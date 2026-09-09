@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram import Update
+from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import dm_start
@@ -38,8 +39,13 @@ def _make_update(
 
 def _make_context(session_factory, **extra_bot_data) -> MagicMock:
     context = MagicMock()
-    context.bot_data = {"session_factory": session_factory, **extra_bot_data}
+    context.bot_data = {
+        "session_factory": session_factory,
+        "group_chat_id": 555,
+        **extra_bot_data,
+    }
     context.user_data = {}
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=ChatMemberStatus.MEMBER))
     return context
 
 
@@ -241,3 +247,17 @@ async def test_pick_callback_handler_schedules_the_timeout_job(
     context.job_queue.run_once.assert_called_once()
     _, kwargs = context.job_queue.run_once.call_args
     assert kwargs["name"] == dm_start.game_service.timeout_job_name(game_id)
+
+
+async def test_photo_handler_rejects_non_group_members(session_factory) -> None:
+    update = _make_update(user_id=1, photo_file_id="file123")
+    context = _make_context(session_factory)
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=ChatMemberStatus.LEFT))
+
+    await dm_start.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        assert session.query(Game).count() == 0
+    update.message.reply_text.assert_awaited_once()
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert "member" in reply_text.lower()

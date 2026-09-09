@@ -9,6 +9,7 @@ from nani_pix_bot.commands.helpers.keyboards import (
     anilist_results_keyboard,
     parse_pick_callback_data,
 )
+from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.commands.timeout import schedule_timeout
 from nani_pix_bot.db import session_scope
@@ -30,6 +31,11 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     user = update.effective_user
     if user is None:
+        return
+
+    group_chat_id = context.bot_data["group_chat_id"]
+    if not await is_group_member(context.bot, group_chat_id, user.id):
+        await message.reply_text("You need to be a member of the group to start a game.")
         return
 
     session_factory = context.bot_data["session_factory"]
