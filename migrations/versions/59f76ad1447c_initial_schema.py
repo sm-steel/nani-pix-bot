@@ -1,8 +1,8 @@
 """initial schema
 
-Revision ID: c83ddf5f429c
+Revision ID: 59f76ad1447c
 Revises:
-Create Date: 2026-09-10 01:22:33.660223
+Create Date: 2026-09-10 02:48:20.790897
 
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "c83ddf5f429c"
+revision: str = "59f76ad1447c"
 down_revision: str | Sequence[str] | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -24,7 +24,7 @@ def upgrade() -> None:
     op.create_table(
         "players",
         sa.Column("telegram_user_id", sa.BigInteger(), nullable=False),
-        sa.Column("username", sa.String(), nullable=True),
+        sa.Column("username", sa.String(length=64), nullable=True),
         sa.Column("wins", sa.Integer(), nullable=False),
         sa.PrimaryKeyConstraint("telegram_user_id"),
     )
@@ -33,11 +33,11 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("starter_id", sa.BigInteger(), nullable=False),
         sa.Column("anilist_id", sa.Integer(), nullable=True),
-        sa.Column("title_romaji", sa.String(), nullable=True),
-        sa.Column("title_english", sa.String(), nullable=True),
-        sa.Column("title_native", sa.String(), nullable=True),
+        sa.Column("title_romaji", sa.String(length=255), nullable=True),
+        sa.Column("title_english", sa.String(length=255), nullable=True),
+        sa.Column("title_native", sa.String(length=255), nullable=True),
         sa.Column("synonyms", sa.JSON(), nullable=True),
-        sa.Column("original_file_id", sa.String(), nullable=True),
+        sa.Column("original_file_id", sa.String(length=512), nullable=True),
         sa.Column(
             "status",
             sa.Enum("SETUP", "ACTIVE", "WON", "UNSOLVED", name="gamestatus"),
