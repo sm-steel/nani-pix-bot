@@ -2,6 +2,7 @@
 MECHANICS.md for the rules this implements."""
 
 import enum
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -18,6 +19,10 @@ TURN_STATE_ID = 1
 # Blockiest to clearest — see MECHANICS.md's "Pixelation stages" table.
 STAGE_ORDER = [PixelStage.X10, PixelStage.X8, PixelStage.X5, PixelStage.X2]
 GUESSES_PER_STAGE = 5
+
+# Absolute from game start, not reset by activity — see MECHANICS.md's
+# "Timeout" section.
+TIMEOUT_DURATION = timedelta(days=2)
 
 
 class GuessOutcome(enum.Enum):
@@ -70,6 +75,13 @@ def active_or_setup_game(session: Session) -> Game | None:
     return session.scalars(stmt).first()
 
 
+def active_games(session: Session) -> list[Game]:
+    """Every ACTIVE game — normally at most one (see active_or_setup_game),
+    but this scans without that assumption for startup timeout re-arming."""
+    stmt = select(Game).where(Game.status == GameStatus.ACTIVE)
+    return list(session.scalars(stmt))
+
+
 def can_start(session: Session, user_id: int) -> bool:
     """Whether `user_id` may DM the bot a screenshot to start a new game
     right now — see MECHANICS.md's "Starting a game"."""
@@ -98,9 +110,29 @@ def activate_game(session: Session, game: Game, result: AniListResult) -> None:
     game.status = GameStatus.ACTIVE
     game.current_stage = PixelStage.X10
     game.wrong_guess_count = 0
+    game.scheduled_end_at = datetime.now(UTC) + TIMEOUT_DURATION
 
     turn_state = _get_or_create_turn_state(session)
     turn_state.next_starter_id = None
+
+
+def seconds_until_timeout(game: Game) -> float:
+    """Seconds from now until `game.scheduled_end_at`, clamped at 0 for an
+    already-overdue game. Normalizes naive datetimes (as DATETIME columns
+    round-trip from the DB) to UTC before comparing."""
+    scheduled = game.scheduled_end_at
+    if scheduled is None:
+        return 0.0
+    if scheduled.tzinfo is None:
+        scheduled = scheduled.replace(tzinfo=UTC)
+    return max((scheduled - datetime.now(UTC)).total_seconds(), 0.0)
+
+
+def timeout_job_name(game_id: int) -> str:
+    """Deterministic JobQueue job name for a game's timeout — lets the
+    command layer look up and cancel a pending job (e.g. on a win) or
+    re-arm it on startup without storing anything extra on the row."""
+    return f"game-timeout-{game_id}"
 
 
 def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: str) -> GuessOutcome:
@@ -122,7 +154,7 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
     game.wrong_guess_count = 0
     next_index = STAGE_ORDER.index(game.current_stage) + 1
     if next_index >= len(STAGE_ORDER):
-        game.status = GameStatus.UNSOLVED
+        force_unsolved(game)
         return GuessOutcome.UNSOLVED
 
     game.current_stage = STAGE_ORDER[next_index]
@@ -151,6 +183,13 @@ def _win(session: Session, game: Game, *, winner_id: int) -> None:
 
     turn_state = _get_or_create_turn_state(session)
     turn_state.next_starter_id = winner_id
+
+
+def force_unsolved(game: Game) -> None:
+    """Ends a game unsolved — used both by record_guess's stage-exhaustion
+    path and by the timeout job callback. See MECHANICS.md's "Ending
+    unsolved" section."""
+    game.status = GameStatus.UNSOLVED
 
 
 def clear_original_screenshot(game: Game) -> None:

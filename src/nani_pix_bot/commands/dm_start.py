@@ -10,6 +10,7 @@ from nani_pix_bot.commands.helpers.keyboards import (
     parse_pick_callback_data,
 )
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
+from nani_pix_bot.commands.timeout import schedule_timeout
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import PixelStage
 from nani_pix_bot.models.game import Game
@@ -101,6 +102,7 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             photo=pixelated,
         )
         game_service.activate_game(session, setup_game, result)
+        schedule_timeout(context.job_queue, setup_game)
 
     user_data.pop(PENDING_GAME_ID_KEY, None)
     user_data.pop(SEARCH_RESULTS_KEY, None)

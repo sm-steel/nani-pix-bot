@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy.orm import Session
 
@@ -280,3 +282,71 @@ def test_set_next_starter_can_open_the_turn(session: Session) -> None:
     turn_state = session.get(TurnState, 1)
     assert turn_state is not None
     assert turn_state.next_starter_id is None
+
+
+def test_activate_game_schedules_the_timeout_two_days_out(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    session.commit()
+    before = datetime.now(UTC).replace(tzinfo=None)  # DATETIME columns round-trip as naive UTC
+
+    game_service.activate_game(session, game, _FRIEREN)
+    session.commit()
+
+    assert game.scheduled_end_at is not None
+    delta_seconds = (game.scheduled_end_at - before).total_seconds()
+    assert delta_seconds == pytest.approx(game_service.TIMEOUT_DURATION.total_seconds(), abs=5)
+
+
+def test_timeout_job_name_is_stable_and_unique_per_game() -> None:
+    assert game_service.timeout_job_name(42) == game_service.timeout_job_name(42)
+    assert game_service.timeout_job_name(42) != game_service.timeout_job_name(43)
+
+
+def test_force_unsolved_sets_the_status(session: Session) -> None:
+    game = _active_game(session)
+
+    game_service.force_unsolved(game)
+    session.commit()
+
+    assert game.status == GameStatus.UNSOLVED
+
+
+def test_seconds_until_timeout_handles_aware_datetimes() -> None:
+    game = Game(starter_id=1, original_file_id="f")
+    game.scheduled_end_at = datetime.now(UTC) + timedelta(seconds=100)
+
+    assert game_service.seconds_until_timeout(game) == pytest.approx(100, abs=1)
+
+
+def test_seconds_until_timeout_treats_naive_datetimes_as_utc() -> None:
+    game = Game(starter_id=1, original_file_id="f")
+    game.scheduled_end_at = (datetime.now(UTC) + timedelta(seconds=100)).replace(tzinfo=None)
+
+    assert game_service.seconds_until_timeout(game) == pytest.approx(100, abs=1)
+
+
+def test_seconds_until_timeout_clamps_overdue_to_zero() -> None:
+    game = Game(starter_id=1, original_file_id="f")
+    game.scheduled_end_at = datetime.now(UTC) - timedelta(days=1)
+
+    assert game_service.seconds_until_timeout(game) == 0
+
+
+def test_active_games_returns_only_active_status_games(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    session.add_all(
+        [
+            Game(starter_id=1, original_file_id="f", status=GameStatus.ACTIVE),
+            Game(starter_id=1, original_file_id="f", status=GameStatus.WON),
+            Game(starter_id=1, original_file_id="f", status=GameStatus.SETUP),
+        ]
+    )
+    session.commit()
+
+    active = game_service.active_games(session)
+
+    assert len(active) == 1
+    assert active[0].status == GameStatus.ACTIVE

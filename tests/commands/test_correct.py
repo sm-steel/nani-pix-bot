@@ -34,6 +34,7 @@ def _make_context(session_factory, *, args: list[str] | None = None) -> MagicMoc
         "game_topic_id": 7,
     }
     context.args = args or []
+    context.job_queue.get_jobs_by_name.return_value = []
     context.bot.send_photo = AsyncMock()
     return context
 
@@ -141,3 +142,21 @@ async def test_correct_command_forces_a_win_for_the_named_player(session_factory
         winner = session.get(Player, 2)
         assert winner is not None
         assert winner.wins == 1
+
+
+async def test_correct_command_cancels_the_timeout_job(session_factory) -> None:
+    game_id = _active_game(session_factory)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="winner"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.job_queue.get_jobs_by_name.assert_called_once_with(
+        correct_command_module.game_service.timeout_job_name(game_id)
+    )

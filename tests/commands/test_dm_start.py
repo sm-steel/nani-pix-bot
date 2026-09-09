@@ -214,3 +214,30 @@ async def test_pick_callback_handler_activates_the_game_on_a_valid_pick(
     assert dm_start.PENDING_GAME_ID_KEY not in context.user_data
     assert dm_start.SEARCH_RESULTS_KEY not in context.user_data
     update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_pick_callback_handler_schedules_the_timeout_job(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(dm_start.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.commit()
+        setup_game = game_service.create_setup_game(
+            session, starter_id=1, original_file_id="file123"
+        )
+        session.commit()
+        game_id = setup_game.id
+
+    update = _make_callback_update(data="anilist_pick:99")
+    context = _make_callback_context(session_factory)
+    context.user_data[dm_start.PENDING_GAME_ID_KEY] = game_id
+    context.user_data[dm_start.SEARCH_RESULTS_KEY] = {99: _FRIEREN}
+
+    await dm_start.pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.job_queue.run_once.assert_called_once()
+    _, kwargs = context.job_queue.run_once.call_args
+    assert kwargs["name"] == dm_start.game_service.timeout_job_name(game_id)

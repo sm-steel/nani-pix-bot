@@ -36,6 +36,7 @@ def _make_context(session_factory, *, args: list[str] | None = None) -> MagicMoc
         "game_topic_id": 7,
     }
     context.args = args or []
+    context.job_queue.get_jobs_by_name.return_value = []
     context.bot.get_file = AsyncMock()
     context.bot.get_file.return_value.download_as_bytearray = AsyncMock(
         return_value=bytearray(b"original-bytes")
@@ -179,3 +180,17 @@ async def test_guess_command_stage_exhaustion_reveals_unsolved(session_factory) 
         assert fetched is not None
         assert fetched.status == GameStatus.UNSOLVED
         assert fetched.original_file_id is None
+
+
+async def test_guess_command_correct_guess_cancels_the_timeout_job(session_factory) -> None:
+    game_id = _active_game(session_factory)
+    update = _make_update(args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.job_queue.get_jobs_by_name.assert_called_once_with(
+        guess_command_module.game_service.timeout_job_name(game_id)
+    )

@@ -5,6 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
+from nani_pix_bot.commands.timeout import cancel_timeout
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
@@ -50,6 +51,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
 
         if outcome is game_service.GuessOutcome.WON:
+            cancel_timeout(context.job_queue, game.id)
             await context.bot.send_photo(
                 chat_id=group_chat_id,
                 message_thread_id=game_topic_id,
