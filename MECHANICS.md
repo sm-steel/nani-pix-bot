@@ -10,21 +10,26 @@ just what's currently built.
 
 | Feature | Status |
 |---|---|
-| Game setup (DM photo + AniList search/pick) | Planned |
-| Pixelation stages (x10 → x8 → x5 → x2 → reveal) | Planned |
-| Guess matching (`/guess`, local fuzzy match) | Planned |
-| Author override (`/correct`) | Planned |
-| Turn handoff (`/skip`) | Planned |
-| 2-day timeout | Planned |
-| Leaderboard (`/leaderboard`) | Planned |
+| Game setup (DM photo + AniList search/pick) | Implemented |
+| Group-membership gate on DM setup | Implemented |
+| Pixelation stages (x10 → x8 → x5 → x2 → reveal) | Implemented |
+| Guess matching (`/guess`, local fuzzy match) | Implemented |
+| Author override (`/correct`) | Implemented |
+| Turn handoff (`/skip`) | Implemented |
+| 2-day timeout | Implemented |
+| Leaderboard (`/leaderboard`) | Implemented |
+| Deployed to `moscow` | Planned |
 
 ## Starting a game
 
-**Status: Planned.**
+**Status: Implemented.**
 
 A game can only start if no other game is currently `SETUP` or `ACTIVE`.
 The player allowed to start is whoever `turn_state.next_starter_id` names —
-or **anyone**, if it's `null`.
+or **anyone**, if it's `null`. They must also currently be a member of the
+configured group — the DM entry point is reachable by anyone who finds the
+bot, unlike the topic-scoped group commands, which Telegram itself already
+restricts to members.
 
 1. The eligible player DMs the bot a screenshot (a photo).
 2. The bot asks them to type a search query (the anime's name, in whatever
@@ -39,10 +44,11 @@ or **anyone**, if it's `null`.
 
 If someone who isn't the designated starter (and it isn't open) DMs a
 photo, the bot replies that it isn't their turn and doesn't create a game.
+Same for someone who isn't currently a group member.
 
 ## Guess matching
 
-**Status: Planned.**
+**Status: Implemented.**
 
 Guessing is an explicit command — **`/guess <text>`** — sent in the game
 topic, never free text. This is deliberate: it means the bot never needs
@@ -71,7 +77,7 @@ external, at guess time.
 
 ## Pixelation stages
 
-**Status: Planned.**
+**Status: Implemented.**
 
 The screenshot is downscaled (blocky pixelation) and immediately
 upscaled back to its original size, via Pillow, at four decreasing
@@ -98,7 +104,7 @@ the game ends unsolved (see below) instead of advancing further.
 
 ## Winning
 
-**Status: Planned.**
+**Status: Implemented.**
 
 A game ends in a win one of two ways:
 
@@ -125,7 +131,7 @@ On a win, the bot:
 
 ## Ending unsolved
 
-**Status: Planned.**
+**Status: Implemented.**
 
 A game ends unsolved one of two ways, handled identically:
 
@@ -143,7 +149,7 @@ they remain designated.
 
 ## Timeout
 
-**Status: Planned.**
+**Status: Implemented.**
 
 Every `ACTIVE` game gets a **2-day timeout, absolute from game start** —
 not reset by guessing activity. It's scheduled as a `JobQueue` job at
@@ -157,7 +163,7 @@ a timeout job on startup for any `Game` still `ACTIVE`, using its stored
 
 ## Turn handoff (`/skip`)
 
-**Status: Planned.**
+**Status: Implemented.**
 
 Usable only by whoever `turn_state.next_starter_id` currently names, and
 only while no game is `SETUP`/`ACTIVE` (it governs who may *start* the
@@ -169,7 +175,7 @@ next game, not anything mid-game):
 
 ## Leaderboard
 
-**Status: Planned.**
+**Status: Implemented.**
 
 `/leaderboard`, usable at any time in the game topic regardless of whether
 a game is running, lists players ordered by `players.wins` descending.
