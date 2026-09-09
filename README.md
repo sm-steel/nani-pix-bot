@@ -40,9 +40,16 @@ target host (moscow):
 
 ```sh
 cp .env.example .env     # fill in real secrets — see comments in the file
-docker compose up -d --build
+docker compose build
+docker compose up -d mariadb
+docker compose run --rm --no-deps bot uv run --no-dev alembic upgrade head
+docker compose up -d
 docker compose logs -f bot
 ```
+
+Migrate before `bot` starts, not after — its startup queries the `games`
+table (to re-arm pending timeout jobs), so starting it against a schema a
+pending migration hasn't created yet crash-loops it.
 
 The `mariadb` service owns its data in a named volume (`mariadb_data`); the
 bot connects to it over the compose network as `mariadb:3306`, not

@@ -134,8 +134,12 @@ arbitrary code on one, including reading secrets):
   of the above as a `verify` job, then a `deploy` job SSHs into `moscow`
   (via `webfactory/ssh-agent` + a dedicated `MOSCOW_SSH_KEY` deploy key —
   **not** the personal key used to administer `moscow` interactively) and
-  runs `git pull --ff-only && docker compose up -d --build && docker
-  compose exec -T bot uv run alembic upgrade head`. Secrets
+  runs `git pull --ff-only`, builds, brings up `mariadb`, runs the
+  migration via a throwaway `docker compose run --rm` container, then
+  `docker compose up -d` for everything — migrating before `bot` starts,
+  not after, since `bot`'s startup queries the `games` table (to re-arm
+  pending timeouts) and would otherwise crash-loop against a schema a
+  pending migration hasn't created yet. Secrets
   (`MOSCOW_SSH_KEY`/`MOSCOW_HOST`/`MOSCOW_USER`) live in the repo's GitHub
   Settings, never in a committed file — see the vault's infrastructure docs
   for what "moscow"/"amsterdam" actually are.

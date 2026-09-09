@@ -45,6 +45,14 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.MOSCOW_SSH_KEY }}
 
+      # Migrate before the bot container starts, not after: app.py's
+      # startup re-arms pending timeout jobs by querying the `games`
+      # table, so if `bot` starts against a schema a pending migration
+      # hasn't created yet, it crash-loops and `docker compose exec`
+      # can't even reach it ("container is restarting"). Running the
+      # migration via a throwaway `run --rm` container (mariadb already
+      # up and healthy from the first `up -d`) avoids that ordering bug
+      # entirely — found the hard way during nani-pix-bot's first deploy.
       - name: Deploy to moscow
         env:
           MOSCOW_HOST: ${{ secrets.MOSCOW_HOST }}
@@ -54,6 +62,8 @@ jobs:
             set -e
             cd /opt/nani-pix-bot
             git pull --ff-only
-            docker compose up -d --build
-            docker compose exec -T bot uv run alembic upgrade head
+            docker compose build
+            docker compose up -d mariadb
+            docker compose run --rm --no-deps bot uv run --no-dev alembic upgrade head
+            docker compose up -d
           '
