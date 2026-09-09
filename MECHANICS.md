@@ -18,7 +18,7 @@ just what's currently built.
 | Turn handoff (`/skip`) | Implemented |
 | 2-day timeout | Implemented |
 | Leaderboard (`/leaderboard`) | Implemented |
-| Deployed to `moscow` | Planned |
+| Deployed to `moscow` | Implemented |
 
 ## Starting a game
 
