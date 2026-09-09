@@ -3,7 +3,7 @@ MECHANICS.md for the rules this implements."""
 
 import enum
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import GameStatus, PixelStage
@@ -44,16 +44,23 @@ def get_or_create_player(
     return player
 
 
-def _get_turn_state(session: Session) -> TurnState | None:
+def get_turn_state(session: Session) -> TurnState | None:
     return session.get(TurnState, TURN_STATE_ID)
 
 
 def _get_or_create_turn_state(session: Session) -> TurnState:
-    turn_state = _get_turn_state(session)
+    turn_state = get_turn_state(session)
     if turn_state is None:
         turn_state = TurnState(id=TURN_STATE_ID)
         session.add(turn_state)
     return turn_state
+
+
+def set_next_starter(session: Session, user_id: int | None) -> None:
+    """Implements /skip — see MECHANICS.md's "Turn handoff" section.
+    `None` opens the turn to anyone."""
+    turn_state = _get_or_create_turn_state(session)
+    turn_state.next_starter_id = user_id
 
 
 def active_or_setup_game(session: Session) -> Game | None:
@@ -68,7 +75,7 @@ def can_start(session: Session, user_id: int) -> bool:
     right now — see MECHANICS.md's "Starting a game"."""
     if active_or_setup_game(session) is not None:
         return False
-    turn_state = _get_turn_state(session)
+    turn_state = get_turn_state(session)
     return turn_state is None or turn_state.next_starter_id in (None, user_id)
 
 
@@ -120,6 +127,19 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
 
     game.current_stage = STAGE_ORDER[next_index]
     return GuessOutcome.STAGE_ADVANCED
+
+
+def find_player_by_username(session: Session, username: str) -> Player | None:
+    """Case-insensitive lookup by the opportunistically-cached username —
+    used by /correct, which takes a plain @username rather than a reply."""
+    stmt = select(Player).where(func.lower(Player.username) == username.lower())
+    return session.scalars(stmt).first()
+
+
+def force_win(session: Session, game: Game, *, winner_id: int) -> None:
+    """The author-override path (/correct) — identical end state to an
+    automatic match in record_guess, just triggered without one."""
+    _win(session, game, winner_id=winner_id)
 
 
 def _win(session: Session, game: Game, *, winner_id: int) -> None:

@@ -218,3 +218,65 @@ def test_record_guess_rejects_a_game_with_no_current_stage(session: Session) -> 
 
     with pytest.raises(ValueError, match="current_stage"):
         game_service.record_guess(session, game, guesser_id=1, guess_text="anything")
+
+
+def test_find_player_by_username_finds_a_case_insensitive_match(session: Session) -> None:
+    session.add(Player(telegram_user_id=1, username="Frieren"))
+    session.commit()
+
+    found = game_service.find_player_by_username(session, "frieren")
+
+    assert found is not None
+    assert found.telegram_user_id == 1
+
+
+def test_find_player_by_username_returns_none_when_unknown(session: Session) -> None:
+    assert game_service.find_player_by_username(session, "nobody") is None
+
+
+def test_force_win_sets_winner_and_hands_over_the_turn(session: Session) -> None:
+    game = _active_game(session)
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+
+    game_service.force_win(session, game, winner_id=2)
+    session.commit()
+
+    assert game.status == GameStatus.WON
+    assert game.winner_id == 2
+
+    winner = session.get(Player, 2)
+    assert winner is not None
+    assert winner.wins == 1
+
+    turn_state = session.get(TurnState, 1)
+    assert turn_state is not None
+    assert turn_state.next_starter_id == 2
+
+
+def test_get_turn_state_returns_none_when_no_row_exists(session: Session) -> None:
+    assert game_service.get_turn_state(session) is None
+
+
+def test_set_next_starter_creates_the_row_if_missing(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+
+    game_service.set_next_starter(session, 1)
+    session.commit()
+
+    turn_state = session.get(TurnState, 1)
+    assert turn_state is not None
+    assert turn_state.next_starter_id == 1
+
+
+def test_set_next_starter_can_open_the_turn(session: Session) -> None:
+    session.add(TurnState(id=1, next_starter_id=1))
+    session.commit()
+
+    game_service.set_next_starter(session, None)
+    session.commit()
+
+    turn_state = session.get(TurnState, 1)
+    assert turn_state is not None
+    assert turn_state.next_starter_id is None
