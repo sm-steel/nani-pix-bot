@@ -1,15 +1,7 @@
 import pytest
 
-from nani_pix_bot.db import get_engine, make_session_factory, session_scope
-from nani_pix_bot.models.base import Base
+from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
-
-
-@pytest.fixture
-def session_factory():
-    engine = get_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    return make_session_factory(engine)
 
 
 def test_session_scope_commits_on_success(session_factory) -> None:
