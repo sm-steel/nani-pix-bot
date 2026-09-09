@@ -1,6 +1,8 @@
 """The game state machine — the only module that mutates a Game row. See
 MECHANICS.md for the rules this implements."""
 
+import enum
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -8,9 +10,24 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
+from nani_pix_bot.services import matching
 from nani_pix_bot.services.anilist import AniListResult
 
 TURN_STATE_ID = 1
+
+# Blockiest to clearest — see MECHANICS.md's "Pixelation stages" table.
+STAGE_ORDER = [PixelStage.X10, PixelStage.X8, PixelStage.X5, PixelStage.X2]
+GUESSES_PER_STAGE = 5
+
+
+class GuessOutcome(enum.Enum):
+    """What a /guess attempt did to the game — tells the command layer
+    which reply/image to send. Not persisted."""
+
+    WON = "won"
+    WRONG = "wrong"
+    STAGE_ADVANCED = "stage_advanced"
+    UNSOLVED = "unsolved"
 
 
 def get_or_create_player(
@@ -77,3 +94,46 @@ def activate_game(session: Session, game: Game, result: AniListResult) -> None:
 
     turn_state = _get_or_create_turn_state(session)
     turn_state.next_starter_id = None
+
+
+def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: str) -> GuessOutcome:
+    """Apply one /guess attempt to an ACTIVE game — see MECHANICS.md's
+    "Guess matching" and "Pixelation stages" sections."""
+    if game.current_stage is None:
+        msg = f"record_guess called on game {game.id} with no current_stage (not ACTIVE?)"
+        raise ValueError(msg)
+
+    candidates = [game.title_romaji, game.title_english, game.title_native, *(game.synonyms or [])]
+    if matching.is_match(guess_text, candidates):
+        _win(session, game, winner_id=guesser_id)
+        return GuessOutcome.WON
+
+    game.wrong_guess_count += 1
+    if game.wrong_guess_count < GUESSES_PER_STAGE:
+        return GuessOutcome.WRONG
+
+    game.wrong_guess_count = 0
+    next_index = STAGE_ORDER.index(game.current_stage) + 1
+    if next_index >= len(STAGE_ORDER):
+        game.status = GameStatus.UNSOLVED
+        return GuessOutcome.UNSOLVED
+
+    game.current_stage = STAGE_ORDER[next_index]
+    return GuessOutcome.STAGE_ADVANCED
+
+
+def _win(session: Session, game: Game, *, winner_id: int) -> None:
+    game.status = GameStatus.WON
+    game.winner_id = winner_id
+
+    winner = get_or_create_player(session, winner_id)
+    winner.wins += 1
+
+    turn_state = _get_or_create_turn_state(session)
+    turn_state.next_starter_id = winner_id
+
+
+def clear_original_screenshot(game: Game) -> None:
+    """Drop the stored Telegram file reference once a reveal message is
+    confirmed sent — see MECHANICS.md's "Cleanup" note."""
+    game.original_file_id = None
