@@ -1,0 +1,80 @@
+[project]
+name = "nani-pix-bot"
+version = "0.1.0"
+description = "Telegram anime-screenshot pixel-guessing game bot."
+readme = "README.md"
+authors = [
+    { name = "smsteel", email = "omg.smsteel@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.13",
+    "httpx>=0.27",
+    "loguru>=0.7.3",
+    "pillow>=11.0",
+    "pymysql>=1.1",
+    "python-dotenv>=1.0",
+    "python-telegram-bot[job-queue]>=21.0",
+    "rapidfuzz>=3.10",
+    "sqlalchemy>=2.0",
+]
+
+[project.scripts]
+nani-pix-bot = "nani_pix_bot.app:main"
+
+[build-system]
+requires = ["uv_build>=0.8.13,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.4",
+    "ty>=0.0.74",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "A",     # flake8-builtins (don't shadow builtins)
+    "C4",    # flake8-comprehensions
+    "DTZ",   # flake8-datetimez (catch naive datetimes)
+    "G",     # flake8-logging-format
+    "PIE",   # flake8-pie
+    "PT",    # flake8-pytest-style
+    "RET",   # flake8-return
+    "SIM",   # flake8-simplify
+    "TID",   # flake8-tidy-imports
+    "ARG",   # flake8-unused-arguments
+    "PTH",   # flake8-use-pathlib
+    "ERA",   # eradicate (commented-out code)
+    "ASYNC", # flake8-async (blocking calls in async handlers)
+    "PERF",  # perflint
+    "S",     # flake8-bandit (security)
+    "RUF",   # ruff-specific rules
+]
+ignore = [
+    "S101",  # assert is fine outside tests too
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG"]  # pytest fixtures are passed but often unused
+
+[tool.ty.rules]
+division-by-zero = "warn"          # default: ignore
+blanket-ignore-comment = "warn"    # default: ignore; require rule-specific `ty: ignore[...]`

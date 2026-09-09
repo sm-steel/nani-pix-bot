@@ -1,0 +1,167 @@
+# Architecture
+
+## Overview
+
+A Python Telegram bot running a single guessing game in one topic of one
+group chat. A player DMs the bot a screenshot and identifies its anime via
+an AniList search; the bot pixelates it hard and posts it into the group's
+game topic, then progressively reveals clearer versions as wrong `/guess`
+attempts accumulate, until someone's right, the stages run out, or a 2-day
+timeout fires. See `CLAUDE.md` for repo layout and coding conventions,
+`MECHANICS.md` for the game rules themselves; this doc covers the system
+design.
+
+```
+                            ┌─────────────────────────────────┐
+                            │            moscow VPS            │
+Telegram  ◄── proxy ────────┤  ┌──────────┐   ┌─────────┐      │
+ servers      (amsterdam)   │  │   bot    │───┤ mariadb │      │
+                            │  │(container)│   │(container)│    │
+                            │  └──────────┘   └─────────┘      │
+                            │       docker compose network      │
+                            └─────────────────────────────────┘
+```
+
+No web-facing component exists (no admin panel, no Traefik/Keycloak
+involvement) — this bot is Telegram-only, unlike `ley-shards-bot`.
+
+## Infrastructure
+
+- **Host:** internal alias `moscow` (see the ops vault for the actual
+  hostname/credentials).
+- **Docker Compose stack:**
+  - `bot` — built from the repo `Dockerfile` (uv-based Python image).
+  - `mariadb` — official `mariadb:11` image, data in a named volume. Not
+    installed on the host — deliberately containerized like everything else
+    deployed to these VPSes.
+- **Telegram connectivity:** `moscow` has no direct route to
+  `api.telegram.org`. The bot routes *all* Telegram API traffic — both
+  `getUpdates` long-polling and outgoing `send*` calls — through another
+  internal host's (`amsterdam`) tinyproxy
+  (`http://<user>:<pass>@<proxy-host>:<proxy-port>`), configured on
+  `ApplicationBuilder`'s `proxy` and `get_updates_proxy`. Real
+  hostname/port/credentials are documented in the ops vault, not here.
+  (`amsterdam` is used rather than `helsinki` — as of this bot's setup,
+  `helsinki`'s proxy is unreachable from both `moscow` and the outside; see
+  the ops vault for current status if this ever needs revisiting.)
+
+## Component boundaries
+
+```
+commands/        →  services/  →  models/
+commands/helpers/   (game rules)  (persistence)
+(Telegram)
+```
+
+- **`commands/`** — one module per Telegram command. Parses the `Update`,
+  calls into `services/`, formats the reply. No game rules live here.
+- **`commands/helpers/`** — Telegram-aware plumbing shared by more than one
+  command file (topic/DM scoping checks, inline-keyboard builders, shared
+  formatting). Nothing here registers a handler in `app.py`.
+- **`services/`** — the game logic, framework-agnostic (no
+  `python-telegram-bot` imports). This is what unit tests target. One
+  module per concern: `anilist.py` (search), `matching.py` (guess
+  normalization/fuzzy-match), `pixelate.py` (Pillow pipeline), `game.py`
+  (the state machine — the only place that mutates a `Game` row),
+  `players.py` (win counts, leaderboard).
+- **`models/`** — SQLAlchemy ORM models, one module per table. Columns and
+  relationships only — if a model needs a method beyond what SQLAlchemy
+  itself generates, that logic belongs in `services/` instead.
+
+This separation exists so guess-matching and pixelation math can be tested
+as plain Python without a Telegram update or a live DB.
+
+### Before adding something new
+
+When a change introduces a genuinely new file, module, enum, or shared
+concept — not just a function added to an existing, already-scoped file —
+decide its placement explicitly before writing code, and update this
+section with the decision, rather than dropping it into whichever file
+happens to need it first.
+
+## Data model
+
+```mermaid
+erDiagram
+    PLAYERS ||--o{ GAMES : starts
+    PLAYERS ||--o{ GAMES : wins
+    PLAYERS ||--o| TURN_STATE : "is next starter"
+
+    PLAYERS {
+        bigint telegram_user_id PK
+        string username
+        int wins
+    }
+    GAMES {
+        int id PK
+        bigint starter_id FK
+        int anilist_id
+        string title_romaji
+        string title_english
+        string title_native
+        json synonyms
+        string original_file_id
+        enum status
+        enum current_stage
+        int wrong_guess_count
+        bigint winner_id FK
+        datetime created_at
+        datetime scheduled_end_at
+        datetime ended_at
+    }
+    TURN_STATE {
+        int id PK
+        bigint next_starter_id FK
+    }
+```
+
+| Table | Status | Purpose |
+|---|---|---|
+| `players` | v1 | Telegram user id, opportunistically-captured `username`, `wins` counter (feeds `/leaderboard`). |
+| `games` | v1 | One row per round. `status` is `SETUP` (starter is picking the anime in DM) → `ACTIVE` (posted to the group, guessing open) → `WON`/`UNSOLVED` (terminal). `current_stage` tracks which pixelation level is currently shown (`X10`→`X8`→`X5`→`X2`); `wrong_guess_count` resets to 0 each time the stage advances. `original_file_id` is cleared once the reveal message (win or unsolved) is confirmed sent — see `MECHANICS.md`'s "Cleanup" note; nothing after a game ends needs to re-fetch the screenshot. Only one row may be `SETUP`/`ACTIVE` at a time, enforced in `services/game.py`, not a DB constraint. |
+| `turn_state` | v1 | Single row (`id=1`). `next_starter_id` is who's designated to start the next game; `null` means anyone can. Set to the winner on a `WON` game, changed by `/skip`, otherwise left alone (an `UNSOLVED` game doesn't force a turn on anyone). |
+
+## Game flow, topics, and commands
+
+Full rules live in `MECHANICS.md`; this section is the interaction-model
+summary.
+
+- **Game setup** happens entirely in **1-to-1 DM** with the bot: send a
+  photo, then a text search query, then tap one of the AniList results
+  shown as an inline keyboard.
+- **Everything else** (`/guess`, `/correct`, `/skip`, `/leaderboard`) is
+  scoped to **one topic** (`GAME_TOPIC_ID`) in **one group**
+  (`GROUP_CHAT_ID`) — checked via `message.message_thread_id` in
+  `commands/helpers/scoping.py`. Commands sent elsewhere in the group are
+  ignored.
+- Guessing is via an explicit `/guess <text>` command rather than scanning
+  every message, which also means the bot never needs Telegram's group
+  privacy mode disabled — it only ever needs to see commands.
+
+## Roadmap (explicitly out of scope for v1)
+
+- **Multi-group / multi-topic support.** `GROUP_CHAT_ID`/`GAME_TOPIC_ID`
+  are single env-var values; supporting more than one group is a real
+  design change (per-chat config, per-chat active game), not a v1 concern.
+- **Per-anime guess history / stats beyond win counts.** `players.wins` is
+  the only aggregate tracked; anything richer (guess accuracy, fastest
+  solve, per-anime stats) is a future addition, not blocked by anything in
+  this schema.
+- **Configurable stage thresholds/timeout per game.** The 5-wrong-guesses-
+  per-stage and 2-day-absolute-timeout constants are fixed in
+  `services/game.py`, not chosen per game by the starter.
+
+## Testing strategy
+
+- **Unit tests** (`tests/`, mirrors `src/` layout): `services/matching.py`
+  gets fuzzy-match edge-case coverage (exact title, known synonym, typo
+  within threshold, unrelated text); `services/pixelate.py` gets
+  output-dimension/block-size assertions per stage; `services/game.py` gets
+  full state-machine coverage (win, stage-exhaustion → unsolved, timeout →
+  unsolved, author override, skip/handoff, and the `original_file_id`
+  cleanup after both terminal states) against `sqlite:///:memory:`.
+  `commands/` tests are thin-layer — topic/DM scoping, error-to-reply
+  mapping — not a second copy of the game-logic tests.
+- **Manual end-to-end**: a throwaway test bot + empty test group (topics
+  enabled, matching the real game topic) before anything touches the real
+  group. See `README.md` for the deploy commands used there.

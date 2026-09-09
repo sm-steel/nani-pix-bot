@@ -1,0 +1,43 @@
+name: Checks
+
+on:
+  push:
+    paths-ignore: ["**.md", "docs/**"]
+  pull_request:
+    paths-ignore: ["**.md", "docs/**"]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project dependencies
+        run: uv sync
+
+      # Just the CLI binary — no Qlty Cloud account involved. Complexity/
+      # duplication analysis plus the trufflehog secret scan are enabled
+      # (see .qlty/qlty.toml); every other third-party linter plugin it
+      # could also run is disabled, ruff/ty stay the only linter/type-
+      # checker (see CLAUDE.md).
+      - name: Install qlty
+        uses: qltysh/qlty-action/install@v1
+
+      # Runs the committed .pre-commit-config.yaml as-is — every hook is
+      # `language: system`, shelling out to `uv run ruff`/`uv run ty`/
+      # `qlty`, so this is the exact same check as the local git hook,
+      # not a second copy of it. See CLAUDE.md's Tooling section.
+      #
+      # Deliberately `uv run pre-commit` rather than the pre-commit/action
+      # marketplace action: that action does its own `pip install
+      # pre-commit` into whatever venv is active, but a `uv`-managed venv
+      # has no pip in it by default — pre-commit is already a `uv` dev
+      # dependency here (`uv sync` above installs it), so there's nothing
+      # for a second installer to do.
+      - name: Run pre-commit hooks
+        run: uv run pre-commit run --all-files

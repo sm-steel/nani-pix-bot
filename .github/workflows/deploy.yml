@@ -1,0 +1,59 @@
+name: Deploy
+
+# Only ever fires on a push straight to master — never on pull_request,
+# so a fork PR can't reach this workflow's secrets. Re-runs checks.yml's
+# and tests.yml's steps itself as a gate (not wired as a cross-workflow
+# `needs:` — not supported across separate workflow files). Doc-only
+# merges skip this too — no app code changed, nothing to redeploy.
+on:
+  push:
+    branches: [master]
+    paths-ignore: ["**.md", "docs/**"]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project dependencies
+        run: uv sync
+
+      - name: Install qlty
+        uses: qltysh/qlty-action/install@v1
+
+      - name: Run pre-commit hooks
+        run: uv run pre-commit run --all-files
+
+      - name: Run tests
+        run: uv run pytest -q
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      # Loads MOSCOW_SSH_KEY into an ssh-agent for the ssh step below.
+      # This is a dedicated deploy-only key, not the personal key used
+      # to administer moscow interactively — see CLAUDE.md.
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.MOSCOW_SSH_KEY }}
+
+      - name: Deploy to moscow
+        env:
+          MOSCOW_HOST: ${{ secrets.MOSCOW_HOST }}
+          MOSCOW_USER: ${{ secrets.MOSCOW_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new "$MOSCOW_USER@$MOSCOW_HOST" '
+            set -e
+            cd /opt/nani-pix-bot
+            git pull --ff-only
+            docker compose up -d --build
+            docker compose exec -T bot uv run alembic upgrade head
+          '

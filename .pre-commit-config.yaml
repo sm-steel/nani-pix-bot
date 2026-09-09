@@ -1,0 +1,41 @@
+# Local hooks only, deliberately — no hosted hook repos (e.g.
+# astral-sh/ruff-pre-commit). Those manage their own pinned tool version,
+# independent of this project's uv.lock; a local hook that just shells out
+# to `uv run ...` always uses the exact version this project already
+# pins, so hook results can never drift from `uv run ruff`/`uv run ty`
+# run by hand or in CI. Every check here matches CLAUDE.md's "Verifying
+# changes" section — same commands, just gated on commit instead of only
+# run manually.
+#
+# qlty is a native binary (see CLAUDE.md's Tooling section), not a uv
+# dependency — installed once per machine via qlty.sh, expected on PATH.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check .
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ruff-format
+        name: ruff format --check
+        entry: uv run ruff format --check .
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ty-check
+        name: ty check
+        entry: uv run ty check
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: qlty-smells
+        name: qlty smells (complexity + duplication + secrets)
+        entry: qlty smells --all --no-snippets
+        language: system
+        pass_filenames: false
+        always_run: true
