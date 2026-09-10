@@ -17,13 +17,14 @@ from PIL import Image
 
 from nani_pix_bot.models.enums import PixelStage
 
-# Blockiest to clearest. Chosen by eye against real screenshots — see the
-# discussion on issue-tracked pixelation tuning.
+# Blockiest to clearest — evenly spread from 12px to 64px (a step of
+# exactly 13px per stage). See MECHANICS.md's "Pixelation stages" table.
 STAGE_TARGET_WIDTH: dict[PixelStage, int] = {
-    PixelStage.X10: 12,
-    PixelStage.X8: 24,
-    PixelStage.X5: 48,
-    PixelStage.X2: 64,
+    PixelStage.STAGE_1: 12,
+    PixelStage.STAGE_2: 25,
+    PixelStage.STAGE_3: 38,
+    PixelStage.STAGE_4: 51,
+    PixelStage.STAGE_5: 64,
 }
 
 

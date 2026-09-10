@@ -54,7 +54,7 @@ def _active_game(session_factory, **overrides) -> int:
             "starter_id": 1,
             "original_file_id": "file123",
             "status": GameStatus.ACTIVE,
-            "current_stage": PixelStage.X10,
+            "current_stage": PixelStage.STAGE_1,
             "wrong_guess_count": 0,
             "anilist_id": 99,
             "title_romaji": "Sousou no Frieren",
@@ -146,7 +146,7 @@ async def test_guess_command_wrong_guess_advances_stage_with_new_image(
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
-        assert fetched.current_stage == PixelStage.X8
+        assert fetched.current_stage == PixelStage.STAGE_2
         assert fetched.wrong_guess_count == 0
 
 
@@ -166,7 +166,7 @@ async def test_guess_command_wrong_guess_below_threshold_does_not_post_a_new_ima
 
 
 async def test_guess_command_stage_exhaustion_reveals_unsolved(session_factory) -> None:
-    game_id = _active_game(session_factory, current_stage=PixelStage.X2, wrong_guess_count=4)
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5, wrong_guess_count=4)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
@@ -234,7 +234,7 @@ async def test_guess_command_wrong_guess_below_threshold_replies_with_remaining_
     update.message.reply_text.assert_awaited_once()
     reply_text = update.message.reply_text.await_args.args[0]
     assert "3" in reply_text  # 5 - 2 = 3 guesses left
-    assert "1/4" in reply_text  # still on stage 1 of 4 (X10)
+    assert "1/5" in reply_text  # still on stage 1 of 5 (STAGE_1)
 
 
 async def test_guess_command_won_caption_names_the_winner(session_factory) -> None:

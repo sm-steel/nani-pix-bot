@@ -178,7 +178,7 @@ def test_activate_game_sets_active_state_and_opens_the_turn(session: Session) ->
     fetched = session.get(Game, game.id)
     assert fetched is not None
     assert fetched.status == GameStatus.ACTIVE
-    assert fetched.current_stage == PixelStage.X10
+    assert fetched.current_stage == PixelStage.STAGE_1
     assert fetched.wrong_guess_count == 0
     assert fetched.anilist_id == 99
     assert fetched.synonyms == ["Frieren"]
@@ -206,7 +206,7 @@ def test_activate_game_creates_turn_state_row_if_missing(session: Session) -> No
 def _active_game(
     session: Session,
     *,
-    stage: PixelStage = PixelStage.X10,
+    stage: PixelStage = PixelStage.STAGE_1,
     wrong_guess_count: int = 0,
     total_guess_count: int = 0,
 ) -> Game:
@@ -272,24 +272,24 @@ def test_record_guess_wrong_increments_the_counter_without_advancing(session: Se
 
     assert outcome is game_service.GuessOutcome.WRONG
     assert game.status == GameStatus.ACTIVE
-    assert game.current_stage == PixelStage.X10
+    assert game.current_stage == PixelStage.STAGE_1
     assert game.wrong_guess_count == 4
 
 
 def test_record_guess_advances_stage_on_the_fifth_wrong_guess(session: Session) -> None:
-    game = _active_game(session, stage=PixelStage.X10, wrong_guess_count=4)
+    game = _active_game(session, stage=PixelStage.STAGE_1, wrong_guess_count=4)
 
     outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
     session.commit()
 
     assert outcome is game_service.GuessOutcome.STAGE_ADVANCED
     assert game.status == GameStatus.ACTIVE
-    assert game.current_stage == PixelStage.X8
+    assert game.current_stage == PixelStage.STAGE_2
     assert game.wrong_guess_count == 0
 
 
 def test_record_guess_ends_unsolved_after_x2_stage_exhaustion(session: Session) -> None:
-    game = _active_game(session, stage=PixelStage.X2, wrong_guess_count=4)
+    game = _active_game(session, stage=PixelStage.STAGE_5, wrong_guess_count=4)
 
     outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
     session.commit()

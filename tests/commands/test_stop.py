@@ -55,7 +55,7 @@ def _active_game(session_factory, *, starter_id: int = 1, **overrides) -> int:
             "starter_id": starter_id,
             "original_file_id": "file123",
             "status": GameStatus.ACTIVE,
-            "current_stage": PixelStage.X10,
+            "current_stage": PixelStage.STAGE_1,
             "title_english": "Frieren: Beyond Journey's End",
         }
         defaults.update(overrides)

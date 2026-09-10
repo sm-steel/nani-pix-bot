@@ -32,7 +32,7 @@ def _unique_colors(png_bytes: bytes) -> int:
 def test_pixelate_preserves_original_dimensions() -> None:
     original = _gradient_png()
 
-    result = pixelate(original, PixelStage.X10)
+    result = pixelate(original, PixelStage.STAGE_1)
 
     with Image.open(io.BytesIO(result)) as image:
         assert image.size == (_TEST_IMAGE_SIZE, _TEST_IMAGE_SIZE)
@@ -40,8 +40,13 @@ def test_pixelate_preserves_original_dimensions() -> None:
 
 @pytest.mark.parametrize("stage", list(PixelStage))
 def test_pixelate_blocks_match_the_stages_target_width(stage: PixelStage) -> None:
-    original = _gradient_png()
-    block_size = _TEST_IMAGE_SIZE // STAGE_TARGET_WIDTH[stage]
+    # Sized as an exact multiple of the stage's own target width — the 5
+    # stage widths (12/25/38/51/64) share no convenient common multiple
+    # the way the old 4 (12/24/48/64) did, so each stage gets an image
+    # sized just for it rather than one shared module-level constant.
+    target_width = STAGE_TARGET_WIDTH[stage]
+    block_size = 8
+    original = _gradient_png(target_width * block_size)
 
     result = pixelate(original, stage)
 
@@ -53,13 +58,13 @@ def test_pixelate_blocks_match_the_stages_target_width(stage: PixelStage) -> Non
         assert len(top_left_block) == 1
 
 
-def test_pixelate_x10_is_blockier_than_x2() -> None:
+def test_pixelate_first_stage_is_blockier_than_last() -> None:
     original = _gradient_png()
 
-    x10 = pixelate(original, PixelStage.X10)
-    x2 = pixelate(original, PixelStage.X2)
+    stage_1 = pixelate(original, PixelStage.STAGE_1)
+    stage_5 = pixelate(original, PixelStage.STAGE_5)
 
-    assert _unique_colors(x10) < _unique_colors(x2)
+    assert _unique_colors(stage_1) < _unique_colors(stage_5)
 
 
 def _count_color_transitions_in_row(png_bytes: bytes, *, y: int) -> int:
@@ -85,12 +90,12 @@ def test_pixelate_is_resolution_independent() -> None:
     small = _gradient_png(192)
     large = _gradient_png(768)
 
-    small_result = pixelate(small, PixelStage.X10)
-    large_result = pixelate(large, PixelStage.X10)
+    small_result = pixelate(small, PixelStage.STAGE_1)
+    large_result = pixelate(large, PixelStage.STAGE_1)
 
     small_transitions = _count_color_transitions_in_row(small_result, y=0)
     large_transitions = _count_color_transitions_in_row(large_result, y=0)
 
-    expected = STAGE_TARGET_WIDTH[PixelStage.X10] - 1
+    expected = STAGE_TARGET_WIDTH[PixelStage.STAGE_1] - 1
     assert small_transitions == expected
     assert large_transitions == expected

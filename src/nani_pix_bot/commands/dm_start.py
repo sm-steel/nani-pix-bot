@@ -34,7 +34,7 @@ from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.models.enums import PixelStage, SetupStep
+from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import anilist, i18n, settings, shikimori
 from nani_pix_bot.services import game as game_service
@@ -225,8 +225,8 @@ async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, s
 async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """The starter tapped a result (or "none of these") from
     search_text_handler's keyboard. A valid pick pixelates the original
-    at X10, posts it to the group's game topic, and activates the
-    game."""
+    at the first (blockiest) stage, posts it to the group's game topic,
+    and activates the game."""
     query = update.callback_query
     if query is None or query.data is None:
         return
@@ -317,13 +317,13 @@ async def _manual_synonyms_step(
 
 async def _finalize_and_post(context, session, game: Game, caption: str) -> None:
     """Shared tail end of every identification method (AniList, Shikimori,
-    manual): pixelate the original at X10, activate the game, post it to
+    manual): pixelate the original at the first (blockiest) stage, activate the game, post it to
     the group topic, and schedule the timeout — canceling the setup-abandon
     timer that's been running since the photo was first sent (issue #21)."""
     timeout_module.cancel_setup_abandon(context.job_queue, game.id)
     telegram_file = await context.bot.get_file(game.original_file_id)
     original_bytes = bytes(await telegram_file.download_as_bytearray())
-    pixelated = pixelate_service.pixelate(original_bytes, PixelStage.X10)
+    pixelated = pixelate_service.pixelate(original_bytes, game_service.STAGE_ORDER[0])
     game_service.activate_game(session, game)
     await context.bot.send_photo(
         chat_id=context.bot_data["group_chat_id"],
@@ -335,13 +335,13 @@ async def _finalize_and_post(context, session, game: Game, caption: str) -> None
 
 
 async def _show_preview(context, game: Game, lang: str, *, chat_id: int) -> None:
-    """Send the starter a private X10-pixelated preview of the staged
+    """Send the starter a private, first-stage-pixelated preview of the staged
     title/synonyms, with buttons to change the image, re-search, add a
     synonym, or confirm and post to the group. Nothing is posted to the
     group until "Confirm and start" is tapped."""
     telegram_file = await context.bot.get_file(game.original_file_id)
     original_bytes = bytes(await telegram_file.download_as_bytearray())
-    pixelated = pixelate_service.pixelate(original_bytes, PixelStage.X10)
+    pixelated = pixelate_service.pixelate(original_bytes, game_service.STAGE_ORDER[0])
     synonyms = ", ".join(game.synonyms or []) or "—"
     caption = i18n.t(
         "dm_start.preview_caption", lang, title=_display_title(game), synonyms=synonyms

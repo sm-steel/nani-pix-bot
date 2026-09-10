@@ -19,7 +19,13 @@ from nani_pix_bot.services.shikimori import ShikimoriResult
 TURN_STATE_ID = 1
 
 # Blockiest to clearest — see MECHANICS.md's "Pixelation stages" table.
-STAGE_ORDER = [PixelStage.X10, PixelStage.X8, PixelStage.X5, PixelStage.X2]
+STAGE_ORDER = [
+    PixelStage.STAGE_1,
+    PixelStage.STAGE_2,
+    PixelStage.STAGE_3,
+    PixelStage.STAGE_4,
+    PixelStage.STAGE_5,
+]
 GUESSES_PER_STAGE = 5
 
 # Absolute from game start, not reset by activity — see MECHANICS.md's
@@ -182,10 +188,10 @@ def stage_manual_entry(game: Game, *, title: str, synonyms: list[str]) -> None:
 
 def activate_game(session: Session, game: Game) -> None:
     """Finalize game setup once a result has been staged (see
-    stage_result): move to the X10 stage and open the turn (the
+    stage_result): move to the first stage and open the turn (the
     designated starter's turn is now consumed)."""
     game.status = GameStatus.ACTIVE
-    game.current_stage = PixelStage.X10
+    game.current_stage = STAGE_ORDER[0]
     game.wrong_guess_count = 0
     game.scheduled_end_at = datetime.now(UTC) + TIMEOUT_DURATION
 

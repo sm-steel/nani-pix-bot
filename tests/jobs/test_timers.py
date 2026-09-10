@@ -21,7 +21,7 @@ def _active_game(session_factory, **overrides) -> int:
             "starter_id": 1,
             "original_file_id": "file123",
             "status": GameStatus.ACTIVE,
-            "current_stage": PixelStage.X10,
+            "current_stage": PixelStage.STAGE_1,
             "title_english": "Frieren: Beyond Journey's End",
         }
         defaults.update(overrides)
@@ -196,7 +196,9 @@ async def test_setup_abandon_job_callback_deletes_the_row_and_opens_the_turn(
 async def test_setup_abandon_job_callback_is_a_noop_if_already_confirmed(
     session_factory,
 ) -> None:
-    game_id = _setup_game(session_factory, status=GameStatus.ACTIVE, current_stage=PixelStage.X10)
+    game_id = _setup_game(
+        session_factory, status=GameStatus.ACTIVE, current_stage=PixelStage.STAGE_1
+    )
     context = _make_group_job_context(session_factory)
     context.job.data = game_id
 

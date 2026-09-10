@@ -40,7 +40,7 @@ def test_game_stores_synonyms_as_a_json_list(session: Session) -> None:
         title_english="Frieren: Beyond Journey's End",
         synonyms=["Frieren", "Frieren at the Funeral"],
         status=GameStatus.ACTIVE,
-        current_stage=PixelStage.X10,
+        current_stage=PixelStage.STAGE_1,
     )
     session.add(game)
     session.commit()
@@ -50,7 +50,7 @@ def test_game_stores_synonyms_as_a_json_list(session: Session) -> None:
 
     assert fetched is not None
     assert fetched.synonyms == ["Frieren", "Frieren at the Funeral"]
-    assert fetched.current_stage == PixelStage.X10
+    assert fetched.current_stage == PixelStage.STAGE_1
 
 
 def test_game_winner_references_a_different_player(session: Session) -> None:
