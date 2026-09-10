@@ -35,7 +35,10 @@ def build_application(config: Config) -> Application:
 
     engine = db.get_engine(config.database_url)
     application.bot_data["session_factory"] = db.make_session_factory(engine)
-    application.bot_data["anilist_client"] = httpx.AsyncClient(timeout=30)
+    # Shared by both anilist.py and shikimori.py — a plain HTTP client,
+    # nothing service-specific about it (each module sends its own
+    # headers per request).
+    application.bot_data["search_client"] = httpx.AsyncClient(timeout=30)
     application.bot_data["group_chat_id"] = config.group_chat_id
     application.bot_data["game_topic_id"] = config.game_topic_id
 
@@ -51,8 +54,11 @@ def build_application(config: Config) -> Application:
     application.add_handler(
         CallbackQueryHandler(
             dm_start.pick_callback_handler,
-            pattern=rf"^({re.escape(RETRY_CALLBACK_DATA)}|anilist_pick:)",
+            pattern=rf"^({re.escape(RETRY_CALLBACK_DATA)}|anilist_pick:|shikimori_pick:)",
         )
+    )
+    application.add_handler(
+        CallbackQueryHandler(dm_start.method_pick_callback_handler, pattern=r"^method:")
     )
     application.add_handler(
         CallbackQueryHandler(

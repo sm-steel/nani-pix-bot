@@ -29,7 +29,7 @@ def test_build_application_populates_bot_data() -> None:
     assert application.bot_data["group_chat_id"] == -100555
     assert application.bot_data["game_topic_id"] == 7
     assert application.bot_data["session_factory"] is not None
-    assert application.bot_data["anilist_client"] is not None
+    assert application.bot_data["search_client"] is not None
 
 
 def test_build_application_registers_every_command() -> None:

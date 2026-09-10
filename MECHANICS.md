@@ -10,7 +10,7 @@ just what's currently built.
 
 | Feature | Status |
 |---|---|
-| Game setup (DM photo + AniList search/pick) | Implemented |
+| Game setup (DM photo + AniList/Shikimori search/pick) | Implemented |
 | Group-membership gate on DM setup | Implemented |
 | Pixelation stages (x10 → x8 → x5 → x2 → reveal) | Implemented |
 | Guess matching (`/guess`, local fuzzy match) | Implemented |
@@ -32,17 +32,28 @@ bot, unlike the topic-scoped group commands, which Telegram itself already
 restricts to members.
 
 1. The eligible player DMs the bot a screenshot (a photo).
-2. The bot asks them to type a search query (the anime's name, in whatever
-   form they remember it).
-3. The bot searches AniList and shows up to 5 results as an inline
-   keyboard (title + year); a "none of these" option lets them retry the
-   search with different text.
-4. The player taps the correct result. The bot stores that anime's title
-   (romaji/English/native) and its AniList `synonyms` list on the new
-   `Game` row, pixelates the screenshot at **x10**, and posts it into the
-   group's game topic with a caption naming the starter and reminding
-   everyone how to guess (`/guess <title>` in that topic). The game is
-   now `ACTIVE`.
+2. The bot asks them to pick an identification method: **AniList** or
+   **Shikimori** (the Russian-community anime database, with better
+   Russian titles/synonyms). If the bot's language is currently Russian,
+   Shikimori is listed first with a one-line note explaining why. The
+   choice is stored on the game's still-`SETUP` row (`Game.source`), not
+   in memory, so it survives a restart before the player finishes typing.
+3. The bot asks them to type a search query (the anime's name, in
+   whatever form they remember it), and searches whichever service was
+   picked, showing up to 5 results as an inline keyboard (title + year
+   for AniList, the Russian title for Shikimori); a "none of these"
+   option lets them retry the search with different text.
+4. The player taps the correct result. The bot re-fetches the full
+   record from that service (title romaji/English/native for AniList,
+   plus a Russian title for Shikimori) and its synonyms list, stores them
+   on the `Game` row, pixelates the screenshot at **x10**, and posts it
+   into the group's game topic with a caption naming the starter and
+   reminding everyone how to guess (`/guess <title>` in that topic). The
+   game is now `ACTIVE`.
+
+If the chosen service is unreachable (search or re-fetch fails), the bot
+tells the player and hands back the AniList/Shikimori choice so they can
+try again or switch services — the game stays `SETUP`, never stuck.
 
 If someone who isn't the designated starter (and it isn't open) DMs a
 photo, the bot replies that it isn't their turn and doesn't create a game.
@@ -59,9 +70,10 @@ unambiguous, loggable event rather than "was that message meant as a
 guess?"
 
 Matching is **local and fully deterministic** — no network call happens
-per guess. AniList is only ever consulted once, at game setup (see
-above), and its result (title variants + synonyms) is cached on the
-`Game` row for the rest of that round:
+per guess. Whichever service was used at setup (see above) is only ever
+consulted once, and its result (title variants — including the Russian
+title, if Shikimori was used — plus synonyms) is cached on the `Game`
+row for the rest of that round:
 
 1. Normalize both the guess and every cached title/synonym: lowercase,
    strip punctuation and extra whitespace.
@@ -80,8 +92,8 @@ own game at all — they already know the answer.
 
 Because everything the matcher needs is cached at setup time, the same
 guess always produces the same verdict for the life of a game — matching
-never depends on AniList being reachable, rate limits, or anything else
-external, at guess time.
+never depends on AniList/Shikimori being reachable, rate limits, or
+anything else external, at guess time.
 
 ## Pixelation stages
 

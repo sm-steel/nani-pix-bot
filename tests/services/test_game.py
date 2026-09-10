@@ -9,6 +9,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.anilist import AniListResult
+from nani_pix_bot.services.shikimori import ShikimoriResult
 
 _FRIEREN = AniListResult(
     anilist_id=99,
@@ -17,6 +18,14 @@ _FRIEREN = AniListResult(
     title_native="葬送のフリーレン",
     synonyms=["Frieren"],
     year=2023,
+)
+
+_FRIEREN_SHIKIMORI = ShikimoriResult(
+    shikimori_id=52991,
+    title_romaji="Sousou no Frieren",
+    title_english="Frieren: Beyond Journey's End",
+    title_russian="Провожающая в последний путь Фрирен",
+    synonyms=["Frieren at the Funeral"],
 )
 
 
@@ -84,6 +93,44 @@ def test_create_setup_game_persists_a_setup_row(session: Session) -> None:
     assert fetched.starter_id == 1
 
 
+def test_stage_result_assigns_anilist_fields_without_changing_status(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    session.commit()
+
+    game_service.stage_result(game, _FRIEREN, source="anilist")
+    session.commit()
+
+    fetched = session.get(Game, game.id)
+    assert fetched is not None
+    assert fetched.status == GameStatus.SETUP
+    assert fetched.anilist_id == 99
+    assert fetched.title_romaji == "Sousou no Frieren"
+    assert fetched.synonyms == ["Frieren"]
+    assert fetched.source == "anilist"
+    assert fetched.title_russian is None
+
+
+def test_stage_result_assigns_shikimori_fields_including_russian_title(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    session.commit()
+
+    game_service.stage_result(game, _FRIEREN_SHIKIMORI, source="shikimori")
+    session.commit()
+
+    fetched = session.get(Game, game.id)
+    assert fetched is not None
+    assert fetched.status == GameStatus.SETUP
+    assert fetched.anilist_id is None
+    assert fetched.title_romaji == "Sousou no Frieren"
+    assert fetched.title_russian == "Провожающая в последний путь Фрирен"
+    assert fetched.synonyms == ["Frieren at the Funeral"]
+    assert fetched.source == "shikimori"
+
+
 def test_activate_game_sets_active_state_and_opens_the_turn(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.add(TurnState(id=1, next_starter_id=1))
@@ -91,7 +138,8 @@ def test_activate_game_sets_active_state_and_opens_the_turn(session: Session) ->
     game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
     session.commit()
 
-    game_service.activate_game(session, game, _FRIEREN)
+    game_service.stage_result(game, _FRIEREN, source="anilist")
+    game_service.activate_game(session, game)
     session.commit()
 
     fetched = session.get(Game, game.id)
@@ -113,7 +161,8 @@ def test_activate_game_creates_turn_state_row_if_missing(session: Session) -> No
     game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
     session.commit()
 
-    game_service.activate_game(session, game, _FRIEREN)
+    game_service.stage_result(game, _FRIEREN, source="anilist")
+    game_service.activate_game(session, game)
     session.commit()
 
     turn_state = session.get(TurnState, 1)
@@ -166,6 +215,20 @@ def test_record_guess_correct_marks_the_game_won(session: Session) -> None:
     turn_state = session.get(TurnState, 1)
     assert turn_state is not None
     assert turn_state.next_starter_id == 2
+
+
+def test_record_guess_matches_the_russian_title(session: Session) -> None:
+    game = _active_game(session)
+    game.title_russian = "Провожающая в последний путь Фрирен"
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+
+    outcome = game_service.record_guess(
+        session, game, guesser_id=2, guess_text="Провожающая в последний путь Фрирен"
+    )
+    session.commit()
+
+    assert outcome is game_service.GuessOutcome.WON
 
 
 def test_record_guess_wrong_increments_the_counter_without_advancing(session: Session) -> None:
@@ -296,7 +359,8 @@ def test_activate_game_schedules_the_timeout_two_days_out(session: Session) -> N
     session.commit()
     before = datetime.now(UTC).replace(tzinfo=None)  # DATETIME columns round-trip as naive UTC
 
-    game_service.activate_game(session, game, _FRIEREN)
+    game_service.stage_result(game, _FRIEREN, source="anilist")
+    game_service.activate_game(session, game)
     session.commit()
 
     assert game.scheduled_end_at is not None

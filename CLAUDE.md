@@ -2,7 +2,7 @@
 
 Telegram bot for an anime-screenshot guessing game, played in one topic of a
 group chat. A player DMs the bot a screenshot and picks the anime (via an
-AniList search); the bot posts it heavily pixelated into the group's game
+AniList or Shikimori search); the bot posts it heavily pixelated into the group's game
 topic, and players guess with `/guess`, watching the image get progressively
 clearer every 5 wrong guesses until someone's right or it's revealed unsolved.
 Runs as a Docker Compose stack on the `moscow` VPS.
@@ -27,7 +27,8 @@ src/nani_pix_bot/
                    # the DB on startup (see MECHANICS.md's Timeout section)
   commands/       # one module per Telegram command (thin: parse update,
                    # call a service, format a reply — no game rules here)
-    dm_start.py   # private-chat photo intake + AniList search/pick flow
+    dm_start.py   # private-chat photo intake + AniList/Shikimori
+                   # method-select + search/pick flow
     guess.py      # /guess — the only handler most wrong-guess traffic hits
     correct.py    # /correct @user — author override
     skip.py       # /skip [@user] — turn handoff when no game is running
@@ -46,6 +47,8 @@ src/nani_pix_bot/
                    # python-telegram-bot imports in this package
     anilist.py    # AniList GraphQL search (httpx) — called once per game,
                    # at setup time only, never per guess (see MECHANICS.md)
+    shikimori.py  # Shikimori REST search (httpx) — the RU-friendly
+                   # alternative to anilist.py, same call pattern/timing
     matching.py   # normalize + rapidfuzz-match a guess against a game's
                    # cached title/synonyms — pure function, fully
                    # deterministic, no network calls

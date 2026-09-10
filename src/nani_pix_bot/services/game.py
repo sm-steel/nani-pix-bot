@@ -13,6 +13,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import matching
 from nani_pix_bot.services.anilist import AniListResult
+from nani_pix_bot.services.shikimori import ShikimoriResult
 
 TURN_STATE_ID = 1
 
@@ -107,15 +108,27 @@ def create_setup_game(session: Session, *, starter_id: int, original_file_id: st
     return game
 
 
-def activate_game(session: Session, game: Game, result: AniListResult) -> None:
-    """Finalize game setup once the starter has picked an AniList result:
-    cache its title/synonyms, move to the X10 stage, and open the turn
-    (the designated starter's turn is now consumed)."""
-    game.anilist_id = result.anilist_id
+def stage_result(game: Game, result: AniListResult | ShikimoriResult, *, source: str) -> None:
+    """Assign a picked search result's title/synonyms onto a still-SETUP
+    game — doesn't post anything or change status. This is the shared
+    landing spot for every identification method (AniList, Shikimori,
+    and eventually manual entry); the confirmation-screen ticket (#19)
+    is what will show a preview between this and activate_game()."""
     game.title_romaji = result.title_romaji
     game.title_english = result.title_english
-    game.title_native = result.title_native
     game.synonyms = result.synonyms
+    game.source = source
+    if isinstance(result, AniListResult):
+        game.anilist_id = result.anilist_id
+        game.title_native = result.title_native
+    elif isinstance(result, ShikimoriResult):
+        game.title_russian = result.title_russian
+
+
+def activate_game(session: Session, game: Game) -> None:
+    """Finalize game setup once a result has been staged (see
+    stage_result): move to the X10 stage and open the turn (the
+    designated starter's turn is now consumed)."""
     game.status = GameStatus.ACTIVE
     game.current_stage = PixelStage.X10
     game.wrong_guess_count = 0
@@ -153,7 +166,13 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
 
     game.total_guess_count += 1
 
-    candidates = [game.title_romaji, game.title_english, game.title_native, *(game.synonyms or [])]
+    candidates = [
+        game.title_romaji,
+        game.title_english,
+        game.title_native,
+        game.title_russian,
+        *(game.synonyms or []),
+    ]
     if matching.is_match(guess_text, candidates):
         _win(session, game, winner_id=guesser_id)
         return GuessOutcome.WON

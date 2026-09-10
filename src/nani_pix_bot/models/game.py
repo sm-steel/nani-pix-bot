@@ -23,7 +23,12 @@ class Game(Base):
     title_romaji: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
     title_english: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
     title_native: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
+    title_russian: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
     synonyms: Mapped[list[str] | None] = mapped_column(JSON, default=None)
+    # Which identification method staged this game's title/synonyms —
+    # "anilist" / "shikimori" / "manual". See services/game.py's
+    # stage_result().
+    source: Mapped[str] = mapped_column(String(16), default="anilist")
     # Cleared once the reveal message is confirmed sent — see MECHANICS.md's
     # "Cleanup" note under Winning/Ending unsolved.
     original_file_id: Mapped[str | None] = mapped_column(String(FILE_ID_LENGTH), default=None)
