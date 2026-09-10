@@ -16,12 +16,13 @@ from telegram.ext import (
 )
 
 from nani_pix_bot import db
-from nani_pix_bot.commands import correct, dm_start, guess, language, leaderboard, skip
+from nani_pix_bot.commands import correct, dm_start, guess, language, leaderboard, onboarding, skip
 from nani_pix_bot.commands.helpers.keyboards import RETRY_CALLBACK_DATA
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
 from nani_pix_bot.commands.timeout import rearm_pending_timeouts
 from nani_pix_bot.config import Config, load_config
 from nani_pix_bot.logging_config import setup_logging
+from nani_pix_bot.services import settings
 
 
 def build_application(config: Config) -> Application:
@@ -63,6 +64,8 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("skip", skip.skip_command))
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
     application.add_handler(CommandHandler("language", language.language_command))
+    application.add_handler(CommandHandler("start", onboarding.start_command))
+    application.add_handler(CommandHandler("help", onboarding.help_command))
 
     return application
 
@@ -70,6 +73,15 @@ def build_application(config: Config) -> Application:
 async def _post_init(application: Application) -> None:
     session_factory = application.bot_data["session_factory"]
     await rearm_pending_timeouts(application.job_queue, session_factory)
+
+    me = await application.bot.get_me()
+    application.bot_data["bot_username"] = me.username
+
+    with db.session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+    await onboarding.refresh_command_menu(
+        application.bot, group_chat_id=application.bot_data["group_chat_id"], lang=lang
+    )
 
 
 def main() -> None:

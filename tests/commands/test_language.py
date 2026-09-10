@@ -14,6 +14,7 @@ def _make_context(session_factory, *, admin: bool = True) -> MagicMock:
     context.bot_data = {"session_factory": session_factory, "group_chat_id": 555}
     status = ChatMemberStatus.ADMINISTRATOR if admin else ChatMemberStatus.MEMBER
     context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=status))
+    context.bot.set_my_commands = AsyncMock()
     return context
 
 
@@ -89,3 +90,15 @@ async def test_language_callback_ignores_non_admins(session_factory) -> None:
     with session_factory() as session:
         assert session.get(BotSettings, 1) is None
     update.callback_query.edit_message_text.assert_not_awaited()
+
+
+async def test_language_callback_refreshes_the_command_menu(session_factory) -> None:
+    update = _make_callback_update(data="set_language:RU")
+    context = _make_context(session_factory, admin=True)
+    context.bot.set_my_commands = AsyncMock()
+
+    await language_module.language_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert context.bot.set_my_commands.await_count == 2

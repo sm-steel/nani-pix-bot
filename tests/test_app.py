@@ -42,7 +42,15 @@ def test_build_application_registers_every_command() -> None:
         for command in getattr(handler, "commands", [])
     }
 
-    assert registered_commands == {"guess", "correct", "skip", "leaderboard", "language"}
+    assert registered_commands == {
+        "guess",
+        "correct",
+        "skip",
+        "leaderboard",
+        "language",
+        "start",
+        "help",
+    }
 
 
 def test_build_application_succeeds_with_a_proxy_configured() -> None:

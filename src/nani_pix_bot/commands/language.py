@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
+from nani_pix_bot.commands.onboarding import refresh_command_menu
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, settings
 
@@ -56,4 +57,5 @@ async def language_callback_handler(update: Update, context: ContextTypes.DEFAUL
             return
         settings.set_language(session, new_lang)
 
+    await refresh_command_menu(context.bot, group_chat_id=group_chat_id, lang=new_lang)
     await query.edit_message_text(i18n.t("language.set", new_lang))
