@@ -122,7 +122,11 @@ def test_activate_game_creates_turn_state_row_if_missing(session: Session) -> No
 
 
 def _active_game(
-    session: Session, *, stage: PixelStage = PixelStage.X10, wrong_guess_count: int = 0
+    session: Session,
+    *,
+    stage: PixelStage = PixelStage.X10,
+    wrong_guess_count: int = 0,
+    total_guess_count: int = 0,
 ) -> Game:
     session.add(Player(telegram_user_id=1))
     session.commit()
@@ -132,6 +136,7 @@ def _active_game(
         status=GameStatus.ACTIVE,
         current_stage=stage,
         wrong_guess_count=wrong_guess_count,
+        total_guess_count=total_guess_count,
         anilist_id=99,
         title_romaji="Sousou no Frieren",
         title_english="Frieren: Beyond Journey's End",
@@ -377,3 +382,33 @@ def test_get_setup_game_for_starter_ignores_active_games(session: Session) -> No
     game = _active_game(session)
 
     assert game_service.get_setup_game_for_starter(session, game.starter_id) is None
+
+
+def test_record_guess_increments_total_guess_count_on_win(session: Session) -> None:
+    game = _active_game(session)
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+
+    game_service.record_guess(session, game, guesser_id=2, guess_text="frieren")
+    session.commit()
+
+    assert game.total_guess_count == 1
+
+
+def test_record_guess_increments_total_guess_count_on_wrong_guess(session: Session) -> None:
+    game = _active_game(session)
+
+    game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
+    session.commit()
+
+    assert game.total_guess_count == 1
+
+
+def test_record_guess_total_guess_count_survives_a_stage_advance(session: Session) -> None:
+    game = _active_game(session, wrong_guess_count=4, total_guess_count=4)
+
+    game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
+    session.commit()
+
+    assert game.wrong_guess_count == 0
+    assert game.total_guess_count == 5

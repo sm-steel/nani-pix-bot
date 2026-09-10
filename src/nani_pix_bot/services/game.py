@@ -151,6 +151,8 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
         msg = f"record_guess called on game {game.id} with no current_stage (not ACTIVE?)"
         raise ValueError(msg)
 
+    game.total_guess_count += 1
+
     candidates = [game.title_romaji, game.title_english, game.title_native, *(game.synonyms or [])]
     if matching.is_match(guess_text, candidates):
         _win(session, game, winner_id=guesser_id)

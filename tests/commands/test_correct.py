@@ -102,7 +102,7 @@ async def test_correct_command_rejects_non_starters(session_factory) -> None:
 
 
 async def test_correct_command_rejects_an_unknown_username(session_factory) -> None:
-    _active_game(session_factory)
+    _active_game(session_factory, total_guess_count=1)
     update = _make_update(user_id=1, args=["@stranger"])
     context = _make_context(session_factory, args=["@stranger"])
 
@@ -116,7 +116,7 @@ async def test_correct_command_rejects_an_unknown_username(session_factory) -> N
 
 
 async def test_correct_command_forces_a_win_for_the_named_player(session_factory) -> None:
-    game_id = _active_game(session_factory)
+    game_id = _active_game(session_factory, total_guess_count=1)
     with session_factory() as session:
         session.add(Player(telegram_user_id=2, username="winner"))
         session.commit()
@@ -145,7 +145,7 @@ async def test_correct_command_forces_a_win_for_the_named_player(session_factory
 
 
 async def test_correct_command_cancels_the_timeout_job(session_factory) -> None:
-    game_id = _active_game(session_factory)
+    game_id = _active_game(session_factory, total_guess_count=1)
     with session_factory() as session:
         session.add(Player(telegram_user_id=2, username="winner"))
         session.commit()
@@ -160,3 +160,43 @@ async def test_correct_command_cancels_the_timeout_job(session_factory) -> None:
     context.job_queue.get_jobs_by_name.assert_called_once_with(
         correct_command_module.game_service.timeout_job_name(game_id)
     )
+
+
+async def test_correct_command_rejects_before_any_guess_was_made(session_factory) -> None:
+    game_id = _active_game(session_factory, total_guess_count=0)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="winner"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_awaited_once()
+    context.bot.send_photo.assert_not_awaited()
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.ACTIVE
+
+
+async def test_correct_command_allowed_after_at_least_one_guess(session_factory) -> None:
+    game_id = _active_game(session_factory, total_guess_count=1)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="winner"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.WON

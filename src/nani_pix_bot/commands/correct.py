@@ -46,6 +46,9 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if game.starter_id != user.id:
             await message.reply_text(i18n.t("correct.not_starter", lang))
             return
+        if game.total_guess_count == 0:
+            await message.reply_text(i18n.t("correct.no_guesses_yet", lang))
+            return
         if game.original_file_id is None:
             return  # shouldn't happen for an ACTIVE game — defensive guard
 

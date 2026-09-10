@@ -30,6 +30,9 @@ class Game(Base):
     status: Mapped[GameStatus] = mapped_column(default=GameStatus.SETUP)
     current_stage: Mapped[PixelStage | None] = mapped_column(default=None)
     wrong_guess_count: Mapped[int] = mapped_column(default=0)
+    # Never resets (unlike wrong_guess_count, which resets on stage
+    # advance) — used to gate /correct on at least one real attempt.
+    total_guess_count: Mapped[int] = mapped_column(default=0)
     winner_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("players.telegram_user_id"), default=None
     )

@@ -6,6 +6,7 @@
   "correct.usage": "Usage: /correct @username",
   "correct.no_game": "No game is currently running.",
   "correct.not_starter": "Only the person who started this round can use /correct.",
+  "correct.no_guesses_yet": "Nobody has guessed yet — /correct is for overriding a guess the matcher missed, not for skipping straight to the end.",
   "correct.unknown_username": "I don't know anyone called @{username} yet — they need to message me at least once first.",
   "correct.caption": "🎉 Correct! It was {title}.",
 
