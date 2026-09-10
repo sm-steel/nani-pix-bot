@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands import dm_start
 from nani_pix_bot.commands.helpers.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
+    MANUAL_METHOD_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
 )
 from nani_pix_bot.models.bot_settings import BotSettings
@@ -63,9 +64,12 @@ def _make_context(session_factory, **extra_bot_data) -> MagicMock:
     return context
 
 
-def _make_text_update(*, user_id: int = 1, text: str = "frieren") -> MagicMock:
+def _make_text_update(
+    *, user_id: int = 1, text: str = "frieren", full_name: str = "Starter Name"
+) -> MagicMock:
     update = MagicMock()
     update.effective_user.id = user_id
+    update.effective_user.full_name = full_name
     update.effective_chat.type = "private"
     update.message.text = text
     update.message.reply_text = AsyncMock()
@@ -116,7 +120,7 @@ async def test_photo_handler_shows_the_method_selection_keyboard(session_factory
     callbacks = [
         button.callback_data for row in kwargs["reply_markup"].inline_keyboard for button in row
     ]
-    assert callbacks == [ANILIST_METHOD_CALLBACK_DATA, SHIKIMORI_METHOD_CALLBACK_DATA]
+    assert callbacks[:2] == [ANILIST_METHOD_CALLBACK_DATA, SHIKIMORI_METHOD_CALLBACK_DATA]
 
 
 async def test_photo_handler_prefers_shikimori_first_when_language_is_ru(session_factory) -> None:
@@ -130,7 +134,7 @@ async def test_photo_handler_prefers_shikimori_first_when_language_is_ru(session
     callbacks = [
         button.callback_data for row in kwargs["reply_markup"].inline_keyboard for button in row
     ]
-    assert callbacks == [SHIKIMORI_METHOD_CALLBACK_DATA, ANILIST_METHOD_CALLBACK_DATA]
+    assert callbacks[:2] == [SHIKIMORI_METHOD_CALLBACK_DATA, ANILIST_METHOD_CALLBACK_DATA]
 
 
 async def test_photo_handler_rejects_when_it_is_not_their_turn(session_factory) -> None:
@@ -202,6 +206,24 @@ async def test_method_pick_callback_handler_stores_the_source_and_prompts_for_se
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.source == "shikimori"
         assert fetched.status == GameStatus.SETUP
+
+
+async def test_method_pick_callback_handler_prompts_for_a_title_when_manual_is_picked(
+    session_factory,
+) -> None:
+    _create_setup_game(session_factory, starter_id=1)
+    update = _make_method_callback_update(data=MANUAL_METHOD_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await dm_start.method_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    text = update.callback_query.edit_message_text.await_args.args[0]
+    assert "title" in text.lower()
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.source == "manual"
 
 
 async def test_search_text_handler_ignores_when_no_game_is_pending(
@@ -477,3 +499,83 @@ async def test_pick_callback_handler_start_caption_names_the_starter(
 
     _, kwargs = context.bot.send_photo.await_args
     assert "Starter Name" in kwargs["caption"]
+
+
+async def test_manual_entry_first_message_sets_the_title_and_asks_for_synonyms(
+    session_factory,
+) -> None:
+    _create_setup_game(session_factory, starter_id=1, source="manual")
+    update = _make_text_update(user_id=1, text="Sousou no Frieren")
+    context = _make_callback_context(session_factory)
+
+    await dm_start.search_text_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_awaited_once()
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert "synonym" in reply_text.lower()
+    context.bot.send_photo.assert_not_awaited()
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.title_english == "Sousou no Frieren"
+        assert fetched.status == GameStatus.SETUP
+
+
+async def test_manual_entry_rejects_a_blank_synonym_message_with_a_reprompt(
+    session_factory,
+) -> None:
+    _create_setup_game(session_factory, starter_id=1, source="manual")
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.title_english = "Sousou no Frieren"
+        session.commit()
+
+    update = _make_text_update(user_id=1, text="   ")
+    context = _make_callback_context(session_factory)
+
+    await dm_start.search_text_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_awaited_once()
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert "synonym" in reply_text.lower()
+    context.bot.send_photo.assert_not_awaited()
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.status == GameStatus.SETUP
+
+
+async def test_manual_entry_second_message_stages_activates_and_posts(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(dm_start.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    _create_setup_game(session_factory, starter_id=1, source="manual")
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.title_english = "Sousou no Frieren"
+        session.commit()
+
+    update = _make_text_update(
+        user_id=1, text="Frieren, Frieren at the Funeral", full_name="Starter Name"
+    )
+    context = _make_callback_context(session_factory)
+
+    await dm_start.search_text_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_photo.assert_awaited_once()
+    _, kwargs = context.bot.send_photo.await_args
+    assert kwargs["photo"] == b"pixelated"
+    assert "Starter Name" in kwargs["caption"]
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.status == GameStatus.ACTIVE
+        assert fetched.source == "manual"
+        assert fetched.title_english == "Sousou no Frieren"
+        assert fetched.synonyms == ["Frieren", "Frieren at the Funeral"]
+
+    update.message.reply_text.assert_awaited_once()

@@ -131,6 +131,26 @@ def test_stage_result_assigns_shikimori_fields_including_russian_title(session: 
     assert fetched.source == "shikimori"
 
 
+def test_stage_manual_entry_assigns_the_typed_title_and_synonyms(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    session.commit()
+
+    game_service.stage_manual_entry(
+        game, title="Sousou no Frieren", synonyms=["Frieren", "Frieren at the Funeral"]
+    )
+    session.commit()
+
+    fetched = session.get(Game, game.id)
+    assert fetched is not None
+    assert fetched.status == GameStatus.SETUP
+    assert fetched.source == "manual"
+    assert fetched.title_english == "Sousou no Frieren"
+    assert fetched.synonyms == ["Frieren", "Frieren at the Funeral"]
+    assert fetched.anilist_id is None
+
+
 def test_activate_game_sets_active_state_and_opens_the_turn(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.add(TurnState(id=1, next_starter_id=1))

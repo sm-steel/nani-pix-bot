@@ -12,6 +12,7 @@ _SHIKIMORI_PICK_PREFIX = "shikimori_pick:"
 
 ANILIST_METHOD_CALLBACK_DATA = "method:anilist"
 SHIKIMORI_METHOD_CALLBACK_DATA = "method:shikimori"
+MANUAL_METHOD_CALLBACK_DATA = "method:manual"
 
 
 def anilist_results_keyboard(results: list[AniListResult]) -> InlineKeyboardMarkup:
@@ -74,18 +75,23 @@ def method_selection_keyboard(*, prefer_shikimori: bool) -> InlineKeyboardMarkup
     shikimori_button = InlineKeyboardButton(
         "Shikimori", callback_data=SHIKIMORI_METHOD_CALLBACK_DATA
     )
+    manual_button = InlineKeyboardButton("Manual entry", callback_data=MANUAL_METHOD_CALLBACK_DATA)
     ordered = (
         [shikimori_button, anilist_button]
         if prefer_shikimori
         else [anilist_button, shikimori_button]
     )
+    ordered.append(manual_button)
     return InlineKeyboardMarkup([[button] for button in ordered])
 
 
 def parse_method_callback_data(data: str) -> str | None:
-    """ "anilist"/"shikimori", or None if `data` isn't a method pick."""
+    """ "anilist"/"shikimori"/"manual", or None if `data` isn't a method
+    pick."""
     if data == ANILIST_METHOD_CALLBACK_DATA:
         return "anilist"
     if data == SHIKIMORI_METHOD_CALLBACK_DATA:
         return "shikimori"
+    if data == MANUAL_METHOD_CALLBACK_DATA:
+        return "manual"
     return None

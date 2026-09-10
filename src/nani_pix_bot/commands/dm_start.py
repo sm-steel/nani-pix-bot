@@ -10,6 +10,8 @@ this survives a bot restart mid-setup, which in-memory `user_data`
 doesn't (see issue #11).
 """
 
+import re
+
 import httpx
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -27,6 +29,7 @@ from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.commands.timeout import schedule_timeout
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import PixelStage
+from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import anilist, i18n, settings, shikimori
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import pixelate as pixelate_service
@@ -36,6 +39,8 @@ from nani_pix_bot.services import pixelate as pixelate_service
 _SEARCH_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError)
 
 _SERVICE_DISPLAY_NAMES = {"anilist": "AniList", "shikimori": "Shikimori"}
+
+_SYNONYM_SPLIT_RE = re.compile(r"[,\n]")
 
 
 def _prefer_shikimori(lang: str) -> bool:
@@ -107,12 +112,14 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
             return
         setup_game.source = source
 
-    await query.edit_message_text(i18n.t("dm_start.ask_search", lang))
+    prompt_key = "dm_start.ask_manual_title" if source == "manual" else "dm_start.ask_search"
+    await query.edit_message_text(i18n.t(prompt_key, lang))
 
 
 async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """A DM text message, once a game is pending, is a search query for
-    whichever service (AniList/Shikimori) the starter picked."""
+    """A DM text message, once a game is pending, is either a manual
+    title/synonym entry or a search query for whichever service
+    (AniList/Shikimori) the starter picked."""
     message = update.message
     user = update.effective_user
     if not is_private_chat(update) or message is None or message.text is None or user is None:
@@ -125,6 +132,14 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         if setup_game is None:
             return
         source = setup_game.source
+        awaiting_synonyms = setup_game.title_english is not None
+
+    if source == "manual":
+        if awaiting_synonyms:
+            await _manual_synonyms_step(message, context, lang, user)
+        else:
+            await _manual_title_step(message, context, lang, user)
+        return
 
     client = context.bot_data["search_client"]
     try:
@@ -189,20 +204,69 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None or setup_game.original_file_id is None:
             return
-        telegram_file = await context.bot.get_file(setup_game.original_file_id)
-        original_bytes = bytes(await telegram_file.download_as_bytearray())
-        pixelated = pixelate_service.pixelate(original_bytes, PixelStage.X10)
         game_service.stage_result(setup_game, result, source=source)
-        game_service.activate_game(session, setup_game)
-        await context.bot.send_photo(
-            chat_id=context.bot_data["group_chat_id"],
-            message_thread_id=context.bot_data["game_topic_id"],
-            photo=pixelated,
-            caption=i18n.t("dm_start.game_started_caption", lang, starter=user.full_name),
-        )
-        schedule_timeout(context.job_queue, setup_game)
+        caption = i18n.t("dm_start.game_started_caption", lang, starter=user.full_name)
+        await _finalize_and_post(context, session, setup_game, caption)
 
     await query.edit_message_text(i18n.t("dm_start.posted", lang))
+
+
+async def _manual_title_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, user) -> None:
+    """The first manual-entry text message: the anime's title."""
+    title = message.text.strip()
+    if not title:
+        await message.reply_text(i18n.t("dm_start.ask_manual_title", lang))
+        return
+
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        if setup_game is None:
+            return
+        setup_game.title_english = title
+
+    await message.reply_text(i18n.t("dm_start.ask_synonyms", lang))
+
+
+async def _manual_synonyms_step(
+    message, context: ContextTypes.DEFAULT_TYPE, lang: str, user
+) -> None:
+    """The second manual-entry text message: at least one synonym. On
+    success, stages, activates, and posts — same as an AniList/Shikimori
+    pick."""
+    synonyms = [s.strip() for s in _SYNONYM_SPLIT_RE.split(message.text) if s.strip()]
+    if not synonyms:
+        await message.reply_text(i18n.t("dm_start.synonyms_required", lang))
+        return
+
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        title = setup_game.title_english if setup_game is not None else None
+        if setup_game is None or setup_game.original_file_id is None or title is None:
+            return
+        game_service.stage_manual_entry(setup_game, title=title, synonyms=synonyms)
+        caption = i18n.t("dm_start.game_started_caption", lang, starter=user.full_name)
+        await _finalize_and_post(context, session, setup_game, caption)
+
+    await message.reply_text(i18n.t("dm_start.posted", lang))
+
+
+async def _finalize_and_post(context, session, game: Game, caption: str) -> None:
+    """Shared tail end of every identification method (AniList, Shikimori,
+    manual): pixelate the original at X10, activate the game, post it to
+    the group topic, and schedule the timeout."""
+    telegram_file = await context.bot.get_file(game.original_file_id)
+    original_bytes = bytes(await telegram_file.download_as_bytearray())
+    pixelated = pixelate_service.pixelate(original_bytes, PixelStage.X10)
+    game_service.activate_game(session, game)
+    await context.bot.send_photo(
+        chat_id=context.bot_data["group_chat_id"],
+        message_thread_id=context.bot_data["game_topic_id"],
+        photo=pixelated,
+        caption=caption,
+    )
+    schedule_timeout(context.job_queue, game)
 
 
 async def _reply_service_down(send, lang: str, source: str) -> None:

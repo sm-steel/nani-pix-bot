@@ -1,5 +1,6 @@
 from nani_pix_bot.commands.helpers.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
+    MANUAL_METHOD_CALLBACK_DATA,
     RETRY_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
     anilist_results_keyboard,
@@ -106,17 +107,26 @@ def test_method_selection_keyboard_defaults_to_anilist_first() -> None:
     markup = method_selection_keyboard(prefer_shikimori=False)
 
     callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
-    assert callbacks == [ANILIST_METHOD_CALLBACK_DATA, SHIKIMORI_METHOD_CALLBACK_DATA]
+    assert callbacks == [
+        ANILIST_METHOD_CALLBACK_DATA,
+        SHIKIMORI_METHOD_CALLBACK_DATA,
+        MANUAL_METHOD_CALLBACK_DATA,
+    ]
 
 
 def test_method_selection_keyboard_prefers_shikimori_first_when_asked() -> None:
     markup = method_selection_keyboard(prefer_shikimori=True)
 
     callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
-    assert callbacks == [SHIKIMORI_METHOD_CALLBACK_DATA, ANILIST_METHOD_CALLBACK_DATA]
+    assert callbacks == [
+        SHIKIMORI_METHOD_CALLBACK_DATA,
+        ANILIST_METHOD_CALLBACK_DATA,
+        MANUAL_METHOD_CALLBACK_DATA,
+    ]
 
 
 def test_parse_method_callback_data_round_trips() -> None:
     assert parse_method_callback_data(ANILIST_METHOD_CALLBACK_DATA) == "anilist"
     assert parse_method_callback_data(SHIKIMORI_METHOD_CALLBACK_DATA) == "shikimori"
+    assert parse_method_callback_data(MANUAL_METHOD_CALLBACK_DATA) == "manual"
     assert parse_method_callback_data(RETRY_CALLBACK_DATA) is None

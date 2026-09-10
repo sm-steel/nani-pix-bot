@@ -27,7 +27,7 @@ src/nani_pix_bot/
                    # the DB on startup (see MECHANICS.md's Timeout section)
   commands/       # one module per Telegram command (thin: parse update,
                    # call a service, format a reply — no game rules here)
-    dm_start.py   # private-chat photo intake + AniList/Shikimori
+    dm_start.py   # private-chat photo intake + AniList/Shikimori/manual
                    # method-select + search/pick flow
     guess.py      # /guess — the only handler most wrong-guess traffic hits
     correct.py    # /correct @user — author override

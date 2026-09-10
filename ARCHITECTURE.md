@@ -130,10 +130,11 @@ Full rules live in `MECHANICS.md`; this section is the interaction-model
 summary.
 
 - **Game setup** happens entirely in **1-to-1 DM** with the bot: send a
-  photo, pick AniList or Shikimori, type a search query, then tap one of
-  that service's results shown as an inline keyboard. Deliberately
+  photo, pick AniList, Shikimori, or manual entry, then either search and
+  tap one of that service's results shown as an inline keyboard, or (for
+  manual) type a title and at least one synonym directly. Deliberately
   stateless across restarts: which game a DM is setting up comes from a
-  DB lookup (`get_setup_game_for_starter`), which service was picked is
+  DB lookup (`get_setup_game_for_starter`), which method was picked is
   stored on that row (`Game.source`) rather than in memory, and a tapped
   result's title/synonyms are re-fetched fresh by the id embedded in the
   button's `callback_data` (`anilist.get_by_id`/`shikimori.get_by_id`) —

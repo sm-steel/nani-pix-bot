@@ -125,6 +125,14 @@ def stage_result(game: Game, result: AniListResult | ShikimoriResult, *, source:
         game.title_russian = result.title_russian
 
 
+def stage_manual_entry(game: Game, *, title: str, synonyms: list[str]) -> None:
+    """Manual entry's equivalent of stage_result() — there's no external
+    search result to draw from, just what the starter typed."""
+    game.title_english = title
+    game.synonyms = synonyms
+    game.source = "manual"
+
+
 def activate_game(session: Session, game: Game) -> None:
     """Finalize game setup once a result has been staged (see
     stage_result): move to the X10 stage and open the turn (the
