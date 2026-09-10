@@ -186,10 +186,13 @@ def _make_callback_context(session_factory, **extra_bot_data) -> MagicMock:
     return context
 
 
-def _make_callback_update(*, data: str, user_id: int = 1) -> MagicMock:
+def _make_callback_update(
+    *, data: str, user_id: int = 1, full_name: str = "Starter Name"
+) -> MagicMock:
     update = MagicMock()
     update.callback_query.data = data
     update.callback_query.from_user.id = user_id
+    update.callback_query.from_user.full_name = full_name
     update.callback_query.answer = AsyncMock()
     update.callback_query.edit_message_text = AsyncMock()
     return update
@@ -225,7 +228,9 @@ async def test_pick_callback_handler_activates_the_game_on_a_valid_pick(
     context.bot.get_file.assert_awaited_once_with("file123")
     context.bot.send_photo.assert_awaited_once()
     _, kwargs = context.bot.send_photo.await_args
-    assert kwargs == {"chat_id": 555, "message_thread_id": 7, "photo": b"pixelated"}
+    assert kwargs["chat_id"] == 555
+    assert kwargs["message_thread_id"] == 7
+    assert kwargs["photo"] == b"pixelated"
 
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
@@ -233,6 +238,24 @@ async def test_pick_callback_handler_activates_the_game_on_a_valid_pick(
         assert fetched.anilist_id == 99
 
     update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_pick_callback_handler_start_caption_names_the_starter(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(dm_start.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(dm_start.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
+    _create_setup_game(session_factory, starter_id=1)
+
+    update = _make_callback_update(data="anilist_pick:99", user_id=1, full_name="Starter Name")
+    context = _make_callback_context(session_factory)
+
+    await dm_start.pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert "Starter Name" in kwargs["caption"]
 
 
 async def test_pick_callback_handler_survives_a_restart_between_search_and_pick(

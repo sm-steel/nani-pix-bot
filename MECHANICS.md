@@ -40,7 +40,9 @@ restricts to members.
 4. The player taps the correct result. The bot stores that anime's title
    (romaji/English/native) and its AniList `synonyms` list on the new
    `Game` row, pixelates the screenshot at **x10**, and posts it into the
-   group's game topic. The game is now `ACTIVE`.
+   group's game topic with a caption naming the starter and reminding
+   everyone how to guess (`/guess <title>` in that topic). The game is
+   now `ACTIVE`.
 
 If someone who isn't the designated starter (and it isn't open) DMs a
 photo, the bot replies that it isn't their turn and doesn't create a game.
@@ -69,6 +71,12 @@ above), and its result (title variants + synonyms) is cached on the
 3. Any match above the threshold counts as correct — it doesn't matter
    which title/synonym it matched, or by how much it cleared the
    threshold.
+
+A **wrong** guess isn't silent: the bot replies in-topic with how many
+more wrong guesses remain before the next pixelation stage, and which
+stage the game is currently on (e.g. "3 guesses left before the next
+clue (1/4)"). The player who started the round can't `/guess` on their
+own game at all — they already know the answer.
 
 Because everything the matcher needs is cached at setup time, the same
 guess always produces the same verdict for the life of a game — matching
@@ -124,7 +132,7 @@ A game ends in a win one of two ways:
 
 On a win, the bot:
 1. Reveals the original (un-pixelated) screenshot together with the
-   anime's title, and congratulates the winner.
+   anime's title, naming the winner by name in the caption.
 2. Sets `status → WON`, records `winner_id`, and increments that player's
    `players.wins`.
 3. Cancels the game's pending 2-day timeout job.

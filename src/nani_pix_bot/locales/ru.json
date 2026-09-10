@@ -18,12 +18,14 @@
   "dm_start.retry": "Хорошо, напишите новый запрос для поиска.",
   "dm_start.not_found_anymore": "Не удалось найти это на AniList — попробуйте поискать снова.",
   "dm_start.posted": "Опубликовано! Удачи всем в угадывании.",
+  "dm_start.game_started_caption": "🎮 {starter} начал(а) новый раунд! Угадывайте с помощью /guess <название> в этой теме.",
 
   "guess.usage": "Использование: /guess <название аниме>",
   "guess.no_game": "Сейчас нет активной игры. Напишите мне скриншот в личные сообщения, чтобы начать!",
   "guess.starter_cannot_guess": "Вы начали этот раунд — вы уже знаете ответ, поэтому не можете угадывать в нём!",
-  "guess.won_caption": "🎉 Угадано! Это было {title}.",
+  "guess.won_caption": "🎉 {winner} угадал(а)! Это было {title}.",
   "guess.unsolved_caption": "Никто не угадал. Это было {title}.",
+  "guess.wrong_feedback": "❌ Не угадано! Осталось попыток до следующей подсказки: {remaining} (этап {stage}/{total}).",
 
   "leaderboard.empty": "Пока никто не выигрывал — может, это будете вы!",
   "leaderboard.header": "🏆 Таблица лидеров",

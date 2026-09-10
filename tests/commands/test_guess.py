@@ -21,6 +21,7 @@ def _make_update(
     update = MagicMock()
     update.effective_user.id = user_id
     update.effective_user.username = "guesser"
+    update.effective_user.full_name = "Guesser Name"
     update.effective_chat.id = chat_id
     update.message.message_thread_id = thread_id
     update.effective_message = update.message
@@ -149,7 +150,9 @@ async def test_guess_command_wrong_guess_advances_stage_with_new_image(
         assert fetched.wrong_guess_count == 0
 
 
-async def test_guess_command_wrong_guess_below_threshold_sends_nothing(session_factory) -> None:
+async def test_guess_command_wrong_guess_below_threshold_does_not_post_a_new_image(
+    session_factory,
+) -> None:
     _active_game(session_factory, wrong_guess_count=0)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
@@ -159,7 +162,7 @@ async def test_guess_command_wrong_guess_below_threshold_sends_nothing(session_f
     )
 
     context.bot.send_photo.assert_not_awaited()
-    update.message.reply_text.assert_not_awaited()
+    update.message.reply_text.assert_awaited_once()
 
 
 async def test_guess_command_stage_exhaustion_reveals_unsolved(session_factory) -> None:
@@ -214,3 +217,34 @@ async def test_guess_command_rejects_the_starter_guessing_on_their_own_game(
         assert fetched is not None
         assert fetched.status == GameStatus.ACTIVE
         assert fetched.total_guess_count == 0
+
+
+async def test_guess_command_wrong_guess_below_threshold_replies_with_remaining_count(
+    session_factory,
+) -> None:
+    _active_game(session_factory, wrong_guess_count=1)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_photo.assert_not_awaited()
+    update.message.reply_text.assert_awaited_once()
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert "3" in reply_text  # 5 - 2 = 3 guesses left
+    assert "1/4" in reply_text  # still on stage 1 of 4 (X10)
+
+
+async def test_guess_command_won_caption_names_the_winner(session_factory) -> None:
+    _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert "Guesser Name" in kwargs["caption"]

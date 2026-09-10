@@ -62,9 +62,24 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 chat_id=group_chat_id,
                 message_thread_id=game_topic_id,
                 photo=game.original_file_id,
-                caption=i18n.t("guess.won_caption", lang, title=_title(game)),
+                caption=i18n.t(
+                    "guess.won_caption", lang, winner=user.full_name, title=_title(game)
+                ),
             )
             game_service.clear_original_screenshot(game)
+        elif outcome is game_service.GuessOutcome.WRONG:
+            stage = game_service.STAGE_ORDER.index(game.current_stage) + 1
+            total_stages = len(game_service.STAGE_ORDER)
+            remaining = game_service.GUESSES_PER_STAGE - game.wrong_guess_count
+            await message.reply_text(
+                i18n.t(
+                    "guess.wrong_feedback",
+                    lang,
+                    remaining=remaining,
+                    stage=stage,
+                    total=total_stages,
+                )
+            )
         elif outcome is game_service.GuessOutcome.STAGE_ADVANCED:
             telegram_file = await context.bot.get_file(game.original_file_id)
             original_bytes = bytes(await telegram_file.download_as_bytearray())

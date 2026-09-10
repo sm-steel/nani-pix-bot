@@ -120,6 +120,7 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             chat_id=context.bot_data["group_chat_id"],
             message_thread_id=context.bot_data["game_topic_id"],
             photo=pixelated,
+            caption=i18n.t("dm_start.game_started_caption", lang, starter=user.full_name),
         )
         game_service.activate_game(session, setup_game, result)
         schedule_timeout(context.job_queue, setup_game)

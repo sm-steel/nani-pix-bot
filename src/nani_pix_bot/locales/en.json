@@ -18,12 +18,14 @@
   "dm_start.retry": "Okay, type a new search query.",
   "dm_start.not_found_anymore": "Couldn't find that on AniList anymore — try searching again.",
   "dm_start.posted": "Posted! Good luck to everyone guessing.",
+  "dm_start.game_started_caption": "🎮 {starter} started a new round! Guess with /guess <title> in this topic.",
 
   "guess.usage": "Usage: /guess <anime title>",
   "guess.no_game": "No game is currently running. DM me a screenshot to start one!",
   "guess.starter_cannot_guess": "You started this round — you already know the answer, so you can't guess on it!",
-  "guess.won_caption": "🎉 Got it! It was {title}.",
+  "guess.won_caption": "🎉 {winner} got it! It was {title}.",
   "guess.unsolved_caption": "Nobody guessed it. It was {title}.",
+  "guess.wrong_feedback": "❌ Not quite! {remaining} guesses left before the next clue ({stage}/{total}).",
 
   "leaderboard.empty": "No one has won a round yet — could be you!",
   "leaderboard.header": "🏆 Leaderboard",
