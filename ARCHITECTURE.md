@@ -3,23 +3,22 @@
 ## Overview
 
 A Python Telegram bot running a single guessing game in one topic of one
-group chat. A player DMs the bot a screenshot and identifies its anime via
-an AniList search; the bot pixelates it hard and posts it into the group's
-game topic, then progressively reveals clearer versions as wrong `/guess`
-attempts accumulate, until someone's right, the stages run out, or a 2-day
-timeout fires. See `CLAUDE.md` for repo layout and coding conventions,
-`MECHANICS.md` for the game rules themselves; this doc covers the system
-design.
+group chat. A player DMs the bot a screenshot and identifies its anime
+(see `MECHANICS.md` for exactly how); the bot pixelates it hard and posts
+it into the group's game topic, then progressively reveals clearer
+versions as wrong `/guess` attempts accumulate, until someone's right,
+the stages run out, or a 2-day timeout fires. See `CLAUDE.md` for repo
+layout and coding conventions, `MECHANICS.md` for the game rules
+themselves; this doc covers the system design.
 
-```
-                            ┌─────────────────────────────────┐
-                            │            moscow VPS            │
-Telegram  ◄── proxy ────────┤  ┌──────────┐   ┌─────────┐      │
- servers      (amsterdam)   │  │   bot    │───┤ mariadb │      │
-                            │  │(container)│   │(container)│    │
-                            │  └──────────┘   └─────────┘      │
-                            │       docker compose network      │
-                            └─────────────────────────────────┘
+```mermaid
+flowchart LR
+    Telegram["Telegram servers"]
+    subgraph moscow["moscow VPS (docker compose network)"]
+        direction LR
+        Bot["bot<br/>(container)"] --- MariaDB[("mariadb<br/>(container)")]
+    end
+    Telegram <-->|"proxy (amsterdam)"| Bot
 ```
 
 No web-facing component exists (no admin panel, no Traefik/Keycloak
@@ -130,6 +129,10 @@ erDiagram
         datetime reminder_at
         datetime expiry_at
     }
+    BOT_SETTINGS {
+        int id PK
+        string language
+    }
 ```
 
 | Table | Status | Purpose |
@@ -137,6 +140,7 @@ erDiagram
 | `players` | v1 | Telegram user id, opportunistically-captured `username`, `wins` counter (feeds `/leaderboard`). |
 | `games` | v1 | One row per round. `status` is `SETUP` (starter is picking/confirming the anime in DM) → `ACTIVE` (posted to the group, guessing open) → `WON`/`UNSOLVED` (terminal). `source` (`"anilist"`/`"shikimori"`/`"manual"`) records which identification method was used. `setup_step` (`PICKING_METHOD`/`AWAITING_PHOTO_CHANGE`/`AWAITING_SYNONYM`/`CONFIRMING`) tracks exactly where in the multi-step DM setup flow the starter is — only meaningful while `status` is `SETUP`, and (like everything else in that flow) derived from the DB rather than in-memory state, so a restart mid-edit resolves correctly. `setup_deadline` (`created_at + 1h`) is when the setup-abandon timer fires if the row is still `SETUP` — see `MECHANICS.md`'s "Starting a game". `current_stage` tracks which pixelation level is currently shown (`X10`→`X8`→`X5`→`X2`); `wrong_guess_count` resets to 0 each time the stage advances, while `total_guess_count` never resets (gates `/correct` on at least one real attempt). `original_file_id` is cleared once the reveal message (win or unsolved) is confirmed sent — see `MECHANICS.md`'s "Cleanup" note; nothing after a game ends needs to re-fetch the screenshot. Only one row may be `SETUP`/`ACTIVE` at a time, enforced in `services/game.py`, not a DB constraint. |
 | `turn_state` | v1 | Single row (`id=1`). `next_starter_id` is who's designated to start the next game; `null` means anyone can. Set to the winner on a `WON` game, changed by `/skip`, otherwise left alone (an `UNSOLVED` game doesn't force a turn on anyone). `reminder_at`/`expiry_at` are the win-turn 15min-reminder/12h-expiry absolute deadlines — set alongside `next_starter_id` whenever it becomes a real user, nulled when it's opened back up (see `MECHANICS.md`'s "Turn handoff"). |
+| `bot_settings` | v2 | Single row (`id=1`). `language` (`"EN"`/`"RU"`) is the bot's current reply language, changed only via `/language` by a group admin/owner — see CLAUDE.md's "Language / i18n". |
 
 ## Game flow, topics, and commands
 
@@ -158,9 +162,9 @@ summary.
   (`anilist.get_by_id`/`shikimori.get_by_id`) — none of it is cached in
   PTB's in-memory `user_data`, which a redeploy mid-setup would otherwise
   wipe.
-- **Everything else** (`/guess`, `/correct`, `/skip`, `/leaderboard`) is
-  scoped to **one topic** (`GAME_TOPIC_ID`) in **one group**
-  (`GROUP_CHAT_ID`) — checked via `message.message_thread_id` in
+- **Everything else** (`/guess`, `/correct`, `/skip`, `/stop`,
+  `/leaderboard`) is scoped to **one topic** (`GAME_TOPIC_ID`) in **one
+  group** (`GROUP_CHAT_ID`) — checked via `message.message_thread_id` in
   `commands/helpers/scoping.py`. Commands sent elsewhere in the group are
   ignored.
 - Guessing is via an explicit `/guess <text>` command rather than scanning

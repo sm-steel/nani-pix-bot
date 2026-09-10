@@ -1,5 +1,5 @@
 """The /language command — DM only, gated to group admins/owners. See
-CLAUDE.md's i18n notes."""
+CLAUDE.md's "Language / i18n" section."""
 
 from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update

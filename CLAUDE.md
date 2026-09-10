@@ -1,11 +1,12 @@
 # nani-pix-bot
 
 Telegram bot for an anime-screenshot guessing game, played in one topic of a
-group chat. A player DMs the bot a screenshot and picks the anime (via an
-AniList or Shikimori search); the bot posts it heavily pixelated into the group's game
-topic, and players guess with `/guess`, watching the image get progressively
-clearer every 5 wrong guesses until someone's right or it's revealed unsolved.
-Runs as a Docker Compose stack on the `moscow` VPS.
+group chat. A player DMs the bot a screenshot and identifies the anime (see
+`MECHANICS.md` for exactly how — there are three ways); the bot posts it
+heavily pixelated into the group's game topic, and players guess with
+`/guess`, watching the image get progressively clearer every 5 wrong
+guesses until someone's right or it's revealed unsolved. Runs as a Docker
+Compose stack on the `moscow` VPS.
 
 **Read `ARCHITECTURE.md` before making non-trivial changes** — it covers the
 system design, data model, and infra topology (why Telegram traffic is
@@ -23,8 +24,8 @@ src/nani_pix_bot/
   db.py           # SQLAlchemy engine/session factory, session_scope()
   logging_config.py  # loguru setup, redirects PTB's stdlib logging into it
   app.py          # ApplicationBuilder wiring, handler registration, and
-                   # re-arming any pending 2-day timeout JobQueue jobs from
-                   # the DB on startup (see MECHANICS.md's Timeout section)
+                   # re-arming any pending JobQueue jobs from the DB on
+                   # startup (see MECHANICS.md's "Game lifecycle")
   commands/       # one module per Telegram command (thin: parse update,
                    # call a service, format a reply — no game rules here)
     dm_start.py   # private-chat photo intake + AniList/Shikimori/manual
@@ -32,19 +33,27 @@ src/nani_pix_bot/
     guess.py      # /guess — the only handler most wrong-guess traffic hits
     correct.py    # /correct @user — author override
     skip.py       # /skip [@user] — turn handoff when no game is running
+    stop.py       # /stop — starter or a group admin aborts the current
+                   # game after a Yes/No confirmation
     leaderboard.py  # /leaderboard
-    timeout.py    # game/turn lifecycle JobQueue wiring: the 2-day game
-                   # timeout, 1h setup-abandon, 15min/12h win-turn
-                   # reminder/expiry — schedule/cancel/rearm helpers, not
-                   # /commands themselves, but Telegram (JobQueue)-aware,
-                   # so they live here rather than services/
+    language.py   # /language — DM-only, admin-gated bot language switch
+    onboarding.py # /start, /help
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
-                   # checks (scoping.py), group-membership checks
-                   # (membership.py), inline-keyboard builders (keyboards.py).
-                   # Nothing here registers a handler in app.py. Test: does
-                   # more than one commands/*.py file need it, or does it
-                   # not correspond to an actual /command at all? Either one
-                   # means helpers/, not a plain commands/*.py file.
+                   # checks (scoping.py), group-membership + admin checks
+                   # (membership.py), inline-keyboard builders
+                   # (keyboards.py), bot command-menu registration
+                   # (bot_menu.py). Nothing here registers a handler in
+                   # app.py. Test: does more than one commands/*.py file
+                   # need it, or does it not correspond to an actual
+                   # /command at all? Either one means helpers/, not a
+                   # plain commands/*.py file.
+  jobs/           # JobQueue-driven background timers — Telegram-aware
+                   # like commands/, but scheduled callbacks rather than
+                   # CommandHandler/CallbackQueryHandlers, so a sibling
+                   # package rather than living under commands/
+    timers.py     # the 2-day game timeout, 1h setup-abandon, 15min/12h
+                   # win-turn reminder/expiry — schedule/cancel/rearm
+                   # helpers plus the job callbacks themselves
   services/       # the actual game logic — framework-agnostic, no
                    # python-telegram-bot imports in this package
     anilist.py    # AniList GraphQL search (httpx) — called once per game,
@@ -58,12 +67,51 @@ src/nani_pix_bot/
     game.py       # the state machine: create/advance/win/unsolved/timeout
                    # transitions — the one place that mutates a Game row
     players.py    # win-count bookkeeping, leaderboard query
+    i18n.py       # simple dict/JSON t(key, lang, **kwargs) — see
+                   # "Language / i18n" below
+    settings.py   # get/set the bot's current language (BotSettings)
   models/         # SQLAlchemy ORM models, one module per table
+    base.py       # declarative base
+    player.py     # Player
+    game.py       # Game
+    turn_state.py # TurnState (singleton row)
+    bot_settings.py  # BotSettings (singleton row — current language)
+    enums.py      # GameStatus, PixelStage, SetupStep
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout
 scripts/          # one-off / operational scripts, if any turn out to be needed
 Dockerfile, docker-compose.yml   # bot + mariadb, see ARCHITECTURE.md
 ```
+
+## Language / i18n
+
+Bot-facing text (both languages the bot currently ships, RU/EN) lives in
+`src/nani_pix_bot/locales/en.json` and `locales/ru.json` — flat
+`"namespace.key": "template with {placeholders}"` maps, loaded and looked
+up by `services/i18n.py`'s `t(key: str, lang: str, **kwargs) -> str`.
+Every command handler that sends a reply calls `settings.get_language(session)`
+first (cheap — `BotSettings` is a singleton row) and passes that `lang`
+into every `t()`/keyboard-builder call.
+
+This is a **deliberately simple custom dict/JSON approach**, not
+`gettext`/`Babel`/the `python-i18n` package — two languages and a bot's
+worth of strings don't need that ceremony (see this project's KISS
+convention below). A key missing in `ru.json` falls back to `en.json`
+(logged as a `WARNING`, so gaps get noticed); a key missing even there
+logs an `ERROR` and returns the bare key rather than raising — a bad
+translation shouldn't crash a live bot.
+
+Two categories of text are **deliberately not translated**: third-party
+brand names (`"AniList"`/`"Shikimori"` in the method-picker keyboard,
+`_SERVICE_DISPLAY_NAMES` in `dm_start.py`) and the `/language` picker's
+own native-name labels (`"🇷🇺 Русский"`/`"🇬🇧 English"` — a language
+switcher inherently shows each option in its own name, so translating
+through the *currently selected* language would be circular).
+
+Only a group's admin/owner may change the language (`/language`, DM
+only), checked live via `commands/helpers/membership.py::is_group_admin`
+— the same Telegram `get_chat_member` call `is_group_member` already
+makes for the DM game-setup gate.
 
 ## Tooling
 

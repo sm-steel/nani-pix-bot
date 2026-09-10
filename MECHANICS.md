@@ -23,6 +23,51 @@ just what's currently built.
 | Leaderboard (`/leaderboard`) | Implemented |
 | Deployed to `moscow` | Implemented |
 
+## Game lifecycle
+
+Every route a `Game` row can take, private (DM setup) and group (posted,
+guessed on) alike, including every timer that can end it without anyone
+typing a command. Each section below expands on one part of this
+diagram in full prose.
+
+```mermaid
+stateDiagram-v2
+    [*] --> SETUP: eligible player DMs a screenshot\n(open turn, /skip'd to them, or after winning)\ngroup notified, 1h setup-abandon timer starts
+
+    state SETUP {
+        [*] --> PickingMethod
+        PickingMethod --> Confirming: AniList/Shikimori result picked,\nor manual title + synonym staged
+        Confirming --> PickingMethod: tap "Re-search title"
+        Confirming --> AwaitingPhotoChange: tap "Change image"
+        AwaitingPhotoChange --> Confirming: new photo sent
+        Confirming --> AwaitingSynonym: tap "Add a synonym"
+        AwaitingSynonym --> Confirming: synonym typed
+    }
+
+    SETUP --> [*]: 1h setup-abandon timer fires\n(row deleted, turn opens)\n— or /stop confirmed
+    SETUP --> ACTIVE: tap "Confirm and start"\n(pixelated x10 posted to group,\n2-day timeout starts)
+
+    state ACTIVE {
+        [*] --> X10
+        X10 --> X8: 5 wrong /guess attempts
+        X8 --> X5: 5 wrong /guess attempts
+        X5 --> X2: 5 wrong /guess attempts
+    }
+
+    ACTIVE --> WON: /guess matches,\nor starter's /correct
+    ACTIVE --> UNSOLVED: 5th wrong guess at X2\n(stage exhaustion),\nor 2-day timeout fires
+    ACTIVE --> [*]: /stop confirmed\n(row deleted, turn opens)
+
+    WON --> [*]: turn assigned to winner\n(15min reminder / 12h expiry timers)
+    UNSOLVED --> [*]: turn state left unchanged
+```
+
+`[*]` here means "no `Game` row exists" — every arrow into it either
+deletes the row (`/stop`, setup-abandon) or the row reaches a terminal
+`status` (`WON`/`UNSOLVED`) and simply stops being the "current" game.
+`SETUP`'s four inner states are `Game.setup_step`; `ACTIVE`'s four inner
+states are `Game.current_stage` (`PixelStage`).
+
 ## Starting a game
 
 **Status: Implemented.**

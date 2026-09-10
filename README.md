@@ -4,12 +4,12 @@
 ![Tests](https://github.com/sm-steel/nani-pix-bot/actions/workflows/tests.yml/badge.svg)
 
 Telegram bot for an anime-screenshot guessing game, played in one topic of a
-group chat. Someone DMs the bot a screenshot and picks the anime via an
-AniList search; the bot posts it heavily pixelated into the group's game
-topic, and it gets progressively clearer every 5 wrong `/guess` attempts
-until someone's right or it's revealed unsolved. Runs on `moscow`, routing
-Telegram API traffic through `amsterdam`'s proxy (moscow has no direct route
-to `api.telegram.org`).
+group chat. Someone DMs the bot a screenshot and identifies the anime (see
+`MECHANICS.md` for exactly how); the bot posts it heavily pixelated into
+the group's game topic, and it gets progressively clearer every 5 wrong
+`/guess` attempts until someone's right or it's revealed unsolved. Runs on
+`moscow`, routing Telegram API traffic through `amsterdam`'s proxy (moscow
+has no direct route to `api.telegram.org`).
 
 See `MECHANICS.md` for the full rules and `ARCHITECTURE.md` for the system
 design.
@@ -19,7 +19,8 @@ design.
 - Python 3.11+, managed with [uv](https://docs.astral.sh/uv/)
 - [python-telegram-bot](https://docs.python-telegram-bot.org/) (async, long-polling)
 - SQLAlchemy + Alembic against MariaDB
-- Pillow (pixelation), rapidfuzz (guess matching), httpx (AniList GraphQL)
+- Pillow (pixelation), rapidfuzz (guess matching), httpx (AniList GraphQL +
+  Shikimori REST)
 - Linting/formatting: `ruff`. Type checking: `ty`. Complexity/duplication/secrets: `qlty`.
 
 ## Dev setup
@@ -47,9 +48,9 @@ docker compose up -d
 docker compose logs -f bot
 ```
 
-Migrate before `bot` starts, not after — its startup queries the `games`
-table (to re-arm pending timeout jobs), so starting it against a schema a
-pending migration hasn't created yet crash-loops it.
+Migrate before `bot` starts, not after — see `CLAUDE.md`'s CI/CD section
+for why (its startup queries the database immediately, and a crash-looping
+container can't be fixed by exec-ing into it).
 
 The `mariadb` service owns its data in a named volume (`mariadb_data`); the
 bot connects to it over the compose network as `mariadb:3306`, not
