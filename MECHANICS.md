@@ -79,16 +79,22 @@ external, at guess time.
 
 **Status: Implemented.**
 
-The screenshot is downscaled (blocky pixelation) and immediately
-upscaled back to its original size, via Pillow, at four decreasing
-factors, from blockiest to clearest:
+The screenshot is downscaled (blocky pixelation) to a **fixed target
+width** and immediately upscaled back to its original size, via Pillow,
+at four decreasing widths, from blockiest to clearest. A fixed target
+width — not a divisor of the source resolution — keeps stage difficulty
+independent of the screenshot's resolution: a 12px-wide image reads as
+pure color blobs whether the original screenshot was 1280px or 3840px
+wide, whereas e.g. ÷10 of a 2560px-wide screenshot is still 256px wide
+and barely pixelated at all. Values chosen by eye against real
+screenshots:
 
-| Stage | Downscale factor |
+| Stage | Target width |
 |---|---|
-| `X10` | ÷10 (shown first — hardest) |
-| `X8` | ÷8 |
-| `X5` | ÷5 |
-| `X2` | ÷2 (clearest pixelated stage) |
+| `X10` | 12px (shown first — hardest) |
+| `X8` | 24px |
+| `X5` | 48px |
+| `X2` | 64px (clearest pixelated stage) |
 
 No image bytes are stored on disk or in the database. The starter's
 original screenshot is kept only as a Telegram `file_id` on the `Game`
