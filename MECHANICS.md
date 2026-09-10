@@ -19,6 +19,7 @@ just what's currently built.
 | 2-day timeout | Implemented |
 | Setup-abandon timeout (1h) | Implemented |
 | Win-turn reminder (15min) + expiry (12h) | Implemented |
+| Manual stop with confirmation (`/stop`) | Implemented |
 | Leaderboard (`/leaderboard`) | Implemented |
 | Deployed to `moscow` | Implemented |
 
@@ -217,6 +218,32 @@ above, regardless of how many wrong guesses happened in between.
 Because `JobQueue` jobs don't survive a process restart, `app.py` re-arms
 a timeout job on startup for any `Game` still `ACTIVE`, using its stored
 `scheduled_end_at` — a redeploy never silently loses or resets the clock.
+
+## Stopping a game (`/stop`)
+
+**Status: Implemented.**
+
+Manually aborts whatever game is currently `SETUP` or `ACTIVE`, usable
+by that game's own starter, or by any group admin/owner (for any game,
+not just their own) — checked via the same `is_group_admin` helper
+`/language` uses. Sent in the game topic like `/guess`/`/correct`/`/skip`.
+
+`/stop` never acts immediately — it always shows a **Yes/No confirmation**
+first (naming the game's title, if one's been staged yet), and only the
+starter or an admin can actually tap "Yes" (re-checked at that point too,
+independently of who saw the prompt). Tapping "No" just leaves the game
+running untouched.
+
+On confirmation, the bot:
+1. Cancels whatever timer was pending for that game — its 2-day timeout
+   if `ACTIVE`, or its 1-hour setup-abandon timer if still `SETUP`.
+2. **Deletes the `Game` row outright** — same precedent as the
+   setup-abandon timer and turn expiry: a manually-stopped round isn't a
+   meaningful outcome worth a terminal status of its own (unlike
+   `WON`/`UNSOLVED`), so no `CANCELED` status exists.
+3. Opens the turn (`next_starter_id → null`), same effect as a bare
+   `/skip` — canceling any pending win-turn reminder/expiry too.
+4. Posts a notice to the group that anyone can start a new game.
 
 ## Turn handoff (`/skip`)
 

@@ -46,6 +46,7 @@ def test_build_application_registers_every_command() -> None:
         "guess",
         "correct",
         "skip",
+        "stop",
         "leaderboard",
         "language",
         "start",

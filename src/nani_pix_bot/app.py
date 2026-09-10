@@ -17,7 +17,16 @@ from telegram.ext import (
 )
 
 from nani_pix_bot import db
-from nani_pix_bot.commands import correct, dm_start, guess, language, leaderboard, onboarding, skip
+from nani_pix_bot.commands import (
+    correct,
+    dm_start,
+    guess,
+    language,
+    leaderboard,
+    onboarding,
+    skip,
+    stop,
+)
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.keyboards import RETRY_CALLBACK_DATA
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
@@ -70,9 +79,11 @@ def build_application(config: Config) -> Application:
             language.language_callback_handler, pattern=rf"^{re.escape(SET_LANGUAGE_PREFIX)}"
         )
     )
+    application.add_handler(CallbackQueryHandler(stop.stop_callback_handler, pattern=r"^stop:"))
     application.add_handler(CommandHandler("guess", guess.guess_command))
     application.add_handler(CommandHandler("correct", correct.correct_command))
     application.add_handler(CommandHandler("skip", skip.skip_command))
+    application.add_handler(CommandHandler("stop", stop.stop_command))
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
     application.add_handler(CommandHandler("language", language.language_command))
     application.add_handler(CommandHandler("start", onboarding.start_command))

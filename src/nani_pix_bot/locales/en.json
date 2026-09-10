@@ -56,7 +56,7 @@
   "turn.expired": "⌛ Nobody started a new game in time — it's open to anyone now! DM me a screenshot to begin.",
 
   "onboarding.start": "👋 Welcome! I run an anime-screenshot guessing game in the group.\n\nWhen it's your turn, DM me a screenshot here and I'll walk you through picking the anime — then I'll post a heavily pixelated version to the group for everyone to guess.\n\nUse /help anytime for the full rundown.",
-  "onboarding.help": "How to play:\n1. When it's your turn, DM me a screenshot here.\n2. I'll ask you to search for the anime and pick the right result.\n3. I'll post a pixelated version to the group's game topic.\n4. Everyone guesses with /guess <title> in that topic — it gets clearer every 5 wrong guesses.\n5. Whoever guesses right wins, and it's their turn next!\n\nIn the group topic:\n/guess <title> — make a guess\n/correct @username — (starter only) force a correct guess if the bot missed it\n/skip [@username] — pass your turn, open or to someone specific\n/leaderboard — see top winners\n\nIn DM:\n/start — this intro\n/help — this message\n/language — (group admins) switch the bot's language",
+  "onboarding.help": "How to play:\n1. When it's your turn, DM me a screenshot here.\n2. I'll ask you to search for the anime and pick the right result.\n3. I'll post a pixelated version to the group's game topic.\n4. Everyone guesses with /guess <title> in that topic — it gets clearer every 5 wrong guesses.\n5. Whoever guesses right wins, and it's their turn next!\n\nIn the group topic:\n/guess <title> — make a guess\n/correct @username — (starter only) force a correct guess if the bot missed it\n/skip [@username] — pass your turn, open or to someone specific\n/stop — (starter or admins) stop the current game, with confirmation\n/leaderboard — see top winners\n\nIn DM:\n/start — this intro\n/help — this message\n/language — (group admins) switch the bot's language",
   "onboarding.help_dm_failed": "Please message me privately first — @{bot_username} — then try /help again.",
 
   "commands.start": "How to play + how to start a game",
@@ -65,6 +65,7 @@
   "commands.guess": "Guess the anime",
   "commands.correct": "Force a correct guess (starter only)",
   "commands.skip": "Pass or hand off your turn",
+  "commands.stop": "Stop the current game (starter/admins)",
   "commands.leaderboard": "Show top winners",
 
   "keyboards.retry": "None of these — search again",
@@ -72,5 +73,14 @@
   "keyboards.preview_confirm": "✅ Confirm and start",
   "keyboards.preview_change_image": "🖼️ Change image",
   "keyboards.preview_research": "🔍 Re-search title",
-  "keyboards.preview_add_synonym": "📝 Add a synonym"
+  "keyboards.preview_add_synonym": "📝 Add a synonym",
+  "keyboards.stop_confirm": "🛑 Yes, stop it",
+  "keyboards.stop_cancel": "❌ No, keep going",
+
+  "stop.no_game": "No game is currently running to stop.",
+  "stop.not_allowed": "Only the game's starter or a group admin can stop it.",
+  "stop.confirm_prompt": "Stop the current game ({title})? This can't be undone — the turn will open up for anyone to start a new game.",
+  "stop.confirmed": "Game stopped.",
+  "stop.confirmed_group_notice": "🛑 The game was stopped — anyone can start a new one now!",
+  "stop.canceled": "Okay, the game continues."
 }

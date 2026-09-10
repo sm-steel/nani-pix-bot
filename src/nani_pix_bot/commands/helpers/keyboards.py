@@ -27,6 +27,9 @@ PREVIEW_CHANGE_IMAGE_CALLBACK_DATA = "preview:change_image"
 PREVIEW_RESEARCH_CALLBACK_DATA = "preview:research"
 PREVIEW_ADD_SYNONYM_CALLBACK_DATA = "preview:add_synonym"
 
+STOP_CONFIRM_CALLBACK_DATA = "stop:confirm"
+STOP_CANCEL_CALLBACK_DATA = "stop:cancel"
+
 
 def anilist_results_keyboard(results: list[AniListResult], lang: str) -> InlineKeyboardMarkup:
     buttons = [
@@ -131,3 +134,15 @@ def preview_keyboard(lang: str) -> InlineKeyboardMarkup:
         callback_data=PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     )
     return InlineKeyboardMarkup([[confirm], [change_image], [research], [add_synonym]])
+
+
+def stop_confirm_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Yes/No confirmation shown by `/stop` before actually deleting a
+    running game — see MECHANICS.md's "Stopping a game" section."""
+    yes = InlineKeyboardButton(
+        i18n.t("keyboards.stop_confirm", lang), callback_data=STOP_CONFIRM_CALLBACK_DATA
+    )
+    no = InlineKeyboardButton(
+        i18n.t("keyboards.stop_cancel", lang), callback_data=STOP_CANCEL_CALLBACK_DATA
+    )
+    return InlineKeyboardMarkup([[yes, no]])

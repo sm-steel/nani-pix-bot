@@ -7,12 +7,15 @@ from nani_pix_bot.commands.helpers.keyboards import (
     PREVIEW_RESEARCH_CALLBACK_DATA,
     RETRY_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
+    STOP_CANCEL_CALLBACK_DATA,
+    STOP_CONFIRM_CALLBACK_DATA,
     anilist_results_keyboard,
     method_selection_keyboard,
     parse_method_callback_data,
     parse_pick_callback_data,
     preview_keyboard,
     shikimori_results_keyboard,
+    stop_confirm_keyboard,
 )
 from nani_pix_bot.services.anilist import AniListResult
 from nani_pix_bot.services.shikimori import ShikimoriResult
@@ -185,3 +188,19 @@ def test_preview_keyboard_labels_are_translated() -> None:
     assert labels_en != labels_ru
     assert "Confirm" in labels_en[0]
     assert "Подтвердить" in labels_ru[0] or "подтвердить" in labels_ru[0].lower()
+
+
+def test_stop_confirm_keyboard_has_confirm_and_cancel_buttons() -> None:
+    markup = stop_confirm_keyboard(lang="en")
+
+    callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
+    assert callbacks == [STOP_CONFIRM_CALLBACK_DATA, STOP_CANCEL_CALLBACK_DATA]
+
+
+def test_stop_confirm_keyboard_labels_are_translated() -> None:
+    markup_en = stop_confirm_keyboard(lang="en")
+    markup_ru = stop_confirm_keyboard(lang="ru")
+
+    labels_en = [button.text for row in markup_en.inline_keyboard for button in row]
+    labels_ru = [button.text for row in markup_ru.inline_keyboard for button in row]
+    assert labels_en != labels_ru
