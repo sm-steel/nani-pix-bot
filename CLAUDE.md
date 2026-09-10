@@ -32,8 +32,12 @@ src/nani_pix_bot/
     correct.py    # /correct @user — author override
     skip.py       # /skip [@user] — turn handoff when no game is running
     leaderboard.py  # /leaderboard
+    timeout.py    # 2-day-timeout JobQueue callback + schedule/cancel/
+                   # rearm helpers — not a /command itself, but Telegram
+                   # (JobQueue)-aware, so it lives here rather than services/
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
-                   # checks, inline-keyboard builders, shared formatting.
+                   # checks (scoping.py), group-membership checks
+                   # (membership.py), inline-keyboard builders (keyboards.py).
                    # Nothing here registers a handler in app.py. Test: does
                    # more than one commands/*.py file need it, or does it
                    # not correspond to an actual /command at all? Either one
