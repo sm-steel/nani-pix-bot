@@ -26,6 +26,7 @@ from nani_pix_bot.commands import (
     onboarding,
     skip,
     stop,
+    testpixels,  # TEMPORARY — see commands/testpixels.py
 )
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.keyboards import RETRY_CALLBACK_DATA
@@ -88,6 +89,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("language", language.language_command))
     application.add_handler(CommandHandler("start", onboarding.start_command))
     application.add_handler(CommandHandler("help", onboarding.help_command))
+    application.add_handler(CommandHandler("testpixels", testpixels.testpixels_command))
 
     return application
 

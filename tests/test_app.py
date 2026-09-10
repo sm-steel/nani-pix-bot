@@ -51,6 +51,7 @@ def test_build_application_registers_every_command() -> None:
         "language",
         "start",
         "help",
+        "testpixels",  # TEMPORARY — see commands/testpixels.py
     }
 
 
