@@ -14,6 +14,11 @@ ANILIST_METHOD_CALLBACK_DATA = "method:anilist"
 SHIKIMORI_METHOD_CALLBACK_DATA = "method:shikimori"
 MANUAL_METHOD_CALLBACK_DATA = "method:manual"
 
+PREVIEW_CONFIRM_CALLBACK_DATA = "preview:confirm"
+PREVIEW_CHANGE_IMAGE_CALLBACK_DATA = "preview:change_image"
+PREVIEW_RESEARCH_CALLBACK_DATA = "preview:research"
+PREVIEW_ADD_SYNONYM_CALLBACK_DATA = "preview:add_synonym"
+
 
 def anilist_results_keyboard(results: list[AniListResult]) -> InlineKeyboardMarkup:
     buttons = [
@@ -95,3 +100,21 @@ def parse_method_callback_data(data: str) -> str | None:
     if data == MANUAL_METHOD_CALLBACK_DATA:
         return "manual"
     return None
+
+
+def preview_keyboard() -> InlineKeyboardMarkup:
+    """Buttons on the private preview shown before a game is posted to
+    the group — see MECHANICS.md's "Starting a game" section."""
+    confirm = InlineKeyboardButton(
+        "✅ Confirm and start", callback_data=PREVIEW_CONFIRM_CALLBACK_DATA
+    )
+    change_image = InlineKeyboardButton(
+        "🖼️ Change image", callback_data=PREVIEW_CHANGE_IMAGE_CALLBACK_DATA
+    )
+    research = InlineKeyboardButton(
+        "🔍 Re-search title", callback_data=PREVIEW_RESEARCH_CALLBACK_DATA
+    )
+    add_synonym = InlineKeyboardButton(
+        "📝 Add a synonym", callback_data=PREVIEW_ADD_SYNONYM_CALLBACK_DATA
+    )
+    return InlineKeyboardMarkup([[confirm], [change_image], [research], [add_synonym]])

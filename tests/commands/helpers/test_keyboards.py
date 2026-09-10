@@ -1,12 +1,17 @@
 from nani_pix_bot.commands.helpers.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
     MANUAL_METHOD_CALLBACK_DATA,
+    PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
+    PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
+    PREVIEW_CONFIRM_CALLBACK_DATA,
+    PREVIEW_RESEARCH_CALLBACK_DATA,
     RETRY_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
     anilist_results_keyboard,
     method_selection_keyboard,
     parse_method_callback_data,
     parse_pick_callback_data,
+    preview_keyboard,
     shikimori_results_keyboard,
 )
 from nani_pix_bot.services.anilist import AniListResult
@@ -130,3 +135,15 @@ def test_parse_method_callback_data_round_trips() -> None:
     assert parse_method_callback_data(SHIKIMORI_METHOD_CALLBACK_DATA) == "shikimori"
     assert parse_method_callback_data(MANUAL_METHOD_CALLBACK_DATA) == "manual"
     assert parse_method_callback_data(RETRY_CALLBACK_DATA) is None
+
+
+def test_preview_keyboard_has_the_four_expected_buttons() -> None:
+    markup = preview_keyboard()
+
+    callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
+    assert callbacks == [
+        PREVIEW_CONFIRM_CALLBACK_DATA,
+        PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
+        PREVIEW_RESEARCH_CALLBACK_DATA,
+        PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
+    ]

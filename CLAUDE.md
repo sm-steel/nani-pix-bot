@@ -28,7 +28,7 @@ src/nani_pix_bot/
   commands/       # one module per Telegram command (thin: parse update,
                    # call a service, format a reply — no game rules here)
     dm_start.py   # private-chat photo intake + AniList/Shikimori/manual
-                   # method-select + search/pick flow
+                   # method-select + search/pick + confirmation-preview flow
     guess.py      # /guess — the only handler most wrong-guess traffic hits
     correct.py    # /correct @user — author override
     skip.py       # /skip [@user] — turn handoff when no game is running

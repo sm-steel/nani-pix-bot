@@ -4,7 +4,7 @@ from sqlalchemy import JSON, BigInteger, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from nani_pix_bot.models.base import Base
-from nani_pix_bot.models.enums import GameStatus, PixelStage
+from nani_pix_bot.models.enums import GameStatus, PixelStage, SetupStep
 from nani_pix_bot.models.player import Player
 
 # Generous headroom over any observed anime title / Telegram file_id length.
@@ -29,6 +29,8 @@ class Game(Base):
     # "anilist" / "shikimori" / "manual". See services/game.py's
     # stage_result().
     source: Mapped[str] = mapped_column(String(16), default="anilist")
+    # Only meaningful while status is SETUP — see SetupStep's docstring.
+    setup_step: Mapped[SetupStep] = mapped_column(default=SetupStep.PICKING_METHOD)
     # Cleared once the reveal message is confirmed sent — see MECHANICS.md's
     # "Cleanup" note under Winning/Ending unsolved.
     original_file_id: Mapped[str | None] = mapped_column(String(FILE_ID_LENGTH), default=None)

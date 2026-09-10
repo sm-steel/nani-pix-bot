@@ -17,18 +17,23 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.keyboards import (
+    PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
+    PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
+    PREVIEW_CONFIRM_CALLBACK_DATA,
+    PREVIEW_RESEARCH_CALLBACK_DATA,
     RETRY_CALLBACK_DATA,
     anilist_results_keyboard,
     method_selection_keyboard,
     parse_method_callback_data,
     parse_pick_callback_data,
+    preview_keyboard,
     shikimori_results_keyboard,
 )
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.commands.timeout import schedule_timeout
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import PixelStage
+from nani_pix_bot.models.enums import PixelStage, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import anilist, i18n, settings, shikimori
 from nani_pix_bot.services import game as game_service
@@ -55,6 +60,11 @@ def _method_prompt_key(*, prefer_shikimori: bool) -> str:
     )
 
 
+def _display_title(game: Game) -> str:
+    candidates = (game.title_english, game.title_romaji, game.title_native, game.title_russian)
+    return next((title for title in candidates if title), "?")
+
+
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """A DM photo starts game setup, if it's this player's turn."""
     message = update.message
@@ -64,9 +74,20 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if user is None:
         return
 
-    group_chat_id = context.bot_data["group_chat_id"]
     session_factory = context.bot_data["session_factory"]
+    file_id = message.photo[-1].file_id
 
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        existing = game_service.get_setup_game_for_starter(session, user.id)
+        if existing is not None and existing.setup_step == SetupStep.AWAITING_PHOTO_CHANGE:
+            # A replacement photo for the preview's "Change image" button —
+            # not a new game, keep the staged title/synonyms.
+            existing.original_file_id = file_id
+            await _show_preview(context, existing, lang, chat_id=user.id)
+            return
+
+    group_chat_id = context.bot_data["group_chat_id"]
     if not await is_group_member(context.bot, group_chat_id, user.id):
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
@@ -79,7 +100,6 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if not game_service.can_start(session, user.id):
             await message.reply_text(i18n.t("dm_start.not_your_turn", lang))
             return
-        file_id = message.photo[-1].file_id
         game_service.create_setup_game(session, starter_id=user.id, original_file_id=file_id)
 
     prefer_shikimori = _prefer_shikimori(lang)
@@ -111,6 +131,7 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
         if setup_game is None:
             return
         setup_game.source = source
+        setup_game.setup_step = SetupStep.PICKING_METHOD
 
     prompt_key = "dm_start.ask_manual_title" if source == "manual" else "dm_start.ask_search"
     await query.edit_message_text(i18n.t(prompt_key, lang))
@@ -131,16 +152,26 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
             return
+        setup_step = setup_game.setup_step
         source = setup_game.source
         awaiting_synonyms = setup_game.title_english is not None
 
-    if source == "manual":
+    if setup_step == SetupStep.AWAITING_SYNONYM:
+        await _add_synonym_step(message, context, lang, user)
+    elif setup_step in (SetupStep.CONFIRMING, SetupStep.AWAITING_PHOTO_CHANGE):
+        pass  # only the preview's buttons (or a replacement photo) matter here
+    elif source == "manual":
         if awaiting_synonyms:
             await _manual_synonyms_step(message, context, lang, user)
         else:
             await _manual_title_step(message, context, lang, user)
-        return
+    else:
+        await _search_step(message, context, lang, source)
 
+
+async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, source: str) -> None:
+    """An AniList/Shikimori search query: search and show a results
+    keyboard, or fail back to the method-selection keyboard."""
     client = context.bot_data["search_client"]
     try:
         if source == "shikimori":
@@ -205,10 +236,9 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if setup_game is None or setup_game.original_file_id is None:
             return
         game_service.stage_result(setup_game, result, source=source)
-        caption = i18n.t("dm_start.game_started_caption", lang, starter=user.full_name)
-        await _finalize_and_post(context, session, setup_game, caption)
+        await _show_preview(context, setup_game, lang, chat_id=user.id)
 
-    await query.edit_message_text(i18n.t("dm_start.posted", lang))
+    await query.edit_message_text(i18n.t("dm_start.preview_sent", lang))
 
 
 async def _manual_title_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, user) -> None:
@@ -232,8 +262,8 @@ async def _manual_synonyms_step(
     message, context: ContextTypes.DEFAULT_TYPE, lang: str, user
 ) -> None:
     """The second manual-entry text message: at least one synonym. On
-    success, stages, activates, and posts — same as an AniList/Shikimori
-    pick."""
+    success, stages the entry and shows the confirmation preview — same
+    as an AniList/Shikimori pick."""
     synonyms = [s.strip() for s in _SYNONYM_SPLIT_RE.split(message.text) if s.strip()]
     if not synonyms:
         await message.reply_text(i18n.t("dm_start.synonyms_required", lang))
@@ -246,10 +276,9 @@ async def _manual_synonyms_step(
         if setup_game is None or setup_game.original_file_id is None or title is None:
             return
         game_service.stage_manual_entry(setup_game, title=title, synonyms=synonyms)
-        caption = i18n.t("dm_start.game_started_caption", lang, starter=user.full_name)
-        await _finalize_and_post(context, session, setup_game, caption)
+        await _show_preview(context, setup_game, lang, chat_id=user.id)
 
-    await message.reply_text(i18n.t("dm_start.posted", lang))
+    await message.reply_text(i18n.t("dm_start.preview_sent", lang))
 
 
 async def _finalize_and_post(context, session, game: Game, caption: str) -> None:
@@ -267,6 +296,95 @@ async def _finalize_and_post(context, session, game: Game, caption: str) -> None
         caption=caption,
     )
     schedule_timeout(context.job_queue, game)
+
+
+async def _show_preview(context, game: Game, lang: str, *, chat_id: int) -> None:
+    """Send the starter a private X10-pixelated preview of the staged
+    title/synonyms, with buttons to change the image, re-search, add a
+    synonym, or confirm and post to the group. Nothing is posted to the
+    group until "Confirm and start" is tapped."""
+    telegram_file = await context.bot.get_file(game.original_file_id)
+    original_bytes = bytes(await telegram_file.download_as_bytearray())
+    pixelated = pixelate_service.pixelate(original_bytes, PixelStage.X10)
+    synonyms = ", ".join(game.synonyms or []) or "—"
+    caption = i18n.t(
+        "dm_start.preview_caption", lang, title=_display_title(game), synonyms=synonyms
+    )
+    game.setup_step = SetupStep.CONFIRMING
+    await context.bot.send_photo(
+        chat_id=chat_id, photo=pixelated, caption=caption, reply_markup=preview_keyboard()
+    )
+
+
+async def _add_synonym_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, user) -> None:
+    """A text message sent after tapping the preview's "Add a synonym"
+    button: appends it (or several, comma/newline-separated) and
+    re-shows the preview."""
+    extra = [s.strip() for s in _SYNONYM_SPLIT_RE.split(message.text) if s.strip()]
+    if not extra:
+        await message.reply_text(i18n.t("dm_start.synonyms_required", lang))
+        return
+
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        if setup_game is None:
+            return
+        setup_game.synonyms = [*(setup_game.synonyms or []), *extra]
+        await _show_preview(context, setup_game, lang, chat_id=user.id)
+
+
+async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """One of the confirmation preview's four buttons was tapped."""
+    query = update.callback_query
+    if query is None or query.data is None:
+        return
+    await query.answer()
+
+    user = query.from_user
+    if user is None:
+        return
+
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        if setup_game is None:
+            return
+
+        if query.data == PREVIEW_CONFIRM_CALLBACK_DATA:
+            await _preview_confirm(context, session, setup_game, lang, user.full_name)
+            await query.edit_message_caption(caption=i18n.t("dm_start.posted", lang))
+        elif query.data == PREVIEW_CHANGE_IMAGE_CALLBACK_DATA:
+            await _preview_change_image(query, setup_game, lang)
+        elif query.data == PREVIEW_RESEARCH_CALLBACK_DATA:
+            await _preview_research(query, setup_game, lang)
+        elif query.data == PREVIEW_ADD_SYNONYM_CALLBACK_DATA:
+            await _preview_add_synonym(query, setup_game, lang)
+
+
+async def _preview_confirm(context, session, game: Game, lang: str, starter_name: str) -> None:
+    caption = i18n.t("dm_start.game_started_caption", lang, starter=starter_name)
+    await _finalize_and_post(context, session, game, caption)
+
+
+async def _preview_change_image(query, game: Game, lang: str) -> None:
+    game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
+    await query.edit_message_caption(caption=i18n.t("dm_start.ask_new_photo", lang))
+
+
+async def _preview_research(query, game: Game, lang: str) -> None:
+    game.setup_step = SetupStep.PICKING_METHOD
+    prefer_shikimori = _prefer_shikimori(lang)
+    await query.edit_message_caption(
+        caption=i18n.t(_method_prompt_key(prefer_shikimori=prefer_shikimori), lang),
+        reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori),
+    )
+
+
+async def _preview_add_synonym(query, game: Game, lang: str) -> None:
+    game.setup_step = SetupStep.AWAITING_SYNONYM
+    await query.edit_message_caption(caption=i18n.t("dm_start.ask_extra_synonym", lang))
 
 
 async def _reply_service_down(send, lang: str, source: str) -> None:

@@ -51,11 +51,24 @@ restricts to members.
    for the title, then for at least one alternate title/synonym
    (comma- or newline-separated, re-prompted if left blank) — both typed
    by the player, no external lookup.
-4. Either way, the bot stores the title/synonyms on the `Game` row,
-   pixelates the screenshot at **x10**, and posts it into the group's
-   game topic with a caption naming the starter and reminding everyone
-   how to guess (`/guess <title>` in that topic). The game is now
-   `ACTIVE`.
+4. Either way, once a title/synonyms are staged, the bot sends the player
+   a **private preview** — the x10-pixelated screenshot plus the staged
+   title and full synonyms list — instead of posting straight to the
+   group. Four buttons let them fix anything before it goes live:
+   - **Change image** — send a new screenshot; keeps the title/synonyms.
+   - **Re-search title** — back to the method-selection keyboard; keeps
+     the screenshot, replaces the title/synonyms/source once a new one
+     is staged.
+   - **Add a synonym** — type one more (or several); appended to the
+     list, repeatable.
+   - **Confirm and start game** — pixelates the (possibly updated)
+     screenshot at **x10** and posts it into the group's game topic with
+     a caption naming the starter and reminding everyone how to guess
+     (`/guess <title>` in that topic). The game is now `ACTIVE`.
+   Exactly where the starter is in this multi-step flow
+   (`Game.setup_step`) is stored on the row, not in memory, so a restart
+   mid-edit — say, between tapping "Add a synonym" and typing it —
+   resolves correctly from the DB rather than losing track.
 
 If the chosen service is unreachable (search or re-fetch fails), the bot
 tells the player and hands back the method-selection choice so they can

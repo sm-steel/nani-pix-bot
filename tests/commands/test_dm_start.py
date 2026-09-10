@@ -14,7 +14,7 @@ from nani_pix_bot.commands.helpers.keyboards import (
     SHIKIMORI_METHOD_CALLBACK_DATA,
 )
 from nani_pix_bot.models.bot_settings import BotSettings
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.enums import GameStatus, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
@@ -357,7 +357,7 @@ async def test_pick_callback_handler_retry_does_not_touch_the_database(session_f
     context.bot.send_photo.assert_not_awaited()
 
 
-async def test_pick_callback_handler_activates_the_game_on_a_valid_anilist_pick(
+async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(dm_start.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
@@ -374,20 +374,25 @@ async def test_pick_callback_handler_activates_the_game_on_a_valid_anilist_pick(
     context.bot.get_file.assert_awaited_once_with("file123")
     context.bot.send_photo.assert_awaited_once()
     _, kwargs = context.bot.send_photo.await_args
-    assert kwargs["chat_id"] == 555
-    assert kwargs["message_thread_id"] == 7
+    # The preview goes to the starter's own DM, not the group topic —
+    # nothing is posted to the group until they confirm.
+    assert kwargs["chat_id"] == 1
+    assert "message_thread_id" not in kwargs
     assert kwargs["photo"] == b"pixelated"
+    assert "Frieren: Beyond Journey's End" in kwargs["caption"]
 
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
-        assert fetched.status == GameStatus.ACTIVE
+        assert fetched.status == GameStatus.SETUP
+        assert fetched.setup_step == SetupStep.CONFIRMING
         assert fetched.anilist_id == 99
         assert fetched.source == "anilist"
 
+    context.job_queue.run_once.assert_not_called()
     update.callback_query.edit_message_text.assert_awaited_once()
 
 
-async def test_pick_callback_handler_stages_and_activates_a_shikimori_pick(
+async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(dm_start.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
@@ -407,7 +412,8 @@ async def test_pick_callback_handler_stages_and_activates_a_shikimori_pick(
 
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
-        assert fetched.status == GameStatus.ACTIVE
+        assert fetched.status == GameStatus.SETUP
+        assert fetched.setup_step == SetupStep.CONFIRMING
         assert fetched.source == "shikimori"
         assert fetched.title_russian == "Провожающая в последний путь Фрирен"
 
@@ -462,7 +468,7 @@ async def test_pick_callback_handler_survives_a_restart_between_search_and_pick(
     context.bot.send_photo.assert_awaited_once()
 
 
-async def test_pick_callback_handler_schedules_the_timeout_job(
+async def test_pick_callback_handler_preview_lists_the_synonyms(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(dm_start.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
@@ -476,29 +482,12 @@ async def test_pick_callback_handler_schedules_the_timeout_job(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    context.job_queue.run_once.assert_called_once()
-    _, kwargs = context.job_queue.run_once.call_args
-    with session_factory() as session:
-        fetched = session.query(Game).filter_by(starter_id=1).one()
-    assert kwargs["name"] == dm_start.game_service.timeout_job_name(fetched.id)
-
-
-async def test_pick_callback_handler_start_caption_names_the_starter(
-    session_factory, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(dm_start.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
-    monkeypatch.setattr(dm_start.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
-    _create_setup_game(session_factory, starter_id=1)
-
-    update = _make_callback_update(data="anilist_pick:99", user_id=1, full_name="Starter Name")
-    context = _make_callback_context(session_factory)
-
-    await dm_start.pick_callback_handler(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )
-
     _, kwargs = context.bot.send_photo.await_args
-    assert "Starter Name" in kwargs["caption"]
+    assert "Frieren" in kwargs["caption"]
+    callbacks = [
+        button.callback_data for row in kwargs["reply_markup"].inline_keyboard for button in row
+    ]
+    assert dm_start.PREVIEW_CONFIRM_CALLBACK_DATA in callbacks
 
 
 async def test_manual_entry_first_message_sets_the_title_and_asks_for_synonyms(
@@ -547,7 +536,7 @@ async def test_manual_entry_rejects_a_blank_synonym_message_with_a_reprompt(
         assert fetched.status == GameStatus.SETUP
 
 
-async def test_manual_entry_second_message_stages_activates_and_posts(
+async def test_manual_entry_second_message_stages_and_shows_a_preview(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(dm_start.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
@@ -568,14 +557,224 @@ async def test_manual_entry_second_message_stages_activates_and_posts(
 
     context.bot.send_photo.assert_awaited_once()
     _, kwargs = context.bot.send_photo.await_args
+    assert kwargs["chat_id"] == 1
     assert kwargs["photo"] == b"pixelated"
-    assert "Starter Name" in kwargs["caption"]
+    assert "Sousou no Frieren" in kwargs["caption"]
 
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
-        assert fetched.status == GameStatus.ACTIVE
+        assert fetched.status == GameStatus.SETUP
+        assert fetched.setup_step == SetupStep.CONFIRMING
         assert fetched.source == "manual"
         assert fetched.title_english == "Sousou no Frieren"
         assert fetched.synonyms == ["Frieren", "Frieren at the Funeral"]
 
     update.message.reply_text.assert_awaited_once()
+
+
+def _make_preview_callback_update(
+    *, data: str, user_id: int = 1, full_name: str = "Starter Name"
+) -> MagicMock:
+    update = MagicMock()
+    update.callback_query.data = data
+    update.callback_query.from_user.id = user_id
+    update.callback_query.from_user.full_name = full_name
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_caption = AsyncMock()
+    return update
+
+
+def _staged_setup_game(session_factory, *, starter_id: int = 1) -> None:
+    _create_setup_game(session_factory, starter_id=starter_id, source="anilist")
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=starter_id).one()
+        game_service.stage_result(game, _FRIEREN, source="anilist")
+        game.setup_step = SetupStep.CONFIRMING
+        session.commit()
+
+
+async def test_preview_confirm_activates_and_posts_to_the_group(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(dm_start.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    _staged_setup_game(session_factory)
+    update = _make_preview_callback_update(data=dm_start.PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_callback_context(session_factory)
+
+    await dm_start.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_photo.assert_awaited_once()
+    _, kwargs = context.bot.send_photo.await_args
+    assert kwargs["chat_id"] == 555
+    assert kwargs["message_thread_id"] == 7
+    assert "Starter Name" in kwargs["caption"]
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.status == GameStatus.ACTIVE
+
+    context.job_queue.run_once.assert_called_once()
+    update.callback_query.edit_message_caption.assert_awaited_once()
+
+
+async def test_preview_change_image_awaits_a_new_photo(session_factory) -> None:
+    _staged_setup_game(session_factory)
+    update = _make_preview_callback_update(
+        data=dm_start.PREVIEW_CHANGE_IMAGE_CALLBACK_DATA, user_id=1
+    )
+    context = _make_context(session_factory)
+
+    await dm_start.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.edit_message_caption.assert_awaited_once()
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.AWAITING_PHOTO_CHANGE
+        assert fetched.status == GameStatus.SETUP
+
+
+async def test_preview_research_returns_to_the_method_keyboard(session_factory) -> None:
+    _staged_setup_game(session_factory)
+    update = _make_preview_callback_update(data=dm_start.PREVIEW_RESEARCH_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await dm_start.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = update.callback_query.edit_message_caption.await_args
+    callbacks = [
+        button.callback_data for row in kwargs["reply_markup"].inline_keyboard for button in row
+    ]
+    assert ANILIST_METHOD_CALLBACK_DATA in callbacks
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.PICKING_METHOD
+
+
+async def test_preview_add_synonym_awaits_a_synonym_message(session_factory) -> None:
+    _staged_setup_game(session_factory)
+    update = _make_preview_callback_update(
+        data=dm_start.PREVIEW_ADD_SYNONYM_CALLBACK_DATA, user_id=1
+    )
+    context = _make_context(session_factory)
+
+    await dm_start.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.edit_message_caption.assert_awaited_once()
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.AWAITING_SYNONYM
+
+
+async def test_search_text_handler_appends_a_synonym_and_reshows_the_preview(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(dm_start.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    _staged_setup_game(session_factory)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.setup_step = SetupStep.AWAITING_SYNONYM
+        session.commit()
+
+    update = _make_text_update(user_id=1, text="Frieren at the Funeral")
+    context = _make_callback_context(session_factory)
+
+    await dm_start.search_text_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_photo.assert_awaited_once()
+    _, kwargs = context.bot.send_photo.await_args
+    assert kwargs["chat_id"] == 1
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.synonyms == ["Frieren", "Frieren at the Funeral"]
+        assert fetched.setup_step == SetupStep.CONFIRMING
+
+
+async def test_search_text_handler_rejects_a_blank_extra_synonym(session_factory) -> None:
+    _staged_setup_game(session_factory)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.setup_step = SetupStep.AWAITING_SYNONYM
+        session.commit()
+
+    update = _make_text_update(user_id=1, text="   ")
+    context = _make_callback_context(session_factory)
+
+    await dm_start.search_text_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_photo.assert_not_awaited()
+    update.message.reply_text.assert_awaited_once()
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.AWAITING_SYNONYM
+
+
+async def test_search_text_handler_ignores_text_while_confirming(session_factory) -> None:
+    _staged_setup_game(session_factory)
+    update = _make_text_update(user_id=1, text="whatever")
+    context = _make_callback_context(session_factory)
+
+    await dm_start.search_text_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_not_awaited()
+    context.bot.send_photo.assert_not_awaited()
+
+
+async def test_search_text_handler_ignores_text_while_awaiting_a_photo_change(
+    session_factory,
+) -> None:
+    _staged_setup_game(session_factory)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
+        session.commit()
+
+    update = _make_text_update(user_id=1, text="whatever")
+    context = _make_callback_context(session_factory)
+
+    await dm_start.search_text_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_not_awaited()
+    context.bot.send_photo.assert_not_awaited()
+
+
+async def test_photo_handler_updates_the_image_and_reshows_the_preview_when_changing(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(dm_start.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    _staged_setup_game(session_factory)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
+        session.commit()
+
+    update = _make_update(user_id=1, photo_file_id="new-file-456")
+    context = _make_callback_context(session_factory)
+
+    await dm_start.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        assert session.query(Game).count() == 1  # no duplicate game created
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.original_file_id == "new-file-456"
+        assert fetched.setup_step == SetupStep.CONFIRMING
+
+    context.bot.get_file.assert_awaited_once_with("new-file-456")
+    context.bot.send_photo.assert_awaited_once()
+    _, kwargs = context.bot.send_photo.await_args
+    assert kwargs["chat_id"] == 1

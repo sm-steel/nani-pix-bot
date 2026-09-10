@@ -61,6 +61,9 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(dm_start.method_pick_callback_handler, pattern=r"^method:")
     )
     application.add_handler(
+        CallbackQueryHandler(dm_start.preview_callback_handler, pattern=r"^preview:")
+    )
+    application.add_handler(
         CallbackQueryHandler(
             language.language_callback_handler, pattern=rf"^{re.escape(SET_LANGUAGE_PREFIX)}"
         )

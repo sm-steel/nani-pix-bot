@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import GameStatus, PixelStage
+from nani_pix_bot.models.enums import GameStatus, PixelStage, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 
@@ -26,6 +26,7 @@ def test_new_game_defaults_to_setup_with_no_wrong_guesses(session: Session) -> N
     assert fetched.wrong_guess_count == 0
     assert fetched.winner_id is None
     assert fetched.created_at is not None
+    assert fetched.setup_step == SetupStep.PICKING_METHOD
 
 
 def test_game_stores_synonyms_as_a_json_list(session: Session) -> None:

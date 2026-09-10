@@ -101,6 +101,7 @@ erDiagram
         string title_native
         string title_russian
         string source
+        enum setup_step
         json synonyms
         string original_file_id
         enum status
@@ -121,7 +122,7 @@ erDiagram
 | Table | Status | Purpose |
 |---|---|---|
 | `players` | v1 | Telegram user id, opportunistically-captured `username`, `wins` counter (feeds `/leaderboard`). |
-| `games` | v1 | One row per round. `status` is `SETUP` (starter is picking the anime in DM) → `ACTIVE` (posted to the group, guessing open) → `WON`/`UNSOLVED` (terminal). `source` (`"anilist"`/`"shikimori"`/eventually `"manual"`) records which identification method was used, set on `Game.source` the moment the starter picks a method — before the title/synonym fields are staged. `current_stage` tracks which pixelation level is currently shown (`X10`→`X8`→`X5`→`X2`); `wrong_guess_count` resets to 0 each time the stage advances, while `total_guess_count` never resets (gates `/correct` on at least one real attempt). `original_file_id` is cleared once the reveal message (win or unsolved) is confirmed sent — see `MECHANICS.md`'s "Cleanup" note; nothing after a game ends needs to re-fetch the screenshot. Only one row may be `SETUP`/`ACTIVE` at a time, enforced in `services/game.py`, not a DB constraint. |
+| `games` | v1 | One row per round. `status` is `SETUP` (starter is picking/confirming the anime in DM) → `ACTIVE` (posted to the group, guessing open) → `WON`/`UNSOLVED` (terminal). `source` (`"anilist"`/`"shikimori"`/`"manual"`) records which identification method was used. `setup_step` (`PICKING_METHOD`/`AWAITING_PHOTO_CHANGE`/`AWAITING_SYNONYM`/`CONFIRMING`) tracks exactly where in the multi-step DM setup flow the starter is — only meaningful while `status` is `SETUP`, and (like everything else in that flow) derived from the DB rather than in-memory state, so a restart mid-edit resolves correctly. `current_stage` tracks which pixelation level is currently shown (`X10`→`X8`→`X5`→`X2`); `wrong_guess_count` resets to 0 each time the stage advances, while `total_guess_count` never resets (gates `/correct` on at least one real attempt). `original_file_id` is cleared once the reveal message (win or unsolved) is confirmed sent — see `MECHANICS.md`'s "Cleanup" note; nothing after a game ends needs to re-fetch the screenshot. Only one row may be `SETUP`/`ACTIVE` at a time, enforced in `services/game.py`, not a DB constraint. |
 | `turn_state` | v1 | Single row (`id=1`). `next_starter_id` is who's designated to start the next game; `null` means anyone can. Set to the winner on a `WON` game, changed by `/skip`, otherwise left alone (an `UNSOLVED` game doesn't force a turn on anyone). |
 
 ## Game flow, topics, and commands
@@ -132,14 +133,18 @@ summary.
 - **Game setup** happens entirely in **1-to-1 DM** with the bot: send a
   photo, pick AniList, Shikimori, or manual entry, then either search and
   tap one of that service's results shown as an inline keyboard, or (for
-  manual) type a title and at least one synonym directly. Deliberately
-  stateless across restarts: which game a DM is setting up comes from a
-  DB lookup (`get_setup_game_for_starter`), which method was picked is
-  stored on that row (`Game.source`) rather than in memory, and a tapped
-  result's title/synonyms are re-fetched fresh by the id embedded in the
-  button's `callback_data` (`anilist.get_by_id`/`shikimori.get_by_id`) —
-  none of it is cached in PTB's in-memory `user_data`, which a redeploy
-  mid-setup would otherwise wipe.
+  manual) type a title and at least one synonym directly — landing on a
+  private preview (staged title/synonyms + the x10 screenshot) with
+  buttons to change the image, re-search, add a synonym, or confirm and
+  post to the group. Deliberately stateless across restarts: which game a
+  DM is setting up comes from a DB lookup (`get_setup_game_for_starter`),
+  which method was picked is stored on that row (`Game.source`) and
+  which step of the flow the starter is on (`Game.setup_step`) rather
+  than in memory, and a tapped result's title/synonyms are re-fetched
+  fresh by the id embedded in the button's `callback_data`
+  (`anilist.get_by_id`/`shikimori.get_by_id`) — none of it is cached in
+  PTB's in-memory `user_data`, which a redeploy mid-setup would otherwise
+  wipe.
 - **Everything else** (`/guess`, `/correct`, `/skip`, `/leaderboard`) is
   scoped to **one topic** (`GAME_TOPIC_ID`) in **one group**
   (`GROUP_CHAT_ID`) — checked via `message.message_thread_id` in
