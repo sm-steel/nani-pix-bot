@@ -87,3 +87,18 @@ async def test_search_raises_after_exhausting_rate_limit_retries() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(RuntimeError, match="rate limit"):
             await anilist.search(client, "frieren")
+
+
+async def test_search_sends_a_referer_header() -> None:
+    # AniList (via Cloudflare) 403s requests with no Referer, regardless of
+    # source IP/proxy — discovered against the real API after deploy.
+    captured: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["referer"] = request.headers.get("referer")
+        return httpx.Response(200, json=_media_payload([]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await anilist.search(client, "frieren")
+
+    assert captured["referer"] == "https://anilist.co/"

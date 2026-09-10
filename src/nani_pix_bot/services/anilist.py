@@ -16,6 +16,11 @@ MAX_RATE_LIMIT_RETRIES = 5
 DEFAULT_RETRY_AFTER_SECONDS = 5.0
 SEARCH_RESULT_LIMIT = 5
 
+# AniList (via Cloudflare) 403s requests with no Referer, regardless of
+# source IP/proxy — a browser-like Referer is enough, discovered against
+# the real API after deploy.
+_REQUEST_HEADERS = {"Referer": "https://anilist.co/"}
+
 _SEARCH_QUERY = """
 query ($search: String, $perPage: Int) {
   Page(page: 1, perPage: $perPage) {
@@ -53,6 +58,7 @@ async def _request(client: httpx.AsyncClient, *, query: str, per_page: int) -> d
         response = await client.post(
             ANILIST_GRAPHQL_URL,
             json={"query": _SEARCH_QUERY, "variables": {"search": query, "perPage": per_page}},
+            headers=_REQUEST_HEADERS,
         )
         if response.status_code != HTTPStatus.TOO_MANY_REQUESTS:
             response.raise_for_status()
