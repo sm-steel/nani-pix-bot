@@ -18,9 +18,9 @@ async def test_refresh_command_menu_sets_private_and_group_scopes() -> None:
         c for c in calls if isinstance(c.kwargs["scope"], BotCommandScopeAllPrivateChats)
     )
     private_commands = {c.command for c in private_call.args[0]}
-    assert private_commands == {"start", "help", "language"}
+    assert private_commands == {"start", "help", "language", "stop"}
 
     group_call = next(c for c in calls if isinstance(c.kwargs["scope"], BotCommandScopeChat))
     assert group_call.kwargs["scope"].chat_id == 555
     group_commands = {c.command for c in group_call.args[0]}
-    assert group_commands == {"guess", "correct", "skip", "stop", "leaderboard", "help"}
+    assert group_commands == {"guess", "correct", "skip", "leaderboard", "help"}

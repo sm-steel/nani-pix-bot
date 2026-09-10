@@ -162,11 +162,16 @@ summary.
   (`anilist.get_by_id`/`shikimori.get_by_id`) — none of it is cached in
   PTB's in-memory `user_data`, which a redeploy mid-setup would otherwise
   wipe.
-- **Everything else** (`/guess`, `/correct`, `/skip`, `/stop`,
-  `/leaderboard`) is scoped to **one topic** (`GAME_TOPIC_ID`) in **one
-  group** (`GROUP_CHAT_ID`) — checked via `message.message_thread_id` in
+- **Everything else** (`/guess`, `/correct`, `/skip`, `/leaderboard`) is
+  scoped to **one topic** (`GAME_TOPIC_ID`) in **one group**
+  (`GROUP_CHAT_ID`) — checked via `message.message_thread_id` in
   `commands/helpers/scoping.py`. Commands sent elsewhere in the group are
   ignored.
+- **`/stop`** is the odd one out: like game setup, it's DM-only (checked
+  via `is_private_chat`, not the topic check above) so a stop/confirm
+  exchange doesn't clutter the group topic — but unlike setup, its
+  *outcome* is still announced back to `GAME_TOPIC_ID` once confirmed.
+  See `MECHANICS.md`'s "Stopping a game" section.
 - Guessing is via an explicit `/guess <text>` command rather than scanning
   every message, which also means the bot never needs Telegram's group
   privacy mode disabled — it only ever needs to see commands.

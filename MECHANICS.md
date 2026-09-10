@@ -271,7 +271,9 @@ a timeout job on startup for any `Game` still `ACTIVE`, using its stored
 Manually aborts whatever game is currently `SETUP` or `ACTIVE`, usable
 by that game's own starter, or by any group admin/owner (for any game,
 not just their own) — checked via the same `is_group_admin` helper
-`/language` uses. Sent in the game topic like `/guess`/`/correct`/`/skip`.
+`/language` uses. **DM only** — sent privately to the bot like `/start`/
+`/help`/`/language`, not in the game topic — though the outcome is still
+announced there (step 4 below).
 
 `/stop` never acts immediately — it always shows a **Yes/No confirmation**
 first (naming the game's title, if one's been staged yet), and only the

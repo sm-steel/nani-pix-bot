@@ -1,6 +1,7 @@
-"""The /stop command — lets the game's own starter, or any group admin,
-abort a SETUP or ACTIVE game after a Yes/No confirmation. See
-MECHANICS.md's "Stopping a game" section."""
+"""The /stop command — DM only. Lets the game's own starter, or any group
+admin, abort a SETUP or ACTIVE game after a Yes/No confirmation; the
+outcome is still announced in the group topic. See MECHANICS.md's
+"Stopping a game" section."""
 
 from loguru import logger
 from telegram import Update
@@ -12,7 +13,7 @@ from nani_pix_bot.commands.helpers.keyboards import (
     stop_confirm_keyboard,
 )
 from nani_pix_bot.commands.helpers.membership import is_group_admin
-from nani_pix_bot.commands.helpers.scoping import is_game_topic
+from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import GameStatus
@@ -35,14 +36,10 @@ async def _may_stop(
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     user = update.effective_user
-    if message is None or user is None:
+    if not is_private_chat(update) or message is None or user is None:
         return
 
     group_chat_id = context.bot_data["group_chat_id"]
-    game_topic_id = context.bot_data["game_topic_id"]
-    if not is_game_topic(update, group_chat_id=group_chat_id, game_topic_id=game_topic_id):
-        return
-
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)

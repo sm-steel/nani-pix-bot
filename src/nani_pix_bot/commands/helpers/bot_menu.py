@@ -16,12 +16,12 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("start", i18n.t("commands.start", lang)),
         BotCommand("help", i18n.t("commands.help", lang)),
         BotCommand("language", i18n.t("commands.language", lang)),
+        BotCommand("stop", i18n.t("commands.stop", lang)),
     ]
     group_commands = [
         BotCommand("guess", i18n.t("commands.guess", lang)),
         BotCommand("correct", i18n.t("commands.correct", lang)),
         BotCommand("skip", i18n.t("commands.skip", lang)),
-        BotCommand("stop", i18n.t("commands.stop", lang)),
         BotCommand("leaderboard", i18n.t("commands.leaderboard", lang)),
         BotCommand("help", i18n.t("commands.help", lang)),
     ]

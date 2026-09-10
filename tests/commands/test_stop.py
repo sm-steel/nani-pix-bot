@@ -17,14 +17,12 @@ from nani_pix_bot.models.turn_state import TurnState
 
 
 def _make_update(
-    *, user_id: int = 1, thread_id: int | None = 7, full_name: str = "Someone"
+    *, user_id: int = 1, full_name: str = "Someone", chat_type: str = "private"
 ) -> MagicMock:
     update = MagicMock()
     update.effective_user.id = user_id
     update.effective_user.full_name = full_name
-    update.effective_chat.id = 555
-    update.message.message_thread_id = thread_id
-    update.effective_message = update.message
+    update.effective_chat.type = chat_type
     update.message.reply_text = AsyncMock()
     return update
 
@@ -77,9 +75,9 @@ def _setup_game(session_factory, *, starter_id: int = 1) -> int:
         return game.id
 
 
-async def test_stop_command_ignores_outside_the_game_topic(session_factory) -> None:
+async def test_stop_command_ignores_group_chat_messages(session_factory) -> None:
     _active_game(session_factory)
-    update = _make_update(thread_id=999)
+    update = _make_update(chat_type="supergroup")
     context = _make_context(session_factory)
 
     await stop_command_module.stop_command(

@@ -33,8 +33,9 @@ src/nani_pix_bot/
     guess.py      # /guess — the only handler most wrong-guess traffic hits
     correct.py    # /correct @user — author override
     skip.py       # /skip [@user] — turn handoff when no game is running
-    stop.py       # /stop — starter or a group admin aborts the current
-                   # game after a Yes/No confirmation
+    stop.py       # /stop — DM-only; starter or a group admin aborts the
+                   # current game after a Yes/No confirmation (outcome is
+                   # still announced in the group topic)
     leaderboard.py  # /leaderboard
     language.py   # /language — DM-only, admin-gated bot language switch
     onboarding.py # /start, /help
