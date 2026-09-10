@@ -89,6 +89,44 @@ async def test_search_raises_after_exhausting_rate_limit_retries() -> None:
             await anilist.search(client, "frieren")
 
 
+async def test_get_by_id_parses_a_result() -> None:
+    entry = {
+        "id": 154587,
+        "title": {
+            "romaji": "Sousou no Frieren",
+            "english": "Frieren: Beyond Journey's End",
+            "native": "葬送のフリーレン",
+        },
+        "synonyms": ["Frieren"],
+        "startDate": {"year": 2023},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"Media": entry}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await anilist.get_by_id(client, 154587)
+
+    assert result == anilist.AniListResult(
+        anilist_id=154587,
+        title_romaji="Sousou no Frieren",
+        title_english="Frieren: Beyond Journey's End",
+        title_native="葬送のフリーレン",
+        synonyms=["Frieren"],
+        year=2023,
+    )
+
+
+async def test_get_by_id_returns_none_when_anilist_has_no_such_media() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"Media": None}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await anilist.get_by_id(client, 999999)
+
+    assert result is None
+
+
 async def test_search_sends_a_referer_header() -> None:
     # AniList (via Cloudflare) 403s requests with no Referer, regardless of
     # source IP/proxy — discovered against the real API after deploy.

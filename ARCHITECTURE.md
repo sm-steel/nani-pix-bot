@@ -128,7 +128,12 @@ summary.
 
 - **Game setup** happens entirely in **1-to-1 DM** with the bot: send a
   photo, then a text search query, then tap one of the AniList results
-  shown as an inline keyboard.
+  shown as an inline keyboard. Deliberately stateless across restarts:
+  which game a DM is setting up comes from a DB lookup
+  (`get_setup_game_for_starter`), and a tapped result's title/synonyms are
+  re-fetched from AniList by the id embedded in the button's
+  `callback_data` (`anilist.get_by_id`) — neither is cached in PTB's
+  in-memory `user_data`, which a redeploy mid-setup would otherwise wipe.
 - **Everything else** (`/guess`, `/correct`, `/skip`, `/leaderboard`) is
   scoped to **one topic** (`GAME_TOPIC_ID`) in **one group**
   (`GROUP_CHAT_ID`) — checked via `message.message_thread_id` in

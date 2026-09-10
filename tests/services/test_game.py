@@ -350,3 +350,30 @@ def test_active_games_returns_only_active_status_games(session: Session) -> None
 
     assert len(active) == 1
     assert active[0].status == GameStatus.ACTIVE
+
+
+def test_get_setup_game_for_starter_finds_the_pending_row(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    session.commit()
+
+    found = game_service.get_setup_game_for_starter(session, 1)
+
+    assert found is not None
+    assert found.id == game.id
+
+
+def test_get_setup_game_for_starter_ignores_other_starters(session: Session) -> None:
+    session.add_all([Player(telegram_user_id=1), Player(telegram_user_id=2)])
+    session.commit()
+    game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    session.commit()
+
+    assert game_service.get_setup_game_for_starter(session, 2) is None
+
+
+def test_get_setup_game_for_starter_ignores_active_games(session: Session) -> None:
+    game = _active_game(session)
+
+    assert game_service.get_setup_game_for_starter(session, game.starter_id) is None

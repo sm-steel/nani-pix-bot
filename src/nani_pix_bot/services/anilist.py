@@ -34,6 +34,17 @@ query ($search: String, $perPage: Int) {
 }
 """
 
+_BY_ID_QUERY = """
+query ($id: Int) {
+  Media(id: $id, type: ANIME) {
+    id
+    title { romaji english native }
+    synonyms
+    startDate { year }
+  }
+}
+"""
+
 
 @dataclass(frozen=True)
 class AniListResult:
@@ -49,24 +60,37 @@ async def search(
     client: httpx.AsyncClient, query: str, *, limit: int = SEARCH_RESULT_LIMIT
 ) -> list[AniListResult]:
     """Search AniList anime titles matching `query`."""
-    page = await _request(client, query=query, per_page=limit)
-    return [_parse_result(raw) for raw in page["media"]]
+    data = await _request(
+        client, query=_SEARCH_QUERY, variables={"search": query, "perPage": limit}
+    )
+    return [_parse_result(raw) for raw in data["Page"]["media"]]
 
 
-async def _request(client: httpx.AsyncClient, *, query: str, per_page: int) -> dict:
+async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult | None:
+    """Re-fetch a single anime by id — used when the starter taps an
+    AniList-picker button, rather than caching search results in
+    ephemeral bot memory (see issue #11: that cache doesn't survive a
+    restart, but the anilist_id embedded in the button's callback_data,
+    stored by Telegram on the message itself, does)."""
+    data = await _request(client, query=_BY_ID_QUERY, variables={"id": anilist_id})
+    media = data["Media"]
+    return _parse_result(media) if media is not None else None
+
+
+async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) -> dict:
     for _attempt in range(MAX_RATE_LIMIT_RETRIES):
         response = await client.post(
             ANILIST_GRAPHQL_URL,
-            json={"query": _SEARCH_QUERY, "variables": {"search": query, "perPage": per_page}},
+            json={"query": query, "variables": variables},
             headers=_REQUEST_HEADERS,
         )
         if response.status_code != HTTPStatus.TOO_MANY_REQUESTS:
             response.raise_for_status()
-            return response.json()["data"]["Page"]
+            return response.json()["data"]
         retry_after = float(response.headers.get("Retry-After", DEFAULT_RETRY_AFTER_SECONDS))
-        logger.warning("AniList rate-limited search {!r}, retrying in {}s", query, retry_after)
+        logger.warning("AniList rate-limited request, retrying in {}s", retry_after)
         await asyncio.sleep(retry_after)
-    msg = f"AniList rate limit retries exhausted (search {query!r})"
+    msg = f"AniList rate limit retries exhausted (variables {variables!r})"
     logger.error(msg)
     raise RuntimeError(msg)
 

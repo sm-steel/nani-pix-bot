@@ -82,6 +82,15 @@ def active_games(session: Session) -> list[Game]:
     return list(session.scalars(stmt))
 
 
+def get_setup_game_for_starter(session: Session, starter_id: int) -> Game | None:
+    """The SETUP game `starter_id` is currently picking an anime for, if
+    any. Deriving this from the DB (rather than caching it in PTB's
+    in-memory user_data) means the DM setup flow survives a bot restart —
+    see the incident that prompted this in issue #11."""
+    stmt = select(Game).where(Game.status == GameStatus.SETUP, Game.starter_id == starter_id)
+    return session.scalars(stmt).first()
+
+
 def can_start(session: Session, user_id: int) -> bool:
     """Whether `user_id` may DM the bot a screenshot to start a new game
     right now — see MECHANICS.md's "Starting a game"."""
