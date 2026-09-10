@@ -44,6 +44,13 @@ _FRIEREN_SHIKIMORI = ShikimoriResult(
     title_russian="Провожающая в последний путь Фрирен",
     synonyms=[],
 )
+_FRIEREN_SHIKIMORI_ALL_TITLES = ShikimoriResult(
+    shikimori_id=52991,
+    title_romaji="Sousou no Frieren",
+    title_english="Frieren: Beyond Journey's End",
+    title_russian="Провожающая в последний путь Фрирен",
+    synonyms=[],
+)
 _NO_RUSSIAN_TITLE = ShikimoriResult(
     shikimori_id=1,
     title_romaji="Some Anime",
@@ -72,6 +79,15 @@ def test_keyboard_button_label_falls_back_to_romaji_with_no_year() -> None:
     assert markup.inline_keyboard[0][0].text == "Some Anime"
 
 
+def test_keyboard_button_label_prefers_english_regardless_of_lang() -> None:
+    # AniList has no Russian-specific title field, so lang doesn't
+    # currently change which title wins here — unlike Shikimori's.
+    markup_en = anilist_results_keyboard([_FRIEREN], lang="en")
+    markup_ru = anilist_results_keyboard([_FRIEREN], lang="ru")
+
+    assert markup_en.inline_keyboard[0][0].text == markup_ru.inline_keyboard[0][0].text
+
+
 def test_retry_button_label_is_translated() -> None:
     markup = anilist_results_keyboard([_NO_YEAR], lang="ru")
 
@@ -97,10 +113,31 @@ def test_shikimori_keyboard_has_one_button_per_result_plus_a_retry_button() -> N
     assert markup.inline_keyboard[-1][0].callback_data == RETRY_CALLBACK_DATA
 
 
-def test_shikimori_keyboard_button_label_prefers_the_russian_title() -> None:
-    markup = shikimori_results_keyboard([_FRIEREN_SHIKIMORI], lang="en")
+def test_shikimori_keyboard_button_label_prefers_the_russian_title_when_lang_is_ru() -> None:
+    markup = shikimori_results_keyboard([_FRIEREN_SHIKIMORI_ALL_TITLES], lang="ru")
 
     assert markup.inline_keyboard[0][0].text == "Провожающая в последний путь Фрирен"
+
+
+def test_shikimori_keyboard_button_label_prefers_english_when_lang_is_en() -> None:
+    markup = shikimori_results_keyboard([_FRIEREN_SHIKIMORI_ALL_TITLES], lang="en")
+
+    assert markup.inline_keyboard[0][0].text == "Frieren: Beyond Journey's End"
+
+
+def test_shikimori_keyboard_button_label_prefers_romaji_over_russian_when_lang_is_en() -> None:
+    markup = shikimori_results_keyboard([_FRIEREN_SHIKIMORI], lang="en")
+
+    assert markup.inline_keyboard[0][0].text == "Sousou no Frieren"
+
+
+def test_shikimori_keyboard_button_label_falls_back_to_russian_as_last_resort() -> None:
+    only_russian = ShikimoriResult(
+        shikimori_id=1, title_romaji=None, title_english=None, title_russian="Фрирен", synonyms=[]
+    )
+    markup = shikimori_results_keyboard([only_russian], lang="en")
+
+    assert markup.inline_keyboard[0][0].text == "Фрирен"
 
 
 def test_shikimori_keyboard_button_label_falls_back_to_romaji() -> None:

@@ -35,7 +35,8 @@ def anilist_results_keyboard(results: list[AniListResult], lang: str) -> InlineK
     buttons = [
         [
             InlineKeyboardButton(
-                _anilist_label(result), callback_data=f"{_ANILIST_PICK_PREFIX}{result.anilist_id}"
+                _anilist_label(result, lang),
+                callback_data=f"{_ANILIST_PICK_PREFIX}{result.anilist_id}",
             )
         ]
         for result in results
@@ -50,7 +51,7 @@ def shikimori_results_keyboard(results: list[ShikimoriResult], lang: str) -> Inl
     buttons = [
         [
             InlineKeyboardButton(
-                _shikimori_label(result),
+                _shikimori_label(result, lang),
                 callback_data=f"{_SHIKIMORI_PICK_PREFIX}{result.shikimori_id}",
             )
         ]
@@ -62,13 +63,28 @@ def shikimori_results_keyboard(results: list[ShikimoriResult], lang: str) -> Inl
     return InlineKeyboardMarkup(buttons)
 
 
-def _anilist_label(result: AniListResult) -> str:
+def _anilist_label(result: AniListResult, lang: str) -> str:
+    """Picks the result's display title, preferring whatever matches
+    `lang` first, then falling back through the rest. AniList doesn't
+    expose a Russian-specific field — `lang` is accepted for symmetry
+    with `_shikimori_label()` and in case that ever changes, but every
+    branch currently resolves the same way (English, then romaji, then
+    native)."""
+    del lang
     title = result.title_english or result.title_romaji or result.title_native or "?"
     return f"{title} ({result.year})" if result.year else title
 
 
-def _shikimori_label(result: ShikimoriResult) -> str:
-    return result.title_russian or result.title_romaji or result.title_english or "?"
+def _shikimori_label(result: ShikimoriResult, lang: str) -> str:
+    """Picks the result's display title, preferring the Russian title
+    only when the bot's language is RU — otherwise English/romaji comes
+    first, with the Russian title as a last resort rather than always
+    winning regardless of the bot's language."""
+    if lang.upper() == "RU":
+        candidates = (result.title_russian, result.title_english, result.title_romaji)
+    else:
+        candidates = (result.title_english, result.title_romaji, result.title_russian)
+    return next((title for title in candidates if title), "?")
 
 
 def parse_pick_callback_data(data: str) -> tuple[str, int] | None:
