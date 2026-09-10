@@ -65,5 +65,12 @@
   "commands.guess": "Guess the anime",
   "commands.correct": "Force a correct guess (starter only)",
   "commands.skip": "Pass or hand off your turn",
-  "commands.leaderboard": "Show top winners"
+  "commands.leaderboard": "Show top winners",
+
+  "keyboards.retry": "None of these — search again",
+  "keyboards.manual_entry": "Manual entry",
+  "keyboards.preview_confirm": "✅ Confirm and start",
+  "keyboards.preview_change_image": "🖼️ Change image",
+  "keyboards.preview_research": "🔍 Re-search title",
+  "keyboards.preview_add_synonym": "📝 Add a synonym"
 }

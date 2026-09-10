@@ -65,5 +65,12 @@
   "commands.guess": "Угадать аниме",
   "commands.correct": "Засчитать правильный ответ (только начавший раунд)",
   "commands.skip": "Пропустить или передать очередь",
-  "commands.leaderboard": "Таблица лидеров"
+  "commands.leaderboard": "Таблица лидеров",
+
+  "keyboards.retry": "Ни один из них — искать заново",
+  "keyboards.manual_entry": "Ввести вручную",
+  "keyboards.preview_confirm": "✅ Подтвердить и начать",
+  "keyboards.preview_change_image": "🖼️ Изменить изображение",
+  "keyboards.preview_research": "🔍 Искать заново",
+  "keyboards.preview_add_synonym": "📝 Добавить синоним"
 }

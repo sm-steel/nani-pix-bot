@@ -1,8 +1,16 @@
 """Inline-keyboard building for the DM anime-identification flow — see
-MECHANICS.md's "Starting a game" section."""
+MECHANICS.md's "Starting a game" section.
+
+Button labels are routed through `i18n.t()` like every other user-facing
+string, with two deliberate exceptions: the "AniList"/"Shikimori"
+method-picker labels (third-party brand names, not translatable UI text)
+and the language picker's own native-name labels in `commands/language.py`
+(a language switcher inherently shows each option in its own name).
+"""
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.anilist import AniListResult
 from nani_pix_bot.services.shikimori import ShikimoriResult
 
@@ -20,7 +28,7 @@ PREVIEW_RESEARCH_CALLBACK_DATA = "preview:research"
 PREVIEW_ADD_SYNONYM_CALLBACK_DATA = "preview:add_synonym"
 
 
-def anilist_results_keyboard(results: list[AniListResult]) -> InlineKeyboardMarkup:
+def anilist_results_keyboard(results: list[AniListResult], lang: str) -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton(
@@ -30,12 +38,12 @@ def anilist_results_keyboard(results: list[AniListResult]) -> InlineKeyboardMark
         for result in results
     ]
     buttons.append(
-        [InlineKeyboardButton("None of these — search again", callback_data=RETRY_CALLBACK_DATA)]
+        [InlineKeyboardButton(i18n.t("keyboards.retry", lang), callback_data=RETRY_CALLBACK_DATA)]
     )
     return InlineKeyboardMarkup(buttons)
 
 
-def shikimori_results_keyboard(results: list[ShikimoriResult]) -> InlineKeyboardMarkup:
+def shikimori_results_keyboard(results: list[ShikimoriResult], lang: str) -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton(
@@ -46,7 +54,7 @@ def shikimori_results_keyboard(results: list[ShikimoriResult]) -> InlineKeyboard
         for result in results
     ]
     buttons.append(
-        [InlineKeyboardButton("None of these — search again", callback_data=RETRY_CALLBACK_DATA)]
+        [InlineKeyboardButton(i18n.t("keyboards.retry", lang), callback_data=RETRY_CALLBACK_DATA)]
     )
     return InlineKeyboardMarkup(buttons)
 
@@ -72,15 +80,18 @@ def parse_pick_callback_data(data: str) -> tuple[str, int] | None:
     return None
 
 
-def method_selection_keyboard(*, prefer_shikimori: bool) -> InlineKeyboardMarkup:
-    """AniList vs. Shikimori choice, shown right after the starter's
-    photo. Shikimori is offered first for RU-language bots (see
-    MECHANICS.md's "Starting a game")."""
+def method_selection_keyboard(*, prefer_shikimori: bool, lang: str) -> InlineKeyboardMarkup:
+    """AniList vs. Shikimori vs. manual-entry choice, shown right after
+    the starter's photo. Shikimori is offered first for RU-language bots
+    (see MECHANICS.md's "Starting a game"). "AniList"/"Shikimori" are
+    brand names and stay untranslated regardless of `lang`."""
     anilist_button = InlineKeyboardButton("AniList", callback_data=ANILIST_METHOD_CALLBACK_DATA)
     shikimori_button = InlineKeyboardButton(
         "Shikimori", callback_data=SHIKIMORI_METHOD_CALLBACK_DATA
     )
-    manual_button = InlineKeyboardButton("Manual entry", callback_data=MANUAL_METHOD_CALLBACK_DATA)
+    manual_button = InlineKeyboardButton(
+        i18n.t("keyboards.manual_entry", lang), callback_data=MANUAL_METHOD_CALLBACK_DATA
+    )
     ordered = (
         [shikimori_button, anilist_button]
         if prefer_shikimori
@@ -102,19 +113,21 @@ def parse_method_callback_data(data: str) -> str | None:
     return None
 
 
-def preview_keyboard() -> InlineKeyboardMarkup:
+def preview_keyboard(lang: str) -> InlineKeyboardMarkup:
     """Buttons on the private preview shown before a game is posted to
     the group — see MECHANICS.md's "Starting a game" section."""
     confirm = InlineKeyboardButton(
-        "✅ Confirm and start", callback_data=PREVIEW_CONFIRM_CALLBACK_DATA
+        i18n.t("keyboards.preview_confirm", lang), callback_data=PREVIEW_CONFIRM_CALLBACK_DATA
     )
     change_image = InlineKeyboardButton(
-        "🖼️ Change image", callback_data=PREVIEW_CHANGE_IMAGE_CALLBACK_DATA
+        i18n.t("keyboards.preview_change_image", lang),
+        callback_data=PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
     )
     research = InlineKeyboardButton(
-        "🔍 Re-search title", callback_data=PREVIEW_RESEARCH_CALLBACK_DATA
+        i18n.t("keyboards.preview_research", lang), callback_data=PREVIEW_RESEARCH_CALLBACK_DATA
     )
     add_synonym = InlineKeyboardButton(
-        "📝 Add a synonym", callback_data=PREVIEW_ADD_SYNONYM_CALLBACK_DATA
+        i18n.t("keyboards.preview_add_synonym", lang),
+        callback_data=PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     )
     return InlineKeyboardMarkup([[confirm], [change_image], [research], [add_synonym]])

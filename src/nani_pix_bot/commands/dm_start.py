@@ -122,7 +122,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     prefer_shikimori = _prefer_shikimori(lang)
     await message.reply_text(
         i18n.t(_method_prompt_key(prefer_shikimori=prefer_shikimori), lang),
-        reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori),
+        reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
     )
 
 
@@ -196,12 +196,12 @@ async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, s
             shikimori_results = await shikimori.search(client, message.text)
             result_count = len(shikimori_results)
             has_results = bool(shikimori_results)
-            keyboard = shikimori_results_keyboard(shikimori_results)
+            keyboard = shikimori_results_keyboard(shikimori_results, lang)
         else:
             anilist_results = await anilist.search(client, message.text)
             result_count = len(anilist_results)
             has_results = bool(anilist_results)
-            keyboard = anilist_results_keyboard(anilist_results)
+            keyboard = anilist_results_keyboard(anilist_results, lang)
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} search failed for query {!r}", source, message.text)
         await _reply_service_down(message.reply_text, lang, source)
@@ -342,7 +342,7 @@ async def _show_preview(context, game: Game, lang: str, *, chat_id: int) -> None
     game.setup_step = SetupStep.CONFIRMING
     logger.debug("Game {}: showing confirmation preview", game.id)
     await context.bot.send_photo(
-        chat_id=chat_id, photo=pixelated, caption=caption, reply_markup=preview_keyboard()
+        chat_id=chat_id, photo=pixelated, caption=caption, reply_markup=preview_keyboard(lang)
     )
 
 
@@ -412,7 +412,7 @@ async def _preview_research(query, game: Game, lang: str) -> None:
     prefer_shikimori = _prefer_shikimori(lang)
     await query.edit_message_caption(
         caption=i18n.t(_method_prompt_key(prefer_shikimori=prefer_shikimori), lang),
-        reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori),
+        reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
     )
 
 
@@ -430,5 +430,5 @@ async def _reply_service_down(send, lang: str, source: str) -> None:
     prefer_shikimori = _prefer_shikimori(lang)
     await send(
         i18n.t("dm_start.search_failed", lang, service=_SERVICE_DISPLAY_NAMES[source]),
-        reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori),
+        reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
     )
