@@ -43,6 +43,12 @@ involvement) — this bot is Telegram-only, unlike `ley-shards-bot`.
   (`amsterdam` is used rather than `helsinki` — as of this bot's setup,
   `helsinki`'s proxy is unreachable from both `moscow` and the outside; see
   the ops vault for current status if this ever needs revisiting.)
+- **AniList/Shikimori connectivity:** both are reached directly from
+  `moscow`, no proxy involved — `services/shikimori.py`'s
+  `SHIKIMORI_BASE_URL` points at `shikimori.io`. (Shikimori's older
+  `shikimori.one` domain now permanently redirects to `shikimori.io` and
+  is itself unreachable directly from `moscow` — worth remembering if
+  that redirect target ever changes again.)
 
 ## Component boundaries
 

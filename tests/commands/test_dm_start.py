@@ -290,6 +290,25 @@ async def test_search_text_handler_ignores_when_no_game_is_pending(
     update.message.reply_text.assert_not_awaited()
 
 
+async def test_search_text_handler_sends_a_searching_message_immediately(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The starter should see feedback right away, before the AniList/
+    # Shikimori round-trip (which can take a few seconds, more over
+    # Shikimori's proxy hop) resolves — see the search-feedback fix.
+    _create_setup_game(session_factory, starter_id=1)
+    monkeypatch.setattr(anilist, "search", AsyncMock(return_value=[]))
+    update = _make_text_update(user_id=1)
+    context = _make_context(session_factory, search_client=MagicMock())
+
+    await dm_start.search_text_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_awaited_once()
+    assert "search" in update.message.reply_text.await_args.args[0].lower()
+
+
 async def test_search_text_handler_finds_the_pending_game_from_the_db(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -304,8 +323,9 @@ async def test_search_text_handler_finds_the_pending_game_from_the_db(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    update.message.reply_text.assert_awaited_once()
-    assert "no" in update.message.reply_text.await_args.args[0].lower()
+    status_message = update.message.reply_text.return_value
+    status_message.edit_text.assert_awaited_once()
+    assert "no" in status_message.edit_text.await_args.args[0].lower()
 
 
 async def test_search_text_handler_shows_keyboard_on_anilist_results(
@@ -320,8 +340,9 @@ async def test_search_text_handler_shows_keyboard_on_anilist_results(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    update.message.reply_text.assert_awaited_once()
-    _, kwargs = update.message.reply_text.await_args
+    status_message = update.message.reply_text.return_value
+    status_message.edit_text.assert_awaited_once()
+    _, kwargs = status_message.edit_text.await_args
     assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "anilist_pick:99"
 
 
@@ -339,7 +360,8 @@ async def test_search_text_handler_uses_shikimori_when_that_is_the_chosen_source
     )
 
     search_mock.assert_awaited_once_with(context.bot_data["search_client"], "frieren")
-    _, kwargs = update.message.reply_text.await_args
+    status_message = update.message.reply_text.return_value
+    _, kwargs = status_message.edit_text.await_args
     assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "shikimori_pick:52991"
 
 
@@ -355,8 +377,9 @@ async def test_search_text_handler_reshows_method_keyboard_when_the_service_erro
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    update.message.reply_text.assert_awaited_once()
-    _, kwargs = update.message.reply_text.await_args
+    status_message = update.message.reply_text.return_value
+    status_message.edit_text.assert_awaited_once()
+    _, kwargs = status_message.edit_text.await_args
     callbacks = [
         button.callback_data for row in kwargs["reply_markup"].inline_keyboard for button in row
     ]

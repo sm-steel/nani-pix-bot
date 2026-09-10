@@ -189,7 +189,14 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, source: str) -> None:
     """An AniList/Shikimori search query: search and show a results
-    keyboard, or fail back to the method-selection keyboard."""
+    keyboard, or fail back to the method-selection keyboard. Sends a
+    "searching" message immediately — the round-trip can take a few
+    seconds (more for Shikimori, which goes through the amsterdam proxy)
+    — and edits that same message in place with the eventual outcome, so
+    the starter gets fast feedback without extra message clutter."""
+    status_message = await message.reply_text(i18n.t("dm_start.searching", lang))
+    logger.debug("{} search started for query {!r}", source, message.text)
+
     client = context.bot_data["search_client"]
     try:
         if source == "shikimori":
@@ -204,15 +211,15 @@ async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, s
             keyboard = anilist_results_keyboard(anilist_results, lang)
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} search failed for query {!r}", source, message.text)
-        await _reply_service_down(message.reply_text, lang, source)
+        await _reply_service_down(status_message.edit_text, lang, source)
         return
 
     logger.debug("{} search for {!r} returned {} results", source, message.text, result_count)
     if not has_results:
-        await message.reply_text(i18n.t("dm_start.no_results", lang))
+        await status_message.edit_text(i18n.t("dm_start.no_results", lang))
         return
 
-    await message.reply_text(i18n.t("dm_start.pick_prompt", lang), reply_markup=keyboard)
+    await status_message.edit_text(i18n.t("dm_start.pick_prompt", lang), reply_markup=keyboard)
 
 
 async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -17,7 +17,12 @@ from http import HTTPStatus
 import httpx
 from loguru import logger
 
-SHIKIMORI_BASE_URL = "https://shikimori.one/api/animes"
+# Shikimori's older shikimori.one domain now permanently 301-redirects
+# here — and shikimori.one is itself unreachable directly from moscow,
+# while this .io domain is (our httpx client doesn't follow redirects,
+# so pointing at the old domain would just return an HTML redirect page
+# instead of JSON). See ARCHITECTURE.md's "AniList/Shikimori connectivity".
+SHIKIMORI_BASE_URL = "https://shikimori.io/api/animes"
 MAX_RATE_LIMIT_RETRIES = 5
 DEFAULT_RETRY_AFTER_SECONDS = 5.0
 SEARCH_RESULT_LIMIT = 5
