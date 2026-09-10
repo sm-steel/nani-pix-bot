@@ -12,7 +12,7 @@ just what's currently built.
 |---|---|
 | Game setup (DM photo + AniList/Shikimori/manual entry) | Implemented |
 | Group-membership gate on DM setup | Implemented |
-| Pixelation stages (x10 → x8 → x5 → x2 → reveal) | Implemented |
+| Pixelation stages (5 stages, scaling wrong-guess allowance, → reveal) | Implemented |
 | Guess matching (`/guess`, local fuzzy match) | Implemented |
 | Author override (`/correct`) | Implemented |
 | Turn handoff (`/skip`) | Implemented |
@@ -45,17 +45,18 @@ stateDiagram-v2
     }
 
     SETUP --> [*]: 1h setup-abandon timer fires\n(row deleted, turn opens)\n— or /stop confirmed
-    SETUP --> ACTIVE: tap "Confirm and start"\n(pixelated x10 posted to group,\n2-day timeout starts)
+    SETUP --> ACTIVE: tap "Confirm and start"\n(pixelated stage 1 posted to group,\n2-day timeout starts)
 
     state ACTIVE {
-        [*] --> X10
-        X10 --> X8: 5 wrong /guess attempts
-        X8 --> X5: 5 wrong /guess attempts
-        X5 --> X2: 5 wrong /guess attempts
+        [*] --> Stage1
+        Stage1 --> Stage2: 1 wrong /guess attempt
+        Stage2 --> Stage3: 1 wrong /guess attempt
+        Stage3 --> Stage4: 3 wrong /guess attempts
+        Stage4 --> Stage5: 5 wrong /guess attempts
     }
 
     ACTIVE --> WON: /guess matches,\nor starter's /correct
-    ACTIVE --> UNSOLVED: 5th wrong guess at X2\n(stage exhaustion),\nor 2-day timeout fires
+    ACTIVE --> UNSOLVED: 8th wrong guess at stage 5\n(stage exhaustion),\nor 2-day timeout fires
     ACTIVE --> [*]: /stop confirmed\n(row deleted, turn opens)
 
     WON --> [*]: turn assigned to winner\n(15min reminder / 12h expiry timers)
@@ -65,7 +66,7 @@ stateDiagram-v2
 `[*]` here means "no `Game` row exists" — every arrow into it either
 deletes the row (`/stop`, setup-abandon) or the row reaches a terminal
 `status` (`WON`/`UNSOLVED`) and simply stops being the "current" game.
-`SETUP`'s four inner states are `Game.setup_step`; `ACTIVE`'s four inner
+`SETUP`'s four inner states are `Game.setup_step`; `ACTIVE`'s five inner
 states are `Game.current_stage` (`PixelStage`).
 
 ## Starting a game
@@ -108,9 +109,10 @@ restricts to members.
    (comma- or newline-separated, re-prompted if left blank) — both typed
    by the player, no external lookup.
 4. Either way, once a title/synonyms are staged, the bot sends the player
-   a **private preview** — the x10-pixelated screenshot plus the staged
-   title and full synonyms list — instead of posting straight to the
-   group. Four buttons let them fix anything before it goes live:
+   a **private preview** — the stage-1-pixelated (blockiest) screenshot
+   plus the staged title and full synonyms list — instead of posting
+   straight to the group. Four buttons let them fix anything before it
+   goes live:
    - **Change image** — send a new screenshot; keeps the title/synonyms.
    - **Re-search title** — back to the method-selection keyboard; keeps
      the screenshot, replaces the title/synonyms/source once a new one
@@ -118,9 +120,9 @@ restricts to members.
    - **Add a synonym** — type one more (or several); appended to the
      list, repeatable.
    - **Confirm and start game** — pixelates the (possibly updated)
-     screenshot at **x10** and posts it into the group's game topic with
-     a caption naming the starter and reminding everyone how to guess
-     (`/guess <title>` in that topic). The game is now `ACTIVE`.
+     screenshot at **stage 1** and posts it into the group's game topic
+     with a caption naming the starter and reminding everyone how to
+     guess (`/guess <title>` in that topic). The game is now `ACTIVE`.
    Exactly where the starter is in this multi-step flow
    (`Game.setup_step`) is stored on the row, not in memory, so a restart
    mid-edit — say, between tapping "Add a synonym" and typing it —
@@ -162,7 +164,7 @@ row for the rest of that round:
 A **wrong** guess isn't silent: the bot replies in-topic with how many
 more wrong guesses remain before the next pixelation stage, and which
 stage the game is currently on (e.g. "3 guesses left before the next
-clue (1/4)"). The player who started the round can't `/guess` on their
+clue (4/5)"). The player who started the round can't `/guess` on their
 own game at all — they already know the answer.
 
 Because everything the matcher needs is cached at setup time, the same
@@ -176,20 +178,21 @@ anything else external, at guess time.
 
 The screenshot is downscaled (blocky pixelation) to a **fixed target
 width** and immediately upscaled back to its original size, via Pillow,
-at four decreasing widths, from blockiest to clearest. A fixed target
+at five decreasing widths, from blockiest to clearest. A fixed target
 width — not a divisor of the source resolution — keeps stage difficulty
 independent of the screenshot's resolution: a 12px-wide image reads as
 pure color blobs whether the original screenshot was 1280px or 3840px
 wide, whereas e.g. ÷10 of a 2560px-wide screenshot is still 256px wide
-and barely pixelated at all. Values chosen by eye against real
-screenshots:
+and barely pixelated at all. Widths are evenly spread from 12px to
+64px (a step of exactly 13px per stage):
 
-| Stage | Target width |
-|---|---|
-| `X10` | 12px (shown first — hardest) |
-| `X8` | 24px |
-| `X5` | 48px |
-| `X2` | 64px (clearest pixelated stage) |
+| Stage | Target width | Wrong guesses allowed |
+|---|---|---|
+| `STAGE_1` | 12px (shown first — hardest) | 1 |
+| `STAGE_2` | 25px | 1 |
+| `STAGE_3` | 38px | 3 |
+| `STAGE_4` | 51px | 5 |
+| `STAGE_5` | 64px (clearest pixelated stage) | 8 |
 
 No image bytes are stored on disk or in the database. The starter's
 original screenshot is kept only as a Telegram `file_id` on the `Game`
@@ -198,10 +201,14 @@ via that `file_id`, run it through the Pillow pipeline, send it, discard
 the bytes — so a bot restart mid-game loses nothing (the `file_id` and
 `current_stage` are all that's needed to pick back up).
 
-**Every 5 wrong `/guess` attempts, the game advances to the next stage**
-and `wrong_guess_count` resets to 0. This constant (5) lives in
-`services/game.py`. If the 5th wrong guess lands while already at `X2`,
-the game ends unsolved (see below) instead of advancing further.
+**Each stage allows a different number of wrong `/guess` attempts
+before the game advances to the next one** (see the table above) and
+`wrong_guess_count` resets to 0 on every advance. This per-stage
+schedule — deliberately front-loaded, with almost no room at the two
+blockiest stages, easing up as the image clarifies — lives as
+`STAGE_WRONG_GUESS_LIMIT` in `services/game.py` (18 wrong guesses total
+to exhaust all 5 stages). If the last allowed wrong guess at `STAGE_5`
+lands, the game ends unsolved (see below) instead of advancing further.
 
 ## Winning
 
@@ -238,8 +245,8 @@ On a win, the bot:
 
 A game ends unsolved one of two ways, handled identically:
 
-- **Stage exhaustion**: the 5th wrong guess lands while already at the
-  `X2` stage.
+- **Stage exhaustion**: the 8th wrong guess lands while already at the
+  final stage (`STAGE_5`).
 - **Timeout**: see below.
 
 Either way, the bot reveals the original screenshot with the anime's

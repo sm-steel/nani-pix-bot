@@ -271,7 +271,7 @@ matters more here than in most bots: `services/matching.py`'s fuzzy-match
 threshold and `services/pixelate.py`'s stage dimensions are exactly the
 kind of logic that's easy to eyeball as "probably right" and quietly wrong
 at the edges — write the edge-case test (near-miss title, empty guess,
-already-pixelated-to-x2 stage exhaustion) before the implementation, not
+already-at-the-final-stage exhaustion) before the implementation, not
 after.
 
 ## Task tracking (GitHub Issues)
@@ -316,9 +316,9 @@ truth for what's done/in progress/planned.
     not the other way around.
   - Don't chase the rest of SOLID for its own sake — no interfaces with a
     single implementation, no factories for things that are never swapped.
-- **DRY** the game constants (wrong-guesses-per-stage, the fuzzy-match
-  threshold, the timeout duration) — define them once as named constants in
-  `services/`, not re-literaled across handlers and tests.
+- **DRY** the game constants (the per-stage wrong-guess thresholds, the
+  fuzzy-match threshold, the timeout duration) — define them once as named
+  constants in `services/`, not re-literaled across handlers and tests.
 - Prefer pure functions for anything with game logic in it (guess
   normalization/matching, pixelation math, stage-advance decisions) —
   deterministic given their inputs, so they're easy to unit-test with `uv
