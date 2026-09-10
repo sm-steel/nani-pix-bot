@@ -9,6 +9,7 @@ from nani_pix_bot.commands.timeout import cancel_timeout
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 
 
@@ -27,18 +28,20 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not is_game_topic(update, group_chat_id=group_chat_id, game_topic_id=game_topic_id):
         return
 
+    session_factory = context.bot_data["session_factory"]
+
     guess_text = " ".join(context.args) if context.args else ""
     if not guess_text:
-        await message.reply_text("Usage: /guess <anime title>")
+        with session_scope(session_factory) as session:
+            lang = settings.get_language(session)
+        await message.reply_text(i18n.t("guess.usage", lang))
         return
 
-    session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
         game = game_service.active_or_setup_game(session)
         if game is None or game.status != GameStatus.ACTIVE:
-            await message.reply_text(
-                "No game is currently running. DM me a screenshot to start one!"
-            )
+            await message.reply_text(i18n.t("guess.no_game", lang))
             return
         if game.original_file_id is None or game.current_stage is None:
             # Shouldn't happen — an ACTIVE game always has both set. Defensive
@@ -56,7 +59,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 chat_id=group_chat_id,
                 message_thread_id=game_topic_id,
                 photo=game.original_file_id,
-                caption=f"🎉 Got it! It was {_title(game)}.",
+                caption=i18n.t("guess.won_caption", lang, title=_title(game)),
             )
             game_service.clear_original_screenshot(game)
         elif outcome is game_service.GuessOutcome.STAGE_ADVANCED:
@@ -71,6 +74,6 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 chat_id=group_chat_id,
                 message_thread_id=game_topic_id,
                 photo=game.original_file_id,
-                caption=f"Nobody guessed it. It was {_title(game)}.",
+                caption=i18n.t("guess.unsolved_caption", lang, title=_title(game)),
             )
             game_service.clear_original_screenshot(game)

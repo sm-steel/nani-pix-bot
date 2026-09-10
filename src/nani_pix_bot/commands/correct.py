@@ -10,6 +10,7 @@ from nani_pix_bot.commands.timeout import cancel_timeout
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import i18n, settings
 
 
 def _title(game) -> str:
@@ -27,19 +28,23 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not is_game_topic(update, group_chat_id=group_chat_id, game_topic_id=game_topic_id):
         return
 
+    session_factory = context.bot_data["session_factory"]
+
     if not context.args:
-        await message.reply_text("Usage: /correct @username")
+        with session_scope(session_factory) as session:
+            lang = settings.get_language(session)
+        await message.reply_text(i18n.t("correct.usage", lang))
         return
     target_username = context.args[0].lstrip("@")
 
-    session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
         game = game_service.active_or_setup_game(session)
         if game is None or game.status != GameStatus.ACTIVE:
-            await message.reply_text("No game is currently running.")
+            await message.reply_text(i18n.t("correct.no_game", lang))
             return
         if game.starter_id != user.id:
-            await message.reply_text("Only the person who started this round can use /correct.")
+            await message.reply_text(i18n.t("correct.not_starter", lang))
             return
         if game.original_file_id is None:
             return  # shouldn't happen for an ACTIVE game — defensive guard
@@ -47,8 +52,7 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         target = game_service.find_player_by_username(session, target_username)
         if target is None:
             await message.reply_text(
-                f"I don't know anyone called @{target_username} yet — "
-                "they need to message me at least once first."
+                i18n.t("correct.unknown_username", lang, username=target_username)
             )
             return
 
@@ -58,6 +62,6 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             chat_id=group_chat_id,
             message_thread_id=game_topic_id,
             photo=game.original_file_id,
-            caption=f"🎉 Correct! It was {_title(game)}.",
+            caption=i18n.t("correct.caption", lang, title=_title(game)),
         )
         game_service.clear_original_screenshot(game)

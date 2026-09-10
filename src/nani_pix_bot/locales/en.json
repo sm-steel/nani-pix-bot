@@ -1,5 +1,36 @@
 {
   "language.prompt": "Choose the bot's language:",
   "language.not_admin": "Only a group admin can change the bot's language.",
-  "language.set": "Language set to English."
+  "language.set": "Language set to English.",
+
+  "correct.usage": "Usage: /correct @username",
+  "correct.no_game": "No game is currently running.",
+  "correct.not_starter": "Only the person who started this round can use /correct.",
+  "correct.unknown_username": "I don't know anyone called @{username} yet — they need to message me at least once first.",
+  "correct.caption": "🎉 Correct! It was {title}.",
+
+  "dm_start.not_a_member": "You need to be a member of the group to start a game.",
+  "dm_start.not_your_turn": "It's not your turn to start a new game right now.",
+  "dm_start.ask_search": "Got it! What anime is this from? Type a search query.",
+  "dm_start.no_results": "No AniList results for that — try a different search.",
+  "dm_start.pick_prompt": "Which one is it?",
+  "dm_start.retry": "Okay, type a new search query.",
+  "dm_start.not_found_anymore": "Couldn't find that on AniList anymore — try searching again.",
+  "dm_start.posted": "Posted! Good luck to everyone guessing.",
+
+  "guess.usage": "Usage: /guess <anime title>",
+  "guess.no_game": "No game is currently running. DM me a screenshot to start one!",
+  "guess.won_caption": "🎉 Got it! It was {title}.",
+  "guess.unsolved_caption": "Nobody guessed it. It was {title}.",
+
+  "leaderboard.empty": "No one has won a round yet — could be you!",
+  "leaderboard.header": "🏆 Leaderboard",
+
+  "skip.game_running": "Can't skip while a game is running.",
+  "skip.not_your_turn": "It's not your turn to skip.",
+  "skip.opened": "Turn opened up — anyone can start the next game!",
+  "skip.unknown_username": "I don't know anyone called @{username} yet — they need to message me at least once first.",
+  "skip.passed": "Turn passed to @{username}.",
+
+  "timeout.caption": "⏰ Nobody guessed it in time. It was {title}."
 }

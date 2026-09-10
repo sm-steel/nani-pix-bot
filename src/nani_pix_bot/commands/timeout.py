@@ -12,6 +12,7 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import i18n, settings
 
 
 def _title(game: Game) -> str:
@@ -44,6 +45,7 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
 
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
         game = session.get(Game, game_id)
         if game is None or game.status != GameStatus.ACTIVE or game.original_file_id is None:
             return
@@ -53,7 +55,7 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
             chat_id=context.bot_data["group_chat_id"],
             message_thread_id=context.bot_data["game_topic_id"],
             photo=game.original_file_id,
-            caption=f"⏰ Nobody guessed it in time. It was {_title(game)}.",
+            caption=i18n.t("timeout.caption", lang, title=_title(game)),
         )
         game_service.clear_original_screenshot(game)
 
