@@ -4,7 +4,7 @@ from telegram import ChatMemberRestricted
 from telegram.constants import ChatMemberStatus
 from telegram.error import TelegramError
 
-from nani_pix_bot.commands.helpers.membership import is_group_member
+from nani_pix_bot.commands.helpers.membership import is_group_admin, is_group_member
 
 
 def _bot(*, status: str | None = None, is_member: bool | None = None, raises: bool = False):
@@ -58,3 +58,23 @@ async def test_banned_is_not_a_member() -> None:
 async def test_unknown_to_the_chat_is_not_a_member() -> None:
     bot = _bot(raises=True)
     assert await is_group_member(bot, 555, 1) is False
+
+
+async def test_owner_is_a_group_admin() -> None:
+    bot = _bot(status=ChatMemberStatus.OWNER)
+    assert await is_group_admin(bot, 555, 1) is True
+
+
+async def test_administrator_is_a_group_admin() -> None:
+    bot = _bot(status=ChatMemberStatus.ADMINISTRATOR)
+    assert await is_group_admin(bot, 555, 1) is True
+
+
+async def test_plain_member_is_not_a_group_admin() -> None:
+    bot = _bot(status=ChatMemberStatus.MEMBER)
+    assert await is_group_admin(bot, 555, 1) is False
+
+
+async def test_unknown_to_the_chat_is_not_a_group_admin() -> None:
+    bot = _bot(raises=True)
+    assert await is_group_admin(bot, 555, 1) is False

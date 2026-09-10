@@ -16,6 +16,7 @@ _MEMBER_STATUSES = {
     ChatMemberStatus.ADMINISTRATOR,
     ChatMemberStatus.MEMBER,
 }
+_ADMIN_STATUSES = {ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR}
 
 
 async def is_group_member(bot: Bot, group_chat_id: int, user_id: int) -> bool:
@@ -36,3 +37,14 @@ async def is_group_member(bot: Bot, group_chat_id: int, user_id: int) -> bool:
     if isinstance(member, ChatMemberRestricted):
         return member.is_member
     return False
+
+
+async def is_group_admin(bot: Bot, group_chat_id: int, user_id: int) -> bool:
+    """Whether `user_id` is currently an owner/administrator of
+    `group_chat_id` — used to gate `/language`. Any Telegram API error is
+    treated as "not an admin"."""
+    try:
+        member = await bot.get_chat_member(group_chat_id, user_id)
+    except TelegramError:
+        return False
+    return member.status in _ADMIN_STATUSES

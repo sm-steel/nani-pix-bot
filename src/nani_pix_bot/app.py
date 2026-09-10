@@ -3,6 +3,8 @@ registers command handlers, and re-arms any pending 2-day timeout
 JobQueue jobs from the database on startup (JobQueue jobs don't survive
 a process restart — see MECHANICS.md's "Timeout" section)."""
 
+import re
+
 import httpx
 from telegram.ext import (
     Application,
@@ -14,7 +16,9 @@ from telegram.ext import (
 )
 
 from nani_pix_bot import db
-from nani_pix_bot.commands import correct, dm_start, guess, leaderboard, skip
+from nani_pix_bot.commands import correct, dm_start, guess, language, leaderboard, skip
+from nani_pix_bot.commands.helpers.keyboards import RETRY_CALLBACK_DATA
+from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
 from nani_pix_bot.commands.timeout import rearm_pending_timeouts
 from nani_pix_bot.config import Config, load_config
 from nani_pix_bot.logging_config import setup_logging
@@ -43,11 +47,22 @@ def build_application(config: Config) -> Application:
             dm_start.search_text_handler,
         )
     )
-    application.add_handler(CallbackQueryHandler(dm_start.pick_callback_handler))
+    application.add_handler(
+        CallbackQueryHandler(
+            dm_start.pick_callback_handler,
+            pattern=rf"^({re.escape(RETRY_CALLBACK_DATA)}|anilist_pick:)",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            language.language_callback_handler, pattern=rf"^{re.escape(SET_LANGUAGE_PREFIX)}"
+        )
+    )
     application.add_handler(CommandHandler("guess", guess.guess_command))
     application.add_handler(CommandHandler("correct", correct.correct_command))
     application.add_handler(CommandHandler("skip", skip.skip_command))
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
+    application.add_handler(CommandHandler("language", language.language_command))
 
     return application
 

@@ -1,0 +1,5 @@
+{
+  "language.prompt": "Choose the bot's language:",
+  "language.not_admin": "Only a group admin can change the bot's language.",
+  "language.set": "Language set to English."
+}
