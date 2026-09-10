@@ -17,7 +17,6 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands import timeout as timeout_module
 from nani_pix_bot.commands.helpers.keyboards import (
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
@@ -34,6 +33,7 @@ from nani_pix_bot.commands.helpers.keyboards import (
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import PixelStage, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import anilist, i18n, settings, shikimori

@@ -50,20 +50,30 @@ involvement) — this bot is Telegram-only, unlike `ley-shards-bot`.
 ```
 commands/        →  services/  →  models/
 commands/helpers/   (game rules)  (persistence)
-(Telegram)
+jobs/            (Telegram)
+(Telegram, JobQueue)
 ```
 
 - **`commands/`** — one module per Telegram command. Parses the `Update`,
   calls into `services/`, formats the reply. No game rules live here.
 - **`commands/helpers/`** — Telegram-aware plumbing shared by more than one
-  command file (topic/DM scoping checks, inline-keyboard builders, shared
-  formatting). Nothing here registers a handler in `app.py`.
+  command file (topic/DM scoping checks, inline-keyboard builders, bot
+  command-menu registration, shared formatting). Nothing here registers a
+  handler in `app.py`.
+- **`jobs/`** — JobQueue-driven background timers (`timers.py`: the 2-day
+  game timeout, 1h setup-abandon, 15min/12h win-turn reminder/expiry).
+  Telegram-aware like `commands/`, but its entry points are scheduled
+  callbacks invoked by PTB's `JobQueue`, not `CommandHandler`/
+  `CallbackQueryHandler`s registered against a user action — a genuinely
+  different shape, so it's a sibling package rather than living under
+  `commands/` despite depending on the same `services/`/`models/` layers.
 - **`services/`** — the game logic, framework-agnostic (no
   `python-telegram-bot` imports). This is what unit tests target. One
-  module per concern: `anilist.py` (search), `matching.py` (guess
-  normalization/fuzzy-match), `pixelate.py` (Pillow pipeline), `game.py`
-  (the state machine — the only place that mutates a `Game` row),
-  `players.py` (win counts, leaderboard).
+  module per concern: `anilist.py`/`shikimori.py` (search), `matching.py`
+  (guess normalization/fuzzy-match), `pixelate.py` (Pillow pipeline),
+  `game.py` (the state machine — the only place that mutates a `Game`
+  row), `players.py` (win counts, leaderboard), `i18n.py`/`settings.py`
+  (bot language).
 - **`models/`** — SQLAlchemy ORM models, one module per table. Columns and
   relationships only — if a model needs a method beyond what SQLAlchemy
   itself generates, that logic belongs in `services/` instead.

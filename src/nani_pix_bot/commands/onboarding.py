@@ -2,7 +2,7 @@
 command/topic model."""
 
 from loguru import logger
-from telegram import Bot, BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeChat, Update
+from telegram import Update
 from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
@@ -51,24 +51,3 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await message.reply_text(
             i18n.t("onboarding.help_dm_failed", lang, bot_username=bot_username)
         )
-
-
-async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> None:
-    """Registers Telegram's native "/" autocomplete menu, scoped
-    separately for DM vs. the group — called on startup and again
-    whenever /language changes the bot's language."""
-    private_commands = [
-        BotCommand("start", i18n.t("commands.start", lang)),
-        BotCommand("help", i18n.t("commands.help", lang)),
-        BotCommand("language", i18n.t("commands.language", lang)),
-    ]
-    group_commands = [
-        BotCommand("guess", i18n.t("commands.guess", lang)),
-        BotCommand("correct", i18n.t("commands.correct", lang)),
-        BotCommand("skip", i18n.t("commands.skip", lang)),
-        BotCommand("leaderboard", i18n.t("commands.leaderboard", lang)),
-        BotCommand("help", i18n.t("commands.help", lang)),
-    ]
-    await bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
-    await bot.set_my_commands(group_commands, scope=BotCommandScopeChat(chat_id=group_chat_id))
-    logger.info("Command menu refreshed (lang={})", lang)

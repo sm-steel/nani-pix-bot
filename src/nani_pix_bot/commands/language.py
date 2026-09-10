@@ -5,9 +5,9 @@ from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
-from nani_pix_bot.commands.onboarding import refresh_command_menu
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, settings
 

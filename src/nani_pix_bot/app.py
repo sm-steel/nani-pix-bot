@@ -18,10 +18,11 @@ from telegram.ext import (
 
 from nani_pix_bot import db
 from nani_pix_bot.commands import correct, dm_start, guess, language, leaderboard, onboarding, skip
+from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.keyboards import RETRY_CALLBACK_DATA
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
-from nani_pix_bot.commands.timeout import rearm_pending_timeouts
 from nani_pix_bot.config import Config, load_config
+from nani_pix_bot.jobs.timers import rearm_pending_timeouts
 from nani_pix_bot.logging_config import setup_logging
 from nani_pix_bot.services import settings
 
@@ -90,7 +91,7 @@ async def _post_init(application: Application) -> None:
 
     with db.session_scope(session_factory) as session:
         lang = settings.get_language(session)
-    await onboarding.refresh_command_menu(
+    await refresh_command_menu(
         application.bot, group_chat_id=application.bot_data["group_chat_id"], lang=lang
     )
 

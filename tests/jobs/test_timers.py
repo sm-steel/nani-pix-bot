@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands import timeout as timeout_module
+from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
