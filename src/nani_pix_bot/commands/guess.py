@@ -75,9 +75,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             )
             game_service.clear_original_screenshot(game)
         elif outcome is game_service.GuessOutcome.WRONG:
-            stage = game_service.STAGE_ORDER.index(game.current_stage) + 1
-            total_stages = len(game_service.STAGE_ORDER)
-            remaining = game_service.GUESSES_PER_STAGE - game.wrong_guess_count
+            stage, total_stages, remaining = game_service.stage_progress(game)
             await message.reply_text(
                 i18n.t(
                     "guess.wrong_feedback",

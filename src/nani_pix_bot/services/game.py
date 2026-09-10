@@ -26,7 +26,17 @@ STAGE_ORDER = [
     PixelStage.STAGE_4,
     PixelStage.STAGE_5,
 ]
-GUESSES_PER_STAGE = 5
+# Wrong guesses allowed at each stage before it advances — see
+# MECHANICS.md's "Pixelation stages" table. Deliberately front-loaded:
+# the two blockiest stages give almost no room, easing up as the image
+# clarifies (18 wrong guesses total to fully exhaust all 5 stages).
+STAGE_WRONG_GUESS_LIMIT: dict[PixelStage, int] = {
+    PixelStage.STAGE_1: 1,
+    PixelStage.STAGE_2: 1,
+    PixelStage.STAGE_3: 3,
+    PixelStage.STAGE_4: 5,
+    PixelStage.STAGE_5: 8,
+}
 
 # Absolute from game start, not reset by activity — see MECHANICS.md's
 # "Timeout" section.
@@ -262,12 +272,13 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
         return GuessOutcome.WON
 
     game.wrong_guess_count += 1
-    if game.wrong_guess_count < GUESSES_PER_STAGE:
+    limit = STAGE_WRONG_GUESS_LIMIT[game.current_stage]
+    if game.wrong_guess_count < limit:
         logger.debug(
             "Game {}: wrong guess {}/{} at stage {}",
             game.id,
             game.wrong_guess_count,
-            GUESSES_PER_STAGE,
+            limit,
             game.current_stage,
         )
         return GuessOutcome.WRONG
@@ -281,6 +292,19 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
     game.current_stage = STAGE_ORDER[next_index]
     logger.info("Game {} advanced to stage {}", game.id, game.current_stage)
     return GuessOutcome.STAGE_ADVANCED
+
+
+def stage_progress(game: Game) -> tuple[int, int, int]:
+    """(1-indexed current stage number, total stage count, wrong guesses
+    remaining before the next stage) for a still-ACTIVE game — feeds the
+    /guess wrong-feedback message."""
+    if game.current_stage is None:
+        msg = f"stage_progress called on game {game.id} with no current_stage (not ACTIVE?)"
+        raise ValueError(msg)
+
+    stage_number = STAGE_ORDER.index(game.current_stage) + 1
+    remaining = STAGE_WRONG_GUESS_LIMIT[game.current_stage] - game.wrong_guess_count
+    return stage_number, len(STAGE_ORDER), remaining
 
 
 def find_player_by_username(session: Session, username: str) -> Player | None:

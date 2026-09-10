@@ -130,7 +130,9 @@ async def test_guess_command_wrong_guess_advances_stage_with_new_image(
     monkeypatch.setattr(
         guess_command_module.pixelate_service, "pixelate", lambda data, stage: b"x8-bytes"
     )
-    game_id = _active_game(session_factory, wrong_guess_count=4)
+    # STAGE_1/STAGE_2's limit is only 1, so a stage with headroom (STAGE_3,
+    # limit 3) is needed to exercise "some wrong guesses, then advances".
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
@@ -146,14 +148,16 @@ async def test_guess_command_wrong_guess_advances_stage_with_new_image(
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
-        assert fetched.current_stage == PixelStage.STAGE_2
+        assert fetched.current_stage == PixelStage.STAGE_4
         assert fetched.wrong_guess_count == 0
 
 
 async def test_guess_command_wrong_guess_below_threshold_does_not_post_a_new_image(
     session_factory,
 ) -> None:
-    _active_game(session_factory, wrong_guess_count=0)
+    # STAGE_1's limit is only 1 (no "stays" case exists there anymore) —
+    # STAGE_3 (limit 3) has headroom.
+    _active_game(session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=0)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
@@ -166,7 +170,7 @@ async def test_guess_command_wrong_guess_below_threshold_does_not_post_a_new_ima
 
 
 async def test_guess_command_stage_exhaustion_reveals_unsolved(session_factory) -> None:
-    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5, wrong_guess_count=4)
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5, wrong_guess_count=7)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
@@ -222,7 +226,9 @@ async def test_guess_command_rejects_the_starter_guessing_on_their_own_game(
 async def test_guess_command_wrong_guess_below_threshold_replies_with_remaining_count(
     session_factory,
 ) -> None:
-    _active_game(session_factory, wrong_guess_count=1)
+    # STAGE_4's limit is 5 — plenty of headroom to test a mid-stage
+    # "N wrong guesses left" reply.
+    _active_game(session_factory, current_stage=PixelStage.STAGE_4, wrong_guess_count=1)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
@@ -234,7 +240,25 @@ async def test_guess_command_wrong_guess_below_threshold_replies_with_remaining_
     update.message.reply_text.assert_awaited_once()
     reply_text = update.message.reply_text.await_args.args[0]
     assert "3" in reply_text  # 5 - 2 = 3 guesses left
-    assert "1/5" in reply_text  # still on stage 1 of 5 (STAGE_1)
+    assert "4/5" in reply_text  # still on stage 4 of 5 (STAGE_4)
+
+
+async def test_guess_command_wrong_guess_reply_uses_the_current_stages_own_threshold(
+    session_factory,
+) -> None:
+    # STAGE_3's limit is 3, not the old flat 5 — a stage-agnostic
+    # "remaining" calculation would get this wrong.
+    _active_game(session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=0)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert "2" in reply_text  # 3 - 1 = 2 guesses left
+    assert "3/5" in reply_text  # stage 3 of 5 (STAGE_3)
 
 
 async def test_guess_command_won_caption_names_the_winner(session_factory) -> None:

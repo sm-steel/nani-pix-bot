@@ -265,37 +265,83 @@ def test_record_guess_matches_the_russian_title(session: Session) -> None:
 
 
 def test_record_guess_wrong_increments_the_counter_without_advancing(session: Session) -> None:
-    game = _active_game(session, wrong_guess_count=3)
+    # STAGE_4's limit is 5 — plenty of headroom below threshold to test
+    # the plain "stays" path.
+    game = _active_game(session, stage=PixelStage.STAGE_4, wrong_guess_count=3)
 
     outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
     session.commit()
 
     assert outcome is game_service.GuessOutcome.WRONG
     assert game.status == GameStatus.ACTIVE
-    assert game.current_stage == PixelStage.STAGE_1
+    assert game.current_stage == PixelStage.STAGE_4
     assert game.wrong_guess_count == 4
 
 
-def test_record_guess_advances_stage_on_the_fifth_wrong_guess(session: Session) -> None:
-    game = _active_game(session, stage=PixelStage.STAGE_1, wrong_guess_count=4)
+def test_record_guess_advances_stage_when_a_stages_threshold_is_reached(session: Session) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_4, wrong_guess_count=4)
 
     outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
     session.commit()
 
     assert outcome is game_service.GuessOutcome.STAGE_ADVANCED
     assert game.status == GameStatus.ACTIVE
-    assert game.current_stage == PixelStage.STAGE_2
+    assert game.current_stage == PixelStage.STAGE_5
     assert game.wrong_guess_count == 0
 
 
-def test_record_guess_ends_unsolved_after_x2_stage_exhaustion(session: Session) -> None:
-    game = _active_game(session, stage=PixelStage.STAGE_5, wrong_guess_count=4)
+def test_record_guess_ends_unsolved_after_final_stage_exhaustion(session: Session) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_5, wrong_guess_count=7)
 
     outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
     session.commit()
 
     assert outcome is game_service.GuessOutcome.UNSOLVED
     assert game.status == GameStatus.UNSOLVED
+
+
+def test_record_guess_stage_1_advances_immediately_on_first_wrong_guess(session: Session) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_1, wrong_guess_count=0)
+
+    outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
+    session.commit()
+
+    assert outcome is game_service.GuessOutcome.STAGE_ADVANCED
+    assert game.current_stage == PixelStage.STAGE_2
+    assert game.wrong_guess_count == 0
+
+
+def test_record_guess_stage_2_advances_immediately_on_first_wrong_guess(session: Session) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_2, wrong_guess_count=0)
+
+    outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
+    session.commit()
+
+    assert outcome is game_service.GuessOutcome.STAGE_ADVANCED
+    assert game.current_stage == PixelStage.STAGE_3
+    assert game.wrong_guess_count == 0
+
+
+def test_record_guess_stage_3_stays_below_its_three_guess_threshold(session: Session) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_3, wrong_guess_count=1)
+
+    outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
+    session.commit()
+
+    assert outcome is game_service.GuessOutcome.WRONG
+    assert game.current_stage == PixelStage.STAGE_3
+    assert game.wrong_guess_count == 2
+
+
+def test_record_guess_stage_3_advances_on_its_third_wrong_guess(session: Session) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_3, wrong_guess_count=2)
+
+    outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
+    session.commit()
+
+    assert outcome is game_service.GuessOutcome.STAGE_ADVANCED
+    assert game.current_stage == PixelStage.STAGE_4
+    assert game.wrong_guess_count == 0
 
 
 def test_clear_original_screenshot_nulls_the_file_id(session: Session) -> None:
@@ -321,6 +367,32 @@ def test_record_guess_rejects_a_game_with_no_current_stage(session: Session) -> 
 
     with pytest.raises(ValueError, match="current_stage"):
         game_service.record_guess(session, game, guesser_id=1, guess_text="anything")
+
+
+def test_stage_progress_reports_stage_number_total_and_remaining(session: Session) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_3, wrong_guess_count=1)
+
+    stage_number, total_stages, remaining = game_service.stage_progress(game)
+
+    assert stage_number == 3
+    assert total_stages == 5
+    assert remaining == 2  # STAGE_3's limit is 3, minus 1 wrong guess so far
+
+
+def test_stage_progress_rejects_a_game_with_no_current_stage(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = Game(
+        starter_id=1,
+        original_file_id="file123",
+        status=GameStatus.SETUP,
+        current_stage=None,
+    )
+    session.add(game)
+    session.commit()
+
+    with pytest.raises(ValueError, match="current_stage"):
+        game_service.stage_progress(game)
 
 
 def test_find_player_by_username_finds_a_case_insensitive_match(session: Session) -> None:
@@ -599,7 +671,7 @@ def test_record_guess_increments_total_guess_count_on_wrong_guess(session: Sessi
 
 
 def test_record_guess_total_guess_count_survives_a_stage_advance(session: Session) -> None:
-    game = _active_game(session, wrong_guess_count=4, total_guess_count=4)
+    game = _active_game(session, stage=PixelStage.STAGE_4, wrong_guess_count=4, total_guess_count=4)
 
     game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
     session.commit()
