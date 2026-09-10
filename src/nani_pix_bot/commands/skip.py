@@ -1,6 +1,7 @@
 """The /skip command — hands off or opens the turn to start the next
 game. See MECHANICS.md's "Turn handoff" section."""
 
+from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -26,12 +27,14 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         if game_service.active_or_setup_game(session) is not None:
+            logger.warning("{} tried /skip while a game is running", user.id)
             await message.reply_text(i18n.t("skip.game_running", lang))
             return
 
         turn_state = game_service.get_turn_state(session)
         current = turn_state.next_starter_id if turn_state is not None else None
         if current is not None and current != user.id:
+            logger.warning("{} tried /skip out of turn (designated: {})", user.id, current)
             await message.reply_text(i18n.t("skip.not_your_turn", lang))
             return
 
@@ -44,6 +47,7 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         target_username = context.args[0].lstrip("@")
         target = game_service.find_player_by_username(session, target_username)
         if target is None:
+            logger.warning("/skip: unknown username {!r}", target_username)
             await message.reply_text(
                 i18n.t("skip.unknown_username", lang, username=target_username)
             )

@@ -12,6 +12,7 @@ original was 1280px or 3840px wide.
 
 import io
 
+from loguru import logger
 from PIL import Image
 
 from nani_pix_bot.models.enums import PixelStage
@@ -42,4 +43,13 @@ def pixelate(image_bytes: bytes, stage: PixelStage) -> bytes:
 
     buffer = io.BytesIO()
     pixelated.save(buffer, format="PNG")
-    return buffer.getvalue()
+    result = buffer.getvalue()
+    logger.debug(
+        "Pixelated {}x{} image to stage {} (target width {}) -> {} bytes",
+        width,
+        height,
+        stage,
+        target_width,
+        len(result),
+    )
+    return result

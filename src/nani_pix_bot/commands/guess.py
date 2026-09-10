@@ -1,6 +1,7 @@
 """The /guess command — see MECHANICS.md's "Guess matching" and
 "Pixelation stages" sections."""
 
+from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -41,6 +42,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         lang = settings.get_language(session)
         game = game_service.active_or_setup_game(session)
         if game is None or game.status != GameStatus.ACTIVE:
+            logger.warning("{} guessed with no ACTIVE game running", user.id)
             await message.reply_text(i18n.t("guess.no_game", lang))
             return
         if game.original_file_id is None or game.current_stage is None:
@@ -48,10 +50,12 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             # guard (also narrows the type for the calls below).
             return
         if user.id == game.starter_id:
+            logger.warning("Starter {} tried to guess on their own game {}", user.id, game.id)
             await message.reply_text(i18n.t("guess.starter_cannot_guess", lang))
             return
 
         game_service.get_or_create_player(session, user.id, username=user.username)
+        logger.debug("{} guessed {!r} on game {}", user.id, guess_text, game.id)
         outcome = game_service.record_guess(
             session, game, guesser_id=user.id, guess_text=guess_text
         )

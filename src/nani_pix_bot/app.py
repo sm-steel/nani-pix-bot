@@ -6,6 +6,7 @@ a process restart — see MECHANICS.md's "Timeout" section)."""
 import re
 
 import httpx
+from loguru import logger
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -85,6 +86,7 @@ async def _post_init(application: Application) -> None:
 
     me = await application.bot.get_me()
     application.bot_data["bot_username"] = me.username
+    logger.info("Logged in as @{}", me.username)
 
     with db.session_scope(session_factory) as session:
         lang = settings.get_language(session)

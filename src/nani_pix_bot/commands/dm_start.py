@@ -13,6 +13,7 @@ doesn't (see issue #11).
 import re
 
 import httpx
+from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -83,6 +84,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if existing is not None and existing.setup_step == SetupStep.AWAITING_PHOTO_CHANGE:
             # A replacement photo for the preview's "Change image" button —
             # not a new game, keep the staged title/synonyms.
+            logger.debug("Starter {} sent a replacement photo for game {}", user.id, existing.id)
             existing.original_file_id = file_id
             await _show_preview(context, existing, lang, chat_id=user.id)
             return
@@ -91,6 +93,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not await is_group_member(context.bot, group_chat_id, user.id):
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
+        logger.warning("Non-member {} tried to start a game via DM", user.id)
         await message.reply_text(i18n.t("dm_start.not_a_member", lang))
         return
 
@@ -98,6 +101,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         lang = settings.get_language(session)
         game_service.get_or_create_player(session, user.id, username=user.username)
         if not game_service.can_start(session, user.id):
+            logger.warning("{} tried to start a game out of turn", user.id)
             await message.reply_text(i18n.t("dm_start.not_your_turn", lang))
             return
         new_game = game_service.create_setup_game(
@@ -145,6 +149,7 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
             return
         setup_game.source = source
         setup_game.setup_step = SetupStep.PICKING_METHOD
+        logger.debug("Game {}: starter picked identification method {!r}", setup_game.id, source)
 
     prompt_key = "dm_start.ask_manual_title" if source == "manual" else "dm_start.ask_search"
     await query.edit_message_text(i18n.t(prompt_key, lang))
@@ -189,16 +194,20 @@ async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, s
     try:
         if source == "shikimori":
             shikimori_results = await shikimori.search(client, message.text)
+            result_count = len(shikimori_results)
             has_results = bool(shikimori_results)
             keyboard = shikimori_results_keyboard(shikimori_results)
         else:
             anilist_results = await anilist.search(client, message.text)
+            result_count = len(anilist_results)
             has_results = bool(anilist_results)
             keyboard = anilist_results_keyboard(anilist_results)
     except _SEARCH_SERVICE_ERRORS:
+        logger.exception("{} search failed for query {!r}", source, message.text)
         await _reply_service_down(message.reply_text, lang, source)
         return
 
+    logger.debug("{} search for {!r} returned {} results", source, message.text, result_count)
     if not has_results:
         await message.reply_text(i18n.t("dm_start.no_results", lang))
         return
@@ -237,10 +246,12 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             result = await anilist.get_by_id(client, external_id)
     except _SEARCH_SERVICE_ERRORS:
+        logger.exception("{} get_by_id failed for id {}", source, external_id)
         await _reply_service_down(query.edit_message_text, lang, source)
         return
 
     if result is None:
+        logger.warning("{} id {} picked but no longer found", source, external_id)
         await query.edit_message_text(i18n.t("dm_start.not_found_anymore", lang))
         return
 
@@ -249,6 +260,7 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if setup_game is None or setup_game.original_file_id is None:
             return
         game_service.stage_result(setup_game, result, source=source)
+        logger.debug("Game {}: staged {} result {}", setup_game.id, source, external_id)
         await _show_preview(context, setup_game, lang, chat_id=user.id)
 
     await query.edit_message_text(i18n.t("dm_start.preview_sent", lang))
@@ -267,6 +279,7 @@ async def _manual_title_step(message, context: ContextTypes.DEFAULT_TYPE, lang: 
         if setup_game is None:
             return
         setup_game.title_english = title
+        logger.debug("Game {}: manual title set to {!r}", setup_game.id, title)
 
     await message.reply_text(i18n.t("dm_start.ask_synonyms", lang))
 
@@ -289,6 +302,7 @@ async def _manual_synonyms_step(
         if setup_game is None or setup_game.original_file_id is None or title is None:
             return
         game_service.stage_manual_entry(setup_game, title=title, synonyms=synonyms)
+        logger.debug("Game {}: manual entry staged with {} synonyms", setup_game.id, len(synonyms))
         await _show_preview(context, setup_game, lang, chat_id=user.id)
 
     await message.reply_text(i18n.t("dm_start.preview_sent", lang))
@@ -326,6 +340,7 @@ async def _show_preview(context, game: Game, lang: str, *, chat_id: int) -> None
         "dm_start.preview_caption", lang, title=_display_title(game), synonyms=synonyms
     )
     game.setup_step = SetupStep.CONFIRMING
+    logger.debug("Game {}: showing confirmation preview", game.id)
     await context.bot.send_photo(
         chat_id=chat_id, photo=pixelated, caption=caption, reply_markup=preview_keyboard()
     )
@@ -346,6 +361,7 @@ async def _add_synonym_step(message, context: ContextTypes.DEFAULT_TYPE, lang: s
         if setup_game is None:
             return
         setup_game.synonyms = [*(setup_game.synonyms or []), *extra]
+        logger.debug("Game {}: appended {} extra synonym(s)", setup_game.id, len(extra))
         await _show_preview(context, setup_game, lang, chat_id=user.id)
 
 
@@ -379,16 +395,19 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
 
 
 async def _preview_confirm(context, session, game: Game, lang: str, starter_name: str) -> None:
+    logger.debug("Game {}: confirmed from preview", game.id)
     caption = i18n.t("dm_start.game_started_caption", lang, starter=starter_name)
     await _finalize_and_post(context, session, game, caption)
 
 
 async def _preview_change_image(query, game: Game, lang: str) -> None:
+    logger.debug("Game {}: change-image requested from preview", game.id)
     game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
     await query.edit_message_caption(caption=i18n.t("dm_start.ask_new_photo", lang))
 
 
 async def _preview_research(query, game: Game, lang: str) -> None:
+    logger.debug("Game {}: re-search requested from preview", game.id)
     game.setup_step = SetupStep.PICKING_METHOD
     prefer_shikimori = _prefer_shikimori(lang)
     await query.edit_message_caption(
@@ -398,6 +417,7 @@ async def _preview_research(query, game: Game, lang: str) -> None:
 
 
 async def _preview_add_synonym(query, game: Game, lang: str) -> None:
+    logger.debug("Game {}: add-synonym requested from preview", game.id)
     game.setup_step = SetupStep.AWAITING_SYNONYM
     await query.edit_message_caption(caption=i18n.t("dm_start.ask_extra_synonym", lang))
 

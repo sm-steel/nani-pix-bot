@@ -63,7 +63,9 @@ async def search(
     data = await _request(
         client, query=_SEARCH_QUERY, variables={"search": query, "perPage": limit}
     )
-    return [_parse_result(raw) for raw in data["Page"]["media"]]
+    results = [_parse_result(raw) for raw in data["Page"]["media"]]
+    logger.debug("AniList search {!r} returned {} result(s)", query, len(results))
+    return results
 
 
 async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult | None:
@@ -74,7 +76,10 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
     stored by Telegram on the message itself, does)."""
     data = await _request(client, query=_BY_ID_QUERY, variables={"id": anilist_id})
     media = data["Media"]
-    return _parse_result(media) if media is not None else None
+    if media is None:
+        logger.debug("AniList id {} no longer found", anilist_id)
+        return None
+    return _parse_result(media)
 
 
 async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) -> dict:

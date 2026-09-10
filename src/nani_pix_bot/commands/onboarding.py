@@ -1,6 +1,7 @@
 """/start and /help — see MECHANICS.md's overview and ARCHITECTURE.md's
 command/topic model."""
 
+from loguru import logger
 from telegram import Bot, BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeChat, Update
 from telegram.error import Forbidden
 from telegram.ext import ContextTypes
@@ -12,12 +13,14 @@ from nani_pix_bot.services import i18n, settings
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
-    if not is_private_chat(update) or message is None:
+    user = update.effective_user
+    if not is_private_chat(update) or message is None or user is None:
         return
 
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
+    logger.debug("/start sent to {}", user.id)
     await message.reply_text(i18n.t("onboarding.start", lang))
 
 
@@ -43,6 +46,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         await context.bot.send_message(chat_id=user.id, text=i18n.t("onboarding.help", lang))
     except Forbidden:
+        logger.warning("Couldn't DM /help to {} — they haven't started the bot", user.id)
         bot_username = context.bot_data.get("bot_username", "")
         await message.reply_text(
             i18n.t("onboarding.help_dm_failed", lang, bot_username=bot_username)
@@ -67,3 +71,4 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
     ]
     await bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
     await bot.set_my_commands(group_commands, scope=BotCommandScopeChat(chat_id=group_chat_id))
+    logger.info("Command menu refreshed (lang={})", lang)

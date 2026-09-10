@@ -45,7 +45,9 @@ async def search(
     once a result is picked."""
     params = {"search": query, "limit": limit}
     entries = await _request(client, url=SHIKIMORI_BASE_URL, params=params)
-    return [_parse_search_result(entry) for entry in entries]
+    results = [_parse_search_result(entry) for entry in entries]
+    logger.debug("Shikimori search {!r} returned {} result(s)", query, len(results))
+    return results
 
 
 async def get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriResult | None:
@@ -58,6 +60,7 @@ async def get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriRe
         entry = await _request(client, url=f"{SHIKIMORI_BASE_URL}/{shikimori_id}", params={})
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == HTTPStatus.NOT_FOUND:
+            logger.debug("Shikimori id {} no longer found", shikimori_id)
             return None
         raise
     return _parse_detail_result(entry)

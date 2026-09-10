@@ -9,6 +9,7 @@ its stored absolute deadline (`Game.scheduled_end_at`/`setup_deadline`,
 resets any of these clocks.
 """
 
+from loguru import logger
 from telegram.error import Forbidden
 from telegram.ext import ContextTypes, JobQueue
 
@@ -33,9 +34,11 @@ def _title(game: Game) -> str:
 def schedule_timeout(job_queue: JobQueue | None, game: Game) -> None:
     if job_queue is None:
         return
+    delay = game_service.seconds_until_timeout(game)
+    logger.debug("Scheduling 2-day timeout for game {} in {:.0f}s", game.id, delay)
     job_queue.run_once(
         timeout_job_callback,
-        when=game_service.seconds_until_timeout(game),
+        when=delay,
         name=game_service.timeout_job_name(game.id),
         data=game.id,
     )
@@ -44,6 +47,7 @@ def schedule_timeout(job_queue: JobQueue | None, game: Game) -> None:
 def cancel_timeout(job_queue: JobQueue | None, game_id: int) -> None:
     if job_queue is None:
         return
+    logger.debug("Canceling 2-day timeout for game {}", game_id)
     for job in job_queue.get_jobs_by_name(game_service.timeout_job_name(game_id)):
         job.schedule_removal()
 
@@ -59,8 +63,10 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         lang = settings.get_language(session)
         game = session.get(Game, game_id)
         if game is None or game.status != GameStatus.ACTIVE or game.original_file_id is None:
+            logger.debug("Timeout fired for game {} but it's already resolved — no-op", game_id)
             return
 
+        logger.info("Game {} timed out after 2 days — ending unsolved", game_id)
         game_service.force_unsolved(game)
         await context.bot.send_photo(
             chat_id=context.bot_data["group_chat_id"],
@@ -73,21 +79,30 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def rearm_pending_timeouts(job_queue: JobQueue | None, session_factory) -> None:
     with session_scope(session_factory) as session:
-        for game in game_service.active_games(session):
+        active = game_service.active_games(session)
+        for game in active:
             schedule_timeout(job_queue, game)
-        for game in game_service.setup_games(session):
+        setups = game_service.setup_games(session)
+        for game in setups:
             schedule_setup_abandon(job_queue, game)
         turn_state = game_service.get_turn_state(session)
         if turn_state is not None:
             schedule_turn_timers(job_queue, turn_state)
+    logger.info(
+        "Re-armed {} game timeout(s), {} setup-abandon timer(s) on startup",
+        len(active),
+        len(setups),
+    )
 
 
 def schedule_setup_abandon(job_queue: JobQueue | None, game: Game) -> None:
     if job_queue is None:
         return
+    delay = game_service.seconds_until(game.setup_deadline)
+    logger.debug("Scheduling setup-abandon for game {} in {:.0f}s", game.id, delay)
     job_queue.run_once(
         setup_abandon_job_callback,
-        when=game_service.seconds_until(game.setup_deadline),
+        when=delay,
         name=game_service.setup_abandon_job_name(game.id),
         data=game.id,
     )
@@ -96,6 +111,7 @@ def schedule_setup_abandon(job_queue: JobQueue | None, game: Game) -> None:
 def cancel_setup_abandon(job_queue: JobQueue | None, game_id: int) -> None:
     if job_queue is None:
         return
+    logger.debug("Canceling setup-abandon timer for game {}", game_id)
     for job in job_queue.get_jobs_by_name(game_service.setup_abandon_job_name(game_id)):
         job.schedule_removal()
 
@@ -115,7 +131,9 @@ async def setup_abandon_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
         lang = settings.get_language(session)
         game = session.get(Game, game_id)
         if game is None or game.status != GameStatus.SETUP:
+            logger.debug("Setup-abandon fired for game {} but it's already resolved", game_id)
             return
+        logger.info("Game {} setup abandoned after 1h — deleting and opening the turn", game_id)
         session.delete(game)
         game_service.set_next_starter(session, None)
 
@@ -133,16 +151,21 @@ def schedule_turn_timers(job_queue: JobQueue | None, turn_state: TurnState) -> N
     if job_queue is None:
         return
     cancel_turn_timers(job_queue)
+    next_starter_id = turn_state.next_starter_id
     if turn_state.reminder_at is not None:
+        delay = game_service.seconds_until(turn_state.reminder_at)
+        logger.debug("Scheduling turn-reminder for {} in {:.0f}s", next_starter_id, delay)
         job_queue.run_once(
             turn_reminder_job_callback,
-            when=game_service.seconds_until(turn_state.reminder_at),
+            when=delay,
             name=TURN_REMINDER_JOB_NAME,
         )
     if turn_state.expiry_at is not None:
+        delay = game_service.seconds_until(turn_state.expiry_at)
+        logger.debug("Scheduling turn-expiry for {} in {:.0f}s", next_starter_id, delay)
         job_queue.run_once(
             turn_expiry_job_callback,
-            when=game_service.seconds_until(turn_state.expiry_at),
+            when=delay,
             name=TURN_EXPIRY_JOB_NAME,
         )
 
@@ -150,6 +173,7 @@ def schedule_turn_timers(job_queue: JobQueue | None, turn_state: TurnState) -> N
 def cancel_turn_timers(job_queue: JobQueue | None) -> None:
     if job_queue is None:
         return
+    logger.debug("Canceling turn-reminder/expiry timers")
     for name in (TURN_REMINDER_JOB_NAME, TURN_EXPIRY_JOB_NAME):
         for job in job_queue.get_jobs_by_name(name):
             job.schedule_removal()
@@ -165,8 +189,10 @@ async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
         lang = settings.get_language(session)
         turn_state = game_service.get_turn_state(session)
         if turn_state is None or turn_state.next_starter_id is None:
+            logger.debug("Turn-reminder fired but no turn is designated — no-op")
             return
         if game_service.active_or_setup_game(session) is not None:
+            logger.debug("Turn-reminder fired but a game is already running — no-op")
             return
         target_id = turn_state.next_starter_id
         target = session.get(Player, target_id)
@@ -174,7 +200,9 @@ async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
 
     try:
         await context.bot.send_message(chat_id=target_id, text=i18n.t("turn.reminder_dm", lang))
+        logger.info("Turn reminder DM sent to {}", target_id)
     except Forbidden:
+        logger.warning("Turn reminder DM to {} failed — falling back to group mention", target_id)
         text = (
             i18n.t("turn.reminder_group_fallback", lang, username=username)
             if username
@@ -195,11 +223,15 @@ async def turn_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         lang = settings.get_language(session)
         turn_state = game_service.get_turn_state(session)
         if turn_state is None or turn_state.next_starter_id is None:
+            logger.debug("Turn-expiry fired but no turn is designated — no-op")
             return
         if game_service.active_or_setup_game(session) is not None:
+            logger.debug("Turn-expiry fired but a game is already running — no-op")
             return
+        expired_id = turn_state.next_starter_id
         game_service.set_next_starter(session, None)
 
+    logger.info("Turn for {} expired after 12h — opening to anyone", expired_id)
     cancel_turn_timers(context.job_queue)
     await context.bot.send_message(
         chat_id=context.bot_data["group_chat_id"],

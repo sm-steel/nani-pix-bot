@@ -4,6 +4,7 @@ MECHANICS.md for the rules this implements."""
 import enum
 from datetime import UTC, datetime, timedelta
 
+from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -82,10 +83,12 @@ def set_next_starter(session: Session, user_id: int | None) -> TurnState:
     if user_id is None:
         turn_state.reminder_at = None
         turn_state.expiry_at = None
+        logger.info("Turn opened — anyone may start the next game")
     else:
         now = datetime.now(UTC)
         turn_state.reminder_at = now + TURN_REMINDER_DELAY
         turn_state.expiry_at = now + TURN_EXPIRY_DELAY
+        logger.info("Turn designated to player {}", user_id)
     return turn_state
 
 
@@ -148,6 +151,7 @@ def create_setup_game(session: Session, *, starter_id: int, original_file_id: st
     )
     session.add(game)
     session.flush()  # populate game.id for the caller without a full commit
+    logger.info("Game {} created (SETUP) by starter {}", game.id, starter_id)
     return game
 
 
@@ -187,6 +191,7 @@ def activate_game(session: Session, game: Game) -> None:
 
     turn_state = _get_or_create_turn_state(session)
     turn_state.next_starter_id = None
+    logger.info("Game {} activated (source={})", game.id, game.source)
 
 
 def seconds_until(deadline: datetime | None) -> float:
@@ -225,6 +230,7 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
     "Guess matching" and "Pixelation stages" sections."""
     if game.current_stage is None:
         msg = f"record_guess called on game {game.id} with no current_stage (not ACTIVE?)"
+        logger.warning(msg)
         raise ValueError(msg)
 
     game.total_guess_count += 1
@@ -236,12 +242,28 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
         game.title_russian,
         *(game.synonyms or []),
     ]
-    if matching.is_match(guess_text, candidates):
+    matched = matching.is_match(guess_text, candidates)
+    logger.debug(
+        "Game {}: guesser {} guessed {!r} against {} candidates -> {}",
+        game.id,
+        guesser_id,
+        guess_text,
+        len(candidates),
+        "match" if matched else "no match",
+    )
+    if matched:
         _win(session, game, winner_id=guesser_id)
         return GuessOutcome.WON
 
     game.wrong_guess_count += 1
     if game.wrong_guess_count < GUESSES_PER_STAGE:
+        logger.debug(
+            "Game {}: wrong guess {}/{} at stage {}",
+            game.id,
+            game.wrong_guess_count,
+            GUESSES_PER_STAGE,
+            game.current_stage,
+        )
         return GuessOutcome.WRONG
 
     game.wrong_guess_count = 0
@@ -251,6 +273,7 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
         return GuessOutcome.UNSOLVED
 
     game.current_stage = STAGE_ORDER[next_index]
+    logger.info("Game {} advanced to stage {}", game.id, game.current_stage)
     return GuessOutcome.STAGE_ADVANCED
 
 
@@ -275,6 +298,7 @@ def _win(session: Session, game: Game, *, winner_id: int) -> None:
     winner.wins += 1
 
     set_next_starter(session, winner_id)
+    logger.info("Game {} won by player {}", game.id, winner_id)
 
 
 def force_unsolved(game: Game) -> None:
@@ -282,6 +306,7 @@ def force_unsolved(game: Game) -> None:
     path and by the timeout job callback. See MECHANICS.md's "Ending
     unsolved" section."""
     game.status = GameStatus.UNSOLVED
+    logger.info("Game {} ended unsolved", game.id)
 
 
 def clear_original_screenshot(game: Game) -> None:

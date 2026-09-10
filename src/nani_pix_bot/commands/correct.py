@@ -2,6 +2,7 @@
 matcher misses a genuinely correct guess. See MECHANICS.md's "Winning"
 section."""
 
+from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -41,12 +42,15 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         lang = settings.get_language(session)
         game = game_service.active_or_setup_game(session)
         if game is None or game.status != GameStatus.ACTIVE:
+            logger.warning("{} ran /correct with no ACTIVE game running", user.id)
             await message.reply_text(i18n.t("correct.no_game", lang))
             return
         if game.starter_id != user.id:
+            logger.warning("Non-starter {} tried /correct on game {}", user.id, game.id)
             await message.reply_text(i18n.t("correct.not_starter", lang))
             return
         if game.total_guess_count == 0:
+            logger.warning("{} tried /correct on game {} before any guess", user.id, game.id)
             await message.reply_text(i18n.t("correct.no_guesses_yet", lang))
             return
         if game.original_file_id is None:
@@ -54,12 +58,19 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         target = game_service.find_player_by_username(session, target_username)
         if target is None:
+            logger.warning("/correct: unknown username {!r} on game {}", target_username, game.id)
             await message.reply_text(
                 i18n.t("correct.unknown_username", lang, username=target_username)
             )
             return
 
         game_service.force_win(session, game, winner_id=target.telegram_user_id)
+        logger.info(
+            "Game {} force-won for {} by starter {} (/correct)",
+            game.id,
+            target.telegram_user_id,
+            user.id,
+        )
         timeout_module.cancel_timeout(context.job_queue, game.id)
         turn_state = game_service.get_turn_state(session)
         if turn_state is not None:

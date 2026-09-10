@@ -4,6 +4,7 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+from loguru import logger
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -24,6 +25,7 @@ def session_scope(session_factory: sessionmaker[Session]) -> Iterator[Session]:
         yield session
         session.commit()
     except Exception:
+        logger.opt(exception=True).warning("Rolling back session due to an exception")
         session.rollback()
         raise
     finally:

@@ -7,6 +7,7 @@ import re
 import string
 from collections.abc import Sequence
 
+from loguru import logger
 from rapidfuzz import fuzz
 
 MATCH_THRESHOLD = 85.0
@@ -26,9 +27,38 @@ def is_match(guess: str, candidates: Sequence[str | None]) -> bool:
     normalized."""
     normalized_guess = normalize(guess)
     if not normalized_guess:
+        logger.debug("Guess {!r} normalized to empty string — no match possible", guess)
         return False
-    return any(
-        fuzz.ratio(normalized_guess, normalize(candidate)) >= MATCH_THRESHOLD
-        for candidate in candidates
-        if candidate
+
+    best_candidate: str | None = None
+    best_normalized: str | None = None
+    best_score = 0.0
+    for candidate in candidates:
+        if not candidate:
+            continue
+        normalized_candidate = normalize(candidate)
+        score = fuzz.ratio(normalized_guess, normalized_candidate)
+        logger.debug(
+            "  vs {!r} (normalized {!r}): score {:.1f}", candidate, normalized_candidate, score
+        )
+        if score > best_score:
+            best_score = score
+            best_candidate = candidate
+            best_normalized = normalized_candidate
+
+    matched = best_score >= MATCH_THRESHOLD
+    margin = best_score - MATCH_THRESHOLD
+    logger.debug(
+        "Guess {!r} (normalized {!r}) best matched {!r} (normalized {!r}): "
+        "score {:.1f}, threshold {:.1f}, {} by {:.1f} -> {}",
+        guess,
+        normalized_guess,
+        best_candidate,
+        best_normalized,
+        best_score,
+        MATCH_THRESHOLD,
+        "cleared" if matched else "short",
+        abs(margin),
+        "MATCH" if matched else "NO MATCH",
     )
+    return matched
