@@ -35,6 +35,7 @@ def _make_context(session_factory, *, args: list[str] | None = None) -> MagicMoc
         "game_topic_id": 7,
     }
     context.args = args or []
+    context.job_queue.get_jobs_by_name.return_value = []
     return context
 
 
@@ -104,6 +105,22 @@ async def test_skip_command_bare_opens_the_turn(session_factory) -> None:
     update.message.reply_text.assert_awaited_once()
 
 
+async def test_skip_command_bare_cancels_the_turn_timers(session_factory) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
+        session.commit()
+
+    update = _make_update(user_id=1, args=[])
+    context = _make_context(session_factory, args=[])
+
+    await skip_command_module.skip_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert context.job_queue.get_jobs_by_name.call_count == 2
+
+
 async def test_skip_command_with_username_hands_off_the_turn(session_factory) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
@@ -122,6 +139,24 @@ async def test_skip_command_with_username_hands_off_the_turn(session_factory) ->
         assert turn_state is not None
         assert turn_state.next_starter_id == 2
     update.message.reply_text.assert_awaited_once()
+
+
+async def test_skip_command_with_username_schedules_the_turn_timers(session_factory) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(Player(telegram_user_id=2, username="friend"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@friend"])
+    context = _make_context(session_factory, args=["@friend"])
+
+    await skip_command_module.skip_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert skip_command_module.timeout_module.TURN_REMINDER_JOB_NAME in names
+    assert skip_command_module.timeout_module.TURN_EXPIRY_JOB_NAME in names
 
 
 async def test_skip_command_rejects_an_unknown_username(session_factory) -> None:

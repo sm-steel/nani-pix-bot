@@ -25,6 +25,15 @@ GUESSES_PER_STAGE = 5
 # "Timeout" section.
 TIMEOUT_DURATION = timedelta(days=2)
 
+# Absolute from SETUP creation, not extended by activity within setup —
+# see MECHANICS.md's "Starting a game" section.
+SETUP_ABANDON_DELAY = timedelta(hours=1)
+
+# Absolute from a turn being designated to a real user (a win, or
+# /skip @user) — see MECHANICS.md's "Turn handoff" section.
+TURN_REMINDER_DELAY = timedelta(minutes=15)
+TURN_EXPIRY_DELAY = timedelta(hours=12)
+
 
 class GuessOutcome(enum.Enum):
     """What a /guess attempt did to the game — tells the command layer
@@ -62,11 +71,32 @@ def _get_or_create_turn_state(session: Session) -> TurnState:
     return turn_state
 
 
-def set_next_starter(session: Session, user_id: int | None) -> None:
-    """Implements /skip — see MECHANICS.md's "Turn handoff" section.
-    `None` opens the turn to anyone."""
+def set_next_starter(session: Session, user_id: int | None) -> TurnState:
+    """Implements /skip and winning — see MECHANICS.md's "Turn handoff"
+    section. `None` opens the turn to anyone and cancels the win-turn
+    reminder/expiry timers; a real user (re)schedules both, absolute
+    from now. Returns the row so the command layer can schedule/cancel
+    the actual JobQueue jobs (this module stays Telegram-agnostic)."""
     turn_state = _get_or_create_turn_state(session)
     turn_state.next_starter_id = user_id
+    if user_id is None:
+        turn_state.reminder_at = None
+        turn_state.expiry_at = None
+    else:
+        now = datetime.now(UTC)
+        turn_state.reminder_at = now + TURN_REMINDER_DELAY
+        turn_state.expiry_at = now + TURN_EXPIRY_DELAY
+    return turn_state
+
+
+def clear_turn_timers(session: Session) -> None:
+    """Cancels the win-turn reminder/expiry deadlines without touching
+    `next_starter_id` — used when the designated player actually starts
+    their game, so a stale reminder doesn't fire after they've already
+    acted."""
+    turn_state = _get_or_create_turn_state(session)
+    turn_state.reminder_at = None
+    turn_state.expiry_at = None
 
 
 def active_or_setup_game(session: Session) -> Game | None:
@@ -80,6 +110,14 @@ def active_games(session: Session) -> list[Game]:
     """Every ACTIVE game — normally at most one (see active_or_setup_game),
     but this scans without that assumption for startup timeout re-arming."""
     stmt = select(Game).where(Game.status == GameStatus.ACTIVE)
+    return list(session.scalars(stmt))
+
+
+def setup_games(session: Session) -> list[Game]:
+    """Every SETUP game — normally at most one (see active_or_setup_game),
+    but this scans without that assumption for startup setup-abandon
+    timer re-arming."""
+    stmt = select(Game).where(Game.status == GameStatus.SETUP)
     return list(session.scalars(stmt))
 
 
@@ -102,7 +140,12 @@ def can_start(session: Session, user_id: int) -> bool:
 
 
 def create_setup_game(session: Session, *, starter_id: int, original_file_id: str) -> Game:
-    game = Game(starter_id=starter_id, original_file_id=original_file_id, status=GameStatus.SETUP)
+    game = Game(
+        starter_id=starter_id,
+        original_file_id=original_file_id,
+        status=GameStatus.SETUP,
+        setup_deadline=datetime.now(UTC) + SETUP_ABANDON_DELAY,
+    )
     session.add(game)
     session.flush()  # populate game.id for the caller without a full commit
     return game
@@ -146,16 +189,22 @@ def activate_game(session: Session, game: Game) -> None:
     turn_state.next_starter_id = None
 
 
-def seconds_until_timeout(game: Game) -> float:
-    """Seconds from now until `game.scheduled_end_at`, clamped at 0 for an
-    already-overdue game. Normalizes naive datetimes (as DATETIME columns
-    round-trip from the DB) to UTC before comparing."""
-    scheduled = game.scheduled_end_at
-    if scheduled is None:
+def seconds_until(deadline: datetime | None) -> float:
+    """Seconds from now until `deadline`, clamped at 0 for an already-
+    overdue deadline (or if there's no deadline at all). Normalizes naive
+    datetimes (as DATETIME columns round-trip from the DB) to UTC before
+    comparing — shared by the game timeout, setup-abandon, and win-turn
+    reminder/expiry timers."""
+    if deadline is None:
         return 0.0
-    if scheduled.tzinfo is None:
-        scheduled = scheduled.replace(tzinfo=UTC)
-    return max((scheduled - datetime.now(UTC)).total_seconds(), 0.0)
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)
+    return max((deadline - datetime.now(UTC)).total_seconds(), 0.0)
+
+
+def seconds_until_timeout(game: Game) -> float:
+    """Seconds from now until `game.scheduled_end_at` — see seconds_until()."""
+    return seconds_until(game.scheduled_end_at)
 
 
 def timeout_job_name(game_id: int) -> str:
@@ -163,6 +212,12 @@ def timeout_job_name(game_id: int) -> str:
     command layer look up and cancel a pending job (e.g. on a win) or
     re-arm it on startup without storing anything extra on the row."""
     return f"game-timeout-{game_id}"
+
+
+def setup_abandon_job_name(game_id: int) -> str:
+    """Deterministic JobQueue job name for a SETUP game's abandon
+    timer — mirrors timeout_job_name()."""
+    return f"setup-abandon-{game_id}"
 
 
 def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: str) -> GuessOutcome:
@@ -219,8 +274,7 @@ def _win(session: Session, game: Game, *, winner_id: int) -> None:
     winner = get_or_create_player(session, winner_id)
     winner.wins += 1
 
-    turn_state = _get_or_create_turn_state(session)
-    turn_state.next_starter_id = winner_id
+    set_next_starter(session, winner_id)
 
 
 def force_unsolved(game: Game) -> None:

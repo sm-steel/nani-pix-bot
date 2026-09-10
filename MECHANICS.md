@@ -17,6 +17,8 @@ just what's currently built.
 | Author override (`/correct`) | Implemented |
 | Turn handoff (`/skip`) | Implemented |
 | 2-day timeout | Implemented |
+| Setup-abandon timeout (1h) | Implemented |
+| Win-turn reminder (15min) + expiry (12h) | Implemented |
 | Leaderboard (`/leaderboard`) | Implemented |
 | Deployed to `moscow` | Implemented |
 
@@ -31,7 +33,15 @@ configured group — the DM entry point is reachable by anyone who finds the
 bot, unlike the topic-scoped group commands, which Telegram itself already
 restricts to members.
 
-1. The eligible player DMs the bot a screenshot (a photo).
+1. The eligible player DMs the bot a screenshot (a photo). The bot posts
+   a notice to the group topic — "so-and-so is preparing a new game" —
+   so nobody else tries to DM a photo at the same moment, and starts a
+   **1-hour setup-abandon timer** (`Game.setup_deadline`). If the player
+   never reaches the preview's "Confirm and start" button within that
+   hour, the bot deletes the orphaned `SETUP` row, opens the turn to
+   anyone, and posts that to the group — the same class of "stuck DM
+   flow" bug issue #11 fixed reactively can no longer linger
+   indefinitely. The timer is canceled the moment they confirm.
 2. The bot asks them to pick an identification method: **AniList**,
    **Shikimori** (the Russian-community anime database, with better
    Russian titles/synonyms), or **manual entry**. If the bot's language
@@ -168,7 +178,9 @@ On a win, the bot:
    `players.wins`.
 3. Cancels the game's pending 2-day timeout job.
 4. Sets `turn_state.next_starter_id` to the winner — it's their turn to
-   start the next game.
+   start the next game, called out explicitly in the reveal caption —
+   and schedules that winner's 15-minute reminder / 12-hour expiry (see
+   "Turn handoff" below).
 5. **Cleanup**: once that reveal message is confirmed sent, clears
    `Game.original_file_id` — nothing after this point ever needs to
    re-fetch or re-pixelate the screenshot, so the stored Telegram file
@@ -216,7 +228,23 @@ next game, not anything mid-game):
 
 - `/skip` (no argument) sets `next_starter_id` to `null` — the turn opens
   up, and anyone can DM the bot a screenshot to start the next game.
-- `/skip @username` hands the designation directly to that person instead.
+  Cancels the reminder/expiry timers below.
+- `/skip @username` hands the designation directly to that person instead
+  — (re)schedules the timers below for the new designee.
+
+Whenever `next_starter_id` becomes a real user (a win, or `/skip @user`),
+two absolute-deadline `TurnState` timers are (re)scheduled:
+
+- **Reminder (15 minutes)**: DMs the designated player that it's their
+  turn. If the DM fails (they've never started the bot), falls back to
+  an `@mention` in the group topic instead — same "can't reach them
+  privately" fallback pattern as `/help`'s.
+- **Expiry (12 hours)**: if they still haven't started by then, opens the
+  turn to anyone (same as a bare `/skip`) and posts that to the group.
+
+Both are canceled — without touching `next_starter_id` itself — the
+moment the designated player actually DMs a photo to start their game;
+they're clearly not going to miss a turn they've already begun.
 
 ## Leaderboard
 

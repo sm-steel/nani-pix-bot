@@ -42,11 +42,16 @@ _FRIEREN_SHIKIMORI = ShikimoriResult(
 
 
 def _make_update(
-    *, user_id: int = 1, username: str = "player", photo_file_id: str | None = None
+    *,
+    user_id: int = 1,
+    username: str = "player",
+    full_name: str = "Starter Name",
+    photo_file_id: str | None = None,
 ) -> MagicMock:
     update = MagicMock()
     update.effective_user.id = user_id
     update.effective_user.username = username
+    update.effective_user.full_name = full_name
     update.effective_chat.type = "private"
     update.message.reply_text = AsyncMock()
     update.message.photo = [MagicMock(file_id=photo_file_id)] if photo_file_id else []
@@ -58,9 +63,12 @@ def _make_context(session_factory, **extra_bot_data) -> MagicMock:
     context.bot_data = {
         "session_factory": session_factory,
         "group_chat_id": 555,
+        "game_topic_id": 7,
         **extra_bot_data,
     }
     context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=ChatMemberStatus.MEMBER))
+    context.bot.send_message = AsyncMock()
+    context.job_queue.get_jobs_by_name.return_value = []
     return context
 
 
@@ -108,6 +116,46 @@ async def test_photo_handler_creates_a_setup_game_when_turn_is_open(session_fact
         assert games[0].original_file_id == "file123"
         assert games[0].starter_id == 1
     update.message.reply_text.assert_awaited_once()
+
+
+async def test_photo_handler_notifies_the_group_that_setup_started(session_factory) -> None:
+    update = _make_update(user_id=1, photo_file_id="file123", full_name="Starter Name")
+    context = _make_context(session_factory)
+
+    await dm_start.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_message.assert_awaited_once()
+    _, kwargs = context.bot.send_message.await_args
+    assert kwargs["chat_id"] == 555
+    assert "Starter Name" in kwargs["text"]
+
+
+async def test_photo_handler_schedules_the_setup_abandon_timer(session_factory) -> None:
+    update = _make_update(user_id=1, photo_file_id="file123")
+    context = _make_context(session_factory)
+
+    await dm_start.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert dm_start.game_service.setup_abandon_job_name(game.id) in names
+
+
+async def test_photo_handler_cancels_turn_timers_when_the_designated_starter_begins(
+    session_factory,
+) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
+        session.commit()
+
+    update = _make_update(user_id=1, photo_file_id="file123")
+    context = _make_context(session_factory)
+
+    await dm_start.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert context.job_queue.get_jobs_by_name.call_count >= 2
 
 
 async def test_photo_handler_shows_the_method_selection_keyboard(session_factory) -> None:
@@ -616,6 +664,9 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
         assert fetched.status == GameStatus.ACTIVE
 
     context.job_queue.run_once.assert_called_once()
+    context.job_queue.get_jobs_by_name.assert_any_call(
+        dm_start.game_service.setup_abandon_job_name(fetched.id)
+    )
     update.callback_query.edit_message_caption.assert_awaited_once()
 
 

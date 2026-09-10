@@ -46,6 +46,9 @@ class Game(Base):
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     scheduled_end_at: Mapped[datetime | None] = mapped_column(default=None)
     ended_at: Mapped[datetime | None] = mapped_column(default=None)
+    # created_at + 1h — see services/game.py's SETUP_ABANDON_DELAY. Only
+    # meaningful while status is SETUP.
+    setup_deadline: Mapped[datetime | None] = mapped_column(default=None)
 
     starter: Mapped[Player] = relationship(foreign_keys=[starter_id])
     winner: Mapped[Player | None] = relationship(foreign_keys=[winner_id])

@@ -157,9 +157,31 @@ async def test_correct_command_cancels_the_timeout_job(session_factory) -> None:
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    context.job_queue.get_jobs_by_name.assert_called_once_with(
+    context.job_queue.get_jobs_by_name.assert_any_call(
         correct_command_module.game_service.timeout_job_name(game_id)
     )
+
+
+async def test_correct_command_caption_names_the_winner_and_schedules_turn_timers(
+    session_factory,
+) -> None:
+    _active_game(session_factory, total_guess_count=1)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="winner"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert "winner" in kwargs["caption"]
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert correct_command_module.timeout_module.TURN_REMINDER_JOB_NAME in names
+    assert correct_command_module.timeout_module.TURN_EXPIRY_JOB_NAME in names
 
 
 async def test_correct_command_rejects_before_any_guess_was_made(session_factory) -> None:

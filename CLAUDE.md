@@ -33,9 +33,11 @@ src/nani_pix_bot/
     correct.py    # /correct @user — author override
     skip.py       # /skip [@user] — turn handoff when no game is running
     leaderboard.py  # /leaderboard
-    timeout.py    # 2-day-timeout JobQueue callback + schedule/cancel/
-                   # rearm helpers — not a /command itself, but Telegram
-                   # (JobQueue)-aware, so it lives here rather than services/
+    timeout.py    # game/turn lifecycle JobQueue wiring: the 2-day game
+                   # timeout, 1h setup-abandon, 15min/12h win-turn
+                   # reminder/expiry — schedule/cancel/rearm helpers, not
+                   # /commands themselves, but Telegram (JobQueue)-aware,
+                   # so they live here rather than services/
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership checks
                    # (membership.py), inline-keyboard builders (keyboards.py).

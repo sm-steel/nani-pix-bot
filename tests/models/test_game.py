@@ -27,6 +27,7 @@ def test_new_game_defaults_to_setup_with_no_wrong_guesses(session: Session) -> N
     assert fetched.winner_id is None
     assert fetched.created_at is not None
     assert fetched.setup_step == SetupStep.PICKING_METHOD
+    assert fetched.setup_deadline is None
 
 
 def test_game_stores_synonyms_as_a_json_list(session: Session) -> None:

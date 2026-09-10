@@ -16,6 +16,7 @@ import httpx
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands import timeout as timeout_module
 from nani_pix_bot.commands.helpers.keyboards import (
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
@@ -31,7 +32,6 @@ from nani_pix_bot.commands.helpers.keyboards import (
 )
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
-from nani_pix_bot.commands.timeout import schedule_timeout
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import PixelStage, SetupStep
 from nani_pix_bot.models.game import Game
@@ -100,7 +100,20 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if not game_service.can_start(session, user.id):
             await message.reply_text(i18n.t("dm_start.not_your_turn", lang))
             return
-        game_service.create_setup_game(session, starter_id=user.id, original_file_id=file_id)
+        new_game = game_service.create_setup_game(
+            session, starter_id=user.id, original_file_id=file_id
+        )
+        # They're clearly not missing their turn if they've already
+        # started it — the setup-abandon timer takes over from here.
+        game_service.clear_turn_timers(session)
+
+    timeout_module.cancel_turn_timers(context.job_queue)
+    timeout_module.schedule_setup_abandon(context.job_queue, new_game)
+    await context.bot.send_message(
+        chat_id=group_chat_id,
+        message_thread_id=context.bot_data["game_topic_id"],
+        text=i18n.t("dm_start.setup_started_group_notice", lang, starter=user.full_name),
+    )
 
     prefer_shikimori = _prefer_shikimori(lang)
     await message.reply_text(
@@ -284,7 +297,9 @@ async def _manual_synonyms_step(
 async def _finalize_and_post(context, session, game: Game, caption: str) -> None:
     """Shared tail end of every identification method (AniList, Shikimori,
     manual): pixelate the original at X10, activate the game, post it to
-    the group topic, and schedule the timeout."""
+    the group topic, and schedule the timeout — canceling the setup-abandon
+    timer that's been running since the photo was first sent (issue #21)."""
+    timeout_module.cancel_setup_abandon(context.job_queue, game.id)
     telegram_file = await context.bot.get_file(game.original_file_id)
     original_bytes = bytes(await telegram_file.download_as_bytearray())
     pixelated = pixelate_service.pixelate(original_bytes, PixelStage.X10)
@@ -295,7 +310,7 @@ async def _finalize_and_post(context, session, game: Game, caption: str) -> None
         photo=pixelated,
         caption=caption,
     )
-    schedule_timeout(context.job_queue, game)
+    timeout_module.schedule_timeout(context.job_queue, game)
 
 
 async def _show_preview(context, game: Game, lang: str, *, chat_id: int) -> None:

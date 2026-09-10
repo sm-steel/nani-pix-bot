@@ -12,6 +12,8 @@ def test_turn_state_next_starter_defaults_to_open(session: Session) -> None:
 
     assert fetched is not None
     assert fetched.next_starter_id is None
+    assert fetched.reminder_at is None
+    assert fetched.expiry_at is None
 
 
 def test_turn_state_can_designate_a_next_starter(session: Session) -> None:

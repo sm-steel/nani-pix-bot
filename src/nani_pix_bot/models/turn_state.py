@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import BigInteger, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -9,6 +11,12 @@ class TurnState(Base):
 
     `next_starter_id` of None means the turn is open to anyone — see
     MECHANICS.md's "Turn handoff" section.
+
+    `reminder_at`/`expiry_at` are absolute deadlines (same style as
+    `Game.scheduled_end_at`, not a stored duration) for the win-turn
+    reminder/expiry timers — both set whenever `next_starter_id` becomes
+    a real user, both cleared when it's opened back up. See
+    `services/game.py`'s `set_next_starter()`.
     """
 
     __tablename__ = "turn_state"
@@ -17,3 +25,5 @@ class TurnState(Base):
     next_starter_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("players.telegram_user_id"), default=None
     )
+    reminder_at: Mapped[datetime | None] = mapped_column(default=None)
+    expiry_at: Mapped[datetime | None] = mapped_column(default=None)

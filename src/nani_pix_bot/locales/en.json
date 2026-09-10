@@ -8,7 +8,7 @@
   "correct.not_starter": "Only the person who started this round can use /correct.",
   "correct.no_guesses_yet": "Nobody has guessed yet — /correct is for overriding a guess the matcher missed, not for skipping straight to the end.",
   "correct.unknown_username": "I don't know anyone called @{username} yet — they need to message me at least once first.",
-  "correct.caption": "🎉 Correct! It was {title}.",
+  "correct.caption": "🎉 Correct! @{winner} got it — it was {title}. Your turn to start the next game!",
 
   "dm_start.not_a_member": "You need to be a member of the group to start a game.",
   "dm_start.not_your_turn": "It's not your turn to start a new game right now.",
@@ -29,11 +29,13 @@
   "dm_start.not_found_anymore": "Couldn't find that on AniList anymore — try searching again.",
   "dm_start.posted": "Posted! Good luck to everyone guessing.",
   "dm_start.game_started_caption": "🎮 {starter} started a new round! Guess with /guess <title> in this topic.",
+  "dm_start.setup_started_group_notice": "🎬 {starter} is preparing a new game — hang tight!",
+  "dm_start.setup_abandoned": "⌛ Setup timed out without finishing — it's open to anyone now! DM me a screenshot to begin.",
 
   "guess.usage": "Usage: /guess <anime title>",
   "guess.no_game": "No game is currently running. DM me a screenshot to start one!",
   "guess.starter_cannot_guess": "You started this round — you already know the answer, so you can't guess on it!",
-  "guess.won_caption": "🎉 {winner} got it! It was {title}.",
+  "guess.won_caption": "🎉 {winner} got it! It was {title}. Your turn to start the next game!",
   "guess.unsolved_caption": "Nobody guessed it. It was {title}.",
   "guess.wrong_feedback": "❌ Not quite! {remaining} guesses left before the next clue ({stage}/{total}).",
 
@@ -47,6 +49,11 @@
   "skip.passed": "Turn passed to @{username}.",
 
   "timeout.caption": "⏰ Nobody guessed it in time. It was {title}.",
+
+  "turn.reminder_dm": "⏰ Reminder: it's your turn to start a new game! DM me a screenshot whenever you're ready.",
+  "turn.reminder_group_fallback": "⏰ @{username}, it's your turn to start a new game — DM me a screenshot! (I couldn't reach you privately — message me first so reminders can find you next time.)",
+  "turn.reminder_group_fallback_unknown": "⏰ It's someone's turn to start a new game, but I can't reach them privately — /skip to open it up to anyone!",
+  "turn.expired": "⌛ Nobody started a new game in time — it's open to anyone now! DM me a screenshot to begin.",
 
   "onboarding.start": "👋 Welcome! I run an anime-screenshot guessing game in the group.\n\nWhen it's your turn, DM me a screenshot here and I'll walk you through picking the anime — then I'll post a heavily pixelated version to the group for everyone to guess.\n\nUse /help anytime for the full rundown.",
   "onboarding.help": "How to play:\n1. When it's your turn, DM me a screenshot (a photo) here.\n2. I'll ask you to search for the anime and pick the right result.\n3. I'll post a pixelated version to the group's game topic.\n4. Everyone guesses with /guess <title> in that topic — it gets clearer every 5 wrong guesses.\n5. Whoever guesses right wins, and it's their turn next!\n\nIn the group topic:\n/guess <title> — make a guess\n/correct @username — (starter only) force a correct guess if the bot missed it\n/skip [@username] — pass your turn, open or to someone specific\n/leaderboard — see top winners\n\nIn DM:\n/start — this intro\n/help — this message\n/language — (group admins) switch the bot's language",

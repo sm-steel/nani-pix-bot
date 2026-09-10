@@ -93,6 +93,19 @@ def test_create_setup_game_persists_a_setup_row(session: Session) -> None:
     assert fetched.starter_id == 1
 
 
+def test_create_setup_game_sets_a_one_hour_setup_deadline(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    before = datetime.now(UTC).replace(tzinfo=None)
+
+    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    session.commit()
+
+    assert game.setup_deadline is not None
+    delta_seconds = (game.setup_deadline - before).total_seconds()
+    assert delta_seconds == pytest.approx(game_service.SETUP_ABANDON_DELAY.total_seconds(), abs=5)
+
+
 def test_stage_result_assigns_anilist_fields_without_changing_status(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
@@ -421,6 +434,103 @@ def test_seconds_until_timeout_clamps_overdue_to_zero() -> None:
     game.scheduled_end_at = datetime.now(UTC) - timedelta(days=1)
 
     assert game_service.seconds_until_timeout(game) == 0
+
+
+def test_seconds_until_handles_aware_datetimes() -> None:
+    deadline = datetime.now(UTC) + timedelta(seconds=100)
+
+    assert game_service.seconds_until(deadline) == pytest.approx(100, abs=1)
+
+
+def test_seconds_until_treats_naive_datetimes_as_utc() -> None:
+    deadline = (datetime.now(UTC) + timedelta(seconds=100)).replace(tzinfo=None)
+
+    assert game_service.seconds_until(deadline) == pytest.approx(100, abs=1)
+
+
+def test_seconds_until_clamps_overdue_to_zero() -> None:
+    deadline = datetime.now(UTC) - timedelta(days=1)
+
+    assert game_service.seconds_until(deadline) == 0
+
+
+def test_seconds_until_returns_zero_for_none() -> None:
+    assert game_service.seconds_until(None) == 0
+
+
+def test_set_next_starter_schedules_reminder_and_expiry_for_a_real_user(
+    session: Session,
+) -> None:
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+    before = datetime.now(UTC).replace(tzinfo=None)
+
+    turn_state = game_service.set_next_starter(session, 2)
+    session.commit()
+
+    assert turn_state.next_starter_id == 2
+    assert turn_state.reminder_at is not None
+    assert turn_state.expiry_at is not None
+    reminder_delta = (turn_state.reminder_at - before).total_seconds()
+    expiry_delta = (turn_state.expiry_at - before).total_seconds()
+    assert reminder_delta == pytest.approx(game_service.TURN_REMINDER_DELAY.total_seconds(), abs=5)
+    assert expiry_delta == pytest.approx(game_service.TURN_EXPIRY_DELAY.total_seconds(), abs=5)
+
+
+def test_set_next_starter_clears_reminder_and_expiry_when_opened(session: Session) -> None:
+    session.add(Player(telegram_user_id=2))
+    session.add(
+        TurnState(
+            id=1,
+            next_starter_id=2,
+            reminder_at=datetime.now(UTC),
+            expiry_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+    turn_state = game_service.set_next_starter(session, None)
+    session.commit()
+
+    assert turn_state.next_starter_id is None
+    assert turn_state.reminder_at is None
+    assert turn_state.expiry_at is None
+
+
+def test_win_schedules_turn_timers_for_the_winner(session: Session) -> None:
+    game = _active_game(session)
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+
+    game_service.record_guess(session, game, guesser_id=2, guess_text="frieren")
+    session.commit()
+
+    turn_state = game_service.get_turn_state(session)
+    assert turn_state is not None
+    assert turn_state.next_starter_id == 2
+    assert turn_state.reminder_at is not None
+    assert turn_state.expiry_at is not None
+
+
+def test_clear_turn_timers_nulls_reminder_and_expiry(session: Session) -> None:
+    session.add(Player(telegram_user_id=2))
+    session.add(
+        TurnState(
+            id=1,
+            next_starter_id=2,
+            reminder_at=datetime.now(UTC),
+            expiry_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+    game_service.clear_turn_timers(session)
+    session.commit()
+
+    turn_state = game_service.get_turn_state(session)
+    assert turn_state is not None
+    assert turn_state.reminder_at is None
+    assert turn_state.expiry_at is None
 
 
 def test_active_games_returns_only_active_status_games(session: Session) -> None:

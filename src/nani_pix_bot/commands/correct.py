@@ -5,8 +5,8 @@ section."""
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands import timeout as timeout_module
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
-from nani_pix_bot.commands.timeout import cancel_timeout
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
@@ -60,11 +60,14 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         game_service.force_win(session, game, winner_id=target.telegram_user_id)
-        cancel_timeout(context.job_queue, game.id)
+        timeout_module.cancel_timeout(context.job_queue, game.id)
+        turn_state = game_service.get_turn_state(session)
+        if turn_state is not None:
+            timeout_module.schedule_turn_timers(context.job_queue, turn_state)
         await context.bot.send_photo(
             chat_id=group_chat_id,
             message_thread_id=game_topic_id,
             photo=game.original_file_id,
-            caption=i18n.t("correct.caption", lang, title=_title(game)),
+            caption=i18n.t("correct.caption", lang, winner=target_username, title=_title(game)),
         )
         game_service.clear_original_screenshot(game)

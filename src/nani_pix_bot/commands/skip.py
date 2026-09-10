@@ -4,6 +4,7 @@ game. See MECHANICS.md's "Turn handoff" section."""
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands import timeout as timeout_module
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import game as game_service
@@ -36,6 +37,7 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         if not context.args:
             game_service.set_next_starter(session, None)
+            timeout_module.cancel_turn_timers(context.job_queue)
             await message.reply_text(i18n.t("skip.opened", lang))
             return
 
@@ -47,5 +49,6 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
             return
 
-        game_service.set_next_starter(session, target.telegram_user_id)
+        turn_state = game_service.set_next_starter(session, target.telegram_user_id)
+        timeout_module.schedule_turn_timers(context.job_queue, turn_state)
         await message.reply_text(i18n.t("skip.passed", lang, username=target_username))

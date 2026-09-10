@@ -194,7 +194,7 @@ async def test_guess_command_correct_guess_cancels_the_timeout_job(session_facto
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    context.job_queue.get_jobs_by_name.assert_called_once_with(
+    context.job_queue.get_jobs_by_name.assert_any_call(
         guess_command_module.game_service.timeout_job_name(game_id)
     )
 
@@ -248,3 +248,17 @@ async def test_guess_command_won_caption_names_the_winner(session_factory) -> No
 
     _, kwargs = context.bot.send_photo.await_args
     assert "Guesser Name" in kwargs["caption"]
+
+
+async def test_guess_command_won_schedules_the_turn_reminder_and_expiry(session_factory) -> None:
+    _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert guess_command_module.timeout_module.TURN_REMINDER_JOB_NAME in names
+    assert guess_command_module.timeout_module.TURN_EXPIRY_JOB_NAME in names
