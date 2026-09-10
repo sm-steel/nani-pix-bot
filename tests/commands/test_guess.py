@@ -105,7 +105,7 @@ async def test_guess_command_replies_when_no_game_is_active(session_factory) -> 
 
 async def test_guess_command_correct_guess_reveals_and_clears_file_id(session_factory) -> None:
     game_id = _active_game(session_factory)
-    update = _make_update(args=["frieren"])
+    update = _make_update(user_id=2, args=["frieren"])
     context = _make_context(session_factory, args=["frieren"])
 
     await guess_command_module.guess_command(
@@ -130,7 +130,7 @@ async def test_guess_command_wrong_guess_advances_stage_with_new_image(
         guess_command_module.pixelate_service, "pixelate", lambda data, stage: b"x8-bytes"
     )
     game_id = _active_game(session_factory, wrong_guess_count=4)
-    update = _make_update(args=["attack", "on", "titan"])
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
     await guess_command_module.guess_command(
@@ -151,7 +151,7 @@ async def test_guess_command_wrong_guess_advances_stage_with_new_image(
 
 async def test_guess_command_wrong_guess_below_threshold_sends_nothing(session_factory) -> None:
     _active_game(session_factory, wrong_guess_count=0)
-    update = _make_update(args=["attack", "on", "titan"])
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
     await guess_command_module.guess_command(
@@ -164,7 +164,7 @@ async def test_guess_command_wrong_guess_below_threshold_sends_nothing(session_f
 
 async def test_guess_command_stage_exhaustion_reveals_unsolved(session_factory) -> None:
     game_id = _active_game(session_factory, current_stage=PixelStage.X2, wrong_guess_count=4)
-    update = _make_update(args=["attack", "on", "titan"])
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
     await guess_command_module.guess_command(
@@ -184,7 +184,7 @@ async def test_guess_command_stage_exhaustion_reveals_unsolved(session_factory) 
 
 async def test_guess_command_correct_guess_cancels_the_timeout_job(session_factory) -> None:
     game_id = _active_game(session_factory)
-    update = _make_update(args=["frieren"])
+    update = _make_update(user_id=2, args=["frieren"])
     context = _make_context(session_factory, args=["frieren"])
 
     await guess_command_module.guess_command(
@@ -194,3 +194,23 @@ async def test_guess_command_correct_guess_cancels_the_timeout_job(session_facto
     context.job_queue.get_jobs_by_name.assert_called_once_with(
         guess_command_module.game_service.timeout_job_name(game_id)
     )
+
+
+async def test_guess_command_rejects_the_starter_guessing_on_their_own_game(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory)
+    update = _make_update(user_id=1, args=["frieren"])  # starter_id is 1 in _active_game
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_awaited_once()
+    context.bot.send_photo.assert_not_awaited()
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.ACTIVE
+        assert fetched.total_guess_count == 0

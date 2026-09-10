@@ -21,6 +21,7 @@
 
   "guess.usage": "Usage: /guess <anime title>",
   "guess.no_game": "No game is currently running. DM me a screenshot to start one!",
+  "guess.starter_cannot_guess": "You started this round — you already know the answer, so you can't guess on it!",
   "guess.won_caption": "🎉 Got it! It was {title}.",
   "guess.unsolved_caption": "Nobody guessed it. It was {title}.",
 

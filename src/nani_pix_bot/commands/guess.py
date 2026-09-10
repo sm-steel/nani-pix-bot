@@ -47,6 +47,9 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             # Shouldn't happen — an ACTIVE game always has both set. Defensive
             # guard (also narrows the type for the calls below).
             return
+        if user.id == game.starter_id:
+            await message.reply_text(i18n.t("guess.starter_cannot_guess", lang))
+            return
 
         game_service.get_or_create_player(session, user.id, username=user.username)
         outcome = game_service.record_guess(
