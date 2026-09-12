@@ -99,6 +99,10 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
+        if not settings.get_games_enabled(session):
+            logger.warning("{} tried to start a game while games are disabled", user.id)
+            await message.reply_text(i18n.t("dm_start.games_disabled", lang))
+            return
         game_service.get_or_create_player(session, user.id, username=user.username)
         if not game_service.can_start(session, user.id):
             logger.warning("{} tried to start a game out of turn", user.id)

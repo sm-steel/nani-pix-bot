@@ -54,6 +54,7 @@ def test_build_application_registers_every_command() -> None:
         "stageconfig",
         "setstageconfig",
         "setstage",
+        "setgamesenabled",
         "testpixels",  # TEMPORARY — see commands/testpixels.py
     }
 

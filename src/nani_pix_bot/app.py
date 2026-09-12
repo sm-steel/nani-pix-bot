@@ -20,6 +20,7 @@ from nani_pix_bot import db
 from nani_pix_bot.commands import (
     correct,
     dm_start,
+    gamesenabled,
     guess,
     language,
     leaderboard,
@@ -94,6 +95,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("stageconfig", stageconfig.stageconfig_command))
     application.add_handler(CommandHandler("setstageconfig", stageconfig.setstageconfig_command))
     application.add_handler(CommandHandler("setstage", stageconfig.setstage_command))
+    application.add_handler(CommandHandler("setgamesenabled", gamesenabled.setgamesenabled_command))
 
     return application
 

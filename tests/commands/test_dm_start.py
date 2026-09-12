@@ -203,6 +203,23 @@ async def test_photo_handler_rejects_when_it_is_not_their_turn(session_factory) 
     assert "turn" in reply_text.lower()
 
 
+async def test_photo_handler_rejects_when_games_are_disabled(session_factory) -> None:
+    with session_factory() as session:
+        session.add(BotSettings(id=1, games_enabled=False))
+        session.commit()
+
+    update = _make_update(user_id=1, photo_file_id="file123")
+    context = _make_context(session_factory)
+
+    await dm_start.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        assert session.query(Game).count() == 0
+    update.message.reply_text.assert_awaited_once()
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert "disabled" in reply_text.lower() or "paused" in reply_text.lower()
+
+
 async def test_photo_handler_ignores_non_photo_messages(session_factory) -> None:
     update = _make_update(user_id=1, photo_file_id=None)
     context = _make_context(session_factory)

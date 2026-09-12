@@ -34,3 +34,35 @@ def test_set_language_updates_an_existing_row(session: Session) -> None:
     fetched = session.get(BotSettings, 1)
     assert fetched is not None
     assert fetched.language == "RU"
+
+
+def test_get_games_enabled_defaults_to_true_when_no_row_exists(session: Session) -> None:
+    assert settings.get_games_enabled(session) is True
+
+
+def test_get_games_enabled_returns_the_stored_value(session: Session) -> None:
+    session.add(BotSettings(id=1, games_enabled=False))
+    session.commit()
+
+    assert settings.get_games_enabled(session) is False
+
+
+def test_set_games_enabled_creates_the_row_if_missing(session: Session) -> None:
+    settings.set_games_enabled(session, False)
+    session.commit()
+
+    fetched = session.get(BotSettings, 1)
+    assert fetched is not None
+    assert fetched.games_enabled is False
+
+
+def test_set_games_enabled_updates_an_existing_row(session: Session) -> None:
+    session.add(BotSettings(id=1, games_enabled=True))
+    session.commit()
+
+    settings.set_games_enabled(session, False)
+    session.commit()
+
+    fetched = session.get(BotSettings, 1)
+    assert fetched is not None
+    assert fetched.games_enabled is False

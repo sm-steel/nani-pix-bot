@@ -12,6 +12,7 @@
 
   "dm_start.not_a_member": "You need to be a member of the group to start a game.",
   "dm_start.not_your_turn": "It's not your turn to start a new game right now.",
+  "dm_start.games_disabled": "Starting new games is temporarily paused — try again later.",
   "dm_start.pick_method_prompt": "How would you like to identify the anime?",
   "dm_start.pick_method_prompt_shikimori_preferred": "How would you like to identify the anime? 💡 Shikimori is listed first — it tends to have better Russian titles and synonyms.",
   "dm_start.search_failed": "{service} looks like it's down right now — pick a method to try again.",
