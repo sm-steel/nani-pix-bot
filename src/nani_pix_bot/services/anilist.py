@@ -4,16 +4,14 @@ module is never consulted per guess, only to populate a Game's cached
 title/synonyms.
 """
 
-import asyncio
 from dataclasses import dataclass
-from http import HTTPStatus
 
 import httpx
 from loguru import logger
 
+from nani_pix_bot.services import http_retry
+
 ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
-MAX_RATE_LIMIT_RETRIES = 5
-DEFAULT_RETRY_AFTER_SECONDS = 5.0
 SEARCH_RESULT_LIMIT = 5
 
 # AniList (via Cloudflare) 403s requests with no Referer, regardless of
@@ -83,21 +81,17 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
 
 
 async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) -> dict:
-    for _attempt in range(MAX_RATE_LIMIT_RETRIES):
-        response = await client.post(
+    async def make_request() -> httpx.Response:
+        return await client.post(
             ANILIST_GRAPHQL_URL,
             json={"query": query, "variables": variables},
             headers=_REQUEST_HEADERS,
         )
-        if response.status_code != HTTPStatus.TOO_MANY_REQUESTS:
-            response.raise_for_status()
-            return response.json()["data"]
-        retry_after = float(response.headers.get("Retry-After", DEFAULT_RETRY_AFTER_SECONDS))
-        logger.warning("AniList rate-limited request, retrying in {}s", retry_after)
-        await asyncio.sleep(retry_after)
-    msg = f"AniList rate limit retries exhausted (variables {variables!r})"
-    logger.error(msg)
-    raise RuntimeError(msg)
+
+    response = await http_retry.request_with_retry(
+        make_request, service_name="AniList", context=f"variables {variables!r}"
+    )
+    return response.json()["data"]
 
 
 def _parse_result(raw: dict) -> AniListResult:

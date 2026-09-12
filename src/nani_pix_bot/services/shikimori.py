@@ -10,12 +10,13 @@ established for AniList, except here it's forced by Shikimori's own API
 shape rather than a design choice.
 """
 
-import asyncio
 from dataclasses import dataclass
 from http import HTTPStatus
 
 import httpx
 from loguru import logger
+
+from nani_pix_bot.services import http_retry
 
 # Shikimori's older shikimori.one domain now permanently 301-redirects
 # here — and shikimori.one is itself unreachable directly from moscow,
@@ -23,8 +24,6 @@ from loguru import logger
 # so pointing at the old domain would just return an HTML redirect page
 # instead of JSON). See ARCHITECTURE.md's "AniList/Shikimori connectivity".
 SHIKIMORI_BASE_URL = "https://shikimori.io/api/animes"
-MAX_RATE_LIMIT_RETRIES = 5
-DEFAULT_RETRY_AFTER_SECONDS = 5.0
 SEARCH_RESULT_LIMIT = 5
 
 # Shikimori asks API consumers to identify themselves with a descriptive
@@ -72,17 +71,13 @@ async def get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriRe
 
 
 async def _request(client: httpx.AsyncClient, *, url: str, params: dict) -> dict:
-    for _attempt in range(MAX_RATE_LIMIT_RETRIES):
-        response = await client.get(url, params=params, headers=_REQUEST_HEADERS)
-        if response.status_code != HTTPStatus.TOO_MANY_REQUESTS:
-            response.raise_for_status()
-            return response.json()
-        retry_after = float(response.headers.get("Retry-After", DEFAULT_RETRY_AFTER_SECONDS))
-        logger.warning("Shikimori rate-limited request, retrying in {}s", retry_after)
-        await asyncio.sleep(retry_after)
-    msg = f"Shikimori rate limit retries exhausted (url {url!r}, params {params!r})"
-    logger.error(msg)
-    raise RuntimeError(msg)
+    async def make_request() -> httpx.Response:
+        return await client.get(url, params=params, headers=_REQUEST_HEADERS)
+
+    response = await http_retry.request_with_retry(
+        make_request, service_name="Shikimori", context=f"url {url!r}, params {params!r}"
+    )
+    return response.json()
 
 
 def _parse_search_result(raw: dict) -> ShikimoriResult:
