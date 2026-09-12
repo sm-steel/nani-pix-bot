@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands import skip as skip_command_module
+from nani_pix_bot.commands.game_flow import skip as skip_command_module
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player

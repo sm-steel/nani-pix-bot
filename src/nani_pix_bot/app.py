@@ -18,16 +18,13 @@ from telegram.ext import (
 
 from nani_pix_bot import db
 from nani_pix_bot.commands import (
-    correct,
     dm_start,
+    game_flow,
     gamesenabled,
-    guess,
     language,
     leaderboard,
     onboarding,
-    skip,
     stageconfig,
-    stop,
     testpixels,  # TEMPORARY — see commands/testpixels.py
 )
 from nani_pix_bot.commands.dm_start.keyboards import RETRY_CALLBACK_DATA
@@ -82,11 +79,13 @@ def build_application(config: Config) -> Application:
             language.language_callback_handler, pattern=rf"^{re.escape(SET_LANGUAGE_PREFIX)}"
         )
     )
-    application.add_handler(CallbackQueryHandler(stop.stop_callback_handler, pattern=r"^stop:"))
-    application.add_handler(CommandHandler("guess", guess.guess_command))
-    application.add_handler(CommandHandler("correct", correct.correct_command))
-    application.add_handler(CommandHandler("skip", skip.skip_command))
-    application.add_handler(CommandHandler("stop", stop.stop_command))
+    application.add_handler(
+        CallbackQueryHandler(game_flow.stop_callback_handler, pattern=r"^stop:")
+    )
+    application.add_handler(CommandHandler("guess", game_flow.guess_command))
+    application.add_handler(CommandHandler("correct", game_flow.correct_command))
+    application.add_handler(CommandHandler("skip", game_flow.skip_command))
+    application.add_handler(CommandHandler("stop", game_flow.stop_command))
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
     application.add_handler(CommandHandler("language", language.language_command))
     application.add_handler(CommandHandler("start", onboarding.start_command))

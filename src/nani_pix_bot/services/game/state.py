@@ -53,10 +53,11 @@ def display_title(game: Game) -> str:
     setup preview: English, then romaji, then native, then Russian
     (Shikimori-only results only ever have this one), then a literal
     "?" if somehow none are set. The one canonical fallback chain —
-    commands/guess.py, correct.py, stop.py, and jobs/timers.py each
-    used to keep their own copy, and three of those four copies were
-    missing the Russian fallback (a Shikimori-only result would show
-    "?" instead of its actual title)."""
+    commands/game_flow/guess.py, correct.py, stop.py, and
+    jobs/timers.py each used to keep their own copy, and three of
+    those four copies were missing the Russian fallback (a
+    Shikimori-only result would show "?" instead of its actual
+    title)."""
     candidates = (game.title_english, game.title_romaji, game.title_native, game.title_russian)
     return next((title for title in candidates if title), "?")
 

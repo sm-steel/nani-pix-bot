@@ -5,7 +5,7 @@ import pytest
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands import guess as guess_command_module
+from nani_pix_bot.commands.game_flow import guess as guess_command_module
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player

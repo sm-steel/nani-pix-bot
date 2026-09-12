@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands import stop as stop_command_module
+from nani_pix_bot.commands.game_flow import stop as stop_command_module
 from nani_pix_bot.commands.helpers.keyboards import (
     STOP_CANCEL_CALLBACK_DATA,
     STOP_CONFIRM_CALLBACK_DATA,
