@@ -25,6 +25,7 @@ from nani_pix_bot.commands import (
     leaderboard,
     onboarding,
     skip,
+    stageconfig,
     stop,
     testpixels,  # TEMPORARY — see commands/testpixels.py
 )
@@ -90,6 +91,9 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("start", onboarding.start_command))
     application.add_handler(CommandHandler("help", onboarding.help_command))
     application.add_handler(CommandHandler("testpixels", testpixels.testpixels_command))
+    application.add_handler(CommandHandler("stageconfig", stageconfig.stageconfig_command))
+    application.add_handler(CommandHandler("setstageconfig", stageconfig.setstageconfig_command))
+    application.add_handler(CommandHandler("setstage", stageconfig.setstage_command))
 
     return application
 
