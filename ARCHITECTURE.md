@@ -167,7 +167,9 @@ summary.
   photo, pick AniList, Shikimori, or manual entry, then either search and
   tap one of that service's results shown as an inline keyboard, or (for
   manual) type a title and at least one synonym directly — landing on a
-  private preview (staged title/synonyms + the x10 screenshot) with
+  private preview — one album with the screenshot pixelated at all 5
+  configured stages, captioned with the staged title/synonyms, followed
+  by a separate message (`sendMediaGroup` can't carry a keyboard) with
   buttons to change the image, re-search, add a synonym, or confirm and
   post to the group. Deliberately stateless across restarts: which game a
   DM is setting up comes from a DB lookup (`get_setup_game_for_starter`),

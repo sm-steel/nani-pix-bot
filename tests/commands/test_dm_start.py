@@ -417,6 +417,7 @@ def _make_callback_context(session_factory, **extra_bot_data) -> MagicMock:
         return_value=bytearray(b"original-bytes")
     )
     context.bot.send_photo = AsyncMock()
+    context.bot.send_media_group = AsyncMock()
     return context
 
 
@@ -460,14 +461,22 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
     )
 
     context.bot.get_file.assert_awaited_once_with("file123")
-    context.bot.send_photo.assert_awaited_once()
-    _, kwargs = context.bot.send_photo.await_args
+    context.bot.send_media_group.assert_awaited_once()
+    _, kwargs = context.bot.send_media_group.await_args
     # The preview goes to the starter's own DM, not the group topic —
     # nothing is posted to the group until they confirm.
     assert kwargs["chat_id"] == 1
     assert "message_thread_id" not in kwargs
-    assert kwargs["photo"] == b"pixelated"
-    assert "Frieren: Beyond Journey's End" in kwargs["caption"]
+    media = kwargs["media"]
+    assert len(media) == 5
+    assert all(item.media.input_file_content == b"pixelated" for item in media)
+    assert "Frieren: Beyond Journey's End" in media[0].caption
+    assert all(item.caption is None for item in media[1:])
+
+    context.bot.send_message.assert_awaited_once()
+    _, message_kwargs = context.bot.send_message.await_args
+    assert message_kwargs["chat_id"] == 1
+    assert "reply_markup" in message_kwargs
 
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
@@ -496,7 +505,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(
     )
 
     get_by_id_mock.assert_awaited_once_with(context.bot_data["search_client"], 52991)
-    context.bot.send_photo.assert_awaited_once()
+    context.bot.send_media_group.assert_awaited_once()
 
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
@@ -553,7 +562,7 @@ async def test_pick_callback_handler_survives_a_restart_between_search_and_pick(
     )
 
     get_by_id_mock.assert_awaited_once_with(context.bot_data["search_client"], 99)
-    context.bot.send_photo.assert_awaited_once()
+    context.bot.send_media_group.assert_awaited_once()
 
 
 async def test_pick_callback_handler_preview_lists_the_synonyms(
@@ -570,10 +579,13 @@ async def test_pick_callback_handler_preview_lists_the_synonyms(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    _, kwargs = context.bot.send_photo.await_args
-    assert "Frieren" in kwargs["caption"]
+    _, media_kwargs = context.bot.send_media_group.await_args
+    assert "Frieren" in media_kwargs["media"][0].caption
+    _, message_kwargs = context.bot.send_message.await_args
     callbacks = [
-        button.callback_data for row in kwargs["reply_markup"].inline_keyboard for button in row
+        button.callback_data
+        for row in message_kwargs["reply_markup"].inline_keyboard
+        for button in row
     ]
     assert dm_start.PREVIEW_CONFIRM_CALLBACK_DATA in callbacks
 
@@ -643,11 +655,11 @@ async def test_manual_entry_second_message_stages_and_shows_a_preview(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    context.bot.send_photo.assert_awaited_once()
-    _, kwargs = context.bot.send_photo.await_args
+    context.bot.send_media_group.assert_awaited_once()
+    _, kwargs = context.bot.send_media_group.await_args
     assert kwargs["chat_id"] == 1
-    assert kwargs["photo"] == b"pixelated"
-    assert "Sousou no Frieren" in kwargs["caption"]
+    assert all(item.media.input_file_content == b"pixelated" for item in kwargs["media"])
+    assert "Sousou no Frieren" in kwargs["media"][0].caption
 
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
@@ -668,7 +680,7 @@ def _make_preview_callback_update(
     update.callback_query.from_user.id = user_id
     update.callback_query.from_user.full_name = full_name
     update.callback_query.answer = AsyncMock()
-    update.callback_query.edit_message_caption = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
     return update
 
 
@@ -707,7 +719,7 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
     context.job_queue.get_jobs_by_name.assert_any_call(
         dm_start.game_service.setup_abandon_job_name(fetched.id)
     )
-    update.callback_query.edit_message_caption.assert_awaited_once()
+    update.callback_query.edit_message_text.assert_awaited_once()
 
 
 async def test_preview_change_image_awaits_a_new_photo(session_factory) -> None:
@@ -721,7 +733,7 @@ async def test_preview_change_image_awaits_a_new_photo(session_factory) -> None:
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    update.callback_query.edit_message_caption.assert_awaited_once()
+    update.callback_query.edit_message_text.assert_awaited_once()
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.setup_step == SetupStep.AWAITING_PHOTO_CHANGE
@@ -737,7 +749,7 @@ async def test_preview_research_returns_to_the_method_keyboard(session_factory) 
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    _, kwargs = update.callback_query.edit_message_caption.await_args
+    _, kwargs = update.callback_query.edit_message_text.await_args
     callbacks = [
         button.callback_data for row in kwargs["reply_markup"].inline_keyboard for button in row
     ]
@@ -758,7 +770,7 @@ async def test_preview_add_synonym_awaits_a_synonym_message(session_factory) -> 
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    update.callback_query.edit_message_caption.assert_awaited_once()
+    update.callback_query.edit_message_text.assert_awaited_once()
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.setup_step == SetupStep.AWAITING_SYNONYM
@@ -781,8 +793,8 @@ async def test_search_text_handler_appends_a_synonym_and_reshows_the_preview(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    context.bot.send_photo.assert_awaited_once()
-    _, kwargs = context.bot.send_photo.await_args
+    context.bot.send_media_group.assert_awaited_once()
+    _, kwargs = context.bot.send_media_group.await_args
     assert kwargs["chat_id"] == 1
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
@@ -866,6 +878,6 @@ async def test_photo_handler_updates_the_image_and_reshows_the_preview_when_chan
         assert fetched.setup_step == SetupStep.CONFIRMING
 
     context.bot.get_file.assert_awaited_once_with("new-file-456")
-    context.bot.send_photo.assert_awaited_once()
-    _, kwargs = context.bot.send_photo.await_args
+    context.bot.send_media_group.assert_awaited_once()
+    _, kwargs = context.bot.send_media_group.await_args
     assert kwargs["chat_id"] == 1

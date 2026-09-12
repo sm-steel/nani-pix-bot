@@ -109,10 +109,16 @@ restricts to members.
    (comma- or newline-separated, re-prompted if left blank) — both typed
    by the player, no external lookup.
 4. Either way, once a title/synonyms are staged, the bot sends the player
-   a **private preview** — the stage-1-pixelated (blockiest) screenshot
-   plus the staged title and full synonyms list — instead of posting
-   straight to the group. Four buttons let them fix anything before it
-   goes live:
+   a **private preview** — the screenshot pixelated at all 5 configured
+   stages (blockiest to clearest, see "Pixelation stages" below), sent
+   as one Telegram album with the staged title and full synonyms list
+   as the caption on the first photo — instead of posting straight to
+   the group, so the starter sees exactly how the round will progress
+   before committing to it. Telegram's `sendMediaGroup` has no
+   `reply_markup` support, so the four buttons below arrive on a short
+   separate text message right after the album, not on the album
+   itself. Those four buttons let them fix anything before it goes
+   live:
    - **Change image** — send a new screenshot; keeps the title/synonyms.
    - **Re-search title** — back to the method-selection keyboard; keeps
      the screenshot, replaces the title/synonyms/source once a new one

@@ -14,7 +14,7 @@ import re
 
 import httpx
 from loguru import logger
-from telegram import Update
+from telegram import InputMediaPhoto, Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.keyboards import (
@@ -341,27 +341,37 @@ async def _finalize_and_post(context, session, game: Game, caption: str) -> None
 
 
 async def _show_preview(context, session, game: Game, lang: str) -> None:
-    """Send the starter a private, first-stage-pixelated preview of the staged
-    title/synonyms, with buttons to change the image, re-search, add a
-    synonym, or confirm and post to the group. Nothing is posted to the
+    """Send the starter a private preview of every pixelation stage for
+    the staged title/synonyms — one Telegram album (blockiest to
+    clearest, see MECHANICS.md) — so they see how the round will
+    actually look before committing to it. `sendMediaGroup` has no
+    `reply_markup` support, so the confirm/change-image/research/add-
+    synonym buttons go on a short separate follow-up text message right
+    after the album, not on the album itself. Nothing is posted to the
     group until "Confirm and start" is tapped. Always the game's own
     starter's DM — every caller looked this game up by starter_id in the
     first place, so game.starter_id is the right chat_id."""
     telegram_file = await context.bot.get_file(game.original_file_id)
     original_bytes = bytes(await telegram_file.download_as_bytearray())
-    first_stage = game_service.STAGE_ORDER[0]
-    target_width = stage_config.get_stage_config(session)[first_stage].target_width
-    pixelated = pixelate_service.pixelate(original_bytes, target_width)
+    config = stage_config.get_stage_config(session)
     synonyms = ", ".join(game.synonyms or []) or "—"
     caption = i18n.t(
         "dm_start.preview_caption", lang, title=_display_title(game), synonyms=synonyms
     )
+    captions = [caption, *([None] * (len(game_service.STAGE_ORDER) - 1))]
+    media = [
+        InputMediaPhoto(
+            media=pixelate_service.pixelate(original_bytes, config[stage].target_width),
+            caption=stage_caption,
+        )
+        for stage, stage_caption in zip(game_service.STAGE_ORDER, captions, strict=True)
+    ]
     game.setup_step = SetupStep.CONFIRMING
-    logger.debug("Game {}: showing confirmation preview", game.id)
-    await context.bot.send_photo(
+    logger.debug("Game {}: showing {}-stage confirmation preview album", game.id, len(media))
+    await context.bot.send_media_group(chat_id=game.starter_id, media=media)
+    await context.bot.send_message(
         chat_id=game.starter_id,
-        photo=pixelated,
-        caption=caption,
+        text=i18n.t("dm_start.preview_confirm_prompt", lang),
         reply_markup=preview_keyboard(lang),
     )
 
@@ -386,7 +396,10 @@ async def _add_synonym_step(message, context: ContextTypes.DEFAULT_TYPE, lang: s
 
 
 async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """One of the confirmation preview's four buttons was tapped."""
+    """One of the confirmation preview's four buttons was tapped. The
+    buttons live on the plain-text follow-up message _show_preview sends
+    after the album (sendMediaGroup can't carry a keyboard itself), so
+    every branch here edits that message's text, not a photo caption."""
     query = update.callback_query
     if query is None or query.data is None:
         return
@@ -405,7 +418,7 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
 
         if query.data == PREVIEW_CONFIRM_CALLBACK_DATA:
             await _preview_confirm(context, session, setup_game, lang, user.full_name)
-            await query.edit_message_caption(caption=i18n.t("dm_start.posted", lang))
+            await query.edit_message_text(text=i18n.t("dm_start.posted", lang))
         elif query.data == PREVIEW_CHANGE_IMAGE_CALLBACK_DATA:
             await _preview_change_image(query, setup_game, lang)
         elif query.data == PREVIEW_RESEARCH_CALLBACK_DATA:
@@ -423,15 +436,15 @@ async def _preview_confirm(context, session, game: Game, lang: str, starter_name
 async def _preview_change_image(query, game: Game, lang: str) -> None:
     logger.debug("Game {}: change-image requested from preview", game.id)
     game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
-    await query.edit_message_caption(caption=i18n.t("dm_start.ask_new_photo", lang))
+    await query.edit_message_text(text=i18n.t("dm_start.ask_new_photo", lang))
 
 
 async def _preview_research(query, game: Game, lang: str) -> None:
     logger.debug("Game {}: re-search requested from preview", game.id)
     game.setup_step = SetupStep.PICKING_METHOD
     prefer_shikimori = _prefer_shikimori(lang)
-    await query.edit_message_caption(
-        caption=i18n.t(_method_prompt_key(prefer_shikimori=prefer_shikimori), lang),
+    await query.edit_message_text(
+        text=i18n.t(_method_prompt_key(prefer_shikimori=prefer_shikimori), lang),
         reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
     )
 
@@ -439,7 +452,7 @@ async def _preview_research(query, game: Game, lang: str) -> None:
 async def _preview_add_synonym(query, game: Game, lang: str) -> None:
     logger.debug("Game {}: add-synonym requested from preview", game.id)
     game.setup_step = SetupStep.AWAITING_SYNONYM
-    await query.edit_message_caption(caption=i18n.t("dm_start.ask_extra_synonym", lang))
+    await query.edit_message_text(text=i18n.t("dm_start.ask_extra_synonym", lang))
 
 
 async def _reply_service_down(send, lang: str, source: str) -> None:
