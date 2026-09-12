@@ -1,9 +1,8 @@
 """Admin commands for viewing/tuning per-stage pixelation config — see
-services/stage_config.py. All three commands are DM-only, admin-gated
-(same precedent as /language), and apply changes immediately with no
-confirmation step (this is a fast-iteration admin tool, not a
-player-facing flow — plain English, no i18n investment, same pragmatic
-call as commands/testpixels.py).
+services/stage_config.py. All three commands are DM-only and
+admin-gated (same precedent as /language), and apply changes
+immediately with no confirmation step (this is a fast-iteration admin
+tool).
 
 Editing is blocked while a game is SETUP or ACTIVE — retuning mid-round
 would pull the rug out from under whoever's playing — with a "stop the
@@ -22,16 +21,10 @@ from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import PixelStage
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import settings, stage_config
+from nani_pix_bot.services import i18n, settings, stage_config
 from nani_pix_bot.services.pixelate import pixelate
 
 _EXAMPLE_IMAGES = [Path("tmp/example1.jpg"), Path("tmp/example2.png")]
-
-_SETSTAGECONFIG_USAGE = (
-    "Usage: /setstageconfig <width:guesses> x5, one per stage in order "
-    "(stage 1 to stage 5), e.g. /setstageconfig 64:1 80:1 128:2 192:3 512:3"
-)
-_SETSTAGE_USAGE = "Usage: /setstage <stage 1-5> <width> <guesses>"
 
 
 async def _is_admin(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
@@ -39,8 +32,11 @@ async def _is_admin(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
     return await is_group_admin(context.bot, group_chat_id, user_id)
 
 
-def _render_table(config: dict[PixelStage, stage_config.StageSettings]) -> str:
-    header = f"{'Stage':<8}{'Width':<8}Guesses"
+def _render_table(lang: str, config: dict[PixelStage, stage_config.StageSettings]) -> str:
+    stage_header = i18n.t("stageconfig.table_header_stage", lang)
+    width_header = i18n.t("stageconfig.table_header_width", lang)
+    guesses_header = i18n.t("stageconfig.table_header_guesses", lang)
+    header = f"{stage_header:<8}{width_header:<8}{guesses_header}"
     rows = [header]
     for stage in PixelStage:
         settings_ = config[stage]
@@ -66,15 +62,17 @@ async def stageconfig_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = update.effective_user
     if not is_private_chat(update) or message is None or user is None:
         return
-    if not await _is_admin(context, user.id):
-        logger.warning("Non-admin {} tried /stageconfig", user.id)
-        await message.reply_text("Admins only.")
-        return
 
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        if not await _is_admin(context, user.id):
+            logger.warning("Non-admin {} tried /stageconfig", user.id)
+            await message.reply_text(i18n.t("commands.admins_only", lang))
+            return
         config = stage_config.get_stage_config(session)
-    await message.reply_text(_render_table(config), parse_mode="HTML")
+
+    await message.reply_text(_render_table(lang, config), parse_mode="HTML")
 
 
 async def setstageconfig_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -82,25 +80,29 @@ async def setstageconfig_command(update: Update, context: ContextTypes.DEFAULT_T
     user = update.effective_user
     if not is_private_chat(update) or message is None or user is None:
         return
-    if not await _is_admin(context, user.id):
-        logger.warning("Non-admin {} tried /setstageconfig", user.id)
-        await message.reply_text("Admins only.")
-        return
+
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        if not await _is_admin(context, user.id):
+            logger.warning("Non-admin {} tried /setstageconfig", user.id)
+            await message.reply_text(i18n.t("commands.admins_only", lang))
+            return
 
     args = context.args or []
     if len(args) != len(PixelStage):
-        await message.reply_text(_SETSTAGECONFIG_USAGE)
+        await message.reply_text(i18n.t("stageconfig.setstageconfig_usage", lang))
         return
 
     changes: dict[PixelStage, tuple[int, int]] = {}
     for stage, arg in zip(PixelStage, args, strict=True):
         parsed = _parse_pair(arg)
         if parsed is None:
-            await message.reply_text(_SETSTAGECONFIG_USAGE)
+            await message.reply_text(i18n.t("stageconfig.setstageconfig_usage", lang))
             return
         changes[stage] = parsed
 
-    await _apply_stage_changes(message, context, changes)
+    await _apply_stage_changes(message, context, lang, changes)
 
 
 async def setstage_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -108,31 +110,36 @@ async def setstage_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     user = update.effective_user
     if not is_private_chat(update) or message is None or user is None:
         return
-    if not await _is_admin(context, user.id):
-        logger.warning("Non-admin {} tried /setstage", user.id)
-        await message.reply_text("Admins only.")
-        return
+
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        if not await _is_admin(context, user.id):
+            logger.warning("Non-admin {} tried /setstage", user.id)
+            await message.reply_text(i18n.t("commands.admins_only", lang))
+            return
 
     args = context.args or []
     if len(args) != 3:
-        await message.reply_text(_SETSTAGE_USAGE)
+        await message.reply_text(i18n.t("stageconfig.setstage_usage", lang))
         return
     try:
         stage_number, width, limit = int(args[0]), int(args[1]), int(args[2])
     except ValueError:
-        await message.reply_text(_SETSTAGE_USAGE)
+        await message.reply_text(i18n.t("stageconfig.setstage_usage", lang))
         return
     if not (1 <= stage_number <= len(game_service.STAGE_ORDER)) or width <= 0 or limit <= 0:
-        await message.reply_text(_SETSTAGE_USAGE)
+        await message.reply_text(i18n.t("stageconfig.setstage_usage", lang))
         return
 
     stage = game_service.STAGE_ORDER[stage_number - 1]
-    await _apply_stage_changes(message, context, {stage: (width, limit)})
+    await _apply_stage_changes(message, context, lang, {stage: (width, limit)})
 
 
 async def _apply_stage_changes(
     message: Message,
     context: ContextTypes.DEFAULT_TYPE,
+    lang: str,
     changes: dict[PixelStage, tuple[int, int]],
 ) -> None:
     """Shared tail end of both setters: blocks while a game is running
@@ -142,10 +149,9 @@ async def _apply_stage_changes(
     with session_scope(session_factory) as session:
         running = game_service.active_or_setup_game(session)
         if running is not None:
-            lang = settings.get_language(session)
             logger.warning("Stage config edit blocked — game {} is {}", running.id, running.status)
             await message.reply_text(
-                "A game is currently running — stop it before editing stage config.",
+                i18n.t("stageconfig.game_running", lang),
                 reply_markup=stop_confirm_keyboard(lang),
             )
             return
@@ -156,13 +162,14 @@ async def _apply_stage_changes(
             )
         config = stage_config.get_stage_config(session)
 
-    await message.reply_text(_render_table(config), parse_mode="HTML")
-    await _send_preview(message, context, changes)
+    await message.reply_text(_render_table(lang, config), parse_mode="HTML")
+    await _send_preview(message, context, lang, changes)
 
 
 async def _send_preview(
     message: Message,
     context: ContextTypes.DEFAULT_TYPE,
+    lang: str,
     changes: dict[PixelStage, tuple[int, int]],
 ) -> None:
     chat_id = message.chat_id
@@ -176,7 +183,11 @@ async def _send_preview(
                 continue
             pixelated = pixelate(image_path.read_bytes(), width)
             caption = (
-                f"{stage.name} — {width}px, {limit} wrong guesses allowed" if index == 0 else None
+                i18n.t(
+                    "stageconfig.preview_caption", lang, stage=stage.name, width=width, limit=limit
+                )
+                if index == 0
+                else None
             )
             media.append(InputMediaPhoto(media=pixelated, caption=caption))
         if media:

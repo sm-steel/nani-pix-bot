@@ -45,6 +45,36 @@ async def test_setgamesenabled_rejects_non_admin(session_factory) -> None:
         assert session.get(BotSettings, 1) is None
 
 
+async def test_setgamesenabled_rejects_non_admin_in_russian(session_factory) -> None:
+    with session_factory() as session:
+        session.add(BotSettings(id=1, language="RU"))
+        session.commit()
+    update = _make_update(user_id=2)
+    context = _make_context(session_factory, args=["off"])
+
+    await gamesenabled_module.setgamesenabled_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert reply_text == "Только для админов."
+
+
+async def test_setgamesenabled_off_replies_in_russian(session_factory) -> None:
+    with session_factory() as session:
+        session.add(BotSettings(id=1, language="RU"))
+        session.commit()
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory, admin_ids={1}, args=["off"])
+
+    await gamesenabled_module.setgamesenabled_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert reply_text == "Начало новых игр теперь приостановлено."
+
+
 async def test_setgamesenabled_ignores_group_chat(session_factory) -> None:
     update = _make_update(user_id=1, chat_type="supergroup")
     context = _make_context(session_factory, admin_ids={1}, args=["off"])

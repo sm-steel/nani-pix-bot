@@ -14,14 +14,16 @@ class GameStatus(enum.Enum):
 class PixelStage(enum.Enum):
     """Pixelation stages, blockiest to clearest — see MECHANICS.md's
     "Pixelation stages" table. Named ordinally (not by a scale factor —
-    that was tried before and the digits stopped meaning anything real,
-    see services/pixelate.py's STAGE_TARGET_WIDTH)."""
+    that was tried before and the digits stopped meaning anything real).
+    Only the 5 members and their order are fixed here; each stage's
+    actual target width and wrong-guess limit are admin-configurable at
+    runtime, not baked into this enum — see services/stage_config.py."""
 
-    STAGE_1 = "stage_1"  # 12px target width — shown first, hardest, only 1 wrong guess allowed
-    STAGE_2 = "stage_2"  # 25px target width — still only 1 wrong guess allowed
-    STAGE_3 = "stage_3"  # 38px target width — 3 wrong guesses allowed
-    STAGE_4 = "stage_4"  # 51px target width — 5 wrong guesses allowed
-    STAGE_5 = "stage_5"  # 64px target width — clearest stage before reveal, 8 wrong guesses allowed
+    STAGE_1 = "stage_1"  # shown first — blockiest/hardest
+    STAGE_2 = "stage_2"
+    STAGE_3 = "stage_3"
+    STAGE_4 = "stage_4"
+    STAGE_5 = "stage_5"  # clearest stage before reveal
 
 
 class SetupStep(enum.Enum):

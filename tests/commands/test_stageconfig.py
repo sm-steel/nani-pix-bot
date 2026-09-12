@@ -6,6 +6,7 @@ from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import stageconfig as stageconfig_module
+from nani_pix_bot.models.bot_settings import BotSettings
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -43,6 +44,12 @@ def _seed_config(session_factory) -> None:
         session.commit()
 
 
+def _set_russian(session_factory) -> None:
+    with session_factory() as session:
+        session.add(BotSettings(id=1, language="RU"))
+        session.commit()
+
+
 def _active_game(session_factory, *, starter_id: int = 1) -> int:
     with session_factory() as session:
         session.add(Player(telegram_user_id=starter_id))
@@ -70,6 +77,36 @@ async def test_stageconfig_command_rejects_non_admin(session_factory) -> None:
     args, kwargs = update.message.reply_text.await_args
     assert "admin" in args[0].lower()
     assert "parse_mode" not in kwargs
+
+
+async def test_stageconfig_command_rejects_non_admin_in_russian(session_factory) -> None:
+    _set_russian(session_factory)
+    update = _make_update(user_id=2)
+    context = _make_context(session_factory)
+
+    await stageconfig_module.stageconfig_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_awaited_once()
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert reply_text == "Только для админов."
+
+
+async def test_stageconfig_command_shows_russian_table_headers(session_factory) -> None:
+    _seed_config(session_factory)
+    _set_russian(session_factory)
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory, admin_ids={1})
+
+    await stageconfig_module.stageconfig_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    args, _ = update.message.reply_text.await_args
+    assert "Этап" in args[0]
+    assert "Ширина" in args[0]
+    assert "Попытки" in args[0]
 
 
 async def test_stageconfig_command_ignores_group_chat(session_factory) -> None:
@@ -214,6 +251,22 @@ async def test_setstage_command_applies_a_single_stage_and_shows_one_preview(
         assert fetched.wrong_guess_limit == 2
 
     context.bot.send_media_group.assert_awaited_once()
+    _, media_kwargs = context.bot.send_media_group.await_args
+    assert "100px" in media_kwargs["media"][0].caption
+    assert "2" in media_kwargs["media"][0].caption
+
+
+async def test_setstage_command_preview_caption_is_translated(session_factory) -> None:
+    _set_russian(session_factory)
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory, admin_ids={1}, args=["3", "100", "2"])
+
+    await stageconfig_module.setstage_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, media_kwargs = context.bot.send_media_group.await_args
+    assert "неверных попыток" in media_kwargs["media"][0].caption
 
 
 async def test_setstage_command_blocks_while_a_game_is_running(session_factory) -> None:
@@ -229,3 +282,19 @@ async def test_setstage_command_blocks_while_a_game_is_running(session_factory) 
     _, kwargs = update.message.reply_text.await_args
     assert "reply_markup" in kwargs
     context.bot.send_media_group.assert_not_awaited()
+
+
+async def test_setstage_command_blocks_with_translated_message_in_russian(session_factory) -> None:
+    _active_game(session_factory)
+    _set_russian(session_factory)
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory, admin_ids={1}, args=["3", "100", "2"])
+
+    await stageconfig_module.setstage_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert (
+        reply_text == "Сейчас идёт игра — сначала остановите её, чтобы изменить настройки этапов."
+    )

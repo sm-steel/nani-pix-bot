@@ -59,7 +59,7 @@
   "turn.expired": "⌛ Nobody started a new game in time — it's open to anyone now! DM me a screenshot to begin.",
 
   "onboarding.start": "👋 Welcome! I run an anime-screenshot guessing game in the group.\n\nWhen it's your turn, DM me a screenshot here and I'll walk you through picking the anime — then I'll post a heavily pixelated version to the group for everyone to guess.\n\nUse /help anytime for the full rundown.",
-  "onboarding.help": "How to play:\n1. When it's your turn, DM me a screenshot here.\n2. I'll ask you to search for the anime and pick the right result.\n3. I'll post a pixelated version to the group's game topic.\n4. Everyone guesses with /guess <title> in that topic — it starts unforgiving (one wrong guess reveals more!) and gets more forgiving each stage.\n5. Whoever guesses right wins, and it's their turn next!\n\nIn the group topic:\n/guess <title> — make a guess\n/correct @username — (starter only) force a correct guess if the bot missed it\n/skip [@username] — pass your turn, open or to someone specific\n/leaderboard — see top winners\n\nIn DM:\n/start — this intro\n/help — this message\n/language — (group admins) switch the bot's language\n/stop — (starter or admins) stop the current game, with confirmation",
+  "onboarding.help": "How to play:\n1. When it's your turn, DM me a screenshot here.\n2. I'll ask you to search for the anime and pick the right result.\n3. I'll post a pixelated version to the group's game topic.\n4. Everyone guesses with /guess <title> in that topic — it starts unforgiving (one wrong guess reveals more!) and gets more forgiving each stage.\n5. Whoever guesses right wins, and it's their turn next!\n\nIn the group topic:\n/guess <title> — make a guess\n/correct @username — (starter only) force a correct guess if the bot missed it\n/skip [@username] — pass your turn, open or to someone specific\n/leaderboard — see top winners\n\nIn DM:\n/start — this intro\n/help — this message\n/language — (group admins) switch the bot's language\n/stop — (starter or admins) stop the current game, with confirmation\n/stageconfig, /setstageconfig, /setstage — (admins) view/tune pixelation stages\n/setgamesenabled — (admins) pause or resume starting new games",
   "onboarding.help_dm_failed": "Please message me privately first — @{bot_username} — then try /help again.",
 
   "commands.start": "How to play + how to start a game",
@@ -70,6 +70,10 @@
   "commands.skip": "Pass or hand off your turn",
   "commands.stop": "Stop the current game (starter/admins)",
   "commands.leaderboard": "Show top winners",
+  "commands.stageconfig": "View pixelation stage config (admins)",
+  "commands.setstageconfig": "Set all 5 stages at once (admins)",
+  "commands.setstage": "Set one pixelation stage (admins)",
+  "commands.setgamesenabled": "Pause/resume starting new games (admins)",
 
   "keyboards.retry": "None of these — search again",
   "keyboards.manual_entry": "Manual entry",
@@ -85,5 +89,19 @@
   "stop.confirm_prompt": "Stop the current game ({title})? This can't be undone — the turn will open up for anyone to start a new game.",
   "stop.confirmed": "Game stopped.",
   "stop.confirmed_group_notice": "🛑 The game was stopped — anyone can start a new one now!",
-  "stop.canceled": "Okay, the game continues."
+  "stop.canceled": "Okay, the game continues.",
+
+  "commands.admins_only": "Admins only.",
+
+  "stageconfig.setstageconfig_usage": "Usage: /setstageconfig <width:guesses> ×5, one per stage in order (stage 1 to stage 5), e.g. /setstageconfig 64:1 80:1 128:2 192:3 512:3",
+  "stageconfig.setstage_usage": "Usage: /setstage <stage 1-5> <width> <guesses>",
+  "stageconfig.game_running": "A game is currently running — stop it before editing stage config.",
+  "stageconfig.preview_caption": "{stage} — {width}px, {limit} wrong guesses allowed",
+  "stageconfig.table_header_stage": "Stage",
+  "stageconfig.table_header_width": "Width",
+  "stageconfig.table_header_guesses": "Guesses",
+
+  "gamesenabled.usage": "Usage: /setgamesenabled on|off",
+  "gamesenabled.enabled": "Starting new games is now enabled.",
+  "gamesenabled.disabled": "Starting new games is now disabled."
 }
