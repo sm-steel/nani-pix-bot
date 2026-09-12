@@ -17,8 +17,8 @@ from nani_pix_bot.commands.helpers.keyboards import (
     shikimori_results_keyboard,
     stop_confirm_keyboard,
 )
-from nani_pix_bot.services.anilist import AniListResult
-from nani_pix_bot.services.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
 _FRIEREN = AniListResult(
     anilist_id=99,

@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from nani_pix_bot.services import http_retry
+from nani_pix_bot.services.search import http_retry
 
 
 def _error_response(status_code: int, **kwargs) -> httpx.Response:

@@ -36,9 +36,10 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.services import anilist, i18n, players, settings, shikimori
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.search import anilist, shikimori
 from nani_pix_bot.services.settings import stage_config
 
 # Raised by anilist.py/shikimori.py on network failure or exhausted

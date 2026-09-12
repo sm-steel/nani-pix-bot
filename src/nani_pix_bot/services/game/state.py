@@ -12,10 +12,10 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import matching, players
-from nani_pix_bot.services.anilist import AniListResult
 from nani_pix_bot.services.game import turns
+from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.settings import stage_config
-from nani_pix_bot.services.shikimori import ShikimoriResult
 
 # Blockiest to clearest — see MECHANICS.md's "Pixelation stages" table.
 # Fixed: the 5 PixelStage members and their order never change, only

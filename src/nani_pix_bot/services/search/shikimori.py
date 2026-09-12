@@ -1,5 +1,5 @@
 """Shikimori search — the Russian-community alternative to AniList,
-called once per game at setup time, same as `services/anilist.py`. See
+called once per game at setup time, same as this package's anilist.py. See
 MECHANICS.md's "Starting a game" section.
 
 Shikimori's list endpoint (`/api/animes`) is deliberately light — no
@@ -16,7 +16,7 @@ from http import HTTPStatus
 import httpx
 from loguru import logger
 
-from nani_pix_bot.services import http_retry
+from nani_pix_bot.services.search import http_retry
 
 # Shikimori's older shikimori.one domain now permanently 301-redirects
 # here — and shikimori.one is itself unreachable directly from moscow,

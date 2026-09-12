@@ -11,8 +11,8 @@ and the language picker's own native-name labels in `commands/language.py`
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nani_pix_bot.services import i18n
-from nani_pix_bot.services.anilist import AniListResult
-from nani_pix_bot.services.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
 RETRY_CALLBACK_DATA = "anilist_retry"
 _ANILIST_PICK_PREFIX = "anilist_pick:"

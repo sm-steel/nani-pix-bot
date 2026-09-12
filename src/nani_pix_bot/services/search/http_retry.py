@@ -1,7 +1,7 @@
-"""Shared rate-limit-retry logic for services that hit external HTTP
-APIs (services/anilist.py, services/shikimori.py) — both had a
-near-identical 429/Retry-After retry loop; this factors it out to one
-place so there's a single implementation to get right."""
+"""Shared rate-limit-retry logic for this package's two search
+services (anilist.py, shikimori.py) — both had a near-identical
+429/Retry-After retry loop; this factors it out to one place so
+there's a single implementation to get right."""
 
 import asyncio
 from collections.abc import Awaitable, Callable

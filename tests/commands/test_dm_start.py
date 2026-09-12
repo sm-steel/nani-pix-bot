@@ -18,10 +18,10 @@ from nani_pix_bot.models.enums import GameStatus, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
-from nani_pix_bot.services import anilist, shikimori
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services.anilist import AniListResult
-from nani_pix_bot.services.shikimori import ShikimoriResult
+from nani_pix_bot.services.search import anilist, shikimori
+from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
 _FRIEREN = AniListResult(
     anilist_id=99,

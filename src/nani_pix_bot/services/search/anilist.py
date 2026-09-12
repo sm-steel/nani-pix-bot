@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import httpx
 from loguru import logger
 
-from nani_pix_bot.services import http_retry
+from nani_pix_bot.services.search import http_retry
 
 ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
 SEARCH_RESULT_LIMIT = 5
