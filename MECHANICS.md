@@ -49,14 +49,14 @@ stateDiagram-v2
 
     state ACTIVE {
         [*] --> Stage1
-        Stage1 --> Stage2: 1 wrong /guess attempt
-        Stage2 --> Stage3: 1 wrong /guess attempt
-        Stage3 --> Stage4: 3 wrong /guess attempts
-        Stage4 --> Stage5: 5 wrong /guess attempts
+        Stage1 --> Stage2: stage 1's configured\nwrong-guess limit reached
+        Stage2 --> Stage3: stage 2's configured\nwrong-guess limit reached
+        Stage3 --> Stage4: stage 3's configured\nwrong-guess limit reached
+        Stage4 --> Stage5: stage 4's configured\nwrong-guess limit reached
     }
 
     ACTIVE --> WON: /guess matches,\nor starter's /correct
-    ACTIVE --> UNSOLVED: 8th wrong guess at stage 5\n(stage exhaustion),\nor 2-day timeout fires
+    ACTIVE --> UNSOLVED: stage 5's configured limit reached\n(stage exhaustion),\nor 2-day timeout fires
     ACTIVE --> [*]: /stop confirmed\n(row deleted, turn opens)
 
     WON --> [*]: turn assigned to winner\n(15min reminder / 12h expiry timers)
@@ -178,21 +178,41 @@ anything else external, at guess time.
 
 The screenshot is downscaled (blocky pixelation) to a **fixed target
 width** and immediately upscaled back to its original size, via Pillow,
-at five decreasing widths, from blockiest to clearest. A fixed target
-width — not a divisor of the source resolution — keeps stage difficulty
-independent of the screenshot's resolution: a 12px-wide image reads as
-pure color blobs whether the original screenshot was 1280px or 3840px
-wide, whereas e.g. ÷10 of a 2560px-wide screenshot is still 256px wide
-and barely pixelated at all. Widths are evenly spread from 12px to
-64px (a step of exactly 13px per stage):
+across 5 stages, from blockiest to clearest. A fixed target width — not
+a divisor of the source resolution — keeps stage difficulty independent
+of the screenshot's resolution: a narrow target width reads as pure
+color blobs whether the original screenshot was 1280px or 3840px wide,
+whereas e.g. ÷10 of a 2560px-wide screenshot is still 256px wide and
+barely pixelated at all.
+
+**Each stage's target width and wrong-guess limit are admin-configurable
+at runtime, not hardcoded constants** — stored one row per `PixelStage`
+in the `stage_config` table (see `services/stage_config.py`), seeded
+with defaults by migration and changeable live via three DM-only,
+admin-gated commands (`commands/stageconfig.py`):
+
+- **`/stageconfig`** — view the current 5-stage table.
+- **`/setstageconfig <width:guesses> ×5`** — bulk-set all 5 stages at
+  once, positionally (stage 1 through stage 5).
+- **`/setstage <stage 1-5> <width> <guesses>`** — tweak just one stage.
+
+Both setters apply immediately (no confirmation step — this is a
+fast-iteration admin tool) but **refuse to run while a game is `SETUP`
+or `ACTIVE`**, offering a "stop the game" button right there instead
+(reusing `/stop`'s own confirmation), and on success immediately post a
+visual preview — both fixed example images pixelated at the new
+width(s) — so the effect can be checked without a separate step.
+
+Current defaults, as seeded by the migration (run `/stageconfig` for
+what's actually live — these get retuned):
 
 | Stage | Target width | Wrong guesses allowed |
 |---|---|---|
-| `STAGE_1` | 12px (shown first — hardest) | 1 |
-| `STAGE_2` | 25px | 1 |
-| `STAGE_3` | 38px | 3 |
-| `STAGE_4` | 51px | 5 |
-| `STAGE_5` | 64px (clearest pixelated stage) | 8 |
+| `STAGE_1` | 64px (shown first — hardest) | 1 |
+| `STAGE_2` | 80px | 1 |
+| `STAGE_3` | 128px | 2 |
+| `STAGE_4` | 192px | 3 |
+| `STAGE_5` | 512px (clearest pixelated stage) | 3 |
 
 No image bytes are stored on disk or in the database. The starter's
 original screenshot is kept only as a Telegram `file_id` on the `Game`
@@ -202,13 +222,19 @@ the bytes — so a bot restart mid-game loses nothing (the `file_id` and
 `current_stage` are all that's needed to pick back up).
 
 **Each stage allows a different number of wrong `/guess` attempts
-before the game advances to the next one** (see the table above) and
-`wrong_guess_count` resets to 0 on every advance. This per-stage
-schedule — deliberately front-loaded, with almost no room at the two
-blockiest stages, easing up as the image clarifies — lives as
-`STAGE_WRONG_GUESS_LIMIT` in `services/game.py` (18 wrong guesses total
-to exhaust all 5 stages). If the last allowed wrong guess at `STAGE_5`
-lands, the game ends unsolved (see below) instead of advancing further.
+before the game advances to the next one**, per its configured
+wrong-guess limit, and `wrong_guess_count` resets to 0 on every advance.
+If the last allowed wrong guess at the final stage (`STAGE_5`) lands,
+the game ends unsolved (see below) instead of advancing further.
+Advancing posts the newly-revealed image with a caption naming the new
+stage, which guess number (overall) triggered the advance, and how many
+more wrong guesses remain before the next one (`guess.
+stage_advanced_caption`).
+
+A separate **`/setgamesenabled on|off`** command (also DM-only,
+admin-gated) lets an admin pause *starting* new games entirely —
+independent of the above, useful for locking things down while
+mid-retune. It has no effect on a game already in progress.
 
 ## Winning
 
@@ -245,8 +271,8 @@ On a win, the bot:
 
 A game ends unsolved one of two ways, handled identically:
 
-- **Stage exhaustion**: the 8th wrong guess lands while already at the
-  final stage (`STAGE_5`).
+- **Stage exhaustion**: the final stage's (`STAGE_5`) configured
+  wrong-guess limit is reached.
 - **Timeout**: see below.
 
 Either way, the bot reveals the original screenshot with the anime's

@@ -75,10 +75,13 @@ jobs/            (Telegram)
 - **`services/`** — the game logic, framework-agnostic (no
   `python-telegram-bot` imports). This is what unit tests target. One
   module per concern: `anilist.py`/`shikimori.py` (search), `matching.py`
-  (guess normalization/fuzzy-match), `pixelate.py` (Pillow pipeline),
+  (guess normalization/fuzzy-match), `pixelate.py` (Pillow pipeline —
+  downscale/upscale to a given width, no DB or `PixelStage` dependency),
   `game.py` (the state machine — the only place that mutates a `Game`
   row), `players.py` (win counts, leaderboard), `i18n.py`/`settings.py`
-  (bot language).
+  (bot language, games-enabled flag), `stage_config.py` (per-stage
+  pixelation width/wrong-guess-limit, admin-adjustable — see
+  `MECHANICS.md`'s "Pixelation stages" section).
 - **`models/`** — SQLAlchemy ORM models, one module per table. Columns and
   relationships only — if a model needs a method beyond what SQLAlchemy
   itself generates, that logic belongs in `services/` instead.
@@ -138,6 +141,12 @@ erDiagram
     BOT_SETTINGS {
         int id PK
         string language
+        bool games_enabled
+    }
+    STAGE_CONFIG {
+        enum stage PK
+        int target_width
+        int wrong_guess_limit
     }
 ```
 
@@ -146,7 +155,8 @@ erDiagram
 | `players` | v1 | Telegram user id, opportunistically-captured `username`, `wins` counter (feeds `/leaderboard`). |
 | `games` | v1 | One row per round. `status` is `SETUP` (starter is picking/confirming the anime in DM) → `ACTIVE` (posted to the group, guessing open) → `WON`/`UNSOLVED` (terminal). `source` (`"anilist"`/`"shikimori"`/`"manual"`) records which identification method was used. `setup_step` (`PICKING_METHOD`/`AWAITING_PHOTO_CHANGE`/`AWAITING_SYNONYM`/`CONFIRMING`) tracks exactly where in the multi-step DM setup flow the starter is — only meaningful while `status` is `SETUP`, and (like everything else in that flow) derived from the DB rather than in-memory state, so a restart mid-edit resolves correctly. `setup_deadline` (`created_at + 1h`) is when the setup-abandon timer fires if the row is still `SETUP` — see `MECHANICS.md`'s "Starting a game". `current_stage` tracks which pixelation level is currently shown (`STAGE_1`→`STAGE_2`→`STAGE_3`→`STAGE_4`→`STAGE_5`); `wrong_guess_count` resets to 0 each time the stage advances, while `total_guess_count` never resets (gates `/correct` on at least one real attempt). `original_file_id` is cleared once the reveal message (win or unsolved) is confirmed sent — see `MECHANICS.md`'s "Cleanup" note; nothing after a game ends needs to re-fetch the screenshot. Only one row may be `SETUP`/`ACTIVE` at a time, enforced in `services/game.py`, not a DB constraint. |
 | `turn_state` | v1 | Single row (`id=1`). `next_starter_id` is who's designated to start the next game; `null` means anyone can. Set to the winner on a `WON` game, changed by `/skip`, otherwise left alone (an `UNSOLVED` game doesn't force a turn on anyone). `reminder_at`/`expiry_at` are the win-turn 15min-reminder/12h-expiry absolute deadlines — set alongside `next_starter_id` whenever it becomes a real user, nulled when it's opened back up (see `MECHANICS.md`'s "Turn handoff"). |
-| `bot_settings` | v2 | Single row (`id=1`). `language` (`"EN"`/`"RU"`) is the bot's current reply language, changed only via `/language` by a group admin/owner — see CLAUDE.md's "Language / i18n". |
+| `bot_settings` | v2 | Single row (`id=1`). `language` (`"EN"`/`"RU"`) is the bot's current reply language, changed only via `/language` by a group admin/owner — see CLAUDE.md's "Language / i18n". `games_enabled` gates whether a new game may be *started*, changed via `/setgamesenabled` — see `MECHANICS.md`'s "Pixelation stages" section. |
+| `stage_config` | v5 | One row per `PixelStage` (5 total, `stage` is the primary key). `target_width`/`wrong_guess_limit` are the admin-configurable pixelation width and wrong-guess allowance for that stage, seeded with defaults by migration and changed live via `/setstageconfig`/`/setstage` — see `services/stage_config.py` and `MECHANICS.md`'s "Pixelation stages" section. |
 
 ## Game flow, topics, and commands
 

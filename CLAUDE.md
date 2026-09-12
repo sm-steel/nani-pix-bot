@@ -13,8 +13,8 @@ system design, data model, and infra topology (why Telegram traffic is
 proxied through `amsterdam`, etc.). `MECHANICS.md` covers the game rules
 themselves (pixelation stages, guess matching, turns, timeout, leaderboard) —
 read it before touching anything in `services/game.py`,
-`services/matching.py`, or `services/pixelate.py`. This file is about where
-things live and how to work in this repo day to day.
+`services/matching.py`, `services/pixelate.py`, or `services/stage_config.py`.
+This file is about where things live and how to work in this repo day to day.
 
 ## Where things are
 
@@ -38,6 +38,12 @@ src/nani_pix_bot/
                    # still announced in the group topic)
     leaderboard.py  # /leaderboard
     language.py   # /language — DM-only, admin-gated bot language switch
+    stageconfig.py  # /stageconfig, /setstageconfig, /setstage — DM-only,
+                   # admin-gated view/edit of per-stage pixelation config
+                   # (blocked while a game is running; posts a visual
+                   # preview on a successful edit)
+    gamesenabled.py  # /setgamesenabled — DM-only, admin-gated toggle for
+                   # whether a *new* game may be started at all
     onboarding.py # /start, /help
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
@@ -64,19 +70,26 @@ src/nani_pix_bot/
     matching.py   # normalize + rapidfuzz-match a guess against a game's
                    # cached title/synonyms — pure function, fully
                    # deterministic, no network calls
-    pixelate.py   # Pillow downscale/upscale pipeline for the 4 stages
+    pixelate.py   # Pillow downscale/upscale pipeline — given raw bytes
+                   # and a target width, no DB or PixelStage dependency;
+                   # callers resolve the width via stage_config.py first
     game.py       # the state machine: create/advance/win/unsolved/timeout
                    # transitions — the one place that mutates a Game row
     players.py    # win-count bookkeeping, leaderboard query
     i18n.py       # simple dict/JSON t(key, lang, **kwargs) — see
                    # "Language / i18n" below
-    settings.py   # get/set the bot's current language (BotSettings)
+    settings.py   # get/set the bot's current language + games-enabled
+                   # flag (BotSettings)
+    stage_config.py  # get/set each PixelStage's target width and
+                   # wrong-guess limit (StageConfig, one row per stage) —
+                   # admin-adjustable via commands/stageconfig.py
   models/         # SQLAlchemy ORM models, one module per table
     base.py       # declarative base
     player.py     # Player
     game.py       # Game
     turn_state.py # TurnState (singleton row)
-    bot_settings.py  # BotSettings (singleton row — current language)
+    bot_settings.py  # BotSettings (singleton row — language, games_enabled)
+    stage_config.py  # StageConfig (one row per PixelStage)
     enums.py      # GameStatus, PixelStage, SetupStep
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout
@@ -268,7 +281,7 @@ fail on the first attempt.
 Every unit in `services/` and `models/` gets a failing test written first,
 then the minimal implementation to make it pass, then refactor. This
 matters more here than in most bots: `services/matching.py`'s fuzzy-match
-threshold and `services/pixelate.py`'s stage dimensions are exactly the
+threshold and `services/pixelate.py`'s width-scaling math are exactly the
 kind of logic that's easy to eyeball as "probably right" and quietly wrong
 at the edges — write the edge-case test (near-miss title, empty guess,
 already-at-the-final-stage exhaustion) before the implementation, not
