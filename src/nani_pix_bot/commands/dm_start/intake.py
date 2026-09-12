@@ -30,17 +30,33 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     session_factory = context.bot_data["session_factory"]
     file_id = message.photo[-1].file_id
 
+    if await _replace_staged_photo_if_pending(context, session_factory, user, file_id):
+        return
+
+    await _start_new_game(message, context, session_factory, user, file_id)
+
+
+async def _replace_staged_photo_if_pending(
+    context: ContextTypes.DEFAULT_TYPE, session_factory, user, file_id: str
+) -> bool:
+    """A replacement photo for the preview's "Change image" button — not a
+    new game, keeps the staged title/synonyms. Returns whether this was
+    such a replacement (so photo_handler knows not to treat it as a new
+    game's first photo)."""
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         existing = game_service.get_setup_game_for_starter(session, user.id)
-        if existing is not None and existing.setup_step == SetupStep.AWAITING_PHOTO_CHANGE:
-            # A replacement photo for the preview's "Change image" button —
-            # not a new game, keep the staged title/synonyms.
-            logger.debug("Starter {} sent a replacement photo for game {}", user.id, existing.id)
-            existing.original_file_id = file_id
-            await _show_preview(context, session, existing, lang)
-            return
+        if existing is None or existing.setup_step != SetupStep.AWAITING_PHOTO_CHANGE:
+            return False
+        logger.debug("Starter {} sent a replacement photo for game {}", user.id, existing.id)
+        existing.original_file_id = file_id
+        await _show_preview(context, session, existing, lang)
+        return True
 
+
+async def _start_new_game(
+    message, context: ContextTypes.DEFAULT_TYPE, session_factory, user, file_id: str
+) -> None:
     group_chat_id = context.bot_data["group_chat_id"]
     if not await is_group_member(context.bot, group_chat_id, user.id):
         with session_scope(session_factory) as session:

@@ -24,6 +24,8 @@ from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.search import anilist, shikimori
+from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
 
 async def method_pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -136,14 +138,41 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
 
-    if query.data == RETRY_CALLBACK_DATA:
-        await query.edit_message_text(i18n.t("dm_start.retry", lang))
+    user = query.from_user
+    if user is None:
         return
 
-    parsed = parse_pick_callback_data(query.data)
-    user = query.from_user
-    if parsed is None or user is None:
+    resolved = await _resolve_picked_result(query, context, lang)
+    if resolved is None:
         return
+    source, external_id, result = resolved
+
+    with session_scope(session_factory) as session:
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        if setup_game is None or setup_game.original_file_id is None:
+            return
+        game_service.stage_result(setup_game, result, source=source)
+        logger.debug("Game {}: staged {} result {}", setup_game.id, source, external_id)
+        await _show_preview(context, session, setup_game, lang)
+
+    await query.edit_message_text(i18n.t("dm_start.preview_sent", lang))
+
+
+async def _resolve_picked_result(
+    query, context: ContextTypes.DEFAULT_TYPE, lang: str
+) -> tuple[str, int, AniListResult | ShikimoriResult] | None:
+    """Handles the "none of these" retry tap and resolves a valid pick to
+    its (source, external_id, result) triple. Replies and returns None
+    for every already-handled outcome: retry tapped, unparseable
+    callback data, the search service erroring, or the id no longer
+    existing."""
+    if query.data == RETRY_CALLBACK_DATA:
+        await query.edit_message_text(i18n.t("dm_start.retry", lang))
+        return None
+
+    parsed = parse_pick_callback_data(query.data)
+    if parsed is None:
+        return None
     source, external_id = parsed
 
     client = context.bot_data["search_client"]
@@ -155,19 +184,11 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} get_by_id failed for id {}", source, external_id)
         await _reply_service_down(query.edit_message_text, lang, source)
-        return
+        return None
 
     if result is None:
         logger.warning("{} id {} picked but no longer found", source, external_id)
         await query.edit_message_text(i18n.t("dm_start.not_found_anymore", lang))
-        return
+        return None
 
-    with session_scope(session_factory) as session:
-        setup_game = game_service.get_setup_game_for_starter(session, user.id)
-        if setup_game is None or setup_game.original_file_id is None:
-            return
-        game_service.stage_result(setup_game, result, source=source)
-        logger.debug("Game {}: staged {} result {}", setup_game.id, source, external_id)
-        await _show_preview(context, session, setup_game, lang)
-
-    await query.edit_message_text(i18n.t("dm_start.preview_sent", lang))
+    return source, external_id, result

@@ -39,20 +39,28 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
 
         if not context.args:
-            game_service.set_next_starter(session, None)
-            timeout_module.cancel_turn_timers(context.job_queue)
-            await message.reply_text(i18n.t("skip.opened", lang))
+            await _open_turn(message, context, session, lang)
             return
 
-        target_username = context.args[0].lstrip("@")
-        target = players.find_player_by_username(session, target_username)
-        if target is None:
-            logger.warning("/skip: unknown username {!r}", target_username)
-            await message.reply_text(
-                i18n.t("skip.unknown_username", lang, username=target_username)
-            )
-            return
+        await _pass_turn(message, context, session, lang, context.args[0])
 
-        turn_state = game_service.set_next_starter(session, target.telegram_user_id)
-        timeout_module.schedule_turn_timers(context.job_queue, turn_state)
-        await message.reply_text(i18n.t("skip.passed", lang, username=target_username))
+
+async def _open_turn(message, context: ContextTypes.DEFAULT_TYPE, session, lang: str) -> None:
+    game_service.set_next_starter(session, None)
+    timeout_module.cancel_turn_timers(context.job_queue)
+    await message.reply_text(i18n.t("skip.opened", lang))
+
+
+async def _pass_turn(
+    message, context: ContextTypes.DEFAULT_TYPE, session, lang: str, raw_username: str
+) -> None:
+    target_username = raw_username.lstrip("@")
+    target = players.find_player_by_username(session, target_username)
+    if target is None:
+        logger.warning("/skip: unknown username {!r}", target_username)
+        await message.reply_text(i18n.t("skip.unknown_username", lang, username=target_username))
+        return
+
+    turn_state = game_service.set_next_starter(session, target.telegram_user_id)
+    timeout_module.schedule_turn_timers(context.job_queue, turn_state)
+    await message.reply_text(i18n.t("skip.passed", lang, username=target_username))
