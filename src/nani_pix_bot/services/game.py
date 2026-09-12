@@ -12,8 +12,9 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
-from nani_pix_bot.services import matching, stage_config
+from nani_pix_bot.services import matching
 from nani_pix_bot.services.anilist import AniListResult
+from nani_pix_bot.services.settings import stage_config
 from nani_pix_bot.services.shikimori import ShikimoriResult
 
 TURN_STATE_ID = 1

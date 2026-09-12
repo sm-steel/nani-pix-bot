@@ -1,8 +1,8 @@
 """Per-stage pixelation config (target width + wrong-guess limit),
 admin-adjustable at runtime — see commands/stageconfig.py. DB-backed
 (the `stage_config` table, one row per `PixelStage`), same
-get/set-singleton-ish pattern as services/settings.py, just five rows
-instead of one."""
+get/set-singleton-ish pattern as this package's bot_settings.py, just
+five rows instead of one."""
 
 from dataclasses import dataclass
 

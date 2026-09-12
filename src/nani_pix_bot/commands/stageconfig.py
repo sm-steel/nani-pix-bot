@@ -21,8 +21,9 @@ from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import PixelStage
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings, stage_config
+from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.pixelate import pixelate
+from nani_pix_bot.services.settings import stage_config
 
 _EXAMPLE_IMAGES = [Path("tmp/example1.jpg"), Path("tmp/example2.png")]
 
