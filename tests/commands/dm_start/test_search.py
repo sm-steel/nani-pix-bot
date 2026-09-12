@@ -387,7 +387,7 @@ async def test_pick_callback_handler_survives_a_restart_between_search_and_pick(
     context.bot.send_media_group.assert_awaited_once()
 
 
-async def test_pick_callback_handler_preview_lists_the_synonyms(
+async def test_pick_callback_handler_preview_lists_every_accepted_answer(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
@@ -402,7 +402,14 @@ async def test_pick_callback_handler_preview_lists_the_synonyms(
     )
 
     _, media_kwargs = context.bot.send_media_group.await_args
-    assert "Frieren" in media_kwargs["media"][0].caption
+    caption = media_kwargs["media"][0].caption
+    # The title itself:
+    assert "Frieren: Beyond Journey's End" in caption
+    # Every other stored title variant is already an accepted /guess —
+    # neither of these is a substring of the display title, so this only
+    # passes if they're shown, not just the manually-typed synonyms.
+    assert "Sousou no Frieren" in caption
+    assert "葬送のフリーレン" in caption
     _, message_kwargs = context.bot.send_message.await_args
     callbacks = [
         button.callback_data

@@ -65,10 +65,19 @@ async def _show_preview(context, session, game: Game, lang: str) -> None:
     telegram_file = await context.bot.get_file(game.original_file_id)
     original_bytes = bytes(await telegram_file.download_as_bytearray())
     config = stage_config.get_stage_config(session)
-    synonyms = ", ".join(game.synonyms or []) or "—"
-    caption = i18n.t(
-        "dm_start.preview_caption", lang, title=game_service.display_title(game), synonyms=synonyms
-    )
+    title = game_service.display_title(game, lang)
+    # Every stored title variant is already an accepted /guess — not just
+    # the manually-typed synonyms — so show all of them here too, minus
+    # whatever's already shown as the Title above. match_candidates() is
+    # the same list record_guess() actually matches against, so this can
+    # never drift from what's really accepted (see issue #50).
+    other_answers = [
+        candidate
+        for candidate in dict.fromkeys(game_service.match_candidates(game))
+        if candidate != title
+    ]
+    answers = ", ".join(other_answers) or "—"
+    caption = i18n.t("dm_start.preview_caption", lang, title=title, answers=answers)
     captions = [caption, *([None] * (len(game_service.STAGE_ORDER) - 1))]
     media = [
         InputMediaPhoto(

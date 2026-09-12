@@ -49,7 +49,7 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await message.reply_text(i18n.t("stop.not_allowed", lang))
             return
 
-        title = game_service.display_title(game)
+        title = game_service.display_title(game, lang)
 
     await message.reply_text(
         i18n.t("stop.confirm_prompt", lang, title=title),

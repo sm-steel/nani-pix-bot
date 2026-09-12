@@ -14,6 +14,7 @@ not specific to the setup flow.
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
@@ -65,27 +66,32 @@ def shikimori_results_keyboard(results: list[ShikimoriResult], lang: str) -> Inl
 
 
 def _anilist_label(result: AniListResult, lang: str) -> str:
-    """Picks the result's display title, preferring whatever matches
-    `lang` first, then falling back through the rest. AniList doesn't
-    expose a Russian-specific field — `lang` is accepted for symmetry
-    with `_shikimori_label()` and in case that ever changes, but every
-    branch currently resolves the same way (English, then romaji, then
-    native)."""
-    del lang
-    title = result.title_english or result.title_romaji or result.title_native or "?"
+    """Picks the result's display title via the same priority rule
+    display_title() uses for the confirmation preview and every caption
+    (services/game/state.py's prioritized_title()) — so the button a
+    starter taps always shows the same title the rest of the game will
+    call this pick. AniList doesn't expose a Russian-specific field, so
+    every branch currently resolves the same way (English, then romaji,
+    then native) regardless of `lang`."""
+    variants = game_service.TitleVariants(
+        english=result.title_english, romaji=result.title_romaji, native=result.title_native
+    )
+    title = game_service.prioritized_title(variants, lang=lang)
     return f"{title} ({result.year})" if result.year else title
 
 
 def _shikimori_label(result: ShikimoriResult, lang: str) -> str:
-    """Picks the result's display title, preferring the Russian title
-    only when the bot's language is RU — otherwise English/romaji comes
-    first, with the Russian title as a last resort rather than always
-    winning regardless of the bot's language."""
-    if lang.upper() == "RU":
-        candidates = (result.title_russian, result.title_english, result.title_romaji)
-    else:
-        candidates = (result.title_english, result.title_romaji, result.title_russian)
-    return next((title for title in candidates if title), "?")
+    """Picks the result's display title via the same priority rule as
+    `_anilist_label()` above — preferring the Russian title only when
+    the bot's language is RU, otherwise English/romaji first. This must
+    stay the exact rule prioritized_title()/display_title() use, or the
+    button a starter taps here can show a different title than the
+    confirmation preview ends up calling that same pick (see issue #50's
+    "Grand Blue"/"Grand Blue Dreaming" mismatch)."""
+    variants = game_service.TitleVariants(
+        english=result.title_english, romaji=result.title_romaji, russian=result.title_russian
+    )
+    return game_service.prioritized_title(variants, lang=lang)
 
 
 def parse_pick_callback_data(data: str) -> tuple[str, int] | None:

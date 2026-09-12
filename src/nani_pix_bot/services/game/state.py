@@ -3,6 +3,7 @@ Game row. See MECHANICS.md for the rules this implements. TurnState
 bookkeeping (a related but distinct concern) lives in turns.py."""
 
 import enum
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from loguru import logger
@@ -48,18 +49,69 @@ class GuessOutcome(enum.Enum):
     UNSOLVED = "unsolved"
 
 
-def display_title(game: Game) -> str:
+@dataclass(frozen=True)
+class TitleVariants:
+    """The title fields a search result or Game might have — not every
+    source has all four (AniList never has `russian`, Shikimori never
+    has `native`), so every field defaults to unset."""
+
+    english: str | None = None
+    romaji: str | None = None
+    native: str | None = None
+    russian: str | None = None
+
+
+def prioritized_title(variants: TitleVariants, *, lang: str) -> str:
+    """The shared priority-order rule behind both display_title() below
+    and the DM setup's AniList/Shikimori result-picker button labels
+    (commands/dm_start/keyboards.py) — the exact same rule has to pick
+    both, or the button a starter taps can show a different title than
+    what the confirmation preview then calls that same pick. RU-language
+    bots prefer the Russian title first; otherwise English leads. Falls
+    back to "?" if every field is unset."""
+    candidates = (
+        (variants.russian, variants.english, variants.romaji, variants.native)
+        if lang.upper() == "RU"
+        else (variants.english, variants.romaji, variants.native, variants.russian)
+    )
+    return next((title for title in candidates if title), "?")
+
+
+def display_title(game: Game, lang: str) -> str:
     """Best available display title for a Game, for captions and the DM
-    setup preview: English, then romaji, then native, then Russian
-    (Shikimori-only results only ever have this one), then a literal
-    "?" if somehow none are set. The one canonical fallback chain —
-    commands/game_flow/guess.py, correct.py, stop.py, and
-    jobs/timers.py each used to keep their own copy, and three of
-    those four copies were missing the Russian fallback (a
+    setup preview — see prioritized_title() for the fallback order.
+    Three of the four call sites that used to keep their own copy of
+    this fallback chain (commands/game_flow/guess.py, correct.py,
+    stop.py) were missing the Russian fallback entirely (a
     Shikimori-only result would show "?" instead of its actual
     title)."""
-    candidates = (game.title_english, game.title_romaji, game.title_native, game.title_russian)
-    return next((title for title in candidates if title), "?")
+    variants = TitleVariants(
+        english=game.title_english,
+        romaji=game.title_romaji,
+        native=game.title_native,
+        russian=game.title_russian,
+    )
+    return prioritized_title(variants, lang=lang)
+
+
+def match_candidates(game: Game) -> list[str]:
+    """Every string a /guess is matched against for this game — the
+    single source of truth for both record_guess() and the DM setup
+    preview (commands/dm_start/preview.py), so what's shown to the
+    starter as an accepted answer can never drift from what actually
+    is one. Filters out unset fields (e.g. title_native is never set
+    for a Shikimori-sourced game) and an empty/missing synonyms list."""
+    return [
+        candidate
+        for candidate in (
+            game.title_romaji,
+            game.title_english,
+            game.title_native,
+            game.title_russian,
+            *(game.synonyms or []),
+        )
+        if candidate
+    ]
 
 
 def active_or_setup_game(session: Session) -> Game | None:
@@ -164,13 +216,7 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
 
     game.total_guess_count += 1
 
-    candidates = [
-        game.title_romaji,
-        game.title_english,
-        game.title_native,
-        game.title_russian,
-        *(game.synonyms or []),
-    ]
+    candidates = match_candidates(game)
     matched = matching.is_match(guess_text, candidates)
     logger.debug(
         "Game {}: guesser {} guessed {!r} against {} candidates -> {}",

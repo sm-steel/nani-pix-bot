@@ -68,7 +68,7 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "correct.caption",
                 lang,
                 winner=target_username,
-                title=game_service.display_title(game),
+                title=game_service.display_title(game, lang),
             ),
         )
         game_service.clear_original_screenshot(game)
