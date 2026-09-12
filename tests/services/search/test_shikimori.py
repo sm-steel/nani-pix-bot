@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from nani_pix_bot.services import shikimori
+from nani_pix_bot.services.search import shikimori
 
 
 async def test_search_parses_a_result() -> None:

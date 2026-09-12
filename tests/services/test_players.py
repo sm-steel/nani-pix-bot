@@ -4,6 +4,41 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import players
 
 
+def test_get_or_create_player_creates_a_new_row(session: Session) -> None:
+    player = players.get_or_create_player(session, 1, username="frieren")
+    session.commit()
+
+    fetched = session.get(Player, 1)
+    assert fetched is not None
+    assert fetched.username == "frieren"
+    assert player.telegram_user_id == 1
+
+
+def test_get_or_create_player_refreshes_username_on_an_existing_row(session: Session) -> None:
+    session.add(Player(telegram_user_id=1, username="old", wins=3))
+    session.commit()
+
+    player = players.get_or_create_player(session, 1, username="new")
+    session.commit()
+
+    assert player.wins == 3
+    assert player.username == "new"
+
+
+def test_find_player_by_username_finds_a_case_insensitive_match(session: Session) -> None:
+    session.add(Player(telegram_user_id=1, username="Frieren"))
+    session.commit()
+
+    found = players.find_player_by_username(session, "frieren")
+
+    assert found is not None
+    assert found.telegram_user_id == 1
+
+
+def test_find_player_by_username_returns_none_when_unknown(session: Session) -> None:
+    assert players.find_player_by_username(session, "nobody") is None
+
+
 def test_top_players_orders_by_wins_descending(session: Session) -> None:
     session.add_all(
         [

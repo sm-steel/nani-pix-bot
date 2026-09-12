@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from nani_pix_bot.services import anilist
+from nani_pix_bot.services.search import anilist
 
 
 def _media_payload(entries: list[dict]) -> dict:

@@ -1,6 +1,6 @@
 """Bot-wide settings (the RU/EN language, and whether starting new
 games is currently allowed) — a singleton row, same pattern as
-services/game.py's TurnState handling."""
+services/game/turns.py's TurnState handling."""
 
 from loguru import logger
 from sqlalchemy.orm import Session

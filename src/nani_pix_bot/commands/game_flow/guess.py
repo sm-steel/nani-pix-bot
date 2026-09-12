@@ -9,13 +9,11 @@ from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings, stage_config
+from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
-
-
-def _title(game) -> str:
-    return game.title_english or game.title_romaji or game.title_native or "?"
+from nani_pix_bot.services.settings import stage_config
 
 
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -40,21 +38,15 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
-        game = game_service.active_or_setup_game(session)
-        if game is None or game.status != GameStatus.ACTIVE:
-            logger.warning("{} guessed with no ACTIVE game running", user.id)
-            await message.reply_text(i18n.t("guess.no_game", lang))
+        game = await _validate_guess(session, message, user, lang)
+        if game is None:
             return
-        if game.original_file_id is None or game.current_stage is None:
-            # Shouldn't happen — an ACTIVE game always has both set. Defensive
-            # guard (also narrows the type for the calls below).
-            return
-        if user.id == game.starter_id:
-            logger.warning("Starter {} tried to guess on their own game {}", user.id, game.id)
-            await message.reply_text(i18n.t("guess.starter_cannot_guess", lang))
-            return
+        # _validate_guess already checked both are set — restores the type
+        # narrowing lost by returning `game` across a function boundary.
+        assert game.original_file_id is not None
+        assert game.current_stage is not None
 
-        game_service.get_or_create_player(session, user.id, username=user.username)
+        players.get_or_create_player(session, user.id, username=user.username)
         logger.debug("{} guessed {!r} on game {}", user.id, guess_text, game.id)
         outcome = game_service.record_guess(
             session, game, guesser_id=user.id, guess_text=guess_text
@@ -70,7 +62,10 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 message_thread_id=game_topic_id,
                 photo=game.original_file_id,
                 caption=i18n.t(
-                    "guess.won_caption", lang, winner=user.full_name, title=_title(game)
+                    "guess.won_caption",
+                    lang,
+                    winner=user.full_name,
+                    title=game_service.display_title(game),
                 ),
             )
             game_service.clear_original_screenshot(game)
@@ -109,6 +104,28 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 chat_id=group_chat_id,
                 message_thread_id=game_topic_id,
                 photo=game.original_file_id,
-                caption=i18n.t("guess.unsolved_caption", lang, title=_title(game)),
+                caption=i18n.t(
+                    "guess.unsolved_caption", lang, title=game_service.display_title(game)
+                ),
             )
             game_service.clear_original_screenshot(game)
+
+
+async def _validate_guess(session, message, user, lang: str) -> Game | None:
+    """The game must be ACTIVE (with both original_file_id and
+    current_stage set, which an ACTIVE game always has), and the
+    starter may not guess on their own round. Replies and returns None
+    on the first failure."""
+    game = game_service.active_or_setup_game(session)
+    if game is None or game.status != GameStatus.ACTIVE:
+        logger.warning("{} guessed with no ACTIVE game running", user.id)
+        await message.reply_text(i18n.t("guess.no_game", lang))
+        return None
+    if game.original_file_id is None or game.current_stage is None:
+        # Shouldn't happen — an ACTIVE game always has both set. Defensive guard.
+        return None
+    if user.id == game.starter_id:
+        logger.warning("Starter {} tried to guess on their own game {}", user.id, game.id)
+        await message.reply_text(i18n.t("guess.starter_cannot_guess", lang))
+        return None
+    return game

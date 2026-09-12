@@ -16,7 +16,7 @@ class TurnState(Base):
     `Game.scheduled_end_at`, not a stored duration) for the win-turn
     reminder/expiry timers — both set whenever `next_starter_id` becomes
     a real user, both cleared when it's opened back up. See
-    `services/game.py`'s `set_next_starter()`.
+    `services/game/turns.py`'s `set_next_starter()`.
     """
 
     __tablename__ = "turn_state"

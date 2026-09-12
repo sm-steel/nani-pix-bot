@@ -11,7 +11,7 @@ A fixed target keeps difficulty independent of screenshot resolution: a
 
 Deliberately takes a raw width rather than a `PixelStage` — which width
 applies to which stage is admin-configurable and DB-backed (see
-services/stage_config.py), so callers resolve that themselves and this
+services/settings/stage_config.py), so callers resolve that themselves and this
 module stays a pure, DB-agnostic image-processing function.
 """
 

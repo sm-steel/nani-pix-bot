@@ -21,10 +21,6 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 
 
-def _title(game) -> str:
-    return game.title_english or game.title_romaji or game.title_native or "?"
-
-
 async def _may_stop(
     context: ContextTypes.DEFAULT_TYPE, group_chat_id: int, user_id: int, game
 ) -> bool:
@@ -53,7 +49,7 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await message.reply_text(i18n.t("stop.not_allowed", lang))
             return
 
-        title = _title(game)
+        title = game_service.display_title(game)
 
     await message.reply_text(
         i18n.t("stop.confirm_prompt", lang, title=title),
@@ -62,6 +58,8 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def stop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Dispatches to the Cancel or Confirm branch — two genuinely
+    different actions that happen to share this small preamble."""
     query = update.callback_query
     if query is None or query.data is None:
         return
@@ -71,17 +69,24 @@ async def stop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if user is None:
         return
 
+    if query.data == STOP_CANCEL_CALLBACK_DATA:
+        await _handle_cancel(query, context)
+    elif query.data == STOP_CONFIRM_CALLBACK_DATA:
+        await _handle_confirm(query, context, user)
+
+
+async def _handle_cancel(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+    await query.edit_message_text(i18n.t("stop.canceled", lang))
+
+
+async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user) -> None:
     group_chat_id = context.bot_data["group_chat_id"]
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
-
-        if query.data == STOP_CANCEL_CALLBACK_DATA:
-            await query.edit_message_text(i18n.t("stop.canceled", lang))
-            return
-
-        if query.data != STOP_CONFIRM_CALLBACK_DATA:
-            return
 
         game = game_service.active_or_setup_game(session)
         if game is None:

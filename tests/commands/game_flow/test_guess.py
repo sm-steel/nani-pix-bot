@@ -5,7 +5,7 @@ import pytest
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands import guess as guess_command_module
+from nani_pix_bot.commands.game_flow import guess as guess_command_module
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -222,7 +222,7 @@ async def test_guess_command_correct_guess_cancels_the_timeout_job(session_facto
     )
 
     context.job_queue.get_jobs_by_name.assert_any_call(
-        guess_command_module.game_service.timeout_job_name(game_id)
+        guess_command_module.timeout_module.timeout_job_name(game_id)
     )
 
 
