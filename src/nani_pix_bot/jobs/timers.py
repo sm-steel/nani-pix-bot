@@ -103,7 +103,7 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
             chat_id=context.bot_data["group_chat_id"],
             message_thread_id=context.bot_data["game_topic_id"],
             photo=game.original_file_id,
-            caption=i18n.t("timeout.caption", lang, title=game_service.display_title(game)),
+            caption=i18n.t("timeout.caption", lang, title=game_service.display_title(game, lang)),
         )
         game_service.clear_original_screenshot(game)
 

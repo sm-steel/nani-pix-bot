@@ -65,7 +65,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                     "guess.won_caption",
                     lang,
                     winner=user.full_name,
-                    title=game_service.display_title(game),
+                    title=game_service.display_title(game, lang),
                 ),
             )
             game_service.clear_original_screenshot(game)
@@ -105,7 +105,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 message_thread_id=game_topic_id,
                 photo=game.original_file_id,
                 caption=i18n.t(
-                    "guess.unsolved_caption", lang, title=game_service.display_title(game)
+                    "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
                 ),
             )
             game_service.clear_original_screenshot(game)

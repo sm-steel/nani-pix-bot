@@ -30,7 +30,44 @@ _FRIEREN_SHIKIMORI = ShikimoriResult(
 )
 
 
-def test_display_title_prefers_english() -> None:
+def test_prioritized_title_prefers_english_for_a_non_ru_lang() -> None:
+    variants = game_service.TitleVariants(
+        english="Frieren: Beyond Journey's End",
+        romaji="Sousou no Frieren",
+        native="葬送のフリーレン",
+        russian="Провожающая в последний путь Фрирен",
+    )
+
+    assert game_service.prioritized_title(variants, lang="EN") == "Frieren: Beyond Journey's End"
+
+
+def test_prioritized_title_prefers_russian_for_ru_lang() -> None:
+    # This is the exact rule commands/dm_start/keyboards.py's result-
+    # picker button labels must also use — the same function backs
+    # both, so they can't drift apart (see issue #50's follow-up).
+    variants = game_service.TitleVariants(
+        english="Frieren: Beyond Journey's End",
+        romaji="Sousou no Frieren",
+        native="葬送のフリーレン",
+        russian="Провожающая в последний путь Фрирен",
+    )
+
+    assert (
+        game_service.prioritized_title(variants, lang="RU") == "Провожающая в последний путь Фрирен"
+    )
+
+
+def test_prioritized_title_falls_back_when_russian_is_unset_for_ru_lang() -> None:
+    variants = game_service.TitleVariants(english="Frieren: Beyond Journey's End")
+
+    assert game_service.prioritized_title(variants, lang="RU") == "Frieren: Beyond Journey's End"
+
+
+def test_prioritized_title_falls_back_to_a_literal_question_mark() -> None:
+    assert game_service.prioritized_title(game_service.TitleVariants(), lang="EN") == "?"
+
+
+def test_display_title_prefers_english_for_a_non_ru_bot() -> None:
     game = Game(
         starter_id=1,
         original_file_id="f",
@@ -40,7 +77,40 @@ def test_display_title_prefers_english() -> None:
         title_russian="Провожающая в последний путь Фрирен",
     )
 
-    assert game_service.display_title(game) == "Frieren: Beyond Journey's End"
+    assert game_service.display_title(game, "EN") == "Frieren: Beyond Journey's End"
+
+
+def test_display_title_prefers_russian_for_a_ru_bot() -> None:
+    # A RU-language bot's AniList/Shikimori result-picker buttons already
+    # prefer the Russian title first (see commands/dm_start/keyboards.py's
+    # _shikimori_label) — display_title() must agree, or the confirmation
+    # preview shows a different title than the button the starter tapped
+    # (see issue #50's follow-up: a mismatched "Grand Blue"/"Grand Blue
+    # Dreaming" case surfaced exactly this).
+    game = Game(
+        starter_id=1,
+        original_file_id="f",
+        title_english="Frieren: Beyond Journey's End",
+        title_romaji="Sousou no Frieren",
+        title_native="葬送のフリーレン",
+        title_russian="Провожающая в последний путь Фрирен",
+    )
+
+    assert game_service.display_title(game, "RU") == "Провожающая в последний путь Фрирен"
+
+
+def test_display_title_falls_back_to_english_for_a_ru_bot_with_no_russian_title() -> None:
+    # An AniList-sourced game never has title_russian set at all — a
+    # RU-language bot must still fall back through the rest of the chain
+    # rather than landing on "?".
+    game = Game(
+        starter_id=1,
+        original_file_id="f",
+        title_english="Frieren: Beyond Journey's End",
+        title_romaji="Sousou no Frieren",
+    )
+
+    assert game_service.display_title(game, "RU") == "Frieren: Beyond Journey's End"
 
 
 def test_display_title_falls_back_to_russian_when_only_that_is_set() -> None:
@@ -54,13 +124,59 @@ def test_display_title_falls_back_to_russian_when_only_that_is_set() -> None:
         title_russian="Провожающая в последний путь Фрирен",
     )
 
-    assert game_service.display_title(game) == "Провожающая в последний путь Фрирен"
+    assert game_service.display_title(game, "EN") == "Провожающая в последний путь Фрирен"
 
 
 def test_display_title_falls_back_to_a_literal_question_mark() -> None:
     game = Game(starter_id=1, original_file_id="f")
 
-    assert game_service.display_title(game) == "?"
+    assert game_service.display_title(game, "EN") == "?"
+
+
+def test_match_candidates_includes_every_title_variant_and_synonym() -> None:
+    game = Game(
+        starter_id=1,
+        original_file_id="f",
+        title_romaji="Sousou no Frieren",
+        title_english="Frieren: Beyond Journey's End",
+        title_native="葬送のフリーレン",
+        title_russian="Провожающая в последний путь Фрирен",
+        synonyms=["Frieren", "Frieren at the Funeral"],
+    )
+
+    assert game_service.match_candidates(game) == [
+        "Sousou no Frieren",
+        "Frieren: Beyond Journey's End",
+        "葬送のフリーレン",
+        "Провожающая в последний путь Фрирен",
+        "Frieren",
+        "Frieren at the Funeral",
+    ]
+
+
+def test_match_candidates_omits_unset_fields() -> None:
+    # A Shikimori-only result never has title_native set — this is the
+    # "Grand Blue" scenario: title_romaji is the only variant besides
+    # title_english, and it must still show up.
+    game = Game(
+        starter_id=1,
+        original_file_id="f",
+        title_romaji="Grand Blue",
+        title_english="Grand Blue Dreaming",
+        title_russian="Необъятный океан",
+    )
+
+    assert game_service.match_candidates(game) == [
+        "Grand Blue",
+        "Grand Blue Dreaming",
+        "Необъятный океан",
+    ]
+
+
+def test_match_candidates_omits_none_synonyms_list() -> None:
+    game = Game(starter_id=1, original_file_id="f", title_english="Some Anime")
+
+    assert game_service.match_candidates(game) == ["Some Anime"]
 
 
 def test_can_start_is_true_with_no_game_and_no_turn_state(session: Session) -> None:

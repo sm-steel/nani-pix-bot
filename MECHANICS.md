@@ -111,9 +111,12 @@ restricts to members.
 4. Either way, once a title/synonyms are staged, the bot sends the player
    a **private preview** — the screenshot pixelated at all 5 configured
    stages (blockiest to clearest, see "Pixelation stages" below), sent
-   as one Telegram album with the staged title and full synonyms list
-   as the caption on the first photo — instead of posting straight to
-   the group, so the starter sees exactly how the round will progress
+   as one Telegram album with the staged title and every other accepted
+   answer (every stored title variant — romaji/English/native/Russian,
+   not just the manually-typed synonyms — since all of them are already
+   valid `/guess` matches) as the caption on the first photo — instead
+   of posting straight to the group, so the starter sees exactly how
+   the round will progress, and exactly what will count as correct,
    before committing to it. Telegram's `sendMediaGroup` has no
    `reply_markup` support, so the four buttons below arrive on a short
    separate text message right after the album, not on the album
