@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
@@ -40,7 +41,7 @@ def test_schedule_timeout_calls_run_once_with_the_games_job_name(session_factory
 
     job_queue.run_once.assert_called_once()
     _, kwargs = job_queue.run_once.call_args
-    assert kwargs["name"] == game_service.timeout_job_name(game_id)
+    assert kwargs["name"] == timeout_module.timeout_job_name(game_id)
     assert kwargs["data"] == game_id
 
 
@@ -51,7 +52,7 @@ def test_cancel_timeout_removes_matching_jobs() -> None:
 
     timeout_module.cancel_timeout(job_queue, 42)
 
-    job_queue.get_jobs_by_name.assert_called_once_with(game_service.timeout_job_name(42))
+    job_queue.get_jobs_by_name.assert_called_once_with(timeout_module.timeout_job_name(42))
     job.schedule_removal.assert_called_once()
 
 
@@ -101,7 +102,7 @@ async def test_rearm_pending_timeouts_schedules_every_active_game(session_factor
 
     job_queue.run_once.assert_called_once()
     _, kwargs = job_queue.run_once.call_args
-    assert kwargs["name"] == game_service.timeout_job_name(game_id)
+    assert kwargs["name"] == timeout_module.timeout_job_name(game_id)
 
 
 def test_schedule_timeout_is_a_noop_when_job_queue_is_none(session_factory) -> None:
@@ -147,7 +148,7 @@ def test_schedule_setup_abandon_calls_run_once_with_the_games_job_name(session_f
 
     job_queue.run_once.assert_called_once()
     _, kwargs = job_queue.run_once.call_args
-    assert kwargs["name"] == game_service.setup_abandon_job_name(game_id)
+    assert kwargs["name"] == timeout_module.setup_abandon_job_name(game_id)
     assert kwargs["data"] == game_id
 
 
@@ -158,7 +159,7 @@ def test_cancel_setup_abandon_removes_matching_jobs() -> None:
 
     timeout_module.cancel_setup_abandon(job_queue, 42)
 
-    job_queue.get_jobs_by_name.assert_called_once_with(game_service.setup_abandon_job_name(42))
+    job_queue.get_jobs_by_name.assert_called_once_with(timeout_module.setup_abandon_job_name(42))
     job.schedule_removal.assert_called_once()
 
 
@@ -343,3 +344,56 @@ async def test_rearm_pending_timeouts_reschedules_setup_abandon_and_turn_timers(
     assert timeout_module.TURN_REMINDER_JOB_NAME in names
     assert timeout_module.TURN_EXPIRY_JOB_NAME in names
     assert any(name.startswith("setup-abandon-") for name in names)
+
+
+def test_timeout_job_name_is_stable_and_unique_per_game() -> None:
+    assert timeout_module.timeout_job_name(42) == timeout_module.timeout_job_name(42)
+    assert timeout_module.timeout_job_name(42) != timeout_module.timeout_job_name(43)
+
+
+def test_setup_abandon_job_name_is_stable_and_unique_per_game() -> None:
+    assert timeout_module.setup_abandon_job_name(42) == timeout_module.setup_abandon_job_name(42)
+    assert timeout_module.setup_abandon_job_name(42) != timeout_module.setup_abandon_job_name(43)
+
+
+def test_seconds_until_timeout_handles_aware_datetimes() -> None:
+    game = Game(starter_id=1, original_file_id="f")
+    game.scheduled_end_at = datetime.now(UTC) + timedelta(seconds=100)
+
+    assert timeout_module.seconds_until_timeout(game) == pytest.approx(100, abs=1)
+
+
+def test_seconds_until_timeout_treats_naive_datetimes_as_utc() -> None:
+    game = Game(starter_id=1, original_file_id="f")
+    game.scheduled_end_at = (datetime.now(UTC) + timedelta(seconds=100)).replace(tzinfo=None)
+
+    assert timeout_module.seconds_until_timeout(game) == pytest.approx(100, abs=1)
+
+
+def test_seconds_until_timeout_clamps_overdue_to_zero() -> None:
+    game = Game(starter_id=1, original_file_id="f")
+    game.scheduled_end_at = datetime.now(UTC) - timedelta(days=1)
+
+    assert timeout_module.seconds_until_timeout(game) == 0
+
+
+def test_seconds_until_handles_aware_datetimes() -> None:
+    deadline = datetime.now(UTC) + timedelta(seconds=100)
+
+    assert timeout_module.seconds_until(deadline) == pytest.approx(100, abs=1)
+
+
+def test_seconds_until_treats_naive_datetimes_as_utc() -> None:
+    deadline = (datetime.now(UTC) + timedelta(seconds=100)).replace(tzinfo=None)
+
+    assert timeout_module.seconds_until(deadline) == pytest.approx(100, abs=1)
+
+
+def test_seconds_until_clamps_overdue_to_zero() -> None:
+    deadline = datetime.now(UTC) - timedelta(days=1)
+
+    assert timeout_module.seconds_until(deadline) == 0
+
+
+def test_seconds_until_returns_zero_for_none() -> None:
+    assert timeout_module.seconds_until(None) == 0

@@ -158,7 +158,7 @@ async def test_correct_command_cancels_the_timeout_job(session_factory) -> None:
     )
 
     context.job_queue.get_jobs_by_name.assert_any_call(
-        correct_command_module.game_service.timeout_job_name(game_id)
+        correct_command_module.timeout_module.timeout_job_name(game_id)
     )
 
 

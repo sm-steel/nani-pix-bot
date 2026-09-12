@@ -10,13 +10,9 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.settings import stage_config
-
-
-def _title(game) -> str:
-    return game.title_english or game.title_romaji or game.title_native or "?"
 
 
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -55,7 +51,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await message.reply_text(i18n.t("guess.starter_cannot_guess", lang))
             return
 
-        game_service.get_or_create_player(session, user.id, username=user.username)
+        players.get_or_create_player(session, user.id, username=user.username)
         logger.debug("{} guessed {!r} on game {}", user.id, guess_text, game.id)
         outcome = game_service.record_guess(
             session, game, guesser_id=user.id, guess_text=guess_text
@@ -71,7 +67,10 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 message_thread_id=game_topic_id,
                 photo=game.original_file_id,
                 caption=i18n.t(
-                    "guess.won_caption", lang, winner=user.full_name, title=_title(game)
+                    "guess.won_caption",
+                    lang,
+                    winner=user.full_name,
+                    title=game_service.display_title(game),
                 ),
             )
             game_service.clear_original_screenshot(game)
@@ -110,6 +109,8 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 chat_id=group_chat_id,
                 message_thread_id=game_topic_id,
                 photo=game.original_file_id,
-                caption=i18n.t("guess.unsolved_caption", lang, title=_title(game)),
+                caption=i18n.t(
+                    "guess.unsolved_caption", lang, title=game_service.display_title(game)
+                ),
             )
             game_service.clear_original_screenshot(game)

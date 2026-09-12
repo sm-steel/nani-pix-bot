@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.orm import Session
@@ -30,25 +30,37 @@ _FRIEREN_SHIKIMORI = ShikimoriResult(
 )
 
 
-def test_get_or_create_player_creates_a_new_row(session: Session) -> None:
-    player = game_service.get_or_create_player(session, 1, username="frieren")
-    session.commit()
+def test_display_title_prefers_english() -> None:
+    game = Game(
+        starter_id=1,
+        original_file_id="f",
+        title_english="Frieren: Beyond Journey's End",
+        title_romaji="Sousou no Frieren",
+        title_native="葬送のフリーレン",
+        title_russian="Провожающая в последний путь Фрирен",
+    )
 
-    fetched = session.get(Player, 1)
-    assert fetched is not None
-    assert fetched.username == "frieren"
-    assert player.telegram_user_id == 1
+    assert game_service.display_title(game) == "Frieren: Beyond Journey's End"
 
 
-def test_get_or_create_player_refreshes_username_on_an_existing_row(session: Session) -> None:
-    session.add(Player(telegram_user_id=1, username="old", wins=3))
-    session.commit()
+def test_display_title_falls_back_to_russian_when_only_that_is_set() -> None:
+    # A Shikimori-only result has no English/romaji/native title — before
+    # consolidating this fallback chain, three of its four copies
+    # (commands/guess.py, correct.py, stop.py) skipped straight to "?"
+    # here instead of using the Russian title.
+    game = Game(
+        starter_id=1,
+        original_file_id="f",
+        title_russian="Провожающая в последний путь Фрирен",
+    )
 
-    player = game_service.get_or_create_player(session, 1, username="new")
-    session.commit()
+    assert game_service.display_title(game) == "Провожающая в последний путь Фрирен"
 
-    assert player.wins == 3
-    assert player.username == "new"
+
+def test_display_title_falls_back_to_a_literal_question_mark() -> None:
+    game = Game(starter_id=1, original_file_id="f")
+
+    assert game_service.display_title(game) == "?"
 
 
 def test_can_start_is_true_with_no_game_and_no_turn_state(session: Session) -> None:
@@ -204,6 +216,22 @@ def test_activate_game_creates_turn_state_row_if_missing(session: Session) -> No
     assert turn_state.next_starter_id is None
 
 
+def test_activate_game_schedules_the_timeout_two_days_out(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    session.commit()
+    before = datetime.now(UTC).replace(tzinfo=None)  # DATETIME columns round-trip as naive UTC
+
+    game_service.stage_result(game, _FRIEREN, source="anilist")
+    game_service.activate_game(session, game)
+    session.commit()
+
+    assert game.scheduled_end_at is not None
+    delta_seconds = (game.scheduled_end_at - before).total_seconds()
+    assert delta_seconds == pytest.approx(game_service.TIMEOUT_DURATION.total_seconds(), abs=5)
+
+
 def _active_game(
     session: Session,
     *,
@@ -232,7 +260,7 @@ def _active_game(
 
 def _seed_stage_limit(session: Session, stage: PixelStage, wrong_guess_limit: int) -> None:
     """Seeds an explicit stage_config row so a test's expected threshold
-    doesn't depend on whatever services/stage_config.py's current
+    doesn't depend on whatever services/settings/stage_config.py's current
     DEFAULT_STAGE_CONFIG happens to be (which gets retuned often)."""
     session.add(StageConfig(stage=stage, target_width=100, wrong_guess_limit=wrong_guess_limit))
     session.commit()
@@ -410,20 +438,6 @@ def test_stage_progress_rejects_a_game_with_no_current_stage(session: Session) -
         game_service.stage_progress(session, game)
 
 
-def test_find_player_by_username_finds_a_case_insensitive_match(session: Session) -> None:
-    session.add(Player(telegram_user_id=1, username="Frieren"))
-    session.commit()
-
-    found = game_service.find_player_by_username(session, "frieren")
-
-    assert found is not None
-    assert found.telegram_user_id == 1
-
-
-def test_find_player_by_username_returns_none_when_unknown(session: Session) -> None:
-    assert game_service.find_player_by_username(session, "nobody") is None
-
-
 def test_force_win_sets_winner_and_hands_over_the_turn(session: Session) -> None:
     game = _active_game(session)
     session.add(Player(telegram_user_id=2))
@@ -444,55 +458,6 @@ def test_force_win_sets_winner_and_hands_over_the_turn(session: Session) -> None
     assert turn_state.next_starter_id == 2
 
 
-def test_get_turn_state_returns_none_when_no_row_exists(session: Session) -> None:
-    assert game_service.get_turn_state(session) is None
-
-
-def test_set_next_starter_creates_the_row_if_missing(session: Session) -> None:
-    session.add(Player(telegram_user_id=1))
-    session.commit()
-
-    game_service.set_next_starter(session, 1)
-    session.commit()
-
-    turn_state = session.get(TurnState, 1)
-    assert turn_state is not None
-    assert turn_state.next_starter_id == 1
-
-
-def test_set_next_starter_can_open_the_turn(session: Session) -> None:
-    session.add(TurnState(id=1, next_starter_id=1))
-    session.commit()
-
-    game_service.set_next_starter(session, None)
-    session.commit()
-
-    turn_state = session.get(TurnState, 1)
-    assert turn_state is not None
-    assert turn_state.next_starter_id is None
-
-
-def test_activate_game_schedules_the_timeout_two_days_out(session: Session) -> None:
-    session.add(Player(telegram_user_id=1))
-    session.commit()
-    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
-    session.commit()
-    before = datetime.now(UTC).replace(tzinfo=None)  # DATETIME columns round-trip as naive UTC
-
-    game_service.stage_result(game, _FRIEREN, source="anilist")
-    game_service.activate_game(session, game)
-    session.commit()
-
-    assert game.scheduled_end_at is not None
-    delta_seconds = (game.scheduled_end_at - before).total_seconds()
-    assert delta_seconds == pytest.approx(game_service.TIMEOUT_DURATION.total_seconds(), abs=5)
-
-
-def test_timeout_job_name_is_stable_and_unique_per_game() -> None:
-    assert game_service.timeout_job_name(42) == game_service.timeout_job_name(42)
-    assert game_service.timeout_job_name(42) != game_service.timeout_job_name(43)
-
-
 def test_force_unsolved_sets_the_status(session: Session) -> None:
     game = _active_game(session)
 
@@ -500,88 +465,6 @@ def test_force_unsolved_sets_the_status(session: Session) -> None:
     session.commit()
 
     assert game.status == GameStatus.UNSOLVED
-
-
-def test_seconds_until_timeout_handles_aware_datetimes() -> None:
-    game = Game(starter_id=1, original_file_id="f")
-    game.scheduled_end_at = datetime.now(UTC) + timedelta(seconds=100)
-
-    assert game_service.seconds_until_timeout(game) == pytest.approx(100, abs=1)
-
-
-def test_seconds_until_timeout_treats_naive_datetimes_as_utc() -> None:
-    game = Game(starter_id=1, original_file_id="f")
-    game.scheduled_end_at = (datetime.now(UTC) + timedelta(seconds=100)).replace(tzinfo=None)
-
-    assert game_service.seconds_until_timeout(game) == pytest.approx(100, abs=1)
-
-
-def test_seconds_until_timeout_clamps_overdue_to_zero() -> None:
-    game = Game(starter_id=1, original_file_id="f")
-    game.scheduled_end_at = datetime.now(UTC) - timedelta(days=1)
-
-    assert game_service.seconds_until_timeout(game) == 0
-
-
-def test_seconds_until_handles_aware_datetimes() -> None:
-    deadline = datetime.now(UTC) + timedelta(seconds=100)
-
-    assert game_service.seconds_until(deadline) == pytest.approx(100, abs=1)
-
-
-def test_seconds_until_treats_naive_datetimes_as_utc() -> None:
-    deadline = (datetime.now(UTC) + timedelta(seconds=100)).replace(tzinfo=None)
-
-    assert game_service.seconds_until(deadline) == pytest.approx(100, abs=1)
-
-
-def test_seconds_until_clamps_overdue_to_zero() -> None:
-    deadline = datetime.now(UTC) - timedelta(days=1)
-
-    assert game_service.seconds_until(deadline) == 0
-
-
-def test_seconds_until_returns_zero_for_none() -> None:
-    assert game_service.seconds_until(None) == 0
-
-
-def test_set_next_starter_schedules_reminder_and_expiry_for_a_real_user(
-    session: Session,
-) -> None:
-    session.add(Player(telegram_user_id=2))
-    session.commit()
-    before = datetime.now(UTC).replace(tzinfo=None)
-
-    turn_state = game_service.set_next_starter(session, 2)
-    session.commit()
-
-    assert turn_state.next_starter_id == 2
-    assert turn_state.reminder_at is not None
-    assert turn_state.expiry_at is not None
-    reminder_delta = (turn_state.reminder_at - before).total_seconds()
-    expiry_delta = (turn_state.expiry_at - before).total_seconds()
-    assert reminder_delta == pytest.approx(game_service.TURN_REMINDER_DELAY.total_seconds(), abs=5)
-    assert expiry_delta == pytest.approx(game_service.TURN_EXPIRY_DELAY.total_seconds(), abs=5)
-
-
-def test_set_next_starter_clears_reminder_and_expiry_when_opened(session: Session) -> None:
-    session.add(Player(telegram_user_id=2))
-    session.add(
-        TurnState(
-            id=1,
-            next_starter_id=2,
-            reminder_at=datetime.now(UTC),
-            expiry_at=datetime.now(UTC),
-        )
-    )
-    session.commit()
-
-    turn_state = game_service.set_next_starter(session, None)
-    session.commit()
-
-    assert turn_state.next_starter_id is None
-    assert turn_state.reminder_at is None
-    assert turn_state.expiry_at is None
 
 
 def test_win_schedules_turn_timers_for_the_winner(session: Session) -> None:
@@ -597,27 +480,6 @@ def test_win_schedules_turn_timers_for_the_winner(session: Session) -> None:
     assert turn_state.next_starter_id == 2
     assert turn_state.reminder_at is not None
     assert turn_state.expiry_at is not None
-
-
-def test_clear_turn_timers_nulls_reminder_and_expiry(session: Session) -> None:
-    session.add(Player(telegram_user_id=2))
-    session.add(
-        TurnState(
-            id=1,
-            next_starter_id=2,
-            reminder_at=datetime.now(UTC),
-            expiry_at=datetime.now(UTC),
-        )
-    )
-    session.commit()
-
-    game_service.clear_turn_timers(session)
-    session.commit()
-
-    turn_state = game_service.get_turn_state(session)
-    assert turn_state is not None
-    assert turn_state.reminder_at is None
-    assert turn_state.expiry_at is None
 
 
 def test_active_games_returns_only_active_status_games(session: Session) -> None:

@@ -9,7 +9,7 @@ from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services import i18n, players, settings
 
 
 async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -45,7 +45,7 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
 
         target_username = context.args[0].lstrip("@")
-        target = game_service.find_player_by_username(session, target_username)
+        target = players.find_player_by_username(session, target_username)
         if target is None:
             logger.warning("/skip: unknown username {!r}", target_username)
             await message.reply_text(

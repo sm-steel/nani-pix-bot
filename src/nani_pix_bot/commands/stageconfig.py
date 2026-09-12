@@ -1,5 +1,5 @@
 """Admin commands for viewing/tuning per-stage pixelation config — see
-services/stage_config.py. All three commands are DM-only and
+services/settings/stage_config.py. All three commands are DM-only and
 admin-gated (same precedent as /language), and apply changes
 immediately with no confirmation step (this is a fast-iteration admin
 tool).

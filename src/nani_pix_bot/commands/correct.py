@@ -11,11 +11,7 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings
-
-
-def _title(game) -> str:
-    return game.title_english or game.title_romaji or game.title_native or "?"
+from nani_pix_bot.services import i18n, players, settings
 
 
 async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -56,7 +52,7 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if game.original_file_id is None:
             return  # shouldn't happen for an ACTIVE game — defensive guard
 
-        target = game_service.find_player_by_username(session, target_username)
+        target = players.find_player_by_username(session, target_username)
         if target is None:
             logger.warning("/correct: unknown username {!r} on game {}", target_username, game.id)
             await message.reply_text(
@@ -79,6 +75,11 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             chat_id=group_chat_id,
             message_thread_id=game_topic_id,
             photo=game.original_file_id,
-            caption=i18n.t("correct.caption", lang, winner=target_username, title=_title(game)),
+            caption=i18n.t(
+                "correct.caption",
+                lang,
+                winner=target_username,
+                title=game_service.display_title(game),
+            ),
         )
         game_service.clear_original_screenshot(game)

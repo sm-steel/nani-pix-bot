@@ -26,7 +26,7 @@ class Game(Base):
     title_russian: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
     synonyms: Mapped[list[str] | None] = mapped_column(JSON, default=None)
     # Which identification method staged this game's title/synonyms —
-    # "anilist" / "shikimori" / "manual". See services/game.py's
+    # "anilist" / "shikimori" / "manual". See services/game/state.py's
     # stage_result().
     source: Mapped[str] = mapped_column(String(16), default="anilist")
     # Only meaningful while status is SETUP — see SetupStep's docstring.
@@ -46,7 +46,7 @@ class Game(Base):
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     scheduled_end_at: Mapped[datetime | None] = mapped_column(default=None)
     ended_at: Mapped[datetime | None] = mapped_column(default=None)
-    # created_at + 1h — see services/game.py's SETUP_ABANDON_DELAY. Only
+    # created_at + 1h — see services/game/state.py's SETUP_ABANDON_DELAY. Only
     # meaningful while status is SETUP.
     setup_deadline: Mapped[datetime | None] = mapped_column(default=None)
 

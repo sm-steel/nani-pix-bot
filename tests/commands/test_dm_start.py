@@ -139,7 +139,7 @@ async def test_photo_handler_schedules_the_setup_abandon_timer(session_factory) 
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()
     names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
-    assert dm_start.game_service.setup_abandon_job_name(game.id) in names
+    assert dm_start.timeout_module.setup_abandon_job_name(game.id) in names
 
 
 async def test_photo_handler_cancels_turn_timers_when_the_designated_starter_begins(
@@ -717,7 +717,7 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
 
     context.job_queue.run_once.assert_called_once()
     context.job_queue.get_jobs_by_name.assert_any_call(
-        dm_start.game_service.setup_abandon_job_name(fetched.id)
+        dm_start.timeout_module.setup_abandon_job_name(fetched.id)
     )
     update.callback_query.edit_message_text.assert_awaited_once()
 

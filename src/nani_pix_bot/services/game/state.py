@@ -1,28 +1,26 @@
-"""The game state machine — the only module that mutates a Game row. See
-MECHANICS.md for the rules this implements."""
+"""The core Game-row state machine — the only module that mutates a
+Game row. See MECHANICS.md for the rules this implements. TurnState
+bookkeeping (a related but distinct concern) lives in turns.py."""
 
 import enum
 from datetime import UTC, datetime, timedelta
 
 from loguru import logger
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.models.player import Player
-from nani_pix_bot.models.turn_state import TurnState
-from nani_pix_bot.services import matching
+from nani_pix_bot.services import matching, players
 from nani_pix_bot.services.anilist import AniListResult
+from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.settings import stage_config
 from nani_pix_bot.services.shikimori import ShikimoriResult
-
-TURN_STATE_ID = 1
 
 # Blockiest to clearest — see MECHANICS.md's "Pixelation stages" table.
 # Fixed: the 5 PixelStage members and their order never change, only
 # each stage's target width and wrong-guess limit (see
-# services/stage_config.py) are admin-configurable.
+# services/settings/stage_config.py) are admin-configurable.
 STAGE_ORDER = [
     PixelStage.STAGE_1,
     PixelStage.STAGE_2,
@@ -39,11 +37,6 @@ TIMEOUT_DURATION = timedelta(days=2)
 # see MECHANICS.md's "Starting a game" section.
 SETUP_ABANDON_DELAY = timedelta(hours=1)
 
-# Absolute from a turn being designated to a real user (a win, or
-# /skip @user) — see MECHANICS.md's "Turn handoff" section.
-TURN_REMINDER_DELAY = timedelta(minutes=15)
-TURN_EXPIRY_DELAY = timedelta(hours=12)
-
 
 class GuessOutcome(enum.Enum):
     """What a /guess attempt did to the game — tells the command layer
@@ -55,60 +48,17 @@ class GuessOutcome(enum.Enum):
     UNSOLVED = "unsolved"
 
 
-def get_or_create_player(
-    session: Session, telegram_user_id: int, *, username: str | None = None
-) -> Player:
-    """Look up a player, creating the row if this is their first time. On
-    an existing row, opportunistically refreshes `username`."""
-    player = session.get(Player, telegram_user_id)
-    if player is None:
-        player = Player(telegram_user_id=telegram_user_id, username=username)
-        session.add(player)
-    elif username is not None:
-        player.username = username
-    return player
-
-
-def get_turn_state(session: Session) -> TurnState | None:
-    return session.get(TurnState, TURN_STATE_ID)
-
-
-def _get_or_create_turn_state(session: Session) -> TurnState:
-    turn_state = get_turn_state(session)
-    if turn_state is None:
-        turn_state = TurnState(id=TURN_STATE_ID)
-        session.add(turn_state)
-    return turn_state
-
-
-def set_next_starter(session: Session, user_id: int | None) -> TurnState:
-    """Implements /skip and winning — see MECHANICS.md's "Turn handoff"
-    section. `None` opens the turn to anyone and cancels the win-turn
-    reminder/expiry timers; a real user (re)schedules both, absolute
-    from now. Returns the row so the command layer can schedule/cancel
-    the actual JobQueue jobs (this module stays Telegram-agnostic)."""
-    turn_state = _get_or_create_turn_state(session)
-    turn_state.next_starter_id = user_id
-    if user_id is None:
-        turn_state.reminder_at = None
-        turn_state.expiry_at = None
-        logger.info("Turn opened — anyone may start the next game")
-    else:
-        now = datetime.now(UTC)
-        turn_state.reminder_at = now + TURN_REMINDER_DELAY
-        turn_state.expiry_at = now + TURN_EXPIRY_DELAY
-        logger.info("Turn designated to player {}", user_id)
-    return turn_state
-
-
-def clear_turn_timers(session: Session) -> None:
-    """Cancels the win-turn reminder/expiry deadlines without touching
-    `next_starter_id` — used when the designated player actually starts
-    their game, so a stale reminder doesn't fire after they've already
-    acted."""
-    turn_state = _get_or_create_turn_state(session)
-    turn_state.reminder_at = None
-    turn_state.expiry_at = None
+def display_title(game: Game) -> str:
+    """Best available display title for a Game, for captions and the DM
+    setup preview: English, then romaji, then native, then Russian
+    (Shikimori-only results only ever have this one), then a literal
+    "?" if somehow none are set. The one canonical fallback chain —
+    commands/guess.py, correct.py, stop.py, and jobs/timers.py each
+    used to keep their own copy, and three of those four copies were
+    missing the Russian fallback (a Shikimori-only result would show
+    "?" instead of its actual title)."""
+    candidates = (game.title_english, game.title_romaji, game.title_native, game.title_russian)
+    return next((title for title in candidates if title), "?")
 
 
 def active_or_setup_game(session: Session) -> Game | None:
@@ -147,7 +97,7 @@ def can_start(session: Session, user_id: int) -> bool:
     right now — see MECHANICS.md's "Starting a game"."""
     if active_or_setup_game(session) is not None:
         return False
-    turn_state = get_turn_state(session)
+    turn_state = turns.get_turn_state(session)
     return turn_state is None or turn_state.next_starter_id in (None, user_id)
 
 
@@ -198,40 +148,9 @@ def activate_game(session: Session, game: Game) -> None:
     game.wrong_guess_count = 0
     game.scheduled_end_at = datetime.now(UTC) + TIMEOUT_DURATION
 
-    turn_state = _get_or_create_turn_state(session)
+    turn_state = turns.get_or_create_turn_state(session)
     turn_state.next_starter_id = None
     logger.info("Game {} activated (source={})", game.id, game.source)
-
-
-def seconds_until(deadline: datetime | None) -> float:
-    """Seconds from now until `deadline`, clamped at 0 for an already-
-    overdue deadline (or if there's no deadline at all). Normalizes naive
-    datetimes (as DATETIME columns round-trip from the DB) to UTC before
-    comparing — shared by the game timeout, setup-abandon, and win-turn
-    reminder/expiry timers."""
-    if deadline is None:
-        return 0.0
-    if deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=UTC)
-    return max((deadline - datetime.now(UTC)).total_seconds(), 0.0)
-
-
-def seconds_until_timeout(game: Game) -> float:
-    """Seconds from now until `game.scheduled_end_at` — see seconds_until()."""
-    return seconds_until(game.scheduled_end_at)
-
-
-def timeout_job_name(game_id: int) -> str:
-    """Deterministic JobQueue job name for a game's timeout — lets the
-    command layer look up and cancel a pending job (e.g. on a win) or
-    re-arm it on startup without storing anything extra on the row."""
-    return f"game-timeout-{game_id}"
-
-
-def setup_abandon_job_name(game_id: int) -> str:
-    """Deterministic JobQueue job name for a SETUP game's abandon
-    timer — mirrors timeout_job_name()."""
-    return f"setup-abandon-{game_id}"
 
 
 def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: str) -> GuessOutcome:
@@ -301,13 +220,6 @@ def stage_progress(session: Session, game: Game) -> tuple[int, int, int]:
     return stage_number, len(STAGE_ORDER), remaining
 
 
-def find_player_by_username(session: Session, username: str) -> Player | None:
-    """Case-insensitive lookup by the opportunistically-cached username —
-    used by /correct, which takes a plain @username rather than a reply."""
-    stmt = select(Player).where(func.lower(Player.username) == username.lower())
-    return session.scalars(stmt).first()
-
-
 def force_win(session: Session, game: Game, *, winner_id: int) -> None:
     """The author-override path (/correct) — identical end state to an
     automatic match in record_guess, just triggered without one."""
@@ -318,10 +230,10 @@ def _win(session: Session, game: Game, *, winner_id: int) -> None:
     game.status = GameStatus.WON
     game.winner_id = winner_id
 
-    winner = get_or_create_player(session, winner_id)
+    winner = players.get_or_create_player(session, winner_id)
     winner.wins += 1
 
-    set_next_starter(session, winner_id)
+    turns.set_next_starter(session, winner_id)
     logger.info("Game {} won by player {}", game.id, winner_id)
 
 

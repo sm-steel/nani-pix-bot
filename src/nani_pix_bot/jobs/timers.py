@@ -9,6 +9,8 @@ its stored absolute deadline (`Game.scheduled_end_at`/`setup_deadline`,
 resets any of these clocks.
 """
 
+from datetime import UTC, datetime
+
 from loguru import logger
 from telegram.error import Forbidden
 from telegram.ext import ContextTypes, JobQueue
@@ -27,19 +29,48 @@ TURN_REMINDER_JOB_NAME = "turn-reminder"
 TURN_EXPIRY_JOB_NAME = "turn-expiry"
 
 
-def _title(game: Game) -> str:
-    return game.title_english or game.title_romaji or game.title_native or "?"
+def seconds_until(deadline: datetime | None) -> float:
+    """Seconds from now until `deadline`, clamped at 0 for an already-
+    overdue deadline (or if there's no deadline at all). Normalizes naive
+    datetimes (as DATETIME columns round-trip from the DB) to UTC before
+    comparing — shared by the game timeout, setup-abandon, and win-turn
+    reminder/expiry timers below. Lives here rather than in
+    services/game/ since it's a pure scheduling helper, not game-state
+    logic, and this module is its only caller."""
+    if deadline is None:
+        return 0.0
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)
+    return max((deadline - datetime.now(UTC)).total_seconds(), 0.0)
+
+
+def seconds_until_timeout(game: Game) -> float:
+    """Seconds from now until `game.scheduled_end_at` — see seconds_until()."""
+    return seconds_until(game.scheduled_end_at)
+
+
+def timeout_job_name(game_id: int) -> str:
+    """Deterministic JobQueue job name for a game's timeout — lets this
+    module look up and cancel a pending job (e.g. on a win) or re-arm it
+    on startup without storing anything extra on the row."""
+    return f"game-timeout-{game_id}"
+
+
+def setup_abandon_job_name(game_id: int) -> str:
+    """Deterministic JobQueue job name for a SETUP game's abandon
+    timer — mirrors timeout_job_name()."""
+    return f"setup-abandon-{game_id}"
 
 
 def schedule_timeout(job_queue: JobQueue | None, game: Game) -> None:
     if job_queue is None:
         return
-    delay = game_service.seconds_until_timeout(game)
+    delay = seconds_until_timeout(game)
     logger.debug("Scheduling 2-day timeout for game {} in {:.0f}s", game.id, delay)
     job_queue.run_once(
         timeout_job_callback,
         when=delay,
-        name=game_service.timeout_job_name(game.id),
+        name=timeout_job_name(game.id),
         data=game.id,
     )
 
@@ -48,7 +79,7 @@ def cancel_timeout(job_queue: JobQueue | None, game_id: int) -> None:
     if job_queue is None:
         return
     logger.debug("Canceling 2-day timeout for game {}", game_id)
-    for job in job_queue.get_jobs_by_name(game_service.timeout_job_name(game_id)):
+    for job in job_queue.get_jobs_by_name(timeout_job_name(game_id)):
         job.schedule_removal()
 
 
@@ -72,7 +103,7 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
             chat_id=context.bot_data["group_chat_id"],
             message_thread_id=context.bot_data["game_topic_id"],
             photo=game.original_file_id,
-            caption=i18n.t("timeout.caption", lang, title=_title(game)),
+            caption=i18n.t("timeout.caption", lang, title=game_service.display_title(game)),
         )
         game_service.clear_original_screenshot(game)
 
@@ -98,12 +129,12 @@ async def rearm_pending_timeouts(job_queue: JobQueue | None, session_factory) ->
 def schedule_setup_abandon(job_queue: JobQueue | None, game: Game) -> None:
     if job_queue is None:
         return
-    delay = game_service.seconds_until(game.setup_deadline)
+    delay = seconds_until(game.setup_deadline)
     logger.debug("Scheduling setup-abandon for game {} in {:.0f}s", game.id, delay)
     job_queue.run_once(
         setup_abandon_job_callback,
         when=delay,
-        name=game_service.setup_abandon_job_name(game.id),
+        name=setup_abandon_job_name(game.id),
         data=game.id,
     )
 
@@ -112,7 +143,7 @@ def cancel_setup_abandon(job_queue: JobQueue | None, game_id: int) -> None:
     if job_queue is None:
         return
     logger.debug("Canceling setup-abandon timer for game {}", game_id)
-    for job in job_queue.get_jobs_by_name(game_service.setup_abandon_job_name(game_id)):
+    for job in job_queue.get_jobs_by_name(setup_abandon_job_name(game_id)):
         job.schedule_removal()
 
 
@@ -153,7 +184,7 @@ def schedule_turn_timers(job_queue: JobQueue | None, turn_state: TurnState) -> N
     cancel_turn_timers(job_queue)
     next_starter_id = turn_state.next_starter_id
     if turn_state.reminder_at is not None:
-        delay = game_service.seconds_until(turn_state.reminder_at)
+        delay = seconds_until(turn_state.reminder_at)
         logger.debug("Scheduling turn-reminder for {} in {:.0f}s", next_starter_id, delay)
         job_queue.run_once(
             turn_reminder_job_callback,
@@ -161,7 +192,7 @@ def schedule_turn_timers(job_queue: JobQueue | None, turn_state: TurnState) -> N
             name=TURN_REMINDER_JOB_NAME,
         )
     if turn_state.expiry_at is not None:
-        delay = game_service.seconds_until(turn_state.expiry_at)
+        delay = seconds_until(turn_state.expiry_at)
         logger.debug("Scheduling turn-expiry for {} in {:.0f}s", next_starter_id, delay)
         job_queue.run_once(
             turn_expiry_job_callback,

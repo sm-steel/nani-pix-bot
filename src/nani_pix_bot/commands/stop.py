@@ -21,10 +21,6 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 
 
-def _title(game) -> str:
-    return game.title_english or game.title_romaji or game.title_native or "?"
-
-
 async def _may_stop(
     context: ContextTypes.DEFAULT_TYPE, group_chat_id: int, user_id: int, game
 ) -> bool:
@@ -53,7 +49,7 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await message.reply_text(i18n.t("stop.not_allowed", lang))
             return
 
-        title = _title(game)
+        title = game_service.display_title(game)
 
     await message.reply_text(
         i18n.t("stop.confirm_prompt", lang, title=title),

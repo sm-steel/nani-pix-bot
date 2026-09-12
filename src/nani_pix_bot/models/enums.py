@@ -17,7 +17,7 @@ class PixelStage(enum.Enum):
     that was tried before and the digits stopped meaning anything real).
     Only the 5 members and their order are fixed here; each stage's
     actual target width and wrong-guess limit are admin-configurable at
-    runtime, not baked into this enum — see services/stage_config.py."""
+    runtime, not baked into this enum — see services/settings/stage_config.py."""
 
     STAGE_1 = "stage_1"  # shown first — blockiest/hardest
     STAGE_2 = "stage_2"

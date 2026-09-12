@@ -36,7 +36,7 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.services import anilist, i18n, settings, shikimori
+from nani_pix_bot.services import anilist, i18n, players, settings, shikimori
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.settings import stage_config
@@ -60,11 +60,6 @@ def _method_prompt_key(*, prefer_shikimori: bool) -> str:
         if prefer_shikimori
         else "dm_start.pick_method_prompt"
     )
-
-
-def _display_title(game: Game) -> str:
-    candidates = (game.title_english, game.title_romaji, game.title_native, game.title_russian)
-    return next((title for title in candidates if title), "?")
 
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -104,7 +99,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             logger.warning("{} tried to start a game while games are disabled", user.id)
             await message.reply_text(i18n.t("dm_start.games_disabled", lang))
             return
-        game_service.get_or_create_player(session, user.id, username=user.username)
+        players.get_or_create_player(session, user.id, username=user.username)
         if not game_service.can_start(session, user.id):
             logger.warning("{} tried to start a game out of turn", user.id)
             await message.reply_text(i18n.t("dm_start.not_your_turn", lang))
@@ -357,7 +352,7 @@ async def _show_preview(context, session, game: Game, lang: str) -> None:
     config = stage_config.get_stage_config(session)
     synonyms = ", ".join(game.synonyms or []) or "—"
     caption = i18n.t(
-        "dm_start.preview_caption", lang, title=_display_title(game), synonyms=synonyms
+        "dm_start.preview_caption", lang, title=game_service.display_title(game), synonyms=synonyms
     )
     captions = [caption, *([None] * (len(game_service.STAGE_ORDER) - 1))]
     media = [
