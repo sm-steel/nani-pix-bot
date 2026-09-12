@@ -30,8 +30,8 @@ from nani_pix_bot.commands import (
     stop,
     testpixels,  # TEMPORARY — see commands/testpixels.py
 )
+from nani_pix_bot.commands.dm_start.keyboards import RETRY_CALLBACK_DATA
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
-from nani_pix_bot.commands.helpers.keyboards import RETRY_CALLBACK_DATA
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
 from nani_pix_bot.config import Config, load_config
 from nani_pix_bot.jobs.timers import rearm_pending_timeouts
