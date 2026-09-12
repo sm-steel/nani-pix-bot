@@ -12,8 +12,9 @@ Compose stack on the `moscow` VPS.
 system design, data model, and infra topology (why Telegram traffic is
 proxied through `amsterdam`, etc.). `MECHANICS.md` covers the game rules
 themselves (pixelation stages, guess matching, turns, timeout, leaderboard) —
-read it before touching anything in `services/game.py`,
-`services/matching.py`, `services/pixelate.py`, or `services/stage_config.py`.
+read it before touching anything in `services/game/`,
+`services/matching.py`, `services/pixelate.py`, or
+`services/settings/stage_config.py`.
 This file is about where things live and how to work in this repo day to day.
 
 ## Where things are
@@ -28,14 +29,32 @@ src/nani_pix_bot/
                    # startup (see MECHANICS.md's "Game lifecycle")
   commands/       # one module per Telegram command (thin: parse update,
                    # call a service, format a reply — no game rules here)
-    dm_start.py   # private-chat photo intake + AniList/Shikimori/manual
-                   # method-select + search/pick + confirmation-preview flow
-    guess.py      # /guess — the only handler most wrong-guess traffic hits
-    correct.py    # /correct @user — author override
-    skip.py       # /skip [@user] — turn handoff when no game is running
-    stop.py       # /stop — DM-only; starter or a group admin aborts the
-                   # current game after a Yes/No confirmation (outcome is
-                   # still announced in the group topic)
+    dm_start/     # private-chat photo intake + AniList/Shikimori/manual
+                   # method-select + search/pick + confirmation-preview
+                   # flow, split by flow stage (package's own __init__
+                   # re-exports only the PTB handler entrypoints):
+                   #   intake.py    photo_handler, the entry point
+                   #   search.py    method selection + AniList/Shikimori
+                   #                search-and-pick
+                   #   manual.py    manual title/synonym entry
+                   #   preview.py   confirmation preview (show/confirm/
+                   #                change-image/research/add-synonym)
+                   #                + the final post to the group
+                   #   keyboards.py inline-keyboard builders + callback-
+                   #                data constants for all of the above
+                   #   _shared.py   helpers used by more than one of them
+    game_flow/    # commands that run during (or between) an in-progress
+                   # game — grouped for symmetry with dm_start/, though
+                   # none of these four is individually large:
+                   #   guess.py    /guess — the only handler most
+                   #               wrong-guess traffic hits
+                   #   correct.py  /correct @user — author override
+                   #   skip.py     /skip [@user] — turn handoff when no
+                   #               game is running
+                   #   stop.py     /stop — DM-only; starter or a group
+                   #               admin aborts the current game after a
+                   #               Yes/No confirmation (outcome is still
+                   #               announced in the group topic)
     leaderboard.py  # /leaderboard
     language.py   # /language — DM-only, admin-gated bot language switch
     stageconfig.py  # /stageconfig, /setstageconfig, /setstage — DM-only,
@@ -47,42 +66,65 @@ src/nani_pix_bot/
     onboarding.py # /start, /help
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
-                   # (membership.py), inline-keyboard builders
-                   # (keyboards.py), bot command-menu registration
+                   # (membership.py), the one inline keyboard genuinely
+                   # shared across packages: stop_confirm_keyboard()
+                   # (keyboards.py, used by game_flow/stop.py and
+                   # stageconfig.py), bot command-menu registration
                    # (bot_menu.py). Nothing here registers a handler in
                    # app.py. Test: does more than one commands/*.py file
                    # need it, or does it not correspond to an actual
                    # /command at all? Either one means helpers/, not a
-                   # plain commands/*.py file.
+                   # plain commands/*.py file (dm_start's own keyboard
+                   # builders live in commands/dm_start/keyboards.py
+                   # instead, since nothing outside that package needs
+                   # them).
   jobs/           # JobQueue-driven background timers — Telegram-aware
                    # like commands/, but scheduled callbacks rather than
                    # CommandHandler/CallbackQueryHandlers, so a sibling
                    # package rather than living under commands/
     timers.py     # the 2-day game timeout, 1h setup-abandon, 15min/12h
                    # win-turn reminder/expiry — schedule/cancel/rearm
-                   # helpers plus the job callbacks themselves
+                   # helpers, the scheduling/naming primitives they're
+                   # built on (seconds_until, timeout_job_name, etc. —
+                   # live here rather than services/game/ since this
+                   # module is their only caller), and the job callbacks
+                   # themselves
   services/       # the actual game logic — framework-agnostic, no
                    # python-telegram-bot imports in this package
-    anilist.py    # AniList GraphQL search (httpx) — called once per game,
-                   # at setup time only, never per guess (see MECHANICS.md)
-    shikimori.py  # Shikimori REST search (httpx) — the RU-friendly
-                   # alternative to anilist.py, same call pattern/timing
+    search/       # anime-identification search, called once per game at
+                   # setup time only, never per guess (see MECHANICS.md):
+                   #   anilist.py    AniList GraphQL search (httpx)
+                   #   shikimori.py  Shikimori REST search (httpx) — the
+                   #                 RU-friendly alternative to anilist.py
+                   #   http_retry.py the 429/Retry-After retry loop
+                   #                 shared by both of the above
     matching.py   # normalize + rapidfuzz-match a guess against a game's
                    # cached title/synonyms — pure function, fully
                    # deterministic, no network calls
     pixelate.py   # Pillow downscale/upscale pipeline — given raw bytes
                    # and a target width, no DB or PixelStage dependency;
-                   # callers resolve the width via stage_config.py first
-    game.py       # the state machine: create/advance/win/unsolved/timeout
-                   # transitions — the one place that mutates a Game row
-    players.py    # win-count bookkeeping, leaderboard query
+                   # callers resolve the width via settings/stage_config.py
+                   # first
+    game/         # the state machine — the only package that mutates a
+                   # Game row:
+                   #   state.py   create/advance/win/unsolved/timeout
+                   #              transitions, plus display_title()
+                   #   turns.py   TurnState bookkeeping (who starts
+                   #              next, their reminder/expiry timers) —
+                   #              a related but distinct concern
+    players.py    # Player lookup/creation, win-count bookkeeping,
+                   # leaderboard query — everything that touches only
+                   # the Player table (win increments themselves happen
+                   # in services/game/state.py, alongside the Game row)
     i18n.py       # simple dict/JSON t(key, lang, **kwargs) — see
                    # "Language / i18n" below
-    settings.py   # get/set the bot's current language + games-enabled
-                   # flag (BotSettings)
-    stage_config.py  # get/set each PixelStage's target width and
-                   # wrong-guess limit (StageConfig, one row per stage) —
-                   # admin-adjustable via commands/stageconfig.py
+    settings/     # bot-wide configuration, two persistence shapes:
+                   #   bot_settings.py  singleton row — language,
+                   #                    games-enabled flag (BotSettings)
+                   #   stage_config.py  one row per PixelStage — target
+                   #                    width + wrong-guess limit
+                   #                    (StageConfig), admin-adjustable
+                   #                    via commands/stageconfig.py
   models/         # SQLAlchemy ORM models, one module per table
     base.py       # declarative base
     player.py     # Player

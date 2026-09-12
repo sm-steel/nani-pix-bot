@@ -193,7 +193,7 @@ barely pixelated at all.
 
 **Each stage's target width and wrong-guess limit are admin-configurable
 at runtime, not hardcoded constants** — stored one row per `PixelStage`
-in the `stage_config` table (see `services/stage_config.py`), seeded
+in the `stage_config` table (see `services/settings/stage_config.py`), seeded
 with defaults by migration and changeable live via three DM-only,
 admin-gated commands (`commands/stageconfig.py`):
 
