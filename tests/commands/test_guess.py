@@ -9,6 +9,7 @@ from nani_pix_bot.commands import guess as guess_command_module
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.models.stage_config import StageConfig
 
 
 def _make_update(
@@ -66,6 +67,15 @@ def _active_game(session_factory, **overrides) -> int:
         session.add(game)
         session.commit()
         return game.id
+
+
+def _seed_stage_limit(session_factory, stage: PixelStage, wrong_guess_limit: int) -> None:
+    """Seeds an explicit stage_config row so a test's expected threshold
+    doesn't depend on whatever services/stage_config.py's current
+    DEFAULT_STAGE_CONFIG happens to be (which gets retuned often)."""
+    with session_factory() as session:
+        session.add(StageConfig(stage=stage, target_width=100, wrong_guess_limit=wrong_guess_limit))
+        session.commit()
 
 
 async def test_guess_command_ignores_outside_the_game_topic(session_factory) -> None:
@@ -128,11 +138,13 @@ async def test_guess_command_wrong_guess_advances_stage_with_new_image(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        guess_command_module.pixelate_service, "pixelate", lambda data, stage: b"x8-bytes"
+        guess_command_module.pixelate_service, "pixelate", lambda data, width: b"x8-bytes"
     )
     # STAGE_1/STAGE_2's limit is only 1, so a stage with headroom (STAGE_3,
-    # limit 3) is needed to exercise "some wrong guesses, then advances".
+    # given a limit of 3 here) is needed to exercise "some wrong guesses,
+    # then advances".
     game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=3)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
@@ -156,8 +168,9 @@ async def test_guess_command_wrong_guess_below_threshold_does_not_post_a_new_ima
     session_factory,
 ) -> None:
     # STAGE_1's limit is only 1 (no "stays" case exists there anymore) —
-    # STAGE_3 (limit 3) has headroom.
+    # STAGE_3, given a limit of 3 here, has headroom.
     _active_game(session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=0)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=3)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
@@ -171,6 +184,7 @@ async def test_guess_command_wrong_guess_below_threshold_does_not_post_a_new_ima
 
 async def test_guess_command_stage_exhaustion_reveals_unsolved(session_factory) -> None:
     game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5, wrong_guess_count=7)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_5, wrong_guess_limit=8)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
@@ -226,9 +240,10 @@ async def test_guess_command_rejects_the_starter_guessing_on_their_own_game(
 async def test_guess_command_wrong_guess_below_threshold_replies_with_remaining_count(
     session_factory,
 ) -> None:
-    # STAGE_4's limit is 5 — plenty of headroom to test a mid-stage
-    # "N wrong guesses left" reply.
+    # STAGE_4, given a limit of 5 here, has plenty of headroom to test a
+    # mid-stage "N wrong guesses left" reply.
     _active_game(session_factory, current_stage=PixelStage.STAGE_4, wrong_guess_count=1)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_4, wrong_guess_limit=5)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
@@ -246,9 +261,10 @@ async def test_guess_command_wrong_guess_below_threshold_replies_with_remaining_
 async def test_guess_command_wrong_guess_reply_uses_the_current_stages_own_threshold(
     session_factory,
 ) -> None:
-    # STAGE_3's limit is 3, not the old flat 5 — a stage-agnostic
-    # "remaining" calculation would get this wrong.
+    # STAGE_3, given a limit of 3 here (not STAGE_4's 5) — a
+    # stage-agnostic "remaining" calculation would get this wrong.
     _active_game(session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=0)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=3)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 

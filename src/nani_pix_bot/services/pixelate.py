@@ -1,13 +1,18 @@
 """Pillow downscale/upscale pipeline — see MECHANICS.md's "Pixelation
 stages" table. No image bytes are ever persisted; callers regenerate a
-stage from the original screenshot's bytes on demand.
+stage's image from the original screenshot's bytes on demand.
 
-Stages downscale to a fixed *target width*, not a divisor of the source
+Downscales to a fixed *target width*, not a divisor of the source
 resolution — a divisor barely pixelates a high-resolution screenshot
 (e.g. ÷10 of a 2560px-wide image is still 256px wide, plenty detailed).
-A fixed target keeps stage difficulty independent of screenshot
-resolution: a 12px-wide image reads as pure color blobs whether the
-original was 1280px or 3840px wide.
+A fixed target keeps difficulty independent of screenshot resolution: a
+12px-wide image reads as pure color blobs whether the original was
+1280px or 3840px wide.
+
+Deliberately takes a raw width rather than a `PixelStage` — which width
+applies to which stage is admin-configurable and DB-backed (see
+services/stage_config.py), so callers resolve that themselves and this
+module stays a pure, DB-agnostic image-processing function.
 """
 
 import io
@@ -15,24 +20,11 @@ import io
 from loguru import logger
 from PIL import Image
 
-from nani_pix_bot.models.enums import PixelStage
 
-# Blockiest to clearest — evenly spread from 12px to 64px (a step of
-# exactly 13px per stage). See MECHANICS.md's "Pixelation stages" table.
-STAGE_TARGET_WIDTH: dict[PixelStage, int] = {
-    PixelStage.STAGE_1: 12,
-    PixelStage.STAGE_2: 25,
-    PixelStage.STAGE_3: 38,
-    PixelStage.STAGE_4: 51,
-    PixelStage.STAGE_5: 64,
-}
-
-
-def pixelate(image_bytes: bytes, stage: PixelStage) -> bytes:
-    """Downscale `image_bytes` to the stage's target width (preserving
-    aspect ratio), then upscale back to the original size — the blocky
+def pixelate(image_bytes: bytes, target_width: int) -> bytes:
+    """Downscale `image_bytes` to `target_width` (preserving aspect
+    ratio), then upscale back to the original size — the blocky
     pixelation effect."""
-    target_width = STAGE_TARGET_WIDTH[stage]
     with Image.open(io.BytesIO(image_bytes)) as source:
         rgb = source.convert("RGB")
 
@@ -46,10 +38,9 @@ def pixelate(image_bytes: bytes, stage: PixelStage) -> bytes:
     pixelated.save(buffer, format="PNG")
     result = buffer.getvalue()
     logger.debug(
-        "Pixelated {}x{} image to stage {} (target width {}) -> {} bytes",
+        "Pixelated {}x{} image to target width {} -> {} bytes",
         width,
         height,
-        stage,
         target_width,
         len(result),
     )

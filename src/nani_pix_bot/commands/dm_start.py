@@ -36,7 +36,7 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.services import anilist, i18n, settings, shikimori
+from nani_pix_bot.services import anilist, i18n, settings, shikimori, stage_config
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import pixelate as pixelate_service
 
@@ -86,7 +86,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             # not a new game, keep the staged title/synonyms.
             logger.debug("Starter {} sent a replacement photo for game {}", user.id, existing.id)
             existing.original_file_id = file_id
-            await _show_preview(context, existing, lang, chat_id=user.id)
+            await _show_preview(context, session, existing, lang)
             return
 
     group_chat_id = context.bot_data["group_chat_id"]
@@ -268,7 +268,7 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             return
         game_service.stage_result(setup_game, result, source=source)
         logger.debug("Game {}: staged {} result {}", setup_game.id, source, external_id)
-        await _show_preview(context, setup_game, lang, chat_id=user.id)
+        await _show_preview(context, session, setup_game, lang)
 
     await query.edit_message_text(i18n.t("dm_start.preview_sent", lang))
 
@@ -310,7 +310,7 @@ async def _manual_synonyms_step(
             return
         game_service.stage_manual_entry(setup_game, title=title, synonyms=synonyms)
         logger.debug("Game {}: manual entry staged with {} synonyms", setup_game.id, len(synonyms))
-        await _show_preview(context, setup_game, lang, chat_id=user.id)
+        await _show_preview(context, session, setup_game, lang)
 
     await message.reply_text(i18n.t("dm_start.preview_sent", lang))
 
@@ -323,7 +323,9 @@ async def _finalize_and_post(context, session, game: Game, caption: str) -> None
     timeout_module.cancel_setup_abandon(context.job_queue, game.id)
     telegram_file = await context.bot.get_file(game.original_file_id)
     original_bytes = bytes(await telegram_file.download_as_bytearray())
-    pixelated = pixelate_service.pixelate(original_bytes, game_service.STAGE_ORDER[0])
+    first_stage = game_service.STAGE_ORDER[0]
+    target_width = stage_config.get_stage_config(session)[first_stage].target_width
+    pixelated = pixelate_service.pixelate(original_bytes, target_width)
     game_service.activate_game(session, game)
     await context.bot.send_photo(
         chat_id=context.bot_data["group_chat_id"],
@@ -334,14 +336,18 @@ async def _finalize_and_post(context, session, game: Game, caption: str) -> None
     timeout_module.schedule_timeout(context.job_queue, game)
 
 
-async def _show_preview(context, game: Game, lang: str, *, chat_id: int) -> None:
+async def _show_preview(context, session, game: Game, lang: str) -> None:
     """Send the starter a private, first-stage-pixelated preview of the staged
     title/synonyms, with buttons to change the image, re-search, add a
     synonym, or confirm and post to the group. Nothing is posted to the
-    group until "Confirm and start" is tapped."""
+    group until "Confirm and start" is tapped. Always the game's own
+    starter's DM — every caller looked this game up by starter_id in the
+    first place, so game.starter_id is the right chat_id."""
     telegram_file = await context.bot.get_file(game.original_file_id)
     original_bytes = bytes(await telegram_file.download_as_bytearray())
-    pixelated = pixelate_service.pixelate(original_bytes, game_service.STAGE_ORDER[0])
+    first_stage = game_service.STAGE_ORDER[0]
+    target_width = stage_config.get_stage_config(session)[first_stage].target_width
+    pixelated = pixelate_service.pixelate(original_bytes, target_width)
     synonyms = ", ".join(game.synonyms or []) or "—"
     caption = i18n.t(
         "dm_start.preview_caption", lang, title=_display_title(game), synonyms=synonyms
@@ -349,7 +355,10 @@ async def _show_preview(context, game: Game, lang: str, *, chat_id: int) -> None
     game.setup_step = SetupStep.CONFIRMING
     logger.debug("Game {}: showing confirmation preview", game.id)
     await context.bot.send_photo(
-        chat_id=chat_id, photo=pixelated, caption=caption, reply_markup=preview_keyboard(lang)
+        chat_id=game.starter_id,
+        photo=pixelated,
+        caption=caption,
+        reply_markup=preview_keyboard(lang),
     )
 
 
@@ -369,7 +378,7 @@ async def _add_synonym_step(message, context: ContextTypes.DEFAULT_TYPE, lang: s
             return
         setup_game.synonyms = [*(setup_game.synonyms or []), *extra]
         logger.debug("Game {}: appended {} extra synonym(s)", setup_game.id, len(extra))
-        await _show_preview(context, setup_game, lang, chat_id=user.id)
+        await _show_preview(context, session, setup_game, lang)
 
 
 async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

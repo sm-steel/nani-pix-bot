@@ -10,7 +10,7 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services import i18n, settings, stage_config
 from nani_pix_bot.services import pixelate as pixelate_service
 
 
@@ -75,7 +75,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             )
             game_service.clear_original_screenshot(game)
         elif outcome is game_service.GuessOutcome.WRONG:
-            stage, total_stages, remaining = game_service.stage_progress(game)
+            stage, total_stages, remaining = game_service.stage_progress(session, game)
             await message.reply_text(
                 i18n.t(
                     "guess.wrong_feedback",
@@ -88,7 +88,8 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         elif outcome is game_service.GuessOutcome.STAGE_ADVANCED:
             telegram_file = await context.bot.get_file(game.original_file_id)
             original_bytes = bytes(await telegram_file.download_as_bytearray())
-            pixelated = pixelate_service.pixelate(original_bytes, game.current_stage)
+            target_width = stage_config.get_stage_config(session)[game.current_stage].target_width
+            pixelated = pixelate_service.pixelate(original_bytes, target_width)
             await context.bot.send_photo(
                 chat_id=group_chat_id, message_thread_id=game_topic_id, photo=pixelated
             )

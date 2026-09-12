@@ -12,13 +12,16 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
-from nani_pix_bot.services import matching
+from nani_pix_bot.services import matching, stage_config
 from nani_pix_bot.services.anilist import AniListResult
 from nani_pix_bot.services.shikimori import ShikimoriResult
 
 TURN_STATE_ID = 1
 
 # Blockiest to clearest — see MECHANICS.md's "Pixelation stages" table.
+# Fixed: the 5 PixelStage members and their order never change, only
+# each stage's target width and wrong-guess limit (see
+# services/stage_config.py) are admin-configurable.
 STAGE_ORDER = [
     PixelStage.STAGE_1,
     PixelStage.STAGE_2,
@@ -26,17 +29,6 @@ STAGE_ORDER = [
     PixelStage.STAGE_4,
     PixelStage.STAGE_5,
 ]
-# Wrong guesses allowed at each stage before it advances — see
-# MECHANICS.md's "Pixelation stages" table. Deliberately front-loaded:
-# the two blockiest stages give almost no room, easing up as the image
-# clarifies (18 wrong guesses total to fully exhaust all 5 stages).
-STAGE_WRONG_GUESS_LIMIT: dict[PixelStage, int] = {
-    PixelStage.STAGE_1: 1,
-    PixelStage.STAGE_2: 1,
-    PixelStage.STAGE_3: 3,
-    PixelStage.STAGE_4: 5,
-    PixelStage.STAGE_5: 8,
-}
 
 # Absolute from game start, not reset by activity — see MECHANICS.md's
 # "Timeout" section.
@@ -272,7 +264,7 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
         return GuessOutcome.WON
 
     game.wrong_guess_count += 1
-    limit = STAGE_WRONG_GUESS_LIMIT[game.current_stage]
+    limit = stage_config.get_stage_config(session)[game.current_stage].wrong_guess_limit
     if game.wrong_guess_count < limit:
         logger.debug(
             "Game {}: wrong guess {}/{} at stage {}",
@@ -294,7 +286,7 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
     return GuessOutcome.STAGE_ADVANCED
 
 
-def stage_progress(game: Game) -> tuple[int, int, int]:
+def stage_progress(session: Session, game: Game) -> tuple[int, int, int]:
     """(1-indexed current stage number, total stage count, wrong guesses
     remaining before the next stage) for a still-ACTIVE game — feeds the
     /guess wrong-feedback message."""
@@ -303,7 +295,8 @@ def stage_progress(game: Game) -> tuple[int, int, int]:
         raise ValueError(msg)
 
     stage_number = STAGE_ORDER.index(game.current_stage) + 1
-    remaining = STAGE_WRONG_GUESS_LIMIT[game.current_stage] - game.wrong_guess_count
+    limit = stage_config.get_stage_config(session)[game.current_stage].wrong_guess_limit
+    remaining = limit - game.wrong_guess_count
     return stage_number, len(STAGE_ORDER), remaining
 
 

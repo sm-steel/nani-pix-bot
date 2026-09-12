@@ -2,17 +2,17 @@
 app.py, and the tmp/example*.* images) once pixelation width tuning is
 done. /testpixels <width>[,<width>...] pixelates both example images at
 each given width and posts them to the chat (group or DM) as one album
-per width, so candidate STAGE_TARGET_WIDTH values can be compared
-visually. Open to anyone who can message the bot — not worth i18n/test
-investment given its lifespan."""
+per width, so candidate widths can be compared visually before setting
+them for real via /setstageconfig or /setstage. Open to anyone who can
+message the bot — not worth i18n/test investment given its lifespan."""
 
-import io
 from pathlib import Path
 
 from loguru import logger
-from PIL import Image
 from telegram import InputMediaPhoto, Update
 from telegram.ext import ContextTypes
+
+from nani_pix_bot.services.pixelate import pixelate
 
 _EXAMPLE_IMAGES = [Path("tmp/example1.jpg"), Path("tmp/example2.png")]
 
@@ -28,18 +28,6 @@ def _parse_widths(args: list[str]) -> list[int] | None:
     if any(width <= 0 for width in widths):
         return None
     return sorted(widths)
-
-
-def _pixelate(image_bytes: bytes, target_width: int) -> bytes:
-    with Image.open(io.BytesIO(image_bytes)) as source:
-        rgb = source.convert("RGB")
-    width, height = rgb.size
-    scale = target_width / width
-    small = rgb.resize((target_width, max(1, round(height * scale))), Image.Resampling.NEAREST)
-    pixelated = small.resize((width, height), Image.Resampling.NEAREST)
-    buffer = io.BytesIO()
-    pixelated.save(buffer, format="PNG")
-    return buffer.getvalue()
 
 
 async def testpixels_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -65,7 +53,7 @@ async def testpixels_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if not image_path.exists():
                 logger.warning("testpixels: missing example image {}", image_path)
                 continue
-            pixelated = _pixelate(image_path.read_bytes(), width)
+            pixelated = pixelate(image_path.read_bytes(), width)
             caption = f"{width}px" if index == 0 else None
             media.append(InputMediaPhoto(media=pixelated, caption=caption))
         if media:
