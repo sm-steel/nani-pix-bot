@@ -90,8 +90,19 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             original_bytes = bytes(await telegram_file.download_as_bytearray())
             target_width = stage_config.get_stage_config(session)[game.current_stage].target_width
             pixelated = pixelate_service.pixelate(original_bytes, target_width)
+            stage, total_stages, remaining = game_service.stage_progress(session, game)
             await context.bot.send_photo(
-                chat_id=group_chat_id, message_thread_id=game_topic_id, photo=pixelated
+                chat_id=group_chat_id,
+                message_thread_id=game_topic_id,
+                photo=pixelated,
+                caption=i18n.t(
+                    "guess.stage_advanced_caption",
+                    lang,
+                    stage=stage,
+                    total=total_stages,
+                    guess_number=game.total_guess_count,
+                    remaining=remaining,
+                ),
             )
         elif outcome is game_service.GuessOutcome.UNSOLVED:
             await context.bot.send_photo(

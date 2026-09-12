@@ -40,6 +40,7 @@
   "guess.won_caption": "🎉 {winner} got it! It was {title}. Your turn to start the next game!",
   "guess.unsolved_caption": "Nobody guessed it. It was {title}.",
   "guess.wrong_feedback": "❌ Not quite! {remaining} guesses left before the next clue ({stage}/{total}).",
+  "guess.stage_advanced_caption": "📸 Stage {stage}/{total} (guess #{guess_number}) — {remaining} more wrong guesses until it clears further.",
 
   "leaderboard.empty": "No one has won a round yet — could be you!",
   "leaderboard.header": "🏆 Leaderboard",

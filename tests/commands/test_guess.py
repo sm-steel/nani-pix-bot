@@ -143,8 +143,11 @@ async def test_guess_command_wrong_guess_advances_stage_with_new_image(
     # STAGE_1/STAGE_2's limit is only 1, so a stage with headroom (STAGE_3,
     # given a limit of 3 here) is needed to exercise "some wrong guesses,
     # then advances".
-    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2)
+    game_id = _active_game(
+        session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2, total_guess_count=3
+    )
     _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=3)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_4, wrong_guess_limit=5)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
@@ -156,12 +159,18 @@ async def test_guess_command_wrong_guess_advances_stage_with_new_image(
     context.bot.send_photo.assert_awaited_once()
     _, kwargs = context.bot.send_photo.await_args
     assert kwargs["photo"] == b"x8-bytes"
+    # New stage (4/5), this was guess #4 overall, 5 more wrong guesses
+    # allowed before STAGE_5.
+    assert "4/5" in kwargs["caption"]
+    assert "4" in kwargs["caption"]
+    assert "5" in kwargs["caption"]
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.current_stage == PixelStage.STAGE_4
         assert fetched.wrong_guess_count == 0
+        assert fetched.total_guess_count == 4
 
 
 async def test_guess_command_wrong_guess_below_threshold_does_not_post_a_new_image(

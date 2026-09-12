@@ -40,6 +40,7 @@
   "guess.won_caption": "🎉 {winner} угадал(а)! Это было {title}. Ваша очередь начинать следующую игру!",
   "guess.unsolved_caption": "Никто не угадал. Это было {title}.",
   "guess.wrong_feedback": "❌ Не угадано! Осталось попыток до следующей подсказки: {remaining} (этап {stage}/{total}).",
+  "guess.stage_advanced_caption": "📸 Этап {stage}/{total} (попытка №{guess_number}) — ещё {remaining} неверных попыток до следующего прояснения.",
 
   "leaderboard.empty": "Пока никто не выигрывал — может, это будете вы!",
   "leaderboard.header": "🏆 Таблица лидеров",
