@@ -103,9 +103,10 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
 
         logger.info("Game {} timed out after 2 days — ending unsolved", game_id)
         game_service.force_unsolved(game)
-        await context.bot.send_photo(
-            chat_id=context.bot_data["group_chat_id"],
-            message_thread_id=context.bot_data["game_topic_id"],
+        cancel_inactivity_timers(context.job_queue, game.id)
+        await post_current_image(
+            context,
+            session,
             photo=game.original_file_id,
             caption=i18n.t("timeout.caption", lang, title=game_service.display_title(game, lang)),
         )

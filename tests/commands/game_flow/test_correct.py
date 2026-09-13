@@ -35,7 +35,9 @@ def _make_context(session_factory, *, args: list[str] | None = None) -> MagicMoc
     }
     context.args = args or []
     context.job_queue.get_jobs_by_name.return_value = []
-    context.bot.send_photo = AsyncMock()
+    context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+    context.bot.pin_chat_message = AsyncMock()
+    context.bot.unpin_chat_message = AsyncMock()
     return context
 
 
@@ -159,6 +161,27 @@ async def test_correct_command_cancels_the_timeout_job(session_factory) -> None:
 
     context.job_queue.get_jobs_by_name.assert_any_call(
         correct_command_module.timeout_module.timeout_job_name(game_id)
+    )
+
+
+async def test_correct_command_cancels_the_inactivity_timers(session_factory) -> None:
+    game_id = _active_game(session_factory, total_guess_count=1)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="winner"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.job_queue.get_jobs_by_name.assert_any_call(
+        correct_command_module.timeout_module.inactivity_nudge_job_name(game_id)
+    )
+    context.job_queue.get_jobs_by_name.assert_any_call(
+        correct_command_module.timeout_module.inactivity_advance_job_name(game_id)
     )
 
 

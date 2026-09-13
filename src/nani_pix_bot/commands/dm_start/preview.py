@@ -42,13 +42,9 @@ async def _finalize_and_post(context, session, game: Game, caption: str) -> None
     target_width = stage_config.get_stage_config(session)[first_stage].target_width
     pixelated = pixelate_service.pixelate(original_bytes, target_width)
     game_service.activate_game(session, game)
-    await context.bot.send_photo(
-        chat_id=context.bot_data["group_chat_id"],
-        message_thread_id=context.bot_data["game_topic_id"],
-        photo=pixelated,
-        caption=caption,
-    )
+    await timeout_module.post_current_image(context, session, photo=pixelated, caption=caption)
     timeout_module.schedule_timeout(context.job_queue, game)
+    timeout_module.schedule_inactivity_timers(context.job_queue, game)
 
 
 async def _show_preview(context, session, game: Game, lang: str) -> None:

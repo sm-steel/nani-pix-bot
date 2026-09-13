@@ -65,7 +65,11 @@ def _make_job_context(session_factory, *, game_id: int) -> MagicMock:
         "group_chat_id": 555,
         "game_topic_id": 7,
     }
-    context.bot.send_photo = AsyncMock()
+    context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+    context.bot.pin_chat_message = AsyncMock()
+    context.bot.unpin_chat_message = AsyncMock()
+    context.job_queue = MagicMock()
+    context.job_queue.get_jobs_by_name.return_value = []
     return context
 
 

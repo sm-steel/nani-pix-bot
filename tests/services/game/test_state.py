@@ -348,6 +348,27 @@ def test_activate_game_schedules_the_timeout_two_days_out(session: Session) -> N
     assert delta_seconds == pytest.approx(game_service.TIMEOUT_DURATION.total_seconds(), abs=5)
 
 
+def test_activate_game_sets_the_initial_inactivity_deadlines(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    session.commit()
+    before = datetime.now(UTC).replace(tzinfo=None)  # DATETIME columns round-trip as naive UTC
+
+    game_service.stage_result(game, _FRIEREN, source="anilist")
+    game_service.activate_game(session, game)
+    session.commit()
+
+    assert game.inactivity_nudge_at is not None
+    assert game.inactivity_advance_at is not None
+    nudge_delta = (game.inactivity_nudge_at - before).total_seconds()
+    advance_delta = (game.inactivity_advance_at - before).total_seconds()
+    assert nudge_delta == pytest.approx(game_service.INACTIVITY_NUDGE_DELAY.total_seconds(), abs=5)
+    assert advance_delta == pytest.approx(
+        game_service.INACTIVITY_ADVANCE_DELAY.total_seconds(), abs=5
+    )
+
+
 def _active_game(
     session: Session,
     *,

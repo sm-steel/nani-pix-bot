@@ -208,6 +208,7 @@ def activate_game(session: Session, game: Game) -> None:
     game.current_stage = STAGE_ORDER[0]
     game.wrong_guess_count = 0
     game.scheduled_end_at = datetime.now(UTC) + TIMEOUT_DURATION
+    reset_inactivity_clock(game)
 
     turn_state = turns.get_or_create_turn_state(session)
     turn_state.next_starter_id = None

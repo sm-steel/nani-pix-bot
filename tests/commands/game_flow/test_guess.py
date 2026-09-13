@@ -43,7 +43,9 @@ def _make_context(session_factory, *, args: list[str] | None = None) -> MagicMoc
     context.bot.get_file.return_value.download_as_bytearray = AsyncMock(
         return_value=bytearray(b"original-bytes")
     )
-    context.bot.send_photo = AsyncMock()
+    context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+    context.bot.pin_chat_message = AsyncMock()
+    context.bot.unpin_chat_message = AsyncMock()
     return context
 
 
@@ -311,3 +313,80 @@ async def test_guess_command_won_schedules_the_turn_reminder_and_expiry(session_
     names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
     assert guess_command_module.timeout_module.TURN_REMINDER_JOB_NAME in names
     assert guess_command_module.timeout_module.TURN_EXPIRY_JOB_NAME in names
+
+
+async def test_guess_command_won_cancels_the_inactivity_timers(session_factory) -> None:
+    game_id = _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.job_queue.get_jobs_by_name.assert_any_call(
+        guess_command_module.timeout_module.inactivity_nudge_job_name(game_id)
+    )
+    context.job_queue.get_jobs_by_name.assert_any_call(
+        guess_command_module.timeout_module.inactivity_advance_job_name(game_id)
+    )
+
+
+async def test_guess_command_unsolved_cancels_the_inactivity_timers(session_factory) -> None:
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5, wrong_guess_count=7)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_5, wrong_guess_limit=8)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.job_queue.get_jobs_by_name.assert_any_call(
+        guess_command_module.timeout_module.inactivity_advance_job_name(game_id)
+    )
+
+
+async def test_guess_command_wrong_guess_resets_and_reschedules_the_inactivity_clock(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_4, wrong_guess_count=1)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_4, wrong_guess_limit=5)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert guess_command_module.timeout_module.inactivity_nudge_job_name(game_id) in names
+    assert guess_command_module.timeout_module.inactivity_advance_job_name(game_id) in names
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.inactivity_nudge_at is not None
+        assert fetched.inactivity_advance_at is not None
+
+
+async def test_guess_command_stage_advanced_resets_and_reschedules_the_inactivity_clock(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        guess_command_module.pixelate_service, "pixelate", lambda data, width: b"x8-bytes"
+    )
+    game_id = _active_game(
+        session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2, total_guess_count=3
+    )
+    _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=3)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_4, wrong_guess_limit=5)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert guess_command_module.timeout_module.inactivity_nudge_job_name(game_id) in names
+    assert guess_command_module.timeout_module.inactivity_advance_job_name(game_id) in names

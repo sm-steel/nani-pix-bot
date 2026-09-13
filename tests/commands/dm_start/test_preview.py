@@ -52,7 +52,9 @@ def _make_callback_context(session_factory, **extra_bot_data) -> MagicMock:
     context.bot.get_file.return_value.download_as_bytearray = AsyncMock(
         return_value=bytearray(b"original-bytes")
     )
-    context.bot.send_photo = AsyncMock()
+    context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+    context.bot.pin_chat_message = AsyncMock()
+    context.bot.unpin_chat_message = AsyncMock()
     context.bot.send_media_group = AsyncMock()
     return context
 
@@ -116,7 +118,13 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.status == GameStatus.ACTIVE
 
-    context.job_queue.run_once.assert_called_once()
+    # One run_once for the 2-day timeout, two more for the inactivity
+    # nudge/auto-advance pair.
+    assert context.job_queue.run_once.call_count == 3
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert preview.timeout_module.timeout_job_name(fetched.id) in names
+    assert preview.timeout_module.inactivity_nudge_job_name(fetched.id) in names
+    assert preview.timeout_module.inactivity_advance_job_name(fetched.id) in names
     context.job_queue.get_jobs_by_name.assert_any_call(
         preview.timeout_module.setup_abandon_job_name(fetched.id)
     )
