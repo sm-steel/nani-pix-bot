@@ -27,6 +27,25 @@ def upgrade() -> None:
     op.add_column("games", sa.Column("inactivity_advance_at", sa.DateTime(), nullable=True))
     op.add_column("bot_settings", sa.Column("pinned_message_id", sa.Integer(), nullable=True))
 
+    # One-time catch-up for a game that's already ACTIVE when this
+    # migration first runs against a live DB: back-date
+    # inactivity_advance_at to right now, so the bot's rearm-on-startup
+    # (jobs/timers.py's rearm_pending_timeouts) schedules it as already
+    # overdue and the real inactivity_advance_job_callback fires once,
+    # almost immediately after this deploy — handing that game a fresh,
+    # correct nudge/advance window from then on, rather than leaving it
+    # silently opted out of the new mechanic until its next guess.
+    # inactivity_nudge_at is deliberately left NULL here (not
+    # back-dated), so no redundant nudge message fires moments before
+    # the advance. "IS NULL" makes this a no-op on every later run of
+    # this migration against a fresh DB or one where activate_game()
+    # already set this column normally — it only ever matches a game
+    # that predates this migration.
+    op.execute(
+        "UPDATE games SET inactivity_advance_at = UTC_TIMESTAMP() "
+        "WHERE status = 'ACTIVE' AND inactivity_advance_at IS NULL"
+    )
+
 
 def downgrade() -> None:
     """Downgrade schema."""
