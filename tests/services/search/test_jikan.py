@@ -1,7 +1,14 @@
 import httpx
 import pytest
 
-from nani_pix_bot.services.search import jikan
+from nani_pix_bot.services.search import cache, jikan
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    cache.clear()
+    yield
+    cache.clear()
 
 
 async def test_search_parses_a_result() -> None:
@@ -120,3 +127,83 @@ async def test_get_by_id_returns_none_when_jikan_has_no_such_anime() -> None:
         result = await jikan.get_by_id(client, 999999)
 
     assert result is None
+
+
+async def test_search_is_cached_for_repeated_identical_queries() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"data": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await jikan.search(client, "frieren")
+        await jikan.search(client, "frieren")
+
+    assert calls["n"] == 1
+
+
+async def test_get_by_id_is_cached_for_repeated_identical_ids() -> None:
+    entry = {"mal_id": 52991, "title": "Sousou no Frieren", "title_english": None}
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await jikan.get_by_id(client, 52991)
+        await jikan.get_by_id(client, 52991)
+
+    assert calls["n"] == 1
+
+
+async def test_screenshots_parses_the_jpg_large_image_urls() -> None:
+    entries = [
+        {"jpg": {"image_url": "a.jpg", "large_image_url": "a-large.jpg"}, "webp": {}},
+        {"jpg": {"image_url": "b.jpg", "large_image_url": "b-large.jpg"}, "webp": {}},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entries})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await jikan.screenshots(client, 52991)
+
+    assert urls == ["a-large.jpg", "b-large.jpg"]
+
+
+async def test_screenshots_falls_back_to_image_url_when_no_large_variant() -> None:
+    entries = [{"jpg": {"image_url": "a.jpg"}, "webp": {}}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entries})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await jikan.screenshots(client, 52991)
+
+    assert urls == ["a.jpg"]
+
+
+async def test_screenshots_returns_empty_list_when_none_exist() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await jikan.screenshots(client, 1)
+
+    assert urls == []
+
+
+async def test_screenshots_is_cached_for_repeated_calls() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"data": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await jikan.screenshots(client, 52991)
+        await jikan.screenshots(client, 52991)
+
+    assert calls["n"] == 1

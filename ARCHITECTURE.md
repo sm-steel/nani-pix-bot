@@ -95,8 +95,14 @@ jobs/            (Telegram)
   `commands/` despite depending on the same `services/`/`models/` layers.
 - **`services/`** — the game logic, framework-agnostic (no
   `python-telegram-bot` imports). This is what unit tests target. One
-  module per concern: `anilist.py`/`shikimori.py` (search), `matching.py`
-  (guess normalization/fuzzy-match), `pixelate.py` (Pillow pipeline —
+  module per concern: `search/anilist.py`/`shikimori.py`/`jikan.py`/
+  `tmdb.py` (identification + screenshot fetching — see
+  `search/http_retry.py` for their shared 429-backoff wrapper and
+  `search/cache.py` for their shared short-TTL, in-process, keyed-by-
+  client-identity cache: read-only performance caching of external API
+  responses, unrelated to this project's DB-derived-flow-state
+  principle below), `matching.py` (guess normalization/fuzzy-match),
+  `pixelate.py` (Pillow pipeline —
   downscale/upscale to a given width, no DB or `PixelStage` dependency),
   `game.py` (the state machine — the only place that mutates a `Game`
   row), `players.py` (win counts, leaderboard), `i18n.py`/`settings.py`

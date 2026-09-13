@@ -1,7 +1,14 @@
 import httpx
 import pytest
 
-from nani_pix_bot.services.search import anilist
+from nani_pix_bot.services.search import anilist, cache
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    cache.clear()
+    yield
+    cache.clear()
 
 
 def _media_payload(entries: list[dict]) -> dict:
@@ -125,6 +132,40 @@ async def test_get_by_id_returns_none_when_anilist_has_no_such_media() -> None:
         result = await anilist.get_by_id(client, 999999)
 
     assert result is None
+
+
+async def test_search_is_cached_for_repeated_identical_queries() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json=_media_payload([]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await anilist.search(client, "frieren")
+        await anilist.search(client, "frieren")
+
+    assert calls["n"] == 1
+
+
+async def test_get_by_id_is_cached_for_repeated_identical_ids() -> None:
+    entry = {
+        "id": 154587,
+        "title": {"romaji": "Sousou no Frieren", "english": None, "native": None},
+        "synonyms": [],
+        "startDate": None,
+    }
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"data": {"Media": entry}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await anilist.get_by_id(client, 154587)
+        await anilist.get_by_id(client, 154587)
+
+    assert calls["n"] == 1
 
 
 async def test_search_sends_a_referer_header() -> None:

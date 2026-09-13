@@ -1,7 +1,14 @@
 import httpx
 import pytest
 
-from nani_pix_bot.services.search import shikimori
+from nani_pix_bot.services.search import cache, shikimori
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    cache.clear()
+    yield
+    cache.clear()
 
 
 async def test_search_parses_a_result() -> None:
@@ -137,3 +144,89 @@ async def test_get_by_id_returns_none_when_shikimori_has_no_such_anime() -> None
         result = await shikimori.get_by_id(client, 999999)
 
     assert result is None
+
+
+async def test_search_is_cached_for_repeated_identical_queries() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json=[])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await shikimori.search(client, "frieren")
+        await shikimori.search(client, "frieren")
+
+    assert calls["n"] == 1
+
+
+async def test_get_by_id_is_cached_for_repeated_identical_ids() -> None:
+    entry = {"id": 52991, "name": "Sousou no Frieren", "russian": None}
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json=entry)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await shikimori.get_by_id(client, 52991)
+        await shikimori.get_by_id(client, 52991)
+
+    assert calls["n"] == 1
+
+
+async def test_screenshots_parses_and_prefixes_relative_urls() -> None:
+    entries = [
+        {"original": "/system/screenshots/original/a.jpg?1", "preview": "/x/a.jpg?1"},
+        {"original": "/system/screenshots/original/b.jpg?2", "preview": "/x/b.jpg?2"},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=entries)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await shikimori.screenshots(client, 52991)
+
+    assert urls == [
+        "https://shikimori.io/system/screenshots/original/a.jpg?1",
+        "https://shikimori.io/system/screenshots/original/b.jpg?2",
+    ]
+
+
+async def test_screenshots_caps_at_the_fetch_limit() -> None:
+    entries = [
+        {"original": f"/system/screenshots/original/{i}.jpg", "preview": f"/x/{i}.jpg"}
+        for i in range(30)
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=entries)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await shikimori.screenshots(client, 52991)
+
+    assert len(urls) == shikimori.SCREENSHOT_FETCH_LIMIT
+
+
+async def test_screenshots_returns_empty_list_when_none_exist() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await shikimori.screenshots(client, 1)
+
+    assert urls == []
+
+
+async def test_screenshots_is_cached_for_repeated_calls() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json=[])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await shikimori.screenshots(client, 52991)
+        await shikimori.screenshots(client, 52991)
+
+    assert calls["n"] == 1
