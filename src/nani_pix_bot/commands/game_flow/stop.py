@@ -103,6 +103,7 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user) -> No
         was_active = game.status == GameStatus.ACTIVE
         if was_active:
             timeout_module.cancel_timeout(context.job_queue, game_id)
+            timeout_module.cancel_inactivity_timers(context.job_queue, game_id)
         else:
             timeout_module.cancel_setup_abandon(context.job_queue, game_id)
         session.delete(game)

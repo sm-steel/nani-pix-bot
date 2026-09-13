@@ -17,6 +17,8 @@ just what's currently built.
 | Author override (`/correct`) | Implemented |
 | Turn handoff (`/skip`) | Implemented |
 | 2-day timeout | Implemented |
+| Inactivity nudge (3h) + auto-advance (6h) | Implemented |
+| Pinned current image (one at a time, follows the game) | Implemented |
 | Setup-abandon timeout (1h) | Implemented |
 | Win-turn reminder (15min) + expiry (12h) | Implemented |
 | Manual stop with confirmation (`/stop`) | Implemented |
@@ -49,14 +51,19 @@ stateDiagram-v2
 
     state ACTIVE {
         [*] --> Stage1
-        Stage1 --> Stage2: stage 1's configured\nwrong-guess limit reached
-        Stage2 --> Stage3: stage 2's configured\nwrong-guess limit reached
-        Stage3 --> Stage4: stage 3's configured\nwrong-guess limit reached
-        Stage4 --> Stage5: stage 4's configured\nwrong-guess limit reached
+        Stage1 --> Stage2: stage 1's configured\nwrong-guess limit reached,\nor 6h of inactivity
+        Stage2 --> Stage3: stage 2's configured\nwrong-guess limit reached,\nor 6h of inactivity
+        Stage3 --> Stage4: stage 3's configured\nwrong-guess limit reached,\nor 6h of inactivity
+        Stage4 --> Stage5: stage 4's configured\nwrong-guess limit reached,\nor 6h of inactivity
     }
+    note right of ACTIVE
+        Every /guess resets a 3h-nudge/6h-auto-advance
+        inactivity clock (see "Inactivity" section) —
+        orthogonal to the 2-day absolute timeout below
+    end note
 
     ACTIVE --> WON: /guess matches,\nor starter's /correct
-    ACTIVE --> UNSOLVED: stage 5's configured limit reached\n(stage exhaustion),\nor 2-day timeout fires
+    ACTIVE --> UNSOLVED: stage 5's configured limit reached\n(stage exhaustion),\nor 6h of inactivity on stage 5,\nor 2-day timeout fires
     ACTIVE --> [*]: /stop confirmed\n(row deleted, turn opens)
 
     WON --> [*]: turn assigned to winner\n(15min reminder / 12h expiry timers)
@@ -240,6 +247,16 @@ stage, which guess number (overall) triggered the advance, and how many
 more wrong guesses remain before the next one (`guess.
 stage_advanced_caption`).
 
+**Whatever image was most recently posted for the current game — a
+pixelation stage or the final reveal — stays pinned in the group topic,
+with exactly one message pinned at a time**: posting a new one unpins
+whatever was pinned before and pins the new one instead
+(`bot_settings.pinned_message_id`). Pinning is best-effort — if the bot
+lacks the group's "Pin messages" admin permission, the pin/unpin call is
+skipped and logged as a warning rather than blocking the post itself
+(see `ARCHITECTURE.md`). The pin is left in place once a game ends; the
+next game's first post naturally supersedes it.
+
 A separate **`/setgamesenabled on|off`** command (also DM-only,
 admin-gated) lets an admin pause *starting* new games entirely —
 independent of the above, useful for locking things down while
@@ -264,7 +281,8 @@ On a win, the bot:
    anime's title, naming the winner by name in the caption.
 2. Sets `status → WON`, records `winner_id`, and increments that player's
    `players.wins`.
-3. Cancels the game's pending 2-day timeout job.
+3. Cancels the game's pending 2-day timeout job, and its inactivity
+   nudge/auto-advance timers.
 4. Sets `turn_state.next_starter_id` to the winner — it's their turn to
    start the next game, called out explicitly in the reveal caption —
    and schedules that winner's 15-minute reminder / 12-hour expiry (see
@@ -281,7 +299,9 @@ On a win, the bot:
 A game ends unsolved one of two ways, handled identically:
 
 - **Stage exhaustion**: the final stage's (`STAGE_5`) configured
-  wrong-guess limit is reached.
+  wrong-guess limit is reached — via a `/guess`, or via the inactivity
+  auto-advance timer firing while already on `STAGE_5` (see
+  "Inactivity" below; both go through the same `advance_stage()`).
 - **Timeout**: see below.
 
 Either way, the bot reveals the original screenshot with the anime's
@@ -306,6 +326,42 @@ Because `JobQueue` jobs don't survive a process restart, `app.py` re-arms
 a timeout job on startup for any `Game` still `ACTIVE`, using its stored
 `scheduled_end_at` — a redeploy never silently loses or resets the clock.
 
+## Inactivity
+
+**Status: Implemented.**
+
+The 2-day timeout above is a coarse absolute backstop; this is a much
+finer-grained clock that keeps an individual round moving if nobody
+guesses on it for a while, without waiting anywhere near 2 days. Unlike
+the timeout, it **resets on every `/guess`** (right or wrong) — not just
+once at game/stage start:
+
+- **Nudge (3 hours of silence)**: posts a reminder to the group topic,
+  replying to whatever image is currently pinned (see "Pixelation
+  stages" above), that the game is still running and nobody's guessed
+  yet.
+- **Auto-advance (6 hours of silence)**: advances to the next stage
+  exactly as a guess-driven stage exhaustion would — the same
+  `advance_stage()` function record_guess() itself calls, so the two
+  paths can never drift apart — posting the newly-revealed (and newly
+  pinned) image. If the game was already on the final stage, it ends
+  unsolved instead, same as normal stage exhaustion.
+
+Both are (re)scheduled from an absolute deadline stored on the row
+(`Game.inactivity_nudge_at`/`inactivity_advance_at`), the same pattern
+as the timeout's `scheduled_end_at` — and, like the timeout, re-armed
+from that stored deadline on startup, so a redeploy never silently loses
+the clock either.
+
+**Worst case — a game that never receives a single guess** — resolves
+to unsolved via 5 stages × 6 hours = 30 hours, comfortably inside the
+2-day absolute timeout. That timeout isn't made redundant by this,
+though: it still catches a different case this clock can't — sparse but
+nonzero guessing (say, one wrong guess every ~10 hours) that never
+leaves the game idle long enough to trigger a nudge or auto-advance, yet
+also never racks up enough wrong guesses within 48 hours to advance via
+the normal guess-count path.
+
 ## Stopping a game (`/stop`)
 
 **Status: Implemented.**
@@ -324,8 +380,9 @@ independently of who saw the prompt). Tapping "No" just leaves the game
 running untouched.
 
 On confirmation, the bot:
-1. Cancels whatever timer was pending for that game — its 2-day timeout
-   if `ACTIVE`, or its 1-hour setup-abandon timer if still `SETUP`.
+1. Cancels whatever timer(s) were pending for that game — its 2-day
+   timeout and inactivity nudge/auto-advance pair if `ACTIVE`, or its
+   1-hour setup-abandon timer if still `SETUP`.
 2. **Deletes the `Game` row outright** — same precedent as the
    setup-abandon timer and turn expiry: a manually-stopped round isn't a
    meaningful outcome worth a terminal status of its own (unlike
