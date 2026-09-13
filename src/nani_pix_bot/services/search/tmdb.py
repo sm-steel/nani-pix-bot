@@ -46,6 +46,7 @@ class TMDBResult:
     synonyms: list[str]
 
 
+@cache.cached()
 async def search(
     client: httpx.AsyncClient, query: str, *, limit: int = SEARCH_RESULT_LIMIT
 ) -> list[TMDBResult]:
@@ -53,29 +54,18 @@ async def search(
     20-per-page rather than taking a result-count param, so `limit` is
     applied client-side. Cached briefly (see cache.py) so a starter
     repeating the same query doesn't re-hit the API each time."""
-    return await cache.cached(
-        client, "tmdb.search", query, limit, fetch=lambda: _search(client, query, limit)
-    )
-
-
-async def _search(client: httpx.AsyncClient, query: str, limit: int) -> list[TMDBResult]:
     data = await _request(client, url=f"{TMDB_BASE_URL}/search/tv", params={"query": query})
     results = [_parse_result(raw) for raw in data["results"][:limit]]
     logger.debug("TMDB search {!r} returned {} result(s)", query, len(results))
     return results
 
 
+@cache.cached()
 async def get_by_id(client: httpx.AsyncClient, tmdb_id: int) -> TMDBResult | None:
     """Re-fetch a single show by id — used when the starter taps a
     TMDB-picker button. Cached briefly (see cache.py) — a short-lived,
     in-process-only performance optimization, not a substitute for the
     restart-resilient by-id re-fetch pattern issue #11 established."""
-    return await cache.cached(
-        client, "tmdb.get_by_id", tmdb_id, fetch=lambda: _get_by_id(client, tmdb_id)
-    )
-
-
-async def _get_by_id(client: httpx.AsyncClient, tmdb_id: int) -> TMDBResult | None:
     try:
         entry = await _request(client, url=f"{TMDB_BASE_URL}/tv/{tmdb_id}", params={})
     except httpx.HTTPStatusError as exc:
@@ -86,6 +76,7 @@ async def _get_by_id(client: httpx.AsyncClient, tmdb_id: int) -> TMDBResult | No
     return _parse_result(entry)
 
 
+@cache.cached()
 async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
     """Real per-episode stills (not promotional art) for a
     TMDB-identified show — used by the screenshot-picker gallery.
@@ -95,15 +86,9 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
     `still_path` directly, so this fetches the show's first season's
     episode list once, then one extra call per episode (up to
     SCREENSHOT_FETCH_LIMIT) — more chatty than the other two providers,
-    but each response is cached individually (see cache.py) so
-    repeating this for the same show is still just one round-trip
-    total after the first fetch."""
-    return await cache.cached(
-        client, "tmdb.screenshots", tmdb_id, fetch=lambda: _screenshots(client, tmdb_id)
-    )
-
-
-async def _screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
+    but the whole result is cached as one unit (see cache.py) so
+    repeating this for the same show costs nothing further until the
+    TTL expires."""
     show = await _request(client, url=f"{TMDB_BASE_URL}/tv/{tmdb_id}", params={})
     seasons = [s for s in show.get("seasons", []) if s.get("season_number", 0) >= 1]
     if not seasons:

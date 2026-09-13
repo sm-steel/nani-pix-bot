@@ -54,18 +54,13 @@ class AniListResult:
     year: int | None
 
 
+@cache.cached()
 async def search(
     client: httpx.AsyncClient, query: str, *, limit: int = SEARCH_RESULT_LIMIT
 ) -> list[AniListResult]:
     """Search AniList anime titles matching `query`. Cached briefly (see
     cache.py) so a starter repeating the same query doesn't re-hit the
     API each time."""
-    return await cache.cached(
-        client, "anilist.search", query, limit, fetch=lambda: _search(client, query, limit)
-    )
-
-
-async def _search(client: httpx.AsyncClient, query: str, limit: int) -> list[AniListResult]:
     data = await _request(
         client, query=_SEARCH_QUERY, variables={"search": query, "perPage": limit}
     )
@@ -74,6 +69,7 @@ async def _search(client: httpx.AsyncClient, query: str, limit: int) -> list[Ani
     return results
 
 
+@cache.cached()
 async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult | None:
     """Re-fetch a single anime by id — used when the starter taps an
     AniList-picker button. Cached briefly (see cache.py) — a
@@ -82,12 +78,6 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
     anilist_id itself surviving in the button's callback_data across a
     restart, not about this in-process cache, which is wiped on every
     restart same as everything else in it)."""
-    return await cache.cached(
-        client, "anilist.get_by_id", anilist_id, fetch=lambda: _get_by_id(client, anilist_id)
-    )
-
-
-async def _get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult | None:
     data = await _request(client, query=_BY_ID_QUERY, variables={"id": anilist_id})
     media = data["Media"]
     if media is None:

@@ -50,6 +50,7 @@ class ShikimoriResult:
     synonyms: list[str]
 
 
+@cache.cached()
 async def search(
     client: httpx.AsyncClient, query: str, *, limit: int = SEARCH_RESULT_LIMIT
 ) -> list[ShikimoriResult]:
@@ -57,12 +58,6 @@ async def search(
     doesn't return synonyms/english — those are filled in by get_by_id
     once a result is picked. Cached briefly (see cache.py) so a starter
     repeating the same query doesn't re-hit the API each time."""
-    return await cache.cached(
-        client, "shikimori.search", query, limit, fetch=lambda: _search(client, query, limit)
-    )
-
-
-async def _search(client: httpx.AsyncClient, query: str, limit: int) -> list[ShikimoriResult]:
     params = {"search": query, "limit": limit}
     entries = await _request(client, url=SHIKIMORI_BASE_URL, params=params)
     results = [_parse_search_result(entry) for entry in entries]
@@ -70,6 +65,7 @@ async def _search(client: httpx.AsyncClient, query: str, limit: int) -> list[Shi
     return results
 
 
+@cache.cached()
 async def get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriResult | None:
     """Re-fetch a single anime by id — used when the starter taps a
     Shikimori-picker button. See module docstring: this is the only call
@@ -78,12 +74,6 @@ async def get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriRe
     short-lived, in-process-only performance optimization, wiped on
     every restart same as everything else in it, unlike the DB-derived
     setup-flow state issue #11 is actually about."""
-    return await cache.cached(
-        client, "shikimori.get_by_id", shikimori_id, fetch=lambda: _get_by_id(client, shikimori_id)
-    )
-
-
-async def _get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriResult | None:
     try:
         entry = await _request(client, url=f"{SHIKIMORI_BASE_URL}/{shikimori_id}", params={})
     except httpx.HTTPStatusError as exc:
@@ -94,6 +84,7 @@ async def _get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriR
     return _parse_detail_result(entry)
 
 
+@cache.cached()
 async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]:
     """Real in-episode screenshots (not promotional art) for a
     Shikimori-identified anime — used by the screenshot-picker gallery.
@@ -101,15 +92,6 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
     the same anime re-slices the same cached list instead of re-hitting
     the API every time — pagination/slicing for display is the caller's
     job, not this function's."""
-    return await cache.cached(
-        client,
-        "shikimori.screenshots",
-        shikimori_id,
-        fetch=lambda: _screenshots(client, shikimori_id),
-    )
-
-
-async def _screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]:
     entries = await _request(
         client, url=f"{SHIKIMORI_BASE_URL}/{shikimori_id}/screenshots", params={}
     )

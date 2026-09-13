@@ -39,18 +39,13 @@ class JikanResult:
     synonyms: list[str]
 
 
+@cache.cached()
 async def search(
     client: httpx.AsyncClient, query: str, *, limit: int = SEARCH_RESULT_LIMIT
 ) -> list[JikanResult]:
     """Search Jikan anime titles matching `query`. Cached briefly (see
     cache.py) so a starter repeating the same query doesn't re-hit the
     API each time."""
-    return await cache.cached(
-        client, "jikan.search", query, limit, fetch=lambda: _search(client, query, limit)
-    )
-
-
-async def _search(client: httpx.AsyncClient, query: str, limit: int) -> list[JikanResult]:
     params = {"q": query, "limit": limit}
     data = await _request(client, url=JIKAN_BASE_URL, params=params)
     results = [_parse_result(raw) for raw in data["data"]]
@@ -58,6 +53,7 @@ async def _search(client: httpx.AsyncClient, query: str, limit: int) -> list[Jik
     return results
 
 
+@cache.cached()
 async def get_by_id(client: httpx.AsyncClient, jikan_id: int) -> JikanResult | None:
     """Re-fetch a single anime by id — used when the starter taps a
     Jikan-picker button. Cached briefly (see cache.py) — a short-lived,
@@ -66,12 +62,6 @@ async def get_by_id(client: httpx.AsyncClient, jikan_id: int) -> JikanResult | N
     (that's about not caching in ephemeral bot memory across a
     restart; this cache is wiped on every restart same as everything
     else in it)."""
-    return await cache.cached(
-        client, "jikan.get_by_id", jikan_id, fetch=lambda: _get_by_id(client, jikan_id)
-    )
-
-
-async def _get_by_id(client: httpx.AsyncClient, jikan_id: int) -> JikanResult | None:
     try:
         entry = await _request(client, url=f"{JIKAN_BASE_URL}/{jikan_id}", params={})
     except httpx.HTTPStatusError as exc:
@@ -82,6 +72,7 @@ async def _get_by_id(client: httpx.AsyncClient, jikan_id: int) -> JikanResult | 
     return _parse_result(entry["data"])
 
 
+@cache.cached()
 async def screenshots(client: httpx.AsyncClient, jikan_id: int) -> list[str]:
     """Promotional/episode pictures for a Jikan-identified anime — not
     true in-episode frame grabs the way Shikimori's are, but usable
@@ -89,12 +80,6 @@ async def screenshots(client: httpx.AsyncClient, jikan_id: int) -> list[str]:
     Cached (see cache.py) so repeatedly tapping "More screenshots" for
     the same anime re-slices the same cached list instead of re-hitting
     the API every time."""
-    return await cache.cached(
-        client, "jikan.screenshots", jikan_id, fetch=lambda: _screenshots(client, jikan_id)
-    )
-
-
-async def _screenshots(client: httpx.AsyncClient, jikan_id: int) -> list[str]:
     data = await _request(client, url=f"{JIKAN_BASE_URL}/{jikan_id}/pictures", params={})
     entries = data["data"][:SCREENSHOT_FETCH_LIMIT]
     urls = [url for entry in entries if (url := _picture_url(entry)) is not None]
