@@ -24,6 +24,7 @@ def _config(**overrides) -> Config:
         "admin_user_ids": [],
         "log_level": "INFO",
         "telegram_proxy_url": None,
+        "tmdb_read_access_token": None,
         "database_url": "sqlite:///:memory:",
     }
     defaults.update(overrides)

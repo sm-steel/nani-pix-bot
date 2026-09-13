@@ -12,6 +12,7 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tmdb import TMDBResult
 
 _FRIEREN = AniListResult(
     anilist_id=99,
@@ -36,6 +37,14 @@ _FRIEREN_JIKAN = JikanResult(
     title_english="Frieren: Beyond Journey's End",
     title_native="葬送のフリーレン",
     synonyms=["Frieren at the Funeral"],
+)
+
+_FRIEREN_TMDB = TMDBResult(
+    tmdb_id=209867,
+    title_romaji=None,
+    title_english="Frieren: Beyond Journey's End",
+    title_native="葬送のフリーレン",
+    synonyms=[],
 )
 
 
@@ -316,6 +325,27 @@ def test_stage_result_assigns_jikan_fields_including_native_title(session: Sessi
     assert fetched.title_native == "葬送のフリーレン"
     assert fetched.synonyms == ["Frieren at the Funeral"]
     assert fetched.source == "jikan"
+
+
+def test_stage_result_assigns_tmdb_fields_including_native_title(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    session.commit()
+
+    game_service.stage_result(game, _FRIEREN_TMDB, source="tmdb")
+    session.commit()
+
+    fetched = session.get(Game, game.id)
+    assert fetched is not None
+    assert fetched.status == GameStatus.SETUP
+    assert fetched.anilist_id is None
+    assert fetched.tmdb_id == 209867
+    assert fetched.title_romaji is None
+    assert fetched.title_english == "Frieren: Beyond Journey's End"
+    assert fetched.title_native == "葬送のフリーレン"
+    assert fetched.synonyms == []
+    assert fetched.source == "tmdb"
 
 
 def test_stage_manual_entry_assigns_the_typed_title_and_synonyms(session: Session) -> None:

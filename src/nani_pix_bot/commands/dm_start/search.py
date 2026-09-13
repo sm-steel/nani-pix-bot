@@ -16,6 +16,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     parse_method_callback_data,
     parse_pick_callback_data,
     shikimori_results_keyboard,
+    tmdb_results_keyboard,
 )
 from nani_pix_bot.commands.dm_start.manual import _manual_synonyms_step, _manual_title_step
 from nani_pix_bot.commands.dm_start.preview import _add_synonym_step, _show_preview
@@ -24,10 +25,21 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.search import anilist, jikan, shikimori
+from nani_pix_bot.services.search import anilist, jikan, shikimori, tmdb
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tmdb import TMDBResult
+
+# TMDB is the only provider needing its own client (DNS-blocked direct
+# from moscow, needs a proxy + Bearer-token auth — see app.py's
+# build_application()); every other provider shares "search_client".
+_TMDB_CLIENT_BOT_DATA_KEY = "tmdb_client"
+
+
+def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: str):
+    key = _TMDB_CLIENT_BOT_DATA_KEY if source == "tmdb" else "search_client"
+    return context.bot_data[key]
 
 
 async def method_pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -101,7 +113,7 @@ async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, s
     status_message = await message.reply_text(i18n.t("dm_start.searching", lang))
     logger.debug("{} search started for query {!r}", source, message.text)
 
-    client = context.bot_data["search_client"]
+    client = _client_for_source(context, source)
     try:
         if source == "shikimori":
             results = await shikimori.search(client, message.text)
@@ -109,6 +121,9 @@ async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, s
         elif source == "jikan":
             results = await jikan.search(client, message.text)
             keyboard = jikan_results_keyboard(results, lang)
+        elif source == "tmdb":
+            results = await tmdb.search(client, message.text)
+            keyboard = tmdb_results_keyboard(results, lang)
         else:
             results = await anilist.search(client, message.text)
             keyboard = anilist_results_keyboard(results, lang)
@@ -161,7 +176,7 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def _resolve_picked_result(
     query, context: ContextTypes.DEFAULT_TYPE, lang: str
-) -> tuple[str, int, AniListResult | ShikimoriResult | JikanResult] | None:
+) -> tuple[str, int, AniListResult | ShikimoriResult | JikanResult | TMDBResult] | None:
     """Handles the "none of these" retry tap and resolves a valid pick to
     its (source, external_id, result) triple. Replies and returns None
     for every already-handled outcome: retry tapped, unparseable
@@ -176,12 +191,14 @@ async def _resolve_picked_result(
         return None
     source, external_id = parsed
 
-    client = context.bot_data["search_client"]
+    client = _client_for_source(context, source)
     try:
         if source == "shikimori":
             result = await shikimori.get_by_id(client, external_id)
         elif source == "jikan":
             result = await jikan.get_by_id(client, external_id)
+        elif source == "tmdb":
+            result = await tmdb.get_by_id(client, external_id)
         else:
             result = await anilist.get_by_id(client, external_id)
     except _SEARCH_SERVICE_ERRORS:

@@ -59,10 +59,25 @@ def build_application(config: Config) -> Application:
 
     engine = db.get_engine(config.database_url)
     application.bot_data["session_factory"] = db.make_session_factory(engine)
-    # Shared by both anilist.py and shikimori.py — a plain HTTP client,
+    # Shared by anilist.py/shikimori.py/jikan.py — a plain HTTP client,
     # nothing service-specific about it (each module sends its own
-    # headers per request).
+    # headers per request). All three are reachable direct from moscow,
+    # no proxy needed.
     application.bot_data["search_client"] = httpx.AsyncClient(timeout=30)
+    # tmdb.py needs its own client: TMDB is DNS-blocked directly from
+    # moscow (reachable via the same amsterdam proxy Telegram already
+    # uses — see ARCHITECTURE.md's connectivity section) and needs a
+    # Bearer-token Authorization header on every request, set here as a
+    # client default so tmdb.py itself never has to touch the secret.
+    application.bot_data["tmdb_client"] = httpx.AsyncClient(
+        timeout=30,
+        proxy=config.telegram_proxy_url,
+        headers=(
+            {"Authorization": f"Bearer {config.tmdb_read_access_token}"}
+            if config.tmdb_read_access_token
+            else {}
+        ),
+    )
     application.bot_data["group_chat_id"] = config.group_chat_id
     application.bot_data["game_topic_id"] = config.game_topic_id
 

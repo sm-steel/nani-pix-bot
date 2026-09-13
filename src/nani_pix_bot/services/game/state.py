@@ -17,6 +17,7 @@ from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tmdb import TMDBResult
 from nani_pix_bot.services.settings import stage_config
 
 # Blockiest to clearest — see MECHANICS.md's "Pixelation stages" table.
@@ -183,13 +184,17 @@ def create_setup_game(
 
 
 def stage_result(
-    game: Game, result: AniListResult | ShikimoriResult | JikanResult, *, source: str
+    game: Game,
+    result: AniListResult | ShikimoriResult | JikanResult | TMDBResult,
+    *,
+    source: str,
 ) -> None:
     """Assign a picked search result's title/synonyms onto a still-SETUP
     game — doesn't post anything or change status. This is the shared
     landing spot for every identification method (AniList, Shikimori,
-    Jikan, and eventually manual entry); the confirmation-screen ticket
-    (#19) is what will show a preview between this and activate_game()."""
+    Jikan, TMDB, and eventually manual entry); the confirmation-screen
+    ticket (#19) is what will show a preview between this and
+    activate_game()."""
     game.title_romaji = result.title_romaji
     game.title_english = result.title_english
     game.synonyms = result.synonyms
@@ -202,6 +207,9 @@ def stage_result(
         game.title_russian = result.title_russian
     elif isinstance(result, JikanResult):
         game.jikan_id = result.jikan_id
+        game.title_native = result.title_native
+    elif isinstance(result, TMDBResult):
+        game.tmdb_id = result.tmdb_id
         game.title_native = result.title_native
 
 
