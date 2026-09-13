@@ -57,12 +57,13 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             user.id,
         )
         timeout_module.cancel_timeout(context.job_queue, game.id)
+        timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
         turn_state = game_service.get_turn_state(session)
         if turn_state is not None:
             timeout_module.schedule_turn_timers(context.job_queue, turn_state)
-        await context.bot.send_photo(
-            chat_id=group_chat_id,
-            message_thread_id=game_topic_id,
+        await timeout_module.post_current_image(
+            context,
+            session,
             photo=game.original_file_id,
             caption=i18n.t(
                 "correct.caption",

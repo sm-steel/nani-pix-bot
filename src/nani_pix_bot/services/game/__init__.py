@@ -12,6 +12,8 @@ live in jobs/timers.py instead (scheduling/naming helpers with no
 Game-state-machine logic in them, used only there)."""
 
 from nani_pix_bot.services.game.state import (
+    INACTIVITY_ADVANCE_DELAY,
+    INACTIVITY_NUDGE_DELAY,
     SETUP_ABANDON_DELAY,
     STAGE_ORDER,
     TIMEOUT_DURATION,
@@ -20,6 +22,7 @@ from nani_pix_bot.services.game.state import (
     activate_game,
     active_games,
     active_or_setup_game,
+    advance_stage,
     can_start,
     clear_original_screenshot,
     create_setup_game,
@@ -30,6 +33,7 @@ from nani_pix_bot.services.game.state import (
     match_candidates,
     prioritized_title,
     record_guess,
+    reset_inactivity_clock,
     setup_games,
     stage_manual_entry,
     stage_progress,
@@ -45,6 +49,8 @@ from nani_pix_bot.services.game.turns import (
 )
 
 __all__ = [
+    "INACTIVITY_ADVANCE_DELAY",
+    "INACTIVITY_NUDGE_DELAY",
     "SETUP_ABANDON_DELAY",
     "STAGE_ORDER",
     "TIMEOUT_DURATION",
@@ -56,6 +62,7 @@ __all__ = [
     "activate_game",
     "active_games",
     "active_or_setup_game",
+    "advance_stage",
     "can_start",
     "clear_original_screenshot",
     "clear_turn_timers",
@@ -68,6 +75,7 @@ __all__ = [
     "match_candidates",
     "prioritized_title",
     "record_guess",
+    "reset_inactivity_clock",
     "set_next_starter",
     "setup_games",
     "stage_manual_entry",

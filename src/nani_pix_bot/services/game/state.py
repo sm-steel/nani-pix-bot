@@ -38,6 +38,14 @@ TIMEOUT_DURATION = timedelta(days=2)
 # see MECHANICS.md's "Starting a game" section.
 SETUP_ABANDON_DELAY = timedelta(hours=1)
 
+# Reset on every /guess (right or wrong) — see MECHANICS.md's
+# "Inactivity" section. Orthogonal to TIMEOUT_DURATION above: that one
+# never resets, this pair does, on every guess. Worst case (a game that
+# never gets a single guess) resolves to UNSOLVED via 5 * 6h = 30h,
+# comfortably inside the 2-day absolute backstop.
+INACTIVITY_NUDGE_DELAY = timedelta(hours=3)
+INACTIVITY_ADVANCE_DELAY = timedelta(hours=6)
+
 
 class GuessOutcome(enum.Enum):
     """What a /guess attempt did to the game — tells the command layer
@@ -200,6 +208,7 @@ def activate_game(session: Session, game: Game) -> None:
     game.current_stage = STAGE_ORDER[0]
     game.wrong_guess_count = 0
     game.scheduled_end_at = datetime.now(UTC) + TIMEOUT_DURATION
+    reset_inactivity_clock(game)
 
     turn_state = turns.get_or_create_turn_state(session)
     turn_state.next_starter_id = None
@@ -242,6 +251,35 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
         )
         return GuessOutcome.WRONG
 
+    return advance_stage(game)
+
+
+def reset_inactivity_clock(game: Game) -> None:
+    """(Re)starts the inactivity nudge/auto-advance clock from now — see
+    INACTIVITY_NUDGE_DELAY/INACTIVITY_ADVANCE_DELAY. Called on
+    activation, after every guess (guess.py), and after every
+    inactivity-driven auto-advance (jobs/timers.py) — so the clock
+    always measures time since the most recent guess or auto-advance,
+    whichever happened last."""
+    now = datetime.now(UTC)
+    game.inactivity_nudge_at = now + INACTIVITY_NUDGE_DELAY
+    game.inactivity_advance_at = now + INACTIVITY_ADVANCE_DELAY
+
+
+def advance_stage(game: Game) -> GuessOutcome:
+    """Move `game` to the next PixelStage, or end it UNSOLVED if it was
+    already on the last one — the shared landing spot for both a
+    guess-driven stage exhaustion (record_guess, above) and the
+    inactivity-driven auto-advance (jobs/timers.py's
+    inactivity_advance_job_callback), so the two paths can never drift
+    apart. Resets wrong_guess_count same as the guess-driven path did
+    inline before this was extracted."""
+    # Every caller only invokes this on an ACTIVE game with a stage
+    # already set (record_guess checks this itself; the inactivity job
+    # callback re-checks status == ACTIVE before calling in) — asserted
+    # rather than re-raising ValueError like record_guess does, since
+    # this is an internal invariant, not user input to validate.
+    assert game.current_stage is not None, "advance_stage called with no current_stage"
     game.wrong_guess_count = 0
     next_index = STAGE_ORDER.index(game.current_stage) + 1
     if next_index >= len(STAGE_ORDER):

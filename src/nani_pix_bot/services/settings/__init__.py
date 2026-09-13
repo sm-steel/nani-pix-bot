@@ -16,8 +16,10 @@ from nani_pix_bot.services.settings.bot_settings import (
     SETTINGS_ID,
     get_games_enabled,
     get_language,
+    get_pinned_message_id,
     set_games_enabled,
     set_language,
+    set_pinned_message_id,
 )
 
 __all__ = [
@@ -26,7 +28,9 @@ __all__ = [
     "SETTINGS_ID",
     "get_games_enabled",
     "get_language",
+    "get_pinned_message_id",
     "set_games_enabled",
     "set_language",
+    "set_pinned_message_id",
     "stage_config",
 ]

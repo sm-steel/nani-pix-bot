@@ -193,6 +193,23 @@ async def test_stop_callback_handler_confirm_deletes_active_game_and_notifies_gr
     update.callback_query.edit_message_text.assert_awaited_once()
 
 
+async def test_stop_callback_handler_confirm_cancels_the_inactivity_timers(session_factory) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.job_queue.get_jobs_by_name.assert_any_call(
+        stop_command_module.timeout_module.inactivity_nudge_job_name(game_id)
+    )
+    context.job_queue.get_jobs_by_name.assert_any_call(
+        stop_command_module.timeout_module.inactivity_advance_job_name(game_id)
+    )
+
+
 async def test_stop_callback_handler_confirm_deletes_setup_game(session_factory) -> None:
     game_id = _setup_game(session_factory, starter_id=1)
     update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)

@@ -49,6 +49,11 @@ class Game(Base):
     # created_at + 1h — see services/game/state.py's SETUP_ABANDON_DELAY. Only
     # meaningful while status is SETUP.
     setup_deadline: Mapped[datetime | None] = mapped_column(default=None)
+    # Reset on every /guess (right or wrong) — see services/game/state.py's
+    # INACTIVITY_NUDGE_DELAY/INACTIVITY_ADVANCE_DELAY. Only meaningful
+    # while status is ACTIVE.
+    inactivity_nudge_at: Mapped[datetime | None] = mapped_column(default=None)
+    inactivity_advance_at: Mapped[datetime | None] = mapped_column(default=None)
 
     starter: Mapped[Player] = relationship(foreign_keys=[starter_id])
     winner: Mapped[Player | None] = relationship(foreign_keys=[winner_id])

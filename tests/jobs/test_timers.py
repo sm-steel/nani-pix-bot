@@ -3,7 +3,7 @@ from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from telegram.error import Forbidden
+from telegram.error import BadRequest, Forbidden
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.jobs import timers as timeout_module
@@ -12,6 +12,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import settings
 
 
 def _active_game(session_factory, **overrides) -> int:
@@ -64,7 +65,11 @@ def _make_job_context(session_factory, *, game_id: int) -> MagicMock:
         "group_chat_id": 555,
         "game_topic_id": 7,
     }
-    context.bot.send_photo = AsyncMock()
+    context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+    context.bot.pin_chat_message = AsyncMock()
+    context.bot.unpin_chat_message = AsyncMock()
+    context.job_queue = MagicMock()
+    context.job_queue.get_jobs_by_name.return_value = []
     return context
 
 
@@ -397,3 +402,275 @@ def test_seconds_until_clamps_overdue_to_zero() -> None:
 
 def test_seconds_until_returns_zero_for_none() -> None:
     assert timeout_module.seconds_until(None) == 0
+
+
+# --- Inactivity nudge/auto-advance timers -----------------------------------
+
+
+def test_inactivity_nudge_job_name_is_stable_and_unique_per_game() -> None:
+    assert timeout_module.inactivity_nudge_job_name(42) == timeout_module.inactivity_nudge_job_name(
+        42
+    )
+    assert timeout_module.inactivity_nudge_job_name(42) != timeout_module.inactivity_nudge_job_name(
+        43
+    )
+
+
+def test_inactivity_advance_job_name_is_stable_and_unique_per_game() -> None:
+    assert timeout_module.inactivity_advance_job_name(
+        42
+    ) == timeout_module.inactivity_advance_job_name(42)
+    assert timeout_module.inactivity_advance_job_name(
+        42
+    ) != timeout_module.inactivity_advance_job_name(43)
+
+
+def test_schedule_inactivity_timers_schedules_both_jobs_from_stored_deadlines(
+    session_factory,
+) -> None:
+    game_id = _active_game(
+        session_factory,
+        inactivity_nudge_at=datetime.now(UTC) + timedelta(hours=3),
+        inactivity_advance_at=datetime.now(UTC) + timedelta(hours=6),
+    )
+    job_queue = MagicMock()
+    job_queue.get_jobs_by_name.return_value = []
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        timeout_module.schedule_inactivity_timers(job_queue, game)
+
+    names = [call.kwargs["name"] for call in job_queue.run_once.call_args_list]
+    assert timeout_module.inactivity_nudge_job_name(game_id) in names
+    assert timeout_module.inactivity_advance_job_name(game_id) in names
+
+
+def test_schedule_inactivity_timers_cancels_existing_ones_first(session_factory) -> None:
+    # Same guard schedule_turn_timers uses — resetting the clock on every
+    # guess must never double-schedule.
+    game_id = _active_game(
+        session_factory,
+        inactivity_nudge_at=datetime.now(UTC) + timedelta(hours=3),
+        inactivity_advance_at=datetime.now(UTC) + timedelta(hours=6),
+    )
+    job_queue = MagicMock()
+    existing_job = MagicMock()
+    job_queue.get_jobs_by_name.return_value = [existing_job]
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        timeout_module.schedule_inactivity_timers(job_queue, game)
+
+    assert existing_job.schedule_removal.call_count == 2  # nudge + advance
+
+
+def test_schedule_inactivity_timers_is_a_noop_when_job_queue_is_none(session_factory) -> None:
+    game_id = _active_game(session_factory)
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        timeout_module.schedule_inactivity_timers(None, game)  # should not raise
+
+
+def test_cancel_inactivity_timers_removes_both_named_jobs() -> None:
+    job = MagicMock()
+    job_queue = MagicMock()
+    job_queue.get_jobs_by_name.return_value = [job]
+
+    timeout_module.cancel_inactivity_timers(job_queue, 42)
+
+    assert job_queue.get_jobs_by_name.call_count == 2
+    assert job.schedule_removal.call_count == 2
+
+
+def test_cancel_inactivity_timers_is_a_noop_when_job_queue_is_none() -> None:
+    timeout_module.cancel_inactivity_timers(None, 42)  # should not raise
+
+
+async def test_inactivity_nudge_job_callback_posts_a_message_replying_to_the_pinned_image(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory)
+    with session_factory() as session:
+        settings.set_pinned_message_id(session, 777)
+        session.commit()
+    context = _make_job_context(session_factory, game_id=game_id)
+    context.bot.send_message = AsyncMock()
+
+    await timeout_module.inactivity_nudge_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_message.assert_awaited_once()
+    assert context.bot.send_message.await_args is not None
+    _, kwargs = context.bot.send_message.await_args
+    assert kwargs["chat_id"] == 555
+    assert kwargs["reply_to_message_id"] == 777
+
+
+async def test_inactivity_nudge_job_callback_is_a_noop_if_not_active(session_factory) -> None:
+    game_id = _active_game(session_factory, status=GameStatus.WON, winner_id=1)
+    context = _make_job_context(session_factory, game_id=game_id)
+    context.bot.send_message = AsyncMock()
+
+    await timeout_module.inactivity_nudge_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_message.assert_not_awaited()
+
+
+def _make_advance_job_context(session_factory, *, game_id: int) -> MagicMock:
+    context = _make_job_context(session_factory, game_id=game_id)
+    context.bot.get_file = AsyncMock(
+        return_value=MagicMock(download_as_bytearray=AsyncMock(return_value=bytearray(b"fake")))
+    )
+    context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+    context.bot.pin_chat_message = AsyncMock()
+    context.bot.unpin_chat_message = AsyncMock()
+    context.job_queue = MagicMock()
+    context.job_queue.get_jobs_by_name.return_value = []
+    return context
+
+
+async def test_inactivity_advance_job_callback_advances_the_stage_and_reschedules(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "nani_pix_bot.services.pixelate.pixelate", lambda image_bytes, target_width: b"pixelated"
+    )
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_1)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_photo.assert_awaited_once()
+    context.bot.pin_chat_message.assert_awaited_once()
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.ACTIVE
+        assert fetched.current_stage == PixelStage.STAGE_2
+        assert fetched.inactivity_advance_at is not None
+    # Rescheduled for the new stage.
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert timeout_module.inactivity_advance_job_name(game_id) in names
+
+
+async def test_inactivity_advance_job_callback_ends_unsolved_on_final_stage(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_photo.assert_awaited_once()
+    _, kwargs = context.bot.send_photo.await_args
+    assert kwargs["photo"] == "file123"  # the original screenshot, not a pixelated one
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.UNSOLVED
+        assert fetched.original_file_id is None
+
+
+async def test_inactivity_advance_job_callback_is_a_noop_if_not_active(session_factory) -> None:
+    game_id = _active_game(session_factory, status=GameStatus.WON, winner_id=1)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_photo.assert_not_awaited()
+
+
+def _make_post_image_context(session_factory) -> MagicMock:
+    context = MagicMock()
+    context.bot_data = {
+        "session_factory": session_factory,
+        "group_chat_id": 555,
+        "game_topic_id": 7,
+    }
+    context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+    context.bot.pin_chat_message = AsyncMock()
+    context.bot.unpin_chat_message = AsyncMock()
+    return context
+
+
+async def test_post_current_image_pins_the_new_message_and_unpins_the_old_one(
+    session_factory,
+) -> None:
+    context = _make_post_image_context(session_factory)
+    with session_factory() as session:
+        settings.set_pinned_message_id(session, 111)
+        session.commit()
+
+        message = await timeout_module.post_current_image(
+            cast(ContextTypes.DEFAULT_TYPE, context),
+            session,
+            photo=b"bytes",
+            caption="a caption",
+        )
+        session.commit()
+
+        assert message.message_id == 999
+        context.bot.unpin_chat_message.assert_awaited_once_with(chat_id=555, message_id=111)
+        context.bot.pin_chat_message.assert_awaited_once()
+        assert settings.get_pinned_message_id(session) == 999
+
+
+async def test_post_current_image_does_not_unpin_when_nothing_was_pinned_yet(
+    session_factory,
+) -> None:
+    context = _make_post_image_context(session_factory)
+    with session_factory() as session:
+        await timeout_module.post_current_image(
+            cast(ContextTypes.DEFAULT_TYPE, context),
+            session,
+            photo=b"bytes",
+            caption="a caption",
+        )
+
+    context.bot.unpin_chat_message.assert_not_awaited()
+
+
+async def test_post_current_image_does_not_raise_when_pinning_fails(session_factory) -> None:
+    context = _make_post_image_context(session_factory)
+    context.bot.pin_chat_message = AsyncMock(side_effect=BadRequest("Not enough rights"))
+    with session_factory() as session:
+        message = await timeout_module.post_current_image(
+            cast(ContextTypes.DEFAULT_TYPE, context),
+            session,
+            photo=b"bytes",
+            caption="a caption",
+        )  # should not raise
+
+    assert message.message_id == 999
+
+
+async def test_post_current_image_does_not_raise_when_unpinning_the_old_message_fails(
+    session_factory,
+) -> None:
+    context = _make_post_image_context(session_factory)
+    context.bot.unpin_chat_message = AsyncMock(side_effect=BadRequest("Message to unpin not found"))
+    with session_factory() as session:
+        settings.set_pinned_message_id(session, 111)
+        session.commit()
+
+        await timeout_module.post_current_image(
+            cast(ContextTypes.DEFAULT_TYPE, context),
+            session,
+            photo=b"bytes",
+            caption="a caption",
+        )  # should not raise
+        # Pinning the new message still happens despite the unpin failure.
+        context.bot.pin_chat_message.assert_awaited_once()
+
+
+async def test_rearm_pending_timeouts_also_reschedules_inactivity_timers(session_factory) -> None:
+    game_id = _active_game(
+        session_factory,
+        inactivity_nudge_at=datetime.now(UTC) + timedelta(hours=3),
+        inactivity_advance_at=datetime.now(UTC) + timedelta(hours=6),
+    )
+    job_queue = MagicMock()
+    job_queue.get_jobs_by_name.return_value = []
+
+    await timeout_module.rearm_pending_timeouts(job_queue, session_factory)
+
+    names = [call.kwargs["name"] for call in job_queue.run_once.call_args_list]
+    assert timeout_module.inactivity_nudge_job_name(game_id) in names
+    assert timeout_module.inactivity_advance_job_name(game_id) in names

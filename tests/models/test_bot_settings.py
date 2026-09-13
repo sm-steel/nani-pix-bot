@@ -41,3 +41,23 @@ def test_bot_settings_games_enabled_can_be_set_false(session: Session) -> None:
 
     assert fetched is not None
     assert fetched.games_enabled is False
+
+
+def test_bot_settings_pinned_message_id_defaults_to_none(session: Session) -> None:
+    session.add(BotSettings(id=1))
+    session.commit()
+
+    fetched = session.get(BotSettings, 1)
+
+    assert fetched is not None
+    assert fetched.pinned_message_id is None
+
+
+def test_bot_settings_pinned_message_id_can_be_set(session: Session) -> None:
+    session.add(BotSettings(id=1, pinned_message_id=12345))
+    session.commit()
+
+    fetched = session.get(BotSettings, 1)
+
+    assert fetched is not None
+    assert fetched.pinned_message_id == 12345

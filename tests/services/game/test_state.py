@@ -348,6 +348,27 @@ def test_activate_game_schedules_the_timeout_two_days_out(session: Session) -> N
     assert delta_seconds == pytest.approx(game_service.TIMEOUT_DURATION.total_seconds(), abs=5)
 
 
+def test_activate_game_sets_the_initial_inactivity_deadlines(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    session.commit()
+    before = datetime.now(UTC).replace(tzinfo=None)  # DATETIME columns round-trip as naive UTC
+
+    game_service.stage_result(game, _FRIEREN, source="anilist")
+    game_service.activate_game(session, game)
+    session.commit()
+
+    assert game.inactivity_nudge_at is not None
+    assert game.inactivity_advance_at is not None
+    nudge_delta = (game.inactivity_nudge_at - before).total_seconds()
+    advance_delta = (game.inactivity_advance_at - before).total_seconds()
+    assert nudge_delta == pytest.approx(game_service.INACTIVITY_NUDGE_DELAY.total_seconds(), abs=5)
+    assert advance_delta == pytest.approx(
+        game_service.INACTIVITY_ADVANCE_DELAY.total_seconds(), abs=5
+    )
+
+
 def _active_game(
     session: Session,
     *,
@@ -672,3 +693,56 @@ def test_record_guess_total_guess_count_survives_a_stage_advance(session: Sessio
 
     assert game.wrong_guess_count == 0
     assert game.total_guess_count == 5
+
+
+def test_reset_inactivity_clock_sets_both_deadlines_from_now(session: Session) -> None:
+    game = _active_game(session)
+    before = datetime.now(UTC)  # not committed/refetched, so still tz-aware unlike scheduled_end_at
+
+    game_service.reset_inactivity_clock(game)
+
+    assert game.inactivity_nudge_at is not None
+    assert game.inactivity_advance_at is not None
+    nudge_delta = (game.inactivity_nudge_at - before).total_seconds()
+    advance_delta = (game.inactivity_advance_at - before).total_seconds()
+    assert nudge_delta == pytest.approx(game_service.INACTIVITY_NUDGE_DELAY.total_seconds(), abs=5)
+    assert advance_delta == pytest.approx(
+        game_service.INACTIVITY_ADVANCE_DELAY.total_seconds(), abs=5
+    )
+
+
+def test_advance_stage_moves_to_the_next_stage_and_resets_wrong_guess_count(
+    session: Session,
+) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_2, wrong_guess_count=3)
+
+    outcome = game_service.advance_stage(game)
+
+    assert outcome is game_service.GuessOutcome.STAGE_ADVANCED
+    assert game.current_stage == PixelStage.STAGE_3
+    assert game.wrong_guess_count == 0
+    assert game.status == GameStatus.ACTIVE
+
+
+def test_advance_stage_ends_unsolved_when_already_on_the_final_stage(session: Session) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_5, wrong_guess_count=7)
+
+    outcome = game_service.advance_stage(game)
+
+    assert outcome is game_service.GuessOutcome.UNSOLVED
+    assert game.status == GameStatus.UNSOLVED
+    assert game.current_stage == PixelStage.STAGE_5  # left as-is, only status changes
+
+
+def test_record_guess_wrong_guess_limit_hit_delegates_to_advance_stage(session: Session) -> None:
+    # record_guess's own stage-exhaustion tests above already cover the
+    # observable behavior; this just pins that it's the same advance_stage()
+    # a future inactivity-advance job callback will call, not a second copy.
+    game = _active_game(session, stage=PixelStage.STAGE_4, wrong_guess_count=4)
+    _seed_stage_limit(session, PixelStage.STAGE_4, wrong_guess_limit=5)
+
+    outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
+    session.commit()
+
+    assert outcome is game_service.GuessOutcome.STAGE_ADVANCED
+    assert game.current_stage == PixelStage.STAGE_5

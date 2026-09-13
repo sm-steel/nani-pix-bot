@@ -54,12 +54,13 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
         if outcome is game_service.GuessOutcome.WON:
             timeout_module.cancel_timeout(context.job_queue, game.id)
+            timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
             turn_state = game_service.get_turn_state(session)
             if turn_state is not None:
                 timeout_module.schedule_turn_timers(context.job_queue, turn_state)
-            await context.bot.send_photo(
-                chat_id=group_chat_id,
-                message_thread_id=game_topic_id,
+            await timeout_module.post_current_image(
+                context,
+                session,
                 photo=game.original_file_id,
                 caption=i18n.t(
                     "guess.won_caption",
@@ -71,6 +72,8 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             game_service.clear_original_screenshot(game)
         elif outcome is game_service.GuessOutcome.WRONG:
             stage, total_stages, remaining = game_service.stage_progress(session, game)
+            game_service.reset_inactivity_clock(game)
+            timeout_module.schedule_inactivity_timers(context.job_queue, game)
             await message.reply_text(
                 i18n.t(
                     "guess.wrong_feedback",
@@ -86,9 +89,11 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             target_width = stage_config.get_stage_config(session)[game.current_stage].target_width
             pixelated = pixelate_service.pixelate(original_bytes, target_width)
             stage, total_stages, remaining = game_service.stage_progress(session, game)
-            await context.bot.send_photo(
-                chat_id=group_chat_id,
-                message_thread_id=game_topic_id,
+            game_service.reset_inactivity_clock(game)
+            timeout_module.schedule_inactivity_timers(context.job_queue, game)
+            await timeout_module.post_current_image(
+                context,
+                session,
                 photo=pixelated,
                 caption=i18n.t(
                     "guess.stage_advanced_caption",
@@ -100,9 +105,10 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 ),
             )
         elif outcome is game_service.GuessOutcome.UNSOLVED:
-            await context.bot.send_photo(
-                chat_id=group_chat_id,
-                message_thread_id=game_topic_id,
+            timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
+            await timeout_module.post_current_image(
+                context,
+                session,
                 photo=game.original_file_id,
                 caption=i18n.t(
                     "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
