@@ -54,7 +54,7 @@ async def test_skip_command_rejects_while_a_game_is_running(session_factory) -> 
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
         session.commit()
-        session.add(Game(starter_id=1, original_file_id="f", status=GameStatus.ACTIVE))
+        session.add(Game(starter_id=1, original_image=b"f", status=GameStatus.ACTIVE))
         session.commit()
 
     update = _make_update(user_id=1)

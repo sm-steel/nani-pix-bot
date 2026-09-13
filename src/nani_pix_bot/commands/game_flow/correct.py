@@ -47,7 +47,7 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # _validate_active_game_for_starter already checked this — restores
         # the type narrowing lost by returning `game` across a function
         # boundary.
-        assert game.original_file_id is not None
+        assert game.original_image is not None
 
         game_service.force_win(session, game, winner_id=target.telegram_user_id)
         logger.info(
@@ -64,7 +64,7 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await timeout_module.post_current_image(
             context,
             session,
-            photo=game.original_file_id,
+            photo=game.original_image,
             caption=i18n.t(
                 "correct.caption",
                 lang,
@@ -93,7 +93,7 @@ async def _validate_active_game_for_starter(session, message, user, lang: str) -
         logger.warning("{} tried /correct on game {} before any guess", user.id, game.id)
         await message.reply_text(i18n.t("correct.no_guesses_yet", lang))
         return None
-    if game.original_file_id is None:
+    if game.original_image is None:
         return None  # shouldn't happen for an ACTIVE game — defensive guard
     return game
 

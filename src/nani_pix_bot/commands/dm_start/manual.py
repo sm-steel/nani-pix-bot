@@ -5,8 +5,8 @@ synonym."""
 from loguru import logger
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start._shared import _SYNONYM_SPLIT_RE
-from nani_pix_bot.commands.dm_start.preview import _show_preview
+from nani_pix_bot.commands.dm_start._shared import _SYNONYM_SPLIT_RE, _show_preview
+from nani_pix_bot.commands.dm_start.screenshots import start_screenshot_picker
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
@@ -45,10 +45,20 @@ async def _manual_synonyms_step(
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         title = setup_game.title_english if setup_game is not None else None
-        if setup_game is None or setup_game.original_file_id is None or title is None:
+        if setup_game is None or title is None:
             return
         game_service.stage_manual_entry(setup_game, title=title, synonyms=synonyms)
         logger.debug("Game {}: manual entry staged with {} synonyms", setup_game.id, len(synonyms))
-        await _show_preview(context, session, setup_game, lang)
+        if setup_game.original_image is not None:
+            # Traditional photo-first entry — image already in hand.
+            await _show_preview(context, session, setup_game, lang)
+            message_key = "dm_start.preview_sent"
+        else:
+            # Screenshot-less /newgame entry — manual has no external id
+            # to fetch screenshots by, so this always falls straight to
+            # asking for an upload (start_screenshot_picker handles that
+            # itself when no screenshot-capable provider is available).
+            await start_screenshot_picker(context, setup_game, lang)
+            message_key = "dm_start.identification_staged"
 
-    await message.reply_text(i18n.t("dm_start.preview_sent", lang))
+    await message.reply_text(i18n.t(message_key, lang))

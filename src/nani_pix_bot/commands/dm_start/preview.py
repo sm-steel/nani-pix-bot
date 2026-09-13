@@ -4,21 +4,28 @@ research/add-synonym buttons, and (on confirm) the actual post to the
 group topic. See MECHANICS.md's "Starting a game" section."""
 
 from loguru import logger
-from telegram import InputMediaPhoto, Update
+from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
     _SYNONYM_SPLIT_RE,
     _method_prompt_key,
     _prefer_shikimori,
+    _show_preview,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
+    PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA,
+    PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
     PREVIEW_RESEARCH_CALLBACK_DATA,
+    change_image_keyboard,
     method_selection_keyboard,
-    preview_keyboard,
+)
+from nani_pix_bot.commands.dm_start.screenshots import (
+    clear_screenshot_selection,
+    resume_screenshot_gallery,
 )
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -36,8 +43,8 @@ async def _finalize_and_post(context, session, game: Game, caption: str) -> None
     the group topic, and schedule the timeout — canceling the setup-abandon
     timer that's been running since the photo was first sent (issue #21)."""
     timeout_module.cancel_setup_abandon(context.job_queue, game.id)
-    telegram_file = await context.bot.get_file(game.original_file_id)
-    original_bytes = bytes(await telegram_file.download_as_bytearray())
+    assert game.original_image is not None
+    original_bytes = game.original_image
     first_stage = game_service.STAGE_ORDER[0]
     target_width = stage_config.get_stage_config(session)[first_stage].target_width
     pixelated = pixelate_service.pixelate(original_bytes, target_width)
@@ -45,51 +52,6 @@ async def _finalize_and_post(context, session, game: Game, caption: str) -> None
     await timeout_module.post_current_image(context, session, photo=pixelated, caption=caption)
     timeout_module.schedule_timeout(context.job_queue, game)
     timeout_module.schedule_inactivity_timers(context.job_queue, game)
-
-
-async def _show_preview(context, session, game: Game, lang: str) -> None:
-    """Send the starter a private preview of every pixelation stage for
-    the staged title/synonyms — one Telegram album (blockiest to
-    clearest, see MECHANICS.md) — so they see how the round will
-    actually look before committing to it. `sendMediaGroup` has no
-    `reply_markup` support, so the confirm/change-image/research/add-
-    synonym buttons go on a short separate follow-up text message right
-    after the album, not on the album itself. Nothing is posted to the
-    group until "Confirm and start" is tapped. Always the game's own
-    starter's DM — every caller looked this game up by starter_id in the
-    first place, so game.starter_id is the right chat_id."""
-    telegram_file = await context.bot.get_file(game.original_file_id)
-    original_bytes = bytes(await telegram_file.download_as_bytearray())
-    config = stage_config.get_stage_config(session)
-    title = game_service.display_title(game, lang)
-    # Every stored title variant is already an accepted /guess — not just
-    # the manually-typed synonyms — so show all of them here too, minus
-    # whatever's already shown as the Title above. match_candidates() is
-    # the same list record_guess() actually matches against, so this can
-    # never drift from what's really accepted (see issue #50).
-    other_answers = [
-        candidate
-        for candidate in dict.fromkeys(game_service.match_candidates(game))
-        if candidate != title
-    ]
-    answers = ", ".join(other_answers) or "—"
-    caption = i18n.t("dm_start.preview_caption", lang, title=title, answers=answers)
-    captions = [caption, *([None] * (len(game_service.STAGE_ORDER) - 1))]
-    media = [
-        InputMediaPhoto(
-            media=pixelate_service.pixelate(original_bytes, config[stage].target_width),
-            caption=stage_caption,
-        )
-        for stage, stage_caption in zip(game_service.STAGE_ORDER, captions, strict=True)
-    ]
-    game.setup_step = SetupStep.CONFIRMING
-    logger.debug("Game {}: showing {}-stage confirmation preview album", game.id, len(media))
-    await context.bot.send_media_group(chat_id=game.starter_id, media=media)
-    await context.bot.send_message(
-        chat_id=game.starter_id,
-        text=i18n.t("dm_start.preview_confirm_prompt", lang),
-        reply_markup=preview_keyboard(lang),
-    )
 
 
 async def _add_synonym_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, user) -> None:
@@ -137,6 +99,10 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
             await query.edit_message_text(text=i18n.t("dm_start.posted", lang))
         elif query.data == PREVIEW_CHANGE_IMAGE_CALLBACK_DATA:
             await _preview_change_image(query, setup_game, lang)
+        elif query.data == PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA:
+            await _preview_change_image_upload(query, setup_game, lang)
+        elif query.data == PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA:
+            await _preview_change_image_pick_screenshot(context, query, setup_game, lang)
         elif query.data == PREVIEW_RESEARCH_CALLBACK_DATA:
             await _preview_research(query, setup_game, lang)
         elif query.data == PREVIEW_ADD_SYNONYM_CALLBACK_DATA:
@@ -150,13 +116,44 @@ async def _preview_confirm(context, session, game: Game, lang: str, starter_name
 
 
 async def _preview_change_image(query, game: Game, lang: str) -> None:
+    """A genuine upload (screenshot_source unset) goes straight to
+    asking for a new photo, exactly as before ticket 9. An API-sourced
+    screenshot instead offers a choice — upload one after all, or pick
+    a different screenshot from the same provider — via
+    _preview_change_image_upload/_preview_change_image_pick_screenshot."""
     logger.debug("Game {}: change-image requested from preview", game.id)
+    if game.screenshot_source is not None:
+        await query.edit_message_text(
+            text=i18n.t("dm_start.pick_new_image_source_prompt", lang),
+            reply_markup=change_image_keyboard(lang),
+        )
+        return
     game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
     await query.edit_message_text(text=i18n.t("dm_start.ask_new_photo", lang))
 
 
+async def _preview_change_image_upload(query, game: Game, lang: str) -> None:
+    logger.debug("Game {}: upload-a-new-photo requested from preview", game.id)
+    game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
+    await query.edit_message_text(text=i18n.t("dm_start.ask_new_photo", lang))
+
+
+async def _preview_change_image_pick_screenshot(context, query, game: Game, lang: str) -> None:
+    logger.debug("Game {}: pick-a-different-screenshot requested from preview", game.id)
+    # resume_screenshot_gallery owns the setup_step transition itself —
+    # PICKING_SCREENSHOT on a successful fetch, AWAITING_PHOTO_CHANGE on
+    # a stale/failed/empty one — and returns the matching reply key.
+    reply_key = await resume_screenshot_gallery(context, game, lang)
+    await query.edit_message_text(text=i18n.t(reply_key, lang))
+
+
 async def _preview_research(query, game: Game, lang: str) -> None:
     logger.debug("Game {}: re-search requested from preview", game.id)
+    # An API-sourced screenshot is cleared here (see
+    # clear_screenshot_selection's docstring) since re-searching might
+    # pick a different anime entirely — a genuine upload is left alone,
+    # unchanged from before ticket 9.
+    clear_screenshot_selection(game)
     game.setup_step = SetupStep.PICKING_METHOD
     prefer_shikimori = _prefer_shikimori(lang)
     await query.edit_message_text(

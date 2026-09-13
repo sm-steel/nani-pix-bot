@@ -11,6 +11,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
 )
+from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.bot_settings import BotSettings
 from nani_pix_bot.models.enums import GameStatus, SetupStep
 from nani_pix_bot.models.game import Game
@@ -56,6 +57,13 @@ def _make_context(session_factory, **extra_bot_data) -> MagicMock:
     }
     context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=ChatMemberStatus.MEMBER))
     context.bot.send_message = AsyncMock()
+    # photo_handler downloads the photo's bytes immediately, once, rather
+    # than storing the Telegram file_id — see models/game.py's
+    # original_image docstring.
+    context.bot.get_file = AsyncMock()
+    context.bot.get_file.return_value.download_as_bytearray = AsyncMock(
+        return_value=bytearray(b"downloaded-bytes")
+    )
     context.job_queue.get_jobs_by_name.return_value = []
     return context
 
@@ -84,7 +92,7 @@ def _staged_setup_game(session_factory, *, starter_id: int = 1) -> None:
         session.add(Player(telegram_user_id=starter_id))
         session.commit()
         game = game_service.create_setup_game(
-            session, starter_id=starter_id, original_file_id="file123"
+            session, starter_id=starter_id, original_image=b"file123"
         )
         game.source = "anilist"
         game_service.stage_result(game, _FRIEREN, source="anilist")
@@ -102,7 +110,7 @@ async def test_photo_handler_creates_a_setup_game_when_turn_is_open(session_fact
         games = session.query(Game).all()
         assert len(games) == 1
         assert games[0].status == GameStatus.SETUP
-        assert games[0].original_file_id == "file123"
+        assert games[0].original_image == b"downloaded-bytes"
         assert games[0].starter_id == 1
     update.message.reply_text.assert_awaited_once()
 
@@ -128,7 +136,7 @@ async def test_photo_handler_schedules_the_setup_abandon_timer(session_factory) 
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()
     names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
-    assert intake.timeout_module.setup_abandon_job_name(game.id) in names
+    assert timeout_module.setup_abandon_job_name(game.id) in names
 
 
 async def test_photo_handler_cancels_turn_timers_when_the_designated_starter_begins(
@@ -252,7 +260,7 @@ async def test_photo_handler_updates_the_image_and_reshows_the_preview_when_chan
     with session_factory() as session:
         assert session.query(Game).count() == 1  # no duplicate game created
         fetched = session.query(Game).filter_by(starter_id=1).one()
-        assert fetched.original_file_id == "new-file-456"
+        assert fetched.original_image == b"original-bytes"
         assert fetched.setup_step == SetupStep.CONFIRMING
 
     context.bot.get_file.assert_awaited_once_with("new-file-456")

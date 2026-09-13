@@ -10,7 +10,9 @@ from nani_pix_bot.models.stage_config import StageConfig
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tmdb import TMDBResult
 
 _FRIEREN = AniListResult(
     anilist_id=99,
@@ -27,6 +29,22 @@ _FRIEREN_SHIKIMORI = ShikimoriResult(
     title_english="Frieren: Beyond Journey's End",
     title_russian="Провожающая в последний путь Фрирен",
     synonyms=["Frieren at the Funeral"],
+)
+
+_FRIEREN_JIKAN = JikanResult(
+    jikan_id=52991,
+    title_romaji="Sousou no Frieren",
+    title_english="Frieren: Beyond Journey's End",
+    title_native="葬送のフリーレン",
+    synonyms=["Frieren at the Funeral"],
+)
+
+_FRIEREN_TMDB = TMDBResult(
+    tmdb_id=209867,
+    title_romaji=None,
+    title_english="Frieren: Beyond Journey's End",
+    title_native="葬送のフリーレン",
+    synonyms=[],
 )
 
 
@@ -70,7 +88,7 @@ def test_prioritized_title_falls_back_to_a_literal_question_mark() -> None:
 def test_display_title_prefers_english_for_a_non_ru_bot() -> None:
     game = Game(
         starter_id=1,
-        original_file_id="f",
+        original_image=b"f",
         title_english="Frieren: Beyond Journey's End",
         title_romaji="Sousou no Frieren",
         title_native="葬送のフリーレン",
@@ -89,7 +107,7 @@ def test_display_title_prefers_russian_for_a_ru_bot() -> None:
     # Dreaming" case surfaced exactly this).
     game = Game(
         starter_id=1,
-        original_file_id="f",
+        original_image=b"f",
         title_english="Frieren: Beyond Journey's End",
         title_romaji="Sousou no Frieren",
         title_native="葬送のフリーレン",
@@ -105,7 +123,7 @@ def test_display_title_falls_back_to_english_for_a_ru_bot_with_no_russian_title(
     # rather than landing on "?".
     game = Game(
         starter_id=1,
-        original_file_id="f",
+        original_image=b"f",
         title_english="Frieren: Beyond Journey's End",
         title_romaji="Sousou no Frieren",
     )
@@ -120,7 +138,7 @@ def test_display_title_falls_back_to_russian_when_only_that_is_set() -> None:
     # here instead of using the Russian title.
     game = Game(
         starter_id=1,
-        original_file_id="f",
+        original_image=b"f",
         title_russian="Провожающая в последний путь Фрирен",
     )
 
@@ -128,7 +146,7 @@ def test_display_title_falls_back_to_russian_when_only_that_is_set() -> None:
 
 
 def test_display_title_falls_back_to_a_literal_question_mark() -> None:
-    game = Game(starter_id=1, original_file_id="f")
+    game = Game(starter_id=1, original_image=b"f")
 
     assert game_service.display_title(game, "EN") == "?"
 
@@ -136,7 +154,7 @@ def test_display_title_falls_back_to_a_literal_question_mark() -> None:
 def test_match_candidates_includes_every_title_variant_and_synonym() -> None:
     game = Game(
         starter_id=1,
-        original_file_id="f",
+        original_image=b"f",
         title_romaji="Sousou no Frieren",
         title_english="Frieren: Beyond Journey's End",
         title_native="葬送のフリーレン",
@@ -160,7 +178,7 @@ def test_match_candidates_omits_unset_fields() -> None:
     # title_english, and it must still show up.
     game = Game(
         starter_id=1,
-        original_file_id="f",
+        original_image=b"f",
         title_romaji="Grand Blue",
         title_english="Grand Blue Dreaming",
         title_russian="Необъятный океан",
@@ -174,7 +192,7 @@ def test_match_candidates_omits_unset_fields() -> None:
 
 
 def test_match_candidates_omits_none_synonyms_list() -> None:
-    game = Game(starter_id=1, original_file_id="f", title_english="Some Anime")
+    game = Game(starter_id=1, original_image=b"f", title_english="Some Anime")
 
     assert game_service.match_candidates(game) == ["Some Anime"]
 
@@ -186,7 +204,7 @@ def test_can_start_is_true_with_no_game_and_no_turn_state(session: Session) -> N
 def test_can_start_is_false_when_a_game_is_active(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
-    session.add(Game(starter_id=1, original_file_id="f", status=GameStatus.ACTIVE))
+    session.add(Game(starter_id=1, original_image=b"f", status=GameStatus.ACTIVE))
     session.commit()
 
     assert game_service.can_start(session, user_id=2) is False
@@ -212,14 +230,29 @@ def test_create_setup_game_persists_a_setup_row(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
 
-    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
     fetched = session.get(Game, game.id)
     assert fetched is not None
     assert fetched.status == GameStatus.SETUP
-    assert fetched.original_file_id == "file123"
+    assert fetched.original_image == b"file123"
     assert fetched.starter_id == 1
+
+
+def test_create_setup_game_allows_no_image_yet(session: Session) -> None:
+    # The screenshot-less /newgame entry point creates the row before any
+    # image exists — it's filled in once a screenshot is picked, later.
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+
+    game = game_service.create_setup_game(session, starter_id=1)
+    session.commit()
+
+    fetched = session.get(Game, game.id)
+    assert fetched is not None
+    assert fetched.status == GameStatus.SETUP
+    assert fetched.original_image is None
 
 
 def test_create_setup_game_sets_a_one_hour_setup_deadline(session: Session) -> None:
@@ -227,7 +260,7 @@ def test_create_setup_game_sets_a_one_hour_setup_deadline(session: Session) -> N
     session.commit()
     before = datetime.now(UTC).replace(tzinfo=None)
 
-    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
     assert game.setup_deadline is not None
@@ -238,7 +271,7 @@ def test_create_setup_game_sets_a_one_hour_setup_deadline(session: Session) -> N
 def test_stage_result_assigns_anilist_fields_without_changing_status(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
-    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
     game_service.stage_result(game, _FRIEREN, source="anilist")
@@ -257,7 +290,7 @@ def test_stage_result_assigns_anilist_fields_without_changing_status(session: Se
 def test_stage_result_assigns_shikimori_fields_including_russian_title(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
-    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
     game_service.stage_result(game, _FRIEREN_SHIKIMORI, source="shikimori")
@@ -267,16 +300,97 @@ def test_stage_result_assigns_shikimori_fields_including_russian_title(session: 
     assert fetched is not None
     assert fetched.status == GameStatus.SETUP
     assert fetched.anilist_id is None
+    assert fetched.shikimori_id == 52991
     assert fetched.title_romaji == "Sousou no Frieren"
     assert fetched.title_russian == "Провожающая в последний путь Фрирен"
     assert fetched.synonyms == ["Frieren at the Funeral"]
     assert fetched.source == "shikimori"
 
 
+def test_stage_result_assigns_jikan_fields_including_native_title(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    session.commit()
+
+    game_service.stage_result(game, _FRIEREN_JIKAN, source="jikan")
+    session.commit()
+
+    fetched = session.get(Game, game.id)
+    assert fetched is not None
+    assert fetched.status == GameStatus.SETUP
+    assert fetched.anilist_id is None
+    assert fetched.jikan_id == 52991
+    assert fetched.title_romaji == "Sousou no Frieren"
+    assert fetched.title_native == "葬送のフリーレン"
+    assert fetched.synonyms == ["Frieren at the Funeral"]
+    assert fetched.source == "jikan"
+
+
+def test_stage_result_assigns_tmdb_fields_including_native_title(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    session.commit()
+
+    game_service.stage_result(game, _FRIEREN_TMDB, source="tmdb")
+    session.commit()
+
+    fetched = session.get(Game, game.id)
+    assert fetched is not None
+    assert fetched.status == GameStatus.SETUP
+    assert fetched.anilist_id is None
+    assert fetched.tmdb_id == 209867
+    assert fetched.title_romaji is None
+    assert fetched.title_english == "Frieren: Beyond Journey's End"
+    assert fetched.title_native == "葬送のフリーレン"
+    assert fetched.synonyms == []
+    assert fetched.source == "tmdb"
+
+
+def test_set_screenshot_provider_id_sets_only_the_ids_column(session: Session) -> None:
+    """Cross-provider screenshot resolution (ticket 8): identifying via
+    Shikimori, then resolving a TMDB screenshot, must not touch the
+    identification fields stage_result() sets — only tmdb_id changes."""
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    game_service.stage_result(game, _FRIEREN_SHIKIMORI, source="shikimori")
+    session.commit()
+
+    game_service.set_screenshot_provider_id(game, _FRIEREN_TMDB)
+    session.commit()
+
+    fetched = session.get(Game, game.id)
+    assert fetched is not None
+    assert fetched.tmdb_id == 209867
+    assert fetched.shikimori_id == 52991
+    assert fetched.source == "shikimori"
+    assert fetched.title_romaji == "Sousou no Frieren"
+    assert fetched.title_russian == "Провожающая в последний путь Фрирен"
+    assert fetched.synonyms == ["Frieren at the Funeral"]
+
+
+def test_set_screenshot_provider_id_handles_each_provider_type(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    session.commit()
+
+    game_service.set_screenshot_provider_id(game, _FRIEREN_SHIKIMORI)
+    assert game.shikimori_id == 52991
+
+    game_service.set_screenshot_provider_id(game, _FRIEREN_JIKAN)
+    assert game.jikan_id == 52991
+
+    game_service.set_screenshot_provider_id(game, _FRIEREN_TMDB)
+    assert game.tmdb_id == 209867
+
+
 def test_stage_manual_entry_assigns_the_typed_title_and_synonyms(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
-    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
     game_service.stage_manual_entry(
@@ -297,7 +411,7 @@ def test_activate_game_sets_active_state_and_opens_the_turn(session: Session) ->
     session.add(Player(telegram_user_id=1))
     session.add(TurnState(id=1, next_starter_id=1))
     session.commit()
-    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
     game_service.stage_result(game, _FRIEREN, source="anilist")
@@ -320,7 +434,7 @@ def test_activate_game_sets_active_state_and_opens_the_turn(session: Session) ->
 def test_activate_game_creates_turn_state_row_if_missing(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
-    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
     game_service.stage_result(game, _FRIEREN, source="anilist")
@@ -335,7 +449,7 @@ def test_activate_game_creates_turn_state_row_if_missing(session: Session) -> No
 def test_activate_game_schedules_the_timeout_two_days_out(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
-    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
     before = datetime.now(UTC).replace(tzinfo=None)  # DATETIME columns round-trip as naive UTC
 
@@ -351,7 +465,7 @@ def test_activate_game_schedules_the_timeout_two_days_out(session: Session) -> N
 def test_activate_game_sets_the_initial_inactivity_deadlines(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
-    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
     before = datetime.now(UTC).replace(tzinfo=None)  # DATETIME columns round-trip as naive UTC
 
@@ -380,7 +494,7 @@ def _active_game(
     session.commit()
     game = Game(
         starter_id=1,
-        original_file_id="file123",
+        original_image=b"file123",
         status=GameStatus.ACTIVE,
         current_stage=stage,
         wrong_guess_count=wrong_guess_count,
@@ -529,7 +643,7 @@ def test_clear_original_screenshot_nulls_the_file_id(session: Session) -> None:
     game_service.clear_original_screenshot(game)
     session.commit()
 
-    assert game.original_file_id is None
+    assert game.original_image is None
 
 
 def test_record_guess_rejects_a_game_with_no_current_stage(session: Session) -> None:
@@ -537,7 +651,7 @@ def test_record_guess_rejects_a_game_with_no_current_stage(session: Session) -> 
     session.commit()
     game = Game(
         starter_id=1,
-        original_file_id="file123",
+        original_image=b"file123",
         status=GameStatus.SETUP,
         current_stage=None,
     )
@@ -564,7 +678,7 @@ def test_stage_progress_rejects_a_game_with_no_current_stage(session: Session) -
     session.commit()
     game = Game(
         starter_id=1,
-        original_file_id="file123",
+        original_image=b"file123",
         status=GameStatus.SETUP,
         current_stage=None,
     )
@@ -624,9 +738,9 @@ def test_active_games_returns_only_active_status_games(session: Session) -> None
     session.commit()
     session.add_all(
         [
-            Game(starter_id=1, original_file_id="f", status=GameStatus.ACTIVE),
-            Game(starter_id=1, original_file_id="f", status=GameStatus.WON),
-            Game(starter_id=1, original_file_id="f", status=GameStatus.SETUP),
+            Game(starter_id=1, original_image=b"f", status=GameStatus.ACTIVE),
+            Game(starter_id=1, original_image=b"f", status=GameStatus.WON),
+            Game(starter_id=1, original_image=b"f", status=GameStatus.SETUP),
         ]
     )
     session.commit()
@@ -640,7 +754,7 @@ def test_active_games_returns_only_active_status_games(session: Session) -> None
 def test_get_setup_game_for_starter_finds_the_pending_row(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
-    game = game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
     found = game_service.get_setup_game_for_starter(session, 1)
@@ -652,7 +766,7 @@ def test_get_setup_game_for_starter_finds_the_pending_row(session: Session) -> N
 def test_get_setup_game_for_starter_ignores_other_starters(session: Session) -> None:
     session.add_all([Player(telegram_user_id=1), Player(telegram_user_id=2)])
     session.commit()
-    game_service.create_setup_game(session, starter_id=1, original_file_id="file123")
+    game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
     assert game_service.get_setup_game_for_starter(session, 2) is None

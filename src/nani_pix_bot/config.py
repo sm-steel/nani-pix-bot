@@ -28,6 +28,7 @@ class Config:
     admin_user_ids: list[int]
     log_level: str
     telegram_proxy_url: str | None
+    tmdb_read_access_token: str | None
     database_url: str
 
 
@@ -41,5 +42,10 @@ def load_config() -> Config:
         admin_user_ids=admin_user_ids,
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
         telegram_proxy_url=os.environ.get("TELEGRAM_PROXY_URL") or None,
+        # Optional, unlike every other required field above — a fresh
+        # clone with no TMDB key can still run everything except the
+        # TMDB identification/screenshot method (which degrades to the
+        # existing "service down" messaging rather than crashing).
+        tmdb_read_access_token=os.environ.get("TMDB_READ_ACCESS_TOKEN") or None,
         database_url=database_url(),
     )

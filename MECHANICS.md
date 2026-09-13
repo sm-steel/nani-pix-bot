@@ -10,7 +10,7 @@ just what's currently built.
 
 | Feature | Status |
 |---|---|
-| Game setup (DM photo + AniList/Shikimori/manual entry) | Implemented |
+| Game setup (DM photo, or `/newgame` + screenshot picker) + AniList/Shikimori/Jikan/TMDB/manual entry | Implemented |
 | Group-membership gate on DM setup | Implemented |
 | Pixelation stages (5 stages, scaling wrong-guess allowance, → reveal) | Implemented |
 | Guess matching (`/guess`, local fuzzy match) | Implemented |
@@ -34,13 +34,17 @@ diagram in full prose.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> SETUP: eligible player DMs a screenshot\n(open turn, /skip'd to them, or after winning)\ngroup notified, 1h setup-abandon timer starts
+    [*] --> SETUP: eligible player DMs a screenshot,\nor sends /newgame\n(open turn, /skip'd to them, or after winning)\ngroup notified, 1h setup-abandon timer starts
 
     state SETUP {
         [*] --> PickingMethod
-        PickingMethod --> Confirming: AniList/Shikimori result picked,\nor manual title + synonym staged
-        Confirming --> PickingMethod: tap "Re-search title"
-        Confirming --> AwaitingPhotoChange: tap "Change image"
+        PickingMethod --> Confirming: AniList/Shikimori/Jikan/TMDB result picked,\nor manual title + synonym staged\n— screenshot already in hand (DM-photo entry)
+        PickingMethod --> PickingScreenshot: same, but no screenshot yet\n(/newgame entry)
+        PickingScreenshot --> Confirming: screenshot picked\n(same- or cross-provider, see\n"Picking a screenshot")
+        PickingScreenshot --> AwaitingPhotoChange: tap "Upload my own instead"
+        Confirming --> PickingMethod: tap "Re-search title"\n(API-sourced screenshot cleared;\na genuine upload is kept)
+        Confirming --> AwaitingPhotoChange: tap "Change image"\n(genuine upload,\nor "Upload a new photo" chosen)
+        Confirming --> PickingScreenshot: tap "Change image" ->\n"Pick a different screenshot"\n(API-sourced screenshot only)
         AwaitingPhotoChange --> Confirming: new photo sent
         Confirming --> AwaitingSynonym: tap "Add a synonym"
         AwaitingSynonym --> Confirming: synonym typed
@@ -73,7 +77,7 @@ stateDiagram-v2
 `[*]` here means "no `Game` row exists" — every arrow into it either
 deletes the row (`/stop`, setup-abandon) or the row reaches a terminal
 `status` (`WON`/`UNSOLVED`) and simply stops being the "current" game.
-`SETUP`'s four inner states are `Game.setup_step`; `ACTIVE`'s five inner
+`SETUP`'s five inner states are `Game.setup_step`; `ACTIVE`'s five inner
 states are `Game.current_stage` (`PixelStage`).
 
 ## Starting a game
@@ -87,70 +91,145 @@ configured group — the DM entry point is reachable by anyone who finds the
 bot, unlike the topic-scoped group commands, which Telegram itself already
 restricts to members.
 
-1. The eligible player DMs the bot a screenshot (a photo). The bot posts
-   a notice to the group topic — "so-and-so is preparing a new game" —
-   so nobody else tries to DM a photo at the same moment, and starts a
-   **1-hour setup-abandon timer** (`Game.setup_deadline`). If the player
-   never reaches the preview's "Confirm and start" button within that
-   hour, the bot deletes the orphaned `SETUP` row, opens the turn to
-   anyone, and posts that to the group — the same class of "stuck DM
-   flow" bug issue #11 fixed reactively can no longer linger
-   indefinitely. The timer is canceled the moment they confirm.
-2. The bot asks them to pick an identification method: **AniList**,
-   **Shikimori** (the Russian-community anime database, with better
-   Russian titles/synonyms), or **manual entry**. If the bot's language
-   is currently Russian, Shikimori is listed first with a one-line note
-   explaining why. The choice is stored on the game's still-`SETUP` row
-   (`Game.source`), not in memory, so it survives a restart before the
-   player finishes typing.
-3. **AniList/Shikimori**: the bot asks for a search query (the anime's
-   name, in whatever form the player remembers it) and searches whichever
-   service was picked, showing up to 5 results as an inline keyboard
-   (title + year for AniList, the Russian title for Shikimori); a "none
-   of these" option lets them retry the search with different text. The
-   player taps the correct result, and the bot re-fetches the full record
-   from that service (title romaji/English/native for AniList, plus a
-   Russian title for Shikimori) and its synonyms list.
-   **Manual entry**: for anime neither service knows about. The bot asks
-   for the title, then for at least one alternate title/synonym
-   (comma- or newline-separated, re-prompted if left blank) — both typed
-   by the player, no external lookup.
-4. Either way, once a title/synonyms are staged, the bot sends the player
-   a **private preview** — the screenshot pixelated at all 5 configured
-   stages (blockiest to clearest, see "Pixelation stages" below), sent
-   as one Telegram album with the staged title and every other accepted
-   answer (every stored title variant — romaji/English/native/Russian,
-   not just the manually-typed synonyms — since all of them are already
-   valid `/guess` matches) as the caption on the first photo — instead
-   of posting straight to the group, so the starter sees exactly how
-   the round will progress, and exactly what will count as correct,
-   before committing to it. Telegram's `sendMediaGroup` has no
-   `reply_markup` support, so the four buttons below arrive on a short
-   separate text message right after the album, not on the album
-   itself. Those four buttons let them fix anything before it goes
-   live:
-   - **Change image** — send a new screenshot; keeps the title/synonyms.
-   - **Re-search title** — back to the method-selection keyboard; keeps
-     the screenshot, replaces the title/synonyms/source once a new one
-     is staged.
-   - **Add a synonym** — type one more (or several); appended to the
-     list, repeatable.
-   - **Confirm and start game** — pixelates the (possibly updated)
-     screenshot at **stage 1** and posts it into the group's game topic
-     with a caption naming the starter and reminding everyone how to
-     guess (`/guess <title>` in that topic). The game is now `ACTIVE`.
-   Exactly where the starter is in this multi-step flow
-   (`Game.setup_step`) is stored on the row, not in memory, so a restart
-   mid-edit — say, between tapping "Add a synonym" and typing it —
-   resolves correctly from the DB rather than losing track.
+There are two entry points, both subject to the same eligibility check
+above and both creating the same `SETUP` row:
 
-If the chosen service is unreachable (search or re-fetch fails), the bot
-tells the player and hands back the method-selection choice so they can
-try again or switch services — the game stays `SETUP`, never stuck.
+- **DM a screenshot** (a photo) — the traditional, photo-first entry.
+  The screenshot's bytes are in hand immediately (`Game.original_image`).
+- **`/newgame`** — for a starter who'd rather not hunt down their own
+  screenshot (lazy, or on mobile): identifies the anime by title first,
+  then picks a real screenshot for it (see "Picking a screenshot"
+  below). `Game.original_image` starts empty and is filled in once a
+  screenshot is chosen — everything past that point (the confirmation
+  preview, posting to the group) is identical either way.
 
-If someone who isn't the designated starter (and it isn't open) DMs a
-photo, the bot replies that it isn't their turn and doesn't create a game.
-Same for someone who isn't currently a group member.
+Either way, the bot posts a notice to the group topic — "so-and-so is
+preparing a new game" — so nobody else tries to start one at the same
+moment, and starts a **1-hour setup-abandon timer** (`Game.setup_deadline`).
+If the player never reaches the preview's "Confirm and start" button
+within that hour, the bot deletes the orphaned `SETUP` row, opens the turn
+to anyone, and posts that to the group — the same class of "stuck DM
+flow" bug issue #11 fixed reactively can no longer linger indefinitely.
+The timer is canceled the moment they confirm.
+
+### Identifying the anime
+
+The bot asks the starter to pick an identification method: **AniList**,
+**Shikimori** (the Russian-community anime database, with better Russian
+titles/synonyms), **Jikan** (a third-party MyAnimeList API), **TMDB**
+(The Movie Database — English-only, no romaji/native/Russian titles), or
+**manual entry**. If the bot's language is currently Russian, Shikimori is
+listed first with a one-line note explaining why. The choice is stored on
+the game's still-`SETUP` row (`Game.source`), not in memory, so it
+survives a restart before the player finishes typing.
+
+**AniList/Shikimori/Jikan/TMDB**: the bot asks for a search query (the
+anime's name, in whatever form the player remembers it) and searches
+whichever service was picked, showing up to 5 results as an inline
+keyboard (title + year for AniList, each service's own best title
+otherwise); a "none of these" option lets them retry the search with
+different text. The player taps the correct result, and the bot
+re-fetches the full record from that service (whichever title fields it
+has, plus its synonyms list where available) and records that service's
+own id (one column per provider — `Game.anilist_id`/`shikimori_id`/
+`jikan_id`/`tmdb_id` — so a later screenshot cross-search can reuse an id
+already on file instead of re-searching, see below).
+**Manual entry**: for anime none of the above knows about. The bot asks
+for the title, then for at least one alternate title/synonym (comma- or
+newline-separated, re-prompted if left blank) — both typed by the
+player, no external lookup.
+
+External search/detail lookups are cached in memory for a short time
+(per process, not persisted across a restart) so repeated taps and a
+follow-up screenshot cross-search don't needlessly re-hit the same API
+and risk a 429.
+
+### Picking a screenshot (the `/newgame` path only)
+
+Once identification is staged, if `Game.original_image` is still empty
+(the `/newgame` path), the bot walks the starter through picking a real
+screenshot instead of asking for an upload outright:
+
+1. **Source selection** — every screenshot-capable provider (Shikimori,
+   Jikan, TMDB — AniList has no such capability) is offered, with
+   whichever one did the identification listed first (no extra search
+   needed for that one). An **"Upload my own instead"** button is always
+   present too, falling back to the traditional upload step.
+2. **Same-provider pick**: tapping the provider that already has an id
+   on file (from identification, or a previous cross-search) fetches
+   its screenshots directly.
+   **Cross-provider resolution**: tapping any other provider silently
+   searches it by the already-confirmed title and takes the **top
+   result** — no extra confirmation tap — recording that provider's own
+   id on the game (`Game.screenshot_source` also starts tracking which
+   provider is in play at this point) without touching the
+   identification fields a real re-search would. If that search finds
+   nothing, the bot asks the starter to type a query for it themselves
+   instead.
+3. **The gallery** — up to 5 numbered screenshots at a time (sent as one
+   album; Telegram fetches them directly from the provider's URL, no
+   download until one's actually picked), followed by a buttons message:
+   numbered picks, **"More screenshots"** (next batch, same provider),
+   **"Wrong anime? Search again"** (shown once a cross-provider
+   resolution is in play — re-opens that same search-and-pick step for
+   a correction), and **"Upload my own instead"**.
+4. Picking a numbered screenshot downloads its bytes, stores them on
+   `Game.original_image` (`Game.screenshot_source` records which
+   provider it came from), and lands on the same confirmation preview
+   described below — same as if the starter had uploaded it themselves.
+
+### The confirmation preview
+
+Once a title/synonyms are staged **and** an image exists (uploaded, or
+picked per above), the bot sends the player a **private preview** — the
+screenshot pixelated at all 5 configured stages (blockiest to clearest,
+see "Pixelation stages" below), sent as one Telegram album with the
+staged title and every other accepted answer (every stored title
+variant — romaji/English/native/Russian, not just the manually-typed
+synonyms — since all of them are already valid `/guess` matches) as the
+caption on the first photo — instead of posting straight to the group,
+so the starter sees exactly how the round will progress, and exactly
+what will count as correct, before committing to it. Telegram's
+`sendMediaGroup` has no `reply_markup` support, so the four buttons
+below arrive on a short separate text message right after the album,
+not on the album itself. Those four buttons let them fix anything
+before it goes live:
+
+- **Change image** — a genuine upload goes straight to asking for a new
+  screenshot, keeping the title/synonyms. An API-picked screenshot
+  instead offers a choice: **upload a new photo** (same as above), or
+  **pick a different screenshot** (re-opens that same provider's own
+  gallery from its already-resolved id — "Wrong anime? Search again" is
+  always offered from there too, as an escape hatch to a different
+  provider entirely).
+- **Re-search title** — back to the method-selection keyboard. A
+  genuine upload keeps its screenshot regardless. An API-picked
+  screenshot is cleared instead, along with the provider id that
+  resolved it, since a re-search might land on a completely different
+  anime — the starter goes through "Picking a screenshot" again once
+  the new title is staged.
+- **Add a synonym** — type one more (or several); appended to the
+  list, repeatable.
+- **Confirm and start game** — pixelates the (possibly updated)
+  screenshot at **stage 1** and posts it into the group's game topic
+  with a caption naming the starter and reminding everyone how to
+  guess (`/guess <title>` in that topic). The game is now `ACTIVE`.
+
+Exactly where the starter is in this multi-step flow (`Game.setup_step`)
+is stored on the row, not in memory, so a restart mid-edit — say,
+between tapping "Add a synonym" and typing it — resolves correctly from
+the DB rather than losing track.
+
+If the chosen service is unreachable (a search, a re-fetch, or a
+screenshot fetch fails), the bot tells the player and hands back to a
+safe point — the method-selection keyboard for an identification
+failure, a manual-query prompt for a failed screenshot cross-search —
+so they can try again or switch services. The game stays `SETUP`, never
+stuck.
+
+If someone who isn't the designated starter (and it isn't open) tries
+either entry point, the bot replies that it isn't their turn and doesn't
+create a game. Same for someone who isn't currently a group member.
 
 ## Guess matching
 
@@ -185,8 +264,8 @@ own game at all — they already know the answer.
 
 Because everything the matcher needs is cached at setup time, the same
 guess always produces the same verdict for the life of a game — matching
-never depends on AniList/Shikimori being reachable, rate limits, or
-anything else external, at guess time.
+never depends on AniList/Shikimori/Jikan/TMDB being reachable, rate
+limits, or anything else external, at guess time.
 
 ## Pixelation stages
 
@@ -288,9 +367,9 @@ On a win, the bot:
    and schedules that winner's 15-minute reminder / 12-hour expiry (see
    "Turn handoff" below).
 5. **Cleanup**: once that reveal message is confirmed sent, clears
-   `Game.original_file_id` — nothing after this point ever needs to
-   re-fetch or re-pixelate the screenshot, so the stored Telegram file
-   reference is dropped rather than kept around indefinitely.
+   `Game.original_image` — nothing after this point ever needs to
+   re-pixelate the screenshot, so the stored bytes are dropped rather
+   than kept around indefinitely.
 
 ## Ending unsolved
 
@@ -305,7 +384,7 @@ A game ends unsolved one of two ways, handled identically:
 - **Timeout**: see below.
 
 Either way, the bot reveals the original screenshot with the anime's
-title, sets `status → UNSOLVED`, and performs the same `original_file_id`
+title, sets `status → UNSOLVED`, and performs the same `original_image`
 cleanup described in "Winning" above. `turn_state.next_starter_id` is left
 untouched — an unsolved game doesn't hand anyone a forced turn. If it was
 already `null` (open to anyone), it stays that way; if someone was
@@ -416,8 +495,9 @@ two absolute-deadline `TurnState` timers are (re)scheduled:
   turn to anyone (same as a bare `/skip`) and posts that to the group.
 
 Both are canceled — without touching `next_starter_id` itself — the
-moment the designated player actually DMs a photo to start their game;
-they're clearly not going to miss a turn they've already begun.
+moment the designated player actually starts their game (a DM photo, or
+`/newgame`); they're clearly not going to miss a turn they've already
+begun.
 
 ## Leaderboard
 

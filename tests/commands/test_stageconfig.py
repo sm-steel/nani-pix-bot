@@ -56,7 +56,7 @@ def _active_game(session_factory, *, starter_id: int = 1) -> int:
         session.commit()
         game = Game(
             starter_id=starter_id,
-            original_file_id="file123",
+            original_image=b"file123",
             status=GameStatus.ACTIVE,
             current_stage=PixelStage.STAGE_1,
         )

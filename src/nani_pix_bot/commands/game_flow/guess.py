@@ -41,9 +41,13 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         game = await _validate_guess(session, message, user, lang)
         if game is None:
             return
-        # _validate_guess already checked both are set — restores the type
+        # _validate_guess already checked this is set — restores the type
         # narrowing lost by returning `game` across a function boundary.
-        assert game.original_file_id is not None
+        # original_image is deliberately NOT checked/asserted here: it's a
+        # deferred column (see models/game.py), and a WRONG guess — by far
+        # the most common outcome — never reads it. Asserting it up front
+        # would force-load the blob on every single /guess. Each branch
+        # below that actually needs the bytes asserts it locally instead.
         assert game.current_stage is not None
 
         players.get_or_create_player(session, user.id, username=user.username)
@@ -53,6 +57,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
 
         if outcome is game_service.GuessOutcome.WON:
+            assert game.original_image is not None
             timeout_module.cancel_timeout(context.job_queue, game.id)
             timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
             turn_state = game_service.get_turn_state(session)
@@ -61,7 +66,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await timeout_module.post_current_image(
                 context,
                 session,
-                photo=game.original_file_id,
+                photo=game.original_image,
                 caption=i18n.t(
                     "guess.won_caption",
                     lang,
@@ -84,8 +89,8 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 )
             )
         elif outcome is game_service.GuessOutcome.STAGE_ADVANCED:
-            telegram_file = await context.bot.get_file(game.original_file_id)
-            original_bytes = bytes(await telegram_file.download_as_bytearray())
+            assert game.original_image is not None
+            original_bytes = game.original_image
             target_width = stage_config.get_stage_config(session)[game.current_stage].target_width
             pixelated = pixelate_service.pixelate(original_bytes, target_width)
             stage, total_stages, remaining = game_service.stage_progress(session, game)
@@ -105,11 +110,12 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 ),
             )
         elif outcome is game_service.GuessOutcome.UNSOLVED:
+            assert game.original_image is not None
             timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
             await timeout_module.post_current_image(
                 context,
                 session,
-                photo=game.original_file_id,
+                photo=game.original_image,
                 caption=i18n.t(
                     "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
                 ),
@@ -118,17 +124,23 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def _validate_guess(session, message, user, lang: str) -> Game | None:
-    """The game must be ACTIVE (with both original_file_id and
-    current_stage set, which an ACTIVE game always has), and the
-    starter may not guess on their own round. Replies and returns None
-    on the first failure."""
+    """The game must be ACTIVE (with current_stage set, which an ACTIVE
+    game always has), and the starter may not guess on their own round.
+    Replies and returns None on the first failure.
+
+    Deliberately does NOT check original_image here — it's a deferred
+    column (see models/game.py), and current_stage being set is already
+    the same "this is a properly-activated ACTIVE game" invariant
+    without touching it. Loading original_image on every /guess (most of
+    which are a WRONG outcome that never reads it) would defeat the
+    point of deferring it in the first place."""
     game = game_service.active_or_setup_game(session)
     if game is None or game.status != GameStatus.ACTIVE:
         logger.warning("{} guessed with no ACTIVE game running", user.id)
         await message.reply_text(i18n.t("guess.no_game", lang))
         return None
-    if game.original_file_id is None or game.current_stage is None:
-        # Shouldn't happen — an ACTIVE game always has both set. Defensive guard.
+    if game.current_stage is None:
+        # Shouldn't happen — an ACTIVE game always has this set. Defensive guard.
         return None
     if user.id == game.starter_id:
         logger.warning("Starter {} tried to guess on their own game {}", user.id, game.id)

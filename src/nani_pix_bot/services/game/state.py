@@ -15,7 +15,9 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import matching, players
 from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tmdb import TMDBResult
 from nani_pix_bot.services.settings import stage_config
 
 # Blockiest to clearest — see MECHANICS.md's "Pixelation stages" table.
@@ -162,10 +164,16 @@ def can_start(session: Session, user_id: int) -> bool:
     return turn_state is None or turn_state.next_starter_id in (None, user_id)
 
 
-def create_setup_game(session: Session, *, starter_id: int, original_file_id: str) -> Game:
+def create_setup_game(
+    session: Session, *, starter_id: int, original_image: bytes | None = None
+) -> Game:
+    """`original_image` is optional — the traditional photo-first entry
+    point always has bytes in hand immediately; the screenshot-less
+    /newgame entry point creates the row before any image exists yet
+    (it's filled in once a screenshot is picked, later in the flow)."""
     game = Game(
         starter_id=starter_id,
-        original_file_id=original_file_id,
+        original_image=original_image,
         status=GameStatus.SETUP,
         setup_deadline=datetime.now(UTC) + SETUP_ABANDON_DELAY,
     )
@@ -175,12 +183,18 @@ def create_setup_game(session: Session, *, starter_id: int, original_file_id: st
     return game
 
 
-def stage_result(game: Game, result: AniListResult | ShikimoriResult, *, source: str) -> None:
+def stage_result(
+    game: Game,
+    result: AniListResult | ShikimoriResult | JikanResult | TMDBResult,
+    *,
+    source: str,
+) -> None:
     """Assign a picked search result's title/synonyms onto a still-SETUP
     game — doesn't post anything or change status. This is the shared
     landing spot for every identification method (AniList, Shikimori,
-    and eventually manual entry); the confirmation-screen ticket (#19)
-    is what will show a preview between this and activate_game()."""
+    Jikan, TMDB, and eventually manual entry); the confirmation-screen
+    ticket (#19) is what will show a preview between this and
+    activate_game()."""
     game.title_romaji = result.title_romaji
     game.title_english = result.title_english
     game.synonyms = result.synonyms
@@ -189,7 +203,32 @@ def stage_result(game: Game, result: AniListResult | ShikimoriResult, *, source:
         game.anilist_id = result.anilist_id
         game.title_native = result.title_native
     elif isinstance(result, ShikimoriResult):
+        game.shikimori_id = result.shikimori_id
         game.title_russian = result.title_russian
+    elif isinstance(result, JikanResult):
+        game.jikan_id = result.jikan_id
+        game.title_native = result.title_native
+    elif isinstance(result, TMDBResult):
+        game.tmdb_id = result.tmdb_id
+        game.title_native = result.title_native
+
+
+def set_screenshot_provider_id(
+    game: Game, result: ShikimoriResult | JikanResult | TMDBResult
+) -> None:
+    """Cross-provider screenshot resolution's equivalent of stage_result()
+    (see commands/dm_start/screenshots.py's and screenshot_gallery.py's
+    ticket 8): records a screenshot provider's id on the game without
+    touching the identification fields (title/synonyms/source)
+    stage_result() sets — resolving a screenshot from a different
+    provider than the one that identified this anime shouldn't
+    overwrite that identification."""
+    if isinstance(result, ShikimoriResult):
+        game.shikimori_id = result.shikimori_id
+    elif isinstance(result, JikanResult):
+        game.jikan_id = result.jikan_id
+    elif isinstance(result, TMDBResult):
+        game.tmdb_id = result.tmdb_id
 
 
 def stage_manual_entry(game: Game, *, title: str, synonyms: list[str]) -> None:
@@ -331,6 +370,6 @@ def force_unsolved(game: Game) -> None:
 
 
 def clear_original_screenshot(game: Game) -> None:
-    """Drop the stored Telegram file reference once a reveal message is
-    confirmed sent — see MECHANICS.md's "Cleanup" note."""
-    game.original_file_id = None
+    """Drop the stored image bytes once a reveal message is confirmed
+    sent — see MECHANICS.md's "Cleanup" note."""
+    game.original_image = None

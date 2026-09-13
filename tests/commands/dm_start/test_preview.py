@@ -6,11 +6,13 @@ from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import preview, search
+from nani_pix_bot.commands.dm_start import preview, screenshots, search
 from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
+    PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA,
+    PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
     PREVIEW_RESEARCH_CALLBACK_DATA,
 )
@@ -83,16 +85,18 @@ def _make_preview_callback_update(
     return update
 
 
-def _staged_setup_game(session_factory, *, starter_id: int = 1) -> None:
+def _staged_setup_game(session_factory, *, starter_id: int = 1, **overrides) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=starter_id))
         session.commit()
         game = game_service.create_setup_game(
-            session, starter_id=starter_id, original_file_id="file123"
+            session, starter_id=starter_id, original_image=b"file123"
         )
         game.source = "anilist"
         game_service.stage_result(game, _FRIEREN, source="anilist")
         game.setup_step = SetupStep.CONFIRMING
+        for key, value in overrides.items():
+            setattr(game, key, value)
         session.commit()
 
 
@@ -131,7 +135,12 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
     update.callback_query.edit_message_text.assert_awaited_once()
 
 
-async def test_preview_change_image_awaits_a_new_photo(session_factory) -> None:
+async def test_preview_change_image_awaits_a_new_photo_for_a_genuine_upload(
+    session_factory,
+) -> None:
+    """screenshot_source is unset — a genuine upload — so "Change image"
+    behaves exactly as before ticket 9: straight to asking for a photo,
+    no branching keyboard."""
     _staged_setup_game(session_factory)
     update = _make_preview_callback_update(data=PREVIEW_CHANGE_IMAGE_CALLBACK_DATA, user_id=1)
     context = _make_context(session_factory)
@@ -145,6 +154,72 @@ async def test_preview_change_image_awaits_a_new_photo(session_factory) -> None:
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.setup_step == SetupStep.AWAITING_PHOTO_CHANGE
         assert fetched.status == GameStatus.SETUP
+
+
+async def test_preview_change_image_offers_a_choice_for_an_api_sourced_screenshot(
+    session_factory,
+) -> None:
+    _staged_setup_game(session_factory, screenshot_source="shikimori", shikimori_id=52991)
+    update = _make_preview_callback_update(data=PREVIEW_CHANGE_IMAGE_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = update.callback_query.edit_message_text.await_args
+    callbacks = [
+        button.callback_data for row in kwargs["reply_markup"].inline_keyboard for button in row
+    ]
+    assert PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA in callbacks
+    assert PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA in callbacks
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.CONFIRMING  # unchanged — still deciding
+
+
+async def test_preview_change_image_upload_awaits_a_new_photo(session_factory) -> None:
+    _staged_setup_game(session_factory, screenshot_source="shikimori", shikimori_id=52991)
+    update = _make_preview_callback_update(
+        data=PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA, user_id=1
+    )
+    context = _make_context(session_factory)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.edit_message_text.assert_awaited_once()
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.AWAITING_PHOTO_CHANGE
+
+
+async def test_preview_change_image_pick_screenshot_resumes_the_gallery(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    urls = ["https://shikimori.io/x/0.jpg"]
+    monkeypatch.setattr(screenshots.shikimori, "screenshots", AsyncMock(return_value=urls))
+    _staged_setup_game(session_factory, screenshot_source="shikimori", shikimori_id=52991)
+    update = _make_preview_callback_update(
+        data=PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA, user_id=1
+    )
+    context = _make_context(session_factory, search_client=MagicMock())
+    context.bot.send_media_group = AsyncMock()
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_media_group.assert_awaited_once()
+    _, kwargs = context.bot.send_message.await_args
+    callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert "screenshot_pick:shikimori:0" in callbacks
+    assert any(c.startswith("screenshot_search_again:") for c in callbacks)
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+    update.callback_query.edit_message_text.assert_awaited_once()
 
 
 async def test_preview_research_returns_to_the_method_keyboard(session_factory) -> None:
@@ -164,6 +239,24 @@ async def test_preview_research_returns_to_the_method_keyboard(session_factory) 
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.setup_step == SetupStep.PICKING_METHOD
+        assert fetched.original_image == b"file123"  # a genuine upload is preserved
+
+
+async def test_preview_research_clears_an_api_sourced_screenshot(session_factory) -> None:
+    _staged_setup_game(session_factory, screenshot_source="shikimori", shikimori_id=52991)
+    update = _make_preview_callback_update(data=PREVIEW_RESEARCH_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.PICKING_METHOD
+        assert fetched.original_image is None
+        assert fetched.screenshot_source is None
+        assert fetched.shikimori_id is None
 
 
 async def test_preview_add_synonym_awaits_a_synonym_message(session_factory) -> None:

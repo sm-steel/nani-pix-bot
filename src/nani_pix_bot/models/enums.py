@@ -37,6 +37,14 @@ class SetupStep(enum.Enum):
     # the finer-grained state within this step is read off Game.source
     # and title_english, not a separate enum value.
     PICKING_METHOD = "picking_method"  # method choice, search, or manual title/synonym entry
+    # Entered once identification is staged but there's still no image
+    # (the screenshot-less /newgame path) — covers both the
+    # screenshot-source-selection buttons and browsing the resulting
+    # gallery ("More screenshots" included). Exited either by picking a
+    # screenshot (-> CONFIRMING) or tapping "Upload my own instead"
+    # (-> AWAITING_PHOTO_CHANGE, same as the traditional flow's own
+    # "Change image" button).
+    PICKING_SCREENSHOT = "picking_screenshot"
     AWAITING_PHOTO_CHANGE = "awaiting_photo_change"  # preview's "Change image" tapped
     AWAITING_SYNONYM = "awaiting_synonym"  # preview's "Add a synonym" tapped
     CONFIRMING = "confirming"  # showing the preview, waiting for a button tap

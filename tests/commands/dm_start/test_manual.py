@@ -53,14 +53,12 @@ def _make_text_update(
 
 
 def _create_setup_game(
-    session_factory, *, starter_id: int = 1, file_id: str = "file123", source: str = "anilist"
+    session_factory, *, starter_id: int = 1, image: bytes = b"file123", source: str = "anilist"
 ) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=starter_id))
         session.commit()
-        game = game_service.create_setup_game(
-            session, starter_id=starter_id, original_file_id=file_id
-        )
+        game = game_service.create_setup_game(session, starter_id=starter_id, original_image=image)
         game.source = source
         session.commit()
 

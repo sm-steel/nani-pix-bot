@@ -29,7 +29,10 @@ from nani_pix_bot.commands import (
     stageconfig,
     testpixels,  # TEMPORARY — see commands/testpixels.py
 )
-from nani_pix_bot.commands.dm_start.keyboards import RETRY_CALLBACK_DATA
+from nani_pix_bot.commands.dm_start.keyboards import (
+    RETRY_CALLBACK_DATA,
+    SCREENSHOT_UPLOAD_CALLBACK_DATA,
+)
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
 from nani_pix_bot.config import Config, load_config
@@ -59,16 +62,32 @@ def build_application(config: Config) -> Application:
 
     engine = db.get_engine(config.database_url)
     application.bot_data["session_factory"] = db.make_session_factory(engine)
-    # Shared by both anilist.py and shikimori.py — a plain HTTP client,
+    # Shared by anilist.py/shikimori.py/jikan.py — a plain HTTP client,
     # nothing service-specific about it (each module sends its own
-    # headers per request).
+    # headers per request). All three are reachable direct from moscow,
+    # no proxy needed.
     application.bot_data["search_client"] = httpx.AsyncClient(timeout=30)
+    # tmdb.py needs its own client: TMDB is DNS-blocked directly from
+    # moscow (reachable via the same amsterdam proxy Telegram already
+    # uses — see ARCHITECTURE.md's connectivity section) and needs a
+    # Bearer-token Authorization header on every request, set here as a
+    # client default so tmdb.py itself never has to touch the secret.
+    application.bot_data["tmdb_client"] = httpx.AsyncClient(
+        timeout=30,
+        proxy=config.telegram_proxy_url,
+        headers=(
+            {"Authorization": f"Bearer {config.tmdb_read_access_token}"}
+            if config.tmdb_read_access_token
+            else {}
+        ),
+    )
     application.bot_data["group_chat_id"] = config.group_chat_id
     application.bot_data["game_topic_id"] = config.game_topic_id
 
     application.add_handler(
         MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, dm_start.photo_handler)
     )
+    application.add_handler(CommandHandler("newgame", dm_start.newgame_command))
     application.add_handler(
         MessageHandler(
             filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND,
@@ -78,11 +97,43 @@ def build_application(config: Config) -> Application:
     application.add_handler(
         CallbackQueryHandler(
             dm_start.pick_callback_handler,
-            pattern=rf"^({re.escape(RETRY_CALLBACK_DATA)}|anilist_pick:|shikimori_pick:)",
+            pattern=(
+                rf"^({re.escape(RETRY_CALLBACK_DATA)}|"
+                r"anilist_pick:|shikimori_pick:|jikan_pick:|tmdb_pick:)"
+            ),
         )
     )
     application.add_handler(
         CallbackQueryHandler(dm_start.method_pick_callback_handler, pattern=r"^method:")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            dm_start.screenshot_upload_instead_callback_handler,
+            pattern=rf"^{re.escape(SCREENSHOT_UPLOAD_CALLBACK_DATA)}$",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            dm_start.screenshot_source_callback_handler, pattern=r"^screenshot_source:"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            dm_start.screenshot_gallery_callback_handler,
+            pattern=r"^(screenshot_pick:|screenshot_more:)",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            dm_start.screenshot_search_again_callback_handler,
+            pattern=r"^screenshot_search_again:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            dm_start.screenshot_search_pick_callback_handler,
+            pattern=r"^screenshot_search_pick:",
+        )
     )
     application.add_handler(
         CallbackQueryHandler(dm_start.preview_callback_handler, pattern=r"^preview:")
