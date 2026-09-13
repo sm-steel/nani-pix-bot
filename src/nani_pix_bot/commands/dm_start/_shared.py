@@ -4,13 +4,18 @@ import re
 
 import httpx
 from loguru import logger
+from telegram import InputMediaPhoto
 
-from nani_pix_bot.commands.dm_start.keyboards import method_selection_keyboard
+from nani_pix_bot.commands.dm_start.keyboards import method_selection_keyboard, preview_keyboard
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
+from nani_pix_bot.models.enums import SetupStep
+from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.settings import stage_config
 
 # Raised by anilist.py/shikimori.py on network failure or exhausted
 # rate-limit retries — see their _request() helpers.
@@ -26,6 +31,18 @@ _SERVICE_DISPLAY_NAMES = {
 # Used by both manual.py's second-message step and preview.py's
 # "add a synonym" step.
 _SYNONYM_SPLIT_RE = re.compile(r"[,\n]")
+
+# TMDB is the only provider needing its own client (DNS-blocked direct
+# from moscow, needs a proxy + Bearer-token auth — see app.py's
+# build_application()); every other provider shares "search_client".
+# Used by both search.py's search/pick flow and screenshots.py's
+# gallery flow.
+_TMDB_CLIENT_BOT_DATA_KEY = "tmdb_client"
+
+
+def _client_for_source(context, source: str):
+    key = _TMDB_CLIENT_BOT_DATA_KEY if source == "tmdb" else "search_client"
+    return context.bot_data[key]
 
 
 def _prefer_shikimori(lang: str) -> bool:
@@ -98,4 +115,54 @@ async def _start_new_game(
     await message.reply_text(
         i18n.t(_method_prompt_key(prefer_shikimori=prefer_shikimori), lang),
         reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
+    )
+
+
+async def _show_preview(context, session, game: Game, lang: str) -> None:
+    """Send the starter a private preview of every pixelation stage for
+    the staged title/synonyms — one Telegram album (blockiest to
+    clearest, see MECHANICS.md) — so they see how the round will
+    actually look before committing to it. `sendMediaGroup` has no
+    `reply_markup` support, so the confirm/change-image/research/add-
+    synonym buttons go on a short separate follow-up text message right
+    after the album, not on the album itself. Nothing is posted to the
+    group until "Confirm and start" is tapped. Always the game's own
+    starter's DM — every caller looked this game up by starter_id in the
+    first place, so game.starter_id is the right chat_id.
+
+    Shared by every path that ends in "an image now exists for this
+    game" — the traditional upload flow (intake.py, manual.py,
+    preview.py's own add-synonym step), and the screenshot-picker flow
+    (screenshots.py), hence living here rather than in preview.py."""
+    assert game.original_image is not None
+    original_bytes = game.original_image
+    config = stage_config.get_stage_config(session)
+    title = game_service.display_title(game, lang)
+    # Every stored title variant is already an accepted /guess — not just
+    # the manually-typed synonyms — so show all of them here too, minus
+    # whatever's already shown as the Title above. match_candidates() is
+    # the same list record_guess() actually matches against, so this can
+    # never drift from what's really accepted (see issue #50).
+    other_answers = [
+        candidate
+        for candidate in dict.fromkeys(game_service.match_candidates(game))
+        if candidate != title
+    ]
+    answers = ", ".join(other_answers) or "—"
+    caption = i18n.t("dm_start.preview_caption", lang, title=title, answers=answers)
+    captions = [caption, *([None] * (len(game_service.STAGE_ORDER) - 1))]
+    media = [
+        InputMediaPhoto(
+            media=pixelate_service.pixelate(original_bytes, config[stage].target_width),
+            caption=stage_caption,
+        )
+        for stage, stage_caption in zip(game_service.STAGE_ORDER, captions, strict=True)
+    ]
+    game.setup_step = SetupStep.CONFIRMING
+    logger.debug("Game {}: showing {}-stage confirmation preview album", game.id, len(media))
+    await context.bot.send_media_group(chat_id=game.starter_id, media=media)
+    await context.bot.send_message(
+        chat_id=game.starter_id,
+        text=i18n.t("dm_start.preview_confirm_prompt", lang),
+        reply_markup=preview_keyboard(lang),
     )

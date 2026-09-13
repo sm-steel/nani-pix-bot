@@ -8,7 +8,12 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start._shared import _SEARCH_SERVICE_ERRORS, _reply_service_down
+from nani_pix_bot.commands.dm_start._shared import (
+    _SEARCH_SERVICE_ERRORS,
+    _client_for_source,
+    _reply_service_down,
+    _show_preview,
+)
 from nani_pix_bot.commands.dm_start.keyboards import (
     RETRY_CALLBACK_DATA,
     anilist_results_keyboard,
@@ -19,7 +24,8 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     tmdb_results_keyboard,
 )
 from nani_pix_bot.commands.dm_start.manual import _manual_synonyms_step, _manual_title_step
-from nani_pix_bot.commands.dm_start.preview import _add_synonym_step, _show_preview
+from nani_pix_bot.commands.dm_start.preview import _add_synonym_step
+from nani_pix_bot.commands.dm_start.screenshots import start_screenshot_picker
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SetupStep
@@ -30,16 +36,6 @@ from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
-
-# TMDB is the only provider needing its own client (DNS-blocked direct
-# from moscow, needs a proxy + Bearer-token auth — see app.py's
-# build_application()); every other provider shares "search_client".
-_TMDB_CLIENT_BOT_DATA_KEY = "tmdb_client"
-
-
-def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: str):
-    key = _TMDB_CLIENT_BOT_DATA_KEY if source == "tmdb" else "search_client"
-    return context.bot_data[key]
 
 
 async def method_pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -165,13 +161,20 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
-        if setup_game is None or setup_game.original_image is None:
+        if setup_game is None:
             return
         game_service.stage_result(setup_game, result, source=source)
         logger.debug("Game {}: staged {} result {}", setup_game.id, source, external_id)
-        await _show_preview(context, session, setup_game, lang)
+        if setup_game.original_image is not None:
+            # Traditional photo-first entry — image already in hand.
+            await _show_preview(context, session, setup_game, lang)
+            message_key = "dm_start.preview_sent"
+        else:
+            # Screenshot-less /newgame entry — pick a screenshot next.
+            await start_screenshot_picker(context, setup_game, lang)
+            message_key = "dm_start.identification_staged"
 
-    await query.edit_message_text(i18n.t("dm_start.preview_sent", lang))
+    await query.edit_message_text(i18n.t(message_key, lang))
 
 
 async def _resolve_picked_result(

@@ -13,6 +13,8 @@ instead — it's shared across this package and `commands/stageconfig.py`,
 not specific to the setup flow.
 """
 
+from dataclasses import dataclass
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nani_pix_bot.services import game as game_service
@@ -230,3 +232,129 @@ def preview_keyboard(lang: str) -> InlineKeyboardMarkup:
         callback_data=PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     )
     return InlineKeyboardMarkup([[confirm], [change_image], [research], [add_synonym]])
+
+
+# --- Screenshot-source selection + gallery (the screenshot-less
+# /newgame flow's own sub-flow — see commands/dm_start/screenshots.py) ---
+
+SCREENSHOT_SOURCE_PREFIX = "screenshot_source:"
+SCREENSHOT_PICK_PREFIX = "screenshot_pick:"
+SCREENSHOT_MORE_PREFIX = "screenshot_more:"
+SCREENSHOT_SEARCH_AGAIN_PREFIX = "screenshot_search_again:"
+SCREENSHOT_UPLOAD_CALLBACK_DATA = "screenshot:upload"
+
+# Brand names, same untranslated-label convention as the method-picker
+# buttons above.
+_SCREENSHOT_PROVIDER_LABELS = {"shikimori": "Shikimori", "jikan": "Jikan", "tmdb": "TMDB"}
+
+
+def screenshot_source_keyboard(providers: list[str], lang: str) -> InlineKeyboardMarkup:
+    """One button per screenshot-capable provider in `providers`
+    (already ordered by the caller — same provider as identification
+    first), plus "Upload my own instead"."""
+    buttons = [
+        [
+            InlineKeyboardButton(
+                _SCREENSHOT_PROVIDER_LABELS[provider],
+                callback_data=f"{SCREENSHOT_SOURCE_PREFIX}{provider}",
+            )
+        ]
+        for provider in providers
+    ]
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                i18n.t("keyboards.upload_own_instead", lang),
+                callback_data=SCREENSHOT_UPLOAD_CALLBACK_DATA,
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(buttons)
+
+
+def parse_screenshot_source_callback_data(data: str) -> str | None:
+    if data.startswith(SCREENSHOT_SOURCE_PREFIX):
+        return data.removeprefix(SCREENSHOT_SOURCE_PREFIX)
+    return None
+
+
+@dataclass(frozen=True)
+class GalleryPage:
+    """What the gallery keyboard needs to render one page: which
+    provider/offset/count of screenshots are shown, whether there's
+    another page, and whether this gallery came from a cross-provider
+    resolution (see ticket 8) — bundled into one object so
+    `screenshot_gallery_keyboard` doesn't need a 6-argument signature
+    (a qlty "many parameters" smell)."""
+
+    provider: str
+    offset: int
+    count: int
+    has_more: bool
+    cross_provider: bool
+
+
+def screenshot_gallery_keyboard(page: GalleryPage, lang: str) -> InlineKeyboardMarkup:
+    """Numbered buttons for the `page.count` screenshots currently shown
+    (absolute indices `page.offset`..`page.offset + page.count - 1`),
+    plus "More screenshots" (only if `page.has_more`), "Wrong anime?
+    Search again" (only if `page.cross_provider` — this gallery came
+    from a cross-provider resolution, see ticket 8), and "Upload my own
+    instead"."""
+    number_row = [
+        InlineKeyboardButton(
+            str(i + 1),
+            callback_data=f"{SCREENSHOT_PICK_PREFIX}{page.provider}:{page.offset + i}",
+        )
+        for i in range(page.count)
+    ]
+    rows = [number_row]
+    if page.has_more:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    i18n.t("keyboards.more_screenshots", lang),
+                    callback_data=(
+                        f"{SCREENSHOT_MORE_PREFIX}{page.provider}:{page.offset + page.count}"
+                    ),
+                )
+            ]
+        )
+    if page.cross_provider:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    i18n.t("keyboards.wrong_anime_search_again", lang),
+                    callback_data=f"{SCREENSHOT_SEARCH_AGAIN_PREFIX}{page.provider}",
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                i18n.t("keyboards.upload_own_instead", lang),
+                callback_data=SCREENSHOT_UPLOAD_CALLBACK_DATA,
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def parse_screenshot_pick_callback_data(data: str) -> tuple[str, int] | None:
+    if not data.startswith(SCREENSHOT_PICK_PREFIX):
+        return None
+    provider, _, index = data.removeprefix(SCREENSHOT_PICK_PREFIX).partition(":")
+    return provider, int(index)
+
+
+def parse_screenshot_more_callback_data(data: str) -> tuple[str, int] | None:
+    if not data.startswith(SCREENSHOT_MORE_PREFIX):
+        return None
+    provider, _, offset = data.removeprefix(SCREENSHOT_MORE_PREFIX).partition(":")
+    return provider, int(offset)
+
+
+def parse_screenshot_search_again_callback_data(data: str) -> str | None:
+    if data.startswith(SCREENSHOT_SEARCH_AGAIN_PREFIX):
+        return data.removeprefix(SCREENSHOT_SEARCH_AGAIN_PREFIX)
+    return None

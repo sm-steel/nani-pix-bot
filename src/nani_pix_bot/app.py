@@ -29,7 +29,10 @@ from nani_pix_bot.commands import (
     stageconfig,
     testpixels,  # TEMPORARY — see commands/testpixels.py
 )
-from nani_pix_bot.commands.dm_start.keyboards import RETRY_CALLBACK_DATA
+from nani_pix_bot.commands.dm_start.keyboards import (
+    RETRY_CALLBACK_DATA,
+    SCREENSHOT_UPLOAD_CALLBACK_DATA,
+)
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
 from nani_pix_bot.config import Config, load_config
@@ -102,6 +105,23 @@ def build_application(config: Config) -> Application:
     )
     application.add_handler(
         CallbackQueryHandler(dm_start.method_pick_callback_handler, pattern=r"^method:")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            dm_start.screenshot_upload_instead_callback_handler,
+            pattern=rf"^{re.escape(SCREENSHOT_UPLOAD_CALLBACK_DATA)}$",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            dm_start.screenshot_source_callback_handler, pattern=r"^screenshot_source:"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            dm_start.screenshot_gallery_callback_handler,
+            pattern=r"^(screenshot_pick:|screenshot_more:)",
+        )
     )
     application.add_handler(
         CallbackQueryHandler(dm_start.preview_callback_handler, pattern=r"^preview:")

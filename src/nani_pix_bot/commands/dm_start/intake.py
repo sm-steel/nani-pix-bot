@@ -6,8 +6,7 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start._shared import _start_new_game
-from nani_pix_bot.commands.dm_start.preview import _show_preview
+from nani_pix_bot.commands.dm_start._shared import _show_preview, _start_new_game
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SetupStep
