@@ -253,6 +253,18 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
     return advance_stage(game)
 
 
+def reset_inactivity_clock(game: Game) -> None:
+    """(Re)starts the inactivity nudge/auto-advance clock from now — see
+    INACTIVITY_NUDGE_DELAY/INACTIVITY_ADVANCE_DELAY. Called on
+    activation, after every guess (guess.py), and after every
+    inactivity-driven auto-advance (jobs/timers.py) — so the clock
+    always measures time since the most recent guess or auto-advance,
+    whichever happened last."""
+    now = datetime.now(UTC)
+    game.inactivity_nudge_at = now + INACTIVITY_NUDGE_DELAY
+    game.inactivity_advance_at = now + INACTIVITY_ADVANCE_DELAY
+
+
 def advance_stage(game: Game) -> GuessOutcome:
     """Move `game` to the next PixelStage, or end it UNSOLVED if it was
     already on the last one — the shared landing spot for both a

@@ -12,7 +12,9 @@ resets any of these clocks.
 from datetime import UTC, datetime
 
 from loguru import logger
-from telegram.error import Forbidden
+from sqlalchemy.orm import Session
+from telegram import Message
+from telegram.error import Forbidden, TelegramError
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
@@ -22,6 +24,8 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.settings import stage_config
 
 # Singleton names — there's never more than one "pending turn" at a
 # time, unlike the per-game timeout/setup-abandon jobs.
@@ -113,6 +117,7 @@ async def rearm_pending_timeouts(job_queue: JobQueue | None, session_factory) ->
         active = game_service.active_games(session)
         for game in active:
             schedule_timeout(job_queue, game)
+            schedule_inactivity_timers(job_queue, game)
         setups = game_service.setup_games(session)
         for game in setups:
             schedule_setup_abandon(job_queue, game)
@@ -269,3 +274,179 @@ async def turn_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         message_thread_id=context.bot_data["game_topic_id"],
         text=i18n.t("turn.expired", lang),
     )
+
+
+def inactivity_nudge_job_name(game_id: int) -> str:
+    """Deterministic JobQueue job name for a game's inactivity nudge —
+    mirrors timeout_job_name()."""
+    return f"inactivity-nudge-{game_id}"
+
+
+def inactivity_advance_job_name(game_id: int) -> str:
+    """Deterministic JobQueue job name for a game's inactivity
+    auto-advance — mirrors timeout_job_name()."""
+    return f"inactivity-advance-{game_id}"
+
+
+def schedule_inactivity_timers(job_queue: JobQueue | None, game: Game) -> None:
+    """(Re)schedules both per-game jobs from `game.inactivity_nudge_at`/
+    `inactivity_advance_at` — cancels any existing ones first (same
+    guard schedule_turn_timers uses), so resetting the clock on every
+    guess or auto-advance never double-schedules."""
+    if job_queue is None:
+        return
+    cancel_inactivity_timers(job_queue, game.id)
+    if game.inactivity_nudge_at is not None:
+        delay = seconds_until(game.inactivity_nudge_at)
+        logger.debug("Scheduling inactivity-nudge for game {} in {:.0f}s", game.id, delay)
+        job_queue.run_once(
+            inactivity_nudge_job_callback,
+            when=delay,
+            name=inactivity_nudge_job_name(game.id),
+            data=game.id,
+        )
+    if game.inactivity_advance_at is not None:
+        delay = seconds_until(game.inactivity_advance_at)
+        logger.debug("Scheduling inactivity-advance for game {} in {:.0f}s", game.id, delay)
+        job_queue.run_once(
+            inactivity_advance_job_callback,
+            when=delay,
+            name=inactivity_advance_job_name(game.id),
+            data=game.id,
+        )
+
+
+def cancel_inactivity_timers(job_queue: JobQueue | None, game_id: int) -> None:
+    if job_queue is None:
+        return
+    logger.debug("Canceling inactivity nudge/advance timers for game {}", game_id)
+    for name in (inactivity_nudge_job_name(game_id), inactivity_advance_job_name(game_id)):
+        for job in job_queue.get_jobs_by_name(name):
+            job.schedule_removal()
+
+
+async def post_current_image(
+    context: ContextTypes.DEFAULT_TYPE, session: Session, *, photo, caption: str
+) -> Message:
+    """Sends `photo` to the game topic, then best-effort swaps the
+    pinned "current image" for just this one message — see
+    services/settings/bot_settings.py's get/set_pinned_message_id.
+    Pin/unpin calls are wrapped and logged at WARNING on failure rather
+    than raising: the bot may simply lack the "Pin messages" admin
+    permission in the group, which shouldn't block the image itself
+    from being posted. Takes chat_id/message_thread_id from
+    `context.bot_data` rather than as parameters — every call site
+    posts to the same group/topic, so there's never a different
+    destination to pass in."""
+    chat_id = context.bot_data["group_chat_id"]
+    message_thread_id = context.bot_data["game_topic_id"]
+    message = await context.bot.send_photo(
+        chat_id=chat_id,
+        message_thread_id=message_thread_id,
+        photo=photo,
+        caption=caption,
+    )
+
+    previous_pinned_id = settings.get_pinned_message_id(session)
+    if previous_pinned_id is not None:
+        try:
+            await context.bot.unpin_chat_message(chat_id=chat_id, message_id=previous_pinned_id)
+        except TelegramError as exc:
+            logger.warning(
+                "Failed to unpin message {} in chat {}: {}", previous_pinned_id, chat_id, exc
+            )
+
+    try:
+        await context.bot.pin_chat_message(
+            chat_id=chat_id, message_id=message.message_id, disable_notification=True
+        )
+        settings.set_pinned_message_id(session, message.message_id)
+    except TelegramError as exc:
+        logger.warning("Failed to pin message {} in chat {}: {}", message.message_id, chat_id, exc)
+
+    return message
+
+
+async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Fires INACTIVITY_NUDGE_DELAY after the last guess (or activation)
+    on an ACTIVE game. Points at whatever's currently pinned so the
+    nudge visually references the last posted image, without revealing
+    the title."""
+    job = context.job
+    if job is None:
+        return
+    game_id = job.data
+
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        game = session.get(Game, game_id)
+        if game is None or game.status != GameStatus.ACTIVE:
+            logger.debug("Inactivity nudge fired for game {} but it's not ACTIVE — no-op", game_id)
+            return
+        pinned_message_id = settings.get_pinned_message_id(session)
+
+    logger.info("Game {} nudged after inactivity", game_id)
+    await context.bot.send_message(
+        chat_id=context.bot_data["group_chat_id"],
+        message_thread_id=context.bot_data["game_topic_id"],
+        text=i18n.t("guess.inactivity_nudge", lang),
+        reply_to_message_id=pinned_message_id,
+    )
+
+
+async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Fires INACTIVITY_ADVANCE_DELAY after the last guess (or
+    activation) on an ACTIVE game, with no guess in between to reset the
+    clock. Advances the stage exactly like a guess-driven exhaustion
+    would (via the shared advance_stage()), or ends the game unsolved
+    if it was already on the last stage."""
+    job = context.job
+    if job is None:
+        return
+    game_id = job.data
+
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        game = session.get(Game, game_id)
+        if game is None or game.status != GameStatus.ACTIVE or game.current_stage is None:
+            logger.debug(
+                "Inactivity advance fired for game {} but it's not ACTIVE — no-op", game_id
+            )
+            return
+        assert game.original_file_id is not None
+
+        outcome = game_service.advance_stage(game)
+
+        if outcome is game_service.GuessOutcome.UNSOLVED:
+            logger.info("Game {} auto-ended unsolved after repeated inactivity", game_id)
+            await post_current_image(
+                context,
+                session,
+                photo=game.original_file_id,
+                caption=i18n.t(
+                    "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
+                ),
+            )
+            game_service.clear_original_screenshot(game)
+            return
+
+        logger.info(
+            "Game {} auto-advanced to stage {} after inactivity", game_id, game.current_stage
+        )
+        telegram_file = await context.bot.get_file(game.original_file_id)
+        original_bytes = bytes(await telegram_file.download_as_bytearray())
+        target_width = stage_config.get_stage_config(session)[game.current_stage].target_width
+        pixelated = pixelate_service.pixelate(original_bytes, target_width)
+        stage_number, total_stages, _ = game_service.stage_progress(session, game)
+        await post_current_image(
+            context,
+            session,
+            photo=pixelated,
+            caption=i18n.t(
+                "guess.inactivity_advanced_caption", lang, stage=stage_number, total=total_stages
+            ),
+        )
+        game_service.reset_inactivity_clock(game)
+        schedule_inactivity_timers(context.job_queue, game)

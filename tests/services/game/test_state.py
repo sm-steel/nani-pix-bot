@@ -674,6 +674,22 @@ def test_record_guess_total_guess_count_survives_a_stage_advance(session: Sessio
     assert game.total_guess_count == 5
 
 
+def test_reset_inactivity_clock_sets_both_deadlines_from_now(session: Session) -> None:
+    game = _active_game(session)
+    before = datetime.now(UTC)  # not committed/refetched, so still tz-aware unlike scheduled_end_at
+
+    game_service.reset_inactivity_clock(game)
+
+    assert game.inactivity_nudge_at is not None
+    assert game.inactivity_advance_at is not None
+    nudge_delta = (game.inactivity_nudge_at - before).total_seconds()
+    advance_delta = (game.inactivity_advance_at - before).total_seconds()
+    assert nudge_delta == pytest.approx(game_service.INACTIVITY_NUDGE_DELAY.total_seconds(), abs=5)
+    assert advance_delta == pytest.approx(
+        game_service.INACTIVITY_ADVANCE_DELAY.total_seconds(), abs=5
+    )
+
+
 def test_advance_stage_moves_to_the_next_stage_and_resets_wrong_guess_count(
     session: Session,
 ) -> None:

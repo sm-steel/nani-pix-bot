@@ -42,6 +42,8 @@
   "guess.unsolved_caption": "Никто не угадал. Это было {title}.",
   "guess.wrong_feedback": "❌ Не угадано! Осталось попыток до следующей подсказки: {remaining} (этап {stage}/{total}).",
   "guess.stage_advanced_caption": "📸 Этап {stage}/{total} (попытка №{guess_number}) — ещё {remaining} неверных попыток до следующего прояснения.",
+  "guess.inactivity_nudge": "👀 Пока никто не угадал! Посмотрите на закреплённое изображение — используйте /guess <название аниме>, или оно само прояснится немного позже.",
+  "guess.inactivity_advanced_caption": "📸 Этап {stage}/{total} — давно никто не угадывал, вот более чёткое изображение.",
 
   "leaderboard.empty": "Пока никто не выигрывал — может, это будете вы!",
   "leaderboard.header": "🏆 Таблица лидеров",
