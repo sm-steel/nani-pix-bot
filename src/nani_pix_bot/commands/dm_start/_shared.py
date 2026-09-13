@@ -11,7 +11,7 @@ from nani_pix_bot.services import i18n
 # rate-limit retries — see their _request() helpers.
 _SEARCH_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError)
 
-_SERVICE_DISPLAY_NAMES = {"anilist": "AniList", "shikimori": "Shikimori"}
+_SERVICE_DISPLAY_NAMES = {"anilist": "AniList", "shikimori": "Shikimori", "jikan": "Jikan"}
 
 # Used by both manual.py's second-message step and preview.py's
 # "add a synonym" step.

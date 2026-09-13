@@ -2,7 +2,7 @@
 MECHANICS.md's "Starting a game" section.
 
 Button labels are routed through `i18n.t()` like every other user-facing
-string, with two deliberate exceptions: the "AniList"/"Shikimori"
+string, with two deliberate exceptions: the "AniList"/"Shikimori"/"Jikan"
 method-picker labels (third-party brand names, not translatable UI text)
 and the language picker's own native-name labels in `commands/language.py`
 (a language switcher inherently shows each option in its own name).
@@ -17,14 +17,17 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
 RETRY_CALLBACK_DATA = "anilist_retry"
 _ANILIST_PICK_PREFIX = "anilist_pick:"
 _SHIKIMORI_PICK_PREFIX = "shikimori_pick:"
+_JIKAN_PICK_PREFIX = "jikan_pick:"
 
 ANILIST_METHOD_CALLBACK_DATA = "method:anilist"
 SHIKIMORI_METHOD_CALLBACK_DATA = "method:shikimori"
+JIKAN_METHOD_CALLBACK_DATA = "method:jikan"
 MANUAL_METHOD_CALLBACK_DATA = "method:manual"
 
 PREVIEW_CONFIRM_CALLBACK_DATA = "preview:confirm"
@@ -65,6 +68,22 @@ def shikimori_results_keyboard(results: list[ShikimoriResult], lang: str) -> Inl
     return InlineKeyboardMarkup(buttons)
 
 
+def jikan_results_keyboard(results: list[JikanResult], lang: str) -> InlineKeyboardMarkup:
+    buttons = [
+        [
+            InlineKeyboardButton(
+                _jikan_label(result, lang),
+                callback_data=f"{_JIKAN_PICK_PREFIX}{result.jikan_id}",
+            )
+        ]
+        for result in results
+    ]
+    buttons.append(
+        [InlineKeyboardButton(i18n.t("keyboards.retry", lang), callback_data=RETRY_CALLBACK_DATA)]
+    )
+    return InlineKeyboardMarkup(buttons)
+
+
 def _anilist_label(result: AniListResult, lang: str) -> str:
     """Picks the result's display title via the same priority rule
     display_title() uses for the confirmation preview and every caption
@@ -94,27 +113,44 @@ def _shikimori_label(result: ShikimoriResult, lang: str) -> str:
     return game_service.prioritized_title(variants, lang=lang)
 
 
+def _jikan_label(result: JikanResult, lang: str) -> str:
+    """Picks the result's display title via the same priority rule as
+    `_anilist_label()` above. Jikan doesn't expose a Russian-specific
+    field either, so every branch resolves the same way (English, then
+    romaji, then native) regardless of `lang`."""
+    variants = game_service.TitleVariants(
+        english=result.title_english, romaji=result.title_romaji, native=result.title_native
+    )
+    return game_service.prioritized_title(variants, lang=lang)
+
+
 def parse_pick_callback_data(data: str) -> tuple[str, int] | None:
     """The picked result's (source, id), or None if `data` wasn't a pick
-    (e.g. retry). `source` is "anilist" or "shikimori" — the command
+    (e.g. retry). `source` is "anilist"/"shikimori"/"jikan" — the command
     layer uses it to know which service's get_by_id to re-fetch from
     (restart-resilient, per issue #11)."""
     if data.startswith(_ANILIST_PICK_PREFIX):
         return "anilist", int(data.removeprefix(_ANILIST_PICK_PREFIX))
     if data.startswith(_SHIKIMORI_PICK_PREFIX):
         return "shikimori", int(data.removeprefix(_SHIKIMORI_PICK_PREFIX))
+    if data.startswith(_JIKAN_PICK_PREFIX):
+        return "jikan", int(data.removeprefix(_JIKAN_PICK_PREFIX))
     return None
 
 
 def method_selection_keyboard(*, prefer_shikimori: bool, lang: str) -> InlineKeyboardMarkup:
-    """AniList vs. Shikimori vs. manual-entry choice, shown right after
-    the starter's photo. Shikimori is offered first for RU-language bots
-    (see MECHANICS.md's "Starting a game"). "AniList"/"Shikimori" are
-    brand names and stay untranslated regardless of `lang`."""
+    """AniList vs. Shikimori vs. Jikan vs. manual-entry choice, shown
+    right after the starter's photo (or, from /newgame, before any
+    photo exists). Shikimori is offered first for RU-language bots (see
+    MECHANICS.md's "Starting a game"); Jikan has no RU-specific reason
+    to move around, so it's always third, before manual entry.
+    "AniList"/"Shikimori"/"Jikan" are brand names and stay untranslated
+    regardless of `lang`."""
     anilist_button = InlineKeyboardButton("AniList", callback_data=ANILIST_METHOD_CALLBACK_DATA)
     shikimori_button = InlineKeyboardButton(
         "Shikimori", callback_data=SHIKIMORI_METHOD_CALLBACK_DATA
     )
+    jikan_button = InlineKeyboardButton("Jikan", callback_data=JIKAN_METHOD_CALLBACK_DATA)
     manual_button = InlineKeyboardButton(
         i18n.t("keyboards.manual_entry", lang), callback_data=MANUAL_METHOD_CALLBACK_DATA
     )
@@ -123,17 +159,20 @@ def method_selection_keyboard(*, prefer_shikimori: bool, lang: str) -> InlineKey
         if prefer_shikimori
         else [anilist_button, shikimori_button]
     )
+    ordered.append(jikan_button)
     ordered.append(manual_button)
     return InlineKeyboardMarkup([[button] for button in ordered])
 
 
 def parse_method_callback_data(data: str) -> str | None:
-    """ "anilist"/"shikimori"/"manual", or None if `data` isn't a method
-    pick."""
+    """ "anilist"/"shikimori"/"jikan"/"manual", or None if `data` isn't a
+    method pick."""
     if data == ANILIST_METHOD_CALLBACK_DATA:
         return "anilist"
     if data == SHIKIMORI_METHOD_CALLBACK_DATA:
         return "shikimori"
+    if data == JIKAN_METHOD_CALLBACK_DATA:
+        return "jikan"
     if data == MANUAL_METHOD_CALLBACK_DATA:
         return "manual"
     return None

@@ -12,6 +12,7 @@ from nani_pix_bot.commands.dm_start._shared import _SEARCH_SERVICE_ERRORS, _repl
 from nani_pix_bot.commands.dm_start.keyboards import (
     RETRY_CALLBACK_DATA,
     anilist_results_keyboard,
+    jikan_results_keyboard,
     parse_method_callback_data,
     parse_pick_callback_data,
     shikimori_results_keyboard,
@@ -23,8 +24,9 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.search import anilist, shikimori
+from nani_pix_bot.services.search import anilist, jikan, shikimori
 from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
 
@@ -102,22 +104,21 @@ async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, s
     client = context.bot_data["search_client"]
     try:
         if source == "shikimori":
-            shikimori_results = await shikimori.search(client, message.text)
-            result_count = len(shikimori_results)
-            has_results = bool(shikimori_results)
-            keyboard = shikimori_results_keyboard(shikimori_results, lang)
+            results = await shikimori.search(client, message.text)
+            keyboard = shikimori_results_keyboard(results, lang)
+        elif source == "jikan":
+            results = await jikan.search(client, message.text)
+            keyboard = jikan_results_keyboard(results, lang)
         else:
-            anilist_results = await anilist.search(client, message.text)
-            result_count = len(anilist_results)
-            has_results = bool(anilist_results)
-            keyboard = anilist_results_keyboard(anilist_results, lang)
+            results = await anilist.search(client, message.text)
+            keyboard = anilist_results_keyboard(results, lang)
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} search failed for query {!r}", source, message.text)
         await _reply_service_down(status_message.edit_text, lang, source)
         return
 
-    logger.debug("{} search for {!r} returned {} results", source, message.text, result_count)
-    if not has_results:
+    logger.debug("{} search for {!r} returned {} results", source, message.text, len(results))
+    if not results:
         await status_message.edit_text(i18n.t("dm_start.no_results", lang))
         return
 
@@ -160,7 +161,7 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def _resolve_picked_result(
     query, context: ContextTypes.DEFAULT_TYPE, lang: str
-) -> tuple[str, int, AniListResult | ShikimoriResult] | None:
+) -> tuple[str, int, AniListResult | ShikimoriResult | JikanResult] | None:
     """Handles the "none of these" retry tap and resolves a valid pick to
     its (source, external_id, result) triple. Replies and returns None
     for every already-handled outcome: retry tapped, unparseable
@@ -179,6 +180,8 @@ async def _resolve_picked_result(
     try:
         if source == "shikimori":
             result = await shikimori.get_by_id(client, external_id)
+        elif source == "jikan":
+            result = await jikan.get_by_id(client, external_id)
         else:
             result = await anilist.get_by_id(client, external_id)
     except _SEARCH_SERVICE_ERRORS:

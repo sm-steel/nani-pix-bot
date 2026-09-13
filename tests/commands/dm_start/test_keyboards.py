@@ -1,5 +1,6 @@
 from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
+    JIKAN_METHOD_CALLBACK_DATA,
     MANUAL_METHOD_CALLBACK_DATA,
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
@@ -8,6 +9,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     RETRY_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
     anilist_results_keyboard,
+    jikan_results_keyboard,
     method_selection_keyboard,
     parse_method_callback_data,
     parse_pick_callback_data,
@@ -15,6 +17,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     shikimori_results_keyboard,
 )
 from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
 _FRIEREN = AniListResult(
@@ -54,6 +57,17 @@ _NO_RUSSIAN_TITLE = ShikimoriResult(
     title_english=None,
     title_russian=None,
     synonyms=[],
+)
+
+_FRIEREN_JIKAN = JikanResult(
+    jikan_id=52991,
+    title_romaji="Sousou no Frieren",
+    title_english="Frieren: Beyond Journey's End",
+    title_native="葬送のフリーレン",
+    synonyms=[],
+)
+_JIKAN_NO_ENGLISH_TITLE = JikanResult(
+    jikan_id=1, title_romaji="Some Anime", title_english=None, title_native=None, synonyms=[]
 )
 
 
@@ -151,6 +165,33 @@ def test_shikimori_pick_callback_data_round_trips_the_shikimori_id() -> None:
     assert parse_pick_callback_data(data) == ("shikimori", 52991)
 
 
+def test_jikan_keyboard_has_one_button_per_result_plus_a_retry_button() -> None:
+    markup = jikan_results_keyboard([_FRIEREN_JIKAN, _JIKAN_NO_ENGLISH_TITLE], lang="en")
+
+    assert len(markup.inline_keyboard) == 3
+    assert markup.inline_keyboard[-1][0].callback_data == RETRY_CALLBACK_DATA
+
+
+def test_jikan_keyboard_button_label_prefers_english_title() -> None:
+    markup = jikan_results_keyboard([_FRIEREN_JIKAN], lang="en")
+
+    assert markup.inline_keyboard[0][0].text == "Frieren: Beyond Journey's End"
+
+
+def test_jikan_keyboard_button_label_falls_back_to_romaji() -> None:
+    markup = jikan_results_keyboard([_JIKAN_NO_ENGLISH_TITLE], lang="en")
+
+    assert markup.inline_keyboard[0][0].text == "Some Anime"
+
+
+def test_jikan_pick_callback_data_round_trips_the_jikan_id() -> None:
+    markup = jikan_results_keyboard([_FRIEREN_JIKAN], lang="en")
+    data = markup.inline_keyboard[0][0].callback_data
+
+    assert isinstance(data, str)
+    assert parse_pick_callback_data(data) == ("jikan", 52991)
+
+
 def test_method_selection_keyboard_defaults_to_anilist_first() -> None:
     markup = method_selection_keyboard(prefer_shikimori=False, lang="en")
 
@@ -158,6 +199,7 @@ def test_method_selection_keyboard_defaults_to_anilist_first() -> None:
     assert callbacks == [
         ANILIST_METHOD_CALLBACK_DATA,
         SHIKIMORI_METHOD_CALLBACK_DATA,
+        JIKAN_METHOD_CALLBACK_DATA,
         MANUAL_METHOD_CALLBACK_DATA,
     ]
 
@@ -169,11 +211,12 @@ def test_method_selection_keyboard_prefers_shikimori_first_when_asked() -> None:
     assert callbacks == [
         SHIKIMORI_METHOD_CALLBACK_DATA,
         ANILIST_METHOD_CALLBACK_DATA,
+        JIKAN_METHOD_CALLBACK_DATA,
         MANUAL_METHOD_CALLBACK_DATA,
     ]
 
 
-def test_method_selection_keyboard_anilist_and_shikimori_labels_are_brand_names() -> None:
+def test_method_selection_keyboard_brand_name_labels_are_untranslated() -> None:
     # Intentional exception — these are third-party brand names, not
     # translated UI text, so they stay the same regardless of lang.
     markup_en = method_selection_keyboard(prefer_shikimori=False, lang="en")
@@ -183,20 +226,23 @@ def test_method_selection_keyboard_anilist_and_shikimori_labels_are_brand_names(
     labels_ru = [button.text for row in markup_ru.inline_keyboard for button in row]
     assert labels_en[0] == "AniList"
     assert labels_en[1] == "Shikimori"
+    assert labels_en[2] == "Jikan"
     assert labels_ru[0] == "AniList"
     assert labels_ru[1] == "Shikimori"
+    assert labels_ru[2] == "Jikan"
 
 
 def test_method_selection_keyboard_manual_entry_label_is_translated() -> None:
     markup = method_selection_keyboard(prefer_shikimori=False, lang="ru")
 
-    manual_label = markup.inline_keyboard[2][0].text
+    manual_label = markup.inline_keyboard[3][0].text
     assert "вручную" in manual_label.lower()
 
 
 def test_parse_method_callback_data_round_trips() -> None:
     assert parse_method_callback_data(ANILIST_METHOD_CALLBACK_DATA) == "anilist"
     assert parse_method_callback_data(SHIKIMORI_METHOD_CALLBACK_DATA) == "shikimori"
+    assert parse_method_callback_data(JIKAN_METHOD_CALLBACK_DATA) == "jikan"
     assert parse_method_callback_data(MANUAL_METHOD_CALLBACK_DATA) == "manual"
     assert parse_method_callback_data(RETRY_CALLBACK_DATA) is None
 

@@ -10,6 +10,7 @@ from nani_pix_bot.models.stage_config import StageConfig
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
 _FRIEREN = AniListResult(
@@ -26,6 +27,14 @@ _FRIEREN_SHIKIMORI = ShikimoriResult(
     title_romaji="Sousou no Frieren",
     title_english="Frieren: Beyond Journey's End",
     title_russian="Провожающая в последний путь Фрирен",
+    synonyms=["Frieren at the Funeral"],
+)
+
+_FRIEREN_JIKAN = JikanResult(
+    jikan_id=52991,
+    title_romaji="Sousou no Frieren",
+    title_english="Frieren: Beyond Journey's End",
+    title_native="葬送のフリーレン",
     synonyms=["Frieren at the Funeral"],
 )
 
@@ -282,10 +291,31 @@ def test_stage_result_assigns_shikimori_fields_including_russian_title(session: 
     assert fetched is not None
     assert fetched.status == GameStatus.SETUP
     assert fetched.anilist_id is None
+    assert fetched.shikimori_id == 52991
     assert fetched.title_romaji == "Sousou no Frieren"
     assert fetched.title_russian == "Провожающая в последний путь Фрирен"
     assert fetched.synonyms == ["Frieren at the Funeral"]
     assert fetched.source == "shikimori"
+
+
+def test_stage_result_assigns_jikan_fields_including_native_title(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    session.commit()
+
+    game_service.stage_result(game, _FRIEREN_JIKAN, source="jikan")
+    session.commit()
+
+    fetched = session.get(Game, game.id)
+    assert fetched is not None
+    assert fetched.status == GameStatus.SETUP
+    assert fetched.anilist_id is None
+    assert fetched.jikan_id == 52991
+    assert fetched.title_romaji == "Sousou no Frieren"
+    assert fetched.title_native == "葬送のフリーレン"
+    assert fetched.synonyms == ["Frieren at the Funeral"]
+    assert fetched.source == "jikan"
 
 
 def test_stage_manual_entry_assigns_the_typed_title_and_synonyms(session: Session) -> None:

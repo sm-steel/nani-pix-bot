@@ -15,6 +15,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import matching, players
 from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.settings import stage_config
 
@@ -181,12 +182,14 @@ def create_setup_game(
     return game
 
 
-def stage_result(game: Game, result: AniListResult | ShikimoriResult, *, source: str) -> None:
+def stage_result(
+    game: Game, result: AniListResult | ShikimoriResult | JikanResult, *, source: str
+) -> None:
     """Assign a picked search result's title/synonyms onto a still-SETUP
     game — doesn't post anything or change status. This is the shared
     landing spot for every identification method (AniList, Shikimori,
-    and eventually manual entry); the confirmation-screen ticket (#19)
-    is what will show a preview between this and activate_game()."""
+    Jikan, and eventually manual entry); the confirmation-screen ticket
+    (#19) is what will show a preview between this and activate_game()."""
     game.title_romaji = result.title_romaji
     game.title_english = result.title_english
     game.synonyms = result.synonyms
@@ -195,7 +198,11 @@ def stage_result(game: Game, result: AniListResult | ShikimoriResult, *, source:
         game.anilist_id = result.anilist_id
         game.title_native = result.title_native
     elif isinstance(result, ShikimoriResult):
+        game.shikimori_id = result.shikimori_id
         game.title_russian = result.title_russian
+    elif isinstance(result, JikanResult):
+        game.jikan_id = result.jikan_id
+        game.title_native = result.title_native
 
 
 def stage_manual_entry(game: Game, *, title: str, synonyms: list[str]) -> None:
