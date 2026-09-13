@@ -24,9 +24,16 @@ src/nani_pix_bot/
   config.py       # env/.env loading — the only place that reads os.environ
   db.py           # SQLAlchemy engine/session factory, session_scope()
   logging_config.py  # loguru setup, redirects PTB's stdlib logging into it
-  app.py          # ApplicationBuilder wiring, handler registration, and
-                   # re-arming any pending JobQueue jobs from the DB on
-                   # startup (see MECHANICS.md's "Game lifecycle")
+  heartbeat.py    # wraps bot.get_updates so a liveness file is only
+                   # touched after a real successful poll — lets
+                   # docker-compose.yml's HEALTHCHECK (+ fleet autoheal)
+                   # detect the getUpdates connection-pool wedge that a
+                   # process can retry-loop through forever otherwise
+  app.py          # ApplicationBuilder wiring, handler registration, an
+                   # error handler (so network hiccups log at WARNING
+                   # instead of vanishing at DEBUG), and re-arming any
+                   # pending JobQueue jobs from the DB on startup (see
+                   # MECHANICS.md's "Game lifecycle")
   commands/       # one module per Telegram command (thin: parse update,
                    # call a service, format a reply — no game rules here)
     dm_start/     # private-chat photo intake + AniList/Shikimori/manual

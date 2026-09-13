@@ -52,6 +52,13 @@ Migrate before `bot` starts, not after — see `CLAUDE.md`'s CI/CD section
 for why (its startup queries the database immediately, and a crash-looping
 container can't be fixed by exec-ing into it).
 
+`bot`'s `HEALTHCHECK` watches a heartbeat file (`src/nani_pix_bot/heartbeat.py`)
+that's only touched after a real, successful Telegram `getUpdates` cycle — a
+stale file means polling is wedged even though the process is still running
+(see issue #51). The host fleet's `autoheal` (see the ops vault's
+`инфраструктура/Autoheal.md`) restarts the container automatically once
+Docker marks it unhealthy; the `bot` service's `autoheal.*` labels opt it in.
+
 The `mariadb` service owns its data in a named volume (`mariadb_data`); the
 bot connects to it over the compose network as `mariadb:3306`, not
 `localhost`.

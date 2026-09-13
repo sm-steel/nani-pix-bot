@@ -3,6 +3,13 @@ directly (no network calls happen building an Application/registering
 handlers) — main()'s actual polling loop is not something a unit test
 should run."""
 
+from typing import cast
+from unittest.mock import MagicMock
+
+import pytest
+from telegram.error import Conflict, NetworkError
+from telegram.ext import ContextTypes
+
 from nani_pix_bot import app
 from nani_pix_bot.config import Config
 
@@ -65,3 +72,60 @@ def test_build_application_succeeds_with_a_proxy_configured() -> None:
     application = app.build_application(_config(telegram_proxy_url="http://user:pass@host:8888"))
 
     assert application.bot.token == _VALID_TOKEN
+
+
+def test_build_application_configures_a_larger_get_updates_pool() -> None:
+    # Same "don't inspect PTB internals" precedent as the proxy test above
+    # — HTTPXRequest doesn't expose connection_pool_size as a public
+    # attribute, so this just proves .get_updates_connection_pool_size()
+    # is a real builder method that doesn't blow up, not the resulting
+    # pool's actual behavior (see issue #51).
+    application = app.build_application(_config())
+
+    assert application.bot.token == _VALID_TOKEN
+
+
+def test_build_application_registers_an_error_handler() -> None:
+    application = app.build_application(_config())
+
+    assert len(application.error_handlers) == 1
+
+
+async def test_error_handler_logs_network_errors_as_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    warnings = []
+    monkeypatch.setattr(app.logger, "warning", lambda *args: warnings.append(args))
+    context = MagicMock()
+    context.error = NetworkError("connection reset")
+
+    await app._error_handler(cast(object, "some update"), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert warnings
+
+
+async def test_error_handler_logs_a_conflict_as_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A 409 Conflict self-heals on its own (see the 2026-09-13 incident) —
+    # it's not a bug, so it shouldn't be logged as one.
+    warnings = []
+    monkeypatch.setattr(app.logger, "warning", lambda *args: warnings.append(args))
+    context = MagicMock()
+    context.error = Conflict("terminated by other getUpdates request")
+
+    await app._error_handler(cast(object, "some update"), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert warnings
+
+
+async def test_error_handler_logs_anything_else_as_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    errors = []
+    fake_opt = lambda **kwargs: MagicMock(error=lambda *a: errors.append(a))  # noqa: E731
+    monkeypatch.setattr(app.logger, "opt", fake_opt)
+    context = MagicMock()
+    context.error = ValueError("a real bug")
+
+    await app._error_handler(cast(object, "some update"), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert errors
