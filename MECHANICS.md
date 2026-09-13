@@ -288,9 +288,9 @@ On a win, the bot:
    and schedules that winner's 15-minute reminder / 12-hour expiry (see
    "Turn handoff" below).
 5. **Cleanup**: once that reveal message is confirmed sent, clears
-   `Game.original_file_id` — nothing after this point ever needs to
-   re-fetch or re-pixelate the screenshot, so the stored Telegram file
-   reference is dropped rather than kept around indefinitely.
+   `Game.original_image` — nothing after this point ever needs to
+   re-pixelate the screenshot, so the stored bytes are dropped rather
+   than kept around indefinitely.
 
 ## Ending unsolved
 
@@ -305,7 +305,7 @@ A game ends unsolved one of two ways, handled identically:
 - **Timeout**: see below.
 
 Either way, the bot reveals the original screenshot with the anime's
-title, sets `status → UNSOLVED`, and performs the same `original_file_id`
+title, sets `status → UNSOLVED`, and performs the same `original_image`
 cleanup described in "Winning" above. `turn_state.next_starter_id` is left
 untouched — an unsolved game doesn't hand anyone a forced turn. If it was
 already `null` (open to anyone), it stays that way; if someone was

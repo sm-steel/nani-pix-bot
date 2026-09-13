@@ -149,7 +149,7 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
-        if setup_game is None or setup_game.original_file_id is None:
+        if setup_game is None or setup_game.original_image is None:
             return
         game_service.stage_result(setup_game, result, source=source)
         logger.debug("Game {}: staged {} result {}", setup_game.id, source, external_id)

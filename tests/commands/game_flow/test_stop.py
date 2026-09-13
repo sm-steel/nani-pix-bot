@@ -53,7 +53,7 @@ def _active_game(session_factory, *, starter_id: int = 1, **overrides) -> int:
         session.commit()
         defaults = {
             "starter_id": starter_id,
-            "original_file_id": "file123",
+            "original_image": b"file123",
             "status": GameStatus.ACTIVE,
             "current_stage": PixelStage.STAGE_1,
             "title_english": "Frieren: Beyond Journey's End",
@@ -69,7 +69,7 @@ def _setup_game(session_factory, *, starter_id: int = 1) -> int:
     with session_factory() as session:
         session.add(Player(telegram_user_id=starter_id))
         session.commit()
-        game = Game(starter_id=starter_id, original_file_id="file123", status=GameStatus.SETUP)
+        game = Game(starter_id=starter_id, original_image=b"file123", status=GameStatus.SETUP)
         session.add(game)
         session.commit()
         return game.id

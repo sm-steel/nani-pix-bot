@@ -55,7 +55,7 @@ def _active_game(session_factory, **overrides) -> int:
         session.commit()
         defaults = {
             "starter_id": 1,
-            "original_file_id": "file123",
+            "original_image": b"file123",
             "status": GameStatus.ACTIVE,
             "current_stage": PixelStage.STAGE_1,
             "wrong_guess_count": 0,
@@ -127,13 +127,13 @@ async def test_guess_command_correct_guess_reveals_and_clears_file_id(session_fa
 
     context.bot.send_photo.assert_awaited_once()
     _, kwargs = context.bot.send_photo.await_args
-    assert kwargs["photo"] == "file123"
+    assert kwargs["photo"] == b"file123"
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.status == GameStatus.WON
-        assert fetched.original_file_id is None
+        assert fetched.original_image is None
 
 
 async def test_guess_command_wrong_guess_advances_stage_with_new_image(
@@ -157,7 +157,6 @@ async def test_guess_command_wrong_guess_advances_stage_with_new_image(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    context.bot.get_file.assert_awaited_once_with("file123")
     context.bot.send_photo.assert_awaited_once()
     _, kwargs = context.bot.send_photo.await_args
     assert kwargs["photo"] == b"x8-bytes"
@@ -205,13 +204,13 @@ async def test_guess_command_stage_exhaustion_reveals_unsolved(session_factory) 
 
     context.bot.send_photo.assert_awaited_once()
     _, kwargs = context.bot.send_photo.await_args
-    assert kwargs["photo"] == "file123"
+    assert kwargs["photo"] == b"file123"
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.status == GameStatus.UNSOLVED
-        assert fetched.original_file_id is None
+        assert fetched.original_image is None
 
 
 async def test_guess_command_correct_guess_cancels_the_timeout_job(session_factory) -> None:

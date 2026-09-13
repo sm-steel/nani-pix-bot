@@ -80,14 +80,12 @@ def _make_text_update(
 
 
 def _create_setup_game(
-    session_factory, *, starter_id: int = 1, file_id: str = "file123", source: str = "anilist"
+    session_factory, *, starter_id: int = 1, image: bytes = b"file123", source: str = "anilist"
 ) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=starter_id))
         session.commit()
-        game = game_service.create_setup_game(
-            session, starter_id=starter_id, original_file_id=file_id
-        )
+        game = game_service.create_setup_game(session, starter_id=starter_id, original_image=image)
         game.source = source
         session.commit()
 
@@ -282,7 +280,6 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    context.bot.get_file.assert_awaited_once_with("file123")
     context.bot.send_media_group.assert_awaited_once()
     _, kwargs = context.bot.send_media_group.await_args
     # The preview goes to the starter's own DM, not the group topic —

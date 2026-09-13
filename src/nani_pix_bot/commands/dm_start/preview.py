@@ -36,8 +36,8 @@ async def _finalize_and_post(context, session, game: Game, caption: str) -> None
     the group topic, and schedule the timeout — canceling the setup-abandon
     timer that's been running since the photo was first sent (issue #21)."""
     timeout_module.cancel_setup_abandon(context.job_queue, game.id)
-    telegram_file = await context.bot.get_file(game.original_file_id)
-    original_bytes = bytes(await telegram_file.download_as_bytearray())
+    assert game.original_image is not None
+    original_bytes = game.original_image
     first_stage = game_service.STAGE_ORDER[0]
     target_width = stage_config.get_stage_config(session)[first_stage].target_width
     pixelated = pixelate_service.pixelate(original_bytes, target_width)
@@ -58,8 +58,8 @@ async def _show_preview(context, session, game: Game, lang: str) -> None:
     group until "Confirm and start" is tapped. Always the game's own
     starter's DM — every caller looked this game up by starter_id in the
     first place, so game.starter_id is the right chat_id."""
-    telegram_file = await context.bot.get_file(game.original_file_id)
-    original_bytes = bytes(await telegram_file.download_as_bytearray())
+    assert game.original_image is not None
+    original_bytes = game.original_image
     config = stage_config.get_stage_config(session)
     title = game_service.display_title(game, lang)
     # Every stored title variant is already an accepted /guess — not just

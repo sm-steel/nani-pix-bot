@@ -47,7 +47,7 @@ def _active_game(session_factory, **overrides) -> int:
         session.commit()
         defaults = {
             "starter_id": 1,
-            "original_file_id": "file123",
+            "original_image": b"file123",
             "status": GameStatus.ACTIVE,
             "current_stage": PixelStage.STAGE_1,
             "title_english": "Frieren: Beyond Journey's End",
@@ -132,14 +132,14 @@ async def test_correct_command_forces_a_win_for_the_named_player(session_factory
 
     context.bot.send_photo.assert_awaited_once()
     _, kwargs = context.bot.send_photo.await_args
-    assert kwargs["photo"] == "file123"
+    assert kwargs["photo"] == b"file123"
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.status == GameStatus.WON
         assert fetched.winner_id == 2
-        assert fetched.original_file_id is None
+        assert fetched.original_image is None
 
         winner = session.get(Player, 2)
         assert winner is not None

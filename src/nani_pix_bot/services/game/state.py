@@ -162,10 +162,16 @@ def can_start(session: Session, user_id: int) -> bool:
     return turn_state is None or turn_state.next_starter_id in (None, user_id)
 
 
-def create_setup_game(session: Session, *, starter_id: int, original_file_id: str) -> Game:
+def create_setup_game(
+    session: Session, *, starter_id: int, original_image: bytes | None = None
+) -> Game:
+    """`original_image` is optional — the traditional photo-first entry
+    point always has bytes in hand immediately; the screenshot-less
+    /newgame entry point creates the row before any image exists yet
+    (it's filled in once a screenshot is picked, later in the flow)."""
     game = Game(
         starter_id=starter_id,
-        original_file_id=original_file_id,
+        original_image=original_image,
         status=GameStatus.SETUP,
         setup_deadline=datetime.now(UTC) + SETUP_ABANDON_DELAY,
     )
@@ -331,6 +337,6 @@ def force_unsolved(game: Game) -> None:
 
 
 def clear_original_screenshot(game: Game) -> None:
-    """Drop the stored Telegram file reference once a reveal message is
-    confirmed sent — see MECHANICS.md's "Cleanup" note."""
-    game.original_file_id = None
+    """Drop the stored image bytes once a reveal message is confirmed
+    sent — see MECHANICS.md's "Cleanup" note."""
+    game.original_image = None

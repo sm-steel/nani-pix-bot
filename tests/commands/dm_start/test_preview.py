@@ -88,7 +88,7 @@ def _staged_setup_game(session_factory, *, starter_id: int = 1) -> None:
         session.add(Player(telegram_user_id=starter_id))
         session.commit()
         game = game_service.create_setup_game(
-            session, starter_id=starter_id, original_file_id="file123"
+            session, starter_id=starter_id, original_image=b"file123"
         )
         game.source = "anilist"
         game_service.stage_result(game, _FRIEREN, source="anilist")

@@ -21,7 +21,7 @@ def _active_game(session_factory, **overrides) -> int:
         session.commit()
         defaults = {
             "starter_id": 1,
-            "original_file_id": "file123",
+            "original_image": b"file123",
             "status": GameStatus.ACTIVE,
             "current_stage": PixelStage.STAGE_1,
             "title_english": "Frieren: Beyond Journey's End",
@@ -81,13 +81,13 @@ async def test_timeout_job_callback_ends_the_game_unsolved(session_factory) -> N
 
     context.bot.send_photo.assert_awaited_once()
     _, kwargs = context.bot.send_photo.await_args
-    assert kwargs["photo"] == "file123"
+    assert kwargs["photo"] == b"file123"
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.status == GameStatus.UNSOLVED
-        assert fetched.original_file_id is None
+        assert fetched.original_image is None
 
 
 async def test_timeout_job_callback_is_a_noop_if_already_won(session_factory) -> None:
@@ -133,7 +133,7 @@ def _setup_game(session_factory, **overrides) -> int:
         session.commit()
         defaults = {
             "starter_id": 1,
-            "original_file_id": "file123",
+            "original_image": b"file123",
             "status": GameStatus.SETUP,
             "setup_deadline": datetime.now(UTC) + timedelta(hours=1),
         }
@@ -294,7 +294,7 @@ async def test_turn_reminder_job_callback_is_a_noop_if_a_game_is_already_running
     with session_factory() as session:
         session.add(Player(telegram_user_id=2))
         session.add(TurnState(id=1, next_starter_id=2))
-        session.add(Game(starter_id=2, original_file_id="f", status=GameStatus.SETUP))
+        session.add(Game(starter_id=2, original_image=b"f", status=GameStatus.SETUP))
         session.commit()
 
     context = _make_group_job_context(session_factory)
@@ -362,21 +362,21 @@ def test_setup_abandon_job_name_is_stable_and_unique_per_game() -> None:
 
 
 def test_seconds_until_timeout_handles_aware_datetimes() -> None:
-    game = Game(starter_id=1, original_file_id="f")
+    game = Game(starter_id=1, original_image=b"f")
     game.scheduled_end_at = datetime.now(UTC) + timedelta(seconds=100)
 
     assert timeout_module.seconds_until_timeout(game) == pytest.approx(100, abs=1)
 
 
 def test_seconds_until_timeout_treats_naive_datetimes_as_utc() -> None:
-    game = Game(starter_id=1, original_file_id="f")
+    game = Game(starter_id=1, original_image=b"f")
     game.scheduled_end_at = (datetime.now(UTC) + timedelta(seconds=100)).replace(tzinfo=None)
 
     assert timeout_module.seconds_until_timeout(game) == pytest.approx(100, abs=1)
 
 
 def test_seconds_until_timeout_clamps_overdue_to_zero() -> None:
-    game = Game(starter_id=1, original_file_id="f")
+    game = Game(starter_id=1, original_image=b"f")
     game.scheduled_end_at = datetime.now(UTC) - timedelta(days=1)
 
     assert timeout_module.seconds_until_timeout(game) == 0
@@ -560,12 +560,12 @@ async def test_inactivity_advance_job_callback_ends_unsolved_on_final_stage(
 
     context.bot.send_photo.assert_awaited_once()
     _, kwargs = context.bot.send_photo.await_args
-    assert kwargs["photo"] == "file123"  # the original screenshot, not a pixelated one
+    assert kwargs["photo"] == b"file123"  # the original screenshot, not a pixelated one
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.status == GameStatus.UNSOLVED
-        assert fetched.original_file_id is None
+        assert fetched.original_image is None
 
 
 async def test_inactivity_advance_job_callback_is_a_noop_if_not_active(session_factory) -> None:

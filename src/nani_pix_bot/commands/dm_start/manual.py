@@ -45,7 +45,7 @@ async def _manual_synonyms_step(
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         title = setup_game.title_english if setup_game is not None else None
-        if setup_game is None or setup_game.original_file_id is None or title is None:
+        if setup_game is None or setup_game.original_image is None or title is None:
             return
         game_service.stage_manual_entry(setup_game, title=title, synonyms=synonyms)
         logger.debug("Game {}: manual entry staged with {} synonyms", setup_game.id, len(synonyms))

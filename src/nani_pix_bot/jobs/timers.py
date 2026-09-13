@@ -97,7 +97,7 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         game = session.get(Game, game_id)
-        if game is None or game.status != GameStatus.ACTIVE or game.original_file_id is None:
+        if game is None or game.status != GameStatus.ACTIVE or game.original_image is None:
             logger.debug("Timeout fired for game {} but it's already resolved — no-op", game_id)
             return
 
@@ -107,7 +107,7 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         await post_current_image(
             context,
             session,
-            photo=game.original_file_id,
+            photo=game.original_image,
             caption=i18n.t("timeout.caption", lang, title=game_service.display_title(game, lang)),
         )
         game_service.clear_original_screenshot(game)
@@ -416,7 +416,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
                 "Inactivity advance fired for game {} but it's not ACTIVE — no-op", game_id
             )
             return
-        assert game.original_file_id is not None
+        assert game.original_image is not None
 
         outcome = game_service.advance_stage(game)
 
@@ -425,7 +425,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
             await post_current_image(
                 context,
                 session,
-                photo=game.original_file_id,
+                photo=game.original_image,
                 caption=i18n.t(
                     "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
                 ),
@@ -436,8 +436,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
         logger.info(
             "Game {} auto-advanced to stage {} after inactivity", game_id, game.current_stage
         )
-        telegram_file = await context.bot.get_file(game.original_file_id)
-        original_bytes = bytes(await telegram_file.download_as_bytearray())
+        original_bytes = game.original_image
         target_width = stage_config.get_stage_config(session)[game.current_stage].target_width
         pixelated = pixelate_service.pixelate(original_bytes, target_width)
         stage_number, total_stages, _ = game_service.stage_progress(session, game)

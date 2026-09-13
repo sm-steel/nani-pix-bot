@@ -43,7 +43,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             return
         # _validate_guess already checked both are set — restores the type
         # narrowing lost by returning `game` across a function boundary.
-        assert game.original_file_id is not None
+        assert game.original_image is not None
         assert game.current_stage is not None
 
         players.get_or_create_player(session, user.id, username=user.username)
@@ -61,7 +61,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await timeout_module.post_current_image(
                 context,
                 session,
-                photo=game.original_file_id,
+                photo=game.original_image,
                 caption=i18n.t(
                     "guess.won_caption",
                     lang,
@@ -84,8 +84,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 )
             )
         elif outcome is game_service.GuessOutcome.STAGE_ADVANCED:
-            telegram_file = await context.bot.get_file(game.original_file_id)
-            original_bytes = bytes(await telegram_file.download_as_bytearray())
+            original_bytes = game.original_image
             target_width = stage_config.get_stage_config(session)[game.current_stage].target_width
             pixelated = pixelate_service.pixelate(original_bytes, target_width)
             stage, total_stages, remaining = game_service.stage_progress(session, game)
@@ -109,7 +108,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await timeout_module.post_current_image(
                 context,
                 session,
-                photo=game.original_file_id,
+                photo=game.original_image,
                 caption=i18n.t(
                     "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
                 ),
@@ -118,7 +117,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def _validate_guess(session, message, user, lang: str) -> Game | None:
-    """The game must be ACTIVE (with both original_file_id and
+    """The game must be ACTIVE (with both original_image and
     current_stage set, which an ACTIVE game always has), and the
     starter may not guess on their own round. Replies and returns None
     on the first failure."""
@@ -127,7 +126,7 @@ async def _validate_guess(session, message, user, lang: str) -> Game | None:
         logger.warning("{} guessed with no ACTIVE game running", user.id)
         await message.reply_text(i18n.t("guess.no_game", lang))
         return None
-    if game.original_file_id is None or game.current_stage is None:
+    if game.original_image is None or game.current_stage is None:
         # Shouldn't happen — an ACTIVE game always has both set. Defensive guard.
         return None
     if user.id == game.starter_id:
