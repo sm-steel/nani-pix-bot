@@ -29,6 +29,7 @@
   "dm_start.pick_screenshot_prompt": "Какой из них использовать?",
   "dm_start.no_screenshots_available": "Для этого тайтла нет доступных скриншотов — пришлите свой.",
   "dm_start.more_screenshots_sent": "Вот ещё несколько — выберите один ниже.",
+  "dm_start.cross_provider_search_failed": "Не удалось автоматически найти совпадение в {service} для этого названия — напишите поисковый запрос сами.",
   "dm_start.ask_new_photo": "Пришлите новый скриншот.",
   "dm_start.ask_extra_synonym": "Напишите дополнительный синоним(ы) (через запятую или с новой строки).",
   "dm_start.searching": "🔍 Ищу…",

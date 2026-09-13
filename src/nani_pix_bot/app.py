@@ -124,6 +124,18 @@ def build_application(config: Config) -> Application:
         )
     )
     application.add_handler(
+        CallbackQueryHandler(
+            dm_start.screenshot_search_again_callback_handler,
+            pattern=r"^screenshot_search_again:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            dm_start.screenshot_search_pick_callback_handler,
+            pattern=r"^screenshot_search_pick:",
+        )
+    )
+    application.add_handler(
         CallbackQueryHandler(dm_start.preview_callback_handler, pattern=r"^preview:")
     )
     application.add_handler(

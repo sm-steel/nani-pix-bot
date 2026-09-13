@@ -13,7 +13,9 @@ instead — it's shared across this package and `commands/stageconfig.py`,
 not specific to the setup flow.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Generic, TypeVar
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -42,68 +44,99 @@ PREVIEW_RESEARCH_CALLBACK_DATA = "preview:research"
 PREVIEW_ADD_SYNONYM_CALLBACK_DATA = "preview:add_synonym"
 
 
+_ResultT = TypeVar("_ResultT")
+
+
+@dataclass(frozen=True)
+class _ResultAccessors(Generic[_ResultT]):
+    """A provider's own display-label rule and id field — bundled with
+    `_CallbackRouting` below so `_results_keyboard` doesn't need a
+    5-argument signature (a qlty "many parameters" smell) on top of its
+    `results`/`lang`."""
+
+    label_fn: Callable[[_ResultT, str], str]
+    id_fn: Callable[[_ResultT], int]
+
+
+@dataclass(frozen=True)
+class _CallbackRouting:
+    """Defaults to identification search's own callback data on every
+    public `*_results_keyboard` wrapper, but ticket 8's cross-provider
+    "Wrong anime? Search again" flow overrides both to route its picks
+    to a different handler (commands/dm_start/screenshots.py) than
+    identification search's own pick_callback_handler."""
+
+    pick_prefix: str
+    retry_data: str = RETRY_CALLBACK_DATA
+
+
+def _results_keyboard(
+    results: list[_ResultT],
+    lang: str,
+    accessors: _ResultAccessors[_ResultT],
+    routing: _CallbackRouting,
+) -> InlineKeyboardMarkup:
+    """Shared body behind every `*_results_keyboard` builder below — one
+    button per result plus a trailing retry button."""
+    buttons = [
+        [
+            InlineKeyboardButton(
+                accessors.label_fn(result, lang),
+                callback_data=f"{routing.pick_prefix}{accessors.id_fn(result)}",
+            )
+        ]
+        for result in results
+    ]
+    buttons.append(
+        [InlineKeyboardButton(i18n.t("keyboards.retry", lang), callback_data=routing.retry_data)]
+    )
+    return InlineKeyboardMarkup(buttons)
+
+
 def anilist_results_keyboard(results: list[AniListResult], lang: str) -> InlineKeyboardMarkup:
-    buttons = [
-        [
-            InlineKeyboardButton(
-                _anilist_label(result, lang),
-                callback_data=f"{_ANILIST_PICK_PREFIX}{result.anilist_id}",
-            )
-        ]
-        for result in results
-    ]
-    buttons.append(
-        [InlineKeyboardButton(i18n.t("keyboards.retry", lang), callback_data=RETRY_CALLBACK_DATA)]
+    accessors = _ResultAccessors(label_fn=_anilist_label, id_fn=lambda result: result.anilist_id)
+    return _results_keyboard(results, lang, accessors, _CallbackRouting(_ANILIST_PICK_PREFIX))
+
+
+def shikimori_results_keyboard(
+    results: list[ShikimoriResult],
+    lang: str,
+    *,
+    pick_prefix: str = _SHIKIMORI_PICK_PREFIX,
+    retry_data: str = RETRY_CALLBACK_DATA,
+) -> InlineKeyboardMarkup:
+    """See _CallbackRouting's docstring for why `pick_prefix`/`retry_data`
+    are overridable."""
+    accessors = _ResultAccessors(
+        label_fn=_shikimori_label, id_fn=lambda result: result.shikimori_id
     )
-    return InlineKeyboardMarkup(buttons)
+    return _results_keyboard(results, lang, accessors, _CallbackRouting(pick_prefix, retry_data))
 
 
-def shikimori_results_keyboard(results: list[ShikimoriResult], lang: str) -> InlineKeyboardMarkup:
-    buttons = [
-        [
-            InlineKeyboardButton(
-                _shikimori_label(result, lang),
-                callback_data=f"{_SHIKIMORI_PICK_PREFIX}{result.shikimori_id}",
-            )
-        ]
-        for result in results
-    ]
-    buttons.append(
-        [InlineKeyboardButton(i18n.t("keyboards.retry", lang), callback_data=RETRY_CALLBACK_DATA)]
-    )
-    return InlineKeyboardMarkup(buttons)
+def jikan_results_keyboard(
+    results: list[JikanResult],
+    lang: str,
+    *,
+    pick_prefix: str = _JIKAN_PICK_PREFIX,
+    retry_data: str = RETRY_CALLBACK_DATA,
+) -> InlineKeyboardMarkup:
+    """See _CallbackRouting's docstring for why `pick_prefix`/`retry_data`
+    are overridable."""
+    accessors = _ResultAccessors(label_fn=_jikan_label, id_fn=lambda result: result.jikan_id)
+    return _results_keyboard(results, lang, accessors, _CallbackRouting(pick_prefix, retry_data))
 
 
-def jikan_results_keyboard(results: list[JikanResult], lang: str) -> InlineKeyboardMarkup:
-    buttons = [
-        [
-            InlineKeyboardButton(
-                _jikan_label(result, lang),
-                callback_data=f"{_JIKAN_PICK_PREFIX}{result.jikan_id}",
-            )
-        ]
-        for result in results
-    ]
-    buttons.append(
-        [InlineKeyboardButton(i18n.t("keyboards.retry", lang), callback_data=RETRY_CALLBACK_DATA)]
-    )
-    return InlineKeyboardMarkup(buttons)
-
-
-def tmdb_results_keyboard(results: list[TMDBResult], lang: str) -> InlineKeyboardMarkup:
-    buttons = [
-        [
-            InlineKeyboardButton(
-                _tmdb_label(result, lang),
-                callback_data=f"{_TMDB_PICK_PREFIX}{result.tmdb_id}",
-            )
-        ]
-        for result in results
-    ]
-    buttons.append(
-        [InlineKeyboardButton(i18n.t("keyboards.retry", lang), callback_data=RETRY_CALLBACK_DATA)]
-    )
-    return InlineKeyboardMarkup(buttons)
+def tmdb_results_keyboard(
+    results: list[TMDBResult],
+    lang: str,
+    *,
+    pick_prefix: str = _TMDB_PICK_PREFIX,
+    retry_data: str = RETRY_CALLBACK_DATA,
+) -> InlineKeyboardMarkup:
+    """See _CallbackRouting's docstring for why `pick_prefix`/`retry_data`
+    are overridable."""
+    accessors = _ResultAccessors(label_fn=_tmdb_label, id_fn=lambda result: result.tmdb_id)
+    return _results_keyboard(results, lang, accessors, _CallbackRouting(pick_prefix, retry_data))
 
 
 def _anilist_label(result: AniListResult, lang: str) -> str:
@@ -241,6 +274,13 @@ SCREENSHOT_SOURCE_PREFIX = "screenshot_source:"
 SCREENSHOT_PICK_PREFIX = "screenshot_pick:"
 SCREENSHOT_MORE_PREFIX = "screenshot_more:"
 SCREENSHOT_SEARCH_AGAIN_PREFIX = "screenshot_search_again:"
+# A cross-provider-resolution search's own pick, format
+# "screenshot_search_pick:<provider>:<id>" — distinct from the plain
+# "<provider>_pick:<id>" identification-search prefixes above so its
+# taps route to screenshots.py's own handler instead of search.py's
+# pick_callback_handler (which would wrongly re-stage identification
+# fields via stage_result() — see game_service.set_screenshot_provider_id).
+SCREENSHOT_SEARCH_PICK_PREFIX = "screenshot_search_pick:"
 SCREENSHOT_UPLOAD_CALLBACK_DATA = "screenshot:upload"
 
 # Brand names, same untranslated-label convention as the method-picker
@@ -358,3 +398,12 @@ def parse_screenshot_search_again_callback_data(data: str) -> str | None:
     if data.startswith(SCREENSHOT_SEARCH_AGAIN_PREFIX):
         return data.removeprefix(SCREENSHOT_SEARCH_AGAIN_PREFIX)
     return None
+
+
+def parse_screenshot_search_pick_callback_data(data: str) -> tuple[str, int] | None:
+    if not data.startswith(SCREENSHOT_SEARCH_PICK_PREFIX):
+        return None
+    provider, _, id_str = data.removeprefix(SCREENSHOT_SEARCH_PICK_PREFIX).partition(":")
+    if not id_str.isdigit():
+        return None
+    return provider, int(id_str)

@@ -14,6 +14,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     method_selection_keyboard,
     parse_method_callback_data,
     parse_pick_callback_data,
+    parse_screenshot_search_pick_callback_data,
     preview_keyboard,
     shikimori_results_keyboard,
     tmdb_results_keyboard,
@@ -231,6 +232,49 @@ def test_tmdb_pick_callback_data_round_trips_the_tmdb_id() -> None:
 
     assert isinstance(data, str)
     assert parse_pick_callback_data(data) == ("tmdb", 209867)
+
+
+def test_shikimori_keyboard_accepts_a_custom_pick_prefix_and_retry_data() -> None:
+    """Ticket 8's cross-provider "Wrong anime? Search again" flow reuses
+    this exact keyboard builder for its own results, routed through a
+    different callback prefix so its picks land on a different handler
+    than identification search's own pick_callback_handler."""
+    markup = shikimori_results_keyboard(
+        [_FRIEREN_SHIKIMORI],
+        lang="en",
+        pick_prefix="screenshot_search_pick:shikimori:",
+        retry_data="custom_retry",
+    )
+
+    assert markup.inline_keyboard[0][0].callback_data == "screenshot_search_pick:shikimori:52991"
+    assert markup.inline_keyboard[-1][0].callback_data == "custom_retry"
+
+
+def test_jikan_keyboard_accepts_a_custom_pick_prefix() -> None:
+    markup = jikan_results_keyboard(
+        [_FRIEREN_JIKAN], lang="en", pick_prefix="screenshot_search_pick:jikan:"
+    )
+
+    assert markup.inline_keyboard[0][0].callback_data == "screenshot_search_pick:jikan:52991"
+
+
+def test_tmdb_keyboard_accepts_a_custom_pick_prefix() -> None:
+    markup = tmdb_results_keyboard(
+        [_FRIEREN_TMDB], lang="en", pick_prefix="screenshot_search_pick:tmdb:"
+    )
+
+    assert markup.inline_keyboard[0][0].callback_data == "screenshot_search_pick:tmdb:209867"
+
+
+def test_parse_screenshot_search_pick_callback_data_round_trips() -> None:
+    assert parse_screenshot_search_pick_callback_data("screenshot_search_pick:tmdb:209867") == (
+        "tmdb",
+        209867,
+    )
+
+
+def test_parse_screenshot_search_pick_callback_data_returns_none_for_other_data() -> None:
+    assert parse_screenshot_search_pick_callback_data("shikimori_pick:52991") is None
 
 
 def test_method_selection_keyboard_defaults_to_anilist_first() -> None:

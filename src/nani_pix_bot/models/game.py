@@ -44,9 +44,16 @@ class Game(Base):
     source: Mapped[str] = mapped_column(String(16), default="anilist")
     # Which provider's *_id column above is currently backing
     # original_image, if it's API-sourced at all ("shikimori"/"jikan"/
-    # "tmdb", or None for a genuine upload or no image yet) — lets
-    # "Re-search title"/"pick a different screenshot" know which id to
-    # trust, and cleanup know whether the current image is API-sourced.
+    # "tmdb", or None for a genuine upload). Also doubles as "which
+    # provider the screenshot picker is currently resolving" *before*
+    # original_image exists yet — set the moment a screenshot-source
+    # button is tapped (commands/dm_start/screenshots.py), so a
+    # cross-provider resolution's follow-up text message (the "Wrong
+    # anime? Search again" correction) still knows which provider it's
+    # searching without needing separate DB state for it (see issue
+    # #11 — flow state has to be DB-derived, never only in-memory).
+    # None means "no screenshot provider chosen yet" (genuine upload,
+    # or still on the source-selection keyboard).
     screenshot_source: Mapped[str | None] = mapped_column(
         String(SCREENSHOT_SOURCE_LENGTH), default=None
     )

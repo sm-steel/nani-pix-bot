@@ -3,10 +3,14 @@
 `pick_callback_handler` once identification is staged but no image
 exists yet. See MECHANICS.md's "Starting a game" section.
 
-Same-provider path only (the screenshot provider tapped is one the
-identification step already has an id for) — cross-provider resolution
-(when the starter picks a provider that wasn't used for identification)
-is a later ticket's job."""
+Every screenshot-capable provider (Shikimori/Jikan/TMDB) is always
+offered, regardless of which provider did the identification: tapping
+one the game already has an id for goes straight to its gallery
+(same-provider path); tapping any other silently searches it by the
+already-confirmed title and takes the top result (cross-provider
+resolution, ticket 8) — with a "Wrong anime? Search again" button on
+the resulting gallery for a correction, and the same correction is
+reachable if the initial auto-search finds nothing at all."""
 
 from dataclasses import dataclass
 
@@ -14,20 +18,34 @@ from loguru import logger
 from telegram import InputMediaPhoto, Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start._shared import _client_for_source, _show_preview
+from nani_pix_bot.commands.dm_start._shared import (
+    _SEARCH_SERVICE_ERRORS,
+    _SERVICE_DISPLAY_NAMES,
+    _client_for_source,
+    _show_preview,
+)
 from nani_pix_bot.commands.dm_start.keyboards import (
+    SCREENSHOT_SEARCH_PICK_PREFIX,
     GalleryPage,
+    jikan_results_keyboard,
     parse_screenshot_more_callback_data,
     parse_screenshot_pick_callback_data,
+    parse_screenshot_search_again_callback_data,
+    parse_screenshot_search_pick_callback_data,
     parse_screenshot_source_callback_data,
     screenshot_gallery_keyboard,
     screenshot_source_keyboard,
+    shikimori_results_keyboard,
+    tmdb_results_keyboard,
 )
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.search import jikan, shikimori, tmdb
+from nani_pix_bot.services.search.jikan import JikanResult
+from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tmdb import TMDBResult
 
 GALLERY_PAGE_SIZE = 5
 
@@ -47,6 +65,18 @@ async def _fetch_screenshots(provider: str, client, provider_id: int) -> list[st
     return await _SCREENSHOT_MODULES[provider].screenshots(client, provider_id)
 
 
+async def _search_provider(
+    provider: str, client, query: str
+) -> list[ShikimoriResult] | list[JikanResult] | list[TMDBResult]:
+    return await _SCREENSHOT_MODULES[provider].search(client, query)
+
+
+async def _get_provider_by_id(
+    provider: str, client, external_id: int
+) -> ShikimoriResult | JikanResult | TMDBResult | None:
+    return await _SCREENSHOT_MODULES[provider].get_by_id(client, external_id)
+
+
 @dataclass(frozen=True)
 class GalleryTarget:
     """Where a gallery page is being sent and which provider/offset
@@ -63,15 +93,13 @@ class GalleryTarget:
 
 
 def _screenshot_capable_providers(game) -> list[str]:
-    """Providers with both a screenshots() capability and a known id
-    for this game, same-provider-as-identification first (so the
-    common case — screenshot source matches identification source —
-    needs no cross-provider search at all)."""
-    candidates = [
-        provider
-        for provider in ("shikimori", "jikan", "tmdb")
-        if getattr(game, _ID_ATTRS[provider])
-    ]
+    """All 3 screenshot-capable providers, same-provider-as-identification
+    first when it's one of them (so the common case — screenshot source
+    matches identification source — needs no cross-provider search at
+    all). Every provider is offered regardless of whether the game
+    already has an id for it — tapping one it doesn't triggers
+    cross-provider resolution (see _resolve_screenshot_source)."""
+    candidates = ["shikimori", "jikan", "tmdb"]
     if game.source in candidates:
         candidates.remove(game.source)
         candidates.insert(0, game.source)
@@ -81,16 +109,12 @@ def _screenshot_capable_providers(game) -> list[str]:
 async def start_screenshot_picker(context: ContextTypes.DEFAULT_TYPE, game, lang: str) -> None:
     """Entry point from `search.py`'s `pick_callback_handler` (and
     `manual.py`'s synonym step) once identification is staged with no
-    image yet — shows the screenshot-source-selection keyboard, or (no
-    screenshot-capable provider at all — e.g. AniList/manual
-    identification) goes straight to asking for an upload."""
+    image yet — shows the screenshot-source-selection keyboard. Every
+    screenshot-capable provider is always offered (see
+    _screenshot_capable_providers) since cross-provider resolution
+    means even an AniList/manual identification can still get a
+    Shikimori/Jikan/TMDB screenshot."""
     providers = _screenshot_capable_providers(game)
-    if not providers:
-        game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
-        await context.bot.send_message(
-            chat_id=game.starter_id, text=i18n.t("dm_start.ask_new_photo", lang)
-        )
-        return
     game.setup_step = SetupStep.PICKING_SCREENSHOT
     await context.bot.send_message(
         chat_id=game.starter_id,
@@ -130,7 +154,8 @@ async def screenshot_source_callback_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """A screenshot-source button tapped from `start_screenshot_picker`'s
-    keyboard."""
+    keyboard — same-provider (an id already on file) or cross-provider
+    (ticket 8's silent auto-search), see _resolve_screenshot_source."""
     query = update.callback_query
     if query is None or query.data is None:
         return
@@ -147,17 +172,236 @@ async def screenshot_source_callback_handler(
             return
 
         provider = parse_screenshot_source_callback_data(query.data)
-        provider_id = getattr(game, _ID_ATTRS[provider]) if provider else None
-        if provider is None or provider_id is None:
+        if provider is None:
             return
+        game.screenshot_source = provider
+        reply_key, reply_kwargs = await _resolve_screenshot_source(context, game, provider, lang)
 
+    await query.edit_message_text(i18n.t(reply_key, lang, **reply_kwargs))
+
+
+async def _resolve_screenshot_source(
+    context: ContextTypes.DEFAULT_TYPE, game, provider: str, lang: str
+) -> tuple[str, dict]:
+    """Runs once a screenshot-source button is tapped: same-provider (an
+    id already on file) goes straight to the gallery; cross-provider
+    silently searches by the confirmed title first (ticket 8) and only
+    falls back to asking for a manual query if that search finds
+    nothing. Returns the i18n key (+ format kwargs) for the caller's
+    own follow-up message edit."""
+    provider_id = getattr(game, _ID_ATTRS[provider])
+    cross_provider = provider_id is None
+    if cross_provider:
+        provider_id = await _resolve_cross_provider_id(context, game, provider)
+        if provider_id is None:
+            return "dm_start.cross_provider_search_failed", {
+                "service": _SERVICE_DISPLAY_NAMES[provider]
+            }
+
+    client = _client_for_source(context, provider)
+    urls = await _fetch_screenshots(provider, client, provider_id)
+    logger.debug("Game {}: fetched {} {} screenshot(s)", game.id, len(urls), provider)
+    target = GalleryTarget(
+        chat_id=game.starter_id, provider=provider, offset=0, cross_provider=cross_provider
+    )
+    await _show_gallery_page(context, target, urls, lang)
+    return "dm_start.screenshot_source_picked", {}
+
+
+async def _resolve_cross_provider_id(
+    context: ContextTypes.DEFAULT_TYPE, game, provider: str
+) -> int | None:
+    """Silently searches `provider` by the already-confirmed title and
+    stages its top result's id onto the game
+    (game_service.set_screenshot_provider_id) — ticket 8's cross-
+    provider resolution. Returns None on zero results or a search
+    failure so the caller can fall back to asking for a manual query
+    (the "Wrong anime? Search again" flow lands in that exact same
+    fallback state, see search_text_handler's PICKING_SCREENSHOT
+    branch in search.py)."""
+    query_text = game.title_english or game.title_romaji or ""
+    client = _client_for_source(context, provider)
+    try:
+        results = await _search_provider(provider, client, query_text)
+    except _SEARCH_SERVICE_ERRORS:
+        logger.exception(
+            "Game {}: {} cross-provider screenshot search failed for {!r}",
+            game.id,
+            provider,
+            query_text,
+        )
+        return None
+
+    if not results:
+        logger.info("Game {}: no {} cross-provider match for {!r}", game.id, provider, query_text)
+        return None
+
+    game_service.set_screenshot_provider_id(game, results[0])
+    provider_id = getattr(game, _ID_ATTRS[provider])
+    logger.info("Game {}: cross-provider resolved {} -> id {}", game.id, provider, provider_id)
+    return provider_id
+
+
+async def screenshot_search_again_callback_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """ "Wrong anime? Search again" — tapped from a cross-provider
+    gallery to correct a bad auto-resolved top result. Just asks for a
+    query; screenshot_source (already set to `provider` by whichever
+    step showed this button) is what tells search_text_handler to route
+    the next text message to _screenshot_search_step below."""
+    query = update.callback_query
+    if query is None or query.data is None:
+        return
+    await query.answer()
+    user = query.from_user
+    if user is None:
+        return
+
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        game = game_service.get_setup_game_for_starter(session, user.id)
+        if game is None:
+            return
+        provider = parse_screenshot_search_again_callback_data(query.data)
+        if provider is None:
+            return
+        game.screenshot_source = provider
+
+    await query.edit_message_text(i18n.t("dm_start.ask_search", lang))
+
+
+async def _screenshot_search_step(
+    message, context: ContextTypes.DEFAULT_TYPE, lang: str, provider: str
+) -> None:
+    """A search query typed while resolving `provider`'s screenshot (the
+    "Wrong anime? Search again" correction, or the fallback state after
+    an auto-search found nothing) — mirrors search.py's own
+    `_search_step`, but wires its results keyboard to
+    screenshot_search_pick_callback_handler instead of identification
+    search's own pick_callback_handler (see keyboards.py's `pick_prefix`
+    override on the shared *_results_keyboard builders)."""
+    status_message = await message.reply_text(i18n.t("dm_start.searching", lang))
+    logger.debug("{} screenshot cross-search started for query {!r}", provider, message.text)
+
+    client = _client_for_source(context, provider)
+    pick_prefix = f"{SCREENSHOT_SEARCH_PICK_PREFIX}{provider}:"
+    try:
+        # Dispatched inline (rather than through a provider->function
+        # dict, like _fetch_screenshots/_search_provider use) since each
+        # branch's *_results_keyboard builder needs its own specific
+        # result type — a dict of them collapses to a union ty can't
+        # narrow back down per call. Mirrors search.py's own
+        # _search_step for the same reason.
+        if provider == "shikimori":
+            results = await shikimori.search(client, message.text)
+            keyboard = shikimori_results_keyboard(results, lang, pick_prefix=pick_prefix)
+        elif provider == "jikan":
+            results = await jikan.search(client, message.text)
+            keyboard = jikan_results_keyboard(results, lang, pick_prefix=pick_prefix)
+        else:
+            results = await tmdb.search(client, message.text)
+            keyboard = tmdb_results_keyboard(results, lang, pick_prefix=pick_prefix)
+    except _SEARCH_SERVICE_ERRORS:
+        logger.exception("{} screenshot cross-search failed for query {!r}", provider, message.text)
+        await status_message.edit_text(
+            i18n.t(
+                "dm_start.cross_provider_search_failed",
+                lang,
+                service=_SERVICE_DISPLAY_NAMES[provider],
+            )
+        )
+        return
+
+    logger.debug(
+        "{} screenshot cross-search for {!r} returned {} result(s)",
+        provider,
+        message.text,
+        len(results),
+    )
+    if not results:
+        await status_message.edit_text(i18n.t("dm_start.no_results", lang))
+        return
+
+    await status_message.edit_text(i18n.t("dm_start.pick_prompt", lang), reply_markup=keyboard)
+
+
+async def screenshot_search_pick_callback_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """A result tapped from `_screenshot_search_step`'s keyboard —
+    resolves it, stages its id (game_service.set_screenshot_provider_id,
+    never stage_result — this is a screenshot correction, not a
+    re-identification) and shows its gallery."""
+    query = update.callback_query
+    if query is None or query.data is None:
+        return
+    await query.answer()
+    user = query.from_user
+    if user is None:
+        return
+
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+
+    resolved = await _resolve_screenshot_search_pick(query, context, lang)
+    if resolved is None:
+        return
+    provider, external_id, result = resolved
+
+    with session_scope(session_factory) as session:
+        game = game_service.get_setup_game_for_starter(session, user.id)
+        if game is None:
+            return
+        game_service.set_screenshot_provider_id(game, result)
+        logger.debug(
+            "Game {}: cross-provider search resolved {} -> id {}", game.id, provider, external_id
+        )
         client = _client_for_source(context, provider)
-        urls = await _fetch_screenshots(provider, client, provider_id)
-        logger.debug("Game {}: fetched {} {} screenshot(s)", game.id, len(urls), provider)
-        target = GalleryTarget(chat_id=game.starter_id, provider=provider, offset=0)
+        urls = await _fetch_screenshots(provider, client, external_id)
+        target = GalleryTarget(
+            chat_id=game.starter_id, provider=provider, offset=0, cross_provider=True
+        )
         await _show_gallery_page(context, target, urls, lang)
 
     await query.edit_message_text(i18n.t("dm_start.screenshot_source_picked", lang))
+
+
+async def _resolve_screenshot_search_pick(
+    query, context: ContextTypes.DEFAULT_TYPE, lang: str
+) -> tuple[str, int, ShikimoriResult | JikanResult | TMDBResult] | None:
+    """Parses the pick and re-fetches the full result via get_by_id
+    (restart-resilient, same reasoning as search.py's own
+    `_resolve_picked_result`). Replies and returns None for every
+    already-handled outcome: unparseable callback data, the search
+    service erroring, or the id no longer existing."""
+    parsed = parse_screenshot_search_pick_callback_data(query.data)
+    if parsed is None:
+        return None
+    provider, external_id = parsed
+
+    client = _client_for_source(context, provider)
+    try:
+        result = await _get_provider_by_id(provider, client, external_id)
+    except _SEARCH_SERVICE_ERRORS:
+        logger.exception("{} get_by_id failed for id {}", provider, external_id)
+        await query.edit_message_text(
+            i18n.t(
+                "dm_start.cross_provider_search_failed",
+                lang,
+                service=_SERVICE_DISPLAY_NAMES[provider],
+            )
+        )
+        return None
+
+    if result is None:
+        logger.warning("{} id {} picked but no longer found", provider, external_id)
+        await query.edit_message_text(i18n.t("dm_start.not_found_anymore", lang))
+        return None
+
+    return provider, external_id, result
 
 
 async def screenshot_gallery_callback_handler(

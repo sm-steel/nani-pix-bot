@@ -253,6 +253,56 @@ async def test_search_text_handler_reshows_method_keyboard_when_the_service_erro
         assert fetched.status == GameStatus.SETUP
 
 
+async def test_search_text_handler_routes_to_screenshot_search_while_resolving_a_provider(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A text message during PICKING_SCREENSHOT, once a screenshot
+    provider is being resolved (screenshot_source set, no image yet),
+    is ticket 8's cross-provider "Search again" query — not an
+    identification search."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.commit()
+        game = game_service.create_setup_game(session, starter_id=1)
+        game.source = "anilist"
+        game.setup_step = SetupStep.PICKING_SCREENSHOT
+        game.screenshot_source = "tmdb"
+        session.commit()
+
+    step_mock = AsyncMock()
+    monkeypatch.setattr(search, "_screenshot_search_step", step_mock)
+    update = _make_text_update(user_id=1, text="Frieren")
+    context = _make_context(session_factory, search_client=MagicMock())
+
+    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    step_mock.assert_awaited_once_with(update.message, context, "EN", "tmdb")
+
+
+async def test_search_text_handler_ignores_text_while_still_on_the_source_keyboard(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No screenshot_source set yet (still choosing a provider) — a
+    stray text message shouldn't be treated as a search query at all."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.commit()
+        game = game_service.create_setup_game(session, starter_id=1)
+        game.source = "anilist"
+        game.setup_step = SetupStep.PICKING_SCREENSHOT
+        session.commit()
+
+    step_mock = AsyncMock()
+    monkeypatch.setattr(search, "_screenshot_search_step", step_mock)
+    update = _make_text_update(user_id=1, text="Frieren")
+    context = _make_context(session_factory, search_client=MagicMock())
+
+    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    step_mock.assert_not_awaited()
+    update.message.reply_text.assert_not_awaited()
+
+
 async def test_pick_callback_handler_retry_does_not_touch_the_database(session_factory) -> None:
     update = _make_callback_update(data=RETRY_CALLBACK_DATA)
     context = _make_callback_context(session_factory)

@@ -19,8 +19,9 @@ Split across submodules by flow stage:
                  search-and-pick
   manual.py      manual title/synonym entry
   screenshots.py screenshot-source selection + gallery browsing for
-                 the /newgame path (same-provider only — cross-
-                 provider resolution is a later ticket's job)
+                 the /newgame path, including cross-provider
+                 resolution (searching a provider other than the one
+                 that identified the anime)
   preview.py     the confirmation preview (show/confirm/change-image/
                  research/add-synonym) and the final post to the group
   keyboards.py   inline-keyboard builders + callback-data constants
@@ -39,6 +40,8 @@ from nani_pix_bot.commands.dm_start.newgame import newgame_command
 from nani_pix_bot.commands.dm_start.preview import preview_callback_handler
 from nani_pix_bot.commands.dm_start.screenshots import (
     screenshot_gallery_callback_handler,
+    screenshot_search_again_callback_handler,
+    screenshot_search_pick_callback_handler,
     screenshot_source_callback_handler,
     screenshot_upload_instead_callback_handler,
 )
@@ -55,6 +58,8 @@ __all__ = [
     "pick_callback_handler",
     "preview_callback_handler",
     "screenshot_gallery_callback_handler",
+    "screenshot_search_again_callback_handler",
+    "screenshot_search_pick_callback_handler",
     "screenshot_source_callback_handler",
     "screenshot_upload_instead_callback_handler",
     "search_text_handler",

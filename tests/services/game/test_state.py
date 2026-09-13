@@ -348,6 +348,45 @@ def test_stage_result_assigns_tmdb_fields_including_native_title(session: Sessio
     assert fetched.source == "tmdb"
 
 
+def test_set_screenshot_provider_id_sets_only_the_ids_column(session: Session) -> None:
+    """Cross-provider screenshot resolution (ticket 8): identifying via
+    Shikimori, then resolving a TMDB screenshot, must not touch the
+    identification fields stage_result() sets — only tmdb_id changes."""
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    game_service.stage_result(game, _FRIEREN_SHIKIMORI, source="shikimori")
+    session.commit()
+
+    game_service.set_screenshot_provider_id(game, _FRIEREN_TMDB)
+    session.commit()
+
+    fetched = session.get(Game, game.id)
+    assert fetched is not None
+    assert fetched.tmdb_id == 209867
+    assert fetched.shikimori_id == 52991
+    assert fetched.source == "shikimori"
+    assert fetched.title_romaji == "Sousou no Frieren"
+    assert fetched.title_russian == "Провожающая в последний путь Фрирен"
+    assert fetched.synonyms == ["Frieren at the Funeral"]
+
+
+def test_set_screenshot_provider_id_handles_each_provider_type(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    session.commit()
+
+    game_service.set_screenshot_provider_id(game, _FRIEREN_SHIKIMORI)
+    assert game.shikimori_id == 52991
+
+    game_service.set_screenshot_provider_id(game, _FRIEREN_JIKAN)
+    assert game.jikan_id == 52991
+
+    game_service.set_screenshot_provider_id(game, _FRIEREN_TMDB)
+    assert game.tmdb_id == 209867
+
+
 def test_stage_manual_entry_assigns_the_typed_title_and_synonyms(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()

@@ -213,6 +213,23 @@ def stage_result(
         game.title_native = result.title_native
 
 
+def set_screenshot_provider_id(
+    game: Game, result: ShikimoriResult | JikanResult | TMDBResult
+) -> None:
+    """Cross-provider screenshot resolution's equivalent of stage_result()
+    (see commands/dm_start/screenshots.py's ticket 8): records a
+    screenshot provider's id on the game without touching the
+    identification fields (title/synonyms/source) stage_result() sets —
+    resolving a screenshot from a different provider than the one that
+    identified this anime shouldn't overwrite that identification."""
+    if isinstance(result, ShikimoriResult):
+        game.shikimori_id = result.shikimori_id
+    elif isinstance(result, JikanResult):
+        game.jikan_id = result.jikan_id
+    elif isinstance(result, TMDBResult):
+        game.tmdb_id = result.tmdb_id
+
+
 def stage_manual_entry(game: Game, *, title: str, synonyms: list[str]) -> None:
     """Manual entry's equivalent of stage_result() — there's no external
     search result to draw from, just what the starter typed."""
