@@ -18,3 +18,9 @@ class BotSettings(Base):
     # Lets an admin lock out starting *new* games (e.g. while mid
     # stage-config tuning) without affecting a game already in progress.
     games_enabled: Mapped[bool] = mapped_column(default=True)
+    # The Telegram message_id of whatever "current image" (a pixelated
+    # stage or a reveal) is currently pinned in the game topic — a
+    # singleton pointer rather than a per-Game column since it's meant
+    # to persist across games (see services/settings/bot_settings.py's
+    # get/set_pinned_message_id and jobs/timers.py's post_current_image).
+    pinned_message_id: Mapped[int | None] = mapped_column(default=None)

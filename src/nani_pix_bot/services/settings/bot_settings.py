@@ -44,3 +44,21 @@ def set_games_enabled(session: Session, enabled: bool) -> None:
     else:
         settings.games_enabled = enabled
     logger.info("Starting new games {}", "enabled" if enabled else "disabled")
+
+
+def get_pinned_message_id(session: Session) -> int | None:
+    """The Telegram message_id of whatever "current image" is currently
+    pinned in the game topic, if any — see jobs/timers.py's
+    post_current_image()."""
+    settings = session.get(BotSettings, SETTINGS_ID)
+    return settings.pinned_message_id if settings is not None else None
+
+
+def set_pinned_message_id(session: Session, message_id: int | None) -> None:
+    settings = session.get(BotSettings, SETTINGS_ID)
+    if settings is None:
+        settings = BotSettings(id=SETTINGS_ID, pinned_message_id=message_id)
+        session.add(settings)
+    else:
+        settings.pinned_message_id = message_id
+    logger.debug("Pinned message id set to {}", message_id)

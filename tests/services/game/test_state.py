@@ -672,3 +672,40 @@ def test_record_guess_total_guess_count_survives_a_stage_advance(session: Sessio
 
     assert game.wrong_guess_count == 0
     assert game.total_guess_count == 5
+
+
+def test_advance_stage_moves_to_the_next_stage_and_resets_wrong_guess_count(
+    session: Session,
+) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_2, wrong_guess_count=3)
+
+    outcome = game_service.advance_stage(game)
+
+    assert outcome is game_service.GuessOutcome.STAGE_ADVANCED
+    assert game.current_stage == PixelStage.STAGE_3
+    assert game.wrong_guess_count == 0
+    assert game.status == GameStatus.ACTIVE
+
+
+def test_advance_stage_ends_unsolved_when_already_on_the_final_stage(session: Session) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_5, wrong_guess_count=7)
+
+    outcome = game_service.advance_stage(game)
+
+    assert outcome is game_service.GuessOutcome.UNSOLVED
+    assert game.status == GameStatus.UNSOLVED
+    assert game.current_stage == PixelStage.STAGE_5  # left as-is, only status changes
+
+
+def test_record_guess_wrong_guess_limit_hit_delegates_to_advance_stage(session: Session) -> None:
+    # record_guess's own stage-exhaustion tests above already cover the
+    # observable behavior; this just pins that it's the same advance_stage()
+    # a future inactivity-advance job callback will call, not a second copy.
+    game = _active_game(session, stage=PixelStage.STAGE_4, wrong_guess_count=4)
+    _seed_stage_limit(session, PixelStage.STAGE_4, wrong_guess_limit=5)
+
+    outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
+    session.commit()
+
+    assert outcome is game_service.GuessOutcome.STAGE_ADVANCED
+    assert game.current_stage == PixelStage.STAGE_5

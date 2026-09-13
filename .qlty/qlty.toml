@@ -40,6 +40,14 @@ exclude_patterns = [
   "**/templates/**",
   "**/testdata/**",
   "**/vendor/**",
+  # Alembic migrations are mandated boilerplate (docstring/header,
+  # revision/down_revision, upgrade()/downgrade() shape) and must stand
+  # alone as immutable historical scripts — there's no legitimate way to
+  # de-duplicate two migrations that happen to add a similar shape of
+  # nullable columns without breaking that model. Confirmed a genuine
+  # false positive with the user (2026-09) before adding this exclusion,
+  # per this repo's own rule against loosening checks unilaterally.
+  "migrations/versions/**",
 ]
 
 test_patterns = [

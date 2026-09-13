@@ -66,3 +66,47 @@ def test_set_games_enabled_updates_an_existing_row(session: Session) -> None:
     fetched = session.get(BotSettings, 1)
     assert fetched is not None
     assert fetched.games_enabled is False
+
+
+def test_get_pinned_message_id_defaults_to_none_when_no_row_exists(session: Session) -> None:
+    assert settings.get_pinned_message_id(session) is None
+
+
+def test_get_pinned_message_id_returns_the_stored_value(session: Session) -> None:
+    session.add(BotSettings(id=1, pinned_message_id=42))
+    session.commit()
+
+    assert settings.get_pinned_message_id(session) == 42
+
+
+def test_set_pinned_message_id_creates_the_row_if_missing(session: Session) -> None:
+    settings.set_pinned_message_id(session, 42)
+    session.commit()
+
+    fetched = session.get(BotSettings, 1)
+    assert fetched is not None
+    assert fetched.pinned_message_id == 42
+
+
+def test_set_pinned_message_id_updates_an_existing_row(session: Session) -> None:
+    session.add(BotSettings(id=1, pinned_message_id=1))
+    session.commit()
+
+    settings.set_pinned_message_id(session, 99)
+    session.commit()
+
+    fetched = session.get(BotSettings, 1)
+    assert fetched is not None
+    assert fetched.pinned_message_id == 99
+
+
+def test_set_pinned_message_id_can_clear_it_back_to_none(session: Session) -> None:
+    session.add(BotSettings(id=1, pinned_message_id=1))
+    session.commit()
+
+    settings.set_pinned_message_id(session, None)
+    session.commit()
+
+    fetched = session.get(BotSettings, 1)
+    assert fetched is not None
+    assert fetched.pinned_message_id is None
