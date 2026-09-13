@@ -43,12 +43,27 @@ involvement) — this bot is Telegram-only, unlike `ley-shards-bot`.
   (`amsterdam` is used rather than `helsinki` — as of this bot's setup,
   `helsinki`'s proxy is unreachable from both `moscow` and the outside; see
   the ops vault for current status if this ever needs revisiting.)
-- **AniList/Shikimori connectivity:** both are reached directly from
-  `moscow`, no proxy involved — `services/search/shikimori.py`'s
-  `SHIKIMORI_BASE_URL` points at `shikimori.io`. (Shikimori's older
-  `shikimori.one` domain now permanently redirects to `shikimori.io` and
-  is itself unreachable directly from `moscow` — worth remembering if
-  that redirect target ever changes again.)
+- **AniList/Shikimori/Jikan connectivity:** all three are reached
+  directly from `moscow`, no proxy involved —
+  `services/search/shikimori.py`'s `SHIKIMORI_BASE_URL` points at
+  `shikimori.io`. (Shikimori's older `shikimori.one` domain now
+  permanently redirects to `shikimori.io` and is itself unreachable
+  directly from `moscow` — worth remembering if that redirect target
+  ever changes again.)
+- **TMDB connectivity — DNS-blocked, needs the `amsterdam` proxy:**
+  unlike the three providers above, `api.themoviedb.org` resolves to
+  loopback (`::1`/`127.0.0.1`) via `moscow`'s configured DNS resolver
+  (Yandex DNS, `77.88.8.8`) — confirmed with `getent hosts`/`resolvectl
+  status`, not just a slow timeout. Routing the exact same request
+  through the `amsterdam` proxy (the one Telegram already uses, see
+  above) resolves and connects fine — confirmed by getting a real `401`
+  (valid endpoint, no API key yet) instead of a connection failure.
+  `services/search/tmdb.py` must therefore construct its `httpx` client
+  with the same proxy as `ApplicationBuilder`'s Telegram client, unlike
+  every other search service in this package, which are all
+  proxy-free. A TMDB API key also still needs to be issued and placed
+  in the ops vault + `.env` before ticket 4 (TMDB search service) can
+  be implemented against a real account.
 - **Group admin permission:** the bot needs the group's "Pin messages"
   admin permission for the pinned-current-image behavior (see
   `MECHANICS.md`'s "Pixelation stages" section) to actually take effect.
