@@ -1,5 +1,7 @@
 # nani-pix-bot
 
+![nani-pix-bot](docs/social-preview.png)
+
 ![Checks](https://github.com/sm-steel/nani-pix-bot/actions/workflows/checks.yml/badge.svg)
 ![Tests](https://github.com/sm-steel/nani-pix-bot/actions/workflows/tests.yml/badge.svg)
 
