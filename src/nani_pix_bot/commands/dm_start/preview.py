@@ -140,9 +140,11 @@ async def _preview_change_image_upload(query, game: Game, lang: str) -> None:
 
 async def _preview_change_image_pick_screenshot(context, query, game: Game, lang: str) -> None:
     logger.debug("Game {}: pick-a-different-screenshot requested from preview", game.id)
-    game.setup_step = SetupStep.PICKING_SCREENSHOT
-    await resume_screenshot_gallery(context, game, lang)
-    await query.edit_message_text(text=i18n.t("dm_start.screenshot_source_picked", lang))
+    # resume_screenshot_gallery owns the setup_step transition itself —
+    # PICKING_SCREENSHOT on a successful fetch, AWAITING_PHOTO_CHANGE on
+    # a stale/failed/empty one — and returns the matching reply key.
+    reply_key = await resume_screenshot_gallery(context, game, lang)
+    await query.edit_message_text(text=i18n.t(reply_key, lang))
 
 
 async def _preview_research(query, game: Game, lang: str) -> None:

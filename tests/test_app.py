@@ -12,7 +12,14 @@ from telegram.error import Conflict, NetworkError
 from telegram.ext import CallbackQueryHandler, ContextTypes
 
 from nani_pix_bot import app
-from nani_pix_bot.commands.dm_start import pick_callback_handler
+from nani_pix_bot.commands.dm_start import (
+    pick_callback_handler,
+    screenshot_gallery_callback_handler,
+    screenshot_search_again_callback_handler,
+    screenshot_search_pick_callback_handler,
+    screenshot_source_callback_handler,
+    screenshot_upload_instead_callback_handler,
+)
 from nani_pix_bot.config import Config
 
 _VALID_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"  # noqa: S105 - test fixture, not a real token
@@ -94,6 +101,56 @@ def test_pick_callback_handler_pattern_matches_every_providers_prefix() -> None:
     )
     for data in pick_examples:
         assert pattern.match(data), f"{data!r} should match the pick-callback pattern"
+
+
+def test_screenshot_callback_handlers_match_only_their_own_prefix() -> None:
+    # Regression, same class of bug as the pick-callback pattern test
+    # above: five screenshot-flow callback prefixes are each registered
+    # as their own CallbackQueryHandler with its own regex — a typo'd
+    # or overlapping pattern would either silently swallow taps meant
+    # for a different handler, or (as happened with jikan/tmdb above)
+    # never reach any handler at all, and nothing else would catch it.
+    application = app.build_application(_config())
+    handlers_by_callback = {
+        handler.callback: handler
+        for group in application.handlers.values()
+        for handler in group
+        if isinstance(handler, CallbackQueryHandler)
+    }
+
+    examples_by_handler = {
+        screenshot_upload_instead_callback_handler: ["screenshot:upload"],
+        screenshot_source_callback_handler: ["screenshot_source:shikimori"],
+        screenshot_gallery_callback_handler: [
+            "screenshot_pick:shikimori:0",
+            "screenshot_more:shikimori:5",
+        ],
+        screenshot_search_again_callback_handler: ["screenshot_search_again:tmdb"],
+        screenshot_search_pick_callback_handler: ["screenshot_search_pick:tmdb:209867"],
+    }
+    # handler.callback's static type is a bare Callable (no __name__
+    # guarantee), so names are looked up through this dict rather than
+    # calling .__name__ on it directly — built from our own literal,
+    # concretely-typed function objects above, which do have one.
+    names = {callback: callback.__name__ for callback in examples_by_handler}
+    for callback in examples_by_handler:
+        assert callback in handlers_by_callback, f"{names[callback]} isn't registered"
+
+    for callback, examples in examples_by_handler.items():
+        pattern = handlers_by_callback[callback].pattern
+        assert isinstance(pattern, re.Pattern)
+        for data in examples:
+            assert pattern.match(data), f"{data!r} should match {names[callback]}'s pattern"
+            for other_callback, other_handler in handlers_by_callback.items():
+                if other_callback is callback:
+                    continue
+                other_pattern = other_handler.pattern
+                if not isinstance(other_pattern, re.Pattern):
+                    continue
+                other_name = names.get(other_callback, repr(other_callback))
+                assert not other_pattern.match(data), (
+                    f"{data!r} (meant for {names[callback]}) also matches {other_name}'s pattern"
+                )
 
 
 def test_build_application_succeeds_with_a_proxy_configured() -> None:

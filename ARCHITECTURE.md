@@ -64,6 +64,14 @@ involvement) — this bot is Telegram-only, unlike `ley-shards-bot`.
   proxy-free. A TMDB API key also still needs to be issued and placed
   in the ops vault + `.env` before ticket 4 (TMDB search service) can
   be implemented against a real account.
+  **`image.tmdb.org` (the screenshot/still image CDN, a different host
+  from the API) has the exact same DNS block** — also confirmed via
+  `getent hosts` (resolves to loopback) and a proxied request getting a
+  real `404` for a made-up path instead of a connection failure.
+  `commands/dm_start/screenshot_gallery.py`'s screenshot download
+  therefore routes through `_client_for_source(context, provider)` (the
+  same proxied client `tmdb.py` itself uses), not a bare unproxied
+  client — a TMDB screenshot pick would otherwise fail every time.
 - **Group admin permission:** the bot needs the group's "Pin messages"
   admin permission for the pinned-current-image behavior (see
   `MECHANICS.md`'s "Pixelation stages" section) to actually take effect.
@@ -142,12 +150,19 @@ src/nani_pix_bot/
                    #   search.py      method selection + AniList/
                    #                  Shikimori/Jikan/TMDB search-and-pick
                    #   manual.py      manual title/synonym entry
-                   #   screenshots.py screenshot-source selection +
-                   #                  gallery browsing for the /newgame
-                   #                  path, including cross-provider
-                   #                  resolution (searching a provider
-                   #                  other than the one that identified
-                   #                  the anime)
+                   #   screenshots.py screenshot-source selection for
+                   #                  the /newgame path — the source-
+                   #                  selection keyboard and same-/
+                   #                  cross-provider resolution up to
+                   #                  the point a gallery is first shown
+                   #   screenshot_gallery.py  browsing an already-shown
+                   #                  gallery (numbered picks, "More
+                   #                  screenshots", the "Wrong anime?
+                   #                  Search again" cross-provider
+                   #                  correction) — split out of
+                   #                  screenshots.py once that file's
+                   #                  own complexity grew past qlty's
+                   #                  threshold
                    #   preview.py     the confirmation preview (show/
                    #                  confirm/change-image/research/
                    #                  add-synonym) + the final post to

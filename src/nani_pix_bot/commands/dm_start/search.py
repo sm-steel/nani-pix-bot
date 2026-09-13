@@ -25,10 +25,8 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 )
 from nani_pix_bot.commands.dm_start.manual import _manual_synonyms_step, _manual_title_step
 from nani_pix_bot.commands.dm_start.preview import _add_synonym_step
-from nani_pix_bot.commands.dm_start.screenshots import (
-    _screenshot_search_step,
-    start_screenshot_picker,
-)
+from nani_pix_bot.commands.dm_start.screenshot_gallery import _screenshot_search_step
+from nani_pix_bot.commands.dm_start.screenshots import start_screenshot_picker
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SetupStep
@@ -89,20 +87,23 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         source = setup_game.source
         awaiting_synonyms = setup_game.title_english is not None
         screenshot_source = setup_game.screenshot_source
-        has_image = setup_game.original_image is not None
 
     if setup_step == SetupStep.AWAITING_SYNONYM:
         await _add_synonym_step(message, context, lang, user)
     elif setup_step in (SetupStep.CONFIRMING, SetupStep.AWAITING_PHOTO_CHANGE):
         pass  # only the preview's buttons (or a replacement photo) matter here
     elif setup_step == SetupStep.PICKING_SCREENSHOT:
-        if screenshot_source is not None and not has_image:
-            # A screenshot provider is being resolved (ticket 8's
-            # cross-provider "Search again" correction, or the fallback
-            # state after an auto-search found nothing) — anything
-            # else during this step (still on the source-selection
-            # keyboard, or mid-gallery review) expects a button tap,
-            # not text.
+        if screenshot_source is not None:
+            # A screenshot provider is being resolved — ticket 8's
+            # cross-provider "Search again" correction, the fallback
+            # state after an auto-search found nothing, or (ticket 9)
+            # the preview's "Pick a different screenshot" re-opening a
+            # gallery that still has an *old* image staged until a new
+            # one is actually picked, so `original_image` being set
+            # here does NOT mean no query is expected (issue: a typed
+            # correction used to be silently swallowed in exactly that
+            # case). Anything else during this step (still on the
+            # source-selection keyboard) expects a button tap, not text.
             await _screenshot_search_step(message, context, lang, screenshot_source)
     elif source == "manual":
         if awaiting_synonyms:

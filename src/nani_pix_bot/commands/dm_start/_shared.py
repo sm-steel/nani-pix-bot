@@ -35,8 +35,8 @@ _SYNONYM_SPLIT_RE = re.compile(r"[,\n]")
 # TMDB is the only provider needing its own client (DNS-blocked direct
 # from moscow, needs a proxy + Bearer-token auth — see app.py's
 # build_application()); every other provider shares "search_client".
-# Used by both search.py's search/pick flow and screenshots.py's
-# gallery flow.
+# Used by search.py's search/pick flow and both screenshots.py's/
+# screenshot_gallery.py's gallery flow.
 _TMDB_CLIENT_BOT_DATA_KEY = "tmdb_client"
 
 
@@ -133,7 +133,8 @@ async def _show_preview(context, session, game: Game, lang: str) -> None:
     Shared by every path that ends in "an image now exists for this
     game" — the traditional upload flow (intake.py, manual.py,
     preview.py's own add-synonym step), and the screenshot-picker flow
-    (screenshots.py), hence living here rather than in preview.py."""
+    (screenshot_gallery.py's pick), hence living here rather than in
+    preview.py."""
     assert game.original_image is not None
     original_bytes = game.original_image
     config = stage_config.get_stage_config(session)

@@ -28,6 +28,7 @@
   "dm_start.screenshot_source_picked": "Here are some screenshots — pick one below.",
   "dm_start.pick_screenshot_prompt": "Which one do you want to use?",
   "dm_start.no_screenshots_available": "No screenshots available for this one — send me one yourself instead.",
+  "dm_start.screenshot_fetch_failed": "Couldn't fetch screenshots for this one right now — send me one yourself instead.",
   "dm_start.more_screenshots_sent": "Here are some more — pick one below.",
   "dm_start.cross_provider_search_failed": "Couldn't automatically find a {service} match for this title — type a search query to try yourself.",
   "dm_start.ask_new_photo": "Send the new screenshot.",

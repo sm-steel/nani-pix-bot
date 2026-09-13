@@ -69,8 +69,8 @@ class _CallbackRouting:
     """Defaults to identification search's own callback data on every
     public `*_results_keyboard` wrapper, but ticket 8's cross-provider
     "Wrong anime? Search again" flow overrides both to route its picks
-    to a different handler (commands/dm_start/screenshots.py) than
-    identification search's own pick_callback_handler."""
+    to a different handler (commands/dm_start/screenshot_gallery.py)
+    than identification search's own pick_callback_handler."""
 
     pick_prefix: str
     retry_data: str = RETRY_CALLBACK_DATA
@@ -290,7 +290,8 @@ def change_image_keyboard(lang: str) -> InlineKeyboardMarkup:
 
 
 # --- Screenshot-source selection + gallery (the screenshot-less
-# /newgame flow's own sub-flow — see commands/dm_start/screenshots.py) ---
+# /newgame flow's own sub-flow — see commands/dm_start/screenshots.py
+# and screenshot_gallery.py) ---
 
 SCREENSHOT_SOURCE_PREFIX = "screenshot_source:"
 SCREENSHOT_PICK_PREFIX = "screenshot_pick:"
@@ -299,9 +300,10 @@ SCREENSHOT_SEARCH_AGAIN_PREFIX = "screenshot_search_again:"
 # A cross-provider-resolution search's own pick, format
 # "screenshot_search_pick:<provider>:<id>" — distinct from the plain
 # "<provider>_pick:<id>" identification-search prefixes above so its
-# taps route to screenshots.py's own handler instead of search.py's
-# pick_callback_handler (which would wrongly re-stage identification
-# fields via stage_result() — see game_service.set_screenshot_provider_id).
+# taps route to screenshot_gallery.py's own handler instead of
+# search.py's pick_callback_handler (which would wrongly re-stage
+# identification fields via stage_result() — see
+# game_service.set_screenshot_provider_id).
 SCREENSHOT_SEARCH_PICK_PREFIX = "screenshot_search_pick:"
 SCREENSHOT_UPLOAD_CALLBACK_DATA = "screenshot:upload"
 

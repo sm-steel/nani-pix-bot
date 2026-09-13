@@ -7,6 +7,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import _show_preview, _start_new_game
+from nani_pix_bot.commands.dm_start.screenshots import clear_screenshot_selection
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SetupStep
@@ -50,6 +51,16 @@ async def _replace_staged_photo_if_pending(
         if existing is None or existing.setup_step != SetupStep.AWAITING_PHOTO_CHANGE:
             return False
         logger.debug("Starter {} sent a replacement photo for game {}", user.id, existing.id)
+        # A genuine upload replacing whatever was there before — clear
+        # screenshot_source (and the id it was pointing at) *before*
+        # writing the new bytes, so this isn't mistaken for an
+        # API-sourced screenshot afterward: the preview's "Change image"
+        # would otherwise wrongly offer "Pick a different screenshot"
+        # for the OLD provider, and "Re-search title" would delete the
+        # photo just uploaded (clear_screenshot_selection is a no-op
+        # once screenshot_source is already None, so this is safe to
+        # call unconditionally here too).
+        clear_screenshot_selection(existing)
         existing.original_image = image_bytes
         await _show_preview(context, session, existing, lang)
         return True

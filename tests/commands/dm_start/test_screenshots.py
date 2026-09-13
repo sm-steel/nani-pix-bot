@@ -5,27 +5,18 @@ import pytest
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import preview, screenshots
+from nani_pix_bot.commands.dm_start import screenshots
 from nani_pix_bot.models.enums import GameStatus, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
-from nani_pix_bot.services.search.tmdb import TMDBResult
 
 _FRIEREN_SHIKIMORI = ShikimoriResult(
     shikimori_id=52991,
     title_romaji="Sousou no Frieren",
     title_english="Frieren: Beyond Journey's End",
     title_russian="Провожающая в последний путь Фрирен",
-    synonyms=[],
-)
-
-_FRIEREN_TMDB = TMDBResult(
-    tmdb_id=209867,
-    title_romaji=None,
-    title_english="Frieren: Beyond Journey's End",
-    title_native=None,
     synonyms=[],
 )
 
@@ -169,71 +160,6 @@ async def test_screenshot_source_callback_handler_paginates_when_more_than_a_pag
     assert any(c.startswith("screenshot_more:shikimori:") for c in callbacks)
 
 
-async def test_screenshot_gallery_callback_handler_more_shows_the_next_page(
-    session_factory, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    urls = [f"https://shikimori.io/x/{i}.jpg" for i in range(8)]
-    monkeypatch.setattr(screenshots.shikimori, "screenshots", AsyncMock(return_value=urls))
-    _staged_game(session_factory, shikimori_id=52991)
-
-    update = _make_callback_update(data="screenshot_more:shikimori:5")
-    context = _make_context(session_factory)
-
-    await screenshots.screenshot_gallery_callback_handler(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )
-
-    _, kwargs = context.bot.send_media_group.await_args
-    captions = [item.caption for item in kwargs["media"]]
-    assert captions == ["6", "7", "8"]  # 1-indexed, starting at offset 5
-    update.callback_query.edit_message_text.assert_awaited_once()
-
-
-async def test_screenshot_gallery_callback_handler_pick_downloads_and_shows_preview(
-    session_factory, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    urls = ["https://shikimori.io/x/0.jpg", "https://shikimori.io/x/1.jpg"]
-    monkeypatch.setattr(screenshots.shikimori, "screenshots", AsyncMock(return_value=urls))
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
-    game_id = _staged_game(session_factory, shikimori_id=52991)
-
-    update = _make_callback_update(data="screenshot_pick:shikimori:1")
-    context = _make_context(session_factory)
-    download_response = MagicMock(content=b"real-screenshot-bytes")
-    download_response.raise_for_status = MagicMock()
-    context.bot_data["search_client"].get = AsyncMock(return_value=download_response)
-
-    await screenshots.screenshot_gallery_callback_handler(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )
-
-    with session_factory() as session:
-        fetched = session.get(Game, game_id)
-        assert fetched is not None
-        assert fetched.original_image == b"real-screenshot-bytes"
-        assert fetched.screenshot_source == "shikimori"
-        assert fetched.setup_step == SetupStep.CONFIRMING
-
-    context.bot.send_media_group.assert_awaited_once()  # the confirmation preview album
-    update.callback_query.edit_message_text.assert_awaited_once()
-
-
-async def test_screenshot_gallery_callback_handler_pick_is_a_noop_for_a_stale_index(
-    session_factory, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(screenshots.shikimori, "screenshots", AsyncMock(return_value=[]))
-    _staged_game(session_factory, shikimori_id=52991)
-
-    update = _make_callback_update(data="screenshot_pick:shikimori:0")
-    context = _make_context(session_factory)
-
-    await screenshots.screenshot_gallery_callback_handler(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )
-
-    update.callback_query.edit_message_text.assert_not_awaited()
-
-
 async def test_screenshot_upload_instead_callback_handler_asks_for_a_photo(
     session_factory,
 ) -> None:
@@ -311,87 +237,31 @@ async def test_screenshot_source_callback_handler_cross_provider_no_match_asks_t
     update.callback_query.edit_message_text.assert_awaited_once()
 
 
-async def test_screenshot_search_again_callback_handler_asks_for_a_query(session_factory) -> None:
-    game_id = _staged_game(session_factory, source="anilist", anilist_id=99)
-    update = _make_callback_update(data="screenshot_search_again:tmdb")
-    context = _make_context(session_factory)
-
-    await screenshots.screenshot_search_again_callback_handler(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )
-
-    with session_factory() as session:
-        fetched = session.get(Game, game_id)
-        assert fetched is not None
-        assert fetched.screenshot_source == "tmdb"
-    update.callback_query.edit_message_text.assert_awaited_once()
-
-
-async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix(
+async def test_screenshot_source_callback_handler_falls_back_when_the_fetch_fails(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(screenshots.tmdb, "search", AsyncMock(return_value=[_FRIEREN_TMDB]))
-    context = _make_context(session_factory)
-    status_message = MagicMock()
-    status_message.edit_text = AsyncMock()
-    message = MagicMock()
-    message.text = "Frieren"
-    message.reply_text = AsyncMock(return_value=status_message)
-
-    await screenshots._screenshot_search_step(message, context, "en", "tmdb")
-
-    status_message.edit_text.assert_awaited_once()
-    assert status_message.edit_text.await_args is not None
-    _, kwargs = status_message.edit_text.await_args
-    callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
-    assert "screenshot_search_pick:tmdb:209867" in callbacks
-
-
-async def test_screenshot_search_pick_callback_handler_resolves_and_shows_gallery(
-    session_factory, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(screenshots.tmdb, "get_by_id", AsyncMock(return_value=_FRIEREN_TMDB))
+    """Regression: a screenshot-fetch failure (service down) after a
+    provider id is already in hand — same-provider here — used to
+    propagate as an unhandled exception with no reply at all. Falls
+    back to asking for an upload instead, distinct wording from a
+    genuinely empty result."""
     monkeypatch.setattr(
-        screenshots.tmdb,
-        "screenshots",
-        AsyncMock(return_value=["https://image.tmdb.org/x/0.jpg"]),
+        screenshots.shikimori, "screenshots", AsyncMock(side_effect=RuntimeError("boom"))
     )
-    game_id = _staged_game(
-        session_factory, source="anilist", anilist_id=99, screenshot_source="tmdb"
-    )
+    game_id = _staged_game(session_factory, shikimori_id=52991)
 
-    update = _make_callback_update(data="screenshot_search_pick:tmdb:209867")
+    update = _make_callback_update(data="screenshot_source:shikimori")
     context = _make_context(session_factory)
 
-    await screenshots.screenshot_search_pick_callback_handler(
+    await screenshots.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
-        assert fetched.tmdb_id == 209867
-        assert fetched.source == "anilist"
-
-    context.bot.send_media_group.assert_awaited_once()
-    _, msg_kwargs = context.bot.send_message.await_args
-    callbacks = [b.callback_data for row in msg_kwargs["reply_markup"].inline_keyboard for b in row]
-    assert "screenshot_search_again:tmdb" in callbacks
-    update.callback_query.edit_message_text.assert_awaited_once()
-
-
-async def test_screenshot_search_pick_callback_handler_handles_a_stale_id(
-    session_factory, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(screenshots.tmdb, "get_by_id", AsyncMock(return_value=None))
-    _staged_game(session_factory, source="anilist", anilist_id=99, screenshot_source="tmdb")
-
-    update = _make_callback_update(data="screenshot_search_pick:tmdb:209867")
-    context = _make_context(session_factory)
-
-    await screenshots.screenshot_search_pick_callback_handler(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )
-
+        assert fetched.setup_step == SetupStep.AWAITING_PHOTO_CHANGE
     context.bot.send_media_group.assert_not_awaited()
     update.callback_query.edit_message_text.assert_awaited_once()
+    text = update.callback_query.edit_message_text.await_args.args[0]
+    assert "screenshots" in text.lower()
