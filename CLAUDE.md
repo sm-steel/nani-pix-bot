@@ -1,150 +1,25 @@
 # nani-pix-bot
 
 Telegram bot for an anime-screenshot guessing game, played in one topic of a
-group chat. A player DMs the bot a screenshot and identifies the anime (see
-`MECHANICS.md` for exactly how — there are three ways); the bot posts it
-heavily pixelated into the group's game topic, and players guess with
+group chat. A player either DMs the bot a screenshot directly, or sends
+`/newgame` and picks a real screenshot from Shikimori/Jikan/TMDB instead —
+either way, they identify the anime (see `MECHANICS.md` for exactly how —
+there are five identification methods) and the bot posts the screenshot
+heavily pixelated into the group's game topic, where players guess with
 `/guess`, watching the image get progressively clearer every 5 wrong
 guesses until someone's right or it's revealed unsolved. Runs as a Docker
 Compose stack on the `moscow` VPS.
 
 **Read `ARCHITECTURE.md` before making non-trivial changes** — it covers the
-system design, data model, and infra topology (why Telegram traffic is
-proxied through `amsterdam`, etc.). `MECHANICS.md` covers the game rules
-themselves (pixelation stages, guess matching, turns, timeout, leaderboard) —
-read it before touching anything in `services/game/`,
-`services/matching.py`, `services/pixelate.py`, or
-`services/settings/stage_config.py`.
-This file is about where things live and how to work in this repo day to day.
-
-## Where things are
-
-```
-src/nani_pix_bot/
-  config.py       # env/.env loading — the only place that reads os.environ
-  db.py           # SQLAlchemy engine/session factory, session_scope()
-  logging_config.py  # loguru setup, redirects PTB's stdlib logging into it
-  heartbeat.py    # wraps bot.get_updates so a liveness file is only
-                   # touched after a real successful poll — lets
-                   # docker-compose.yml's HEALTHCHECK (+ fleet autoheal)
-                   # detect the getUpdates connection-pool wedge that a
-                   # process can retry-loop through forever otherwise
-  app.py          # ApplicationBuilder wiring, handler registration, an
-                   # error handler (so network hiccups log at WARNING
-                   # instead of vanishing at DEBUG), and re-arming any
-                   # pending JobQueue jobs from the DB on startup (see
-                   # MECHANICS.md's "Game lifecycle")
-  commands/       # one module per Telegram command (thin: parse update,
-                   # call a service, format a reply — no game rules here)
-    dm_start/     # private-chat photo intake + AniList/Shikimori/manual
-                   # method-select + search/pick + confirmation-preview
-                   # flow, split by flow stage (package's own __init__
-                   # re-exports only the PTB handler entrypoints):
-                   #   intake.py    photo_handler, the entry point
-                   #   search.py    method selection + AniList/Shikimori
-                   #                search-and-pick
-                   #   manual.py    manual title/synonym entry
-                   #   preview.py   confirmation preview (show/confirm/
-                   #                change-image/research/add-synonym)
-                   #                + the final post to the group
-                   #   keyboards.py inline-keyboard builders + callback-
-                   #                data constants for all of the above
-                   #   _shared.py   helpers used by more than one of them
-    game_flow/    # commands that run during (or between) an in-progress
-                   # game — grouped for symmetry with dm_start/, though
-                   # none of these four is individually large:
-                   #   guess.py    /guess — the only handler most
-                   #               wrong-guess traffic hits
-                   #   correct.py  /correct @user — author override
-                   #   skip.py     /skip [@user] — turn handoff when no
-                   #               game is running
-                   #   stop.py     /stop — DM-only; starter or a group
-                   #               admin aborts the current game after a
-                   #               Yes/No confirmation (outcome is still
-                   #               announced in the group topic)
-    leaderboard.py  # /leaderboard
-    language.py   # /language — DM-only, admin-gated bot language switch
-    stageconfig.py  # /stageconfig, /setstageconfig, /setstage — DM-only,
-                   # admin-gated view/edit of per-stage pixelation config
-                   # (blocked while a game is running; posts a visual
-                   # preview on a successful edit)
-    gamesenabled.py  # /setgamesenabled — DM-only, admin-gated toggle for
-                   # whether a *new* game may be started at all
-    onboarding.py # /start, /help
-    helpers/      # shared Telegram-aware plumbing — topic/DM scoping
-                   # checks (scoping.py), group-membership + admin checks
-                   # (membership.py), the one inline keyboard genuinely
-                   # shared across packages: stop_confirm_keyboard()
-                   # (keyboards.py, used by game_flow/stop.py and
-                   # stageconfig.py), bot command-menu registration
-                   # (bot_menu.py). Nothing here registers a handler in
-                   # app.py. Test: does more than one commands/*.py file
-                   # need it, or does it not correspond to an actual
-                   # /command at all? Either one means helpers/, not a
-                   # plain commands/*.py file (dm_start's own keyboard
-                   # builders live in commands/dm_start/keyboards.py
-                   # instead, since nothing outside that package needs
-                   # them).
-  jobs/           # JobQueue-driven background timers — Telegram-aware
-                   # like commands/, but scheduled callbacks rather than
-                   # CommandHandler/CallbackQueryHandlers, so a sibling
-                   # package rather than living under commands/
-    timers.py     # the 2-day game timeout, 1h setup-abandon, 15min/12h
-                   # win-turn reminder/expiry — schedule/cancel/rearm
-                   # helpers, the scheduling/naming primitives they're
-                   # built on (seconds_until, timeout_job_name, etc. —
-                   # live here rather than services/game/ since this
-                   # module is their only caller), and the job callbacks
-                   # themselves
-  services/       # the actual game logic — framework-agnostic, no
-                   # python-telegram-bot imports in this package
-    search/       # anime-identification search, called once per game at
-                   # setup time only, never per guess (see MECHANICS.md):
-                   #   anilist.py    AniList GraphQL search (httpx)
-                   #   shikimori.py  Shikimori REST search (httpx) — the
-                   #                 RU-friendly alternative to anilist.py
-                   #   http_retry.py the 429/Retry-After retry loop
-                   #                 shared by both of the above
-    matching.py   # normalize + rapidfuzz-match a guess against a game's
-                   # cached title/synonyms — pure function, fully
-                   # deterministic, no network calls
-    pixelate.py   # Pillow downscale/upscale pipeline — given raw bytes
-                   # and a target width, no DB or PixelStage dependency;
-                   # callers resolve the width via settings/stage_config.py
-                   # first
-    game/         # the state machine — the only package that mutates a
-                   # Game row:
-                   #   state.py   create/advance/win/unsolved/timeout
-                   #              transitions, plus display_title()
-                   #   turns.py   TurnState bookkeeping (who starts
-                   #              next, their reminder/expiry timers) —
-                   #              a related but distinct concern
-    players.py    # Player lookup/creation, win-count bookkeeping,
-                   # leaderboard query — everything that touches only
-                   # the Player table (win increments themselves happen
-                   # in services/game/state.py, alongside the Game row)
-    i18n.py       # simple dict/JSON t(key, lang, **kwargs) — see
-                   # "Language / i18n" below
-    settings/     # bot-wide configuration, two persistence shapes:
-                   #   bot_settings.py  singleton row — language,
-                   #                    games-enabled flag (BotSettings)
-                   #   stage_config.py  one row per PixelStage — target
-                   #                    width + wrong-guess limit
-                   #                    (StageConfig), admin-adjustable
-                   #                    via commands/stageconfig.py
-  models/         # SQLAlchemy ORM models, one module per table
-    base.py       # declarative base
-    player.py     # Player
-    game.py       # Game
-    turn_state.py # TurnState (singleton row)
-    bot_settings.py  # BotSettings (singleton row — language, games_enabled)
-    stage_config.py  # StageConfig (one row per PixelStage)
-    enums.py      # GameStatus, PixelStage, SetupStep
-migrations/       # Alembic migrations
-tests/            # mirrors src/ layout
-scripts/          # one-off / operational scripts, if any turn out to be needed
-Dockerfile, docker-compose.yml   # bot + mariadb, see ARCHITECTURE.md
-```
+system design, data model, infra topology (why Telegram traffic is proxied
+through `amsterdam`, etc.), and the full directory/module layout
+("Where things are"). `MECHANICS.md` covers the game rules themselves
+(pixelation stages, guess matching, turns, timeout, leaderboard) — read it
+before touching anything in `services/game/`, `services/matching.py`,
+`services/pixelate.py`, or `services/settings/stage_config.py`.
+This file covers how to work in this repo day to day — tooling, testing,
+logging, and coding conventions — not where things live; that's
+`ARCHITECTURE.md`'s job, so it isn't duplicated here.
 
 ## Language / i18n
 

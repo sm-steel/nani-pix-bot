@@ -86,35 +86,193 @@ jobs/            (Telegram)
   command file (topic/DM scoping checks, inline-keyboard builders, bot
   command-menu registration, shared formatting). Nothing here registers a
   handler in `app.py`.
-- **`jobs/`** — JobQueue-driven background timers (`timers.py`: the 2-day
-  game timeout, 1h setup-abandon, 15min/12h win-turn reminder/expiry).
-  Telegram-aware like `commands/`, but its entry points are scheduled
-  callbacks invoked by PTB's `JobQueue`, not `CommandHandler`/
-  `CallbackQueryHandler`s registered against a user action — a genuinely
-  different shape, so it's a sibling package rather than living under
-  `commands/` despite depending on the same `services/`/`models/` layers.
+- **`jobs/`** — JobQueue-driven background timers. Telegram-aware like
+  `commands/`, but its entry points are scheduled callbacks invoked by
+  PTB's `JobQueue`, not `CommandHandler`/`CallbackQueryHandler`s registered
+  against a user action — a genuinely different shape, so it's a sibling
+  package rather than living under `commands/` despite depending on the
+  same `services/`/`models/` layers.
 - **`services/`** — the game logic, framework-agnostic (no
-  `python-telegram-bot` imports). This is what unit tests target. One
-  module per concern: `search/anilist.py`/`shikimori.py`/`jikan.py`/
-  `tmdb.py` (identification + screenshot fetching — see
-  `search/http_retry.py` for their shared 429-backoff wrapper and
-  `search/cache.py` for their shared short-TTL, in-process, keyed-by-
-  client-identity cache: read-only performance caching of external API
-  responses, unrelated to this project's DB-derived-flow-state
-  principle below), `matching.py` (guess normalization/fuzzy-match),
-  `pixelate.py` (Pillow pipeline —
-  downscale/upscale to a given width, no DB or `PixelStage` dependency),
-  `game.py` (the state machine — the only place that mutates a `Game`
-  row), `players.py` (win counts, leaderboard), `i18n.py`/`settings.py`
-  (bot language, games-enabled flag), `stage_config.py` (per-stage
-  pixelation width/wrong-guess-limit, admin-adjustable — see
-  `MECHANICS.md`'s "Pixelation stages" section).
+  `python-telegram-bot` imports). This is what unit tests target.
 - **`models/`** — SQLAlchemy ORM models, one module per table. Columns and
   relationships only — if a model needs a method beyond what SQLAlchemy
   itself generates, that logic belongs in `services/` instead.
 
 This separation exists so guess-matching and pixelation math can be tested
-as plain Python without a Telegram update or a live DB.
+as plain Python without a Telegram update or a live DB. See "Where things
+are" below for what's actually in each of these.
+
+### Where things are
+
+The full directory/module layout — moved here from `CLAUDE.md` since it's
+architecture, not day-to-day workflow. Each `commands/`/`services/`
+subpackage's own `__init__.py` docstring (`dm_start/`, `game_flow/`,
+`services/game/`, `services/search/`, `services/settings/`) is the more
+detailed, load-bearing version of what's summarized here — if the two ever
+disagree, trust the docstring and fix this tree, not the other way around.
+
+```
+src/nani_pix_bot/
+  config.py       # env/.env loading — the only place that reads os.environ
+  db.py           # SQLAlchemy engine/session factory, session_scope()
+  logging_config.py  # loguru setup, redirects PTB's stdlib logging into it
+  heartbeat.py    # wraps bot.get_updates so a liveness file is only
+                   # touched after a real successful poll — lets
+                   # docker-compose.yml's HEALTHCHECK (+ fleet autoheal)
+                   # detect the getUpdates connection-pool wedge that a
+                   # process can retry-loop through forever otherwise
+  app.py          # ApplicationBuilder wiring, handler registration, an
+                   # error handler (so network hiccups log at WARNING
+                   # instead of vanishing at DEBUG), and re-arming any
+                   # pending JobQueue jobs from the DB on startup (see
+                   # MECHANICS.md's "Game lifecycle")
+  commands/       # one module per Telegram command (thin: parse update,
+                   # call a service, format a reply — no game rules here)
+    dm_start/     # both game-setup entry points (DM photo, /newgame) and
+                   # the shared identification/screenshot-picking/preview
+                   # flow that follows either one, split by flow stage
+                   # (package's own __init__ re-exports only the PTB
+                   # handler entrypoints):
+                   #   intake.py      photo_handler — the traditional,
+                   #                  photo-first entry point
+                   #   newgame.py     newgame_command — the screenshot-
+                   #                  less /newgame entry point (picks a
+                   #                  screenshot later instead of
+                   #                  uploading one first)
+                   #   search.py      method selection + AniList/
+                   #                  Shikimori/Jikan/TMDB search-and-pick
+                   #   manual.py      manual title/synonym entry
+                   #   screenshots.py screenshot-source selection +
+                   #                  gallery browsing for the /newgame
+                   #                  path, including cross-provider
+                   #                  resolution (searching a provider
+                   #                  other than the one that identified
+                   #                  the anime)
+                   #   preview.py     the confirmation preview (show/
+                   #                  confirm/change-image/research/
+                   #                  add-synonym) + the final post to
+                   #                  the group
+                   #   keyboards.py   inline-keyboard builders +
+                   #                  callback-data constants for all of
+                   #                  the above
+                   #   _shared.py     helpers used by more than one of
+                   #                  them — _start_new_game() (the
+                   #                  eligibility-check + game-creation
+                   #                  logic both intake.py and newgame.py
+                   #                  call), _show_preview() (needed by
+                   #                  every path that ends in "an image
+                   #                  now exists for this game")
+    game_flow/    # commands that run during (or between) an in-progress
+                   # game — grouped for symmetry with dm_start/, though
+                   # none of these four is individually large:
+                   #   guess.py    /guess — the only handler most
+                   #               wrong-guess traffic hits
+                   #   correct.py  /correct @user — author override
+                   #   skip.py     /skip [@user] — turn handoff when no
+                   #               game is running
+                   #   stop.py     /stop — DM-only; starter or a group
+                   #               admin aborts the current game after a
+                   #               Yes/No confirmation (outcome is still
+                   #               announced in the group topic)
+    leaderboard.py  # /leaderboard
+    language.py   # /language — DM-only, admin-gated bot language switch
+    stageconfig.py  # /stageconfig, /setstageconfig, /setstage — DM-only,
+                   # admin-gated view/edit of per-stage pixelation config
+                   # (blocked while a game is running; posts a visual
+                   # preview on a successful edit)
+    gamesenabled.py  # /setgamesenabled — DM-only, admin-gated toggle for
+                   # whether a *new* game may be started at all
+    onboarding.py # /start, /help
+    helpers/      # shared Telegram-aware plumbing — topic/DM scoping
+                   # checks (scoping.py), group-membership + admin checks
+                   # (membership.py), the one inline keyboard genuinely
+                   # shared across packages: stop_confirm_keyboard()
+                   # (keyboards.py, used by game_flow/stop.py and
+                   # stageconfig.py), bot command-menu registration
+                   # (bot_menu.py). Nothing here registers a handler in
+                   # app.py. Test: does more than one commands/*.py file
+                   # need it, or does it not correspond to an actual
+                   # /command at all? Either one means helpers/, not a
+                   # plain commands/*.py file (dm_start's own keyboard
+                   # builders live in commands/dm_start/keyboards.py
+                   # instead, since nothing outside that package needs
+                   # them).
+  jobs/           # JobQueue-driven background timers — Telegram-aware
+                   # like commands/, but scheduled callbacks rather than
+                   # CommandHandler/CallbackQueryHandlers, so a sibling
+                   # package rather than living under commands/
+    timers.py     # the 2-day game timeout, 1h setup-abandon, 15min/12h
+                   # win-turn reminder/expiry, 3h-nudge/6h-auto-advance
+                   # inactivity timers — schedule/cancel/rearm helpers,
+                   # the scheduling/naming primitives they're built on
+                   # (seconds_until, timeout_job_name, etc. — live here
+                   # rather than services/game/ since this module is
+                   # their only caller), and the job callbacks themselves
+  services/       # the actual game logic — framework-agnostic, no
+                   # python-telegram-bot imports in this package
+    search/       # anime identification + screenshot fetching, called
+                   # at setup time only, never per guess:
+                   #   anilist.py    AniList GraphQL search (httpx) — no
+                   #                 screenshot capability
+                   #   shikimori.py  Shikimori REST search + screenshots
+                   #                 (httpx) — the RU-friendly
+                   #                 alternative to anilist.py
+                   #   jikan.py      Jikan (third-party MyAnimeList API)
+                   #                 search + screenshots (httpx)
+                   #   tmdb.py       TMDB search + screenshots (httpx) —
+                   #                 needs the amsterdam proxy + a
+                   #                 Bearer token, unlike the three
+                   #                 above (see "Infrastructure" above)
+                   #   http_retry.py the 429/Retry-After retry loop
+                   #                 shared by all four
+                   #   cache.py      short-TTL, in-process, keyed-by-
+                   #                 client-identity cache wrapping all
+                   #                 four providers' search()/
+                   #                 get_by_id()/screenshots() calls —
+                   #                 read-only performance caching,
+                   #                 unrelated to this project's
+                   #                 DB-derived-flow-state principle
+                   #                 (issue #11 — see CLAUDE.md)
+    matching.py   # normalize + rapidfuzz-match a guess against a game's
+                   # cached title/synonyms — pure function, fully
+                   # deterministic, no network calls
+    pixelate.py   # Pillow downscale/upscale pipeline — given raw bytes
+                   # and a target width, no DB or PixelStage dependency;
+                   # callers resolve the width via settings/stage_config.py
+                   # first
+    game/         # the state machine — the only package that mutates a
+                   # Game row:
+                   #   state.py   create/advance/win/unsolved/timeout
+                   #              transitions, plus display_title()
+                   #   turns.py   TurnState bookkeeping (who starts
+                   #              next, their reminder/expiry timers) —
+                   #              a related but distinct concern
+    players.py    # Player lookup/creation, win-count bookkeeping,
+                   # leaderboard query — everything that touches only
+                   # the Player table (win increments themselves happen
+                   # in services/game/state.py, alongside the Game row)
+    i18n.py       # simple dict/JSON t(key, lang, **kwargs) — see
+                   # CLAUDE.md's "Language / i18n"
+    settings/     # bot-wide configuration, two persistence shapes:
+                   #   bot_settings.py  singleton row — language,
+                   #                    games-enabled flag (BotSettings)
+                   #   stage_config.py  one row per PixelStage — target
+                   #                    width + wrong-guess limit
+                   #                    (StageConfig), admin-adjustable
+                   #                    via commands/stageconfig.py
+  models/         # SQLAlchemy ORM models, one module per table
+    base.py       # declarative base
+    player.py     # Player
+    game.py       # Game
+    turn_state.py # TurnState (singleton row)
+    bot_settings.py  # BotSettings (singleton row — language, games_enabled)
+    stage_config.py  # StageConfig (one row per PixelStage)
+    enums.py      # GameStatus, PixelStage, SetupStep
+migrations/       # Alembic migrations
+tests/            # mirrors src/ layout
+scripts/          # one-off / operational scripts, if any turn out to be needed
+Dockerfile, docker-compose.yml   # bot + mariadb, see "Infrastructure" above
+```
 
 ### Before adding something new
 
@@ -197,11 +355,15 @@ erDiagram
 Full rules live in `MECHANICS.md`; this section is the interaction-model
 summary.
 
-- **Game setup** happens entirely in **1-to-1 DM** with the bot: send a
-  photo, pick AniList, Shikimori, or manual entry, then either search and
-  tap one of that service's results shown as an inline keyboard, or (for
-  manual) type a title and at least one synonym directly — landing on a
-  private preview — one album with the screenshot pixelated at all 5
+- **Game setup** happens entirely in **1-to-1 DM** with the bot, via either
+  of two entry points: send a photo directly, or send `/newgame` and pick
+  a screenshot afterward instead (see `MECHANICS.md`'s "Starting a game"
+  for the full walkthrough, including cross-provider screenshot
+  resolution). Either way: pick AniList, Shikimori, Jikan, TMDB, or manual
+  entry, then either search and tap one of that service's results shown
+  as an inline keyboard, or (for manual) type a title and at least one
+  synonym directly — landing on a private preview once both a title and a
+  screenshot exist — one album with the screenshot pixelated at all 5
   configured stages, captioned with the staged title/synonyms, followed
   by a separate message (`sendMediaGroup` can't carry a keyboard) with
   buttons to change the image, re-search, add a synonym, or confirm and
@@ -211,9 +373,9 @@ summary.
   which step of the flow the starter is on (`Game.setup_step`) rather
   than in memory, and a tapped result's title/synonyms are re-fetched
   fresh by the id embedded in the button's `callback_data`
-  (`anilist.get_by_id`/`shikimori.get_by_id`) — none of it is cached in
-  PTB's in-memory `user_data`, which a redeploy mid-setup would otherwise
-  wipe.
+  (`anilist.get_by_id`/`shikimori.get_by_id`/etc.) — none of it is cached
+  in PTB's in-memory `user_data`, which a redeploy mid-setup would
+  otherwise wipe.
 - **Everything else** (`/guess`, `/correct`, `/skip`, `/leaderboard`) is
   scoped to **one topic** (`GAME_TOPIC_ID`) in **one group**
   (`GROUP_CHAT_ID`) — checked via `message.message_thread_id` in
@@ -251,7 +413,7 @@ summary.
   within threshold, unrelated text); `services/pixelate.py` gets
   output-dimension/block-size assertions per stage; `services/game/state.py`
   gets full state-machine coverage (win, stage-exhaustion → unsolved, timeout →
-  unsolved, author override, skip/handoff, and the `original_file_id`
+  unsolved, author override, skip/handoff, and the `original_image`
   cleanup after both terminal states) against `sqlite:///:memory:`.
   `commands/` tests are thin-layer — topic/DM scoping, error-to-reply
   mapping — not a second copy of the game-logic tests.
