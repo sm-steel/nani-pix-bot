@@ -15,6 +15,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
     private_commands = [
         BotCommand("start", i18n.t("commands.start", lang)),
         BotCommand("help", i18n.t("commands.help", lang)),
+        BotCommand("newgame", i18n.t("commands.newgame", lang)),
         BotCommand("language", i18n.t("commands.language", lang)),
         BotCommand("stop", i18n.t("commands.stop", lang)),
         BotCommand("stageconfig", i18n.t("commands.stageconfig", lang)),

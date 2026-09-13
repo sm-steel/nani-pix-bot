@@ -21,6 +21,7 @@ async def test_refresh_command_menu_sets_private_and_group_scopes() -> None:
     assert private_commands == {
         "start",
         "help",
+        "newgame",
         "language",
         "stop",
         "stageconfig",

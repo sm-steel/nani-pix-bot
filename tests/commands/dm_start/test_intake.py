@@ -11,6 +11,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
 )
+from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.bot_settings import BotSettings
 from nani_pix_bot.models.enums import GameStatus, SetupStep
 from nani_pix_bot.models.game import Game
@@ -135,7 +136,7 @@ async def test_photo_handler_schedules_the_setup_abandon_timer(session_factory) 
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()
     names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
-    assert intake.timeout_module.setup_abandon_job_name(game.id) in names
+    assert timeout_module.setup_abandon_job_name(game.id) in names
 
 
 async def test_photo_handler_cancels_turn_timers_when_the_designated_starter_begins(

@@ -3,14 +3,16 @@ directly (no network calls happen building an Application/registering
 handlers) — main()'s actual polling loop is not something a unit test
 should run."""
 
+import re
 from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
 from telegram.error import Conflict, NetworkError
-from telegram.ext import ContextTypes
+from telegram.ext import CallbackQueryHandler, ContextTypes
 
 from nani_pix_bot import app
+from nani_pix_bot.commands.dm_start import pick_callback_handler
 from nani_pix_bot.config import Config
 
 _VALID_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"  # noqa: S105 - test fixture, not a real token
@@ -59,12 +61,39 @@ def test_build_application_registers_every_command() -> None:
         "language",
         "start",
         "help",
+        "newgame",
         "stageconfig",
         "setstageconfig",
         "setstage",
         "setgamesenabled",
         "testpixels",  # TEMPORARY — see commands/testpixels.py
     }
+
+
+def test_pick_callback_handler_pattern_matches_every_providers_prefix() -> None:
+    # Regression: jikan/tmdb were added to the search/pick flow (and
+    # their own *_pick: keyboard prefixes) without this pattern being
+    # updated, so tapping a Jikan/TMDB result button silently did
+    # nothing — the callback query never reached the handler at all.
+    application = app.build_application(_config())
+    handlers = [
+        handler
+        for group in application.handlers.values()
+        for handler in group
+        if isinstance(handler, CallbackQueryHandler) and handler.callback is pick_callback_handler
+    ]
+    assert len(handlers) == 1
+    pattern = handlers[0].pattern
+    assert isinstance(pattern, re.Pattern)
+    pick_examples = (
+        "anilist_pick:99",
+        "shikimori_pick:1",
+        "jikan_pick:1",
+        "tmdb_pick:1",
+        "anilist_retry",
+    )
+    for data in pick_examples:
+        assert pattern.match(data), f"{data!r} should match the pick-callback pattern"
 
 
 def test_build_application_succeeds_with_a_proxy_configured() -> None:

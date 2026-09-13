@@ -84,6 +84,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(
         MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, dm_start.photo_handler)
     )
+    application.add_handler(CommandHandler("newgame", dm_start.newgame_command))
     application.add_handler(
         MessageHandler(
             filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND,
@@ -93,7 +94,10 @@ def build_application(config: Config) -> Application:
     application.add_handler(
         CallbackQueryHandler(
             dm_start.pick_callback_handler,
-            pattern=rf"^({re.escape(RETRY_CALLBACK_DATA)}|anilist_pick:|shikimori_pick:)",
+            pattern=(
+                rf"^({re.escape(RETRY_CALLBACK_DATA)}|"
+                r"anilist_pick:|shikimori_pick:|jikan_pick:|tmdb_pick:)"
+            ),
         )
     )
     application.add_handler(
