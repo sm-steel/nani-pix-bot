@@ -123,6 +123,40 @@ async def start_screenshot_picker(context: ContextTypes.DEFAULT_TYPE, game, lang
     )
 
 
+def clear_screenshot_selection(game) -> None:
+    """Drops an API-picked screenshot and the provider id that resolved
+    it — used by preview.py's "Re-search title" when the current image
+    is API-sourced, since a re-search that picks a different anime
+    shouldn't leave the old anime's screenshot attached to it. A no-op
+    if the current image is a genuine upload (screenshot_source is
+    None) — that one is preserved across a re-search, unchanged from
+    before ticket 9."""
+    if game.screenshot_source is None:
+        return
+    setattr(game, _ID_ATTRS[game.screenshot_source], None)
+    game.original_image = None
+    game.screenshot_source = None
+
+
+async def resume_screenshot_gallery(context: ContextTypes.DEFAULT_TYPE, game, lang: str) -> None:
+    """Re-shows `game.screenshot_source`'s gallery from the top using its
+    already-resolved id — preview.py's "Change image" -> "Pick a
+    different screenshot" branch, reached only when the current image
+    is API-sourced (ticket 9). `cross_provider=True` unconditionally so
+    "Wrong anime? Search again" is always offered here, letting the
+    starter back out to a different provider entirely if nothing in
+    this one's gallery fits."""
+    provider = game.screenshot_source
+    assert provider is not None, "resume_screenshot_gallery called with no screenshot_source"
+    provider_id = getattr(game, _ID_ATTRS[provider])
+    client = _client_for_source(context, provider)
+    urls = await _fetch_screenshots(provider, client, provider_id)
+    target = GalleryTarget(
+        chat_id=game.starter_id, provider=provider, offset=0, cross_provider=True
+    )
+    await _show_gallery_page(context, target, urls, lang)
+
+
 async def screenshot_upload_instead_callback_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:

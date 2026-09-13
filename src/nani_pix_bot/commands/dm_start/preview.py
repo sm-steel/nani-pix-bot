@@ -16,9 +16,16 @@ from nani_pix_bot.commands.dm_start._shared import (
 from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
+    PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA,
+    PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
     PREVIEW_RESEARCH_CALLBACK_DATA,
+    change_image_keyboard,
     method_selection_keyboard,
+)
+from nani_pix_bot.commands.dm_start.screenshots import (
+    clear_screenshot_selection,
+    resume_screenshot_gallery,
 )
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -92,6 +99,10 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
             await query.edit_message_text(text=i18n.t("dm_start.posted", lang))
         elif query.data == PREVIEW_CHANGE_IMAGE_CALLBACK_DATA:
             await _preview_change_image(query, setup_game, lang)
+        elif query.data == PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA:
+            await _preview_change_image_upload(query, setup_game, lang)
+        elif query.data == PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA:
+            await _preview_change_image_pick_screenshot(context, query, setup_game, lang)
         elif query.data == PREVIEW_RESEARCH_CALLBACK_DATA:
             await _preview_research(query, setup_game, lang)
         elif query.data == PREVIEW_ADD_SYNONYM_CALLBACK_DATA:
@@ -105,13 +116,42 @@ async def _preview_confirm(context, session, game: Game, lang: str, starter_name
 
 
 async def _preview_change_image(query, game: Game, lang: str) -> None:
+    """A genuine upload (screenshot_source unset) goes straight to
+    asking for a new photo, exactly as before ticket 9. An API-sourced
+    screenshot instead offers a choice — upload one after all, or pick
+    a different screenshot from the same provider — via
+    _preview_change_image_upload/_preview_change_image_pick_screenshot."""
     logger.debug("Game {}: change-image requested from preview", game.id)
+    if game.screenshot_source is not None:
+        await query.edit_message_text(
+            text=i18n.t("dm_start.pick_new_image_source_prompt", lang),
+            reply_markup=change_image_keyboard(lang),
+        )
+        return
     game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
     await query.edit_message_text(text=i18n.t("dm_start.ask_new_photo", lang))
 
 
+async def _preview_change_image_upload(query, game: Game, lang: str) -> None:
+    logger.debug("Game {}: upload-a-new-photo requested from preview", game.id)
+    game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
+    await query.edit_message_text(text=i18n.t("dm_start.ask_new_photo", lang))
+
+
+async def _preview_change_image_pick_screenshot(context, query, game: Game, lang: str) -> None:
+    logger.debug("Game {}: pick-a-different-screenshot requested from preview", game.id)
+    game.setup_step = SetupStep.PICKING_SCREENSHOT
+    await resume_screenshot_gallery(context, game, lang)
+    await query.edit_message_text(text=i18n.t("dm_start.screenshot_source_picked", lang))
+
+
 async def _preview_research(query, game: Game, lang: str) -> None:
     logger.debug("Game {}: re-search requested from preview", game.id)
+    # An API-sourced screenshot is cleared here (see
+    # clear_screenshot_selection's docstring) since re-searching might
+    # pick a different anime entirely — a genuine upload is left alone,
+    # unchanged from before ticket 9.
+    clear_screenshot_selection(game)
     game.setup_step = SetupStep.PICKING_METHOD
     prefer_shikimori = _prefer_shikimori(lang)
     await query.edit_message_text(

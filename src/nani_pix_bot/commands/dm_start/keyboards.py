@@ -40,6 +40,12 @@ MANUAL_METHOD_CALLBACK_DATA = "method:manual"
 
 PREVIEW_CONFIRM_CALLBACK_DATA = "preview:confirm"
 PREVIEW_CHANGE_IMAGE_CALLBACK_DATA = "preview:change_image"
+# The two options offered when "Change image" is tapped on an
+# API-sourced screenshot (see change_image_keyboard/ticket 9) — a
+# genuine upload skips straight to AWAITING_PHOTO_CHANGE without
+# either of these ever being shown.
+PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA = "preview:change_image:upload"
+PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA = "preview:change_image:pick_screenshot"
 PREVIEW_RESEARCH_CALLBACK_DATA = "preview:research"
 PREVIEW_ADD_SYNONYM_CALLBACK_DATA = "preview:add_synonym"
 
@@ -265,6 +271,22 @@ def preview_keyboard(lang: str) -> InlineKeyboardMarkup:
         callback_data=PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     )
     return InlineKeyboardMarkup([[confirm], [change_image], [research], [add_synonym]])
+
+
+def change_image_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Shown instead of going straight to AWAITING_PHOTO_CHANGE when the
+    preview's "Change image" is tapped on an API-sourced screenshot
+    (`Game.screenshot_source` set) — ticket 9's preview-screen
+    branching. A genuine upload never sees this keyboard."""
+    upload = InlineKeyboardButton(
+        i18n.t("keyboards.change_image_upload", lang),
+        callback_data=PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA,
+    )
+    pick_screenshot = InlineKeyboardButton(
+        i18n.t("keyboards.change_image_pick_screenshot", lang),
+        callback_data=PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA,
+    )
+    return InlineKeyboardMarkup([[upload], [pick_screenshot]])
 
 
 # --- Screenshot-source selection + gallery (the screenshot-less
