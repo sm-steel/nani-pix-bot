@@ -7,16 +7,18 @@ import re
 
 import httpx
 from loguru import logger
+from telegram.error import Conflict, NetworkError
 from telegram.ext import (
     Application,
     ApplicationBuilder,
     CallbackQueryHandler,
     CommandHandler,
+    ContextTypes,
     MessageHandler,
     filters,
 )
 
-from nani_pix_bot import db
+from nani_pix_bot import db, heartbeat
 from nani_pix_bot.commands import (
     dm_start,
     game_flow,
@@ -35,9 +37,20 @@ from nani_pix_bot.jobs.timers import rearm_pending_timeouts
 from nani_pix_bot.logging_config import setup_logging
 from nani_pix_bot.services import settings
 
+# python-telegram-bot's ApplicationBuilder defaults this to 1 (general
+# Bot-API requests default to 256) — a single connection that fails
+# mid-handshake instead of cleanly erroring can wedge it permanently,
+# silently killing all future polling (see the 2026-09-13 incident,
+# issue #51). This doesn't fix that underlying httpx/httpcore behavior,
+# it just means one stuck connection is no longer enough to wedge
+# everything — see heartbeat.py + docker-compose.yml's healthcheck for
+# the actual detection/recovery.
+GET_UPDATES_CONNECTION_POOL_SIZE = 4
+
 
 def build_application(config: Config) -> Application:
     builder = ApplicationBuilder().token(config.bot_token)
+    builder = builder.get_updates_connection_pool_size(GET_UPDATES_CONNECTION_POOL_SIZE)
     if config.telegram_proxy_url:
         builder = builder.proxy(config.telegram_proxy_url).get_updates_proxy(
             config.telegram_proxy_url
@@ -95,8 +108,25 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("setstageconfig", stageconfig.setstageconfig_command))
     application.add_handler(CommandHandler("setstage", stageconfig.setstage_command))
     application.add_handler(CommandHandler("setgamesenabled", gamesenabled.setgamesenabled_command))
+    application.add_error_handler(_error_handler)
 
     return application
+
+
+async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Without this, PTB just logs "No error handlers are registered,
+    logging exception" — which is how the 2026-09-13 getUpdates
+    connection-pool wedge (issue #51) produced hours of DEBUG-only
+    "Failed run number N of -1. Retrying." spam with nothing at
+    WARNING/ERROR level to catch it. Network hiccups (including a 409
+    Conflict, which self-heals — see that incident's postmortem) are
+    expected occasionally and log at WARNING; anything else reaching
+    here is an actual bug and gets a full traceback at ERROR."""
+    error = context.error
+    if isinstance(error, NetworkError | Conflict):
+        logger.warning("Network error talking to Telegram: {}", error)
+        return
+    logger.opt(exception=error).error("Unhandled exception while processing update: {}", update)
 
 
 async def _post_init(application: Application) -> None:
@@ -118,6 +148,7 @@ def main() -> None:
     config = load_config()
     setup_logging(config.log_level)
     application = build_application(config)
+    heartbeat.install(application)
     application.run_polling()
 
 

@@ -22,6 +22,29 @@ services:
     depends_on:
       mariadb:
         condition: service_healthy
+    # heartbeat.py touches /tmp/nani-pix-bot-heartbeat after every real,
+    # successful getUpdates cycle — a stale file means polling is wedged
+    # (see the 2026-09-13 connection-pool-wedge incident, issue #51),
+    # even though the process itself is still running and retrying.
+    # 90s is ~6x a normal idle poll cycle (~10-15s), so this catches a
+    # real wedge quickly without flapping on ordinary jitter.
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "test $(( $(date +%s) - $(stat -c %Y /tmp/nani-pix-bot-heartbeat 2>/dev/null || echo 0) )) -lt 90",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    # Fleet-wide autoheal (tmknight/docker-autoheal, see the ops vault's
+    # инфраструктура/Autoheal.md) restarts any container Docker itself
+    # marks unhealthy — but only containers carrying these labels, since
+    # monitoring is opt-in fleet-wide.
+    labels:
+      autoheal.monitor.enable: "true"
+      autoheal.restart.enable: "true"
 
 volumes:
   mariadb_data:
