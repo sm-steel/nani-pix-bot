@@ -43,7 +43,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
+    """Downgrade schema.
+
+    Not data-safe: re-adding original_file_id restores an empty column,
+    not the file_id that used to live there, and dropping original_image
+    destroys whatever bytes were backfilled or written since — bytes are
+    not invertible back into the Telegram file_id that produced them.
+    Same posture as d7a3e5c9b8f1's own honest downgrade() comment."""
     op.add_column("games", sa.Column("original_file_id", sa.String(512), nullable=True))
     op.drop_column("games", "original_image")
     op.drop_column("games", "screenshot_source")
@@ -98,7 +104,25 @@ def _backfill_original_image_for_in_flight_games() -> None:
     proxy = os.environ.get("TELEGRAM_PROXY_URL") or None
     with httpx.Client(proxy=proxy, timeout=30.0) as client:
         for row in rows:
-            image_bytes = _fetch_telegram_file_bytes(client, bot_token, row.original_file_id)
+            # An expired/invalid file_id (Telegram 400s), a proxy hiccup,
+            # a timeout, or a file over 20MB must not escape this loop:
+            # MariaDB auto-commits DDL, so the add_column calls above are
+            # already durable, and an uncaught raise here would abort
+            # upgrade() before alembic_version is bumped — the next
+            # deploy would then re-run this migration and die on
+            # "Duplicate column name" against a schema that's already
+            # been changed. Leaving one row's original_image NULL is a
+            # recoverable, already-handled state (jobs/timers.py no-ops
+            # on it, has_answer_to_reveal returns False); a half-applied
+            # migration wedging every future deploy is not.
+            try:
+                image_bytes = _fetch_telegram_file_bytes(client, bot_token, row.original_file_id)
+            except (httpx.HTTPError, KeyError) as exc:
+                print(
+                    f"WARNING: could not backfill game {row.id}: {exc} — "
+                    f"leaving original_image NULL"
+                )
+                continue
             bind.execute(
                 games.update().where(games.c.id == row.id).values(original_image=image_bytes)
             )

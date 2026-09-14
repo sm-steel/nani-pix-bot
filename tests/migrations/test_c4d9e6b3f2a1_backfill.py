@@ -1,0 +1,199 @@
+"""Tests for c4d9e6b3f2a1's original_image backfill error handling
+(issue #77).
+
+Migrations aren't exercised by the rest of the test suite at all —
+tests/conftest.py builds schema straight from the models with
+Base.metadata.create_all, never by running Alembic. This file loads the
+migration module directly by path and drives its private
+_backfill_original_image_for_in_flight_games() against a real Alembic
+Operations context bound to an in-memory SQLite connection, so the
+function's own op.get_bind() call resolves exactly as it would under a
+genuine `alembic upgrade` — without needing the five op.add_column/
+op.drop_column DDL calls in upgrade() itself, which are a separate,
+already-covered-by-precedent concern (every earlier migration in this
+project does the same column adds) and not what issue #77 is about.
+
+Only the backfill loop's new try/except is under test here — the
+scenario from the issue: a failing per-row fetch must leave that row's
+original_image NULL and let the migration complete, not abort upgrade()
+partway through an already-autocommitted DDL sequence.
+"""
+
+import importlib.util
+from collections.abc import Iterator
+from pathlib import Path
+from types import ModuleType
+
+import httpx
+import pytest
+import sqlalchemy as sa
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
+
+_MIGRATION_PATH = (
+    Path(__file__).parents[2]
+    / "migrations"
+    / "versions"
+    / "c4d9e6b3f2a1_add_provider_ids_and_stored_image.py"
+)
+
+
+def _load_migration_module() -> ModuleType:
+    """Import the migration file fresh under a throwaway module name —
+    it's a standalone script Alembic loads by path, not a package
+    member, so it has to be pulled in by path here too. Not cached in
+    sys.modules under its real name, so each test gets its own module
+    object and monkeypatching one test's copy can't leak into another."""
+    spec = importlib.util.spec_from_file_location("c4d9e6b3f2a1_under_test", _MIGRATION_PATH)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _make_games_table(metadata: sa.MetaData) -> sa.Table:
+    """The post-add_column, pre-drop_column 'games' shape the backfill
+    itself queries and updates — id/status/original_file_id/
+    original_image are the only columns _backfill_original_image_for_
+    in_flight_games touches."""
+    return sa.Table(
+        "games",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("status", sa.String(16)),
+        sa.Column("original_file_id", sa.String(512)),
+        sa.Column("original_image", sa.LargeBinary),
+    )
+
+
+@pytest.fixture
+def games_connection() -> Iterator[tuple[sa.Connection, sa.Table]]:
+    """A live Alembic Operations context bound to a real sqlite
+    connection, so op.get_bind() inside the migration resolves exactly
+    as it does under `alembic upgrade` — see Operations.context in
+    alembic/operations/base.py, the same mechanism env.py uses."""
+    engine = sa.create_engine("sqlite://")
+    metadata = sa.MetaData()
+    games = _make_games_table(metadata)
+    metadata.create_all(engine)
+    with engine.connect() as conn:
+        migration_context = MigrationContext.configure(conn)
+        with Operations.context(migration_context):
+            yield conn, games
+
+
+def _image_by_id(conn: sa.Connection, games: sa.Table) -> dict[int, bytes | None]:
+    rows = conn.execute(sa.select(games.c.id, games.c.original_image)).fetchall()
+    return {row.id: row.original_image for row in rows}
+
+
+def test_a_failing_fetch_leaves_that_row_null_and_completes(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    conn, games = games_connection
+    conn.execute(
+        games.insert(),
+        [
+            {"id": 1, "status": "ACTIVE", "original_file_id": "good-id", "original_image": None},
+            {"id": 2, "status": "SETUP", "original_file_id": "bad-id", "original_image": None},
+        ],
+    )
+    conn.commit()
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+
+    def fake_fetch(client: httpx.Client, bot_token: str, file_id: str) -> bytes:
+        if file_id == "bad-id":
+            request = httpx.Request("GET", "https://api.telegram.org/fake")
+            raise httpx.HTTPStatusError(
+                "400 Bad Request", request=request, response=httpx.Response(400, request=request)
+            )
+        return b"real-bytes"
+
+    monkeypatch.setattr(module, "_fetch_telegram_file_bytes", fake_fetch)
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    images = _image_by_id(conn, games)
+    assert images[1] == b"real-bytes"
+    assert images[2] is None
+
+    output = capsys.readouterr().out
+    assert "WARNING" in output
+    assert "game 2" in output
+    assert "400 Bad Request" in output
+
+
+def test_a_missing_response_key_is_also_caught(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A malformed getFile response (Telegram's JSON shape not matching
+    what _fetch_telegram_file_bytes expects) raises KeyError from
+    `.json()["result"]["file_path"]`, not an httpx exception — the
+    backfill's except clause has to catch both."""
+    conn, games = games_connection
+    conn.execute(
+        games.insert(),
+        [{"id": 3, "status": "ACTIVE", "original_file_id": "weird-id", "original_image": None}],
+    )
+    conn.commit()
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+
+    def fake_fetch(client: httpx.Client, bot_token: str, file_id: str) -> bytes:
+        raise KeyError("result")
+
+    monkeypatch.setattr(module, "_fetch_telegram_file_bytes", fake_fetch)
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[3] is None
+
+
+def test_fetch_raises_http_error_on_a_telegram_400() -> None:
+    """Confirms the exception type the backfill actually catches
+    (httpx.HTTPError) is what a real expired/invalid file_id produces —
+    Telegram answers getFile with a non-2xx status, which
+    raise_for_status turns into httpx.HTTPStatusError, a subclass of
+    httpx.HTTPError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"ok": False, "description": "Bad Request: file not found"})
+
+    module = _load_migration_module()
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        pytest.raises(httpx.HTTPError),
+    ):
+        module._fetch_telegram_file_bytes(client, "fake-token", "expired-file-id")
+
+
+def test_a_successful_backfill_is_not_swallowed(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Guards against a too-broad fix that skips every row: a row whose
+    fetch succeeds must still be written and logged, not just the
+    failure path."""
+    conn, games = games_connection
+    conn.execute(
+        games.insert(),
+        [{"id": 4, "status": "ACTIVE", "original_file_id": "good-id", "original_image": None}],
+    )
+    conn.commit()
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+    monkeypatch.setattr(module, "_fetch_telegram_file_bytes", lambda client, token, fid: b"bytes")
+
+    module._backfill_original_image_for_in_flight_games()
+
+    assert _image_by_id(conn, games)[4] == b"bytes"
+    assert "Backfilled original_image for game 4" in capsys.readouterr().out
