@@ -287,15 +287,35 @@ async def _handle_more_screenshots(
     button as well as the forward one — the callback has always encoded
     an absolute offset rather than a direction — so the confirmation
     names the range shown instead of saying "here are some more", which
-    would be wrong half the time."""
+    would be wrong half the time.
+
+    `cross_provider=True` unconditionally, like `resume_screenshot_gallery`
+    and for the same reason: the `screenshot_more:<provider>:<offset>`
+    payload has nowhere to carry the flag (Telegram caps callback_data at
+    64 bytes, so an extra field is expensive), and rendering "Wrong
+    anime? Search again" on every page is the right side to err on —
+    paging is precisely what a starter does when the auto-resolved title
+    looks wrong, so dropping the escape hatch on page 2 took it away at
+    the exact moment it was wanted. The button re-arms
+    screenshot_picker_provider itself when tapped, so it still routes on
+    a page whose gallery never armed it."""
     provider, offset = more
     provider_id = _provider_id(game, provider)
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
     if isinstance(result, Fallback):
         return result
-    target = GalleryTarget(chat_id=game.starter_id, provider=provider, offset=offset)
+    target = GalleryTarget(
+        chat_id=game.starter_id, provider=provider, offset=offset, cross_provider=True
+    )
     await _show_gallery_page(context, target, result, lang)
     shown = len(result[offset : offset + GALLERY_PAGE_SIZE])
+    logger.debug(
+        "Game {}: showing {} gallery page at offset {} ({} url(s) total)",
+        game.id,
+        provider,
+        offset,
+        len(result),
+    )
     return i18n.t(
         "dm_start.gallery_page_sent",
         lang,

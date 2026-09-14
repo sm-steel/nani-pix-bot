@@ -235,6 +235,52 @@ async def test_preview_change_image_pick_screenshot_resumes_the_gallery(
     update.callback_query.edit_message_text.assert_awaited_once()
 
 
+async def test_preview_change_image_pick_screenshot_reoffers_the_source_menu_when_it_is_stale(
+    session_factory,
+) -> None:
+    """Regression: an older preview message's "pick a different
+    screenshot" tapped after a "Re-search title" has already cleared the
+    screenshot source used to render "Where should I get a screenshot
+    from?" with no reply_markup at all — a SETUP game with nothing to
+    tap, the dead end MECHANICS.md's "When a provider fails" rules out.
+    There is no provider to blame here, so the menu goes out plain
+    (nothing flagged), but it does go out."""
+    # What a "Re-search title" leaves behind (clear_screenshot_selection):
+    # no provider backing the image and no picker resolving anything —
+    # while the older preview message's own buttons are still tappable.
+    _staged_setup_game(session_factory)
+    update = _make_preview_callback_update(
+        data=PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA, user_id=1
+    )
+    context = _make_context(session_factory, search_client=MagicMock())
+    context.bot.send_media_group = AsyncMock()
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_media_group.assert_not_awaited()  # no gallery to resume
+    update.callback_query.edit_message_text.assert_awaited_once()
+    _, kwargs = update.callback_query.edit_message_text.await_args
+    callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert callbacks == [
+        "screenshot_source:shikimori",
+        "screenshot_source:jikan",
+        "screenshot_source:tmdb",
+        "screenshot:upload",
+    ]
+    # Nothing failed, so no provider wears the ⚠️ mark.
+    labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert not any(label.startswith("⚠️") for label in labels)
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        # The plain source menu resolves nothing yet, and this path
+        # arms nothing either — a typed message here is not a
+        # cross-search query.
+        assert fetched.screenshot_picker_provider is None
+
+
 async def test_preview_research_returns_to_the_method_keyboard(session_factory) -> None:
     _staged_setup_game(session_factory)
     update = _make_preview_callback_update(data=PREVIEW_RESEARCH_CALLBACK_DATA, user_id=1)

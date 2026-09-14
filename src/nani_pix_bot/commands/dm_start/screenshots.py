@@ -47,6 +47,16 @@ from nani_pix_bot.services.search.tmdb import TMDBResult
 
 GALLERY_PAGE_SIZE = 5
 
+# `resume_screenshot_gallery`'s one no-provider outcome: a stale "pick a
+# different screenshot" tap on a game whose screenshot_source was
+# cleared meanwhile. Named (rather than returned as a bare string) so
+# preview.py can tell it apart from `dm_start.screenshot_source_picked`
+# — that one lands on a gallery message carrying its own buttons, this
+# one has to be rendered *with* the source menu or the starter is left
+# with nothing to tap. Placeholder-free, as SourceMenu.provider=None
+# requires.
+NO_SOURCE_PROMPT_KEY = "dm_start.pick_screenshot_source_prompt"
+
 # One provider id column per screenshot-capable provider — see
 # models/game.py's per-provider *_id columns.
 _ID_ATTRS = {"shikimori": "shikimori_id", "jikan": "jikan_id", "tmdb": "tmdb_id"}
@@ -298,7 +308,9 @@ async def resume_screenshot_gallery(
     a fallback key the caller passes to `reply_with_source_menu`. A
     stale button here (`screenshot_source` cleared by a "Re-search
     title" since this preview message was sent) must degrade
-    gracefully, not crash on a bare assert."""
+    gracefully, not crash on a bare assert — it returns
+    NO_SOURCE_PROMPT_KEY, which the caller must render *with* the source
+    menu (there is no gallery message to carry buttons in that case)."""
     game.setup_step = SetupStep.PICKING_SCREENSHOT
     provider = game.screenshot_source
     if provider is None:
@@ -307,7 +319,7 @@ async def resume_screenshot_gallery(
             game.id,
         )
         # No provider to name or flag — just re-offer the plain menu.
-        return "dm_start.pick_screenshot_source_prompt"
+        return NO_SOURCE_PROMPT_KEY
 
     # The gallery below is drawn cross_provider=True, so it carries
     # "Wrong anime? Search again" — which means a typed correction has

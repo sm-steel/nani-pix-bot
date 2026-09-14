@@ -24,10 +24,13 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     method_selection_keyboard,
 )
 from nani_pix_bot.commands.dm_start.screenshots import (
+    NO_SOURCE_PROMPT_KEY,
     Fallback,
     clear_screenshot_selection,
     reply_fallback,
+    reply_with_source_menu,
     resume_screenshot_gallery,
+    source_menu_for,
 )
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -164,6 +167,18 @@ async def _preview_change_image_pick_screenshot(context, query, game: Game, lang
     outcome = await resume_screenshot_gallery(context, game, lang)
     if isinstance(outcome, Fallback):
         await reply_fallback(query.edit_message_text, game, lang, outcome)
+        return
+    if outcome == NO_SOURCE_PROMPT_KEY:
+        # A stale tap: the source this gallery would have resumed is
+        # gone, so no gallery (and therefore no buttons) goes out
+        # alongside this message. It has to carry the source menu
+        # itself, plain — there is no provider at fault to flag — or the
+        # starter reads "Where should I get a screenshot from?" with
+        # nothing to tap (MECHANICS.md's "When a provider fails").
+        logger.warning("Game {}: stale pick-a-screenshot tap, re-offering the source menu", game.id)
+        await reply_with_source_menu(
+            query.edit_message_text, source_menu_for(game, None), lang, outcome
+        )
         return
     await query.edit_message_text(text=i18n.t(outcome, lang))
 

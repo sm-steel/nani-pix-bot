@@ -506,6 +506,49 @@ async def test_screenshot_gallery_second_page_offers_a_way_back(
     assert "8" in text
 
 
+async def test_screenshot_gallery_paging_keeps_the_search_again_button(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: the "More screenshots" callback carries only a
+    provider and an offset (widening it would eat into Telegram's
+    64-byte callback_data budget), so page 2 used to be rendered with
+    cross_provider=False and silently dropped "Wrong anime? Search
+    again" — the escape hatch MECHANICS.md promises is always there, and
+    paging is exactly when a starter hunting a fitting screenshot would
+    reach for it."""
+    urls = [f"https://image.tmdb.org/x/{i}.jpg" for i in range(8)]
+    monkeypatch.setattr(tmdb, "screenshots", AsyncMock(return_value=urls))
+    # The state a cross-provider resolution leaves behind: identified on
+    # AniList, TMDB's id resolved by the silent cross-search, and the
+    # picker pointed at TMDB so a typed correction routes there.
+    game_id = _staged_game(
+        session_factory,
+        source="anilist",
+        anilist_id=99,
+        tmdb_id=209867,
+        screenshot_picker_provider="tmdb",
+    )
+
+    update = _make_callback_update(data="screenshot_more:tmdb:5")
+    context = _make_context(session_factory)
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, button_kwargs = context.bot.send_message.await_args
+    callbacks = [
+        b.callback_data for row in button_kwargs["reply_markup"].inline_keyboard for b in row
+    ]
+    assert "screenshot_search_again:tmdb" in callbacks
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        # Paging shows another page of the same gallery, so the picker
+        # keeps pointing where it did — the button stays routable.
+        assert fetched.screenshot_picker_provider == "tmdb"
+
+
 async def test_screenshot_gallery_paging_looks_the_url_list_up_once_per_page(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
