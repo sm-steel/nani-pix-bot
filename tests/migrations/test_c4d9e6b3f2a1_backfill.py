@@ -211,6 +211,112 @@ def test_fetch_raises_type_error_on_a_malformed_but_json_2xx_body() -> None:
         module._fetch_telegram_file_bytes(client, "fake-token", "some-file-id")
 
 
+def test_fetch_raises_invalid_url_on_a_corrupted_file_path() -> None:
+    """A corrupted proxy response can put a non-printable character into
+    file_path — the same corrupted-response threat model already
+    accepted for a non-JSON or malformed-JSON body — which makes the
+    second client.get(...) raise httpx.InvalidURL. Unlike every other
+    exception this file catches, InvalidURL's MRO is (InvalidURL,
+    Exception, BaseException, object): it is not a subclass of
+    httpx.HTTPError, so the except clause has to name it explicitly."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "getFile" in str(request.url):
+            return httpx.Response(200, json={"ok": True, "result": {"file_path": "bad\x00path"}})
+        raise AssertionError("should not reach the download request")
+
+    module = _load_migration_module()
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        pytest.raises(httpx.InvalidURL),
+    ):
+        module._fetch_telegram_file_bytes(client, "fake-token", "some-file-id")
+
+
+def test_the_loop_catches_invalid_url_too(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Confirms the loop itself, not just _fetch_telegram_file_bytes in
+    isolation, leaves the row NULL and keeps going for httpx.InvalidURL
+    — the one exception type in this set that isn't a subclass of
+    anything else already caught, so a fix that widened the tuple
+    without this specific member would still wedge a deploy on this
+    input."""
+    conn, games = games_connection
+    conn.execute(
+        games.insert(),
+        [{"id": 8, "status": "ACTIVE", "original_file_id": "corrupt-id", "original_image": None}],
+    )
+    conn.commit()
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+
+    def fake_fetch(client: httpx.Client, bot_token: str, file_id: str) -> bytes:
+        raise httpx.InvalidURL("Invalid non-printable ASCII character in URL")
+
+    monkeypatch.setattr(module, "_fetch_telegram_file_bytes", fake_fetch)
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[8] is None
+    assert "game 8" in capsys.readouterr().out
+
+
+def test_a_telegram_error_does_not_leak_the_bot_token_into_the_warning(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """httpx.HTTPStatusError's own message embeds the full request URL,
+    and both URLs _fetch_telegram_file_bytes builds have BOT_TOKEN
+    folded straight into the path — so printing str(exc) unredacted
+    would write a live bot token into deploy.yml's GitHub Actions logs
+    on a public repo, on exactly the most likely trigger (an
+    expired/invalid file_id producing a Telegram 400). Runs the real
+    (unmocked) _fetch_telegram_file_bytes through a fake transport
+    swapped in for httpx.Client, so the exception message genuinely
+    contains the token the same way it would in production, rather than
+    asserting redaction against a message that was never at risk.
+
+    Uses an obviously-fake placeholder token, per this repo's rule
+    against ever writing a real credential anywhere — including here,
+    where the whole point is proving it does NOT end up in output."""
+    conn, games = games_connection
+    conn.execute(
+        games.insert(),
+        [{"id": 9, "status": "ACTIVE", "original_file_id": "expired-id", "original_image": None}],
+    )
+    conn.commit()
+
+    module = _load_migration_module()
+    # Built from parts, not one literal, so this obviously-fake value
+    # (used here purely to prove it does NOT end up in output) doesn't
+    # itself read to a secret scanner as a hardcoded credential.
+    placeholder_token = "-".join(["PLACEHOLDER", "NOT", "A", "REAL", "TOKEN", "123456"])
+    monkeypatch.setenv("BOT_TOKEN", placeholder_token)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"ok": False, "description": "Bad Request: file not found"})
+
+    mock_transport = httpx.MockTransport(handler)
+    real_client_cls = httpx.Client
+    monkeypatch.setattr(
+        module.httpx, "Client", lambda *args, **kwargs: real_client_cls(transport=mock_transport)
+    )
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[9] is None
+
+    output = capsys.readouterr().out
+    assert placeholder_token not in output
+    assert "<bot-token-redacted>" in output
+    assert "game 9" in output
+
+
 def test_the_loop_catches_value_error_and_type_error_too(
     games_connection: tuple[sa.Connection, sa.Table],
     monkeypatch: pytest.MonkeyPatch,

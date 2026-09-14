@@ -124,15 +124,43 @@ def _backfill_original_image_for_in_flight_games() -> None:
             # json.JSONDecodeError (a ValueError subclass). A 2xx body
             # that *is* JSON but whose "result" isn't a dict (a
             # malformed-but-technically-JSON success response) raises
-            # TypeError from the ["file_path"] lookup instead. Both are
-            # the same deploy-wedging shape as the network failures
-            # above, so they get the same fate: skip this row, keep the
-            # migration moving.
+            # TypeError from the ["file_path"] lookup instead. httpx.
+            # InvalidURL covers the same corrupted-proxy-response shape
+            # one step later: a file_path containing a non-printable
+            # character makes the second client.get(...) below raise
+            # InvalidURL, which — unlike every other exception caught
+            # here — is not a subclass of httpx.HTTPError, so it needs
+            # naming explicitly. All of these are the same
+            # deploy-wedging shape as the network failures above, so
+            # they get the same fate: skip this row, keep the migration
+            # moving.
             try:
                 image_bytes = _fetch_telegram_file_bytes(client, bot_token, row.original_file_id)
-            except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
+            except (
+                httpx.HTTPError,
+                httpx.InvalidURL,
+                KeyError,
+                ValueError,
+                TypeError,
+            ) as exc:
+                # str(exc) can itself contain bot_token: httpx.
+                # HTTPStatusError's message embeds the full request URL
+                # ("...for url 'https://api.telegram.org/bot<TOKEN>/
+                # getFile'"), and both URLs built in
+                # _fetch_telegram_file_bytes have the token folded
+                # straight into the path. This migration runs via
+                # `docker compose run --rm` from deploy.yml on a
+                # GitHub-hosted Actions runner against this public
+                # repo, so an unredacted print here would write a live
+                # bot token into publicly-readable Actions logs — on
+                # exactly the most likely trigger (an expired file_id
+                # producing a Telegram 400). repr(exc) has the same
+                # problem, so the token is stripped out of the message
+                # text itself rather than switched to a different
+                # rendering of the same exception.
+                safe_message = str(exc).replace(bot_token, "<bot-token-redacted>")
                 print(
-                    f"WARNING: could not backfill game {row.id}: {exc} — "
+                    f"WARNING: could not backfill game {row.id}: {safe_message} — "
                     f"leaving original_image NULL"
                 )
                 continue
