@@ -20,6 +20,7 @@ partway through an already-autocommitted DDL sequence.
 """
 
 import importlib.util
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
@@ -172,6 +173,83 @@ def test_fetch_raises_http_error_on_a_telegram_400() -> None:
         pytest.raises(httpx.HTTPError),
     ):
         module._fetch_telegram_file_bytes(client, "fake-token", "expired-file-id")
+
+
+def test_fetch_raises_value_error_on_a_non_json_2xx_body() -> None:
+    """A misbehaving proxy/intermediary can answer a 2xx with something
+    that isn't Telegram's JSON at all (an HTML interstitial, say) — that
+    never trips raise_for_status(), but .json() then raises
+    json.JSONDecodeError, a ValueError subclass. This is the "proxy
+    hiccup" scenario named in issue #77's own rationale, so the except
+    clause has to catch it too."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"<html>proxy error page</html>")
+
+    module = _load_migration_module()
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        pytest.raises(json.JSONDecodeError),
+    ):
+        module._fetch_telegram_file_bytes(client, "fake-token", "some-file-id")
+
+
+def test_fetch_raises_type_error_on_a_malformed_but_json_2xx_body() -> None:
+    """A 2xx body that is valid JSON but whose "result" isn't a dict (a
+    malformed-but-technically-JSON success response) raises TypeError
+    from the ["file_path"] lookup rather than KeyError or ValueError —
+    also has to be caught."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True, "result": "not-a-dict"})
+
+    module = _load_migration_module()
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        pytest.raises(TypeError),
+    ):
+        module._fetch_telegram_file_bytes(client, "fake-token", "some-file-id")
+
+
+def test_the_loop_catches_value_error_and_type_error_too(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The two fetch-level tests above confirm what exception type a
+    non-JSON or malformed-JSON 2xx body raises; this confirms the loop
+    itself — not just _fetch_telegram_file_bytes in isolation — leaves
+    each such row NULL and keeps going, the same guarantee already
+    proven for httpx.HTTPError."""
+    conn, games = games_connection
+    conn.execute(
+        games.insert(),
+        [
+            {"id": 5, "status": "ACTIVE", "original_file_id": "html-id", "original_image": None},
+            {"id": 6, "status": "ACTIVE", "original_file_id": "odd-id", "original_image": None},
+        ],
+    )
+    conn.commit()
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+
+    def fake_fetch(client: httpx.Client, bot_token: str, file_id: str) -> bytes:
+        if file_id == "html-id":
+            raise ValueError("Expecting value: line 1 column 1 (char 0)")
+        raise TypeError("string indices must be integers")
+
+    monkeypatch.setattr(module, "_fetch_telegram_file_bytes", fake_fetch)
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    images = _image_by_id(conn, games)
+    assert images[5] is None
+    assert images[6] is None
+
+    output = capsys.readouterr().out
+    assert "game 5" in output
+    assert "game 6" in output
 
 
 def test_a_successful_backfill_is_not_swallowed(

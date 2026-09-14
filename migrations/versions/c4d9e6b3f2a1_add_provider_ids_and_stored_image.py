@@ -115,9 +115,22 @@ def _backfill_original_image_for_in_flight_games() -> None:
             # recoverable, already-handled state (jobs/timers.py no-ops
             # on it, has_answer_to_reveal returns False); a half-applied
             # migration wedging every future deploy is not.
+            #
+            # ValueError and TypeError are in this set for the same
+            # "proxy hiccup" reason httpx.HTTPError is: a misbehaving
+            # proxy/intermediary can answer with a 2xx whose body isn't
+            # Telegram's JSON at all (an HTML interstitial, say) — that
+            # never trips raise_for_status(), but .json() then raises
+            # json.JSONDecodeError (a ValueError subclass). A 2xx body
+            # that *is* JSON but whose "result" isn't a dict (a
+            # malformed-but-technically-JSON success response) raises
+            # TypeError from the ["file_path"] lookup instead. Both are
+            # the same deploy-wedging shape as the network failures
+            # above, so they get the same fate: skip this row, keep the
+            # migration moving.
             try:
                 image_bytes = _fetch_telegram_file_bytes(client, bot_token, row.original_file_id)
-            except (httpx.HTTPError, KeyError) as exc:
+            except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
                 print(
                     f"WARNING: could not backfill game {row.id}: {exc} — "
                     f"leaving original_image NULL"
