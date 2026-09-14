@@ -19,6 +19,7 @@ from nani_pix_bot.models.enums import GameStatus, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
@@ -80,7 +81,11 @@ def _make_text_update(
 
 
 def _create_setup_game(
-    session_factory, *, starter_id: int = 1, image: bytes = b"file123", source: str = "anilist"
+    session_factory,
+    *,
+    starter_id: int = 1,
+    image: bytes | None = b"file123",
+    source: str = "anilist",
 ) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=starter_id))
@@ -128,6 +133,39 @@ async def test_method_pick_callback_handler_stores_the_source_and_prompts_for_se
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.source == "shikimori"
         assert fetched.status == GameStatus.SETUP
+
+
+async def test_method_pick_callback_handler_asks_a_screenshotless_prompt_for_newgame(
+    session_factory,
+) -> None:
+    """A /newgame game has no image yet, so the photo-first wording
+    ("what anime is this from?") would be describing an image that
+    doesn't exist — see locales' ask_search vs ask_search_newgame."""
+    _create_setup_game(session_factory, starter_id=1, image=None)
+    update = _make_method_callback_update(data=ANILIST_METHOD_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await search.method_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    text = update.callback_query.edit_message_text.await_args.args[0]
+    assert text == i18n.t("dm_start.ask_search_newgame", "en")
+
+
+async def test_method_pick_callback_handler_asks_the_photo_first_prompt_with_an_image(
+    session_factory,
+) -> None:
+    _create_setup_game(session_factory, starter_id=1)
+    update = _make_method_callback_update(data=ANILIST_METHOD_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await search.method_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    text = update.callback_query.edit_message_text.await_args.args[0]
+    assert text == i18n.t("dm_start.ask_search", "en")
 
 
 async def test_method_pick_callback_handler_prompts_for_a_title_when_manual_is_picked(

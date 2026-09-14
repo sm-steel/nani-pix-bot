@@ -5,6 +5,7 @@ bookkeeping (a related but distinct concern) lives in turns.py."""
 import enum
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import NamedTuple
 
 from loguru import logger
 from sqlalchemy import select
@@ -330,10 +331,23 @@ def advance_stage(game: Game) -> GuessOutcome:
     return GuessOutcome.STAGE_ADVANCED
 
 
-def stage_progress(session: Session, game: Game) -> tuple[int, int, int]:
-    """(1-indexed current stage number, total stage count, wrong guesses
-    remaining before the next stage) for a still-ACTIVE game — feeds the
-    /guess wrong-feedback message."""
+class StageProgress(NamedTuple):
+    """Where an ACTIVE game stands within its pixelation stages. Both
+    `remaining` and `limit` are reported because every player-facing
+    guess counter shows them as a pair ("2/3") — the bare remaining count
+    on its own says nothing about how generous the stage was to start
+    with. See MECHANICS.md's "Pixelation stages"."""
+
+    number: int
+    total: int
+    remaining: int
+    limit: int
+
+
+def stage_progress(session: Session, game: Game) -> StageProgress:
+    """Current stage number/total and the wrong-guess budget left at it,
+    for a still-ACTIVE game — feeds the /guess wrong-feedback message and
+    the stage-advance caption."""
     if game.current_stage is None:
         msg = f"stage_progress called on game {game.id} with no current_stage (not ACTIVE?)"
         raise ValueError(msg)
@@ -341,7 +355,7 @@ def stage_progress(session: Session, game: Game) -> tuple[int, int, int]:
     stage_number = STAGE_ORDER.index(game.current_stage) + 1
     limit = stage_config.get_stage_config(session)[game.current_stage].wrong_guess_limit
     remaining = limit - game.wrong_guess_count
-    return stage_number, len(STAGE_ORDER), remaining
+    return StageProgress(stage_number, len(STAGE_ORDER), remaining, limit)
 
 
 def force_win(session: Session, game: Game, *, winner_id: int) -> None:
@@ -367,6 +381,21 @@ def force_unsolved(game: Game) -> None:
     unsolved" section."""
     game.status = GameStatus.UNSOLVED
     logger.info("Game {} ended unsolved", game.id)
+
+
+def has_answer_to_reveal(game: Game) -> bool:
+    """Whether `game` still has an answer the group is waiting on — an
+    ACTIVE round with its original image intact. Drives `/stop`'s "stop
+    and reveal" button (commands/game_flow/stop.py, and the same keyboard
+    offered by commands/stageconfig.py when a config edit is blocked): a
+    SETUP game has never posted anything to the topic, and may not even
+    have a title or an image staged yet, so there's nothing to reveal.
+
+    The image half is belt-and-braces — an ACTIVE game always still has
+    its bytes, since clear_original_screenshot() only runs on a terminal
+    outcome — mirroring the same guard in jobs/timers.py's timeout
+    callback."""
+    return game.status == GameStatus.ACTIVE and game.original_image is not None
 
 
 def clear_original_screenshot(game: Game) -> None:

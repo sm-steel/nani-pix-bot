@@ -33,6 +33,7 @@ def _make_context(session_factory, *, args: list[str] | None = None) -> MagicMoc
         "session_factory": session_factory,
         "group_chat_id": 555,
         "game_topic_id": 7,
+        "bot_username": "nani_pix_bot",
     }
     context.args = args or []
     context.job_queue.get_jobs_by_name.return_value = []
@@ -172,6 +173,10 @@ async def test_skip_command_rejects_an_unknown_username(session_factory) -> None
     )
 
     update.message.reply_text.assert_awaited_once()
-    assert "stranger" in update.message.reply_text.await_args.args[0].lower()
+    text = update.message.reply_text.await_args.args[0]
+    assert "stranger" in text.lower()
+    # The reply has to tell them where to go: a bare @handle is
+    # auto-linked by Telegram, so no parse_mode is involved.
+    assert "@nani_pix_bot" in text
     with session_factory() as session:
         assert session.get(TurnState, 1) is None

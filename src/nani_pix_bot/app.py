@@ -7,6 +7,7 @@ import re
 
 import httpx
 from loguru import logger
+from telegram import Update
 from telegram.error import Conflict, NetworkError
 from telegram.ext import (
     Application,
@@ -15,6 +16,7 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -33,6 +35,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     RETRY_CALLBACK_DATA,
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
 )
+from nani_pix_bot.commands.helpers import player_tracking
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
 from nani_pix_bot.config import Config, load_config
@@ -49,6 +52,11 @@ from nani_pix_bot.services import settings
 # everything — see heartbeat.py + docker-compose.yml's healthcheck for
 # the actual detection/recovery.
 GET_UPDATES_CONNECTION_POOL_SIZE = 4
+
+# Everything else registers into PTB's default group (0). Named rather
+# than literal so tests can assert "before the commands" instead of
+# hard-coding -1 in two places.
+_PLAYER_TRACKING_GROUP = -1
 
 
 def build_application(config: Config) -> Application:
@@ -83,6 +91,15 @@ def build_application(config: Config) -> Application:
     )
     application.bot_data["group_chat_id"] = config.group_chat_id
     application.bot_data["game_topic_id"] = config.game_topic_id
+
+    # The only handler outside the default group. -1 runs it before every
+    # command handler below (PTB walks groups in order and carries on to
+    # the next one unless a callback raises ApplicationHandlerStop, which
+    # this one never does), so a user is recorded from the very update
+    # that first mentions them — including the /correct that needs them.
+    application.add_handler(
+        TypeHandler(Update, player_tracking.remember_user), group=_PLAYER_TRACKING_GROUP
+    )
 
     application.add_handler(
         MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, dm_start.photo_handler)

@@ -92,8 +92,25 @@ jobs/            (Telegram)
   calls into `services/`, formats the reply. No game rules live here.
 - **`commands/helpers/`** — Telegram-aware plumbing shared by more than one
   command file (topic/DM scoping checks, inline-keyboard builders, bot
-  command-menu registration, shared formatting). Nothing here registers a
-  handler in `app.py`.
+  command-menu registration, shared formatting). One exception to the
+  "no handlers here" rule: `player_tracking.py` (see "Handler groups").
+
+### Handler groups
+
+Every handler `app.py` registers goes into PTB's default group (`0`)
+except one: `player_tracking.remember_user`, a `TypeHandler(Update, …)`
+in group `-1` (`app._PLAYER_TRACKING_GROUP`). PTB walks groups in order
+and, unless a callback raises `ApplicationHandlerStop`, carries on to the
+next — so this runs first on *every* update and then hands off to the
+normal command handlers.
+
+Its job is to create-or-refresh the update sender's `players` row, which
+is what `/correct @username` and `/skip @username` resolve their typed
+handle against. It's a pre-handler rather than a `get_or_create_player`
+call inside each command because those two lookups have to work for
+someone the bot has only ever *seen* — a person who answered a round in
+plain prose in the game topic is exactly who `/correct` is for, and is
+exactly who no command handler would ever have recorded.
 - **`jobs/`** — JobQueue-driven background timers. Telegram-aware like
   `commands/`, but its entry points are scheduled callbacks invoked by
   PTB's `JobQueue`, not `CommandHandler`/`CallbackQueryHandler`s registered
@@ -204,14 +221,15 @@ src/nani_pix_bot/
                    # shared across packages: stop_confirm_keyboard()
                    # (keyboards.py, used by game_flow/stop.py and
                    # stageconfig.py), bot command-menu registration
-                   # (bot_menu.py). Nothing here registers a handler in
-                   # app.py. Test: does more than one commands/*.py file
-                   # need it, or does it not correspond to an actual
-                   # /command at all? Either one means helpers/, not a
-                   # plain commands/*.py file (dm_start's own keyboard
-                   # builders live in commands/dm_start/keyboards.py
-                   # instead, since nothing outside that package needs
-                   # them).
+                   # (bot_menu.py), and the one update callback here that
+                   # app.py does register — player_tracking.py's
+                   # remember_user (see "Handler groups" below). Test:
+                   # does more than one commands/*.py file need it, or
+                   # does it not correspond to an actual /command at all?
+                   # Either one means helpers/, not a plain commands/*.py
+                   # file (dm_start's own keyboard builders live in
+                   # commands/dm_start/keyboards.py instead, since
+                   # nothing outside that package needs them).
   jobs/           # JobQueue-driven background timers — Telegram-aware
                    # like commands/, but scheduled callbacks rather than
                    # CommandHandler/CallbackQueryHandlers, so a sibling

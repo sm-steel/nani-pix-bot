@@ -41,7 +41,7 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         game = await _validate_active_game_for_starter(session, message, user, lang)
         if game is None:
             return
-        target = await _resolve_target_player(session, message, game, target_username, lang)
+        target = await _resolve_target_player(session, message, context, target_username, lang)
         if target is None:
             return
         # _validate_active_game_for_starter already checked this — restores
@@ -99,11 +99,24 @@ async def _validate_active_game_for_starter(session, message, user, lang: str) -
 
 
 async def _resolve_target_player(
-    session, message, game: Game, target_username: str, lang: str
+    session, message, context: ContextTypes.DEFAULT_TYPE, target_username: str, lang: str
 ) -> Player | None:
+    """Takes `context` (rather than the `game`, whose id used to go in the
+    warning below) because the not-found reply names the bot's own handle
+    so the target can be told exactly where to write — see
+    `correct.unknown_username`. The game id is still on the surrounding
+    lifecycle log lines, and this now matches skip.py's identical
+    lookup/log/reply for the same failure."""
     target = players.find_player_by_username(session, target_username)
     if target is None:
-        logger.warning("/correct: unknown username {!r} on game {}", target_username, game.id)
-        await message.reply_text(i18n.t("correct.unknown_username", lang, username=target_username))
+        logger.warning("/correct: unknown username {!r}", target_username)
+        await message.reply_text(
+            i18n.t(
+                "correct.unknown_username",
+                lang,
+                username=target_username,
+                bot_username=context.bot_data.get("bot_username", ""),
+            )
+        )
         return None
     return target

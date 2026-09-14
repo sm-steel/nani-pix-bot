@@ -58,7 +58,14 @@ async def _pass_turn(
     target = players.find_player_by_username(session, target_username)
     if target is None:
         logger.warning("/skip: unknown username {!r}", target_username)
-        await message.reply_text(i18n.t("skip.unknown_username", lang, username=target_username))
+        await message.reply_text(
+            i18n.t(
+                "skip.unknown_username",
+                lang,
+                username=target_username,
+                bot_username=context.bot_data.get("bot_username", ""),
+            )
+        )
         return
 
     turn_state = game_service.set_next_starter(session, target.telegram_user_id)

@@ -9,6 +9,7 @@ from nani_pix_bot.commands.game_flow import stop as stop_command_module
 from nani_pix_bot.commands.helpers.keyboards import (
     STOP_CANCEL_CALLBACK_DATA,
     STOP_CONFIRM_CALLBACK_DATA,
+    STOP_REVEAL_CALLBACK_DATA,
 )
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
@@ -38,6 +39,9 @@ def _make_context(session_factory, *, admin_ids: set[int] | None = None) -> Magi
     context.args = []
     context.job_queue.get_jobs_by_name.return_value = []
     context.bot.send_message = AsyncMock()
+    context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+    context.bot.pin_chat_message = AsyncMock()
+    context.bot.unpin_chat_message = AsyncMock()
 
     async def _get_chat_member(_chat_id, user_id):
         status = ChatMemberStatus.ADMINISTRATOR if user_id in admin_ids else ChatMemberStatus.MEMBER
@@ -236,4 +240,99 @@ async def test_stop_callback_handler_confirm_rejects_a_non_starter_non_admin_tap
 
     with session_factory() as session:
         assert session.get(Game, game_id) is not None
+    context.bot.send_message.assert_not_awaited()
+
+
+async def test_stop_command_offers_reveal_for_an_active_game(session_factory) -> None:
+    _active_game(session_factory, starter_id=1)
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = update.message.reply_text.await_args
+    callbacks = [
+        button.callback_data for row in kwargs["reply_markup"].inline_keyboard for button in row
+    ]
+    assert STOP_REVEAL_CALLBACK_DATA in callbacks
+
+
+async def test_stop_command_does_not_offer_reveal_for_a_setup_game(session_factory) -> None:
+    """Nothing has been posted to the group yet for a SETUP game, so
+    there's no answer anyone is waiting on."""
+    _setup_game(session_factory, starter_id=1)
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = update.message.reply_text.await_args
+    callbacks = [
+        button.callback_data for row in kwargs["reply_markup"].inline_keyboard for button in row
+    ]
+    assert STOP_REVEAL_CALLBACK_DATA not in callbacks
+
+
+async def test_stop_callback_handler_reveal_posts_the_answer_and_deletes_the_game(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    update = _make_callback_update(data=STOP_REVEAL_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
+        turn_state = session.get(TurnState, 1)
+        assert turn_state is None or turn_state.next_starter_id is None
+
+    context.bot.send_photo.assert_awaited_once()
+    _, kwargs = context.bot.send_photo.await_args
+    assert kwargs["chat_id"] == 555
+    assert kwargs["message_thread_id"] == 7
+    assert kwargs["photo"] == b"file123"
+    assert "Frieren: Beyond Journey's End" in kwargs["caption"]
+    # The reveal caption already says the turn is open — no second notice.
+    context.bot.send_message.assert_not_awaited()
+    update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_stop_callback_handler_reveal_cancels_the_timers(session_factory) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    update = _make_callback_update(data=STOP_REVEAL_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.job_queue.get_jobs_by_name.assert_any_call(
+        stop_command_module.timeout_module.timeout_job_name(game_id)
+    )
+    context.job_queue.get_jobs_by_name.assert_any_call(
+        stop_command_module.timeout_module.inactivity_advance_job_name(game_id)
+    )
+
+
+async def test_stop_callback_handler_reveal_rejects_a_non_starter_non_admin_tap(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    update = _make_callback_update(data=STOP_REVEAL_CALLBACK_DATA, user_id=2)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        assert session.get(Game, game_id) is not None
+    context.bot.send_photo.assert_not_awaited()
     context.bot.send_message.assert_not_awaited()

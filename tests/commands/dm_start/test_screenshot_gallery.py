@@ -10,6 +10,7 @@ from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.search import shikimori, tmdb
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
@@ -204,7 +205,11 @@ async def test_screenshot_search_again_callback_handler_asks_for_a_query(session
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.screenshot_source == "tmdb"
-    update.callback_query.edit_message_text.assert_awaited_once()
+    # Not the identification-search wording: here the starter is
+    # re-choosing which title's screenshots to browse, not saying what
+    # anime an already-uploaded image is from.
+    text = update.callback_query.edit_message_text.await_args.args[0]
+    assert text == i18n.t("dm_start.ask_search_screenshots", "en")
 
 
 async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix(

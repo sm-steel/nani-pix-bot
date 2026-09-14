@@ -389,3 +389,43 @@ async def test_guess_command_stage_advanced_resets_and_reschedules_the_inactivit
     names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
     assert guess_command_module.timeout_module.inactivity_nudge_job_name(game_id) in names
     assert guess_command_module.timeout_module.inactivity_advance_job_name(game_id) in names
+
+
+async def test_guess_command_wrong_feedback_shows_remaining_over_the_stage_limit(
+    session_factory,
+) -> None:
+    _active_game(session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=0)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=3)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    text = update.message.reply_text.await_args.args[0]
+    assert "2/3" in text
+
+
+async def test_guess_command_stage_advance_caption_shows_the_new_stage_budget(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The advance caption names the stage's whole budget, not a bare
+    cumulative guess counter with nothing to measure it against."""
+    monkeypatch.setattr(
+        guess_command_module.pixelate_service, "pixelate", lambda data, width: b"x8-bytes"
+    )
+    _active_game(session_factory, current_stage=PixelStage.STAGE_2, wrong_guess_count=0)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_2, wrong_guess_limit=1)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=2)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert "3/5" in kwargs["caption"]
+    assert "2/2" in kwargs["caption"]
+    assert "#" not in kwargs["caption"]

@@ -14,11 +14,19 @@ def get_or_create_player(
     session: Session, telegram_user_id: int, *, username: str | None = None
 ) -> Player:
     """Look up a player, creating the row if this is their first time. On
-    an existing row, opportunistically refreshes `username`."""
+    an existing row, opportunistically refreshes `username` — unless the
+    caller has none to offer, which must not blank out a handle we
+    already know (it's what /correct and /skip match against).
+
+    The creation branch logs at INFO because a person entering the game
+    for the first time is a real event; the refresh branch stays silent
+    on purpose, since commands/helpers/player_tracking.py calls this on
+    *every* update and an unchanged username is not news."""
     player = session.get(Player, telegram_user_id)
     if player is None:
         player = Player(telegram_user_id=telegram_user_id, username=username)
         session.add(player)
+        logger.info("First time seeing player {} (@{})", telegram_user_id, username or "?")
     elif username is not None:
         player.username = username
     return player

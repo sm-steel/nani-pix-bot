@@ -37,17 +37,33 @@ from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.settings import stage_config
 
 
-async def _finalize_and_post(context, session, game: Game, caption: str) -> None:
+async def _finalize_and_post(context, session, game: Game, lang: str, starter_name: str) -> None:
     """Shared tail end of every identification method (AniList, Shikimori,
     manual): pixelate the original at the first (blockiest) stage, activate the game, post it to
     the group topic, and schedule the timeout — canceling the setup-abandon
-    timer that's been running since the photo was first sent (issue #21)."""
+    timer that's been running since the photo was first sent (issue #21).
+
+    Builds the group caption here rather than taking it prebuilt, because
+    it names stage 1 and that stage's wrong-guess budget — both of which
+    come from the stage config this function is already loading for the
+    pixelation width. Read straight off STAGE_ORDER[0] rather than through
+    game_service.stage_progress(), which needs an already-ACTIVE game;
+    activate_game() only runs a couple of lines below."""
     timeout_module.cancel_setup_abandon(context.job_queue, game.id)
     assert game.original_image is not None
     original_bytes = game.original_image
     first_stage = game_service.STAGE_ORDER[0]
-    target_width = stage_config.get_stage_config(session)[first_stage].target_width
-    pixelated = pixelate_service.pixelate(original_bytes, target_width)
+    first_stage_settings = stage_config.get_stage_config(session)[first_stage]
+    pixelated = pixelate_service.pixelate(original_bytes, first_stage_settings.target_width)
+    caption = i18n.t(
+        "dm_start.game_started_caption",
+        lang,
+        starter=starter_name,
+        stage=1,
+        total=len(game_service.STAGE_ORDER),
+        remaining=first_stage_settings.wrong_guess_limit,
+        limit=first_stage_settings.wrong_guess_limit,
+    )
     game_service.activate_game(session, game)
     await timeout_module.post_current_image(context, session, photo=pixelated, caption=caption)
     timeout_module.schedule_timeout(context.job_queue, game)
@@ -111,8 +127,7 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
 
 async def _preview_confirm(context, session, game: Game, lang: str, starter_name: str) -> None:
     logger.debug("Game {}: confirmed from preview", game.id)
-    caption = i18n.t("dm_start.game_started_caption", lang, starter=starter_name)
-    await _finalize_and_post(context, session, game, caption)
+    await _finalize_and_post(context, session, game, lang, starter_name)
 
 
 async def _preview_change_image(query, game: Game, lang: str) -> None:
