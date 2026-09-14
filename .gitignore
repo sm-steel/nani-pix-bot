@@ -10,3 +10,4 @@ venv/
 .ruff_cache/
 docs/superpowers/
 .claude/
+.superpowers/
