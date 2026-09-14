@@ -236,6 +236,18 @@ async def test_search_raises_a_runtime_error_on_a_non_json_body() -> None:
             await tmdb.search(client, "frieren")
 
 
+async def test_search_raises_a_runtime_error_on_a_literal_null_body() -> None:
+    """A 200 carrying `null` decodes fine, so the decode guard misses it;
+    None then reaches `.get` as an AttributeError no handler catches."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="null", headers={"Content-Type": "application/json"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="answered 200"):
+            await tmdb.search(client, "frieren")
+
+
 async def test_search_returns_nothing_when_the_results_container_is_null() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"results": None})

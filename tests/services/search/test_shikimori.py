@@ -231,6 +231,32 @@ async def test_search_raises_a_runtime_error_on_a_non_json_body() -> None:
             await shikimori.search(client, "frieren")
 
 
+async def test_search_raises_a_runtime_error_on_a_literal_null_body() -> None:
+    """Shikimori's list endpoints answer with a bare array; a 200 that
+    decodes to `null` instead is not an empty list, and iterating it
+    raises a TypeError no handler catches."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="null", headers={"Content-Type": "application/json"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="answered 200"):
+            await shikimori.search(client, "frieren")
+
+
+async def test_screenshots_raises_when_an_object_arrives_instead_of_an_array() -> None:
+    """The screenshots endpoint is declared as a list endpoint, so an
+    error object where the array should be is an outage, not zero
+    screenshots."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": "something went wrong"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="expected list"):
+            await shikimori.screenshots(client, 52991)
+
+
 async def test_screenshots_skips_entries_with_no_original_path() -> None:
     entries = [
         {"original": "/system/screenshots/original/a.jpg?1", "preview": "/x/a.jpg?1"},

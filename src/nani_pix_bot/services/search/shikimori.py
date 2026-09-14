@@ -60,7 +60,7 @@ async def search(
     once a result is picked. Cached briefly (see cache.py) so a starter
     repeating the same query doesn't re-hit the API each time."""
     params = {"search": query, "limit": limit}
-    entries = await rest.get_json(_API, client, SHIKIMORI_BASE_URL, params)
+    entries = await rest.get_json(_API, client, SHIKIMORI_BASE_URL, params, expect=list)
     results = [_parse_search_result(entry) for entry in entries]
     logger.debug("Shikimori search {!r} returned {} result(s)", query, len(results))
     return results
@@ -89,7 +89,7 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
     the API every time — pagination/slicing for display is the caller's
     job, not this function's."""
     entries = await rest.get_json(
-        _API, client, f"{SHIKIMORI_BASE_URL}/{shikimori_id}/screenshots", {}
+        _API, client, f"{SHIKIMORI_BASE_URL}/{shikimori_id}/screenshots", {}, expect=list
     )
     urls = [
         f"{SHIKIMORI_HOST}{path}"

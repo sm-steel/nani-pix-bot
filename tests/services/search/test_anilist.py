@@ -189,15 +189,76 @@ async def test_search_returns_nothing_when_the_media_container_is_missing() -> N
         assert await anilist.search(client, "frieren") == []
 
 
-async def test_search_returns_nothing_when_the_body_has_no_data_at_all() -> None:
-    """A GraphQL error response carries "errors" and a null "data" —
-    an empty result beats a KeyError the handlers can't catch."""
+async def test_search_raises_when_anilist_reports_graphql_errors() -> None:
+    """A GraphQL error response carries "errors" and a null "data". That
+    is an explicit "I am broken" signal, not an empty result: reporting
+    "no results found" would tell the starter a flat lie about a working
+    search. It has to reach _SEARCH_SERVICE_ERRORS as a RuntimeError."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": None, "errors": [{"message": "boom"}]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="GraphQL error"):
+            await anilist.search(client, "frieren")
+
+
+async def test_get_by_id_raises_when_anilist_reports_graphql_errors() -> None:
+    """Same for the by-id path, where the silent fallback would have told
+    the starter their pick no longer exists."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": None, "errors": [{"message": "boom"}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="GraphQL error"):
+            await anilist.get_by_id(client, 154587)
+
+
+async def test_search_logs_graphql_errors_even_when_data_came_back(monkeypatch) -> None:
+    """GraphQL allows partial success — data alongside errors. The usable
+    half is still used, but the errors never go unrecorded."""
+    entry = {
+        "id": 1,
+        "title": {"romaji": "Some Anime", "english": None, "native": None},
+        "synonyms": [],
+        "startDate": None,
+    }
+    logged: list[tuple] = []
+    monkeypatch.setattr(anilist.logger, "error", lambda *args: logged.append(args))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"data": {"Page": {"media": [entry]}}, "errors": [{"message": "deprecated"}]},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await anilist.search(client, "some anime")
+
+    assert [r.anilist_id for r in results] == [1]
+    assert len(logged) == 1
+    assert "deprecated" in str(logged[0])
+
+
+async def test_search_returns_nothing_when_data_is_null_without_any_errors() -> None:
+    """No data and no errors either is just a missing container key —
+    the empty result the ticket asks for, not an outage."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": None})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         assert await anilist.search(client, "frieren") == []
+
+
+async def test_search_raises_a_runtime_error_on_a_literal_null_body() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="null", headers={"Content-Type": "application/json"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="answered 200"):
+            await anilist.search(client, "frieren")
 
 
 async def test_get_by_id_returns_none_when_the_media_key_is_missing() -> None:

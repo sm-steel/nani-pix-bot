@@ -91,12 +91,21 @@ async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) ->
     """POST the GraphQL document and hand back its `data` object.
 
     AniList sits behind Cloudflare, which answers with an HTML
-    interstitial often enough that a 200 is no guarantee of a JSON body.
-    That becomes a `RuntimeError` — in the handlers'
-    `_SEARCH_SERVICE_ERRORS` tuple — rather than the `ValueError`
-    `response.json()` raises, which nothing catches (issue #75). A
-    GraphQL error response (a null `data` alongside `errors`) yields an
-    empty object, so the callers below find no media rather than raising."""
+    interstitial often enough that a 200 is no guarantee of a JSON
+    object. A body that doesn't decode, and one that decodes to anything
+    other than an object (`null` decodes perfectly well and would reach
+    the callers below as an `AttributeError`), both become a
+    `RuntimeError` — which is in the handlers' `_SEARCH_SERVICE_ERRORS`
+    tuple, unlike what they'd otherwise raise (issue #75).
+
+    GraphQL reports failures in an `errors` array rather than in the
+    status code, so those are never dropped silently: they're always
+    logged at ERROR, and when nothing usable came back with them they
+    raise too. Falling back to an empty object there would have told the
+    starter "no results found" / "your pick is gone" — both flat lies
+    about a search that never ran. A null `data` with no `errors`
+    alongside it is just a missing container key, and does yield an empty
+    object."""
 
     async def make_request() -> httpx.Response:
         return await client.post(
@@ -114,7 +123,21 @@ async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) ->
         msg = f"AniList returned a non-JSON body for variables {variables!r}"
         logger.error(msg)
         raise RuntimeError(msg) from exc
-    return body.get("data") or {}
+    if not isinstance(body, dict):
+        msg = (
+            f"AniList answered 200 with a {type(body).__name__} body "
+            f"for variables {variables!r}, expected an object"
+        )
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    data = body.get("data")
+    if errors := body.get("errors"):
+        msg = f"AniList reported GraphQL error(s) for variables {variables!r}: {errors!r}"
+        logger.error(msg)
+        if not data:
+            raise RuntimeError(msg)
+    return data or {}
 
 
 def _parse_result(raw: dict) -> AniListResult:

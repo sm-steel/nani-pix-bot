@@ -37,7 +37,7 @@ async def test_get_json_decodes_a_top_level_list() -> None:
         return httpx.Response(200, json=[{"id": 1}, {"id": 2}])
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        body = await rest.get_json(_API, client, "https://example.test/animes", {})
+        body = await rest.get_json(_API, client, "https://example.test/animes", {}, expect=list)
 
     assert body == [{"id": 1}, {"id": 2}]
 
@@ -95,6 +95,60 @@ async def test_get_json_converts_a_non_json_body_into_a_runtime_error() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(RuntimeError, match="non-JSON"):
             await rest.get_json(_API, client, "https://example.test/anime/7", {})
+
+
+async def test_get_json_rejects_a_literal_null_body() -> None:
+    """`json.loads("null")` succeeds and hands back None, so the decode
+    guard alone doesn't catch it — None then reaches every caller's
+    `.get`/`[...]`/iteration as an AttributeError or TypeError that no
+    handler catches, which is the same dead-keyboard outcome by a
+    different door."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="null", headers={"Content-Type": "application/json"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="answered 200"):
+            await rest.get_json(_API, client, "https://example.test/anime/7", {})
+
+
+async def test_get_json_rejects_a_scalar_body() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json="rate limited")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="answered 200"):
+            await rest.get_json(_API, client, "https://example.test/anime/7", {})
+
+
+async def test_get_json_rejects_an_array_where_an_object_is_expected() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="expected dict"):
+            await rest.get_json(_API, client, "https://example.test/anime/7", {})
+
+
+async def test_get_json_rejects_an_object_where_an_array_is_expected() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"error": "nope"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="expected list"):
+            await rest.get_json(_API, client, "https://example.test/animes", {}, expect=list)
+
+
+async def test_fetch_by_id_does_not_swallow_a_null_body() -> None:
+    """A null body is not "this id is gone" either — the 404 branch must
+    not absorb it into a None that reads as a removed entry."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="null", headers={"Content-Type": "application/json"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="answered 200"):
+            await rest.fetch_by_id(_API, client, "https://example.test/anime/7", 7, _parse)
 
 
 async def test_fetch_by_id_does_not_swallow_a_non_json_body() -> None:
