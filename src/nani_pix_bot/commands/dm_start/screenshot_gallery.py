@@ -29,6 +29,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     tmdb_results_keyboard,
 )
 from nani_pix_bot.commands.dm_start.screenshots import (
+    GALLERY_PAGE_SIZE,
     Fallback,
     GalleryTarget,
     SourceMenu,
@@ -253,15 +254,17 @@ async def screenshot_gallery_callback_handler(
         if isinstance(outcome, Fallback):
             await reply_fallback(query.edit_message_text, game, lang, outcome)
         elif outcome is not None:
-            await query.edit_message_text(i18n.t(outcome, lang))
+            # Already-rendered text, not an i18n key — the paging
+            # confirmation needs format kwargs the caller doesn't have.
+            await query.edit_message_text(outcome)
 
 
 async def _dispatch_gallery_action(
     context: ContextTypes.DEFAULT_TYPE, session, game, data: str, lang: str
 ) -> str | Fallback | None:
     """Runs the gallery action `data` encodes (a "More screenshots" page
-    or a numbered pick) and returns the i18n key for the resulting
-    message, or None for a stale-button no-op — split out of
+    or a numbered pick) and returns the rendered text for the
+    resulting message, or None for a stale-button no-op — split out of
     `screenshot_gallery_callback_handler` itself to keep that handler's
     own return count under qlty's "many returns" threshold."""
     more = parse_screenshot_more_callback_data(data)
@@ -277,6 +280,11 @@ async def _dispatch_gallery_action(
 async def _handle_more_screenshots(
     context: ContextTypes.DEFAULT_TYPE, game, more: tuple[str, int], lang: str
 ) -> str | Fallback | None:
+    """Renders the gallery page at the tapped offset. Serves the back
+    button as well as the forward one — the callback has always encoded
+    an absolute offset rather than a direction — so the confirmation
+    names the range shown instead of saying "here are some more", which
+    would be wrong half the time."""
     provider, offset = more
     provider_id = _provider_id(game, provider)
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
@@ -284,7 +292,14 @@ async def _handle_more_screenshots(
         return result
     target = GalleryTarget(chat_id=game.starter_id, provider=provider, offset=offset)
     await _show_gallery_page(context, target, result, lang)
-    return "dm_start.more_screenshots_sent"
+    shown = len(result[offset : offset + GALLERY_PAGE_SIZE])
+    return i18n.t(
+        "dm_start.gallery_page_sent",
+        lang,
+        first=offset + 1,
+        last=offset + shown,
+        total=len(result),
+    )
 
 
 async def _handle_screenshot_pick(
@@ -329,4 +344,4 @@ async def _handle_screenshot_pick(
     logger.debug("Game {}: picked {} screenshot #{}", game.id, provider, index + 1)
 
     await _show_preview(context, session, game, lang)
-    return "dm_start.preview_sent"
+    return i18n.t("dm_start.preview_sent", lang)

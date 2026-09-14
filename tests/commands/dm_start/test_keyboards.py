@@ -10,6 +10,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
     TMDB_METHOD_CALLBACK_DATA,
+    GalleryPage,
     anilist_results_keyboard,
     jikan_results_keyboard,
     method_selection_keyboard,
@@ -17,6 +18,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     parse_pick_callback_data,
     parse_screenshot_search_pick_callback_data,
     preview_keyboard,
+    screenshot_gallery_keyboard,
     screenshot_source_keyboard,
     shikimori_results_keyboard,
     tmdb_results_keyboard,
@@ -394,3 +396,83 @@ def test_screenshot_source_keyboard_always_offers_upload_instead() -> None:
 
     callbacks = [data for _, data in _source_rows(markup)]
     assert SCREENSHOT_UPLOAD_CALLBACK_DATA in callbacks
+
+
+def _gallery_rows(markup) -> list[list[tuple[str, str]]]:
+    return [[(b.text, b.callback_data) for b in row] for row in markup.inline_keyboard]
+
+
+def test_screenshot_gallery_keyboard_numbers_match_the_album_captions() -> None:
+    """The album photos are captioned with absolute positions, so the
+    pick buttons under them must be too — page 2 labelled 1,2,3 under
+    photos captioned 6,7,8 told the starter the wrong thing (the
+    callback data was right all along)."""
+    page = GalleryPage(
+        provider="shikimori",
+        offset=5,
+        count=3,
+        has_more=False,
+        cross_provider=False,
+        previous_offset=0,
+    )
+
+    numbers = _gallery_rows(screenshot_gallery_keyboard(page, "en"))[0]
+    assert [text for text, _ in numbers] == ["6", "7", "8"]
+    assert [data for _, data in numbers] == [
+        "screenshot_pick:shikimori:5",
+        "screenshot_pick:shikimori:6",
+        "screenshot_pick:shikimori:7",
+    ]
+
+
+def test_screenshot_gallery_keyboard_offers_back_past_the_first_page() -> None:
+    page = GalleryPage(
+        provider="shikimori",
+        offset=5,
+        count=5,
+        has_more=True,
+        cross_provider=False,
+        previous_offset=0,
+    )
+
+    callbacks = [
+        data for row in _gallery_rows(screenshot_gallery_keyboard(page, "en")) for _, data in row
+    ]
+    assert "screenshot_more:shikimori:0" in callbacks  # back
+    assert "screenshot_more:shikimori:10" in callbacks  # forward
+
+
+def test_screenshot_gallery_keyboard_has_no_back_button_on_the_first_page() -> None:
+    page = GalleryPage(
+        provider="shikimori",
+        offset=0,
+        count=5,
+        has_more=True,
+        cross_provider=False,
+        previous_offset=None,
+    )
+
+    callbacks = [
+        data for row in _gallery_rows(screenshot_gallery_keyboard(page, "en")) for _, data in row
+    ]
+    assert "screenshot_more:shikimori:5" in callbacks  # forward only
+    assert not any(data.endswith(":0") for data in callbacks if data.startswith("screenshot_more:"))
+
+
+def test_screenshot_gallery_keyboard_puts_both_paging_buttons_on_one_row() -> None:
+    page = GalleryPage(
+        provider="shikimori",
+        offset=5,
+        count=5,
+        has_more=True,
+        cross_provider=False,
+        previous_offset=0,
+    )
+
+    paging = [
+        row
+        for row in _gallery_rows(screenshot_gallery_keyboard(page, "en"))
+        if all(data.startswith("screenshot_more:") for _, data in row)
+    ]
+    assert len(paging) == 1
+    assert len(paging[0]) == 2

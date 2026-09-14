@@ -383,3 +383,81 @@ async def test_screenshot_search_pick_offers_the_source_menu_when_the_id_is_gone
 
     _, kwargs = update.callback_query.edit_message_text.await_args
     assert kwargs["reply_markup"] is not None
+
+
+async def test_screenshot_gallery_callback_handler_pages_back_to_the_previous_slice(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The back button reuses the same offset-encoded callback as the
+    forward one, so paging back is just another page render."""
+    urls = [f"https://shikimori.io/x/{i}.jpg" for i in range(8)]
+    screenshots_mock = AsyncMock(return_value=urls)
+    monkeypatch.setattr(shikimori, "screenshots", screenshots_mock)
+    _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_more:shikimori:0")
+    context = _make_context(session_factory)
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_media_group.await_args
+    captions = [item.caption for item in kwargs["media"]]
+    assert captions == ["1", "2", "3", "4", "5"]
+    # First page again, so forward only — nothing to go back to.
+    _, button_kwargs = context.bot.send_message.await_args
+    callbacks = [
+        b.callback_data for row in button_kwargs["reply_markup"].inline_keyboard for b in row
+    ]
+    assert "screenshot_more:shikimori:5" in callbacks
+
+
+async def test_screenshot_gallery_second_page_offers_a_way_back(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    urls = [f"https://shikimori.io/x/{i}.jpg" for i in range(8)]
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=urls))
+    _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_more:shikimori:5")
+    context = _make_context(session_factory)
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, button_kwargs = context.bot.send_message.await_args
+    callbacks = [
+        b.callback_data for row in button_kwargs["reply_markup"].inline_keyboard for b in row
+    ]
+    assert "screenshot_more:shikimori:0" in callbacks
+    # The confirmation names the range rather than "here are some more",
+    # which would be wrong when paging backwards.
+    assert update.callback_query.edit_message_text.await_args is not None
+    text = update.callback_query.edit_message_text.await_args.args[0]
+    assert "6" in text
+    assert "8" in text
+
+
+async def test_screenshot_gallery_paging_looks_the_url_list_up_once_per_page(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One `screenshots()` lookup per page render — not one per photo,
+    and not a re-resolution of the provider id. The lookup itself is
+    @cache.cached() in production, so stepping back and forth costs no
+    real API calls; this test patches over that decorator, so the cache
+    is covered by tests/services/search/test_cache.py instead."""
+    urls = [f"https://shikimori.io/x/{i}.jpg" for i in range(8)]
+    screenshots_mock = AsyncMock(return_value=urls)
+    monkeypatch.setattr(shikimori, "screenshots", screenshots_mock)
+    _staged_game(session_factory, shikimori_id=52991)
+    context = _make_context(session_factory)
+
+    for data in ("screenshot_more:shikimori:5", "screenshot_more:shikimori:0"):
+        await screenshot_gallery.screenshot_gallery_callback_handler(
+            cast(Update, _make_callback_update(data=data)),
+            cast(ContextTypes.DEFAULT_TYPE, context),
+        )
+
+    assert screenshots_mock.await_count == 2  # one per page, not one per photo

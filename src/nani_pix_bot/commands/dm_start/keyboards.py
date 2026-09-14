@@ -378,34 +378,65 @@ class GalleryPage:
     count: int
     has_more: bool
     cross_provider: bool
+    # Offset of the page to go back to, or None on the first page. The
+    # caller computes it because the page size lives in screenshots.py,
+    # which already imports this module — importing it back would be a
+    # cycle.
+    previous_offset: int | None = None
+
+
+def _gallery_paging_row(page: GalleryPage, lang: str) -> list[InlineKeyboardButton]:
+    """Back and/or forward, sharing one row — either can be absent (the
+    first page has no back, the last has no forward), and on a gallery
+    that fits in a single page the row is empty and gets dropped.
+
+    Both use the same SCREENSHOT_MORE_PREFIX callback: it has always
+    encoded "show the page at this offset" rather than a direction, so
+    paging backwards needs no new handler, and the provider's url list
+    is cached (see services/search/cache.py) so it costs no extra API
+    call either."""
+    row = []
+    if page.previous_offset is not None:
+        row.append(
+            InlineKeyboardButton(
+                i18n.t("keyboards.previous_screenshots", lang),
+                callback_data=f"{SCREENSHOT_MORE_PREFIX}{page.provider}:{page.previous_offset}",
+            )
+        )
+    if page.has_more:
+        row.append(
+            InlineKeyboardButton(
+                i18n.t("keyboards.more_screenshots", lang),
+                callback_data=f"{SCREENSHOT_MORE_PREFIX}{page.provider}:{page.offset + page.count}",
+            )
+        )
+    return row
 
 
 def screenshot_gallery_keyboard(page: GalleryPage, lang: str) -> InlineKeyboardMarkup:
     """Numbered buttons for the `page.count` screenshots currently shown
     (absolute indices `page.offset`..`page.offset + page.count - 1`),
-    plus "More screenshots" (only if `page.has_more`), "Wrong anime?
-    Search again" (only if `page.cross_provider` — this gallery came
-    from a cross-provider resolution, see ticket 8), and "Upload my own
-    instead"."""
+    a back/forward paging row, "Wrong anime? Search again" (only if
+    `page.cross_provider` — this gallery came from a cross-provider
+    resolution, see ticket 8), and "Upload my own instead".
+
+    The number labels are **absolute** positions, matching the captions
+    `_show_gallery_page` puts on the album photos themselves — they used
+    to restart at 1 on every page, so page 2 offered buttons labelled
+    1,2,3 under photos captioned 6,7,8. Only the labels were wrong (the
+    callback data has always carried the absolute index), but it told
+    the starter the wrong thing."""
     number_row = [
         InlineKeyboardButton(
-            str(i + 1),
+            str(page.offset + i + 1),
             callback_data=f"{SCREENSHOT_PICK_PREFIX}{page.provider}:{page.offset + i}",
         )
         for i in range(page.count)
     ]
     rows = [number_row]
-    if page.has_more:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    i18n.t("keyboards.more_screenshots", lang),
-                    callback_data=(
-                        f"{SCREENSHOT_MORE_PREFIX}{page.provider}:{page.offset + page.count}"
-                    ),
-                )
-            ]
-        )
+    paging_row = _gallery_paging_row(page, lang)
+    if paging_row:
+        rows.append(paging_row)
     if page.cross_provider:
         rows.append(
             [

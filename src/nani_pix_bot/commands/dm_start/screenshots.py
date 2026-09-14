@@ -473,6 +473,10 @@ async def _show_gallery_page(
         count=len(shown),
         has_more=has_more,
         cross_provider=target.cross_provider,
+        # None on the first page — nothing to go back to. Clamped rather
+        # than allowed negative, so a gallery reached at an odd offset
+        # (a stale button) still steps back to a valid page.
+        previous_offset=max(target.offset - GALLERY_PAGE_SIZE, 0) if target.offset else None,
     )
     await context.bot.send_message(
         chat_id=target.chat_id,
