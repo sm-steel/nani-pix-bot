@@ -58,7 +58,7 @@ async def search(
     applied client-side. Cached briefly (see cache.py) so a starter
     repeating the same query doesn't re-hit the API each time."""
     data = await rest.get_json(_API, client, f"{TMDB_BASE_URL}/search/tv", {"query": query})
-    results = [_parse_result(raw) for raw in data["results"][:limit]]
+    results = [_parse_result(raw) for raw in (data.get("results") or [])[:limit]]
     logger.debug("TMDB search {!r} returned {} result(s)", query, len(results))
     return results
 
@@ -88,7 +88,7 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
     repeating this for the same show costs nothing further until the
     TTL expires."""
     show = await rest.get_json(_API, client, f"{TMDB_BASE_URL}/tv/{tmdb_id}", {})
-    seasons = [s for s in show.get("seasons", []) if s.get("season_number", 0) >= 1]
+    seasons = [s for s in show.get("seasons") or [] if s.get("season_number", 0) >= 1]
     if not seasons:
         logger.debug("TMDB id {} has no real seasons to pull stills from", tmdb_id)
         return []

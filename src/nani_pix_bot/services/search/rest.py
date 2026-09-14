@@ -53,7 +53,14 @@ async def get_json(api: RestApi, client: httpx.AsyncClient, url: str, params: di
     into it directly.
 
     Rate limits (429) are retried inside `http_retry.request_with_retry`;
-    every other error status raises."""
+    every other error status raises.
+
+    A 200 whose body isn't JSON at all — a throttle page served as HTML,
+    a proxy error page, a truncated response — becomes a `RuntimeError`
+    rather than the `ValueError` `response.json()` would raise on its
+    own: `RuntimeError` is in the handlers' `_SEARCH_SERVICE_ERRORS`
+    tuple, so the starter gets the "service is down" reply instead of
+    being stranded on a SETUP row with a dead keyboard (issue #75)."""
 
     async def make_request() -> httpx.Response:
         return await client.get(url, params=params, headers=api.headers)
@@ -61,7 +68,12 @@ async def get_json(api: RestApi, client: httpx.AsyncClient, url: str, params: di
     response = await http_retry.request_with_retry(
         make_request, service_name=api.name, context=f"url {url!r}, params {params!r}"
     )
-    return response.json()
+    try:
+        return response.json()
+    except ValueError as exc:
+        msg = f"{api.name} returned a non-JSON body for {url!r}"
+        logger.error(msg)
+        raise RuntimeError(msg) from exc
 
 
 async def fetch_by_id(

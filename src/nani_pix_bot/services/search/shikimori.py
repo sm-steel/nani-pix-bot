@@ -91,7 +91,11 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
     entries = await rest.get_json(
         _API, client, f"{SHIKIMORI_BASE_URL}/{shikimori_id}/screenshots", {}
     )
-    urls = [f"{SHIKIMORI_HOST}{entry['original']}" for entry in entries[:SCREENSHOT_FETCH_LIMIT]]
+    urls = [
+        f"{SHIKIMORI_HOST}{path}"
+        for entry in entries[:SCREENSHOT_FETCH_LIMIT]
+        if (path := entry.get("original"))
+    ]
     logger.debug("Shikimori id {} has {} screenshot(s) available", shikimori_id, len(entries))
     return urls
 

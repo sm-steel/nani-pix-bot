@@ -84,6 +84,31 @@ async def test_get_json_raises_on_a_server_error() -> None:
             await rest.get_json(_API, client, "https://example.test/anime/7", {})
 
 
+async def test_get_json_converts_a_non_json_body_into_a_runtime_error() -> None:
+    """A throttle/proxy error page served as HTML with a 200 must not
+    escape as a bare ValueError — nothing on the handler side catches
+    that, so the starter would be left with no reply at all (issue #75)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html><body>Too many requests</body></html>")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="non-JSON"):
+            await rest.get_json(_API, client, "https://example.test/anime/7", {})
+
+
+async def test_fetch_by_id_does_not_swallow_a_non_json_body() -> None:
+    """The 404 branch turns a missing entity into None; a malformed body
+    is not a missing entity and must still surface as an error."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="not json")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="non-JSON"):
+            await rest.fetch_by_id(_API, client, "https://example.test/anime/7", 7, _parse)
+
+
 async def test_fetch_by_id_parses_a_found_entity() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"id": 7, "title": "Frieren"})

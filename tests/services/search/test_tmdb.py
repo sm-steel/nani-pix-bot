@@ -223,6 +223,35 @@ async def test_screenshots_returns_empty_list_when_no_seasons_exist() -> None:
     assert urls == []
 
 
+async def test_search_raises_a_runtime_error_on_a_non_json_body() -> None:
+    """TMDB is reached through a proxy, whose own error pages come back
+    as HTML with whatever status it likes — a 200 among them must become
+    a RuntimeError the handlers already catch (issue #75)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>Proxy error</html>")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="non-JSON"):
+            await tmdb.search(client, "frieren")
+
+
+async def test_search_returns_nothing_when_the_results_container_is_null() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": None})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await tmdb.search(client, "frieren") == []
+
+
+async def test_screenshots_returns_empty_list_when_the_seasons_key_is_null() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"id": 1, "name": "Some Anime", "seasons": None})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await tmdb.screenshots(client, 1) == []
+
+
 async def test_screenshots_is_cached_for_repeated_calls() -> None:
     calls = {"n": 0}
     handler = _season_episode_handler(episode_count=1, still_paths={1: "/still1.jpg"})

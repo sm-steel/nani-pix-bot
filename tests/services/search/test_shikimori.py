@@ -218,6 +218,35 @@ async def test_screenshots_returns_empty_list_when_none_exist() -> None:
     assert urls == []
 
 
+async def test_search_raises_a_runtime_error_on_a_non_json_body() -> None:
+    """Shikimori is reached over a proxy, which can answer 200 with its
+    own HTML error page — that must surface as a RuntimeError the
+    handlers already catch (issue #75)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>Bad gateway</html>")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="non-JSON"):
+            await shikimori.search(client, "frieren")
+
+
+async def test_screenshots_skips_entries_with_no_original_path() -> None:
+    entries = [
+        {"original": "/system/screenshots/original/a.jpg?1", "preview": "/x/a.jpg?1"},
+        {"preview": "/x/b.jpg?2"},
+        {"original": None, "preview": "/x/c.jpg?3"},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=entries)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await shikimori.screenshots(client, 52991)
+
+    assert urls == ["https://shikimori.io/system/screenshots/original/a.jpg?1"]
+
+
 async def test_screenshots_is_cached_for_repeated_calls() -> None:
     calls = {"n": 0}
 

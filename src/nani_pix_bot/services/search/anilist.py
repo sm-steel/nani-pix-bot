@@ -64,7 +64,8 @@ async def search(
     data = await _request(
         client, query=_SEARCH_QUERY, variables={"search": query, "perPage": limit}
     )
-    results = [_parse_result(raw) for raw in data["Page"]["media"]]
+    page = data.get("Page") or {}
+    results = [_parse_result(raw) for raw in page.get("media") or []]
     logger.debug("AniList search {!r} returned {} result(s)", query, len(results))
     return results
 
@@ -79,7 +80,7 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
     restart, not about this in-process cache, which is wiped on every
     restart same as everything else in it)."""
     data = await _request(client, query=_BY_ID_QUERY, variables={"id": anilist_id})
-    media = data["Media"]
+    media = data.get("Media")
     if media is None:
         logger.debug("AniList id {} no longer found", anilist_id)
         return None
@@ -87,6 +88,16 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
 
 
 async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) -> dict:
+    """POST the GraphQL document and hand back its `data` object.
+
+    AniList sits behind Cloudflare, which answers with an HTML
+    interstitial often enough that a 200 is no guarantee of a JSON body.
+    That becomes a `RuntimeError` — in the handlers'
+    `_SEARCH_SERVICE_ERRORS` tuple — rather than the `ValueError`
+    `response.json()` raises, which nothing catches (issue #75). A
+    GraphQL error response (a null `data` alongside `errors`) yields an
+    empty object, so the callers below find no media rather than raising."""
+
     async def make_request() -> httpx.Response:
         return await client.post(
             ANILIST_GRAPHQL_URL,
@@ -97,7 +108,13 @@ async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) ->
     response = await http_retry.request_with_retry(
         make_request, service_name="AniList", context=f"variables {variables!r}"
     )
-    return response.json()["data"]
+    try:
+        body = response.json()
+    except ValueError as exc:
+        msg = f"AniList returned a non-JSON body for variables {variables!r}"
+        logger.error(msg)
+        raise RuntimeError(msg) from exc
+    return body.get("data") or {}
 
 
 def _parse_result(raw: dict) -> AniListResult:

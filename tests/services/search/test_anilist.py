@@ -168,6 +168,46 @@ async def test_get_by_id_is_cached_for_repeated_identical_ids() -> None:
     assert calls["n"] == 1
 
 
+async def test_search_raises_a_runtime_error_on_a_non_json_body() -> None:
+    """A 200 that isn't JSON at all (a Cloudflare interstitial, say) has
+    to reach the caller's _SEARCH_SERVICE_ERRORS tuple as a RuntimeError
+    instead of escaping as a ValueError nobody catches (issue #75)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>Just a moment...</html>")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="non-JSON"):
+            await anilist.search(client, "frieren")
+
+
+async def test_search_returns_nothing_when_the_media_container_is_missing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"Page": {}}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await anilist.search(client, "frieren") == []
+
+
+async def test_search_returns_nothing_when_the_body_has_no_data_at_all() -> None:
+    """A GraphQL error response carries "errors" and a null "data" —
+    an empty result beats a KeyError the handlers can't catch."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": None, "errors": [{"message": "boom"}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await anilist.search(client, "frieren") == []
+
+
+async def test_get_by_id_returns_none_when_the_media_key_is_missing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await anilist.get_by_id(client, 154587) is None
+
+
 async def test_search_sends_a_referer_header() -> None:
     # AniList (via Cloudflare) 403s requests with no Referer, regardless of
     # source IP/proxy — discovered against the real API after deploy.

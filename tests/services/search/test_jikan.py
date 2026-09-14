@@ -195,6 +195,46 @@ async def test_screenshots_returns_empty_list_when_none_exist() -> None:
     assert urls == []
 
 
+async def test_search_raises_a_runtime_error_on_a_non_json_body() -> None:
+    """Jikan in front of a proxy can answer 200 with an HTML error page;
+    that has to become a RuntimeError the handlers already catch, not a
+    ValueError that strands the starter (issue #75)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>503 Service Unavailable</html>")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="non-JSON"):
+            await jikan.search(client, "frieren")
+
+
+async def test_search_returns_nothing_when_the_data_container_is_null() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": None})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await jikan.search(client, "frieren") == []
+
+
+async def test_screenshots_returns_nothing_when_the_data_container_is_missing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await jikan.screenshots(client, 52991) == []
+
+
+async def test_get_by_id_returns_none_when_the_detail_body_has_no_entry() -> None:
+    """Jikan wraps its single detail entry in "data"; a body without one
+    is reported as "gone" rather than raising past every handler."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": None})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await jikan.get_by_id(client, 52991) is None
+
+
 async def test_screenshots_is_cached_for_repeated_calls() -> None:
     calls = {"n": 0}
 

@@ -49,7 +49,7 @@ async def search(
     API each time."""
     params = {"q": query, "limit": limit}
     data = await rest.get_json(_API, client, JIKAN_BASE_URL, params)
-    results = [_parse_result(raw) for raw in data["data"]]
+    results = [_parse_result(raw) for raw in data.get("data") or []]
     logger.debug("Jikan search {!r} returned {} result(s)", query, len(results))
     return results
 
@@ -77,9 +77,10 @@ async def screenshots(client: httpx.AsyncClient, jikan_id: int) -> list[str]:
     the same anime re-slices the same cached list instead of re-hitting
     the API every time."""
     data = await rest.get_json(_API, client, f"{JIKAN_BASE_URL}/{jikan_id}/pictures", {})
-    entries = data["data"][:SCREENSHOT_FETCH_LIMIT]
+    pictures = data.get("data") or []
+    entries = pictures[:SCREENSHOT_FETCH_LIMIT]
     urls = [url for entry in entries if (url := _picture_url(entry)) is not None]
-    logger.debug("Jikan id {} has {} picture(s) available", jikan_id, len(data["data"]))
+    logger.debug("Jikan id {} has {} picture(s) available", jikan_id, len(pictures))
     return urls
 
 
@@ -88,10 +89,18 @@ def _picture_url(entry: dict) -> str | None:
     return jpg.get("large_image_url") or jpg.get("image_url")
 
 
-def _parse_detail_result(raw: dict) -> JikanResult:
+def _parse_detail_result(raw: dict) -> JikanResult | None:
     """The by-id endpoint wraps its single entry in a "data" object,
-    unlike the search endpoint's list of bare entries."""
-    return _parse_result(raw["data"])
+    unlike the search endpoint's list of bare entries.
+
+    A body with no entry in it is reported the same way a 404 is — the
+    picker says the pick is gone — rather than raising a `KeyError` no
+    handler catches (issue #75)."""
+    entry = raw.get("data")
+    if not entry:
+        logger.error('Jikan answered 200 with no "data" entry to parse')
+        return None
+    return _parse_result(entry)
 
 
 def _parse_result(raw: dict) -> JikanResult:
