@@ -71,7 +71,7 @@ async def screenshot_search_again_callback_handler(
             return
         game.screenshot_source = provider
 
-    await query.edit_message_text(i18n.t("dm_start.ask_search", lang))
+    await query.edit_message_text(i18n.t("dm_start.ask_search_screenshots", lang))
 
 
 async def _screenshot_search_step(

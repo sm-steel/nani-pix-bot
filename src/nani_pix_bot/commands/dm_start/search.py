@@ -39,6 +39,17 @@ from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 
+def _search_prompt_key(*, source: str, has_image: bool) -> str:
+    """Which "now tell me what it is" prompt to show after a method pick.
+    The photo-first entry point already has the screenshot in hand, so it
+    can say "what anime is *this* from?"; `/newgame` has nothing to point
+    at yet and needs its own wording. Manual entry's prompt is neutral
+    about whether an image exists, so both entry points share it."""
+    if source == "manual":
+        return "dm_start.ask_manual_title"
+    return "dm_start.ask_search" if has_image else "dm_start.ask_search_newgame"
+
+
 async def method_pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """The starter tapped AniList or Shikimori from photo_handler's
     keyboard. Stores the choice on the still-SETUP game row (rather than
@@ -62,10 +73,14 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
             return
         setup_game.source = source
         setup_game.setup_step = SetupStep.PICKING_METHOD
+        # Read inside the session block — the prompt below depends on it,
+        # and the row is detached once the block closes.
+        has_image = setup_game.original_image is not None
         logger.debug("Game {}: starter picked identification method {!r}", setup_game.id, source)
 
-    prompt_key = "dm_start.ask_manual_title" if source == "manual" else "dm_start.ask_search"
-    await query.edit_message_text(i18n.t(prompt_key, lang))
+    await query.edit_message_text(
+        i18n.t(_search_prompt_key(source=source, has_image=has_image), lang)
+    )
 
 
 async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

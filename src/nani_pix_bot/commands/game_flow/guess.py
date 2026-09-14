@@ -76,16 +76,17 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             )
             game_service.clear_original_screenshot(game)
         elif outcome is game_service.GuessOutcome.WRONG:
-            stage, total_stages, remaining = game_service.stage_progress(session, game)
+            progress = game_service.stage_progress(session, game)
             game_service.reset_inactivity_clock(game)
             timeout_module.schedule_inactivity_timers(context.job_queue, game)
             await message.reply_text(
                 i18n.t(
                     "guess.wrong_feedback",
                     lang,
-                    remaining=remaining,
-                    stage=stage,
-                    total=total_stages,
+                    remaining=progress.remaining,
+                    limit=progress.limit,
+                    stage=progress.number,
+                    total=progress.total,
                 )
             )
         elif outcome is game_service.GuessOutcome.STAGE_ADVANCED:
@@ -93,7 +94,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             original_bytes = game.original_image
             target_width = stage_config.get_stage_config(session)[game.current_stage].target_width
             pixelated = pixelate_service.pixelate(original_bytes, target_width)
-            stage, total_stages, remaining = game_service.stage_progress(session, game)
+            progress = game_service.stage_progress(session, game)
             game_service.reset_inactivity_clock(game)
             timeout_module.schedule_inactivity_timers(context.job_queue, game)
             await timeout_module.post_current_image(
@@ -103,10 +104,10 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 caption=i18n.t(
                     "guess.stage_advanced_caption",
                     lang,
-                    stage=stage,
-                    total=total_stages,
-                    guess_number=game.total_guess_count,
-                    remaining=remaining,
+                    stage=progress.number,
+                    total=progress.total,
+                    remaining=progress.remaining,
+                    limit=progress.limit,
                 ),
             )
         elif outcome is game_service.GuessOutcome.UNSOLVED:

@@ -322,9 +322,16 @@ wrong-guess limit, and `wrong_guess_count` resets to 0 on every advance.
 If the last allowed wrong guess at the final stage (`STAGE_5`) lands,
 the game ends unsolved (see below) instead of advancing further.
 Advancing posts the newly-revealed image with a caption naming the new
-stage, which guess number (overall) triggered the advance, and how many
-more wrong guesses remain before the next one (`guess.
-stage_advanced_caption`).
+stage and its wrong-guess budget as `remaining/limit` (`guess.
+stage_advanced_caption`) — on a freshly entered stage those are equal,
+which is the point: it says how generous this stage is, not just how
+much is left. The same `remaining/limit` pair appears in the `/guess`
+wrong-answer reply (`guess.wrong_feedback`, where the numerator does
+tick down) and in the round's opening post (`dm_start.
+game_started_caption`, which names stage 1 and its budget), so all three
+counters read the same way. The overall guess number is still tracked on
+the row (`total_guess_count`) but is no longer shown — a bare counter
+with nothing to measure it against told players nothing.
 
 **Whatever image was most recently posted for the current game — a
 pixelation stage or the final reveal — stays pinned in the group topic,
@@ -354,6 +361,16 @@ A game ends in a win one of two ways:
   actually correct (an alternate title/spelling AniList doesn't list as a
   synonym, for example). Only the starter may run this command; it's a
   fixed `@username` argument, not a reply-based selection.
+
+  The `@username` is resolved against the `players` table, which the bot
+  fills in from **any** update it sees — a DM, a command, or plain chat
+  in the game topic (see ARCHITECTURE.md's "Handler groups"). So this
+  only fails for someone who has never interacted with the bot at all,
+  and the failure reply tells them to DM it, naming the bot's handle.
+  Before that pre-handler existed the table was populated only by a
+  successful `/guess` or by starting a game, which meant `/correct` —
+  whose entire purpose is awarding someone the matcher didn't catch —
+  routinely couldn't find its target.
 
 On a win, the bot:
 1. Reveals the original (un-pixelated) screenshot together with the
@@ -452,23 +469,42 @@ not just their own) — checked via the same `is_group_admin` helper
 `/help`/`/language`, not in the game topic — though the outcome is still
 announced there (step 4 below).
 
-`/stop` never acts immediately — it always shows a **Yes/No confirmation**
+`/stop` never acts immediately — it always shows a **confirmation**
 first (naming the game's title, if one's been staged yet), and only the
-starter or an admin can actually tap "Yes" (re-checked at that point too,
-independently of who saw the prompt). Tapping "No" just leaves the game
-running untouched.
+starter or an admin can actually tap a stop button (re-checked at that
+point too, independently of who saw the prompt). Tapping "No" just leaves
+the game running untouched.
 
-On confirmation, the bot:
+There are **two** ways to say yes:
+
+- **"Yes, stop it"** — stops quietly.
+- **"Stop and reveal"** — stops *and* tells the group what the anime
+  was. Offered only for an `ACTIVE` round that still has its image
+  (`game_service.has_answer_to_reveal`): a `SETUP` game has never posted
+  anything to the topic, and may not even have a title staged yet, so
+  there's nothing anyone is waiting to find out. The confirmation for a
+  `SETUP` game is therefore still a plain Yes/No.
+
+On either confirmation, the bot:
 1. Cancels whatever timer(s) were pending for that game — its 2-day
    timeout and inactivity nudge/auto-advance pair if `ACTIVE`, or its
    1-hour setup-abandon timer if still `SETUP`.
-2. **Deletes the `Game` row outright** — same precedent as the
+2. Announces the outcome in the group topic — a plain "anyone can start a
+   new game" notice, or, on the reveal path, the **original un-pixelated
+   screenshot captioned with the title**, posted through the same
+   `post_current_image` the win/unsolved/timeout reveals use, so it also
+   becomes the topic's pinned image. That caption already says the turn
+   is open, so the reveal path posts one message, not two.
+3. **Deletes the `Game` row outright** — same precedent as the
    setup-abandon timer and turn expiry: a manually-stopped round isn't a
    meaningful outcome worth a terminal status of its own (unlike
    `WON`/`UNSOLVED`), so no `CANCELED` status exists.
-3. Opens the turn (`next_starter_id → null`), same effect as a bare
+4. Opens the turn (`next_starter_id → null`), same effect as a bare
    `/skip` — canceling any pending win-turn reminder/expiry too.
-4. Posts a notice to the group that anyone can start a new game.
+
+The announcement deliberately happens *before* the row is deleted: the
+reveal needs the row's image bytes and title, and `post_current_image`
+needs a live session to move the group's pin.
 
 ## Turn handoff (`/skip`)
 
@@ -482,7 +518,8 @@ next game, not anything mid-game):
   up, and anyone can DM the bot a screenshot to start the next game.
   Cancels the reminder/expiry timers below.
 - `/skip @username` hands the designation directly to that person instead
-  — (re)schedules the timers below for the new designee.
+  — (re)schedules the timers below for the new designee. Same `players`
+  lookup and same "I don't know them yet" reply as `/correct` above.
 
 Whenever `next_starter_id` becomes a real user (a win, or `/skip @user`),
 two absolute-deadline `TurnState` timers are (re)scheduled:

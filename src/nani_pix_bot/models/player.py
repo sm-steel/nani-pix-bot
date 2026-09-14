@@ -9,7 +9,13 @@ USERNAME_LENGTH = 64
 
 
 class Player(Base):
-    """A Telegram user known to the game (has started or won at least once)."""
+    """A Telegram user the bot has seen — any DM, command, or message in
+    the game topic, via commands/helpers/player_tracking.py. Deliberately
+    broader than "has played": `/correct @username` and `/skip @username`
+    resolve a typed handle against this table, and `/correct` exists
+    precisely for someone who answered in plain prose without ever
+    issuing a command. A row with `wins == 0` is the normal case and is
+    filtered out of the leaderboard by `players.top_players`."""
 
     __tablename__ = "players"
 

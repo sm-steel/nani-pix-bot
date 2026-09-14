@@ -1,7 +1,7 @@
 """The /stop command — DM only. Lets the game's own starter, or any group
-admin, abort a SETUP or ACTIVE game after a Yes/No confirmation; the
-outcome is still announced in the group topic. See MECHANICS.md's
-"Stopping a game" section."""
+admin, abort a SETUP or ACTIVE game after a confirmation; the outcome is
+still announced in the group topic, optionally revealing what the round's
+answer was. See MECHANICS.md's "Stopping a game" section."""
 
 from loguru import logger
 from telegram import Update
@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.helpers.keyboards import (
     STOP_CANCEL_CALLBACK_DATA,
     STOP_CONFIRM_CALLBACK_DATA,
+    STOP_REVEAL_CALLBACK_DATA,
     stop_confirm_keyboard,
 )
 from nani_pix_bot.commands.helpers.membership import is_group_admin
@@ -50,16 +51,19 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
 
         title = game_service.display_title(game, lang)
+        can_reveal = game_service.has_answer_to_reveal(game)
 
     await message.reply_text(
         i18n.t("stop.confirm_prompt", lang, title=title),
-        reply_markup=stop_confirm_keyboard(lang),
+        reply_markup=stop_confirm_keyboard(lang, can_reveal=can_reveal),
     )
 
 
 async def stop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Dispatches to the Cancel or Confirm branch — two genuinely
-    different actions that happen to share this small preamble."""
+    different actions that happen to share this small preamble. The
+    reveal button is a Confirm that also posts the answer, not a third
+    action, so it shares _handle_confirm."""
     query = update.callback_query
     if query is None or query.data is None:
         return
@@ -71,8 +75,9 @@ async def stop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     if query.data == STOP_CANCEL_CALLBACK_DATA:
         await _handle_cancel(query, context)
-    elif query.data == STOP_CONFIRM_CALLBACK_DATA:
-        await _handle_confirm(query, context, user)
+    elif query.data in (STOP_CONFIRM_CALLBACK_DATA, STOP_REVEAL_CALLBACK_DATA):
+        reveal = query.data == STOP_REVEAL_CALLBACK_DATA
+        await _handle_confirm(query, context, user, reveal=reveal)
 
 
 async def _handle_cancel(query, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -82,7 +87,10 @@ async def _handle_cancel(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     await query.edit_message_text(i18n.t("stop.canceled", lang))
 
 
-async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user) -> None:
+async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, reveal: bool) -> None:
+    """Both stop buttons land here — the permission re-check, timer
+    cancellation, row deletion and turn-opening are identical; only the
+    group announcement differs (see _announce_stop)."""
     group_chat_id = context.bot_data["group_chat_id"]
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
@@ -106,15 +114,55 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user) -> No
             timeout_module.cancel_inactivity_timers(context.job_queue, game_id)
         else:
             timeout_module.cancel_setup_abandon(context.job_queue, game_id)
+        # Announce before deleting: the reveal path reads the row's image
+        # and title, and post_current_image needs a live session to move
+        # the group's pin.
+        revealed = await _announce_stop(context, session, game, lang, reveal=reveal)
         session.delete(game)
         game_service.set_next_starter(session, None)
         logger.info(
-            "Game {} stopped by {} (was {})", game_id, user.id, "ACTIVE" if was_active else "SETUP"
+            "Game {} stopped by {} (was {}, answer {})",
+            game_id,
+            user.id,
+            "ACTIVE" if was_active else "SETUP",
+            "revealed" if revealed else "not revealed",
         )
 
-    await query.edit_message_text(i18n.t("stop.confirmed", lang))
+    await query.edit_message_text(
+        i18n.t("stop.confirmed_revealed" if revealed else "stop.confirmed", lang)
+    )
+
+
+async def _announce_stop(
+    context: ContextTypes.DEFAULT_TYPE, session, game, lang: str, reveal: bool
+) -> bool:
+    """Tells the group topic the round is over, and returns whether it
+    also revealed the answer. (`reveal` is positional-or-keyword rather
+    than keyword-only purely to stay inside qlty's parameter-count
+    threshold; the one caller still passes it by name.)
+
+    Revealing posts the un-pixelated original captioned with the title —
+    the same `post_current_image` the win/unsolved/timeout reveals use, so
+    it becomes the topic's pinned image too. That caption already says the
+    turn is open, so the reveal path posts one message rather than a photo
+    plus a duplicate notice. Falls back to the plain notice if the button
+    was a stale tap on a game that no longer has its image."""
+    if reveal and game.original_image is not None:
+        await timeout_module.post_current_image(
+            context,
+            session,
+            photo=game.original_image,
+            caption=i18n.t(
+                "stop.stopped_reveal_caption", lang, title=game_service.display_title(game, lang)
+            ),
+        )
+        return True
+
+    if reveal:
+        logger.warning("Game {}: reveal requested but no image is stored", game.id)
     await context.bot.send_message(
-        chat_id=group_chat_id,
+        chat_id=context.bot_data["group_chat_id"],
         message_thread_id=context.bot_data["game_topic_id"],
         text=i18n.t("stop.confirmed_group_notice", lang),
     )
+    return False

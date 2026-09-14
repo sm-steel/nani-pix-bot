@@ -153,7 +153,9 @@ async def _apply_stage_changes(
             logger.warning("Stage config edit blocked — game {} is {}", running.id, running.status)
             await message.reply_text(
                 i18n.t("stageconfig.game_running", lang),
-                reply_markup=stop_confirm_keyboard(lang),
+                reply_markup=stop_confirm_keyboard(
+                    lang, can_reveal=game_service.has_answer_to_reveal(running)
+                ),
             )
             return
 

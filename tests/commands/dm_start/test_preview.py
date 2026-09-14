@@ -21,6 +21,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.settings import stage_config
 
 _FRIEREN = AniListResult(
     anilist_id=99,
@@ -117,6 +118,14 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
     assert kwargs["chat_id"] == 555
     assert kwargs["message_thread_id"] == 7
     assert "Starter Name" in kwargs["caption"]
+    # Players should see the stakes up front: stage 1 of 5, and how many
+    # wrong guesses that stage allows before the image clears.
+    assert "1/5" in kwargs["caption"]
+    with session_factory() as session:
+        limit = stage_config.get_stage_config(session)[
+            game_service.STAGE_ORDER[0]
+        ].wrong_guess_limit
+    assert f"{limit}/{limit}" in kwargs["caption"]
 
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()

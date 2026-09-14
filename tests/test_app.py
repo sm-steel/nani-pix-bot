@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from telegram.error import Conflict, NetworkError
-from telegram.ext import CallbackQueryHandler, ContextTypes
+from telegram.ext import CallbackQueryHandler, ContextTypes, TypeHandler
 
 from nani_pix_bot import app
 from nani_pix_bot.commands.dm_start import (
@@ -20,6 +20,7 @@ from nani_pix_bot.commands.dm_start import (
     screenshot_source_callback_handler,
     screenshot_upload_instead_callback_handler,
 )
+from nani_pix_bot.commands.helpers import player_tracking
 from nani_pix_bot.config import Config
 
 _VALID_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"  # noqa: S105 - test fixture, not a real token
@@ -216,3 +217,27 @@ async def test_error_handler_logs_anything_else_as_an_error(
     await app._error_handler(cast(object, "some update"), cast(ContextTypes.DEFAULT_TYPE, context))
 
     assert errors
+
+
+def test_build_application_registers_player_tracking_before_the_commands() -> None:
+    """Ordering is the whole point: a /correct that names a user the bot
+    has just seen must find them already recorded, so the tracking
+    handler has to run in an earlier group than the command handlers."""
+    application = app.build_application(_config())
+
+    tracking_handlers = [
+        handler
+        for handler in application.handlers[app._PLAYER_TRACKING_GROUP]
+        if isinstance(handler, TypeHandler)
+    ]
+    assert len(tracking_handlers) == 1
+    assert tracking_handlers[0].callback is player_tracking.remember_user
+
+    command_groups = {
+        group
+        for group, handlers in application.handlers.items()
+        for handler in handlers
+        if getattr(handler, "commands", None)
+    }
+    assert command_groups
+    assert min(command_groups) > app._PLAYER_TRACKING_GROUP

@@ -666,11 +666,25 @@ def test_stage_progress_reports_stage_number_total_and_remaining(session: Sessio
     game = _active_game(session, stage=PixelStage.STAGE_3, wrong_guess_count=1)
     _seed_stage_limit(session, PixelStage.STAGE_3, wrong_guess_limit=3)
 
-    stage_number, total_stages, remaining = game_service.stage_progress(session, game)
+    progress = game_service.stage_progress(session, game)
 
-    assert stage_number == 3
-    assert total_stages == 5
-    assert remaining == 2  # STAGE_3's limit is 3, minus 1 wrong guess so far
+    assert progress.number == 3
+    assert progress.total == 5
+    assert progress.remaining == 2  # STAGE_3's limit is 3, minus 1 wrong guess so far
+    assert progress.limit == 3
+
+
+def test_stage_progress_reports_the_full_limit_on_a_freshly_entered_stage(
+    session: Session,
+) -> None:
+    """remaining == limit right after an advance — what the stage-advance
+    caption shows as "2/2"."""
+    game = _active_game(session, stage=PixelStage.STAGE_3, wrong_guess_count=0)
+    _seed_stage_limit(session, PixelStage.STAGE_3, wrong_guess_limit=2)
+
+    progress = game_service.stage_progress(session, game)
+
+    assert (progress.remaining, progress.limit) == (2, 2)
 
 
 def test_stage_progress_rejects_a_game_with_no_current_stage(session: Session) -> None:
@@ -687,6 +701,31 @@ def test_stage_progress_rejects_a_game_with_no_current_stage(session: Session) -
 
     with pytest.raises(ValueError, match="current_stage"):
         game_service.stage_progress(session, game)
+
+
+def test_has_answer_to_reveal_is_true_for_an_active_game_with_its_image(session: Session) -> None:
+    game = _active_game(session)
+
+    assert game_service.has_answer_to_reveal(game) is True
+
+
+def test_has_answer_to_reveal_is_false_for_a_setup_game(session: Session) -> None:
+    """A SETUP round has never posted anything to the group topic, so
+    there's no answer anyone is waiting on."""
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = Game(starter_id=1, original_image=b"file123", status=GameStatus.SETUP)
+    session.add(game)
+    session.commit()
+
+    assert game_service.has_answer_to_reveal(game) is False
+
+
+def test_has_answer_to_reveal_is_false_once_the_image_is_cleared(session: Session) -> None:
+    game = _active_game(session)
+    game_service.clear_original_screenshot(game)
+
+    assert game_service.has_answer_to_reveal(game) is False
 
 
 def test_force_win_sets_winner_and_hands_over_the_turn(session: Session) -> None:
