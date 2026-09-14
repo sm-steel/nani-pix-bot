@@ -177,13 +177,25 @@ async def reply_fallback(send, game, lang: str, fallback: Fallback) -> None:
     """`reply_with_source_menu` for the common case where the caller has
     the game loaded and so can build the menu itself.
 
-    Puts the game back on PICKING_SCREENSHOT, since that is literally
-    the screen being shown — whatever step the failure interrupted (a
-    gallery pick, a "More screenshots" page, the preview's "pick a
-    different screenshot"), the starter is now looking at the
-    source-selection menu again and a typed query has to route to the
-    cross-provider search."""
+    Puts the game back on PICKING_SCREENSHOT *and* points the picker at
+    the provider being blamed, since that is literally the screen being
+    shown — whatever step the failure interrupted (a gallery pick, a
+    "More screenshots" page, the preview's "pick a different
+    screenshot"), the starter is now looking at the source-selection
+    menu again and a typed query has to route to the cross-provider
+    search.
+
+    The picker half matters most for a failure reached *from a
+    same-provider gallery*: showing that gallery clears the picker
+    (nothing is being resolved while it is up), so without re-arming it
+    here a retyped query would be silently dropped by
+    search_text_handler — the exact escape MECHANICS.md's "When a
+    provider fails" promises. Setting it at this one chokepoint covers
+    every provider-flagged failure screen uniformly, and can't
+    resurrect the same-provider-gallery bug: this only ever runs when
+    the source menu is *replacing* a gallery, never while one is up."""
     game.setup_step = SetupStep.PICKING_SCREENSHOT
+    game.screenshot_picker_provider = fallback.provider
     await reply_with_source_menu(send, source_menu_for(game, fallback.provider), lang, fallback.key)
 
 
@@ -365,11 +377,11 @@ async def screenshot_source_callback_handler(
         provider = parse_screenshot_source_callback_data(query.data)
         if provider is None:
             return
-        # Picker state, not image provenance — no image exists yet, and
-        # this tap must not claim one (see models/game.py). Set before
-        # resolution so every failure exit below still knows which
-        # provider a typed retry query belongs to.
-        game.screenshot_picker_provider = provider
+        # The picker column is written by whichever screen this ends on,
+        # not here: _resolve_screenshot_source sets it for the gallery it
+        # shows, and reply_fallback sets it for a failure screen. Note
+        # it is never screenshot_source — no image exists yet, and this
+        # tap must not claim one (see models/game.py).
         failure = await _resolve_screenshot_source(context, game, provider, lang)
         # Replying inside the session block, while `game` is still live —
         # the source menu is built from it.
@@ -406,12 +418,12 @@ async def _resolve_screenshot_source(
         return result
 
     logger.debug("Game {}: fetched {} {} screenshot(s)", game.id, len(result), provider)
-    if not cross_provider:
-        # A same-provider gallery has nothing left to resolve — the id
-        # came from identification, and this gallery carries no "Wrong
-        # anime? Search again" button — so a typed message from here is
-        # not a correction query and must not be searched as one.
-        game.screenshot_picker_provider = None
+    # A cross-provider gallery carries "Wrong anime? Search again", so a
+    # typed correction still has to reach this provider's search. A
+    # same-provider one has nothing left to resolve — the id came from
+    # identification, and it offers no such button — so a typed message
+    # there is not a correction query and must not be searched as one.
+    game.screenshot_picker_provider = provider if cross_provider else None
     target = GalleryTarget(
         chat_id=game.starter_id, provider=provider, offset=0, cross_provider=cross_provider
     )

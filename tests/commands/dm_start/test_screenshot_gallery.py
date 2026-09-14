@@ -213,6 +213,63 @@ async def test_screenshot_gallery_callback_handler_pick_falls_back_when_the_down
     assert kwargs["reply_markup"] is not None
 
 
+async def test_gallery_failure_keeps_a_typed_query_routable_to_the_provider(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: a same-provider gallery clears the picker (nothing is
+    being resolved while it is on screen), but a failure reached *from*
+    that gallery replaces it with the source menu — where a retyped
+    query still has to reach this provider's cross-search, per
+    _fetch_screenshots_or_fallback's docstring and MECHANICS.md's "When
+    a provider fails". reply_fallback is the chokepoint every
+    provider-flagged failure screen passes through, so it re-arms the
+    picker."""
+    monkeypatch.setattr(
+        shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
+    )
+    # Exactly the state a shown same-provider gallery leaves behind.
+    game_id = _staged_game(session_factory, shikimori_id=52991, screenshot_picker_provider=None)
+
+    update = _make_callback_update(data="screenshot_pick:shikimori:0")
+    context = _make_context(session_factory)
+    context.bot_data["search_client"].get = AsyncMock(side_effect=RuntimeError("boom"))
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        assert fetched.screenshot_picker_provider == "shikimori"
+        # Still nothing API-sourced backing an image — the download failed.
+        assert fetched.screenshot_source is None
+        assert fetched.original_image is None
+
+
+async def test_more_screenshots_failure_keeps_a_typed_query_routable(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same chokepoint reached from the gallery's other button: a
+    "More screenshots" page whose re-listing call fails."""
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(side_effect=RuntimeError("boom")))
+    game_id = _staged_game(session_factory, shikimori_id=52991, screenshot_picker_provider=None)
+
+    update = _make_callback_update(data="screenshot_more:shikimori:5")
+    context = _make_context(session_factory)
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.screenshot_picker_provider == "shikimori"
+    context.bot.send_media_group.assert_not_awaited()
+
+
 async def test_screenshot_search_again_callback_handler_asks_for_a_query(session_factory) -> None:
     game_id = _staged_game(session_factory, source="anilist", anilist_id=99)
     update = _make_callback_update(data="screenshot_search_again:tmdb")
