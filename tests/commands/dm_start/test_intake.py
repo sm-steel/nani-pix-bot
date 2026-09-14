@@ -267,3 +267,32 @@ async def test_photo_handler_updates_the_image_and_reshows_the_preview_when_chan
     context.bot.send_media_group.assert_awaited_once()
     _, kwargs = context.bot.send_media_group.await_args
     assert kwargs["chat_id"] == 1
+
+
+async def test_photo_handler_accepts_an_upload_while_picking_a_screenshot(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sending a screenshot while the source menu is up — including the
+    one a provider failure drops you back onto — is an obvious way to
+    say "use this one". It used to fall through to _start_new_game and
+    come back as "it's not your turn", which made no sense: it's the
+    starter's own setup."""
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    _staged_setup_game(session_factory)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.setup_step = SetupStep.PICKING_SCREENSHOT
+        session.commit()
+
+    update = _make_update(user_id=1, photo_file_id="own-screenshot")
+    context = _make_callback_context(session_factory)
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        assert session.query(Game).count() == 1  # no duplicate game created
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.original_image == b"original-bytes"
+        assert fetched.setup_step == SetupStep.CONFIRMING
+    context.bot.send_media_group.assert_awaited_once()  # the preview album
+    update.message.reply_text.assert_not_awaited()  # no "not your turn"

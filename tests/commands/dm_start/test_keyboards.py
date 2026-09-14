@@ -7,6 +7,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_CONFIRM_CALLBACK_DATA,
     PREVIEW_RESEARCH_CALLBACK_DATA,
     RETRY_CALLBACK_DATA,
+    SCREENSHOT_UPLOAD_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
     TMDB_METHOD_CALLBACK_DATA,
     anilist_results_keyboard,
@@ -16,6 +17,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     parse_pick_callback_data,
     parse_screenshot_search_pick_callback_data,
     preview_keyboard,
+    screenshot_source_keyboard,
     shikimori_results_keyboard,
     tmdb_results_keyboard,
 )
@@ -358,3 +360,37 @@ def test_preview_keyboard_labels_are_translated() -> None:
     assert labels_en != labels_ru
     assert "Confirm" in labels_en[0]
     assert "Подтвердить" in labels_ru[0] or "подтвердить" in labels_ru[0].lower()
+
+
+def _source_rows(markup):
+    return [(button.text, button.callback_data) for row in markup.inline_keyboard for button in row]
+
+
+def test_screenshot_source_keyboard_marks_the_provider_that_just_failed() -> None:
+    """A failed provider stays tappable — a 504 is often transient, and
+    it may be the only source with screenshots for this title — but it's
+    flagged so it isn't retried by accident."""
+    markup = screenshot_source_keyboard(
+        ["shikimori", "jikan", "tmdb"], "en", failed_provider="jikan"
+    )
+
+    labels = dict(_source_rows(markup))
+    jikan_label = next(text for text in labels if "Jikan" in text)
+    assert jikan_label.startswith("⚠️")
+    assert labels[jikan_label] == "screenshot_source:jikan"
+    # Only that one is marked.
+    assert not any(text.startswith("⚠️") for text in labels if "Jikan" not in text)
+
+
+def test_screenshot_source_keyboard_marks_nothing_by_default() -> None:
+    markup = screenshot_source_keyboard(["shikimori", "jikan", "tmdb"], "en")
+
+    assert not any(text.startswith("⚠️") for text, _ in _source_rows(markup))
+
+
+def test_screenshot_source_keyboard_always_offers_upload_instead() -> None:
+    """The upload escape has to survive on the failure screen too."""
+    markup = screenshot_source_keyboard(["jikan"], "en", failed_provider="jikan")
+
+    callbacks = [data for _, data in _source_rows(markup)]
+    assert SCREENSHOT_UPLOAD_CALLBACK_DATA in callbacks

@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
+    _SERVICE_DISPLAY_NAMES,
     _client_for_source,
     _reply_service_down,
     _show_preview,
@@ -26,7 +27,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 from nani_pix_bot.commands.dm_start.manual import _manual_synonyms_step, _manual_title_step
 from nani_pix_bot.commands.dm_start.preview import _add_synonym_step
 from nani_pix_bot.commands.dm_start.screenshot_gallery import _screenshot_search_step
-from nani_pix_bot.commands.dm_start.screenshots import start_screenshot_picker
+from nani_pix_bot.commands.dm_start.screenshots import source_menu_for, start_screenshot_picker
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SetupStep
@@ -102,13 +103,21 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         source = setup_game.source
         awaiting_synonyms = setup_game.title_english is not None
         screenshot_source = setup_game.screenshot_source
+        # Captured while the game is live: _screenshot_search_step runs
+        # after this block closes and needs the source menu to fall back
+        # onto if the provider is down or finds nothing.
+        screenshot_menu = (
+            source_menu_for(setup_game, screenshot_source)
+            if screenshot_source is not None
+            else None
+        )
 
     if setup_step == SetupStep.AWAITING_SYNONYM:
         await _add_synonym_step(message, context, lang, user)
     elif setup_step in (SetupStep.CONFIRMING, SetupStep.AWAITING_PHOTO_CHANGE):
         pass  # only the preview's buttons (or a replacement photo) matter here
     elif setup_step == SetupStep.PICKING_SCREENSHOT:
-        if screenshot_source is not None:
+        if screenshot_menu is not None:
             # A screenshot provider is being resolved — ticket 8's
             # cross-provider "Search again" correction, the fallback
             # state after an auto-search found nothing, or (ticket 9)
@@ -119,7 +128,7 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             # correction used to be silently swallowed in exactly that
             # case). Anything else during this step (still on the
             # source-selection keyboard) expects a button tap, not text.
-            await _screenshot_search_step(message, context, lang, screenshot_source)
+            await _screenshot_search_step(message, context, lang, screenshot_menu)
     elif source == "manual":
         if awaiting_synonyms:
             await _manual_synonyms_step(message, context, lang, user)
@@ -160,7 +169,9 @@ async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, s
 
     logger.debug("{} search for {!r} returned {} results", source, message.text, len(results))
     if not results:
-        await status_message.edit_text(i18n.t("dm_start.no_results", lang))
+        await status_message.edit_text(
+            i18n.t("dm_start.no_results", lang, service=_SERVICE_DISPLAY_NAMES[source])
+        )
         return
 
     await status_message.edit_text(i18n.t("dm_start.pick_prompt", lang), reply_markup=keyboard)
@@ -241,7 +252,9 @@ async def _resolve_picked_result(
 
     if result is None:
         logger.warning("{} id {} picked but no longer found", source, external_id)
-        await query.edit_message_text(i18n.t("dm_start.not_found_anymore", lang))
+        await query.edit_message_text(
+            i18n.t("dm_start.not_found_anymore", lang, service=_SERVICE_DISPLAY_NAMES[source])
+        )
         return None
 
     return source, external_id, result

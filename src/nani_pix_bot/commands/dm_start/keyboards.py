@@ -310,16 +310,38 @@ SCREENSHOT_UPLOAD_CALLBACK_DATA = "screenshot:upload"
 # Brand names, same untranslated-label convention as the method-picker
 # buttons above.
 _SCREENSHOT_PROVIDER_LABELS = {"shikimori": "Shikimori", "jikan": "Jikan", "tmdb": "TMDB"}
+# Marks the provider that just failed on a re-shown source menu. A bare
+# sign rather than an i18n'd word so the brand-name labels stay
+# untranslated (see CLAUDE.md) and the buttons stay short.
+_FAILED_PROVIDER_MARK = "⚠️"
 
 
-def screenshot_source_keyboard(providers: list[str], lang: str) -> InlineKeyboardMarkup:
+def _source_label(provider: str, *, failed: bool) -> str:
+    label = _SCREENSHOT_PROVIDER_LABELS[provider]
+    return f"{_FAILED_PROVIDER_MARK} {label}" if failed else label
+
+
+def screenshot_source_keyboard(
+    providers: list[str], lang: str, *, failed_provider: str | None = None
+) -> InlineKeyboardMarkup:
     """One button per screenshot-capable provider in `providers`
     (already ordered by the caller — same provider as identification
-    first), plus "Upload my own instead"."""
+    first), plus "Upload my own instead".
+
+    `failed_provider` prefixes that one provider's label with a warning
+    sign — this keyboard is re-shown as the escape hatch from every
+    screenshot-sub-flow failure (see screenshots.py's
+    `reply_with_source_menu`), and the starter shouldn't have to
+    remember which source just let them down. It stays tappable on
+    purpose: provider outages are usually transient, and it may be the
+    only source with screenshots for this title.
+
+    The labels themselves are third-party brand names, deliberately not
+    translated — see CLAUDE.md's i18n notes."""
     buttons = [
         [
             InlineKeyboardButton(
-                _SCREENSHOT_PROVIDER_LABELS[provider],
+                _source_label(provider, failed=provider == failed_provider),
                 callback_data=f"{SCREENSHOT_SOURCE_PREFIX}{provider}",
             )
         ]

@@ -59,6 +59,34 @@ _ID_ATTRS = {"shikimori": "shikimori_id", "jikan": "jikan_id", "tmdb": "tmdb_id"
 _SCREENSHOT_MODULES = {"shikimori": shikimori, "jikan": jikan, "tmdb": tmdb}
 
 
+@dataclass(frozen=True)
+class SourceMenu:
+    """The source-selection menu, plus which provider is currently in
+    play. Bundled into one object so the failure helpers below stay
+    under qlty's parameter threshold (same reasoning as GalleryTarget
+    above), and so `_screenshot_search_step` — which runs after its
+    caller's session has closed and so can't look the game up itself —
+    can be handed everything it needs to draw the menu in one value."""
+
+    providers: list[str]
+    # None only for the one failure with no provider to blame: a stale
+    # "pick a different screenshot" button on a game whose
+    # screenshot_source was cleared meanwhile. Nothing gets flagged and
+    # the message carries no {service}.
+    provider: str | None
+
+
+@dataclass(frozen=True)
+class Fallback:
+    """A screenshot-sub-flow failure, propagated up to whichever handler
+    owns the reply: the message to show and the provider to blame. Every
+    one of these ends at `reply_with_source_menu` — carrying the provider
+    along means no caller has to remember which one it was asking about."""
+
+    key: str
+    provider: str
+
+
 def _provider_id(game, provider: str) -> int | None:
     """Typed wrapper around the getattr(game, _ID_ATTRS[provider]) dance
     used throughout this module — a bare getattr on a dynamic attribute
@@ -75,23 +103,28 @@ async def _fetch_screenshots(provider: str, client, provider_id: int) -> list[st
 
 async def _fetch_screenshots_or_fallback(
     context: ContextTypes.DEFAULT_TYPE, game, provider: str, provider_id: int | None
-) -> list[str] | str:
+) -> list[str] | Fallback:
     """Fetches `provider`'s screenshots for `provider_id` — the one
     chokepoint every screenshot-gallery call site routes through.
     Returns the url list on success (which can still legitimately be
     empty). On a stale/missing id, a fetch failure, or a genuinely empty
-    result, moves `game.setup_step` to AWAITING_PHOTO_CHANGE (so the
-    flow can never strand the starter mid-setup — a stale button or a
-    dead provider used to leave `PICKING_SCREENSHOT` in place with no
-    way forward) and returns the i18n key for a fallback message
-    instead, distinguishing "couldn't reach the service" from "this one
-    just has no screenshots" so the starter gets an accurate reason."""
+    result, returns the i18n key for a fallback message instead —
+    distinguishing "couldn't reach the service" from "this one just has
+    no screenshots" so the starter gets an accurate reason — which every
+    caller hands to `reply_with_source_menu`.
+
+    `setup_step` stays at PICKING_SCREENSHOT rather than moving to
+    AWAITING_PHOTO_CHANGE: the starter is going back to the source menu,
+    where typing a new query still has to route to the cross-provider
+    search. Sending a plain photo works from here too — intake.py
+    accepts one throughout PICKING_SCREENSHOT, which is what lets this
+    step mean "which screen am I on" without also having to mean "may I
+    accept a photo"."""
     if provider_id is None:
         logger.warning(
             "Game {}: no {} id on file for a screenshot fetch (stale button?)", game.id, provider
         )
-        game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
-        return "dm_start.no_screenshots_available"
+        return Fallback("dm_start.no_screenshots_available", provider)
 
     client = _client_for_source(context, provider)
     try:
@@ -100,13 +133,11 @@ async def _fetch_screenshots_or_fallback(
         logger.exception(
             "Game {}: fetching {} screenshots failed for id {}", game.id, provider, provider_id
         )
-        game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
-        return "dm_start.screenshot_fetch_failed"
+        return Fallback("dm_start.screenshot_service_down", provider)
 
     if not urls:
         logger.info("Game {}: {} has no screenshots for id {}", game.id, provider, provider_id)
-        game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
-        return "dm_start.no_screenshots_available"
+        return Fallback("dm_start.no_screenshots_available", provider)
 
     return urls
 
@@ -136,6 +167,53 @@ class GalleryTarget:
     provider: str
     offset: int
     cross_provider: bool = False
+
+
+def source_menu_for(game, provider: str | None) -> SourceMenu:
+    return SourceMenu(providers=_screenshot_capable_providers(game), provider=provider)
+
+
+async def reply_fallback(send, game, lang: str, fallback: Fallback) -> None:
+    """`reply_with_source_menu` for the common case where the caller has
+    the game loaded and so can build the menu itself.
+
+    Puts the game back on PICKING_SCREENSHOT, since that is literally
+    the screen being shown — whatever step the failure interrupted (a
+    gallery pick, a "More screenshots" page, the preview's "pick a
+    different screenshot"), the starter is now looking at the
+    source-selection menu again and a typed query has to route to the
+    cross-provider search."""
+    game.setup_step = SetupStep.PICKING_SCREENSHOT
+    await reply_with_source_menu(send, source_menu_for(game, fallback.provider), lang, fallback.key)
+
+
+async def reply_with_source_menu(send, menu: SourceMenu, lang: str, key: str) -> None:
+    """The one exit every screenshot-sub-flow failure takes: say what
+    went wrong, and put the starter back on the source-selection menu
+    with the offending provider flagged.
+
+    The screenshot sub-flow shipped without this (see MECHANICS.md's
+    "Starting a game") and every failure reply went out with no buttons
+    at all, leaving a SETUP game whose only escapes were `/stop` or the
+    1-hour setup-abandon timer — a provider outage put the starter in a
+    literal loop: type a query, get an error, repeat. This mirrors
+    `_shared.py::_reply_service_down`, which has always done exactly
+    this for the *identification* search, down to taking the `send`
+    callable so one helper serves `query.edit_message_text`,
+    `status_message.edit_text` and `context.bot.send_message` alike.
+
+    Every fallback message names the provider, so `key` must be one of
+    the `{service}` strings — except when there is no provider to blame
+    (see SourceMenu.provider), where `key` must be a placeholder-free
+    one, since i18n.t's `.format` raises on a missing kwarg."""
+    logger.debug("Screenshot flow: falling back to the source menu with {!r}", key)
+    service = {"service": _SERVICE_DISPLAY_NAMES[menu.provider]} if menu.provider else {}
+    await send(
+        i18n.t(key, lang, **service),
+        reply_markup=screenshot_source_keyboard(
+            menu.providers, lang, failed_provider=menu.provider
+        ),
+    )
 
 
 def _screenshot_capable_providers(game) -> list[str]:
@@ -184,7 +262,9 @@ def clear_screenshot_selection(game) -> None:
     game.screenshot_source = None
 
 
-async def resume_screenshot_gallery(context: ContextTypes.DEFAULT_TYPE, game, lang: str) -> str:
+async def resume_screenshot_gallery(
+    context: ContextTypes.DEFAULT_TYPE, game, lang: str
+) -> str | Fallback:
     """Re-shows `game.screenshot_source`'s gallery from the top using its
     already-resolved id — preview.py's "Change image" -> "Pick a
     different screenshot" branch, reached only when the current image
@@ -193,14 +273,12 @@ async def resume_screenshot_gallery(context: ContextTypes.DEFAULT_TYPE, game, la
     starter back out to a different provider entirely if nothing in
     this one's gallery fits.
 
-    Owns the `game.setup_step` transition itself (PICKING_SCREENSHOT on
-    a successful fetch, AWAITING_PHOTO_CHANGE on a stale/failed/empty
-    one — see _fetch_screenshots_or_fallback) rather than the caller
-    setting it unconditionally beforehand — a stale button here
-    (`screenshot_source` cleared by a "Re-search title" since this
-    preview message was sent) must degrade gracefully, not crash on a
-    bare assert. Returns the i18n key for the caller's own follow-up
-    message edit."""
+    Returns the i18n key for the caller's own follow-up message edit —
+    `dm_start.screenshot_source_picked` once a gallery is up, otherwise
+    a fallback key the caller passes to `reply_with_source_menu`. A
+    stale button here (`screenshot_source` cleared by a "Re-search
+    title" since this preview message was sent) must degrade
+    gracefully, not crash on a bare assert."""
     game.setup_step = SetupStep.PICKING_SCREENSHOT
     provider = game.screenshot_source
     if provider is None:
@@ -208,12 +286,12 @@ async def resume_screenshot_gallery(context: ContextTypes.DEFAULT_TYPE, game, la
             "Game {}: resume_screenshot_gallery called with no screenshot_source (stale button)",
             game.id,
         )
-        game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
-        return "dm_start.no_screenshots_available"
+        # No provider to name or flag — just re-offer the plain menu.
+        return "dm_start.pick_screenshot_source_prompt"
 
     provider_id = _provider_id(game, provider)
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
-    if isinstance(result, str):
+    if isinstance(result, Fallback):
         return result
 
     target = GalleryTarget(
@@ -275,42 +353,47 @@ async def screenshot_source_callback_handler(
         if provider is None:
             return
         game.screenshot_source = provider
-        reply_key, reply_kwargs = await _resolve_screenshot_source(context, game, provider, lang)
-
-    await query.edit_message_text(i18n.t(reply_key, lang, **reply_kwargs))
+        failure = await _resolve_screenshot_source(context, game, provider, lang)
+        # Replying inside the session block, while `game` is still live —
+        # the source menu is built from it.
+        if failure is None:
+            await query.edit_message_text(i18n.t("dm_start.screenshot_source_picked", lang))
+        else:
+            await reply_fallback(query.edit_message_text, game, lang, failure)
 
 
 async def _resolve_screenshot_source(
     context: ContextTypes.DEFAULT_TYPE, game, provider: str, lang: str
-) -> tuple[str, dict]:
+) -> Fallback | None:
     """Runs once a screenshot-source button is tapped: same-provider (an
     id already on file) goes straight to the gallery; cross-provider
     silently searches by the confirmed title first (ticket 8) and only
-    falls back to asking for a manual query if that search finds
-    nothing. Once a provider id is in hand either way, a screenshot-
-    fetch failure or a genuinely empty result also falls back — to
-    asking for an upload instead this time, via
-    _fetch_screenshots_or_fallback. Returns the i18n key (+ format
-    kwargs) for the caller's own follow-up message edit."""
+    falls back if that search finds nothing or the provider is down.
+    Once a provider id is in hand either way, a screenshot-fetch failure
+    or a genuinely empty result falls back the same way, via
+    _fetch_screenshots_or_fallback.
+
+    Returns None once a gallery is on screen, or the i18n key for a
+    failure — which the caller hands to `reply_with_source_menu`, so
+    every one of these exits leaves the starter on the source menu
+    rather than staring at a bare error."""
     provider_id = _provider_id(game, provider)
     cross_provider = provider_id is None
     if cross_provider:
         provider_id = await _resolve_cross_provider_id(context, game, provider)
         if provider_id is None:
-            return "dm_start.cross_provider_search_failed", {
-                "service": _SERVICE_DISPLAY_NAMES[provider]
-            }
+            return Fallback("dm_start.cross_provider_search_failed", provider)
 
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
-    if isinstance(result, str):
-        return result, {}
+    if isinstance(result, Fallback):
+        return result
 
     logger.debug("Game {}: fetched {} {} screenshot(s)", game.id, len(result), provider)
     target = GalleryTarget(
         chat_id=game.starter_id, provider=provider, offset=0, cross_provider=cross_provider
     )
     await _show_gallery_page(context, target, result, lang)
-    return "dm_start.screenshot_source_picked", {}
+    return None
 
 
 async def _resolve_cross_provider_id(
@@ -357,8 +440,23 @@ async def _show_gallery_page(
     actually picked."""
     shown = urls[target.offset : target.offset + GALLERY_PAGE_SIZE]
     if not shown:
+        # A stale "More screenshots" tap pointing past the end of the
+        # list. Not a dead end — the gallery message that button came
+        # from is still on screen with all its own buttons — so this
+        # stays a plain notice rather than re-showing the source menu.
+        logger.warning(
+            "Game gallery: {} page at offset {} is past the end of {} url(s)",
+            target.provider,
+            target.offset,
+            len(urls),
+        )
         await context.bot.send_message(
-            chat_id=target.chat_id, text=i18n.t("dm_start.no_screenshots_available", lang)
+            chat_id=target.chat_id,
+            text=i18n.t(
+                "dm_start.no_screenshots_available",
+                lang,
+                service=_SERVICE_DISPLAY_NAMES[target.provider],
+            ),
         )
         return
 

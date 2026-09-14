@@ -314,7 +314,14 @@ async def test_search_text_handler_routes_to_screenshot_search_while_resolving_a
 
     await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    step_mock.assert_awaited_once_with(update.message, context, "EN", "tmdb")
+    # The whole source menu is handed down, not a bare provider: the
+    # step's failure exits re-show it (search.py's session is closed by
+    # the time it runs, so it can't build one itself).
+    step_mock.assert_awaited_once()
+    assert step_mock.await_args is not None
+    menu = step_mock.await_args.args[3]
+    assert menu.provider == "tmdb"
+    assert menu.providers == ["shikimori", "jikan", "tmdb"]
 
 
 async def test_search_text_handler_routes_to_screenshot_search_even_with_an_old_image_staged(
@@ -342,7 +349,14 @@ async def test_search_text_handler_routes_to_screenshot_search_even_with_an_old_
 
     await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    step_mock.assert_awaited_once_with(update.message, context, "EN", "tmdb")
+    # The whole source menu is handed down, not a bare provider: the
+    # step's failure exits re-show it (search.py's session is closed by
+    # the time it runs, so it can't build one itself).
+    step_mock.assert_awaited_once()
+    assert step_mock.await_args is not None
+    menu = step_mock.await_args.args[3]
+    assert menu.provider == "tmdb"
+    assert menu.providers == ["shikimori", "jikan", "tmdb"]
 
 
 async def test_search_text_handler_ignores_text_while_still_on_the_source_keyboard(

@@ -40,7 +40,8 @@ stateDiagram-v2
         [*] --> PickingMethod
         PickingMethod --> Confirming: AniList/Shikimori/Jikan/TMDB result picked,\nor manual title + synonym staged\n— screenshot already in hand (DM-photo entry)
         PickingMethod --> PickingScreenshot: same, but no screenshot yet\n(/newgame entry)
-        PickingScreenshot --> Confirming: screenshot picked\n(same- or cross-provider, see\n"Picking a screenshot")
+        PickingScreenshot --> Confirming: screenshot picked\n(same- or cross-provider, see\n"Picking a screenshot")\nor own photo sent
+        PickingScreenshot --> PickingScreenshot: provider down / nothing found\n— back to the source menu\n(see "When a provider fails")
         PickingScreenshot --> AwaitingPhotoChange: tap "Upload my own instead"
         Confirming --> PickingMethod: tap "Re-search title"\n(API-sourced screenshot cleared;\na genuine upload is kept)
         Confirming --> AwaitingPhotoChange: tap "Change image"\n(genuine upload,\nor "Upload a new photo" chosen)
@@ -165,7 +166,7 @@ screenshot instead of asking for an upload outright:
    provider is in play at this point) without touching the
    identification fields a real re-search would. If that search finds
    nothing, the bot asks the starter to type a query for it themselves
-   instead.
+   instead (see "When a provider fails" below).
 3. **The gallery** — up to 5 numbered screenshots at a time (sent as one
    album; Telegram fetches them directly from the provider's URL, no
    download until one's actually picked), followed by a buttons message:
@@ -177,6 +178,29 @@ screenshot instead of asking for an upload outright:
    `Game.original_image` (`Game.screenshot_source` records which
    provider it came from), and lands on the same confirmation preview
    described below — same as if the starter had uploaded it themselves.
+
+**A DM photo is accepted at any point in this sub-flow**, not only after
+tapping "Upload my own instead" — someone staring at the source menu who
+just sends a screenshot means the obvious thing, and it lands on the same
+confirmation preview.
+
+#### When a provider fails
+
+Third-party APIs go down (Jikan served nothing but HTTP 504 for a stretch
+on 2026-09-14), return nothing for a title, or lose an id between the
+search and the pick. **Every one of those outcomes says what happened and
+re-shows the source-selection menu**, with the offending provider flagged
+`⚠️` but still tappable — outages are usually transient, and it may be the
+only source with screenshots for that title. That covers a failed
+auto-resolution, a failed or empty typed query, a screenshot fetch that
+errors or comes back empty, and a chosen image that won't download.
+
+The starter therefore always has three ways forward — a different
+provider, another typed query, or their own upload — and none of these
+paths can leave a `SETUP` game with no buttons on screen. Before this,
+failure replies went out bare: a down provider produced a literal loop
+(type a query, get an error, repeat) whose only exits were `/stop` or the
+1-hour setup-abandon timer.
 
 ### The confirmation preview
 

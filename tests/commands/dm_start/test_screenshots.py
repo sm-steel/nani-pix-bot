@@ -260,8 +260,15 @@ async def test_screenshot_source_callback_handler_falls_back_when_the_fetch_fail
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
-        assert fetched.setup_step == SetupStep.AWAITING_PHOTO_CHANGE
+        # Back on the source menu, not forced into an upload — the
+        # starter can try another provider (or still upload) from here.
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
     context.bot.send_media_group.assert_not_awaited()
     update.callback_query.edit_message_text.assert_awaited_once()
-    text = update.callback_query.edit_message_text.await_args.args[0]
-    assert "screenshots" in text.lower()
+    args, kwargs = update.callback_query.edit_message_text.await_args
+    assert "Shikimori" in args[0]
+    callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert "screenshot_source:jikan" in callbacks
+    assert "screenshot:upload" in callbacks
+    labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert any(label.startswith("⚠️") and "Shikimori" in label for label in labels)

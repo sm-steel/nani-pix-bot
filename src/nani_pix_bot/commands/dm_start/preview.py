@@ -24,7 +24,9 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     method_selection_keyboard,
 )
 from nani_pix_bot.commands.dm_start.screenshots import (
+    Fallback,
     clear_screenshot_selection,
+    reply_fallback,
     resume_screenshot_gallery,
 )
 from nani_pix_bot.db import session_scope
@@ -155,11 +157,15 @@ async def _preview_change_image_upload(query, game: Game, lang: str) -> None:
 
 async def _preview_change_image_pick_screenshot(context, query, game: Game, lang: str) -> None:
     logger.debug("Game {}: pick-a-different-screenshot requested from preview", game.id)
-    # resume_screenshot_gallery owns the setup_step transition itself —
-    # PICKING_SCREENSHOT on a successful fetch, AWAITING_PHOTO_CHANGE on
-    # a stale/failed/empty one — and returns the matching reply key.
-    reply_key = await resume_screenshot_gallery(context, game, lang)
-    await query.edit_message_text(text=i18n.t(reply_key, lang))
+    # resume_screenshot_gallery owns the setup_step transition itself and
+    # returns either a plain reply key or a Fallback — the latter puts
+    # the starter back on the source menu rather than leaving this
+    # message buttonless (see screenshots.py's reply_with_source_menu).
+    outcome = await resume_screenshot_gallery(context, game, lang)
+    if isinstance(outcome, Fallback):
+        await reply_fallback(query.edit_message_text, game, lang, outcome)
+        return
+    await query.edit_message_text(text=i18n.t(outcome, lang))
 
 
 async def _preview_research(query, game: Game, lang: str) -> None:

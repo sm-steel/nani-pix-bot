@@ -14,6 +14,11 @@ from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import settings
 
+# Setup steps where a DM photo means "use this image for the game I'm
+# already setting up" rather than "start a new game" — see
+# _replace_staged_photo_if_pending.
+_PHOTO_ACCEPTING_STEPS = frozenset({SetupStep.AWAITING_PHOTO_CHANGE, SetupStep.PICKING_SCREENSHOT})
+
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """A DM photo starts game setup, if it's this player's turn."""
@@ -41,14 +46,25 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def _replace_staged_photo_if_pending(
     context: ContextTypes.DEFAULT_TYPE, session_factory, user, image_bytes: bytes
 ) -> bool:
-    """A replacement photo for the preview's "Change image" button — not a
-    new game, keeps the staged title/synonyms. Returns whether this was
-    such a replacement (so photo_handler knows not to treat it as a new
-    game's first photo)."""
+    """A photo for a setup already in progress — the preview's "Change
+    image" button, or simply uploading one instead of picking from a
+    provider gallery. Not a new game: it keeps the staged
+    title/synonyms. Returns whether this was such a replacement (so
+    photo_handler knows not to treat it as a new game's first photo).
+
+    PICKING_SCREENSHOT counts too, not just AWAITING_PHOTO_CHANGE:
+    anyone looking at the screenshot-source menu (including the one a
+    provider failure drops them back onto) may reasonably just send a
+    screenshot rather than hunting for "Upload my own instead", and
+    before this that photo fell through to _start_new_game and came back
+    as "it's not your turn" — a non-sequitur, since it *is* their setup.
+    Keeping this decoupled from the step is also what lets the failure
+    screens stay in PICKING_SCREENSHOT, where a typed query still routes
+    to the cross-provider search."""
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         existing = game_service.get_setup_game_for_starter(session, user.id)
-        if existing is None or existing.setup_step != SetupStep.AWAITING_PHOTO_CHANGE:
+        if existing is None or existing.setup_step not in _PHOTO_ACCEPTING_STEPS:
             return False
         logger.debug("Starter {} sent a replacement photo for game {}", user.id, existing.id)
         # A genuine upload replacing whatever was there before — clear

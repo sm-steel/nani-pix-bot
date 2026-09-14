@@ -7,13 +7,14 @@ is first shown) once that file's total complexity grew past qlty's
 threshold; see MECHANICS.md's "Starting a game" section for the
 player-facing flow both files implement together."""
 
+from dataclasses import replace
+
 from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
-    _SERVICE_DISPLAY_NAMES,
     _client_for_source,
     _show_preview,
 )
@@ -28,14 +29,18 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     tmdb_results_keyboard,
 )
 from nani_pix_bot.commands.dm_start.screenshots import (
+    Fallback,
     GalleryTarget,
+    SourceMenu,
     _fetch_screenshots_or_fallback,
     _get_provider_by_id,
     _provider_id,
     _show_gallery_page,
+    reply_fallback,
+    reply_with_source_menu,
+    source_menu_for,
 )
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.search import jikan, shikimori, tmdb
@@ -75,15 +80,24 @@ async def screenshot_search_again_callback_handler(
 
 
 async def _screenshot_search_step(
-    message, context: ContextTypes.DEFAULT_TYPE, lang: str, provider: str
+    message, context: ContextTypes.DEFAULT_TYPE, lang: str, menu: SourceMenu
 ) -> None:
-    """A search query typed while resolving `provider`'s screenshot (the
-    "Wrong anime? Search again" correction, or the fallback state after
-    an auto-search found nothing) — mirrors search.py's own
+    """A search query typed while resolving `menu.provider`'s screenshot
+    (the "Wrong anime? Search again" correction, or the fallback state
+    after an auto-search found nothing) — mirrors search.py's own
     `_search_step`, but wires its results keyboard to
     screenshot_search_pick_callback_handler instead of identification
     search's own pick_callback_handler (see keyboards.py's `pick_prefix`
-    override on the shared *_results_keyboard builders)."""
+    override on the shared *_results_keyboard builders).
+
+    Takes the whole `menu` rather than a bare provider because both
+    failure exits below re-show the source-selection keyboard: this is
+    the step a dead provider used to trap the starter in — type a query,
+    get a bare error, repeat, with no button anywhere on screen (a live
+    Jikan outage on 2026-09-14 did exactly that). The menu is built by
+    the caller, whose session is already closed by the time we run."""
+    provider = menu.provider
+    assert provider is not None  # search is always for a specific provider
     status_message = await message.reply_text(i18n.t("dm_start.searching", lang))
     logger.debug("{} screenshot cross-search started for query {!r}", provider, message.text)
 
@@ -107,12 +121,8 @@ async def _screenshot_search_step(
             keyboard = tmdb_results_keyboard(results, lang, pick_prefix=pick_prefix)
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} screenshot cross-search failed for query {!r}", provider, message.text)
-        await status_message.edit_text(
-            i18n.t(
-                "dm_start.cross_provider_search_failed",
-                lang,
-                service=_SERVICE_DISPLAY_NAMES[provider],
-            )
+        await reply_with_source_menu(
+            status_message.edit_text, menu, lang, "dm_start.screenshot_service_down"
         )
         return
 
@@ -123,7 +133,9 @@ async def _screenshot_search_step(
         len(results),
     )
     if not results:
-        await status_message.edit_text(i18n.t("dm_start.no_results", lang))
+        await reply_with_source_menu(
+            status_message.edit_text, menu, lang, "dm_start.screenshot_no_results"
+        )
         return
 
     await status_message.edit_text(i18n.t("dm_start.pick_prompt", lang), reply_markup=keyboard)
@@ -147,8 +159,15 @@ async def screenshot_search_pick_callback_handler(
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
+        game = game_service.get_setup_game_for_starter(session, user.id)
+        if game is None:
+            return
+        # Built here, where the game is loaded anyway, so the failure
+        # paths below can re-show the source menu without a second
+        # lookup. The provider is filled in once the pick is parsed.
+        menu = source_menu_for(game, None)
 
-    resolved = await _resolve_screenshot_search_pick(query, context, lang)
+    resolved = await _resolve_screenshot_search_pick(query, context, lang, menu)
     if resolved is None:
         return
     provider, external_id, result = resolved
@@ -162,48 +181,48 @@ async def screenshot_search_pick_callback_handler(
             "Game {}: cross-provider search resolved {} -> id {}", game.id, provider, external_id
         )
         fetched = await _fetch_screenshots_or_fallback(context, game, provider, external_id)
-        if isinstance(fetched, str):
-            reply_key = fetched
+        # if/else rather than an early return purely to keep this
+        # handler's return count under qlty's threshold.
+        if isinstance(fetched, Fallback):
+            await reply_fallback(query.edit_message_text, game, lang, fetched)
         else:
             target = GalleryTarget(
                 chat_id=game.starter_id, provider=provider, offset=0, cross_provider=True
             )
             await _show_gallery_page(context, target, fetched, lang)
-            reply_key = "dm_start.screenshot_source_picked"
-
-    await query.edit_message_text(i18n.t(reply_key, lang))
+            await query.edit_message_text(i18n.t("dm_start.screenshot_source_picked", lang))
 
 
 async def _resolve_screenshot_search_pick(
-    query, context: ContextTypes.DEFAULT_TYPE, lang: str
+    query, context: ContextTypes.DEFAULT_TYPE, lang: str, menu: SourceMenu
 ) -> tuple[str, int, ShikimoriResult | JikanResult | TMDBResult] | None:
     """Parses the pick and re-fetches the full result via get_by_id
     (restart-resilient, same reasoning as search.py's own
     `_resolve_picked_result`). Replies and returns None for every
     already-handled outcome: unparseable callback data, the search
-    service erroring, or the id no longer existing."""
+    service erroring, or the id no longer existing — each of the last
+    two re-showing `menu` so the starter keeps a way out."""
     parsed = parse_screenshot_search_pick_callback_data(query.data)
     if parsed is None:
         return None
     provider, external_id = parsed
+    menu = replace(menu, provider=provider)
 
     client = _client_for_source(context, provider)
     try:
         result = await _get_provider_by_id(provider, client, external_id)
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} get_by_id failed for id {}", provider, external_id)
-        await query.edit_message_text(
-            i18n.t(
-                "dm_start.cross_provider_search_failed",
-                lang,
-                service=_SERVICE_DISPLAY_NAMES[provider],
-            )
+        await reply_with_source_menu(
+            query.edit_message_text, menu, lang, "dm_start.screenshot_service_down"
         )
         return None
 
     if result is None:
         logger.warning("{} id {} picked but no longer found", provider, external_id)
-        await query.edit_message_text(i18n.t("dm_start.not_found_anymore", lang))
+        await reply_with_source_menu(
+            query.edit_message_text, menu, lang, "dm_start.not_found_anymore"
+        )
         return None
 
     return provider, external_id, result
@@ -228,15 +247,18 @@ async def screenshot_gallery_callback_handler(
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
             return
-        reply_key = await _dispatch_gallery_action(context, session, game, query.data, lang)
-
-    if reply_key is not None:
-        await query.edit_message_text(i18n.t(reply_key, lang))
+        outcome = await _dispatch_gallery_action(context, session, game, query.data, lang)
+        # Replied inside the session block — a Fallback's source menu is
+        # built from the still-live `game`.
+        if isinstance(outcome, Fallback):
+            await reply_fallback(query.edit_message_text, game, lang, outcome)
+        elif outcome is not None:
+            await query.edit_message_text(i18n.t(outcome, lang))
 
 
 async def _dispatch_gallery_action(
     context: ContextTypes.DEFAULT_TYPE, session, game, data: str, lang: str
-) -> str | None:
+) -> str | Fallback | None:
     """Runs the gallery action `data` encodes (a "More screenshots" page
     or a numbered pick) and returns the i18n key for the resulting
     message, or None for a stale-button no-op — split out of
@@ -254,11 +276,11 @@ async def _dispatch_gallery_action(
 
 async def _handle_more_screenshots(
     context: ContextTypes.DEFAULT_TYPE, game, more: tuple[str, int], lang: str
-) -> str | None:
+) -> str | Fallback | None:
     provider, offset = more
     provider_id = _provider_id(game, provider)
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
-    if isinstance(result, str):
+    if isinstance(result, Fallback):
         return result
     target = GalleryTarget(chat_id=game.starter_id, provider=provider, offset=offset)
     await _show_gallery_page(context, target, result, lang)
@@ -267,7 +289,7 @@ async def _handle_more_screenshots(
 
 async def _handle_screenshot_pick(
     context: ContextTypes.DEFAULT_TYPE, session, game, picked: tuple[str, int], lang: str
-) -> str | None:
+) -> str | Fallback | None:
     """Downloads the picked screenshot's bytes and shows the
     confirmation preview. Returns the i18n key for the caller's own
     follow-up message edit, or None for a stale-button no-op (the
@@ -278,7 +300,7 @@ async def _handle_screenshot_pick(
     provider, index = picked
     provider_id = _provider_id(game, provider)
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
-    if isinstance(result, str):
+    if isinstance(result, Fallback):
         return result
     urls = result
     if index >= len(urls):
@@ -300,8 +322,7 @@ async def _handle_screenshot_pick(
         logger.exception(
             "Game {}: downloading {} screenshot #{} failed", game.id, provider, index + 1
         )
-        game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
-        return "dm_start.screenshot_fetch_failed"
+        return Fallback("dm_start.screenshot_service_down", provider)
 
     game.original_image = response.content
     game.screenshot_source = provider
