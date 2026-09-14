@@ -7,31 +7,32 @@ anyone who can message the bot — not worth i18n/test investment given
 its lifespan.
 
     /testpixels                       live algorithm at the live stage widths
-    /testpixels <algo>                that algorithm at its own stage defaults
-    /testpixels <algo> 32,64,128      that algorithm at raw params
-    /testpixels all <stage 1-5>       every algorithm at that stage's setting
+    /testpixels <algo>                that algorithm at the live stage widths
+    /testpixels <algo> 32,64,128      that algorithm at raw widths
+    /testpixels all <stage 1-5>       every algorithm at that stage's width
     /testpixels 32,64                 (still works) live algorithm, raw widths
 
-`all` is anchored to a stage number rather than a shared parameter
-because the two families' parameters are not comparable — a target
-width of 64 and a blur radius of 64 mean nothing alike. Anchoring to
-the game's own stages keeps the comparison honest.
+Every algorithm takes a target width, so `all` can anchor to a stage
+number and have one setting mean the same thing across all of them.
 
 Sends are paced deliberately: Telegram caps a media group at 10 items
-and throttles a group chat at roughly 20 messages a minute, and a batch
-run is exactly the shape of request that trips flood control. `all`
-mode therefore posts one album per example image (each holding that
-scene under every algorithm) rather than one per algorithm, which keeps
-a full comparison down to two sends.
+and throttles a *group* chat at roughly 20 messages a minute, and a
+batch run is exactly the shape of request that trips flood control. So
+`all` mode posts albums per example image (each holding that scene under
+every algorithm) rather than per algorithm, keeping a full comparison to
+a handful of sends — and the gap between albums is much larger in a
+group than in a DM, where the limit is far more forgiving.
 """
 
 import asyncio
 from dataclasses import dataclass
 from datetime import timedelta
+from math import ceil
 from pathlib import Path
 
 from loguru import logger
 from telegram import InputMediaPhoto, Update
+from telegram.constants import ChatType
 from telegram.error import RetryAfter, TelegramError
 from telegram.ext import ContextTypes
 
@@ -45,22 +46,24 @@ _DEFAULT_ALGO = "nearest"
 
 # Telegram's own media-group cap.
 _ALBUM_MAX = 10
-# Pause between albums, well inside a group chat's ~20 messages/minute.
-_SEND_GAP_SECONDS = 3.0
+# A group chat throttles at roughly 20 messages/minute; a DM is far more
+# forgiving, so a diagnostic run there needn't crawl.
+_GAP_PRIVATE_SECONDS = 2.0
+_GAP_GROUP_SECONDS = 20.0
 # Refuse oversized single-algo sweeps rather than half-send one that
 # then gets throttled mid-run.
-_MAX_PARAMS = 8
+_MAX_WIDTHS = 8
 
 
 @dataclass(frozen=True)
 class _Shot:
     algo_name: str
-    param: int
+    width: int
     image_path: Path
     caption: str | None
 
 
-def _parse_params(args: list[str]) -> list[int] | None:
+def _parse_widths(args: list[str]) -> list[int] | None:
     """Positive ints from comma- and/or space-separated tokens. `[]` when
     nothing was given, `None` when what was given isn't usable."""
     tokens = [token for arg in args for token in arg.split(",") if token.strip()]
@@ -78,46 +81,50 @@ def _parse_params(args: list[str]) -> list[int] | None:
 def _usage() -> str:
     lines = [
         "/testpixels — live algorithm at the live stage widths",
-        "/testpixels <algo> [n,n,...] — one algorithm, its stage defaults if no numbers",
-        "/testpixels all <stage 1-5> — every algorithm at that stage's setting",
-        f"(at most {_MAX_PARAMS} numbers per run, to stay under Telegram's flood limits)",
+        "/testpixels <algo> [w,w,...] — one algorithm, live stage widths if no numbers",
+        "/testpixels all <stage 1-5> — every algorithm at that stage's width",
+        f"(at most {_MAX_WIDTHS} widths per run, to stay under Telegram's flood limits)",
         "",
         "Algorithms:",
     ]
-    lines += [f"  {name} <{algo.param_kind}> — {algo.help}" for name, algo in ALGORITHMS.items()]
+    lines += [f"  {name} — {algo.help}" for name, algo in ALGORITHMS.items()]
     return "\n".join(lines)
 
 
-def _label(algo_name: str, param: int) -> str:
-    return f"{algo_name} {ALGORITHMS[algo_name].param_kind}={param}"
+def _chunked(shots: list[_Shot]) -> list[list[_Shot]]:
+    """Split into albums of at most _ALBUM_MAX, as evenly as possible —
+    11 algorithms become 6 and 5, not 10 and a lonely 1."""
+    albums = max(1, ceil(len(shots) / _ALBUM_MAX))
+    size = ceil(len(shots) / albums)
+    return [shots[index : index + size] for index in range(0, len(shots), size)]
 
 
-def _plan_single(algo_name: str, params: list[int]) -> list[list[_Shot]]:
-    """One album per parameter, holding every example image at it —
-    the original /testpixels shape."""
+def _plan_single(algo_name: str, widths: list[int]) -> list[list[_Shot]]:
+    """One album per width, holding every example image at it — the
+    original /testpixels shape."""
     return [
         [
-            _Shot(algo_name, param, path, _label(algo_name, param) if index == 0 else None)
+            _Shot(algo_name, width, path, f"{algo_name} w={width}" if index == 0 else None)
             for index, path in enumerate(_EXAMPLE_IMAGES)
         ]
-        for param in params
+        for width in widths
     ]
 
 
-def _plan_all(stage_width: int) -> list[list[_Shot]]:
-    """One album per example image, holding that scene under every
+def _plan_all(width: int) -> list[list[_Shot]]:
+    """Albums per example image, holding that scene under every
     algorithm — swiping an album is the side-by-side comparison."""
-    settings = [(name, algo.default_param(stage_width)) for name, algo in ALGORITHMS.items()]
-    return [
-        [_Shot(name, param, path, _label(name, param)) for name, param in settings]
-        for path in _EXAMPLE_IMAGES
-    ]
+    plan = []
+    for path in _EXAMPLE_IMAGES:
+        shots = [_Shot(name, width, path, f"{name} w={width}") for name in ALGORITHMS]
+        plan.extend(_chunked(shots))
+    return plan
 
 
 def _build_plan(args: list[str], stage_widths: list[int]) -> list[list[_Shot]] | None:
     """The albums to post, or None if `args` don't make sense."""
     if args and args[0].lower() == "all":
-        stage = _parse_params(args[1:])
+        stage = _parse_widths(args[1:])
         if not stage or len(stage) != 1 or stage[0] > len(stage_widths):
             return None
         return _plan_all(stage_widths[stage[0] - 1])
@@ -126,17 +133,10 @@ def _build_plan(args: list[str], stage_widths: list[int]) -> list[list[_Shot]] |
     if args and args[0].lower() in ALGORITHMS:
         algo_name, rest = args[0].lower(), args[1:]
 
-    params = _parse_params(rest)
-    if params is None or len(params) > _MAX_PARAMS:
+    widths = _parse_widths(rest)
+    if widths is None or len(widths) > _MAX_WIDTHS:
         return None
-    if not params:
-        params = [ALGORITHMS[algo_name].default_param(width) for width in stage_widths]
-    elif ALGORITHMS[algo_name].param_kind == "radius":
-        # A sweep should read hardest-to-clearest like the game's own
-        # stage order does. For a target width that is ascending; for a
-        # blur radius it is the other way round.
-        params.reverse()
-    return _plan_single(algo_name, params)
+    return _plan_single(algo_name, widths or stage_widths)
 
 
 async def _send_album(
@@ -168,14 +168,14 @@ async def _send_album(
 
 async def _render_album(group: list[_Shot]) -> list[InputMediaPhoto]:
     media = []
-    for shot in group[:_ALBUM_MAX]:
+    for shot in group:
         if not shot.image_path.exists():
             logger.warning("testpixels: missing example image {}", shot.image_path)
             continue
         data = shot.image_path.read_bytes()
         # Rank filters and big upscales are slow enough to stall the
         # event loop for seconds, which would freeze the live bot.
-        image = await asyncio.to_thread(render, shot.algo_name, data, shot.param)
+        image = await asyncio.to_thread(render, shot.algo_name, data, shot.width)
         media.append(InputMediaPhoto(media=image, caption=shot.caption))
     return media
 
@@ -198,14 +198,19 @@ async def testpixels_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await message.reply_text(_usage())
         return
 
+    gap = _GAP_PRIVATE_SECONDS if chat.type == ChatType.PRIVATE else _GAP_GROUP_SECONDS
     for index, group in enumerate(plan):
         media = await _render_album(group)
         if not media:
             continue
         if index:
-            await asyncio.sleep(_SEND_GAP_SECONDS)
+            await asyncio.sleep(gap)
         await _send_album(context, chat.id, message.message_thread_id, media)
 
     logger.info(
-        "{} ran /testpixels {} -> {} albums", user.id, " ".join(args) or "(defaults)", len(plan)
+        "{} ran /testpixels {} -> {} albums, {}s gap",
+        user.id,
+        " ".join(args) or "(defaults)",
+        len(plan),
+        gap,
     )
