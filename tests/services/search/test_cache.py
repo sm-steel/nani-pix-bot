@@ -1,7 +1,16 @@
+import gc
+import weakref
+
 import httpx
 import pytest
 
 from nani_pix_bot.services.search import cache
+
+
+class _Payload:
+    """Weakref-able stand-in for a provider's result list — `list`
+    itself can't be weakref'd, and the test below needs to observe when
+    a cached value is actually released."""
 
 
 @pytest.fixture(autouse=True)
@@ -84,6 +93,37 @@ async def test_cached_is_scoped_to_the_client_instance() -> None:
 
     assert first == "value-1"
     assert second == "value-2"
+    assert calls["n"] == 2
+
+
+async def test_cached_drops_a_collected_clients_entries() -> None:
+    """Entries have to die with the client that produced them. Keying
+    on `id(client)` while holding no reference to the client left them
+    behind forever: CPython recycles addresses, so a later client
+    allocated where a dead one used to live would read the dead one's
+    value back. Address reuse isn't reproducible on demand, but its
+    precondition is — a cached value still alive after its only client
+    is gone — so that's what's asserted here, plus the fresh client
+    getting a freshly-fetched value rather than the old one's."""
+    calls = {"n": 0}
+
+    @cache.cached()
+    async def fetch(client: httpx.AsyncClient, query: str) -> _Payload:
+        calls["n"] += 1
+        return _Payload()
+
+    client = httpx.AsyncClient()
+    value_ref = weakref.ref(await fetch(client, "frieren"))
+    assert value_ref() is not None  # still cached while the client lives
+
+    del client
+    gc.collect()
+
+    assert value_ref() is None  # the entry went with the client
+
+    async with httpx.AsyncClient() as fresh_client:
+        await fetch(fresh_client, "frieren")
+
     assert calls["n"] == 2
 
 
