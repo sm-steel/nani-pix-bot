@@ -47,9 +47,11 @@ _DEFAULT_ALGO = "nearest"
 # Telegram's own media-group cap.
 _ALBUM_MAX = 10
 # A group chat throttles at roughly 20 messages/minute; a DM is far more
-# forgiving, so a diagnostic run there needn't crawl.
+# forgiving, so a diagnostic run there needn't crawl. The worst case is
+# a full-width sweep, _MAX_WIDTHS albums of one photo per example image,
+# which these gaps keep under that ceiling.
 _GAP_PRIVATE_SECONDS = 2.0
-_GAP_GROUP_SECONDS = 20.0
+_GAP_GROUP_SECONDS = 8.0
 # Refuse oversized single-algo sweeps rather than half-send one that
 # then gets throttled mid-run.
 _MAX_WIDTHS = 8
@@ -92,8 +94,10 @@ def _usage() -> str:
 
 
 def _chunked(shots: list[_Shot]) -> list[list[_Shot]]:
-    """Split into albums of at most _ALBUM_MAX, as evenly as possible —
-    11 algorithms become 6 and 5, not 10 and a lonely 1."""
+    """Split into albums of at most _ALBUM_MAX, as evenly as possible (a
+    hypothetical 11 would become 6 and 5, not 10 and a lonely 1). The
+    current roster fits one album, but truncating instead of chunking
+    would silently drop an algorithm the moment it doesn't."""
     albums = max(1, ceil(len(shots) / _ALBUM_MAX))
     size = ceil(len(shots) / albums)
     return [shots[index : index + size] for index in range(0, len(shots), size)]
