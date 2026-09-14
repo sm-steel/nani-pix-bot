@@ -11,12 +11,11 @@ shape rather than a design choice.
 """
 
 from dataclasses import dataclass
-from http import HTTPStatus
 
 import httpx
 from loguru import logger
 
-from nani_pix_bot.services.search import cache, http_retry
+from nani_pix_bot.services.search import cache, rest
 
 # Shikimori's older shikimori.one domain now permanently 301-redirects
 # here — and shikimori.one is itself unreachable directly from moscow,
@@ -40,6 +39,8 @@ SCREENSHOT_FETCH_LIMIT = 20
 # Shikimori research spike.
 _REQUEST_HEADERS = {"User-Agent": "nani-pix-bot (github.com/sm-steel/nani-pix-bot)"}
 
+_API = rest.RestApi(name="Shikimori", headers=_REQUEST_HEADERS)
+
 
 @dataclass(frozen=True)
 class ShikimoriResult:
@@ -59,7 +60,7 @@ async def search(
     once a result is picked. Cached briefly (see cache.py) so a starter
     repeating the same query doesn't re-hit the API each time."""
     params = {"search": query, "limit": limit}
-    entries = await _request(client, url=SHIKIMORI_BASE_URL, params=params)
+    entries = await rest.get_json(_API, client, SHIKIMORI_BASE_URL, params)
     results = [_parse_search_result(entry) for entry in entries]
     logger.debug("Shikimori search {!r} returned {} result(s)", query, len(results))
     return results
@@ -74,14 +75,9 @@ async def get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriRe
     short-lived, in-process-only performance optimization, wiped on
     every restart same as everything else in it, unlike the DB-derived
     setup-flow state issue #11 is actually about."""
-    try:
-        entry = await _request(client, url=f"{SHIKIMORI_BASE_URL}/{shikimori_id}", params={})
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == HTTPStatus.NOT_FOUND:
-            logger.debug("Shikimori id {} no longer found", shikimori_id)
-            return None
-        raise
-    return _parse_detail_result(entry)
+    return await rest.fetch_by_id(
+        _API, client, f"{SHIKIMORI_BASE_URL}/{shikimori_id}", shikimori_id, _parse_detail_result
+    )
 
 
 @cache.cached()
@@ -92,22 +88,12 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
     the same anime re-slices the same cached list instead of re-hitting
     the API every time — pagination/slicing for display is the caller's
     job, not this function's."""
-    entries = await _request(
-        client, url=f"{SHIKIMORI_BASE_URL}/{shikimori_id}/screenshots", params={}
+    entries = await rest.get_json(
+        _API, client, f"{SHIKIMORI_BASE_URL}/{shikimori_id}/screenshots", {}
     )
     urls = [f"{SHIKIMORI_HOST}{entry['original']}" for entry in entries[:SCREENSHOT_FETCH_LIMIT]]
     logger.debug("Shikimori id {} has {} screenshot(s) available", shikimori_id, len(entries))
     return urls
-
-
-async def _request(client: httpx.AsyncClient, *, url: str, params: dict) -> dict:
-    async def make_request() -> httpx.Response:
-        return await client.get(url, params=params, headers=_REQUEST_HEADERS)
-
-    response = await http_retry.request_with_retry(
-        make_request, service_name="Shikimori", context=f"url {url!r}, params {params!r}"
-    )
-    return response.json()
 
 
 def _parse_search_result(raw: dict) -> ShikimoriResult:

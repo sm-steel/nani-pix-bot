@@ -256,6 +256,14 @@ src/nani_pix_bot/
                    #                 needs the amsterdam proxy + a
                    #                 Bearer token, unlike the three
                    #                 above (see "Infrastructure" above)
+                   #   rest.py       the JSON-GET + by-id-or-404 plumbing
+                   #                 shared by the three REST providers
+                   #                 above (not anilist.py, which is
+                   #                 GraphQL and has neither a by-id URL
+                   #                 nor 404 semantics). Generic over the
+                   #                 parsed type, so each module's
+                   #                 get_by_id keeps its own concrete
+                   #                 return type (issue #68)
                    #   http_retry.py the 429/Retry-After retry loop
                    #                 shared by all four
                    #   cache.py      short-TTL, in-process, keyed-by-

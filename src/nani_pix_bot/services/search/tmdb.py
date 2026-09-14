@@ -19,12 +19,11 @@ already expects from every other provider's result dataclass.
 """
 
 from dataclasses import dataclass
-from http import HTTPStatus
 
 import httpx
 from loguru import logger
 
-from nani_pix_bot.services.search import cache, http_retry
+from nani_pix_bot.services.search import cache, rest
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/original"
@@ -35,6 +34,10 @@ SEARCH_RESULT_LIMIT = 5
 # pagination of whatever this returns). Also bounds how many extra
 # per-episode API calls screenshots() makes (see its docstring).
 SCREENSHOT_FETCH_LIMIT = 20
+
+# No per-request headers: the v4 Read Access Token is set as a default
+# Authorization header on the client itself (app.py), not here.
+_API = rest.RestApi(name="TMDB")
 
 
 @dataclass(frozen=True)
@@ -54,7 +57,7 @@ async def search(
     20-per-page rather than taking a result-count param, so `limit` is
     applied client-side. Cached briefly (see cache.py) so a starter
     repeating the same query doesn't re-hit the API each time."""
-    data = await _request(client, url=f"{TMDB_BASE_URL}/search/tv", params={"query": query})
+    data = await rest.get_json(_API, client, f"{TMDB_BASE_URL}/search/tv", {"query": query})
     results = [_parse_result(raw) for raw in data["results"][:limit]]
     logger.debug("TMDB search {!r} returned {} result(s)", query, len(results))
     return results
@@ -66,14 +69,9 @@ async def get_by_id(client: httpx.AsyncClient, tmdb_id: int) -> TMDBResult | Non
     TMDB-picker button. Cached briefly (see cache.py) — a short-lived,
     in-process-only performance optimization, not a substitute for the
     restart-resilient by-id re-fetch pattern issue #11 established."""
-    try:
-        entry = await _request(client, url=f"{TMDB_BASE_URL}/tv/{tmdb_id}", params={})
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == HTTPStatus.NOT_FOUND:
-            logger.debug("TMDB id {} no longer found", tmdb_id)
-            return None
-        raise
-    return _parse_result(entry)
+    return await rest.fetch_by_id(
+        _API, client, f"{TMDB_BASE_URL}/tv/{tmdb_id}", tmdb_id, _parse_result
+    )
 
 
 @cache.cached()
@@ -89,7 +87,7 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
     but the whole result is cached as one unit (see cache.py) so
     repeating this for the same show costs nothing further until the
     TTL expires."""
-    show = await _request(client, url=f"{TMDB_BASE_URL}/tv/{tmdb_id}", params={})
+    show = await rest.get_json(_API, client, f"{TMDB_BASE_URL}/tv/{tmdb_id}", {})
     seasons = [s for s in show.get("seasons", []) if s.get("season_number", 0) >= 1]
     if not seasons:
         logger.debug("TMDB id {} has no real seasons to pull stills from", tmdb_id)
@@ -101,10 +99,11 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
 
     urls = []
     for episode_number in episode_numbers:
-        episode = await _request(
+        episode = await rest.get_json(
+            _API,
             client,
-            url=f"{TMDB_BASE_URL}/tv/{tmdb_id}/season/{season_number}/episode/{episode_number}",
-            params={},
+            f"{TMDB_BASE_URL}/tv/{tmdb_id}/season/{season_number}/episode/{episode_number}",
+            {},
         )
         still_path = episode.get("still_path")
         if still_path:
@@ -116,16 +115,6 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
         len(episode_numbers),
     )
     return urls
-
-
-async def _request(client: httpx.AsyncClient, *, url: str, params: dict) -> dict:
-    async def make_request() -> httpx.Response:
-        return await client.get(url, params=params)
-
-    response = await http_retry.request_with_retry(
-        make_request, service_name="TMDB", context=f"url {url!r}, params {params!r}"
-    )
-    return response.json()
 
 
 def _parse_result(raw: dict) -> TMDBResult:

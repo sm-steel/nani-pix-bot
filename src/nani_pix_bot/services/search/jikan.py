@@ -9,12 +9,11 @@ here, no forced re-fetch-by-id needed for the full field set.
 """
 
 from dataclasses import dataclass
-from http import HTTPStatus
 
 import httpx
 from loguru import logger
 
-from nani_pix_bot.services.search import cache, http_retry
+from nani_pix_bot.services.search import cache, rest
 
 JIKAN_BASE_URL = "https://api.jikan.moe/v4/anime"
 SEARCH_RESULT_LIMIT = 5
@@ -28,6 +27,8 @@ SCREENSHOT_FETCH_LIMIT = 20
 # shikimori.py's User-Agent — identifies this bot as a consumer of a
 # shared, community-run resource rather than an anonymous default.
 _REQUEST_HEADERS = {"User-Agent": "nani-pix-bot (github.com/sm-steel/nani-pix-bot)"}
+
+_API = rest.RestApi(name="Jikan", headers=_REQUEST_HEADERS)
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,7 @@ async def search(
     cache.py) so a starter repeating the same query doesn't re-hit the
     API each time."""
     params = {"q": query, "limit": limit}
-    data = await _request(client, url=JIKAN_BASE_URL, params=params)
+    data = await rest.get_json(_API, client, JIKAN_BASE_URL, params)
     results = [_parse_result(raw) for raw in data["data"]]
     logger.debug("Jikan search {!r} returned {} result(s)", query, len(results))
     return results
@@ -62,14 +63,9 @@ async def get_by_id(client: httpx.AsyncClient, jikan_id: int) -> JikanResult | N
     (that's about not caching in ephemeral bot memory across a
     restart; this cache is wiped on every restart same as everything
     else in it)."""
-    try:
-        entry = await _request(client, url=f"{JIKAN_BASE_URL}/{jikan_id}", params={})
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == HTTPStatus.NOT_FOUND:
-            logger.debug("Jikan id {} no longer found", jikan_id)
-            return None
-        raise
-    return _parse_result(entry["data"])
+    return await rest.fetch_by_id(
+        _API, client, f"{JIKAN_BASE_URL}/{jikan_id}", jikan_id, _parse_detail_result
+    )
 
 
 @cache.cached()
@@ -80,7 +76,7 @@ async def screenshots(client: httpx.AsyncClient, jikan_id: int) -> list[str]:
     Cached (see cache.py) so repeatedly tapping "More screenshots" for
     the same anime re-slices the same cached list instead of re-hitting
     the API every time."""
-    data = await _request(client, url=f"{JIKAN_BASE_URL}/{jikan_id}/pictures", params={})
+    data = await rest.get_json(_API, client, f"{JIKAN_BASE_URL}/{jikan_id}/pictures", {})
     entries = data["data"][:SCREENSHOT_FETCH_LIMIT]
     urls = [url for entry in entries if (url := _picture_url(entry)) is not None]
     logger.debug("Jikan id {} has {} picture(s) available", jikan_id, len(data["data"]))
@@ -92,14 +88,10 @@ def _picture_url(entry: dict) -> str | None:
     return jpg.get("large_image_url") or jpg.get("image_url")
 
 
-async def _request(client: httpx.AsyncClient, *, url: str, params: dict) -> dict:
-    async def make_request() -> httpx.Response:
-        return await client.get(url, params=params, headers=_REQUEST_HEADERS)
-
-    response = await http_retry.request_with_retry(
-        make_request, service_name="Jikan", context=f"url {url!r}, params {params!r}"
-    )
-    return response.json()
+def _parse_detail_result(raw: dict) -> JikanResult:
+    """The by-id endpoint wraps its single entry in a "data" object,
+    unlike the search endpoint's list of bare entries."""
+    return _parse_result(raw["data"])
 
 
 def _parse_result(raw: dict) -> JikanResult:
