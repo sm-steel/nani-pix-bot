@@ -487,10 +487,16 @@ async def _show_gallery_page(
     actually picked."""
     shown = urls[target.offset : target.offset + GALLERY_PAGE_SIZE]
     if not shown:
-        # A stale "More screenshots" tap pointing past the end of the
-        # list. Not a dead end — the gallery message that button came
-        # from is still on screen with all its own buttons — so this
-        # stays a plain notice rather than re-showing the source menu.
+        # Defensive only: every caller either passes offset 0 against a
+        # list _fetch_screenshots_or_fallback already guaranteed is
+        # non-empty, or (paging) checks the slice itself and falls back
+        # to the source menu. It used to be the paging path's actual
+        # landing spot, on the since-disproved reasoning that "the
+        # gallery message that button came from is still on screen with
+        # all its own buttons" — it is not: the caller edits that very
+        # message, so this notice went out bare *and* took the only
+        # keyboard with it. A bare notice is safe only because nothing
+        # reaches it; anything that starts to must fall back instead.
         logger.warning(
             "Game gallery: {} page at offset {} is past the end of {} url(s)",
             target.provider,

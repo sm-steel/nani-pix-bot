@@ -549,6 +549,45 @@ async def test_screenshot_gallery_paging_keeps_the_search_again_button(
         assert fetched.screenshot_picker_provider == "tmdb"
 
 
+async def test_screenshot_gallery_paging_past_the_end_still_offers_the_source_menu(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: a stale forward tap against a list that shrank since
+    the page was drawn produced two buttonless messages — a bare "no
+    screenshots" notice, and the tapped gallery message edited down to a
+    nonsense "Screenshots 11-10 of 2 - pick one below." with its own
+    keyboard stripped off. The notice even names buttons ("pick another
+    source below") that weren't there. It takes the normal failure exit
+    instead: the source menu, on the message that was tapped."""
+    monkeypatch.setattr(
+        shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
+    )
+    game_id = _staged_game(session_factory, shikimori_id=52991, screenshot_picker_provider=None)
+
+    update = _make_callback_update(data="screenshot_more:shikimori:10")
+    context = _make_context(session_factory)
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_media_group.assert_not_awaited()
+    update.callback_query.edit_message_text.assert_awaited_once()
+    _, kwargs = update.callback_query.edit_message_text.await_args
+    assert _source_callbacks(kwargs["reply_markup"]) == [
+        "screenshot_source:shikimori",
+        "screenshot_source:jikan",
+        "screenshot_source:tmdb",
+        "screenshot:upload",
+    ]
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        # The source menu is up, so a retyped query has to route again.
+        assert fetched.screenshot_picker_provider == "shikimori"
+
+
 async def test_screenshot_gallery_paging_looks_the_url_list_up_once_per_page(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:

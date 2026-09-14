@@ -304,11 +304,31 @@ async def _handle_more_screenshots(
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
     if isinstance(result, Fallback):
         return result
+
+    shown = len(result[offset : offset + GALLERY_PAGE_SIZE])
+    if not shown:
+        # A stale forward tap against a list that shrank since this page
+        # was drawn. Handing it to _show_gallery_page sent a bare "no
+        # screenshots" notice *and* let the caller edit this message's
+        # own keyboard away in favour of a nonsense range ("Screenshots
+        # 11-10 of 2"), leaving two messages with no buttons on either —
+        # the notice even names buttons ("pick another source below")
+        # that weren't there. It is an ordinary failure, so it takes the
+        # ordinary failure exit: the same notice, with the source menu
+        # under it and the picker re-armed (see reply_fallback).
+        logger.warning(
+            "Game {}: stale {} page at offset {} is past the end of {} url(s)",
+            game.id,
+            provider,
+            offset,
+            len(result),
+        )
+        return Fallback("dm_start.no_screenshots_available", provider)
+
     target = GalleryTarget(
         chat_id=game.starter_id, provider=provider, offset=offset, cross_provider=True
     )
     await _show_gallery_page(context, target, result, lang)
-    shown = len(result[offset : offset + GALLERY_PAGE_SIZE])
     logger.debug(
         "Game {}: showing {} gallery page at offset {} ({} url(s) total)",
         game.id,
