@@ -42,19 +42,31 @@ class Game(Base):
     # "anilist" / "shikimori" / "jikan" / "tmdb" / "manual". See
     # services/game/state.py's stage_result().
     source: Mapped[str] = mapped_column(String(16), default="anilist")
-    # Which provider's *_id column above is currently backing
-    # original_image, if it's API-sourced at all ("shikimori"/"jikan"/
-    # "tmdb", or None for a genuine upload). Also doubles as "which
-    # provider the screenshot picker is currently resolving" *before*
-    # original_image exists yet — set the moment a screenshot-source
-    # button is tapped (commands/dm_start/screenshots.py), so a
-    # cross-provider resolution's follow-up text message (the "Wrong
-    # anime? Search again" correction) still knows which provider it's
-    # searching without needing separate DB state for it (see issue
-    # #11 — flow state has to be DB-derived, never only in-memory).
-    # None means "no screenshot provider chosen yet" (genuine upload,
-    # or still on the source-selection keyboard).
+    # Image provenance, and nothing else: which provider's *_id column
+    # above is currently backing original_image ("shikimori"/"jikan"/
+    # "tmdb"), or None when there is no API-sourced image — a genuine
+    # upload, or no image staged yet. Written only where original_image
+    # itself is written from a gallery pick
+    # (commands/dm_start/screenshot_gallery.py).
     screenshot_source: Mapped[str | None] = mapped_column(
+        String(SCREENSHOT_SOURCE_LENGTH), default=None
+    )
+    # Picker state, and nothing else: which provider the screenshot
+    # picker is currently *resolving* an anime for, i.e. which provider
+    # a typed DM message would be searched against. Set when a
+    # screenshot-source button is tapped (commands/dm_start/
+    # screenshots.py) and kept for as long as a typed query is still
+    # meaningful — a cross-provider gallery's "Wrong anime? Search
+    # again" correction, or any failure screen the starter was dropped
+    # back onto — so that flow state stays DB-derived rather than
+    # in-memory (see issue #11). Cleared once there is nothing left to
+    # resolve: a same-provider gallery (the id came from identification,
+    # and no correction is offered) or a finished pick. Deliberately
+    # *not* screenshot_source: the picker being on a provider says
+    # nothing about where the stored image came from, and conflating
+    # the two let a genuine upload delete an identification provider id
+    # (see MECHANICS.md's "Starting a game").
+    screenshot_picker_provider: Mapped[str | None] = mapped_column(
         String(SCREENSHOT_SOURCE_LENGTH), default=None
     )
     # Only meaningful while status is SETUP — see SetupStep's docstring.

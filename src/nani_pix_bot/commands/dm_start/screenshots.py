@@ -248,13 +248,21 @@ async def start_screenshot_picker(context: ContextTypes.DEFAULT_TYPE, game, lang
 
 
 def clear_screenshot_selection(game) -> None:
-    """Drops an API-picked screenshot and the provider id that resolved
-    it — used by preview.py's "Re-search title" when the current image
-    is API-sourced, since a re-search that picks a different anime
-    shouldn't leave the old anime's screenshot attached to it. A no-op
-    if the current image is a genuine upload (screenshot_source is
-    None) — that one is preserved across a re-search, unchanged from
-    before ticket 9."""
+    """Leaves the screenshot sub-flow behind: the picker stops resolving
+    anything, and an API-picked screenshot plus the provider id that
+    resolved it are dropped. Used by preview.py's "Re-search title"
+    (a re-search that picks a different anime shouldn't leave the old
+    anime's screenshot attached) and by intake.py, where a genuine
+    upload supersedes whatever was staged before.
+
+    Only an *image* clears the id: `screenshot_source` is None whenever
+    nothing API-sourced backs `original_image`, which covers both a
+    genuine upload and a picker that was merely pointed at a provider
+    without ever picking from it. That second case is why this reads
+    `screenshot_source` and not the picker column — the id it would
+    otherwise null out is the identification id, deliberately kept so a
+    later cross-search can reuse it (MECHANICS.md's "Starting a game")."""
+    game.screenshot_picker_provider = None
     if game.screenshot_source is None:
         return
     setattr(game, _ID_ATTRS[game.screenshot_source], None)
@@ -289,6 +297,11 @@ async def resume_screenshot_gallery(
         # No provider to name or flag — just re-offer the plain menu.
         return "dm_start.pick_screenshot_source_prompt"
 
+    # The gallery below is drawn cross_provider=True, so it carries
+    # "Wrong anime? Search again" — which means a typed correction has
+    # to route to _screenshot_search_step, which is what the picker
+    # column is for.
+    game.screenshot_picker_provider = provider
     provider_id = _provider_id(game, provider)
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
     if isinstance(result, Fallback):
@@ -352,7 +365,11 @@ async def screenshot_source_callback_handler(
         provider = parse_screenshot_source_callback_data(query.data)
         if provider is None:
             return
-        game.screenshot_source = provider
+        # Picker state, not image provenance — no image exists yet, and
+        # this tap must not claim one (see models/game.py). Set before
+        # resolution so every failure exit below still knows which
+        # provider a typed retry query belongs to.
+        game.screenshot_picker_provider = provider
         failure = await _resolve_screenshot_source(context, game, provider, lang)
         # Replying inside the session block, while `game` is still live —
         # the source menu is built from it.
@@ -389,6 +406,12 @@ async def _resolve_screenshot_source(
         return result
 
     logger.debug("Game {}: fetched {} {} screenshot(s)", game.id, len(result), provider)
+    if not cross_provider:
+        # A same-provider gallery has nothing left to resolve — the id
+        # came from identification, and this gallery carries no "Wrong
+        # anime? Search again" button — so a typed message from here is
+        # not a correction query and must not be searched as one.
+        game.screenshot_picker_provider = None
     target = GalleryTarget(
         chat_id=game.starter_id, provider=provider, offset=0, cross_provider=cross_provider
     )

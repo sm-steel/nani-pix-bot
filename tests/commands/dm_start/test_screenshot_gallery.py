@@ -104,7 +104,11 @@ async def test_screenshot_gallery_callback_handler_pick_downloads_and_shows_prev
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.original_image == b"real-screenshot-bytes"
+        # The one place image provenance is written: these bytes really
+        # do come from the shikimori_id on file.
         assert fetched.screenshot_source == "shikimori"
+        # ...and the picker is done, so nothing is being resolved.
+        assert fetched.screenshot_picker_provider is None
         assert fetched.setup_step == SetupStep.CONFIRMING
 
     context.bot.send_media_group.assert_awaited_once()  # the confirmation preview album
@@ -221,7 +225,10 @@ async def test_screenshot_search_again_callback_handler_asks_for_a_query(session
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
-        assert fetched.screenshot_source == "tmdb"
+        # Pure picker state — asking for a query stages no image, so
+        # image provenance must stay untouched.
+        assert fetched.screenshot_picker_provider == "tmdb"
+        assert fetched.screenshot_source is None
     # Not the identification-search wording: here the starter is
     # re-choosing which title's screenshots to browse, not saying what
     # anime an already-uploaded image is from.
@@ -257,7 +264,7 @@ async def test_screenshot_search_pick_callback_handler_resolves_and_shows_galler
         tmdb, "screenshots", AsyncMock(return_value=["https://image.tmdb.org/x/0.jpg"])
     )
     game_id = _staged_game(
-        session_factory, source="anilist", anilist_id=99, screenshot_source="tmdb"
+        session_factory, source="anilist", anilist_id=99, screenshot_picker_provider="tmdb"
     )
 
     update = _make_callback_update(data="screenshot_search_pick:tmdb:209867")
@@ -284,7 +291,9 @@ async def test_screenshot_search_pick_callback_handler_handles_a_stale_id(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(tmdb, "get_by_id", AsyncMock(return_value=None))
-    _staged_game(session_factory, source="anilist", anilist_id=99, screenshot_source="tmdb")
+    _staged_game(
+        session_factory, source="anilist", anilist_id=99, screenshot_picker_provider="tmdb"
+    )
 
     update = _make_callback_update(data="screenshot_search_pick:tmdb:209867")
     context = _make_context(session_factory)

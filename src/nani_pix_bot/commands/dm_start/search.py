@@ -102,14 +102,16 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         setup_step = setup_game.setup_step
         source = setup_game.source
         awaiting_synonyms = setup_game.title_english is not None
-        screenshot_source = setup_game.screenshot_source
+        # The picker column, never the image one: "which provider is
+        # being resolved" is exactly the question routing a typed
+        # message asks, and screenshot_source answers a different one
+        # ("what backs the stored image") — see models/game.py.
+        picker_provider = setup_game.screenshot_picker_provider
         # Captured while the game is live: _screenshot_search_step runs
         # after this block closes and needs the source menu to fall back
         # onto if the provider is down or finds nothing.
         screenshot_menu = (
-            source_menu_for(setup_game, screenshot_source)
-            if screenshot_source is not None
-            else None
+            source_menu_for(setup_game, picker_provider) if picker_provider is not None else None
         )
 
     if setup_step == SetupStep.AWAITING_SYNONYM:
@@ -120,15 +122,23 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         if screenshot_menu is not None:
             # A screenshot provider is being resolved — ticket 8's
             # cross-provider "Search again" correction, the fallback
-            # state after an auto-search found nothing, or (ticket 9)
-            # the preview's "Pick a different screenshot" re-opening a
-            # gallery that still has an *old* image staged until a new
-            # one is actually picked, so `original_image` being set
-            # here does NOT mean no query is expected (issue: a typed
-            # correction used to be silently swallowed in exactly that
-            # case). Anything else during this step (still on the
-            # source-selection keyboard) expects a button tap, not text.
+            # state after an auto-search found nothing or a provider
+            # failed, or (ticket 9) the preview's "Pick a different
+            # screenshot" re-opening a gallery that still has an *old*
+            # image staged until a new one is actually picked, so
+            # `original_image` being set here does NOT mean no query is
+            # expected (issue: a typed correction used to be silently
+            # swallowed in exactly that case). Anything else during
+            # this step — the source-selection keyboard, or a
+            # same-provider gallery, neither of which offers a search —
+            # expects a button tap, not text.
             await _screenshot_search_step(message, context, lang, screenshot_menu)
+        else:
+            logger.debug(
+                "Starter {}: ignoring text during PICKING_SCREENSHOT — no provider is being "
+                "resolved, so this screen expects a button tap",
+                user.id,
+            )
     elif source == "manual":
         if awaiting_synonyms:
             await _manual_synonyms_step(message, context, lang, user)

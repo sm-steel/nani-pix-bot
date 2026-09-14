@@ -120,7 +120,7 @@ async def test_screenshot_source_callback_handler_shows_the_gallery(
 ) -> None:
     urls = [f"https://shikimori.io/x/{i}.jpg" for i in range(3)]
     monkeypatch.setattr(screenshots.shikimori, "screenshots", AsyncMock(return_value=urls))
-    _staged_game(session_factory, shikimori_id=52991)
+    game_id = _staged_game(session_factory, shikimori_id=52991)
 
     update = _make_callback_update(data="screenshot_source:shikimori")
     context = _make_context(session_factory)
@@ -137,6 +137,16 @@ async def test_screenshot_source_callback_handler_shows_the_gallery(
     callbacks = [b.callback_data for row in msg_kwargs["reply_markup"].inline_keyboard for b in row]
     assert "screenshot_pick:shikimori:0" in callbacks
     update.callback_query.edit_message_text.assert_awaited_once()
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        # Nothing left to resolve on a same-provider gallery (and no
+        # "Search again" button on it), so a typed message here is not a
+        # correction query — see search.py's PICKING_SCREENSHOT branch.
+        assert fetched.screenshot_picker_provider is None
+        # And no image has been picked yet, so nothing backs one.
+        assert fetched.screenshot_source is None
 
 
 async def test_screenshot_source_callback_handler_paginates_when_more_than_a_page(
@@ -205,7 +215,11 @@ async def test_screenshot_source_callback_handler_cross_provider_auto_resolves_t
         assert fetched is not None
         assert fetched.shikimori_id == 52991
         assert fetched.source == "anilist"  # identification untouched
-        assert fetched.screenshot_source == "shikimori"
+        # A cross-provider gallery still offers "Wrong anime? Search
+        # again", so the picker stays on Shikimori — but no image has
+        # been picked, so nothing backs one yet.
+        assert fetched.screenshot_picker_provider == "shikimori"
+        assert fetched.screenshot_source is None
 
     context.bot.send_media_group.assert_awaited_once()
     _, msg_kwargs = context.bot.send_message.await_args
@@ -231,7 +245,10 @@ async def test_screenshot_source_callback_handler_cross_provider_no_match_asks_t
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.shikimori_id is None
-        assert fetched.screenshot_source == "shikimori"
+        # The starter is asked to type a query for Shikimori themselves,
+        # so the picker has to remember which provider that is.
+        assert fetched.screenshot_picker_provider == "shikimori"
+        assert fetched.screenshot_source is None
         assert fetched.original_image is None
     context.bot.send_media_group.assert_not_awaited()
     update.callback_query.edit_message_text.assert_awaited_once()
@@ -263,6 +280,10 @@ async def test_screenshot_source_callback_handler_falls_back_when_the_fetch_fail
         # Back on the source menu, not forced into an upload — the
         # starter can try another provider (or still upload) from here.
         assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        # ...or type a different query for the same provider, which the
+        # picker column is what keeps routable (no gallery ever came up,
+        # so this is not the same-provider-gallery case that clears it).
+        assert fetched.screenshot_picker_provider == "shikimori"
     context.bot.send_media_group.assert_not_awaited()
     update.callback_query.edit_message_text.assert_awaited_once()
     args, kwargs = update.callback_query.edit_message_text.await_args
@@ -272,3 +293,51 @@ async def test_screenshot_source_callback_handler_falls_back_when_the_fetch_fail
     assert "screenshot:upload" in callbacks
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
     assert any(label.startswith("⚠️") and "Shikimori" in label for label in labels)
+
+
+def test_clear_screenshot_selection_keeps_an_id_no_image_ever_used(session_factory) -> None:
+    """The picker being mid-flight on Shikimori is not the same thing as
+    a Shikimori-sourced image: with no image picked there is no
+    selection to clear, and the identification id has to survive so a
+    later cross-search can reuse it (MECHANICS.md's "Starting a game").
+    Overloading one column for both meanings is what used to delete it."""
+    game_id = _staged_game(
+        session_factory, shikimori_id=52991, screenshot_picker_provider="shikimori"
+    )
+
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        screenshots.clear_screenshot_selection(game)
+        session.commit()
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.shikimori_id == 52991
+        assert fetched.screenshot_source is None
+        # The picker itself is abandoned, though — every caller of this
+        # is leaving the screenshot sub-flow behind.
+        assert fetched.screenshot_picker_provider is None
+
+
+def test_clear_screenshot_selection_drops_an_api_sourced_image_and_its_id(session_factory) -> None:
+    game_id = _staged_game(
+        session_factory,
+        shikimori_id=52991,
+        screenshot_source="shikimori",
+        original_image=b"api-bytes",
+    )
+
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        screenshots.clear_screenshot_selection(game)
+        session.commit()
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.shikimori_id is None
+        assert fetched.original_image is None
+        assert fetched.screenshot_source is None

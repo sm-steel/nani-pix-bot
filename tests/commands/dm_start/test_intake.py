@@ -296,3 +296,41 @@ async def test_photo_handler_accepts_an_upload_while_picking_a_screenshot(
         assert fetched.setup_step == SetupStep.CONFIRMING
     context.bot.send_media_group.assert_awaited_once()  # the preview album
     update.message.reply_text.assert_not_awaited()  # no "not your turn"
+
+
+async def test_photo_handler_upload_keeps_the_identification_provider_id(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: identify on Shikimori, tap Shikimori for screenshots,
+    then upload your own photo instead. The tap only moves the *picker*
+    onto Shikimori — it stages no image — so there is no screenshot
+    selection to clear, and shikimori_id (kept so a later cross-search
+    can reuse it, see MECHANICS.md's "Starting a game") must survive.
+    While one column carried both meanings, this upload deleted it."""
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.commit()
+        game = game_service.create_setup_game(session, starter_id=1)
+        game.source = "shikimori"
+        game.shikimori_id = 52991
+        game.title_english = "Frieren: Beyond Journey's End"
+        game.setup_step = SetupStep.PICKING_SCREENSHOT
+        game.screenshot_picker_provider = "shikimori"
+        session.commit()
+
+    update = _make_update(user_id=1, photo_file_id="own-screenshot")
+    context = _make_callback_context(session_factory)
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.shikimori_id == 52991
+        assert fetched.original_image == b"original-bytes"
+        # A genuine upload — nothing API-sourced backs it — and the
+        # picker is abandoned, so a stray typed message can't be read as
+        # a screenshot query afterwards.
+        assert fetched.screenshot_source is None
+        assert fetched.screenshot_picker_provider is None
+        assert fetched.setup_step == SetupStep.CONFIRMING

@@ -228,6 +228,10 @@ async def test_preview_change_image_pick_screenshot_resumes_the_gallery(
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        # This gallery always offers "Wrong anime? Search again", so a
+        # typed correction has to route — which needs the picker column
+        # set, not merely the image's provenance.
+        assert fetched.screenshot_picker_provider == "shikimori"
     update.callback_query.edit_message_text.assert_awaited_once()
 
 
@@ -265,6 +269,7 @@ async def test_preview_research_clears_an_api_sourced_screenshot(session_factory
         assert fetched.setup_step == SetupStep.PICKING_METHOD
         assert fetched.original_image is None
         assert fetched.screenshot_source is None
+        assert fetched.screenshot_picker_provider is None
         assert fetched.shikimori_id is None
 
 

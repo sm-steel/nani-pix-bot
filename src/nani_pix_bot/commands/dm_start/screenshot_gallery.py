@@ -55,9 +55,11 @@ async def screenshot_search_again_callback_handler(
 ) -> None:
     """ "Wrong anime? Search again" — tapped from a cross-provider
     gallery to correct a bad auto-resolved top result. Just asks for a
-    query; screenshot_source (already set to `provider` by whichever
-    step showed this button) is what tells search_text_handler to route
-    the next text message to _screenshot_search_step below."""
+    query; screenshot_picker_provider (already set to `provider` by
+    whichever step showed this button, re-asserted here so a stale
+    button still routes) is what tells search_text_handler to send the
+    next text message to _screenshot_search_step below. No image is
+    staged by any of this, so screenshot_source stays untouched."""
     query = update.callback_query
     if query is None or query.data is None:
         return
@@ -75,7 +77,8 @@ async def screenshot_search_again_callback_handler(
         provider = parse_screenshot_search_again_callback_data(query.data)
         if provider is None:
             return
-        game.screenshot_source = provider
+        game.screenshot_picker_provider = provider
+        logger.debug("Game {}: re-searching {} screenshots by hand", game.id, provider)
 
     await query.edit_message_text(i18n.t("dm_start.ask_search_screenshots", lang))
 
@@ -339,8 +342,12 @@ async def _handle_screenshot_pick(
         )
         return Fallback("dm_start.screenshot_service_down", provider)
 
+    # The one place image provenance is written: these bytes really do
+    # come from `provider`'s *_id on file. The picker is done resolving
+    # at the same moment — the next screen is the confirmation preview.
     game.original_image = response.content
     game.screenshot_source = provider
+    game.screenshot_picker_provider = None
     logger.debug("Game {}: picked {} screenshot #{}", game.id, provider, index + 1)
 
     await _show_preview(context, session, game, lang)
