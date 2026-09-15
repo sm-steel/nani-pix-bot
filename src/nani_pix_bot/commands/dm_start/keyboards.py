@@ -43,10 +43,14 @@ _SHIKIMORI_PICK_PREFIX = f"{Provider.SHIKIMORI}_pick:"
 _JIKAN_PICK_PREFIX = f"{Provider.JIKAN}_pick:"
 _TMDB_PICK_PREFIX = f"{Provider.TMDB}_pick:"
 
-ANILIST_METHOD_CALLBACK_DATA = "method:anilist"
-SHIKIMORI_METHOD_CALLBACK_DATA = "method:shikimori"
-JIKAN_METHOD_CALLBACK_DATA = "method:jikan"
-TMDB_METHOD_CALLBACK_DATA = "method:tmdb"
+# Derived from Provider, not hand-spelled — same reasoning as the
+# pick-prefix constants above.
+ANILIST_METHOD_CALLBACK_DATA = f"method:{Provider.ANILIST}"
+SHIKIMORI_METHOD_CALLBACK_DATA = f"method:{Provider.SHIKIMORI}"
+JIKAN_METHOD_CALLBACK_DATA = f"method:{Provider.JIKAN}"
+TMDB_METHOD_CALLBACK_DATA = f"method:{Provider.TMDB}"
+# "manual" is deliberately not a Provider member (see its docstring) —
+# stays a standalone literal.
 MANUAL_METHOD_CALLBACK_DATA = "method:manual"
 
 PREVIEW_CONFIRM_CALLBACK_DATA = "preview:confirm"
