@@ -329,7 +329,14 @@ def test_a_malformed_proxy_url_skips_the_whole_backfill_and_completes(
     backfill, leave every in-flight row NULL, let the migration
     complete. Uses a real invalid proxy URL against the real
     httpx.Client constructor (not a faked exception), since the point
-    is confirming httpx actually raises what this expects it to."""
+    is confirming httpx actually raises what this expects it to.
+
+    The proxy URL carries an obviously-fake username and host (an
+    "unknown scheme" error embeds the full authority in its message) so
+    this can also confirm neither ends up in the warning -- a real
+    proxy's host/username are exactly the owned-infrastructure detail
+    this project's own convention keeps out of anything public, and
+    this migration's warnings can land in public GitHub Actions logs."""
     conn, games = games_connection
     conn.execute(
         games.insert(),
@@ -339,7 +346,10 @@ def test_a_malformed_proxy_url_skips_the_whole_backfill_and_completes(
 
     module = _load_migration_module()
     monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
-    monkeypatch.setenv("TELEGRAM_PROXY_URL", "ftp://not-a-supported-scheme:9999")
+    monkeypatch.setenv(
+        "TELEGRAM_PROXY_URL",
+        "socks9://fakeuser:fakepass@fake-proxy-host.example.invalid:1080",
+    )
 
     module._backfill_original_image_for_in_flight_games()  # must not raise
 
@@ -348,6 +358,9 @@ def test_a_malformed_proxy_url_skips_the_whole_backfill_and_completes(
     output = capsys.readouterr().out
     assert "WARNING" in output
     assert "TELEGRAM_PROXY_URL" in output
+    assert "fakeuser" not in output
+    assert "fake-proxy-host" not in output
+    assert "<redacted>" in output
 
 
 def test_redaction_survives_a_token_with_a_trailing_space(
@@ -362,7 +375,7 @@ def test_redaction_survives_a_token_with_a_trailing_space(
     renders into the exception message -- a literal match against the
     raw (unencoded) bot_token string would miss that and print the
     secret in the clear on exactly the misconfiguration that makes this
-    error path run. The regex-based _redact_bot_token has to catch it
+    error path run. The regex-based _redact_secrets has to catch it
     regardless of how httpx rendered the token."""
     conn, games = games_connection
     conn.execute(

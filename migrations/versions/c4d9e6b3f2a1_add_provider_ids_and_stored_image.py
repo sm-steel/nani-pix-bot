@@ -27,24 +27,44 @@ depends_on: str | Sequence[str] | None = None
 _IMAGE_COLUMN_LENGTH = 2**32 - 1
 
 
-def _redact_bot_token(message: str) -> str:
-    """Scrub a Telegram bot token out of an exception message before it
-    ever reaches a print() that deploy.yml's `docker compose run --rm`
-    step would otherwise write straight into a public GitHub Actions
-    log.
+def _redact_secrets(message: str) -> str:
+    """Scrub anything an exception message from this backfill could
+    carry that has no business in a public place, before it ever
+    reaches a print() that deploy.yml's `docker compose run --rm` step
+    would otherwise write straight into a public GitHub Actions log.
+    Two distinct things end up in a URL's text here: a Telegram bot
+    token folded into a request path (".../bot<TOKEN>/getFile") when a
+    per-row fetch fails, and TELEGRAM_PROXY_URL's own authority
+    (scheme://user:pass@host:port) when it fails to parse -- httpx
+    already masks that password as "[secure]", but the proxy username
+    and host are exactly the owned-infrastructure detail this project's
+    own convention (aliases like "amsterdam", placeholders like
+    PROXY_HOST) otherwise keeps out of anything public, and printing
+    them for real on a misconfiguration would undo that at the one
+    moment it matters.
 
-    Pattern-based rather than a literal substring replace of the
-    bot_token variable's exact value: a misconfigured .env can hand
-    this migration a token with a stray leading/trailing space (Compose
+    One pattern closes both: anything after a "scheme://" up to the
+    next '/', whitespace, or quote/paren gets replaced wholesale,
+    scheme kept. That's deliberately blanket rather than picking apart
+    "is this bit the token, the host, or just an informational link" --
+    a message destined for a public log doesn't get to keep whatever
+    URL text happens to be judged harmless, and a message with no URL
+    in it (e.g. httpx's own "Invalid port: '...'") passes through
+    unchanged since there's nothing matching the pattern.
+
+    Pattern-based rather than a literal substring match against a known
+    value (the raw bot_token, or the raw TELEGRAM_PROXY_URL) for the
+    same reason in both cases: a misconfigured .env can hand this
+    migration a value with a stray leading/trailing space (Compose
     preserves literal whitespace in .env values) or an embedded '#',
-    and httpx's URL rendering percent-encodes or otherwise reshapes
-    those bytes before they reach an exception's message -- so a
-    literal match against the raw bot_token string would miss them and
-    print the secret in the clear on exactly the misconfiguration that
-    makes this error path run in the first place. Matching "/bot"
-    followed by anything up to the next '/', whitespace, or quote
-    catches the token regardless of how httpx rendered it."""
-    return re.sub(r"/bot[^/\s']+", "/bot<redacted>", message)
+    and httpx reshapes those bytes (percent-encoding, its own
+    "[secure]" masking) before they reach an exception's message -- so
+    a literal match would miss the reshaped form and print the secret
+    in the clear on exactly the misconfiguration that makes either
+    error path run in the first place."""
+    return re.sub(
+        r"([A-Za-z][A-Za-z0-9+.-]*)://[^\s'\")]+", lambda m: m.group(1) + "://<redacted>", message
+    )
 
 
 def upgrade() -> None:
@@ -133,16 +153,21 @@ def _backfill_original_image_for_in_flight_games() -> None:
         # everything caught inside the loop below, just triggered by
         # client setup instead of a bad file_id, so it gets the same
         # warn-and-skip treatment. httpx already renders a proxy URL's
-        # password as "[secure]" in its own exception text; the
-        # username and host still print here in clear, which is
-        # accepted as no worse than what httpx's own error would
-        # already have disclosed on its own.
+        # password as "[secure]" in its own exception text, but the
+        # username and host would otherwise still print here in clear
+        # -- exactly the owned-infrastructure detail this project's own
+        # convention (aliases like "amsterdam", placeholders like
+        # PROXY_HOST) keeps out of anything public, and this migration
+        # runs on a GitHub-hosted Actions runner against this public
+        # repo. _redact_secrets closes that the same way it closes the
+        # bot-token leak below.
+        safe_message = _redact_secrets(str(exc))
         print(
             f"WARNING: could not configure the Telegram HTTP client from "
-            f"TELEGRAM_PROXY_URL: {exc} — skipping live-fetch backfill "
-            f"for {len(rows)} in-flight game(s); their original_image "
-            f"will stay NULL until the app itself sets it via a fresh "
-            f"screenshot/pick"
+            f"TELEGRAM_PROXY_URL: {safe_message} — skipping live-fetch "
+            f"backfill for {len(rows)} in-flight game(s); their "
+            f"original_image will stay NULL until the app itself sets it "
+            f"via a fresh screenshot/pick"
         )
         return
 
@@ -200,10 +225,10 @@ def _backfill_original_image_for_in_flight_games() -> None:
                 # exactly the most likely trigger (an expired file_id
                 # producing a Telegram 400). repr(exc) has the same
                 # problem, so the token is stripped out of the message
-                # text itself; see _redact_bot_token's own docstring
+                # text itself; see _redact_secrets's own docstring
                 # for why that's pattern-based rather than a literal
                 # substring match against bot_token.
-                safe_message = _redact_bot_token(str(exc))
+                safe_message = _redact_secrets(str(exc))
                 print(
                     f"WARNING: could not backfill game {row.id}: {safe_message} — "
                     f"leaving original_image NULL"
