@@ -548,3 +548,104 @@ async def test_get_by_id_returns_none_for_a_malformed_field(field: dict) -> None
 
     async with httpx.AsyncClient(transport=_responding({"data": {"Media": entry}})) as client:
         assert await anilist.get_by_id(client, 154587) is None
+
+
+# issue #89: a well-typed entry whose titles are all null/absent/empty and
+# whose synonyms are also empty stages an unwinnable game (an empty
+# match_candidates() list) that looks exactly like a working one — not a
+# malformation, so the three cases below aren't rejected by
+# optional_str/optional_str_list, they have to be caught one level up.
+_NO_TITLE_NO_SYNONYMS_ENTRIES = [
+    pytest.param(
+        {"title": {"romaji": None, "english": None, "native": None}, "synonyms": []},
+        id="all-titles-null",
+    ),
+    pytest.param(
+        {"title": {"romaji": "", "english": "", "native": ""}, "synonyms": []},
+        id="all-titles-empty-string",
+    ),
+    pytest.param({"title": {}, "synonyms": []}, id="titles-absent-entirely"),
+]
+
+
+@pytest.mark.parametrize("field", _NO_TITLE_NO_SYNONYMS_ENTRIES)
+async def test_search_skips_an_entry_with_no_title_and_no_synonyms(field: dict) -> None:
+    bad = {**_GOOD_ENTRY, "id": 1, "synonyms": [], **field}
+    body = _media_payload([bad, _GOOD_ENTRY])
+
+    async with httpx.AsyncClient(transport=_responding(body)) as client:
+        results = await anilist.search(client, "frieren")
+
+    assert [result.anilist_id for result in results] == [154587]
+
+
+@pytest.mark.parametrize("field", _NO_TITLE_NO_SYNONYMS_ENTRIES)
+async def test_get_by_id_returns_none_when_the_entry_has_no_title_and_no_synonyms(
+    field: dict,
+) -> None:
+    entry = {**_GOOD_ENTRY, **field}
+
+    async with httpx.AsyncClient(transport=_responding({"data": {"Media": entry}})) as client:
+        assert await anilist.get_by_id(client, 154587) is None
+
+
+async def test_search_keeps_an_entry_with_no_title_but_nonempty_synonyms() -> None:
+    """Design decision (see parsing.has_answer_key): synonyms alone are
+    still a real answer key, even though the picker button reads "?"."""
+    entry = {
+        "id": 1,
+        "title": {"romaji": None, "english": None, "native": None},
+        "synonyms": ["Frieren"],
+        "startDate": None,
+    }
+
+    async with httpx.AsyncClient(transport=_responding(_media_payload([entry]))) as client:
+        results = await anilist.search(client, "frieren")
+
+    assert results == [
+        anilist.AniListResult(
+            anilist_id=1,
+            title_romaji=None,
+            title_english=None,
+            title_native=None,
+            synonyms=["Frieren"],
+            year=None,
+        )
+    ]
+
+
+async def test_get_by_id_keeps_an_entry_with_no_title_but_nonempty_synonyms() -> None:
+    entry = {
+        "id": 1,
+        "title": {"romaji": None, "english": None, "native": None},
+        "synonyms": ["Frieren"],
+        "startDate": None,
+    }
+
+    async with httpx.AsyncClient(transport=_responding({"data": {"Media": entry}})) as client:
+        result = await anilist.get_by_id(client, 1)
+
+    assert result == anilist.AniListResult(
+        anilist_id=1,
+        title_romaji=None,
+        title_english=None,
+        title_native=None,
+        synonyms=["Frieren"],
+        year=None,
+    )
+
+
+async def test_search_keeps_a_legitimately_sparse_entry_with_one_title_variant() -> None:
+    """Regression guard: one populated title variant, the rest null, is
+    winnable and must not be caught by the no-title check."""
+    entry = {
+        "id": 1,
+        "title": {"romaji": "Some Anime", "english": None, "native": None},
+        "synonyms": [],
+        "startDate": None,
+    }
+
+    async with httpx.AsyncClient(transport=_responding(_media_payload([entry]))) as client:
+        results = await anilist.search(client, "frieren")
+
+    assert [result.anilist_id for result in results] == [1]

@@ -130,14 +130,28 @@ def _parse_detail_result(raw: dict) -> JikanResult | None:
     return _parse_result(entry)
 
 
-def _parse_result(raw: dict) -> JikanResult:
+def _parse_result(raw: dict) -> JikanResult | None:
     """Titles and synonyms are validated alongside the id, because the
     guard around this function stops at the `return` — see
-    `parsing.optional_str`/`optional_str_list` (issue #86)."""
+    `parsing.optional_str`/`optional_str_list` (issue #86).
+
+    Returns None (skipped quietly, same as any other "not wanted"
+    decision) when every title variant is empty and there are no
+    synonyms either — see `parsing.has_answer_key` (issue #89): a
+    well-typed entry with no title and no synonyms stages a game
+    `match_candidates()` can never match anything against."""
+    jikan_id = parsing.require_int(raw, "mal_id")
+    title_romaji = parsing.optional_str(raw, "title")
+    title_english = parsing.optional_str(raw, "title_english")
+    title_native = parsing.optional_str(raw, "title_japanese")
+    synonyms = parsing.optional_str_list(raw, "title_synonyms")
+    if not parsing.has_answer_key((title_romaji, title_english, title_native), synonyms):
+        logger.debug("Jikan id {} has no title in any variant and no synonyms, skipping", jikan_id)
+        return None
     return JikanResult(
-        jikan_id=parsing.require_int(raw, "mal_id"),
-        title_romaji=parsing.optional_str(raw, "title"),
-        title_english=parsing.optional_str(raw, "title_english"),
-        title_native=parsing.optional_str(raw, "title_japanese"),
-        synonyms=parsing.optional_str_list(raw, "title_synonyms"),
+        jikan_id=jikan_id,
+        title_romaji=title_romaji,
+        title_english=title_english,
+        title_native=title_native,
+        synonyms=synonyms,
     )

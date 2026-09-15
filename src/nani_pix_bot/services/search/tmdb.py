@@ -269,15 +269,29 @@ def _parse_still_url(episode: dict) -> str | None:
     return f"{TMDB_IMAGE_BASE_URL}{still_path}" if still_path else None
 
 
-def _parse_result(raw: dict) -> TMDBResult:
+def _parse_result(raw: dict) -> TMDBResult | None:
     """TMDB has no synonyms field to corrupt (see the module docstring),
     but its two title fields are validated for the same reason every
     other provider's are — the entry guard ends at this `return`
-    (issue #86)."""
+    (issue #86).
+
+    Returns None (skipped quietly, same as any other "not wanted"
+    decision) when both title fields are empty — see
+    `parsing.has_answer_key` (issue #89): a well-typed entry with no
+    title stages a game `match_candidates()` can never match anything
+    against. TMDB has no synonyms to fall back on, so unlike the other
+    three providers this can never be rescued by a nonempty synonym
+    list — the general rule just has nothing left to check here."""
+    tmdb_id = parsing.require_int(raw, "id")
+    title_english = parsing.optional_str(raw, "name")
+    title_native = parsing.optional_str(raw, "original_name")
+    if not parsing.has_answer_key((title_english, title_native), []):
+        logger.debug("TMDB id {} has no title in any variant, skipping", tmdb_id)
+        return None
     return TMDBResult(
-        tmdb_id=parsing.require_int(raw, "id"),
+        tmdb_id=tmdb_id,
         title_romaji=None,
-        title_english=parsing.optional_str(raw, "name"),
-        title_native=parsing.optional_str(raw, "original_name"),
+        title_english=title_english,
+        title_native=title_native,
         synonyms=[],
     )

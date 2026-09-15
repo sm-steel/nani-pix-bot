@@ -107,7 +107,7 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
     return parsing.parse_entry(_API_NAME, media, _parse_result)
 
 
-def _parse_result(raw: dict) -> AniListResult:
+def _parse_result(raw: dict) -> AniListResult | None:
     """Every field is validated, not just the id: the guard around this
     function ends at the `return`, so a title that arrived as a number or
     a `synonyms` that arrived as a bare string used to sail out of here
@@ -118,15 +118,31 @@ def _parse_result(raw: dict) -> AniListResult:
     pre-check rather than an `optional_*` helper, which is the split
     `require_int`'s docstring describes: it's optional here and nowhere
     else, so the pre-check says something at this one call site instead of
-    being copy-pasted ahead of a dozen."""
+    being copy-pasted ahead of a dozen.
+
+    Returns None (skipped quietly by `parse_entry`/`parse_entries`, same
+    as any other "not wanted" decision) when every title variant is empty
+    and there are no synonyms either — see `parsing.has_answer_key`
+    (issue #89): a well-typed entry with no title and no synonyms stages
+    a game `match_candidates()` can never match anything against."""
+    anilist_id = parsing.require_int(raw, "id")
     title = raw["title"]
+    title_romaji = parsing.optional_str(title, "romaji")
+    title_english = parsing.optional_str(title, "english")
+    title_native = parsing.optional_str(title, "native")
+    synonyms = parsing.optional_str_list(raw, "synonyms")
+    if not parsing.has_answer_key((title_romaji, title_english, title_native), synonyms):
+        logger.debug(
+            "AniList id {} has no title in any variant and no synonyms, skipping", anilist_id
+        )
+        return None
     start_date = raw.get("startDate") or {}
     year = None if start_date.get("year") is None else parsing.require_int(start_date, "year")
     return AniListResult(
-        anilist_id=parsing.require_int(raw, "id"),
-        title_romaji=parsing.optional_str(title, "romaji"),
-        title_english=parsing.optional_str(title, "english"),
-        title_native=parsing.optional_str(title, "native"),
-        synonyms=parsing.optional_str_list(raw, "synonyms"),
+        anilist_id=anilist_id,
+        title_romaji=title_romaji,
+        title_english=title_english,
+        title_native=title_native,
+        synonyms=synonyms,
         year=year,
     )
