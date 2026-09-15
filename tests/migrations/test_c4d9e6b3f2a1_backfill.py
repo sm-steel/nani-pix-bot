@@ -313,8 +313,89 @@ def test_a_telegram_error_does_not_leak_the_bot_token_into_the_warning(
 
     output = capsys.readouterr().out
     assert placeholder_token not in output
-    assert "<bot-token-redacted>" in output
+    assert "<redacted>" in output
     assert "game 9" in output
+
+
+def test_a_malformed_proxy_url_skips_the_whole_backfill_and_completes(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A malformed TELEGRAM_PROXY_URL (unknown scheme, bad port, ...)
+    raises straight out of httpx.Client's own constructor, before the
+    loop -- or even the first row -- is reached. That must not escape
+    upgrade() any more than a bad file_id does: warn, skip the whole
+    backfill, leave every in-flight row NULL, let the migration
+    complete. Uses a real invalid proxy URL against the real
+    httpx.Client constructor (not a faked exception), since the point
+    is confirming httpx actually raises what this expects it to."""
+    conn, games = games_connection
+    conn.execute(
+        games.insert(),
+        [{"id": 10, "status": "ACTIVE", "original_file_id": "some-id", "original_image": None}],
+    )
+    conn.commit()
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+    monkeypatch.setenv("TELEGRAM_PROXY_URL", "ftp://not-a-supported-scheme:9999")
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[10] is None
+
+    output = capsys.readouterr().out
+    assert "WARNING" in output
+    assert "TELEGRAM_PROXY_URL" in output
+
+
+def test_redaction_survives_a_token_with_a_trailing_space(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Pins the gap a literal `str(exc).replace(bot_token, ...)` had: a
+    misconfigured .env can hand this migration a token with a stray
+    trailing space (Compose preserves literal whitespace in .env
+    values), which httpx percent-encodes to "...%20" in the URL it
+    renders into the exception message -- a literal match against the
+    raw (unencoded) bot_token string would miss that and print the
+    secret in the clear on exactly the misconfiguration that makes this
+    error path run. The regex-based _redact_bot_token has to catch it
+    regardless of how httpx rendered the token."""
+    conn, games = games_connection
+    conn.execute(
+        games.insert(),
+        [{"id": 11, "status": "ACTIVE", "original_file_id": "expired-id", "original_image": None}],
+    )
+    conn.commit()
+
+    module = _load_migration_module()
+    # Built from parts (not one literal) for the same S105 reason as the
+    # other placeholder-token test, plus a trailing space -- the actual
+    # misconfiguration under test -- that must survive monkeypatch.setenv
+    # unstripped.
+    placeholder_token = "-".join(["PLACEHOLDER", "NOT", "A", "REAL", "TOKEN", "654321"]) + " "
+    monkeypatch.setenv("BOT_TOKEN", placeholder_token)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"ok": False, "description": "Bad Request: file not found"})
+
+    mock_transport = httpx.MockTransport(handler)
+    real_client_cls = httpx.Client
+    monkeypatch.setattr(
+        module.httpx, "Client", lambda *args, **kwargs: real_client_cls(transport=mock_transport)
+    )
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[11] is None
+
+    output = capsys.readouterr().out
+    assert placeholder_token.strip() not in output
+    assert "<redacted>" in output
+    assert "game 11" in output
 
 
 def test_the_loop_catches_value_error_and_type_error_too(

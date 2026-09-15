@@ -7,6 +7,7 @@ Create Date: 2026-09-13 18:00:00.000000
 """
 
 import os
+import re
 from collections.abc import Sequence
 
 import httpx
@@ -24,6 +25,26 @@ depends_on: str | Sequence[str] | None = None
 # literal here rather than imported, per this project's migrations
 # standing alone as immutable historical scripts).
 _IMAGE_COLUMN_LENGTH = 2**32 - 1
+
+
+def _redact_bot_token(message: str) -> str:
+    """Scrub a Telegram bot token out of an exception message before it
+    ever reaches a print() that deploy.yml's `docker compose run --rm`
+    step would otherwise write straight into a public GitHub Actions
+    log.
+
+    Pattern-based rather than a literal substring replace of the
+    bot_token variable's exact value: a misconfigured .env can hand
+    this migration a token with a stray leading/trailing space (Compose
+    preserves literal whitespace in .env values) or an embedded '#',
+    and httpx's URL rendering percent-encodes or otherwise reshapes
+    those bytes before they reach an exception's message -- so a
+    literal match against the raw bot_token string would miss them and
+    print the secret in the clear on exactly the misconfiguration that
+    makes this error path run in the first place. Matching "/bot"
+    followed by anything up to the next '/', whitespace, or quote
+    catches the token regardless of how httpx rendered it."""
+    return re.sub(r"/bot[^/\s']+", "/bot<redacted>", message)
 
 
 def upgrade() -> None:
@@ -102,7 +123,30 @@ def _backfill_original_image_for_in_flight_games() -> None:
         return
 
     proxy = os.environ.get("TELEGRAM_PROXY_URL") or None
-    with httpx.Client(proxy=proxy, timeout=30.0) as client:
+    try:
+        client = httpx.Client(proxy=proxy, timeout=30.0)
+    except (ValueError, httpx.InvalidURL) as exc:
+        # A malformed TELEGRAM_PROXY_URL (unknown scheme, invalid port,
+        # ...) raises straight out of the client's constructor, before
+        # any per-row fetch even starts -- the same "escape upgrade()
+        # after the add_column calls already committed" wedge as
+        # everything caught inside the loop below, just triggered by
+        # client setup instead of a bad file_id, so it gets the same
+        # warn-and-skip treatment. httpx already renders a proxy URL's
+        # password as "[secure]" in its own exception text; the
+        # username and host still print here in clear, which is
+        # accepted as no worse than what httpx's own error would
+        # already have disclosed on its own.
+        print(
+            f"WARNING: could not configure the Telegram HTTP client from "
+            f"TELEGRAM_PROXY_URL: {exc} — skipping live-fetch backfill "
+            f"for {len(rows)} in-flight game(s); their original_image "
+            f"will stay NULL until the app itself sets it via a fresh "
+            f"screenshot/pick"
+        )
+        return
+
+    with client:
         for row in rows:
             # An expired/invalid file_id (Telegram 400s), a proxy hiccup,
             # a timeout, or a file over 20MB must not escape this loop:
@@ -156,9 +200,10 @@ def _backfill_original_image_for_in_flight_games() -> None:
                 # exactly the most likely trigger (an expired file_id
                 # producing a Telegram 400). repr(exc) has the same
                 # problem, so the token is stripped out of the message
-                # text itself rather than switched to a different
-                # rendering of the same exception.
-                safe_message = str(exc).replace(bot_token, "<bot-token-redacted>")
+                # text itself; see _redact_bot_token's own docstring
+                # for why that's pattern-based rather than a literal
+                # substring match against bot_token.
+                safe_message = _redact_bot_token(str(exc))
                 print(
                     f"WARNING: could not backfill game {row.id}: {safe_message} — "
                     f"leaving original_image NULL"
