@@ -85,35 +85,28 @@ async def _search_and_build_keyboard(
 ) -> tuple[list[_ResultT], InlineKeyboardMarkup | None]:
     """Search + build-the-results-keyboard, shared by search.py's
     `_search_step` and screenshot_gallery.py's `_screenshot_search_step`
-    — the two call sites that pair a provider search with a
-    provider-specific `*_results_keyboard` builder, and so are exactly
-    where the concrete result type matters (unlike
-    search.py's own `_get_identification_result`, which never needs a
-    keyboard and collapses straight into a `Provider`-keyed dict
-    instead). A `TypeVar`-generic helper is how `rest.py`'s
-    `fetch_by_id` and `keyboards.py`'s `_results_keyboard` already solve
-    the same "one provider's concrete type has to survive the call"
-    problem — reused here rather than introducing `Protocol`/`@overload`
-    as a first use of either in this codebase.
+    — the two call sites where a provider search pairs with a
+    provider-specific `*_results_keyboard` builder, so the concrete
+    result type matters (unlike `_get_identification_result`, which
+    collapses straight into a `Provider`-keyed dict). Generic via
+    `TypeVar` the same way `rest.py`'s `fetch_by_id` and `keyboards.py`'s
+    `_results_keyboard` already solve "one provider's concrete type has
+    to survive the call", rather than introducing `Protocol`/`@overload`
+    as a first use of either here.
 
-    `keyboard_fn` is a one-argument callable on purpose: each call site
-    passes a lambda that already closes over `lang` (and, for the
-    screenshot variant, `pick_prefix`), the same way `keyboards.py`'s own
-    `_ResultAccessors` instantiations bind their per-provider closures
-    rather than widening a shared function's parameter list. This helper
-    never needs to know either exists.
+    `keyboard_fn` takes one argument on purpose: each call site passes a
+    lambda already closed over `lang` (and, for the screenshot variant,
+    `pick_prefix`) rather than widening this helper's own parameter list
+    — this helper never needs to know either exists.
 
-    Returns `(results, keyboard)`, not just the keyboard: both callers
-    log `len(results)` in their own debug line right after this returns,
-    and handing `results` back means they keep doing that rather than
-    recomputing or losing it. `keyboard` is None for an empty result
-    list — the caller's own empty-results branch decides what to say
-    about that.
+    Returns `(results, keyboard)`, not just the keyboard, because both
+    callers log `len(results)` right after this returns. `keyboard` is
+    None for an empty result list; the caller's own empty-results branch
+    decides what to say about that.
 
-    Deliberately doesn't catch anything: the two call sites' failure
+    Deliberately doesn't catch anything — the two call sites' failure
     handling genuinely differs (different fallback screens), so each
-    keeps its own `try/except _SEARCH_SERVICE_ERRORS` wrapped around a
-    call to this helper, unchanged in shape from before."""
+    keeps its own `try/except _SEARCH_SERVICE_ERRORS` around the call."""
     results = await search_fn(client, query)
     keyboard = keyboard_fn(results) if results else None
     return results, keyboard
@@ -133,42 +126,40 @@ def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: Provider) -> 
 
 
 async def _reject_stale_tap(query: CallbackQuery, user_id: int, lang: str) -> None:
-    """The one thing every screen of the screenshot sub-flow has to say
-    when a button is tapped and there is no SETUP game left to act on:
-    the row was resolved (confirmed, stopped) or the setup-abandon timer
-    deleted it an hour in, while the messages it left behind stayed
-    tappable forever. It is a rejected action, so WARNING, per CLAUDE.md's
-    table — and an alert on screen, so the starter tapping a dead
-    keyboard is told why nothing happens (issue #79).
+    """The one thing every screen of the screenshot sub-flow says when a
+    button is tapped and there is no SETUP game left to act on: the row
+    was resolved (confirmed, stopped) or the setup-abandon timer deleted
+    it an hour in, while the messages it left behind stayed tappable
+    forever. WARNING per CLAUDE.md's table (a rejected action), plus an
+    alert so the starter tapping a dead keyboard is told why nothing
+    happens (issue #79).
 
     An **alert**, not a plain toast: the screen these sites answer for is
-    finished, so the message has to survive being read. The two things it
-    says are the two things that are true of every one of them — the
-    round is gone, and here is how to start another. Not
-    `dm_start.setup_abandoned`, the nearest existing string: that one is
-    worded as a group announcement and asserts the turn is open to
-    anyone, which is false when the row went away via /stop or because
-    the game actually started.
+    finished, so the message has to survive being read. It says the two
+    things true of every one of them — the round is gone, and how to
+    start another — rather than reusing `dm_start.setup_abandoned`, which
+    is worded as a group announcement asserting the turn is open to
+    anyone, false when the row went away via /stop or because the game
+    actually started.
 
-    **The alert is the handler's only `query.answer` on this path.**
-    Telegram invalidates a callback query id the moment it is answered,
-    so a bare acknowledgement above the lookup would spend the answer
-    these sites need and leave the text with nowhere to go. Every caller
-    therefore acknowledges a *successful* tap below this branch instead
-    — see each handler for where its own single answer sits.
+    **The alert is the handler's only `query.answer` on this path** —
+    Telegram invalidates a callback query id the moment it's answered, so
+    a bare acknowledgement above the lookup would spend it and leave the
+    text with nowhere to go. Every caller acknowledges a *successful* tap
+    below this branch instead — see each handler for where its own
+    single answer sits.
 
     One helper rather than the same lines at each of the six sites, so
-    the wording production greps for can't drift between them —
-    `opt(depth=1)` so loguru still stamps the *caller's* frame rather
-    than this one. Without it every site logged the same
-    `_shared:_reject_stale_tap:<the logger.warning below>` — one fixed
-    location, whatever line it currently sits on — and two of them (the
-    pair inside screenshot_search_pick_callback_handler, which also
-    share a callback prefix) became byte-identical, erasing the only
-    thing that told a mundane hour-old tap apart from a row that
-    vanished mid-round-trip. No literal line number here on purpose:
-    the last one went stale twice over, and it was a comment about line
-    numbers that did it."""
+    the wording can't drift between them — `opt(depth=1)` so loguru
+    stamps the *caller's* frame, not this one. Without it every site
+    logged the same fixed `_shared:_reject_stale_tap:<line>` location,
+    and two of them (the pair inside
+    screenshot_search_pick_callback_handler, sharing a callback prefix)
+    became byte-identical, erasing the only thing that told a mundane
+    hour-old tap apart from a row that vanished mid-round-trip. No
+    literal line number is cited here on purpose — the last one went
+    stale, and it was a line-number comment that caused this exact
+    bug."""
     logger.opt(depth=1).warning(
         "Starter {} tapped {!r} with no SETUP game left — already resolved, or the "
         "setup-abandon timer deleted the row",
@@ -194,31 +185,24 @@ def _stored_provider(stored: str) -> Provider:
     """A provider value read back off one of `Game`'s three
     `Provider`-typed columns, as a real `Provider` member.
 
-    Those columns are deliberately `String`-backed (see models/game.py),
-    which means SQLAlchemy has no idea they are enum-shaped: `ty` reads
-    the `Mapped[Provider...]` annotation and sees a `Provider`, but at
-    runtime a plain `str` comes back. Everything `Provider` inherits from
-    `str` works on it regardless — `==` in both directions, `in` against
-    a list of members, even a dict keyed by members (a StrEnum hashes as
-    its value) — so the *only* thing that breaks is member-specific
-    attribute access, and `.display_name` is exactly that. It raised
+    Those columns are deliberately `String`-backed (see models/game.py):
+    `ty` sees `Provider` from the `Mapped[Provider...]` annotation, but a
+    plain `str` comes back at runtime. Everything `Provider` inherits
+    from `str` still works on it (`==`, `in`, dict-key lookup, since a
+    StrEnum hashes as its value), so the only thing that breaks is
+    member-specific attribute access — `.display_name` — which raised
     `AttributeError: 'str' object has no attribute 'display_name'` from
     three failure screens, i.e. only when a provider was already down.
 
     So conversion happens once, here, at each of the four sites that
-    read one of those columns into a `Provider`-typed slot — rather than
-    defensively at every `.display_name` — and `ty` is right about
-    everything downstream of it. Those four: `search.py`'s
+    read one of those columns into a `Provider`-typed slot, rather than
+    defensively at every `.display_name`: `search.py`'s
     `search_text_handler` (twice — the picker column and `source`),
     `screenshots.py`'s `resume_screenshot_gallery`, and
-    `_screenshot_capable_providers` just below.
-
-    That last one is the load-bearing one, and the reason "only failure
-    screens are affected" understates this. It puts its result in a
-    `list[Provider]` that the source menu is drawn from, so without the
-    conversion a bare `str` reaches `_source_label`'s `.display_name` on
-    the ordinary screenshot-source screen — the happy path, not a
-    failure path."""
+    `_screenshot_capable_providers` below — the load-bearing one, since
+    its result feeds a `list[Provider]` the ordinary (non-failure)
+    screenshot-source screen draws its `.display_name` labels from, not
+    just a failure path."""
     return Provider(stored)
 
 

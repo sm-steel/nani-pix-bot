@@ -18,18 +18,17 @@ outage exactly like that one. Instead, `install()` wraps the bot's
 real `get_updates` call itself, so the heartbeat file is only touched
 on the line after a real call actually returns successfully.
 
-The first version of this shipped patching the *instance*
+The first version shipped patching the *instance*
 (`application.bot.get_updates = ...`) and crash-looped in production
-within seconds: python-telegram-bot's `TelegramObject.__setattr__`
-freezes every attribute assignment on a live instance once
-constructed, raising "AttributeError: Attribute `get_updates` of
-class `ExtBot` can't be set!" — confirmed straight from that class's
-own source. Patching the *class* instead
+within seconds: `TelegramObject.__setattr__` freezes every attribute
+assignment on a live instance once constructed, raising
+"AttributeError: Attribute `get_updates` of class `ExtBot` can't be
+set!". Patching the *class* instead
 (`type(application.bot).get_updates = ...`) bypasses that guard
-entirely, since it's `type.__setattr__` mutating the class's own
-namespace, not `TelegramObject`'s instance-level override — verified
-directly against a real `ApplicationBuilder`-built bot, not just
-inferred from reading the freeze check's source."""
+entirely — it's `type.__setattr__` mutating the class's own namespace,
+not `TelegramObject`'s instance-level override — verified directly
+against a real `ApplicationBuilder`-built bot, not just inferred from
+reading the freeze check's source."""
 
 import asyncio
 from pathlib import Path
