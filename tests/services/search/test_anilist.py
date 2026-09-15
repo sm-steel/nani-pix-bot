@@ -408,6 +408,16 @@ _MALFORMED_DATA_BODIES = [
     pytest.param({"data": [1]}, id="data-is-an-array"),
     pytest.param({"data": "Page"}, id="data-is-a-string"),
     pytest.param({"data": True}, id="data-is-a-bool"),
+    # Falsy, and therefore the half the pre-fix `data or {}` / `... or {}`
+    # swallowed *silently*: the only line it emitted was a DEBUG "returned
+    # 0 result(s)", making a dead provider indistinguishable from an
+    # unpopular anime. The GraphQL spec allows `data` to be a map or null
+    # and nothing else, so a falsy non-null here can only come from
+    # something that isn't a GraphQL server — an interstitial, a proxy
+    # envelope — and it has to raise like every other malformed shape.
+    # Without these two params `or`-truthiness could be reintroduced in a
+    # refactor with the suite staying green.
+    pytest.param({"data": []}, id="data-is-an-empty-array"),
 ]
 
 
@@ -433,6 +443,7 @@ async def test_get_by_id_raises_when_data_is_not_an_object(body: dict) -> None:
         pytest.param(5, id="page-is-a-number"),
         pytest.param([1], id="page-is-an-array"),
         pytest.param("media", id="page-is-a-string"),
+        pytest.param(0, id="page-is-zero"),
     ],
 )
 async def test_search_raises_when_the_page_container_is_not_an_object(page: Any) -> None:
