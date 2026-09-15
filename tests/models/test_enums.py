@@ -71,6 +71,18 @@ def test_provider_pick_prefixes_are_the_wire_format_every_member_uses() -> None:
     assert Provider.TMDB.pick_prefix == "tmdb_pick:"
 
 
+def test_provider_method_callback_data_is_the_method_picker_wire_format() -> None:
+    # Single source of truth for the identification-method-picker's
+    # per-provider callback data. keyboards.py's ANILIST_METHOD_CALLBACK_DATA
+    # etc. stay named module constants (dm_start's tests import them
+    # directly), but now derive from this property instead of an
+    # independent f"method:{...}" restatement.
+    assert Provider.ANILIST.method_callback_data == "method:anilist"
+    assert Provider.SHIKIMORI.method_callback_data == "method:shikimori"
+    assert Provider.JIKAN.method_callback_data == "method:jikan"
+    assert Provider.TMDB.method_callback_data == "method:tmdb"
+
+
 def test_provider_id_attr_names_are_the_game_column_names() -> None:
     # Replaces the old `_ID_ATTRS` dict (issue #114).
     assert Provider.SHIKIMORI.id_attr_name == "shikimori_id"

@@ -79,6 +79,22 @@ class Provider(enum.StrEnum):
         return f"{self}_pick:"
 
     @property
+    def method_callback_data(self) -> str:
+        """The callback data for this provider's button on the
+        identification-method picker, e.g. `"method:shikimori"` — see
+        `keyboards.py::method_selection_keyboard`.
+
+        `keyboards.py`'s `ANILIST_METHOD_CALLBACK_DATA` etc. stay named
+        module constants derived from this property, rather than moving
+        onto `Provider` outright the way `pick_prefix`/`id_attr_name` did:
+        several `dm_start` test files import those constants directly, and
+        `MANUAL_METHOD_CALLBACK_DATA` has no `Provider` member to hang off
+        of (see this enum's own docstring on `"manual"`) — so a plain
+        f-string restatement here is what #114 was about eliminating, not
+        the named constants themselves."""
+        return f"method:{self}"
+
+    @property
     def id_attr_name(self) -> str:
         """The `Game` column name that stores this provider's screenshot
         id — see `models/game.py`'s `shikimori_id`/`jikan_id`/`tmdb_id`

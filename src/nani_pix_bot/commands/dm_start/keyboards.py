@@ -36,20 +36,16 @@ from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 SEARCH_RETRY_CALLBACK_DATA = "search_retry"
-# Read off Provider.pick_prefix, not re-derived — app.py's routing pattern
-# is built the same way, and the two used to be independent copies of one
-# wire format (issue #114).
-_ANILIST_PICK_PREFIX = Provider.ANILIST.pick_prefix
-_SHIKIMORI_PICK_PREFIX = Provider.SHIKIMORI.pick_prefix
-_JIKAN_PICK_PREFIX = Provider.JIKAN.pick_prefix
-_TMDB_PICK_PREFIX = Provider.TMDB.pick_prefix
 
-# Derived from Provider, not hand-spelled — same reasoning as the
-# pick-prefix constants above.
-ANILIST_METHOD_CALLBACK_DATA = f"method:{Provider.ANILIST}"
-SHIKIMORI_METHOD_CALLBACK_DATA = f"method:{Provider.SHIKIMORI}"
-JIKAN_METHOD_CALLBACK_DATA = f"method:{Provider.JIKAN}"
-TMDB_METHOD_CALLBACK_DATA = f"method:{Provider.TMDB}"
+# Kept as named module constants (not inlined like the pick-prefix values
+# below) because several dm_start test files import these directly — but
+# derived from Provider.method_callback_data, not an independent
+# f"method:{...}" restatement, so the wire format still has one source of
+# truth (issue #114).
+ANILIST_METHOD_CALLBACK_DATA = Provider.ANILIST.method_callback_data
+SHIKIMORI_METHOD_CALLBACK_DATA = Provider.SHIKIMORI.method_callback_data
+JIKAN_METHOD_CALLBACK_DATA = Provider.JIKAN.method_callback_data
+TMDB_METHOD_CALLBACK_DATA = Provider.TMDB.method_callback_data
 # "manual" is deliberately not a Provider member (see its docstring) —
 # stays a standalone literal.
 MANUAL_METHOD_CALLBACK_DATA = "method:manual"
@@ -130,11 +126,11 @@ def _retry_data_for(pick_prefix: str) -> str:
 
 def anilist_results_keyboard(results: list[AniListResult], lang: str) -> InlineKeyboardMarkup:
     accessors = _ResultAccessors(label_fn=_anilist_label, id_fn=lambda result: result.anilist_id)
-    return _results_keyboard(results, lang, accessors, _ANILIST_PICK_PREFIX)
+    return _results_keyboard(results, lang, accessors, Provider.ANILIST.pick_prefix)
 
 
 def shikimori_results_keyboard(
-    results: list[ShikimoriResult], lang: str, *, pick_prefix: str = _SHIKIMORI_PICK_PREFIX
+    results: list[ShikimoriResult], lang: str, *, pick_prefix: str = Provider.SHIKIMORI.pick_prefix
 ) -> InlineKeyboardMarkup:
     """`pick_prefix` is overridable so ticket 8's cross-provider "Wrong
     anime? Search again" flow can route its picks to a different handler
@@ -147,7 +143,7 @@ def shikimori_results_keyboard(
 
 
 def jikan_results_keyboard(
-    results: list[JikanResult], lang: str, *, pick_prefix: str = _JIKAN_PICK_PREFIX
+    results: list[JikanResult], lang: str, *, pick_prefix: str = Provider.JIKAN.pick_prefix
 ) -> InlineKeyboardMarkup:
     """See `shikimori_results_keyboard` for why `pick_prefix` is
     overridable."""
@@ -156,7 +152,7 @@ def jikan_results_keyboard(
 
 
 def tmdb_results_keyboard(
-    results: list[TMDBResult], lang: str, *, pick_prefix: str = _TMDB_PICK_PREFIX
+    results: list[TMDBResult], lang: str, *, pick_prefix: str = Provider.TMDB.pick_prefix
 ) -> InlineKeyboardMarkup:
     """See `shikimori_results_keyboard` for why `pick_prefix` is
     overridable."""
