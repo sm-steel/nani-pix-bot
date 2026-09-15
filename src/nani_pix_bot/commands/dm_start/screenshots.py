@@ -394,6 +394,10 @@ async def screenshot_source_callback_handler(
         # above has had its chance at it (see _reject_stale_tap). Still
         # ahead of the provider round-trip below, so the spinner clears
         # at the same moment it always did for a tap that works.
+        # Inside the open write transaction, like every other await in
+        # this block — see issue #82, which is filed against exactly
+        # that shape here; this is one more call for its sweep to move,
+        # not a new pattern.
         await query.answer()
 
         provider = parse_screenshot_source_callback_data(query.data)

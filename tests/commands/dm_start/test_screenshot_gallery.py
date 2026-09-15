@@ -991,21 +991,69 @@ async def test_a_stale_index_is_acknowledged_without_disturbing_the_gallery(
 
     update.callback_query.edit_message_text.assert_not_awaited()
     update.callback_query.answer.assert_awaited_once_with(i18n.t("dm_start.screenshot_gone", "EN"))
+    # Answered at the decision point, so nothing was downloaded first.
+    context.bot_data["search_client"].get.assert_not_called()
 
 
-async def test_a_live_gallery_tap_still_gets_its_bare_acknowledgement(
+async def test_a_live_gallery_tap_is_answered_before_the_album_goes_out(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A tap that does work is answered once, with nothing to say."""
+    """A tap that does work is answered once, with nothing to say — and
+    *before* the slow part. Paging sends an album Telegram fetches from
+    five remote URLs; answering after it would leave the spinner running
+    on the flow's most-tapped button for as long as that takes, and would
+    put the answer outside the window Telegram accepts it in if the send
+    dragged. Asserted as an ordering, not a count, because a count passes
+    either way."""
     urls = [f"https://shikimori.io/x/{i}.jpg" for i in range(8)]
     monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=urls))
     _staged_game(session_factory, shikimori_id=52991)
 
     update = _make_callback_update(data="screenshot_more:shikimori:5")
     context = _make_context(session_factory)
+    answered_before_send: list[bool] = []
+    context.bot.send_media_group = AsyncMock(
+        side_effect=lambda **_: answered_before_send.append(
+            update.callback_query.answer.await_count == 1
+        )
+    )
 
     await screenshot_gallery.screenshot_gallery_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    update.callback_query.answer.assert_awaited_once_with(None)
+    assert answered_before_send == [True]
+    update.callback_query.answer.assert_awaited_once_with()
+
+
+async def test_a_gallery_pick_is_answered_before_the_download_starts(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half: a real numbered pick is answered once the pick is
+    known to be real — after the (normally cached) url listing, before
+    the download and the five-stage preview album, which together are the
+    longest stretch in the flow."""
+    monkeypatch.setattr(
+        shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
+    )
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_pick:shikimori:0")
+    context = _make_context(session_factory)
+    answered_before_download: list[bool] = []
+    download_response = MagicMock(content=b"real-screenshot-bytes")
+    download_response.raise_for_status = MagicMock()
+
+    async def _download(_url):
+        answered_before_download.append(update.callback_query.answer.await_count == 1)
+        return download_response
+
+    context.bot_data["search_client"].get = AsyncMock(side_effect=_download)
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert answered_before_download == [True]
+    update.callback_query.answer.assert_awaited_once_with()

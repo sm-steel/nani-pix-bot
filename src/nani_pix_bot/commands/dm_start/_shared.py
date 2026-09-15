@@ -5,7 +5,7 @@ from typing import assert_never, cast
 
 import httpx
 from loguru import logger
-from telegram import InlineKeyboardMarkup, InputMediaPhoto
+from telegram import CallbackQuery, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
@@ -94,7 +94,7 @@ def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: str) -> httpx
     return cast(httpx.AsyncClient, context.bot_data[key])
 
 
-async def _reject_stale_tap(query, user_id: int, lang: str) -> None:
+async def _reject_stale_tap(query: CallbackQuery, user_id: int, lang: str) -> None:
     """The one thing every screen of the screenshot sub-flow has to say
     when a button is tapped and there is no SETUP game left to act on:
     the row was resolved (confirmed, stopped) or the setup-abandon timer

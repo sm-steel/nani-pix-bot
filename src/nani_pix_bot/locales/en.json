@@ -47,7 +47,7 @@
   "dm_start.game_started_caption": "🎮 {starter} started a new round! Guess with /guess <title> in this topic.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
   "dm_start.setup_started_group_notice": "🎬 {starter} is preparing a new game — hang tight!",
   "dm_start.setup_already_open": "You're already setting up a game — send /stop if you'd rather abandon it and start over.",
-  "dm_start.setup_gone": "That round isn't being set up anymore — DM me a screenshot or send /newgame to start a fresh one.",
+  "dm_start.setup_gone": "That round isn't being set up anymore — if it's your turn, DM me a screenshot or send /newgame to start a fresh one.",
   "dm_start.screenshot_gone": "That screenshot isn't in the list anymore — pick another one above.",
   "dm_start.setup_abandoned": "⌛ Setup timed out without finishing — it's open to anyone now! DM me a screenshot to begin, or send /newgame to pick one instead.",
 
