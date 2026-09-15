@@ -166,7 +166,19 @@ _RESHAPED_PROXY_SHAPES = [
     ("quote-in-password", f'{_FAKE_USER}:fake"pass@{_FAKE_HOST}:1080', 'fake"pass'),
     ("brace-in-password", f"{_FAKE_USER}:fake{{pass@{_FAKE_HOST}:1080", "fake{pass"),
     ("leading-slashes", f"//{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080", _FAKE_PASS),
+    # The three below carry a "://" and so exercise _describe_proxy_shape's
+    # scheme-classification branch rather than its no-scheme early return.
+    # Without them the branch is covered once in twelve, and the most
+    # plausible future regression -- "let's also tell the operator which
+    # scheme they typed" -- would barely be pinned.
     ("unknown-scheme", f"socks9://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080", _FAKE_PASS),
+    # The leading segment IS the credential: a pattern that anchors on
+    # "<scheme>://" keeps it as the scheme and redacts only what follows.
+    ("credential-as-scheme", f"{_FAKE_USER}://{_FAKE_PASS}@{_FAKE_HOST}:1080", _FAKE_PASS),
+    # A padded scheme percent-encodes to "%20%20http%20%20://", which no
+    # scheme-anchored pattern matches at all -- so the whole authority
+    # printed in the clear despite the scheme itself being valid.
+    ("padded-scheme", f"  http  ://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080", _FAKE_PASS),
 ]
 
 # The bot-token shapes earlier rounds closed, plus the two a

@@ -41,8 +41,14 @@ _IMAGE_COLUMN_LENGTH = 2**32 - 1
 # message, and no text derived from TELEGRAM_PROXY_URL's contents, is
 # ever printed. A warning is assembled only from (1) string literals
 # written in this file, (2) an exception's class name, and (3)
-# structured non-text fields (an HTTP status code as an int, a game id
-# as an int, a row count).
+# structured non-text fields: an HTTP status code, type-checked as
+# exactly int before use, plus len(rows) and row.id.
+#
+# One honest caveat about (3): row.id is the single printed value that
+# is neither a literal from this file nor guarded by a type check. It
+# is the games table's integer primary key, so it cannot carry a
+# credential -- but that is an argument about where it comes from,
+# not a check this code performs.
 #
 # WHY NOT REDACT THE MESSAGE INSTEAD. Three earlier attempts did, and
 # all three failed the same way. A literal `str(exc).replace(secret,
@@ -136,10 +142,16 @@ def _describe_exception_safely(exc: BaseException) -> str:
     The one message-level detail worth keeping is an HTTP status code,
     and it does not need the message at all -- it is an int on the
     response object, so it comes across as structured data rather than
-    as text that might have a secret next to it."""
+    as text that might have a secret next to it. It is accepted only
+    when its type is exactly int; see the comment at the check."""
     summary = type(exc).__name__
     status_code = getattr(getattr(exc, "response", None), "status_code", None)
-    if isinstance(status_code, int):
+    # `type(...) is int`, not isinstance: httpx.Response does not coerce
+    # what it is handed, and isinstance would admit bool and any int
+    # subclass -- including one with a hostile __str__ that renders
+    # arbitrary text here. Unreachable from configuration, but exact-type
+    # is free and keeps the invariant airtight rather than nearly so.
+    if type(status_code) is int:
         summary = f"{summary} (HTTP {status_code})"
     return summary
 
@@ -302,9 +314,22 @@ def _backfill_original_image_for_in_flight_games() -> None:
                 # request URL ("...for url 'https://api.telegram.org/
                 # bot<TOKEN>/getFile'"), and both URLs built in
                 # _fetch_telegram_file_bytes fold the token straight
-                # into the path. An httpx.ConnectError's message can
-                # carry the proxy host the same way (an OS resolver
-                # error names what it failed to resolve). Neither is
+                # into the path. An httpx.ConnectError can carry the
+                # proxy host too -- but NOT, despite the obvious guess,
+                # via DNS: socket.gaierror renders as "[Errno ...]
+                # getaddrinfo failed" and never embeds the hostname, on
+                # Linux or Windows. Do not "correct" this comment back
+                # to a resolver claim after testing that one and finding
+                # it false; the real vector is TLS. For an https://
+                # proxy, httpcore's HTTPConnection._connect passes the
+                # proxy host as start_tls's server_hostname inside a
+                # block that maps OSError to ConnectError, and
+                # ssl.SSLCertVerificationError (an OSError subclass)
+                # reads "Hostname mismatch, certificate is not valid for
+                # '<proxy host>'". httpx's map_httpcore_exceptions
+                # carries that text across verbatim, so a proxy with a
+                # mismatched certificate reaches this warning as a
+                # ConnectError spelling the host out. Neither secret is
                 # printed: _describe_exception_safely reports the
                 # exception's class and, for an HTTP failure, its status
                 # code as a structured int -- see the "Safe diagnostics"
