@@ -4,8 +4,10 @@ steps (`CONFIRMING`/`AWAITING_SYNONYM`/`AWAITING_PHOTO_CHANGE`) are
 dispatched from here too, since they all arrive as the same kind of DM
 text message — see `search_text_handler`."""
 
+from types import ModuleType
 from typing import Literal
 
+import httpx
 from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -238,6 +240,28 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     await query.edit_message_text(i18n.t(message_key, lang))
 
 
+# Module references, not bound function references — see
+# screenshots.py's own _SCREENSHOT_MODULES for why (monkeypatch.setattr
+# on a provider module has to keep working). Deliberately not unified
+# with that dict: it's 3-provider (AniList has no screenshots()), and
+# widening it to 4 would turn a stray AniList screenshot-lookup's
+# KeyError into an AttributeError on its other call sites — an
+# invisible-to-tests behavior change on a defensive path, for no
+# benefit. The entry overlap is coincidental, not a signal to merge.
+_SEARCH_MODULES: dict[Provider, ModuleType] = {
+    Provider.ANILIST: anilist,
+    Provider.SHIKIMORI: shikimori,
+    Provider.JIKAN: jikan,
+    Provider.TMDB: tmdb,
+}
+
+
+async def _get_identification_result(
+    provider: Provider, client: httpx.AsyncClient, external_id: int
+) -> AniListResult | ShikimoriResult | JikanResult | TMDBResult | None:
+    return await _SEARCH_MODULES[provider].get_by_id(client, external_id)
+
+
 async def _resolve_picked_result(
     query, context: ContextTypes.DEFAULT_TYPE, lang: str
 ) -> tuple[Provider, int, AniListResult | ShikimoriResult | JikanResult | TMDBResult] | None:
@@ -257,14 +281,7 @@ async def _resolve_picked_result(
 
     client = _client_for_source(context, source)
     try:
-        if source == Provider.SHIKIMORI:
-            result = await shikimori.get_by_id(client, external_id)
-        elif source == Provider.JIKAN:
-            result = await jikan.get_by_id(client, external_id)
-        elif source == Provider.TMDB:
-            result = await tmdb.get_by_id(client, external_id)
-        else:
-            result = await anilist.get_by_id(client, external_id)
+        result = await _get_identification_result(source, client, external_id)
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} get_by_id failed for id {}", source, external_id)
         await _reply_service_down(query.edit_message_text, lang, source)
