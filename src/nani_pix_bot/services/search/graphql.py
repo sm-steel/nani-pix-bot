@@ -1,12 +1,12 @@
 """Shared GraphQL-over-HTTP plumbing for this package's GraphQL
-providers — anilist.py today, with shikimori.py migrating onto
-GraphQL next (issue #104) to sidestep a REST-API data-shape bug that
+providers — anilist.py, and shikimori.py since it migrated onto
+GraphQL (issue #104) to sidestep a REST-API data-shape bug that
 GraphQL's schema can't produce. Mirrors rest.py's shape: a small
 provider-identity dataclass plus a couple of thin functions layered
 directly on http_retry.py — not a full GraphQL client, just the two
 pieces every GraphQL provider here needs and would otherwise each
 reimplement byte-identically, the same duplication rest.py's docstring
-describes for the three REST providers.
+describes for its own two REST providers.
 
 What stays per-provider: the queries themselves, the variables they're
 built with, and all parsing — this module only gets a caller as far as

@@ -46,7 +46,7 @@ involvement) — this bot is Telegram-only, unlike `ley-shards-bot`.
   the ops vault for current status if this ever needs revisiting.)
 - **AniList/Shikimori/Jikan connectivity:** all three are reached
   directly from `moscow`, no proxy involved —
-  `services/search/shikimori.py`'s `SHIKIMORI_BASE_URL` points at
+  `services/search/shikimori.py`'s `SHIKIMORI_GRAPHQL_URL` points at
   `shikimori.io`. (Shikimori's older `shikimori.one` domain now
   permanently redirects to `shikimori.io` and is itself unreachable
   directly from `moscow` — worth remembering if that redirect target
@@ -264,9 +264,12 @@ src/nani_pix_bot/
                    # at setup time only, never per guess:
                    #   anilist.py    AniList GraphQL search (httpx) — no
                    #                 screenshot capability
-                   #   shikimori.py  Shikimori REST search + screenshots
+                   #   shikimori.py  Shikimori GraphQL search + screenshots
                    #                 (httpx) — the RU-friendly
-                   #                 alternative to anilist.py
+                   #                 alternative to anilist.py. Migrated
+                   #                 off REST (issue #104) to sidestep a
+                   #                 REST-only malformed-data shape (issue
+                   #                 #103)
                    #   jikan.py      Jikan (third-party MyAnimeList API)
                    #                 search + screenshots (httpx)
                    #   tmdb.py       TMDB search + screenshots (httpx) —
@@ -274,22 +277,30 @@ src/nani_pix_bot/
                    #                 Bearer token, unlike the three
                    #                 above (see "Infrastructure" above)
                    #   rest.py       the JSON-GET + by-id-or-404 plumbing
-                   #                 shared by the three REST providers
-                   #                 above (not anilist.py, which is
-                   #                 GraphQL and has neither a by-id URL
-                   #                 nor 404 semantics). Generic over the
+                   #                 shared by the two REST providers
+                   #                 above (jikan.py, tmdb.py — not
+                   #                 anilist.py or shikimori.py, both
+                   #                 GraphQL with neither a by-id URL nor
+                   #                 404 semantics). Generic over the
                    #                 parsed type, so each module's
                    #                 get_by_id keeps its own concrete
                    #                 return type (issue #68)
+                   #   graphql.py    the shared GraphQL-over-HTTP plumbing
+                   #                 for the two GraphQL providers above
+                   #                 (anilist.py, then shikimori.py once
+                   #                 it migrated onto GraphQL, issue
+                   #                 #104) — the POST/decode/error-array
+                   #                 handling rest.py provides for its
+                   #                 own two REST providers
                    #   parsing.py    the entry-level guards all four
                    #                 share: skip a result whose shape
                    #                 the provider's own _parse_* can't
                    #                 index, and validate the fields it
                    #                 hands back. Here rather than in
-                   #                 rest.py because anilist.py needs
-                   #                 them too and deliberately shares
-                   #                 none of the REST plumbing (issue
-                   #                 #83)
+                   #                 rest.py because anilist.py and
+                   #                 shikimori.py need them too and
+                   #                 deliberately share none of the REST
+                   #                 plumbing (issue #83)
                    #   http_retry.py the 429/Retry-After retry loop
                    #                 shared by all four
                    #   cache.py      short-TTL, in-process, keyed-by-

@@ -19,6 +19,21 @@ Shikimori's `animes(search: ...)` query is deliberately light — no
 restart-resilient by-id re-fetch issue #11 already established for
 AniList, except here it's forced by Shikimori's own schema shape rather
 than a design choice.
+
+`synonyms`' item-level nullability (whether Shikimori can ever answer a
+list *containing* a null, the same shape REST's `english` bug had) could
+not be confirmed via GraphQL introspection — the live API enforces a max
+query depth of 5, one hop short of what's needed to inspect a list
+field's inner item type. Empirically checked instead: 53 real anime
+entries sampled across a wide id range (ids 1-68 plus several higher/
+known-sparse ids, including 817 and 1790 — the original issue #103 repro
+titles) via live queries against `shikimori.io/api/graphql`. Every
+`synonyms` value observed was either `[]` or a list of real strings,
+never a list containing a null. No code change was needed either way:
+`parsing.optional_str_list` already raises (and `parse_entry` already
+skips) on a null member if one ever does appear, the same as it does for
+every other provider's list fields — this note just records that the
+shape was actually checked, not assumed.
 """
 
 from dataclasses import dataclass
@@ -126,14 +141,23 @@ async def get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriRe
     plural even for one id, confirmed live to answer an unknown id with
     an empty list (`{"data": {"animes": []}}`), HTTP 200, no `errors`.
     That's the actual not-found contract here, replacing REST's 404
-    status this used to catch via `rest.fetch_by_id`."""
+    status this used to catch via `rest.fetch_by_id`.
+
+    `data.get("animes")` goes through `parsing.parse_entries` before
+    anything indexes it, same as `search()` — deliberately, not an
+    oversight: a malformed (non-list) `animes` here now raises
+    `RuntimeError` ("service is down") instead of silently returning
+    `None` ("pick is gone"). An API malfunction being reported as an
+    outage rather than as a vanished search result is the correct
+    direction — the opposite is exactly the issue #103 failure mode this
+    migration exists to eliminate."""
     variables = {"ids": str(shikimori_id)}
     data = await graphql.request(_API, client, query=_DETAIL_QUERY, variables=variables)
-    animes = data.get("animes") or []
-    if not animes:
+    entry = _single_anime(data)
+    if entry is None:
         logger.debug("Shikimori id {} no longer found", shikimori_id)
         return None
-    return parsing.parse_entry(_API_NAME, animes[0], _parse_detail_result)
+    return parsing.parse_entry(_API_NAME, entry, _parse_detail_result)
 
 
 @cache.cached()
@@ -143,11 +167,18 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
     Cached (see cache.py) so repeatedly tapping "More screenshots" for
     the same anime re-slices the same cached list instead of re-hitting
     the API every time — pagination/slicing for display is the caller's
-    job, not this function's."""
+    job, not this function's.
+
+    `data.get("animes")` goes through `_single_anime` (the same
+    `parsing.parse_entries` guard `search()` and `get_by_id` use) before
+    anything indexes it — deliberately, not an oversight: see
+    `get_by_id`'s docstring for why a malformed `animes` here raising
+    `RuntimeError` rather than yielding an empty screenshot list is the
+    correct direction (issue #103)."""
     variables = {"ids": str(shikimori_id)}
     data = await graphql.request(_API, client, query=_SCREENSHOTS_QUERY, variables=variables)
-    animes = data.get("animes") or []
-    entries = (animes[0].get("screenshots") or []) if animes else []
+    entry = _single_anime(data)
+    entries = (entry.get("screenshots") or []) if entry else []
     # Through `parse_entries` rather than an inline comprehension:
     # `entry.get("originalUrl")` on a scalar is an AttributeError, and
     # this endpoint's entries are third-party data exactly like the
@@ -155,6 +186,26 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
     urls = parsing.parse_entries(_API_NAME, entries, _parse_screenshot_url)[:SCREENSHOT_FETCH_LIMIT]
     logger.debug("Shikimori id {} has {} screenshot(s) available", shikimori_id, len(entries))
     return urls
+
+
+def _single_anime(data: dict) -> dict | None:
+    """The one `Anime` entry a by-id/screenshots query's `animes` list
+    should hold, or None if the id wasn't found (an empty list) or the
+    single entry couldn't be read (a non-dict scalar — `parse_entries`
+    already logged why).
+
+    Routes `data.get("animes")` through the same `parsing.parse_entries`
+    guard `search()` already uses, rather than indexing it directly —
+    without this, a truthy non-list `animes` (a dict, a number, a
+    malformed string) would reach `[0]`/`.get(...)` unguarded and raise
+    a `KeyError`/`TypeError`/`AttributeError` that escapes
+    `_SEARCH_SERVICE_ERRORS` entirely (issue #83, reintroduced for this
+    call shape). The identity parse function is deliberate: this helper
+    only validates the *container*, exactly one level of guard — each
+    caller still runs its own `_parse_*` over the single entry
+    afterwards."""
+    entries = parsing.parse_entries(_API_NAME, data.get("animes"), lambda raw: raw)
+    return entries[0] if entries else None
 
 
 def _parse_shikimori_id(raw: dict) -> int:
@@ -174,12 +225,19 @@ def _parse_shikimori_id(raw: dict) -> int:
     public interface — so the string is converted here, at the one point
     that already validates every other field, rather than by a caller
     downstream that would have to re-learn this quirk. Anything that
-    isn't a digit-only string (missing, null, a float, a bool, an array,
-    an object, a non-numeric string) raises `TypeError`, which
-    `parse_entry` turns into the same WARNING-and-skip as every other
-    malformed id (issue #83)."""
+    isn't an ASCII digit-only string (missing, null, a float, a bool, an
+    array, an object, a non-numeric string, or a non-ASCII "digit" like
+    a superscript that `str.isdigit()` accepts but `int()` can't parse)
+    raises `TypeError`, which `parse_entry` turns into the same
+    WARNING-and-skip as every other malformed id (issue #83)."""
     value = raw["id"]
-    if not isinstance(value, str) or not value.isdigit():
+    # `isascii()` alongside `isdigit()`, not instead of it: `str.isdigit()`
+    # returns True for some non-ASCII digit characters `int()` can't
+    # actually parse (e.g. "²".isdigit() is True but int("²")
+    # raises ValueError, which isn't in parsing._MALFORMED_ENTRY_ERRORS and
+    # would escape uncaught). Requiring isascii() too guarantees int(value)
+    # succeeds for anything that passes this check.
+    if not isinstance(value, str) or not value.isascii() or not value.isdigit():
         raise TypeError(f"'id' is {value!r}, expected a numeric string")
     return int(value)
 

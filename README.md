@@ -24,8 +24,8 @@ design.
 - Python 3.11+, managed with [uv](https://docs.astral.sh/uv/)
 - [python-telegram-bot](https://docs.python-telegram-bot.org/) (async, long-polling)
 - SQLAlchemy + Alembic against MariaDB
-- Pillow (pixelation), rapidfuzz (guess matching), httpx (AniList GraphQL,
-  Shikimori/Jikan/TMDB REST)
+- Pillow (pixelation), rapidfuzz (guess matching), httpx (AniList/Shikimori
+  GraphQL, Jikan/TMDB REST)
 - Linting/formatting: `ruff`. Type checking: `ty`. Complexity/duplication/secrets: `qlty`.
 
 ## Dev setup

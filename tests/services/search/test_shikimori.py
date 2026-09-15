@@ -118,6 +118,21 @@ async def test_get_by_id_sends_the_id_as_a_string_variable() -> None:
     assert captured["json"]["variables"] == {"ids": "52991"}
 
 
+async def test_screenshots_sends_the_id_as_a_string_variable() -> None:
+    """Mirrors test_get_by_id_sends_the_id_as_a_string_variable: the same
+    `ids` stringification requirement applies to the screenshots query."""
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json=_animes_payload([]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await shikimori.screenshots(client, 52991)
+
+    assert captured["json"]["variables"] == {"ids": "52991"}
+
+
 async def test_search_retries_after_rate_limit_then_succeeds() -> None:
     calls = {"n": 0}
 
@@ -375,6 +390,47 @@ async def test_search_skips_scalar_entries() -> None:
     assert results == []
 
 
+async def test_get_by_id_raises_when_animes_is_not_a_list() -> None:
+    """The container guard search() already has via parsing.parse_entries
+    must apply to get_by_id too — a truthy non-list `animes` (a dict here)
+    is an outage, not a vanished pick, and must reach
+    _SEARCH_SERVICE_ERRORS as a RuntimeError rather than raising an
+    uncaught KeyError/TypeError from unguarded indexing (issue #83,
+    reintroduced for this call shape)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"animes": {"message": "unexpected"}}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="expected an array"):
+            await shikimori.get_by_id(client, 52991)
+
+
+async def test_screenshots_raises_when_animes_is_not_a_list() -> None:
+    """The screenshots equivalent of test_get_by_id_raises_when_animes_is_not_a_list."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"animes": {"message": "unexpected"}}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="expected an array"):
+            await shikimori.screenshots(client, 52991)
+
+
+async def test_screenshots_skips_scalar_anime_entries() -> None:
+    """The screenshots equivalent of test_search_skips_scalar_entries: an
+    `animes` array of scalars where an array of entry objects belongs
+    must be skipped per-entry rather than indexed unguarded."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_animes_payload([1, 2]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await shikimori.screenshots(client, 52991)
+
+    assert urls == []
+
+
 async def test_get_by_id_returns_none_when_the_entry_has_no_id() -> None:
     """Nothing usable came back for this pick, which the picker already
     reports the same way it reports a not-found result."""
@@ -433,6 +489,11 @@ async def test_search_skips_an_entry_whose_id_is_null() -> None:
         pytest.param({"value": "52991"}, id="id-is-an-object"),
         pytest.param("52991a", id="id-is-a-non-numeric-string"),
         pytest.param("", id="id-is-an-empty-string"),
+        # "²".isdigit() is True but int("²") raises ValueError, which
+        # isn't in parsing._MALFORMED_ENTRY_ERRORS and would escape
+        # uncaught if isdigit() were trusted alone — must be rejected by
+        # the isascii() check before int() is ever called.
+        pytest.param("²", id="id-is-a-non-ascii-digit"),
     ],
 )
 async def test_search_skips_an_entry_with_a_malformed_id(raw_id: object) -> None:
