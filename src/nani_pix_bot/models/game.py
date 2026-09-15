@@ -1,15 +1,16 @@
 from datetime import UTC, datetime
+from typing import Literal
 
 from sqlalchemy import JSON, BigInteger, ForeignKey, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from nani_pix_bot.models.base import Base
-from nani_pix_bot.models.enums import GameStatus, PixelStage, SetupStep
+from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider, SetupStep
 from nani_pix_bot.models.player import Player
 
 # Generous headroom over any observed anime title length.
 TITLE_LENGTH = 255
-# "shikimori"/"jikan"/"tmdb" plus headroom — same length as `source` below.
+# A Provider value plus headroom — same length as `source` below.
 SCREENSHOT_SOURCE_LENGTH = 16
 # A length this large just tells MariaDB to pick LONGBLOB over
 # BLOB/MEDIUMBLOB (see services/pixelate.py's docstring on why no image
@@ -38,17 +39,31 @@ class Game(Base):
     title_native: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
     title_russian: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
     synonyms: Mapped[list[str] | None] = mapped_column(JSON, default=None)
-    # Which identification method staged this game's title/synonyms —
-    # "anilist" / "shikimori" / "jikan" / "tmdb" / "manual". See
-    # services/game/state.py's stage_result().
-    source: Mapped[str] = mapped_column(String(16), default="anilist")
+    # Which identification method staged this game's title/synonyms — a
+    # Provider, or "manual", which is deliberately outside that enum
+    # because it names the *absence* of an automatic provider rather than
+    # one of them (see Provider's docstring). See
+    # services/game/state.py's stage_result()/stage_manual_entry().
+    #
+    # The explicit String(16) on this column, and String(...) on the two
+    # screenshot columns below, are load-bearing and must stay: drop one
+    # and SQLAlchemy auto-infers a native sa.Enum(Provider) column from
+    # the annotation instead, which persists member *names*
+    # ("SHIKIMORI") rather than the values every existing row already
+    # holds — with no migration behind it and no error until something
+    # reads the column back. GameStatus/PixelStage/SetupStep genuinely
+    # do get native sa.Enum columns, created by their own migrations;
+    # these three deliberately must not. Guarded by
+    # tests/models/test_game.py's
+    # test_provider_columns_store_the_value_not_the_member_name.
+    source: Mapped[Provider | Literal["manual"]] = mapped_column(String(16), default="anilist")
     # Image provenance, and nothing else: which provider's *_id column
-    # above is currently backing original_image ("shikimori"/"jikan"/
-    # "tmdb"), or None when there is no API-sourced image — a genuine
+    # above is currently backing original_image, or None when there is
+    # no API-sourced image — a genuine
     # upload, or no image staged yet. Written only where original_image
     # itself is written from a gallery pick
     # (commands/dm_start/screenshot_gallery.py).
-    screenshot_source: Mapped[str | None] = mapped_column(
+    screenshot_source: Mapped[Provider | None] = mapped_column(
         String(SCREENSHOT_SOURCE_LENGTH), default=None
     )
     # Picker state, and nothing else: which provider the screenshot
@@ -66,7 +81,7 @@ class Game(Base):
     # nothing about where the stored image came from, and conflating
     # the two let a genuine upload delete an identification provider id
     # (see MECHANICS.md's "Starting a game").
-    screenshot_picker_provider: Mapped[str | None] = mapped_column(
+    screenshot_picker_provider: Mapped[Provider | None] = mapped_column(
         String(SCREENSHOT_SOURCE_LENGTH), default=None
     )
     # Only meaningful while status is SETUP — see SetupStep's docstring.
