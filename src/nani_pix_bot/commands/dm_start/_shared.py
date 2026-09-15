@@ -150,16 +150,16 @@ async def _reject_stale_tap(query: CallbackQuery, user_id: int, lang: str) -> No
     single answer sits.
 
     One helper rather than the same lines at each of the six sites, so
-    the wording can't drift between them — `opt(depth=1)` so loguru
-    stamps the *caller's* frame, not this one. Without it every site
-    logged the same fixed `_shared:_reject_stale_tap:<line>` location,
-    and two of them (the pair inside
-    screenshot_search_pick_callback_handler, sharing a callback prefix)
-    became byte-identical, erasing the only thing that told a mundane
-    hour-old tap apart from a row that vanished mid-round-trip. No
-    literal line number is cited here on purpose — the last one went
-    stale, and it was a line-number comment that caused this exact
-    bug."""
+    the wording production greps for can't drift between them —
+    `opt(depth=1)` so loguru stamps the *caller's* frame, not this one.
+    Without it every site logged the same fixed
+    `_shared:_reject_stale_tap:<line>` location, and two of them (the
+    pair inside screenshot_search_pick_callback_handler, sharing a
+    callback prefix) became byte-identical, erasing the only thing that
+    told a mundane hour-old tap apart from a row that vanished
+    mid-round-trip. No literal line number is cited here on purpose —
+    the last one went stale, and it was a line-number comment that
+    caused this exact bug."""
     logger.opt(depth=1).warning(
         "Starter {} tapped {!r} with no SETUP game left — already resolved, or the "
         "setup-abandon timer deleted the row",
