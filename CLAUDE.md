@@ -43,9 +43,10 @@ logs an `ERROR` and returns the bare key rather than raising — a bad
 translation shouldn't crash a live bot.
 
 Two categories of text are **deliberately not translated**: third-party
-brand names (`"AniList"`/`"Shikimori"`/`"Jikan"`/`"TMDB"` in the
-method-picker keyboard, `_SERVICE_DISPLAY_NAMES` in
-`commands/dm_start/_shared.py`) and the `/language` picker's
+brand names (`"AniList"`/`"Shikimori"`/`"Jikan"`/`"TMDB"` — in the
+method-picker keyboard and everywhere else via `Provider.display_name`
+in `models/enums.py`, the single source of truth for them) and the
+`/language` picker's
 own native-name labels (`"🇷🇺 Русский"`/`"🇬🇧 English"` — a language
 switcher inherently shows each option in its own name, so translating
 through the *currently selected* language would be circular).
