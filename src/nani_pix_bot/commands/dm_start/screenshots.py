@@ -30,6 +30,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
     _SERVICE_DISPLAY_NAMES,
     _client_for_source,
+    _log_stale_tap,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     GalleryPage,
@@ -373,6 +374,7 @@ async def screenshot_upload_instead_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
+            _log_stale_tap(query.data, user.id)
             return
         game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
         await query.edit_message_text(i18n.t("dm_start.ask_new_photo", lang))
@@ -397,10 +399,15 @@ async def screenshot_source_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
+            _log_stale_tap(query.data, user.id)
             return
 
         provider = parse_screenshot_source_callback_data(query.data)
         if provider is None:
+            # keyboards.py already logged what was wrong with the payload
+            # itself; this says which screen it was aimed at and which
+            # game it would have moved, neither of which it can see.
+            logger.warning("Game {}: rejected screenshot-source tap {!r}", game.id, query.data)
             return
         # The picker column is written by whichever screen this ends on,
         # not here: _resolve_screenshot_source sets it for the gallery it

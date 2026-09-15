@@ -17,6 +17,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _IMAGE_DOWNLOAD_ERRORS,
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
+    _log_stale_tap,
     _show_preview,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
@@ -94,9 +95,14 @@ async def screenshot_search_again_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
+            _log_stale_tap(query.data, user.id)
             return
         provider = parse_screenshot_search_again_callback_data(query.data)
         if provider is None:
+            # keyboards.py logged what was wrong with the payload; this
+            # names the game whose picker it would otherwise have aimed
+            # at a provider that doesn't exist (see #71).
+            logger.warning("Game {}: rejected search-again tap {!r}", game.id, query.data)
             return
         game.setup_step = SetupStep.PICKING_SCREENSHOT
         game.screenshot_picker_provider = provider
@@ -193,6 +199,7 @@ async def screenshot_search_pick_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
+            _log_stale_tap(query.data, user.id)
             return
         # Built here, where the game is loaded anyway, so the failure
         # paths below can re-show the source menu without a second
@@ -207,6 +214,11 @@ async def screenshot_search_pick_callback_handler(
     with session_scope(session_factory) as session:
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
+            # The second lookup, so this is the narrow window where the
+            # row went away *during* the get_by_id round-trip above
+            # rather than before the tap. Same message, but loguru stamps
+            # the line number, so the two are still told apart in a log.
+            _log_stale_tap(query.data, user.id)
             return
         game_service.set_screenshot_provider_id(game, result)
         logger.debug(
@@ -250,6 +262,11 @@ async def _resolve_screenshot_search_pick(
     two re-showing `menu` so the starter keeps a way out."""
     parsed = parse_screenshot_search_pick_callback_data(query.data)
     if parsed is None:
+        # Forged payload — keyboards.py logged which half didn't hold up.
+        # Nothing to reply with: `menu` has no provider yet (the pick is
+        # where one would have come from), so there is no failure screen
+        # to draw that wouldn't have to invent one.
+        logger.warning("Rejected cross-search pick {!r}", query.data)
         return None
     provider, external_id = parsed
     menu = replace(menu, provider=provider)
@@ -292,6 +309,7 @@ async def screenshot_gallery_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
+            _log_stale_tap(query.data, user.id)
             return
         outcome = await _dispatch_gallery_action(context, session, game, query.data, lang)
         # Replied inside the session block — a Fallback's source menu is
@@ -318,6 +336,12 @@ async def _dispatch_gallery_action(
 
     picked = parse_screenshot_pick_callback_data(data)
     if picked is None:
+        # app.py only routes screenshot_pick:/screenshot_more: here, so
+        # neither parser recognising `data` means it was forged — the
+        # payload after the prefix is whatever the client chose to send.
+        # keyboards.py logged which half didn't hold up; this says which
+        # game the forged tap was aimed at.
+        logger.warning("Game {}: rejected gallery tap {!r}", game.id, data)
         return None
     return await _handle_screenshot_pick(context, session, game, picked, lang)
 
@@ -416,6 +440,19 @@ async def _handle_screenshot_pick(
         return result
     urls = result
     if index >= len(urls):
+        # Deliberately no reply: unlike the paging equivalent above, the
+        # gallery message this was tapped from is left exactly as it was,
+        # keyboard and all, so the starter still has every other
+        # screenshot to pick and nothing to be rescued from. What they
+        # don't get is any sign the tap registered, which is why it is at
+        # least a rejected action in the log.
+        logger.warning(
+            "Game {}: stale {} pick #{} against {} url(s)",
+            game.id,
+            provider,
+            index + 1,
+            len(urls),
+        )
         return None
 
     # These are external URLs (Shikimori/Jikan/TMDB), not Telegram

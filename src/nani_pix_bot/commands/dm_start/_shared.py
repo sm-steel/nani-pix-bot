@@ -79,6 +79,26 @@ def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: str) -> httpx
     return cast(httpx.AsyncClient, context.bot_data[key])
 
 
+def _log_stale_tap(data: str | None, user_id: int) -> None:
+    """The one thing every screen of the screenshot sub-flow has to say
+    when a button is tapped and there is no SETUP game left to act on:
+    the row was resolved (confirmed, stopped) or the setup-abandon timer
+    deleted it an hour in, while the messages it left behind stayed
+    tappable forever. Nothing can be replied to usefully — there is no
+    game to read a language or a provider list off — so the tap is a
+    no-op on screen, which makes the log the only trace it happened at
+    all. It is a rejected action, so WARNING, per CLAUDE.md's table.
+
+    One helper rather than the same two lines at each of the six sites,
+    so the wording production greps for can't drift between them."""
+    logger.warning(
+        "Starter {} tapped {!r} with no SETUP game left — already resolved, or the "
+        "setup-abandon timer deleted the row",
+        user_id,
+        data,
+    )
+
+
 def _prefer_shikimori(lang: str) -> bool:
     return lang.upper() == "RU"
 

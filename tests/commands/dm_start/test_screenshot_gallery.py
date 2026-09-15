@@ -1,8 +1,11 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from loguru import logger
 from telegram import Update
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
@@ -58,6 +61,21 @@ def _make_text_update(*, text: str, user_id: int = 1) -> MagicMock:
     update.message.text = text
     update.message.reply_text = AsyncMock()
     return update
+
+
+@contextmanager
+def _captured_warnings() -> Iterator[list[str]]:
+    """Every WARNING+ line the code under test emits. A silent return is
+    only acceptable on screen if it is *not* silent in the logs — which
+    is a property of the handler worth pinning, not an implementation
+    detail, since the whole point is that production has nothing else to
+    go on when a starter reports "I tapped it and nothing happened"."""
+    captured: list[str] = []
+    sink_id = logger.add(captured.append, level="WARNING", format="{message}")
+    try:
+        yield captured
+    finally:
+        logger.remove(sink_id)
 
 
 def _staged_game(session_factory, *, starter_id: int = 1, **overrides) -> int:
@@ -175,8 +193,11 @@ async def test_screenshot_gallery_callback_handler_pick_is_a_noop_for_a_stale_in
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A still-successful fetch that just doesn't have the tapped index
-    anymore (e.g. the gallery shrank between page loads) stays a silent
-    no-op — distinct from the fetch itself failing/emptying above."""
+    anymore (e.g. the gallery shrank between page loads) leaves the
+    screen alone — distinct from the fetch itself failing/emptying above,
+    and safe to do because the gallery message that was tapped keeps its
+    own keyboard. Leaving no *trace* is the part that isn't safe: it is a
+    rejected action, so it is logged as one."""
     monkeypatch.setattr(
         shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
     )
@@ -187,15 +208,36 @@ async def test_screenshot_gallery_callback_handler_pick_is_a_noop_for_a_stale_in
     update = _make_callback_update(data="screenshot_pick:shikimori:5")
     context = _make_context(session_factory)
 
-    await screenshot_gallery.screenshot_gallery_callback_handler(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )
+    with _captured_warnings() as warnings:
+        await screenshot_gallery.screenshot_gallery_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
     update.callback_query.edit_message_text.assert_not_awaited()
+    assert any("#6" in line and "1 url(s)" in line for line in warnings)
+
+
+async def test_a_tap_after_the_setup_row_is_gone_leaves_a_warning(session_factory) -> None:
+    """The trigger behind most of this sub-flow's silent returns: the
+    setup-abandon timer deleted the row an hour in, and every button on
+    every screen it left behind is still tappable. The starter sees
+    nothing happen, and production used to see nothing either, so
+    diagnosing a report of it meant guessing. CLAUDE.md's table calls a
+    rejected action a WARNING; there is no game row left to name, so the
+    line names the starter and the payload."""
+    context = _make_context(session_factory)  # no game row at all
+
+    with _captured_warnings() as warnings:
+        await screenshot_gallery.screenshot_gallery_callback_handler(
+            cast(Update, _make_callback_update(data="screenshot_pick:shikimori:0")),
+            cast(ContextTypes.DEFAULT_TYPE, context),
+        )
+
+    assert any("screenshot_pick:shikimori:0" in line and "1" in line for line in warnings)
 
 
 async def test_screenshot_gallery_callback_handler_pick_falls_back_when_the_download_fails(
