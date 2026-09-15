@@ -460,7 +460,25 @@ async def _resolve_cross_provider_id(
     (the "Wrong anime? Search again" flow lands in that exact same
     fallback state, see search_text_handler's PICKING_SCREENSHOT
     branch in search.py)."""
-    query_text = game.title_english or game.title_romaji or ""
+    # Every stored variant, not just the Latin-script two: AniList often
+    # has no English title and TMDB has no romaji one at all, so a game
+    # can easily reach here identified by its native (or, from
+    # Shikimori, its Russian) title alone — which used to be searched
+    # for as `""`. That degraded into the manual-query fallback rather
+    # than breaking, but it asked the starter to type a title the game
+    # already knows.
+    #
+    # Same order as prioritized_title()'s non-RU one, and deliberately
+    # not display_title() itself: a *search query* must not follow the
+    # bot's display language (a RU bot would then send Jikan/TMDB a
+    # Russian title even when an English one is on file), and
+    # display_title's "?" fallback for a title-less game would be a
+    # query rather than the no-query this still wants. Native before
+    # Russian for the same reason — all three providers index the
+    # Japanese title, only Shikimori knows the Russian one.
+    query_text = (
+        game.title_english or game.title_romaji or game.title_native or game.title_russian or ""
+    )
     client = _client_for_source(context, provider)
     try:
         results = await _search_provider(provider, client, query_text)

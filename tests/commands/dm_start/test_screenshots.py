@@ -229,6 +229,63 @@ async def test_screenshot_source_callback_handler_cross_provider_auto_resolves_t
     update.callback_query.edit_message_text.assert_awaited_once()
 
 
+async def test_screenshot_source_callback_handler_cross_provider_searches_a_native_only_title(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AniList often has no English title, and TMDB has no romaji one at
+    all, so a game can reach the source menu identified by its native
+    title alone. That used to be searched for as `""`."""
+    search = AsyncMock(return_value=[_FRIEREN_SHIKIMORI])
+    monkeypatch.setattr(screenshots.shikimori, "search", search)
+    monkeypatch.setattr(
+        screenshots.shikimori,
+        "screenshots",
+        AsyncMock(return_value=["https://shikimori.io/x/0.jpg"]),
+    )
+    _staged_game(
+        session_factory,
+        source="anilist",
+        anilist_id=99,
+        title_english=None,
+        title_native="葬送のフリーレン",
+    )
+
+    update = _make_callback_update(data="screenshot_source:shikimori")
+    context = _make_context(session_factory)
+
+    await screenshots.screenshot_source_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert search.await_args_list[0].args[1] == "葬送のフリーレン"
+
+
+async def test_screenshot_source_callback_handler_cross_provider_searches_a_russian_only_title(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Shikimori is the one provider with a Russian title and no native
+    one, so a Shikimori identification with no English/romaji match
+    leaves that as the only query there is."""
+    search = AsyncMock(return_value=[])
+    monkeypatch.setattr(screenshots.jikan, "search", search)
+    _staged_game(
+        session_factory,
+        source="shikimori",
+        shikimori_id=52991,
+        title_english=None,
+        title_russian="Провожающая в последний путь Фрирен",
+    )
+
+    update = _make_callback_update(data="screenshot_source:jikan")
+    context = _make_context(session_factory)
+
+    await screenshots.screenshot_source_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert search.await_args_list[0].args[1] == "Провожающая в последний путь Фрирен"
+
+
 async def test_screenshot_source_callback_handler_cross_provider_no_match_asks_to_search(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
