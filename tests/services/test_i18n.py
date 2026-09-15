@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from nani_pix_bot.services import i18n
@@ -45,3 +47,46 @@ def test_real_locale_files_have_matching_keys() -> None:
     ru_keys = set(i18n._load("ru"))
 
     assert en_keys == ru_keys
+
+
+def _placeholders(template: str) -> set[str]:
+    return set(re.findall(r"\{(\w+)\}", template))
+
+
+def test_real_locale_files_have_matching_placeholders_per_key() -> None:
+    """Matching key sets are only half of parity: `t()` formats whatever
+    the caller passes, so a Russian string that spells a placeholder
+    differently (or drops one) silently loses the value — or, if it
+    invents one, raises `KeyError` at the moment a player sees it. The
+    key set is checked above; this pins the templates themselves."""
+    en = i18n._load("en")
+    ru = i18n._load("ru")
+
+    mismatched = {
+        key: (_placeholders(en[key]), _placeholders(value))
+        for key, value in ru.items()
+        if key in en and _placeholders(en[key]) != _placeholders(value)
+    }
+
+    assert mismatched == {}
+
+
+def test_the_turn_and_no_game_prompts_name_both_entry_points() -> None:
+    """There are two ways to start a round — DM a screenshot, or
+    /newgame — and these five strings are the moments a player is told
+    how. They documented only the upload for the whole /newgame range
+    (issue #79). This repo's known failure mode is a mechanics change
+    that sweeps the docs and forgets `locales/`, so the guard is a test,
+    not a habit."""
+    both_entry_points = [
+        "dm_start.setup_abandoned",
+        "guess.no_game",
+        "turn.reminder_dm",
+        "turn.reminder_group_fallback",
+        "turn.expired",
+    ]
+
+    for lang in ("en", "ru"):
+        catalog = i18n._load(lang)
+        for key in both_entry_points:
+            assert "/newgame" in catalog[key], f"{key} ({lang}) never mentions /newgame"
