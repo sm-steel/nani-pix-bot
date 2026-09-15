@@ -105,12 +105,24 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
     timeout, which is minutes of a starter waiting on a gallery.
 
     **The returned order is the episode order, never the completion
-    order** — `asyncio.gather` yields results positionally, matching the
-    order `_episode_targets` built. That's a correctness requirement,
-    not a nicety: the gallery resolves a `screenshot_pick:tmdb:<index>`
-    callback against this list's indices (see cache.py's TTL note), so a
-    list reordered by which request happened to answer first would hand
-    the starter a different image than the one they tapped."""
+    order** — each fetch writes into its own slot of a pre-sized list,
+    indexed by the position `_episode_targets` gave it. That's a
+    correctness requirement, not a nicety: the gallery resolves a
+    `screenshot_pick:tmdb:<index>` callback against this list's indices
+    (see cache.py's TTL note), so a list reordered by which request
+    happened to answer first would hand the starter a different image
+    than the one they tapped.
+
+    A `TaskGroup` rather than `asyncio.gather`: gather propagates the
+    first failure but does *not* cancel its siblings, so a show whose
+    second episode 500s still issued all twenty requests, eleven of them
+    completing after the caller had already raised and replied. The
+    serial loop this replaced at least stopped asking. A TaskGroup
+    cancels the rest — including the ones still queued on the semaphore,
+    which never issue a request at all — which matters precisely because
+    every one of them contends with Telegram's own polling through the
+    single `amsterdam` proxy, on the exact path where the remote is
+    already misbehaving."""
     show = await rest.get_json(_API, client, f"{TMDB_BASE_URL}/tv/{tmdb_id}", {})
     targets = _episode_targets(show)
     if not targets:
@@ -118,8 +130,9 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
         return []
 
     semaphore = asyncio.Semaphore(SCREENSHOT_FETCH_CONCURRENCY)
+    stills: list[str | None] = [None] * len(targets)
 
-    async def fetch_still(season_number: int, episode_number: int) -> str | None:
+    async def fetch_still(index: int, season_number: int, episode_number: int) -> None:
         async with semaphore:
             episode = await rest.get_json(
                 _API,
@@ -128,9 +141,29 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
                 {},
             )
         still_path = episode.get("still_path")
-        return f"{TMDB_IMAGE_BASE_URL}{still_path}" if still_path else None
+        if still_path:
+            stills[index] = f"{TMDB_IMAGE_BASE_URL}{still_path}"
 
-    stills = await asyncio.gather(*(fetch_still(*target) for target in targets))
+    try:
+        async with asyncio.TaskGroup() as group:
+            for index, (season_number, episode_number) in enumerate(targets):
+                group.create_task(fetch_still(index, season_number, episode_number))
+    except BaseExceptionGroup as failures:
+        # Unwrapped, because a TaskGroup reports failures as a group and
+        # `_SEARCH_SERVICE_ERRORS` (httpx.HTTPError, RuntimeError) matches
+        # the provider's own exception, not a group wrapping it — leaving
+        # it wrapped would strand the starter on a dead keyboard, the same
+        # outcome issue #75 closed. Siblings that lost the race to fail
+        # are reported in the log line rather than silently dropped.
+        logger.warning(
+            "TMDB id {} still fetch abandoned: {} of {} episode request(s) failed, first was {!r}",
+            tmdb_id,
+            len(failures.exceptions),
+            len(targets),
+            failures.exceptions[0],
+        )
+        raise failures.exceptions[0] from None
+
     urls = [url for url in stills if url is not None]
     logger.debug(
         "TMDB id {} yielded {} still(s) from {} episode(s)", tmdb_id, len(urls), len(targets)

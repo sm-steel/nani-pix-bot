@@ -455,3 +455,43 @@ async def test_screenshots_fetches_episodes_concurrently_but_bounded() -> None:
     assert len(urls) == 20
     assert peak > 1
     assert peak <= tmdb.SCREENSHOT_FETCH_CONCURRENCY
+
+
+async def test_screenshots_stops_issuing_requests_once_an_episode_fails() -> None:
+    """`asyncio.gather` propagates the first failure but leaves its
+    siblings running: every remaining episode request still went out,
+    and landed after the starter already had their error message. The
+    starter-facing half was always fine (screenshots.py catches it and
+    renders a live source menu) — what's worth not sending is the volume,
+    through the one proxy Telegram's polling shares, on exactly the path
+    where the remote is already misbehaving."""
+    issued: list[int] = []
+    still_paths: dict[tuple[int, int], str | None] = {(1, n): f"/s1e{n}.jpg" for n in range(1, 13)}
+    handler = _show_handler(
+        seasons=[{"season_number": 1, "episode_count": 12}], still_paths=still_paths
+    )
+
+    async def failing_handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.count("/episode/") != 1:
+            return handler(request)
+        episode_number = int(path.rsplit("/episode/", 1)[1])
+        issued.append(episode_number)
+        if episode_number == 2:
+            return httpx.Response(500)
+        await asyncio.sleep(0.05)
+        return handler(request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(failing_handler)) as client:
+        with pytest.raises(httpx.HTTPStatusError):
+            await tmdb.screenshots(client, 1)
+        at_raise_time = sorted(issued)
+        await asyncio.sleep(0.3)  # let anything still detached run to completion
+
+    assert sorted(issued) == at_raise_time, "requests kept going out after the caller had failed"
+    # One more than the concurrency limit, not one fewer: the failing
+    # request releases its own semaphore slot while unwinding, so exactly
+    # one queued episode gets in before the group aborts the rest. Twelve
+    # is what `gather` produced.
+    assert len(issued) <= tmdb.SCREENSHOT_FETCH_CONCURRENCY + 1
+    assert 12 not in issued
