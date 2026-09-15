@@ -465,3 +465,38 @@ async def test_screenshots_skips_a_picture_whose_url_is_not_a_string(jpg: dict) 
         urls = await jikan.screenshots(client, 52991)
 
     assert urls == ["a-large.jpg"]
+
+
+@pytest.mark.parametrize(
+    "jpg",
+    [
+        pytest.param(
+            {"large_image_url": "a-large.jpg", "image_url": 5}, id="unused-fallback-is-a-number"
+        ),
+        pytest.param({"large_image_url": 5, "image_url": "a.jpg"}, id="preferred-is-a-number"),
+    ],
+)
+async def test_screenshots_treats_both_url_fields_alike(
+    jpg: dict, records: list[tuple[str, str]]
+) -> None:
+    """Whichever of the two is malformed, the picture goes — the
+    short-circuiting `or` used to check only the preferred field, so an
+    entry was kept or skipped depending on which half a provider had
+    mistyped rather than on whether it was mistyped at all.
+
+    Both alike rather than "fall back past the bad one" because that is
+    exactly what `_parse_result` already does for a malformed
+    `title_japanese` when `title` is fine: the entry is skipped, not
+    salvaged field by field (issue #86's review)."""
+    entries = [{"jpg": jpg, "webp": {}}, {"jpg": {"large_image_url": "b-large.jpg"}, "webp": {}}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entries})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await jikan.screenshots(client, 52991)
+
+    assert urls == ["b-large.jpg"]
+    warnings = [message for level, message in records if level == "WARNING"]
+    assert len(warnings) == 1
+    assert "_picture_url" in warnings[0]

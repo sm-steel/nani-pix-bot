@@ -92,11 +92,27 @@ def _picture_url(entry: dict) -> str | None:
     result goes straight to `InputMediaPhoto(media=url)` in the gallery,
     and `{"jpg": {"large_image_url": 5}}` handed it the bare int (#86).
 
-    A malformed `large_image_url` raises rather than falling through to
-    `image_url` — a picture entry this provider typed wrongly isn't one to
-    go looking for a second opinion inside."""
+    **Both fields are read before either is chosen**, rather than letting
+    `or` short-circuit past the fallback. Short-circuiting made the check
+    depend on *which half* a provider had mistyped instead of on whether
+    it had: a bad `image_url` behind a good `large_image_url` was kept
+    silently, while a bad `large_image_url` in front of a perfectly good
+    `image_url` — the case the fallback exists for — skipped the picture.
+    One function, two opposite answers to the same malformation.
+
+    Treating them alike, rather than falling back past the bad one, is
+    what the rest of this package already does: `_parse_result` above
+    skips an entry whose `title_japanese` is malformed even when `title`
+    would have displayed fine. A malformed sibling field is a malformed
+    entry, and per-field salvage is the second mechanism `parsing.py`'s
+    docstring argues against. It also keeps the WARNING, which is the
+    only signal that a provider has quietly changed its schema — and
+    the cost here is the mildest in the package: one picture out of a
+    gallery of twenty, not a game."""
     jpg = entry.get("jpg") or {}
-    return parsing.optional_str(jpg, "large_image_url") or parsing.optional_str(jpg, "image_url")
+    preferred = parsing.optional_str(jpg, "large_image_url")
+    fallback = parsing.optional_str(jpg, "image_url")
+    return preferred or fallback
 
 
 def _parse_detail_result(raw: dict) -> JikanResult | None:

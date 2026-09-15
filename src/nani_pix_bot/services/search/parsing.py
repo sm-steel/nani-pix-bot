@@ -51,12 +51,17 @@ tempting distinction is that an entry with a good id and a bad title
 could still make a working button, unlike one with no usable id at all.
 It can't, usefully:
 
-- Dropping a title leaves the field None, and `prioritized_title` renders
-  an all-None result as `"?"`. That isn't a degraded button, it's a
-  button labelled "?" that stages a game whose stored answer key is "?"
-  — unwinnable, and indistinguishable from a working game until a whole
-  round has been wasted on it. Skipping costs one of five buttons;
-  keeping costs a game.
+- Dropping a title leaves the field None, which is worse than it looks.
+  `"?"` is only what `prioritized_title` *displays* for an all-None
+  result; what gets stored is an empty candidate list, because
+  `match_candidates` filters unset fields out. So the game isn't merely
+  badly labelled, it is unwinnable by construction — no guess can match
+  an empty list — and it looks exactly like a working game until a whole
+  round has been wasted on it. The claim here is not "we never produce a
+  `?` game": a well-typed entry whose titles happen to all be null does
+  that today by a legitimate path, which is its own issue (#89). It's
+  that we don't *newly create* one out of a malformation we could simply
+  have skipped. Skipping costs one of five buttons; keeping costs a game.
 - Dropping a *synonym list* is worse still, because the field is the
   answer key: a game quietly missing the answers a player would actually
   type is the same class of silent game-rule corruption the bare-string
