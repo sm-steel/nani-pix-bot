@@ -33,7 +33,15 @@ jobs:
           git_committer_email: "actions@users.noreply.github.com"
           build: false
           changelog: true
-          commit: true
+          # commit: false is deliberate, not a bug -- master requires PRs,
+          # and GITHUB_TOKEN can't push a branch update around that. Tags
+          # live in a different ref namespace (refs/tags/*, not
+          # refs/heads/master) so push+tag alone never touches the
+          # protected branch. pyproject.toml still gets the version
+          # stamped on disk for the build step below to read; that change
+          # is just never committed. See python-semantic-release's own
+          # "avoid committing during release" guidance.
+          commit: false
           push: true
           tag: true
           vcs_release: true
