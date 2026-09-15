@@ -131,7 +131,12 @@ def require_int(raw: dict, key: str) -> int:
     Raising rather than returning None is the point: a `TypeError` here is
     caught by `parse_entry` and becomes the same WARNING-and-skip every other
     malformation gets, instead of a second mechanism doing the same job
-    differently. A missing key stays a `KeyError` for the same reason.
+    differently. A missing key stays a `KeyError` for the same reason — so a
+    caller whose field is genuinely optional guards with an
+    `if raw.get(key) is None: return <default>` ahead of the call rather than
+    asking this function for a default (see `tmdb._parse_season`, which does
+    exactly that for both of its fields), keeping "absent, that's fine" and
+    "present but unusable" as two visibly different answers.
 
     `bool` is excluded explicitly because it is an `int` subclass in Python,
     but `str(True)` is `"True"` — the same broken button by a subtler route."""

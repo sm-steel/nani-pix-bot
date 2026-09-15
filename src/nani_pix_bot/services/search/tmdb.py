@@ -225,20 +225,27 @@ def _parse_season(raw: dict) -> tuple[int, int] | None:
     season this function deliberately doesn't want — a special (season 0)
     or a placeholder TMDB sent with a null number.
 
-    `or 0` rather than `.get(key, 0)` on both counts: TMDB sends these
-    keys present-but-null for placeholder seasons, and `None >= 1` /
-    `range(1, None + 1)` are both a `TypeError` no handler catches
-    (issue #76).
+    A null or absent field still means "no season here" / "no episodes",
+    quietly: TMDB sends both keys present-but-null for placeholder seasons,
+    and `None >= 1` / `range(1, None + 1)` are both a `TypeError` no handler
+    catches (issue #76). That `is None` pre-check is how an optional field
+    keeps its default while still being type-checked when it *is* present.
 
-    `episode_count` is validated here rather than left to the guard around
-    this function, because the guard's boundary is this `return`:
-    `_episode_targets` consumes the count at `min(episode_count, remaining)`
-    *after* the guard has let go, so an `episode_count` of `"3"` escaped as a
-    raw `TypeError` even with every reading of it protected. Raising inside
-    the guard instead routes it through the same skip everything else gets
-    (issue #83). `season_number` needs no such call: it's compared right here,
-    inside the guard, which is what made the count the one that got away."""
-    season_number = raw.get("season_number") or 0
+    **Both** fields are then validated rather than left to the guard around
+    this function, because the guard's boundary is this `return` — it covers
+    reading a field, not the value handed back. `_episode_targets` consumes
+    the count at `min(episode_count, remaining)` after the guard has let go,
+    so `"3"` escaped as a raw `TypeError`. `season_number` looks safer
+    because it's compared right here, and for `str`/`list`/`dict` it is — but
+    `2.5` and `True` compare against 1 without raising and were interpolated
+    straight into a request URL (`.../season/2.5/episode/1`). That only ever
+    looked fine because the bogus URL 404s into `httpx.HTTPStatusError`,
+    which costs the starter a "service is down" reply for a show whose other
+    seasons were perfectly good — strictly worse than skipping the one bad
+    season, and it made this function's `-> tuple[int, int]` a lie (#83)."""
+    if raw.get("season_number") is None:
+        return None
+    season_number = parsing.require_int(raw, "season_number")
     if season_number < 1:
         return None
     if raw.get("episode_count") is None:

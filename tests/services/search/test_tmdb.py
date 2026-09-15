@@ -621,3 +621,44 @@ async def test_screenshots_skips_a_season_whose_episode_count_is_a_list() -> Non
         urls = await tmdb.screenshots(client, 209867)
 
     assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/still2.jpg"]
+
+
+async def test_screenshots_skips_a_season_whose_number_is_a_float() -> None:
+    """A float season_number compares against 1 without raising, so it
+    escaped the guard the same way episode_count did and was interpolated
+    straight into a request URL (issue #83)."""
+    handler = _show_handler(
+        [{"season_number": 2.5, "episode_count": 1}, {"season_number": 2, "episode_count": 1}],
+        {(2, 1): "/still2.jpg"},
+    )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await tmdb.screenshots(client, 209867)
+
+    assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/still2.jpg"]
+
+
+async def test_screenshots_skips_a_season_whose_number_is_a_bool() -> None:
+    """bool is an int subclass, so True compares as 1 and would have asked
+    TMDB for /season/True/episode/1."""
+    handler = _show_handler(
+        [{"season_number": True, "episode_count": 1}, {"season_number": 2, "episode_count": 1}],
+        {(2, 1): "/still2.jpg"},
+    )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await tmdb.screenshots(client, 209867)
+
+    assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/still2.jpg"]
+
+
+async def test_screenshots_skips_a_season_whose_number_is_a_string() -> None:
+    handler = _show_handler(
+        [{"season_number": "1", "episode_count": 1}, {"season_number": 2, "episode_count": 1}],
+        {(2, 1): "/still2.jpg"},
+    )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await tmdb.screenshots(client, 209867)
+
+    assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/still2.jpg"]
