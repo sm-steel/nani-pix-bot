@@ -1,9 +1,12 @@
-"""Shared JSON-over-HTTP plumbing for the three REST providers —
-shikimori.py, jikan.py and tmdb.py. (anilist.py is GraphQL: one POST to
-one endpoint, no by-id URL and no 404 semantics, so it shares nothing
-here and shouldn't be forced to.)
+"""Shared JSON-over-HTTP plumbing for the two REST providers — jikan.py
+and tmdb.py. (anilist.py and shikimori.py are both GraphQL: one POST to
+one endpoint, no by-id URL and no 404 semantics, so they share nothing
+here and shouldn't be forced to — see graphql.py for their shared
+plumbing instead. shikimori.py was itself a REST provider here until
+issue #104 migrated it onto GraphQL, to sidestep a REST-only malformed-
+data shape, issue #103.)
 
-Each of those three had its own byte-identical `_request` and its own
+Jikan and TMDB had their own byte-identical `_request` and their own
 copy of the same by-id-with-404-handling dance, differing only in a
 log label, a URL and which parse function to call. `qlty smells`
 flagged the duplication — intermittently, since it sat right on the
@@ -13,15 +16,15 @@ hook and CI (issue #68).
 What deliberately stays per-provider is the *parsing*: each module
 keeps its own `_parse_*` and its own concretely-typed public
 `get_by_id`. `fetch_by_id` is generic over the parsed type, so
-`ShikimoriResult | None` stays `ShikimoriResult | None` to `ty` rather
-than collapsing into a union of all three that callers would have to
-narrow back down by hand — the same constraint that keeps
+`JikanResult | None` stays `JikanResult | None` to `ty` rather than
+collapsing into a union of the two that callers would have to narrow
+back down by hand — the same constraint that keeps
 `screenshot_gallery.py::_screenshot_search_step` dispatching on an
 if/elif chain instead of a provider->function dict.
 
 What those per-provider parse functions *do* share is the guard around
-them, which lives in `parsing.py` rather than here — anilist.py needs
-that one too, and can't import this module."""
+them, which lives in `parsing.py` rather than here — anilist.py and
+shikimori.py need that one too, and neither can import this module."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -53,12 +56,15 @@ async def get_json(
     api: RestApi, client: httpx.AsyncClient, url: str, params: dict, expect: type = dict
 ) -> Any:
     """GET `url` and decode the body. Returns `Any` rather than `dict`
-    because providers disagree on the shape: Shikimori's list endpoints
-    answer with a bare JSON array while Jikan and TMDB wrap everything
-    in an object — hence `expect`, which is the *container* the calling
-    endpoint is documented to answer with (`list` for Shikimori's two,
-    `dict` everywhere else). Callers know their own provider's shape and
-    index into it directly.
+    because `expect` is caller-supplied rather than hardcoded — the
+    *container* the calling endpoint is documented to answer with.
+    Jikan and TMDB, the two remaining callers, both wrap their results
+    in a JSON object, so both pass the default `dict` today; `expect`
+    used to also cover Shikimori's bare-array list endpoints before
+    issue #104 moved shikimori.py off this module entirely onto
+    GraphQL, and stays a parameter rather than a hardcoded type in case
+    a future REST provider needs the array shape again. Callers know
+    their own provider's shape and index into it directly.
 
     Rate limits (429) are retried inside `http_retry.request_with_retry`;
     every other error status raises.

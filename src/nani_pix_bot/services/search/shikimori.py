@@ -2,12 +2,38 @@
 called once per game at setup time, same as this package's anilist.py. See
 MECHANICS.md's "Starting a game" section.
 
-Shikimori's list endpoint (`/api/animes`) is deliberately light — no
+Talks to Shikimori's GraphQL API rather than its REST API (issue #104).
+REST's detail endpoint (`/api/animes/:id`) returned `"english": [None]`
+for a title with no recorded English name — a list *containing* a null,
+not an absent field — which `parsing.optional_str_list` raised a
+TypeError on, which `parsing.parse_entry` then turned into a silent skip
+indistinguishable from a genuine 404 (issue #103): a starter picking a
+valid search result got told "Couldn't find that anymore." GraphQL's
+equivalent field, `Anime.english`, is a plain nullable `String` scalar —
+that bug shape cannot occur here, so the fix is the migration itself
+rather than a patch to the REST parsing.
+
+Shikimori's `animes(search: ...)` query is deliberately light — no
 `synonyms`/`english` — so a picked result is always re-fetched by id via
-the detail endpoint (`/api/animes/:id`) for the full title/synonym set.
-This mirrors the restart-resilient by-id re-fetch issue #11 already
-established for AniList, except here it's forced by Shikimori's own API
-shape rather than a design choice.
+`animes(ids: ...)` for the full title/synonym set. This mirrors the
+restart-resilient by-id re-fetch issue #11 already established for
+AniList, except here it's forced by Shikimori's own schema shape rather
+than a design choice.
+
+`synonyms`' item-level nullability (whether Shikimori can ever answer a
+list *containing* a null, the same shape REST's `english` bug had) could
+not be confirmed via GraphQL introspection — the live API enforces a max
+query depth of 5, one hop short of what's needed to inspect a list
+field's inner item type. Empirically checked instead: 53 real anime
+entries sampled across a wide id range (ids 1-68 plus several higher/
+known-sparse ids, including 817 and 1790 — the original issue #103 repro
+titles) via live queries against `shikimori.io/api/graphql`. Every
+`synonyms` value observed was either `[]` or a list of real strings,
+never a list containing a null. No code change was needed either way:
+`parsing.optional_str_list` already raises (and `parse_entry` already
+skips) on a null member if one ever does appear, the same as it does for
+every other provider's list fields — this note just records that the
+shape was actually checked, not assumed.
 """
 
 from dataclasses import dataclass
@@ -16,18 +42,9 @@ import httpx
 from loguru import logger
 
 from nani_pix_bot.models.enums import Provider
-from nani_pix_bot.services.search import cache, parsing, rest
+from nani_pix_bot.services.search import cache, graphql, parsing
 
-# Shikimori's older shikimori.one domain now permanently 301-redirects
-# here — and shikimori.one is itself unreachable directly from moscow,
-# while this .io domain is (our httpx client doesn't follow redirects,
-# so pointing at the old domain would just return an HTML redirect page
-# instead of JSON). See ARCHITECTURE.md's "AniList/Shikimori connectivity".
-# Screenshot image paths returned by the API are relative to this same
-# host too (confirmed live — shikimori.one, the historical image host,
-# is unreachable direct from moscow just like the API itself).
-SHIKIMORI_HOST = "https://shikimori.io"
-SHIKIMORI_BASE_URL = f"{SHIKIMORI_HOST}/api/animes"
+SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 SEARCH_RESULT_LIMIT = 5
 # A fixed cap on how many screenshots are ever fetched/cached per anime
 # — not a per-call parameter, so the cache key never needs to encode it
@@ -37,10 +54,48 @@ SCREENSHOT_FETCH_LIMIT = 20
 
 # Shikimori asks API consumers to identify themselves with a descriptive
 # User-Agent rather than a Referer (unlike AniList) — see the project's
-# Shikimori research spike.
+# Shikimori research spike. Confirmed still required against the
+# GraphQL endpoint, same as it was against REST.
 _REQUEST_HEADERS = {"User-Agent": "nani-pix-bot (github.com/sm-steel/nani-pix-bot)"}
 
-_API = rest.RestApi(name=Provider.SHIKIMORI.display_name, headers=_REQUEST_HEADERS)
+_API_NAME = Provider.SHIKIMORI.display_name
+
+# This module's identity for graphql.py's shared request/error-handling
+# plumbing (see graphql.py — anilist.py was its first caller; this is
+# its second, issue #104).
+_API = graphql.GraphQLApi(name=_API_NAME, url=SHIKIMORI_GRAPHQL_URL, headers=_REQUEST_HEADERS)
+
+_SEARCH_QUERY = """
+query ($search: String, $limit: Int) {
+  animes(search: $search, limit: $limit) {
+    id
+    name
+    russian
+  }
+}
+"""
+
+_DETAIL_QUERY = """
+query ($ids: String) {
+  animes(ids: $ids) {
+    id
+    name
+    russian
+    english
+    synonyms
+  }
+}
+"""
+
+_SCREENSHOTS_QUERY = """
+query ($ids: String) {
+  animes(ids: $ids) {
+    screenshots {
+      originalUrl
+    }
+  }
+}
+"""
 
 
 @dataclass(frozen=True)
@@ -56,13 +111,18 @@ class ShikimoriResult:
 async def search(
     client: httpx.AsyncClient, query: str, *, limit: int = SEARCH_RESULT_LIMIT
 ) -> list[ShikimoriResult]:
-    """Search Shikimori anime titles matching `query`. The list endpoint
-    doesn't return synonyms/english — those are filled in by get_by_id
+    """Search Shikimori anime titles matching `query`. The search query
+    doesn't request synonyms/english — those are filled in by get_by_id
     once a result is picked. Cached briefly (see cache.py) so a starter
     repeating the same query doesn't re-hit the API each time."""
-    params = {"search": query, "limit": limit}
-    entries = await rest.get_json(_API, client, SHIKIMORI_BASE_URL, params, expect=list)
-    results = parsing.parse_entries(_API.name, entries, _parse_search_result)
+    variables = {"search": query, "limit": limit}
+    data = await graphql.request(_API, client, query=_SEARCH_QUERY, variables=variables)
+    # `animes` is a list directly — unlike AniList's `Page`, Shikimori's
+    # schema has no wrapper object here, so there's no nested container
+    # for graphql.require_object to validate; parse_entries below already
+    # guards the list shape itself (and raises RuntimeError if it isn't
+    # one), the same guard REST's `expect=list` used to provide.
+    results = parsing.parse_entries(_API_NAME, data.get("animes"), _parse_search_result)
     logger.debug("Shikimori search {!r} returned {} result(s)", query, len(results))
     return results
 
@@ -75,10 +135,29 @@ async def get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriRe
     (issue #11) to cache this briefly — the cache (see cache.py) is a
     short-lived, in-process-only performance optimization, wiped on
     every restart same as everything else in it, unlike the DB-derived
-    setup-flow state issue #11 is actually about."""
-    return await rest.fetch_by_id(
-        _API, client, f"{SHIKIMORI_BASE_URL}/{shikimori_id}", shikimori_id, _parse_detail_result
-    )
+    setup-flow state issue #11 is actually about.
+
+    Shikimori has no singular by-id query field — `animes(ids: ...)` is
+    plural even for one id, confirmed live to answer an unknown id with
+    an empty list (`{"data": {"animes": []}}`), HTTP 200, no `errors`.
+    That's the actual not-found contract here, replacing REST's 404
+    status this used to catch via `rest.fetch_by_id`.
+
+    `data.get("animes")` goes through `parsing.parse_entries` before
+    anything indexes it, same as `search()` — deliberately, not an
+    oversight: a malformed (non-list) `animes` here now raises
+    `RuntimeError` ("service is down") instead of silently returning
+    `None` ("pick is gone"). An API malfunction being reported as an
+    outage rather than as a vanished search result is the correct
+    direction — the opposite is exactly the issue #103 failure mode this
+    migration exists to eliminate."""
+    variables = {"ids": str(shikimori_id)}
+    data = await graphql.request(_API, client, query=_DETAIL_QUERY, variables=variables)
+    entry = _single_anime(data)
+    if entry is None:
+        logger.debug("Shikimori id {} no longer found", shikimori_id)
+        return None
+    return parsing.parse_entry(_API_NAME, entry, _parse_detail_result)
 
 
 @cache.cached()
@@ -88,34 +167,95 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
     Cached (see cache.py) so repeatedly tapping "More screenshots" for
     the same anime re-slices the same cached list instead of re-hitting
     the API every time — pagination/slicing for display is the caller's
-    job, not this function's."""
-    entries = await rest.get_json(
-        _API, client, f"{SHIKIMORI_BASE_URL}/{shikimori_id}/screenshots", {}, expect=list
-    )
-    # Through `parse_entries` rather than the inline comprehension this
-    # used to be: `entry.get("original")` on a scalar is an
-    # AttributeError, and this endpoint's entries are third-party data
-    # exactly like the search endpoint's (issue #83).
-    urls = parsing.parse_entries(_API.name, entries, _parse_screenshot_url)[:SCREENSHOT_FETCH_LIMIT]
+    job, not this function's.
+
+    `data.get("animes")` goes through `_single_anime` (the same
+    `parsing.parse_entries` guard `search()` and `get_by_id` use) before
+    anything indexes it — deliberately, not an oversight: see
+    `get_by_id`'s docstring for why a malformed `animes` here raising
+    `RuntimeError` rather than yielding an empty screenshot list is the
+    correct direction (issue #103)."""
+    variables = {"ids": str(shikimori_id)}
+    data = await graphql.request(_API, client, query=_SCREENSHOTS_QUERY, variables=variables)
+    entry = _single_anime(data)
+    entries = (entry.get("screenshots") or []) if entry else []
+    # Through `parse_entries` rather than an inline comprehension:
+    # `entry.get("originalUrl")` on a scalar is an AttributeError, and
+    # this endpoint's entries are third-party data exactly like the
+    # search endpoint's (issue #83).
+    urls = parsing.parse_entries(_API_NAME, entries, _parse_screenshot_url)[:SCREENSHOT_FETCH_LIMIT]
     logger.debug("Shikimori id {} has {} screenshot(s) available", shikimori_id, len(entries))
     return urls
 
 
+def _single_anime(data: dict) -> dict | None:
+    """The one `Anime` entry a by-id/screenshots query's `animes` list
+    should hold, or None if the id wasn't found (an empty list) or the
+    single entry couldn't be read (a non-dict scalar — `parse_entries`
+    already logged why).
+
+    Routes `data.get("animes")` through the same `parsing.parse_entries`
+    guard `search()` already uses, rather than indexing it directly —
+    without this, a truthy non-list `animes` (a dict, a number, a
+    malformed string) would reach `[0]`/`.get(...)` unguarded and raise
+    a `KeyError`/`TypeError`/`AttributeError` that escapes
+    `_SEARCH_SERVICE_ERRORS` entirely (issue #83, reintroduced for this
+    call shape). The identity parse function is deliberate: this helper
+    only validates the *container*, exactly one level of guard — each
+    caller still runs its own `_parse_*` over the single entry
+    afterwards."""
+    entries = parsing.parse_entries(_API_NAME, data.get("animes"), lambda raw: raw)
+    return entries[0] if entries else None
+
+
+def _parse_shikimori_id(raw: dict) -> int:
+    """`raw["id"]` as an int, from Shikimori's GraphQL `Anime.id`.
+
+    Confirmed live: Shikimori's `id` is a GraphQL `ID` scalar, which this
+    API serializes as a numeric *string* (`"id": "52991"`) in both
+    `animes(search: ...)` and `animes(ids: ...)` responses — unlike
+    AniList's `Media.id`, a genuine `Int!` that `parsing.require_int`
+    (built for that shape) reads directly. Reusing `require_int` here
+    unmodified would reject every single entry. This is a small
+    Shikimori-specific sibling instead of a change to that shared
+    helper, which stays exactly as-is for the providers whose ids really
+    are JSON integers already.
+
+    `ShikimoriResult.shikimori_id` stays an `int` regardless — unchanged
+    public interface — so the string is converted here, at the one point
+    that already validates every other field, rather than by a caller
+    downstream that would have to re-learn this quirk. Anything that
+    isn't an ASCII digit-only string (missing, null, a float, a bool, an
+    array, an object, a non-numeric string, or a non-ASCII "digit" like
+    a superscript that `str.isdigit()` accepts but `int()` can't parse)
+    raises `TypeError`, which `parse_entry` turns into the same
+    WARNING-and-skip as every other malformed id (issue #83)."""
+    value = raw["id"]
+    # `isascii()` alongside `isdigit()`, not instead of it: `str.isdigit()`
+    # returns True for some non-ASCII digit characters `int()` can't
+    # actually parse (e.g. "²".isdigit() is True but int("²")
+    # raises ValueError, which isn't in parsing._MALFORMED_ENTRY_ERRORS and
+    # would escape uncaught). Requiring isascii() too guarantees int(value)
+    # succeeds for anything that passes this check.
+    if not isinstance(value, str) or not value.isascii() or not value.isdigit():
+        raise TypeError(f"'id' is {value!r}, expected a numeric string")
+    return int(value)
+
+
 def _parse_screenshot_url(raw: dict) -> str | None:
-    """None for a screenshot with no usable path — a decision, not a
+    """None for a screenshot with no usable URL — a decision, not a
     malformation, so `parse_entries` drops it without a warning (the
-    same way jikan.py's `_picture_url` does). A path that *is* there but
-    isn't a string is the other thing entirely, and warns: the f-string
-    below interpolates anything, so `{"original": {"a": 1}}` used to
-    produce the URL `https://shikimori.io{'a': 1}` and only fail later,
-    at `InputMediaPhoto(media=url)` (issue #86)."""
-    path = parsing.optional_str(raw, "original")
-    return f"{SHIKIMORI_HOST}{path}" if path else None
+    same way jikan.py's `_picture_url` does). A URL that *is* there but
+    isn't a string still warns (issue #86). Unlike REST's `original`
+    field, GraphQL's `originalUrl` is confirmed live to already be
+    absolute, so there's no more `SHIKIMORI_HOST` prefixing to do."""
+    url = parsing.optional_str(raw, "originalUrl")
+    return url or None
 
 
 def _parse_search_result(raw: dict) -> ShikimoriResult:
     return ShikimoriResult(
-        shikimori_id=parsing.require_int(raw, "id"),
+        shikimori_id=_parse_shikimori_id(raw),
         title_romaji=parsing.optional_str(raw, "name"),
         title_english=None,
         title_russian=parsing.optional_str(raw, "russian"),
@@ -127,20 +267,15 @@ def _parse_detail_result(raw: dict) -> ShikimoriResult:
     """The only call that fills in `english`/`synonyms`, so it's where a
     malformed one actually reaches the game's answer key (issue #86).
 
-    `english[0]` looked like it was already guarded, and half of it was:
-    indexing a number raises `TypeError` and indexing an object raises
-    `KeyError`, both inside `parse_entry`. The half it missed is the half
-    that matters — `"Frieren"[0]` is `"F"`, so a string `english` staged a
-    game titled "F" without raising anything, and `[5][0]` handed back a
-    non-string title that detonated later in the preview's `", ".join`.
-    Coverage by accident, in other words, and only against the shapes
-    nobody minds losing. `optional_str_list` covers all four shapes on
-    purpose, and keeps covering them if this read is ever rewritten."""
-    english = parsing.optional_str_list(raw, "english")
+    `english` no longer needs the list-indexing dance the REST version
+    did: GraphQL's `Anime.english` is a plain nullable `String` scalar
+    (the actual fix for issue #103, not just a defensive rewrite), so
+    `parsing.optional_str` covers it exactly the way it covers `name`/
+    `russian`."""
     return ShikimoriResult(
-        shikimori_id=parsing.require_int(raw, "id"),
+        shikimori_id=_parse_shikimori_id(raw),
         title_romaji=parsing.optional_str(raw, "name"),
-        title_english=english[0] if english else None,
+        title_english=parsing.optional_str(raw, "english"),
         title_russian=parsing.optional_str(raw, "russian"),
         synonyms=parsing.optional_str_list(raw, "synonyms"),
     )
