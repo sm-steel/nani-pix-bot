@@ -81,16 +81,52 @@ class Tap:
 
 @dataclass(frozen=True)
 class _FreshRead:
-    """How to re-read the tapped game's row fresh in a brand-new session,
-    once whatever network work needed doing before a write is done —
-    bundled for the same reason `Tap` above is: `session_factory` and
-    `user_id` travel together through every write site issue #82's
-    restructuring introduced below, and threading them as two loose
-    parameters put three of those functions over qlty's "many
-    parameters" threshold."""
+    """How to re-read the tapped game's row fresh in a brand-new session
+    once whatever network work needed doing before a write is done, and
+    how to tell the starter directly if that re-read comes back empty —
+    bundled for the same reason `Tap` above is: all four travel together
+    through every post-network write site issue #82's restructuring
+    introduced below, and threading them as loose parameters put several
+    of those functions, and `_fresh_game_or_notify` itself, over qlty's
+    "many parameters" threshold."""
 
     session_factory: sessionmaker[Session]
     user_id: int
+    context: ContextTypes.DEFAULT_TYPE
+    lang: str
+
+
+async def _fresh_game_or_notify(
+    session, fresh: _FreshRead, chat_id: int, log_msg: str, *log_args: object
+):
+    """Re-reads the tapped game fresh inside `session` and, if the row is
+    gone, logs `log_msg` and tells the starter directly — the same
+    `dm_start.setup_gone` text `_reject_stale_tap`'s alert uses, sent as
+    a plain follow-up message instead, since every call site that reaches
+    this point has already spent its one callback-query answer and an
+    alert is no longer possible.
+
+    This is not a defensive, can't-really-happen check: `jobs/timers.py`'s
+    setup_abandon_job_callback deletes an abandoned SETUP row an hour in,
+    on its own JobQueue-scheduled task — not serialized against update
+    handling (app.py never sets `concurrent_updates`) — so an ordinary
+    screenshot download or search-pick round-trip that happens to still
+    be in flight when that hour ticks over hits exactly this branch.
+    Logging it and saying nothing on screen is the #72/#79/#95 silent-
+    failure class this codebase has zero tolerance for reintroducing,
+    even in a new, narrower spot than those three originally covered.
+
+    Returns the fresh row, or None once it's already told the starter and
+    logged — every caller's own None-branch is then just "stop", nothing
+    left to reply with."""
+    fresh_game = game_service.get_setup_game_for_starter(session, fresh.user_id)
+    if fresh_game is not None:
+        return fresh_game
+    logger.warning(log_msg, *log_args)
+    await fresh.context.bot.send_message(
+        chat_id=chat_id, text=i18n.t("dm_start.setup_gone", fresh.lang)
+    )
+    return None
 
 
 async def screenshot_search_again_callback_handler(
@@ -315,33 +351,33 @@ async def screenshot_search_pick_callback_handler(
     outcome = await _show_search_pick_gallery(context, game, provider, external_id, lang)
     if isinstance(outcome, Fallback):
         await _reply_search_pick_fallback(
-            query, _FreshRead(session_factory, user.id), lang, game.id, outcome
+            query, _FreshRead(session_factory, user.id, context, lang), game, outcome
         )
     else:
         await query.edit_message_text(i18n.t(outcome, lang))
 
 
-async def _reply_search_pick_fallback(
-    query, fresh: _FreshRead, lang: str, game_id: int, fallback: Fallback
-) -> None:
+async def _reply_search_pick_fallback(query, fresh: _FreshRead, game, fallback: Fallback) -> None:
     """Shows `fallback` with the source menu — split out of
     `screenshot_search_pick_callback_handler` to keep that handler's own
     return count under qlty's threshold, and because it needs its own
     fresh row: that handler's write session already closed by the time a
     Fallback can reach here (issue #82), so `reply_fallback`'s writes
     (setup_step, screenshot_picker_provider) need a session of their
-    own, not the caller's now-detached snapshot."""
+    own, not the caller's now-detached snapshot. `game` here is that
+    snapshot — read-only, for `starter_id`/`id` only (see
+    `_fresh_game_or_notify`)."""
     with session_scope(fresh.session_factory) as session:
-        fresh_game = game_service.get_setup_game_for_starter(session, fresh.user_id)
+        fresh_game = await _fresh_game_or_notify(
+            session,
+            fresh,
+            game.starter_id,
+            "Game {}: setup vanished before its search-pick fallback could be shown",
+            game.id,
+        )
         if fresh_game is None:
-            # Vanished *after* the id write above committed and the
-            # query was already answered — nothing left to alert with
-            # (see _reject_stale_tap), so this is as far as it goes.
-            logger.warning(
-                "Game {}: setup vanished before its search-pick fallback could be shown", game_id
-            )
             return
-        await reply_fallback(query.edit_message_text, fresh_game, lang, fallback)
+        await reply_fallback(query.edit_message_text, fresh_game, fresh.lang, fallback)
 
 
 async def _show_search_pick_gallery(
@@ -443,7 +479,7 @@ async def screenshot_gallery_callback_handler(
             await _reject_stale_tap(query, user.id, lang)
             return
 
-    fresh = _FreshRead(session_factory, user.id)
+    fresh = _FreshRead(session_factory, user.id, context, lang)
     outcome = await _dispatch_gallery_action(
         context, fresh, game, query.data, Tap(lang, query.answer)
     )
@@ -452,14 +488,14 @@ async def screenshot_gallery_callback_handler(
         # (setup_step, screenshot_picker_provider), so it needs a live
         # row, not the snapshot above — see the docstring.
         with session_scope(session_factory) as session:
-            fresh_game = game_service.get_setup_game_for_starter(session, user.id)
+            fresh_game = await _fresh_game_or_notify(
+                session,
+                fresh,
+                game.starter_id,
+                "Game {}: setup vanished before its gallery fallback could be shown",
+                game.id,
+            )
             if fresh_game is None:
-                # The tap was already answered by whichever branch
-                # produced this Fallback, so there's no alert left to
-                # give (see _reject_stale_tap) — just note it happened.
-                logger.warning(
-                    "Game {}: setup vanished before its gallery fallback could be shown", game.id
-                )
                 return
             await reply_fallback(query.edit_message_text, fresh_game, lang, outcome)
     elif outcome is not None:
@@ -570,6 +606,12 @@ async def _handle_more_screenshots(
     # fresh, short session of its own rather than on the pre-fetch
     # snapshot `game`, and closed *before* the page's own send runs
     # (issue #82: that send used to run inside this same transaction).
+    # Deliberately not `_fresh_game_or_notify` here, unlike this file's
+    # other three re-read sites: the page still goes out below
+    # regardless of whether the row is gone (see the comment on that
+    # branch), so this is the one re-read whose vanished-row case isn't
+    # actually silent — notifying here on top of that page would double
+    # up on the starter, not fix a silence.
     with session_scope(fresh.session_factory) as session:
         fresh_game = game_service.get_setup_game_for_starter(session, fresh.user_id)
         if fresh_game is None:
@@ -690,18 +732,20 @@ async def _handle_screenshot_pick(
     # other call site of it in this package — it stays paired with its
     # write rather than moving outside it.
     with session_scope(fresh.session_factory) as session:
-        fresh_game = game_service.get_setup_game_for_starter(session, fresh.user_id)
+        fresh_game = await _fresh_game_or_notify(
+            session,
+            fresh,
+            game.starter_id,
+            "Game {}: setup vanished after downloading {} screenshot #{} — dropping the pick",
+            game.id,
+            provider,
+            index + 1,
+        )
         if fresh_game is None:
-            # Vanished between the download finishing and this re-read —
-            # the tap is already answered, so there's no alert left to
-            # give (see _reject_stale_tap), and no live row left to show
-            # a preview album for.
-            logger.warning(
-                "Game {}: setup vanished after downloading {} screenshot #{} — dropping the pick",
-                game.id,
-                provider,
-                index + 1,
-            )
+            # There is no live row left to show a preview album for
+            # either way, but the starter has just been told directly
+            # (see _fresh_game_or_notify) — no alert would have been
+            # possible here since the tap is already answered.
             return None
         # The one place image provenance is written: these bytes really
         # do come from `provider`'s *_id on file. The picker is done
