@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 from loguru import logger
 from telegram import InputMediaPhoto, Update
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
@@ -238,6 +239,19 @@ async def reply_with_source_menu(send, menu: SourceMenu, lang: str, key: str) ->
     )
 
 
+async def gallery_page_or_fallback(
+    context: ContextTypes.DEFAULT_TYPE, target: GalleryTarget, urls: list[str], lang: str
+) -> str | Fallback:
+    """`_show_gallery_page` for the callers whose own return value is
+    "the i18n key for the message to edit the tapped message down to":
+    the gallery's own confirmation once a page is up, or the page's
+    Fallback if Telegram wouldn't take it. Saves each of them repeating
+    the same three-line None check around a call whose success value is
+    always the same constant."""
+    fallback = await _show_gallery_page(context, target, urls, lang)
+    return fallback if fallback is not None else "dm_start.screenshot_source_picked"
+
+
 def _screenshot_capable_providers(game) -> list[str]:
     """All 3 screenshot-capable providers, same-provider-as-identification
     first when it's one of them (so the common case — screenshot source
@@ -334,8 +348,7 @@ async def resume_screenshot_gallery(
     target = GalleryTarget(
         chat_id=game.starter_id, provider=provider, offset=0, cross_provider=True
     )
-    await _show_gallery_page(context, target, result, lang)
-    return "dm_start.screenshot_source_picked"
+    return await gallery_page_or_fallback(context, target, result, lang)
 
 
 async def screenshot_upload_instead_callback_handler(
@@ -439,8 +452,7 @@ async def _resolve_screenshot_source(
     target = GalleryTarget(
         chat_id=game.starter_id, provider=provider, offset=0, cross_provider=cross_provider
     )
-    await _show_gallery_page(context, target, result, lang)
-    return None
+    return await _show_gallery_page(context, target, result, lang)
 
 
 async def _resolve_cross_provider_id(
@@ -479,12 +491,20 @@ async def _resolve_cross_provider_id(
 
 async def _show_gallery_page(
     context: ContextTypes.DEFAULT_TYPE, target: GalleryTarget, urls: list[str], lang: str
-) -> None:
+) -> Fallback | None:
     """Sends an album of up to GALLERY_PAGE_SIZE numbered screenshots
     starting at `target.offset`, followed by the gallery's own buttons
     message. Telegram fetches media-group photos server-side from a URL
     directly — no need to download bytes ourselves until one is
-    actually picked."""
+    actually picked.
+
+    Handing those URLs to Telegram is also what makes this the one place
+    a *Telegram* error means "this provider is unreachable": if it can't
+    fetch one (hotlink blocking, still over 10MB, a dead CDN path) it
+    answers with a BadRequest, which used to escape every caller and
+    reach app._error_handler with no reply going out at all. Returns a
+    Fallback instead, so it takes the same source-menu exit as the
+    provider timing out — every caller already had to handle one."""
     shown = urls[target.offset : target.offset + GALLERY_PAGE_SIZE]
     if not shown:
         # Defensive only: every caller either passes offset 0 against a
@@ -511,13 +531,12 @@ async def _show_gallery_page(
                 service=_SERVICE_DISPLAY_NAMES[target.provider],
             ),
         )
-        return
+        return None
 
     media = [
         InputMediaPhoto(media=url, caption=str(target.offset + i + 1))
         for i, url in enumerate(shown)
     ]
-    await context.bot.send_media_group(chat_id=target.chat_id, media=media)
 
     has_more = len(urls) > target.offset + len(shown)
     page = GalleryPage(
@@ -531,8 +550,23 @@ async def _show_gallery_page(
         # (a stale button) still steps back to a valid page.
         previous_offset=max(target.offset - GALLERY_PAGE_SIZE, 0) if target.offset else None,
     )
-    await context.bot.send_message(
-        chat_id=target.chat_id,
-        text=i18n.t("dm_start.pick_screenshot_prompt", lang),
-        reply_markup=screenshot_gallery_keyboard(page, lang),
-    )
+    # Both sends, not just the album: an album that lands without its
+    # buttons message is a gallery nobody can pick from, which is the
+    # same dead end by a different route.
+    try:
+        await context.bot.send_media_group(chat_id=target.chat_id, media=media)
+        await context.bot.send_message(
+            chat_id=target.chat_id,
+            text=i18n.t("dm_start.pick_screenshot_prompt", lang),
+            reply_markup=screenshot_gallery_keyboard(page, lang),
+        )
+    except TelegramError:
+        logger.exception(
+            "Telegram refused the {} gallery page at offset {} ({} url(s))",
+            target.provider,
+            target.offset,
+            len(urls),
+        )
+        return Fallback("dm_start.screenshot_service_down", target.provider)
+
+    return None

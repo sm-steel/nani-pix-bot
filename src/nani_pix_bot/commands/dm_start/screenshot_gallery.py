@@ -14,6 +14,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
+    _IMAGE_DOWNLOAD_ERRORS,
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
     _show_preview,
@@ -38,6 +39,7 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     _get_provider_by_id,
     _provider_id,
     _show_gallery_page,
+    gallery_page_or_fallback,
     reply_fallback,
     reply_with_source_menu,
     source_menu_for,
@@ -210,17 +212,31 @@ async def screenshot_search_pick_callback_handler(
         logger.debug(
             "Game {}: cross-provider search resolved {} -> id {}", game.id, provider, external_id
         )
-        fetched = await _fetch_screenshots_or_fallback(context, game, provider, external_id)
+        outcome = await _show_search_pick_gallery(context, game, provider, external_id, lang)
         # if/else rather than an early return purely to keep this
         # handler's return count under qlty's threshold.
-        if isinstance(fetched, Fallback):
-            await reply_fallback(query.edit_message_text, game, lang, fetched)
+        if isinstance(outcome, Fallback):
+            await reply_fallback(query.edit_message_text, game, lang, outcome)
         else:
-            target = GalleryTarget(
-                chat_id=game.starter_id, provider=provider, offset=0, cross_provider=True
-            )
-            await _show_gallery_page(context, target, fetched, lang)
-            await query.edit_message_text(i18n.t("dm_start.screenshot_source_picked", lang))
+            await query.edit_message_text(i18n.t(outcome, lang))
+
+
+async def _show_search_pick_gallery(
+    context: ContextTypes.DEFAULT_TYPE, game, provider: str, external_id: int, lang: str
+) -> str | Fallback:
+    """Lists the picked title's screenshots and puts its first gallery
+    page up — `cross_provider=True` because arriving here *is* the
+    cross-provider correction, so the page keeps offering "Wrong anime?
+    Search again" for another go. Returns the i18n key for the caller's
+    own message edit, or the Fallback that fetching/sending produced."""
+    fetched = await _fetch_screenshots_or_fallback(context, game, provider, external_id)
+    if isinstance(fetched, Fallback):
+        return fetched
+
+    target = GalleryTarget(
+        chat_id=game.starter_id, provider=provider, offset=0, cross_provider=True
+    )
+    return await gallery_page_or_fallback(context, target, fetched, lang)
 
 
 async def _resolve_screenshot_search_pick(
@@ -363,7 +379,10 @@ async def _handle_more_screenshots(
     target = GalleryTarget(
         chat_id=game.starter_id, provider=provider, offset=offset, cross_provider=True
     )
-    await _show_gallery_page(context, target, result, lang)
+    fallback = await _show_gallery_page(context, target, result, lang)
+    if fallback is not None:
+        return fallback
+
     logger.debug(
         "Game {}: showing {} gallery page at offset {} ({} url(s) total)",
         game.id,
@@ -407,11 +426,15 @@ async def _handle_screenshot_pick(
     # same proxied, Bearer-authed client its search/screenshots calls
     # already use — TMDB's image CDN may be behind the same DNS block
     # as api.themoviedb.org (see ARCHITECTURE.md's connectivity notes).
+    # _IMAGE_DOWNLOAD_ERRORS, not _SEARCH_SERVICE_ERRORS: this is a plain
+    # GET against a CDN, so only a transport error means "the provider is
+    # unreachable" — see _shared.py for why the broader tuple is the
+    # wrong one to reuse here.
     download_client = _client_for_source(context, provider)
     try:
         response = await download_client.get(urls[index])
         response.raise_for_status()
-    except _SEARCH_SERVICE_ERRORS:
+    except _IMAGE_DOWNLOAD_ERRORS:
         logger.exception(
             "Game {}: downloading {} screenshot #{} failed", game.id, provider, index + 1
         )

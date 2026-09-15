@@ -1,10 +1,13 @@
 """Small helpers shared by more than one submodule of this package."""
 
 import re
+from typing import cast
 
 import httpx
 from loguru import logger
 from telegram import InputMediaPhoto
+from telegram.error import TelegramError
+from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start.keyboards import method_selection_keyboard, preview_keyboard
 from nani_pix_bot.commands.helpers.membership import is_group_member
@@ -17,9 +20,32 @@ from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.settings import stage_config
 
-# Raised by anilist.py/shikimori.py on network failure or exhausted
-# rate-limit retries — see their _request() helpers.
-_SEARCH_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError)
+# "The provider is unreachable" in all the shapes it actually arrives in.
+#
+# httpx.HTTPError/RuntimeError are what services/search/ raises on a
+# network failure, exhausted rate-limit retries, or a body that came back
+# 200 but wasn't the JSON we asked for (a throttle page served as HTML,
+# say) — see rest.py's get_json()/http_retry(), which is where that
+# plumbing lives since the REST refactor deleted the per-provider
+# _request() helpers this comment used to point at.
+#
+# TelegramError belongs with them because the gallery hands provider URLs
+# to Telegram to fetch server-side (see screenshots.py's
+# _show_gallery_page): a hotlink block, an over-10MB frame or a dead CDN
+# path surfaces as a telegram.error.BadRequest on our side rather than as
+# an httpx error of our own. Same cause, same thing to tell the starter,
+# so the same exit — and until it was in here it escaped every handler in
+# this package and left them on a SETUP row with a dead keyboard.
+_SEARCH_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError, TelegramError)
+
+# Deliberately narrower than the tuple above, for the one call that is a
+# plain httpx GET against a provider's CDN and nothing else:
+# screenshot_gallery.py's download of the picked screenshot's bytes.
+# Catching RuntimeError there would take any ordinary bug in that code
+# path, swallow its traceback and report it to the starter as "the
+# provider is down" — sending them round the source menu for a provider
+# that is working fine.
+_IMAGE_DOWNLOAD_ERRORS = (httpx.HTTPError,)
 
 _SERVICE_DISPLAY_NAMES = {
     "anilist": "AniList",
@@ -40,9 +66,17 @@ _SYNONYM_SPLIT_RE = re.compile(r"[,\n]")
 _TMDB_CLIENT_BOT_DATA_KEY = "tmdb_client"
 
 
-def _client_for_source(context, source: str):
+def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: str) -> httpx.AsyncClient:
+    """The httpx client to talk to `source` with. Annotated on both ends
+    on purpose: `bot_data` is an untyped dict, so an unannotated return
+    made this Unknown — and since every search, screenshot fetch and
+    image download in the package funnels through here, that one Unknown
+    was enough to stop `ty` checking a single call made on a client
+    anywhere downstream. app.py puts a real AsyncClient under both keys
+    (see build_application), so the cast states what is already true
+    rather than papering over a doubt."""
     key = _TMDB_CLIENT_BOT_DATA_KEY if source == "tmdb" else "search_client"
-    return context.bot_data[key]
+    return cast(httpx.AsyncClient, context.bot_data[key])
 
 
 def _prefer_shikimori(lang: str) -> bool:

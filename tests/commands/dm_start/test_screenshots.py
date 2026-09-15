@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram import Update
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import screenshots
@@ -293,6 +294,73 @@ async def test_screenshot_source_callback_handler_falls_back_when_the_fetch_fail
     assert "screenshot:upload" in callbacks
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
     assert any(label.startswith("⚠️") and "Shikimori" in label for label in labels)
+
+
+async def test_screenshot_source_callback_handler_falls_back_when_telegram_rejects_the_album(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gallery deliberately hands provider URLs to Telegram to fetch
+    server-side, so a hotlink block, an over-10MB file or a dead CDN path
+    comes back as telegram.error.BadRequest out of send_media_group —
+    neither an httpx error nor a RuntimeError. It used to escape every
+    handler in this package, reach app._error_handler, and leave the
+    starter on a SETUP row with a dead keyboard and no reply at all. It
+    is the provider's images that are unreachable, so it takes the same
+    exit as the provider being down."""
+    monkeypatch.setattr(
+        screenshots.shikimori,
+        "screenshots",
+        AsyncMock(return_value=["https://shikimori.io/x/0.jpg"]),
+    )
+    game_id = _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_source:shikimori")
+    context = _make_context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=BadRequest("wrong file identifier"))
+
+    await screenshots.screenshot_source_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        assert fetched.screenshot_picker_provider == "shikimori"
+        # No gallery ever made it to the screen, so nothing was picked.
+        assert fetched.screenshot_source is None
+    update.callback_query.edit_message_text.assert_awaited_once()
+    _, kwargs = update.callback_query.edit_message_text.await_args
+    callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert "screenshot_source:jikan" in callbacks
+    assert "screenshot:upload" in callbacks
+
+
+async def test_screenshot_source_callback_handler_falls_back_on_a_malformed_provider_body(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The handler half of the cross-lane contract: services/search/
+    turns a malformed or non-JSON body (a throttle page served as HTML
+    with a 200, say) into RuntimeError, and this package treats that as
+    the provider being unreachable rather than letting it escape."""
+    monkeypatch.setattr(
+        screenshots.shikimori,
+        "screenshots",
+        AsyncMock(side_effect=RuntimeError("shikimori returned a non-JSON body")),
+    )
+    _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_source:shikimori")
+    context = _make_context(session_factory)
+
+    await screenshots.screenshot_source_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.edit_message_text.assert_awaited_once()
+    _, kwargs = update.callback_query.edit_message_text.await_args
+    callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert "screenshot_source:jikan" in callbacks
 
 
 def test_clear_screenshot_selection_keeps_an_id_no_image_ever_used(session_factory) -> None:

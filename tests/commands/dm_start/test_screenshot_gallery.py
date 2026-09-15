@@ -1,8 +1,10 @@
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 from telegram import Update
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import preview, screenshot_gallery, search
@@ -209,7 +211,7 @@ async def test_screenshot_gallery_callback_handler_pick_falls_back_when_the_down
 
     update = _make_callback_update(data="screenshot_pick:shikimori:0")
     context = _make_context(session_factory)
-    context.bot_data["search_client"].get = AsyncMock(side_effect=RuntimeError("boom"))
+    context.bot_data["search_client"].get = AsyncMock(side_effect=httpx.ConnectError("boom"))
 
     await screenshot_gallery.screenshot_gallery_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
@@ -223,6 +225,68 @@ async def test_screenshot_gallery_callback_handler_pick_falls_back_when_the_down
     update.callback_query.edit_message_text.assert_awaited_once()
     _, kwargs = update.callback_query.edit_message_text.await_args
     assert kwargs["reply_markup"] is not None
+
+
+async def test_screenshot_gallery_pick_does_not_dress_a_bug_up_as_a_provider_outage(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The raw image download catches transport errors only. A
+    RuntimeError out of it is a bug in our own code, not the CDN
+    refusing us — reporting it to the starter as "Shikimori isn't
+    responding" would hide it behind a friendly message and send them
+    round the source menu for a provider that is perfectly fine. It goes
+    to app's error handler with its traceback intact instead."""
+    monkeypatch.setattr(
+        shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
+    )
+    _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_pick:shikimori:0")
+    context = _make_context(session_factory)
+    context.bot_data["search_client"].get = AsyncMock(
+        side_effect=RuntimeError("bug, not an outage")
+    )
+
+    with pytest.raises(RuntimeError):
+        await screenshot_gallery.screenshot_gallery_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    update.callback_query.edit_message_text.assert_not_awaited()
+
+
+async def test_screenshot_gallery_paging_falls_back_when_telegram_rejects_the_album(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Paging's own half of the send_media_group contract: Telegram
+    refusing to fetch the provider's URLs must land on the source menu,
+    not escape the handler. Reached through the gallery's other button,
+    so the page-drawing chokepoint is covered from both entry points."""
+    urls = [f"https://shikimori.io/x/{i}.jpg" for i in range(8)]
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=urls))
+    game_id = _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_more:shikimori:5")
+    context = _make_context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=BadRequest("failed to get HTTP URL"))
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.edit_message_text.assert_awaited_once()
+    _, kwargs = update.callback_query.edit_message_text.await_args
+    assert _source_callbacks(kwargs["reply_markup"]) == [
+        "screenshot_source:shikimori",
+        "screenshot_source:jikan",
+        "screenshot_source:tmdb",
+        "screenshot:upload",
+    ]
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        assert fetched.screenshot_picker_provider == "shikimori"
 
 
 async def test_gallery_failure_keeps_a_typed_query_routable_to_the_provider(
@@ -244,7 +308,7 @@ async def test_gallery_failure_keeps_a_typed_query_routable_to_the_provider(
 
     update = _make_callback_update(data="screenshot_pick:shikimori:0")
     context = _make_context(session_factory)
-    context.bot_data["search_client"].get = AsyncMock(side_effect=RuntimeError("boom"))
+    context.bot_data["search_client"].get = AsyncMock(side_effect=httpx.ConnectError("boom"))
 
     await screenshot_gallery.screenshot_gallery_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
