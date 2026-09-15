@@ -104,7 +104,11 @@ to loosening it.
 smells` (which includes the `trufflehog` secret scan) — run as a git
 pre-commit hook** via [pre-commit](https://pre-commit.com)
 (`.pre-commit-config.yaml`, installed as a `uv` dev dependency — `uv run
-pre-commit install` sets up the hook once per clone). A commit is blocked if
+pre-commit install` sets up the hook once per clone) — though `qlty smells`
+itself always exits 0 regardless of findings, so its hook entry is
+`scripts/qlty_smells_gate.py`, a small wrapper that turns a non-empty
+`--quiet` result into a failing exit code; every other hook entry shells out
+to the real tool directly, this one doesn't. A commit is blocked if
 any of them fail. Every hook is a `local` entry (`language: system`) that
 shells out to the project's own `uv run ruff`/`uv run ty` — deliberately
 **not** the hosted `astral-sh/ruff-pre-commit` repo, which pins its own
