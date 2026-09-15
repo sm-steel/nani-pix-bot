@@ -33,7 +33,7 @@ def _require_original_image(game: Game, situation: str) -> bytes:
     branch that actually needs the bytes calls this once, right where
     it's used."""
     if game.original_image is None:
-        raise AssertionError(f"game.original_image is None on {situation}")
+        raise RuntimeError(f"game.original_image is None on {situation}")
     return game.original_image
 
 
@@ -65,7 +65,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # _validate_guess already checked this is set — restores the type
         # narrowing lost by returning `game` across a function boundary.
         if game.current_stage is None:
-            raise AssertionError("game.current_stage is None despite _validate_guess's check")
+            raise RuntimeError("game.current_stage is None despite _validate_guess's check")
 
         players.get_or_create_player(session, user.id, username=user.username)
         logger.debug("{} guessed {!r} on game {}", user.id, guess_text, game.id)

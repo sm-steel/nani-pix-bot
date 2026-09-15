@@ -56,7 +56,7 @@ async def _finalize_and_post(context, session, game: Game, lang: str, starter_na
     activate_game() only runs a couple of lines below."""
     timeout_module.cancel_setup_abandon(context.job_queue, game.id)
     if game.original_image is None:
-        raise AssertionError("game.original_image is None in _finalize_and_post")
+        raise RuntimeError("game.original_image is None in _finalize_and_post")
     original_bytes = game.original_image
     first_stage = game_service.STAGE_ORDER[0]
     first_stage_settings = stage_config.get_stage_config(session, first_stage)

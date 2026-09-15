@@ -48,7 +48,7 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # the type narrowing lost by returning `game` across a function
         # boundary.
         if game.original_image is None:
-            raise AssertionError(
+            raise RuntimeError(
                 "game.original_image is None despite _validate_active_game_for_starter's check"
             )
 
