@@ -53,7 +53,13 @@ def _make_text_update(
 
 
 def _create_setup_game(
-    session_factory, *, starter_id: int = 1, image: bytes = b"file123", source: str = "anilist"
+    session_factory,
+    *,
+    starter_id: int = 1,
+    # None for the screenshot-less /newgame path, where no image exists
+    # until one is picked or uploaded later (see create_setup_game).
+    image: bytes | None = b"file123",
+    source: str = "anilist",
 ) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=starter_id))
@@ -103,6 +109,40 @@ async def test_manual_entry_rejects_a_blank_synonym_message_with_a_reprompt(
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.status == GameStatus.SETUP
+
+
+async def test_manual_entry_without_an_image_offers_every_screenshot_source(
+    session_factory,
+) -> None:
+    """The screenshot-less /newgame path. Manual entry has no external id
+    of its own, which used to be read as "so it can only ask for an
+    upload" — but cross-provider resolution offers all three providers
+    regardless and searches the tapped one by the title just staged, so
+    what goes out is the full source menu with "Upload my own instead"
+    as one option on it."""
+    _create_setup_game(session_factory, starter_id=1, image=None, source="manual")
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.title_english = "Sousou no Frieren"
+        session.commit()
+
+    update = _make_text_update(user_id=1, text="Frieren")
+    context = _make_callback_context(session_factory)
+
+    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_message.assert_awaited_once()
+    _, kwargs = context.bot.send_message.await_args
+    callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert callbacks == [
+        "screenshot_source:shikimori",
+        "screenshot_source:jikan",
+        "screenshot_source:tmdb",
+        "screenshot:upload",
+    ]
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
 
 
 async def test_manual_entry_second_message_stages_and_shows_a_preview(

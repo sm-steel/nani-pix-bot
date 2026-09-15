@@ -14,8 +14,10 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
+    _IMAGE_DOWNLOAD_ERRORS,
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
+    _log_stale_tap,
     _show_preview,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
@@ -25,6 +27,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     parse_screenshot_pick_callback_data,
     parse_screenshot_search_again_callback_data,
     parse_screenshot_search_pick_callback_data,
+    screenshot_source_keyboard,
     shikimori_results_keyboard,
     tmdb_results_keyboard,
 )
@@ -37,11 +40,13 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     _get_provider_by_id,
     _provider_id,
     _show_gallery_page,
+    gallery_page_or_fallback,
     reply_fallback,
     reply_with_source_menu,
     source_menu_for,
 )
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.search import jikan, shikimori, tmdb
@@ -54,10 +59,29 @@ async def screenshot_search_again_callback_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """ "Wrong anime? Search again" — tapped from a cross-provider
-    gallery to correct a bad auto-resolved top result. Just asks for a
-    query; screenshot_source (already set to `provider` by whichever
-    step showed this button) is what tells search_text_handler to route
-    the next text message to _screenshot_search_step below."""
+    gallery to correct a bad auto-resolved top result, or from a
+    cross-search's own "None of these". Asks for a query;
+    screenshot_picker_provider (already set to `provider` by whichever
+    step showed this button, re-asserted here so a stale button still
+    routes) is what tells search_text_handler to send the next text
+    message to _screenshot_search_step below. No image is staged by any
+    of this, so screenshot_source stays untouched.
+
+    `setup_step` is re-asserted for the same reason the picker is, and
+    it is the other half of the same routing: this button rides on a
+    gallery message that stays tappable after the preview has already
+    moved the game to CONFIRMING, and search_text_handler's CONFIRMING
+    branch drops typed text on the floor. Setting only the picker put
+    the starter in front of a prompt whose answer went nowhere — 0
+    replies, 0 searches — which no keyboard on that prompt can fix.
+
+    The prompt carries the source-selection keyboard because this reply
+    replaces the message whose buttons were the starter's other ways
+    forward (a different provider, their own upload) — leaving only a
+    typed query would be another buttonless prompt, which is what issue
+    #71 asks this button to stop landing on. Not the "When a provider
+    fails" rule from MECHANICS.md: nothing has failed on this screen, so
+    no provider is flagged either."""
     query = update.callback_query
     if query is None or query.data is None:
         return
@@ -71,13 +95,26 @@ async def screenshot_search_again_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
+            _log_stale_tap(query.data, user.id)
             return
         provider = parse_screenshot_search_again_callback_data(query.data)
         if provider is None:
+            # keyboards.py logged what was wrong with the payload; this
+            # names the game whose picker it would otherwise have aimed
+            # at a provider that doesn't exist (see #71).
+            logger.warning("Game {}: rejected search-again tap {!r}", game.id, query.data)
             return
-        game.screenshot_source = provider
+        game.setup_step = SetupStep.PICKING_SCREENSHOT
+        game.screenshot_picker_provider = provider
+        # Built while the game is still live — the keyboard below is
+        # sent after this block closes.
+        providers = source_menu_for(game, None).providers
+        logger.debug("Game {}: re-searching {} screenshots by hand", game.id, provider)
 
-    await query.edit_message_text(i18n.t("dm_start.ask_search_screenshots", lang))
+    await query.edit_message_text(
+        i18n.t("dm_start.ask_search_screenshots", lang),
+        reply_markup=screenshot_source_keyboard(providers, lang),
+    )
 
 
 async def _screenshot_search_step(
@@ -162,6 +199,7 @@ async def screenshot_search_pick_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
+            _log_stale_tap(query.data, user.id)
             return
         # Built here, where the game is loaded anyway, so the failure
         # paths below can re-show the source menu without a second
@@ -176,22 +214,48 @@ async def screenshot_search_pick_callback_handler(
     with session_scope(session_factory) as session:
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
+            # The second lookup, so this is the narrow window where the
+            # row went away *during* the get_by_id round-trip above
+            # rather than before the tap. Same message as the first
+            # site's, and the line number is the only thing that tells
+            # the two apart in a log — these two also share a callback
+            # prefix, so `data` doesn't. That line number is the
+            # *caller's* solely because _log_stale_tap logs through
+            # `logger.opt(depth=1)`: plain loguru stamps the frame of the
+            # logger.warning call itself, which is one line inside the
+            # helper and identical for every site. Drop that opt() and
+            # this pair goes back to being byte-identical.
+            _log_stale_tap(query.data, user.id)
             return
         game_service.set_screenshot_provider_id(game, result)
         logger.debug(
             "Game {}: cross-provider search resolved {} -> id {}", game.id, provider, external_id
         )
-        fetched = await _fetch_screenshots_or_fallback(context, game, provider, external_id)
+        outcome = await _show_search_pick_gallery(context, game, provider, external_id, lang)
         # if/else rather than an early return purely to keep this
         # handler's return count under qlty's threshold.
-        if isinstance(fetched, Fallback):
-            await reply_fallback(query.edit_message_text, game, lang, fetched)
+        if isinstance(outcome, Fallback):
+            await reply_fallback(query.edit_message_text, game, lang, outcome)
         else:
-            target = GalleryTarget(
-                chat_id=game.starter_id, provider=provider, offset=0, cross_provider=True
-            )
-            await _show_gallery_page(context, target, fetched, lang)
-            await query.edit_message_text(i18n.t("dm_start.screenshot_source_picked", lang))
+            await query.edit_message_text(i18n.t(outcome, lang))
+
+
+async def _show_search_pick_gallery(
+    context: ContextTypes.DEFAULT_TYPE, game, provider: str, external_id: int, lang: str
+) -> str | Fallback:
+    """Lists the picked title's screenshots and puts its first gallery
+    page up — `cross_provider=True` because arriving here *is* the
+    cross-provider correction, so the page keeps offering "Wrong anime?
+    Search again" for another go. Returns the i18n key for the caller's
+    own message edit, or the Fallback that fetching/sending produced."""
+    fetched = await _fetch_screenshots_or_fallback(context, game, provider, external_id)
+    if isinstance(fetched, Fallback):
+        return fetched
+
+    target = GalleryTarget(
+        chat_id=game.starter_id, provider=provider, offset=0, cross_provider=True
+    )
+    return await gallery_page_or_fallback(context, target, fetched, lang)
 
 
 async def _resolve_screenshot_search_pick(
@@ -205,6 +269,11 @@ async def _resolve_screenshot_search_pick(
     two re-showing `menu` so the starter keeps a way out."""
     parsed = parse_screenshot_search_pick_callback_data(query.data)
     if parsed is None:
+        # Forged payload — keyboards.py logged which half didn't hold up.
+        # Nothing to reply with: `menu` has no provider yet (the pick is
+        # where one would have come from), so there is no failure screen
+        # to draw that wouldn't have to invent one.
+        logger.warning("Rejected cross-search pick {!r}", query.data)
         return None
     provider, external_id = parsed
     menu = replace(menu, provider=provider)
@@ -247,6 +316,7 @@ async def screenshot_gallery_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
+            _log_stale_tap(query.data, user.id)
             return
         outcome = await _dispatch_gallery_action(context, session, game, query.data, lang)
         # Replied inside the session block — a Fallback's source menu is
@@ -273,6 +343,12 @@ async def _dispatch_gallery_action(
 
     picked = parse_screenshot_pick_callback_data(data)
     if picked is None:
+        # app.py only routes screenshot_pick:/screenshot_more: here, so
+        # neither parser recognising `data` means it was forged — the
+        # payload after the prefix is whatever the client chose to send.
+        # keyboards.py logged which half didn't hold up; this says which
+        # game the forged tap was aimed at.
+        logger.warning("Game {}: rejected gallery tap {!r}", game.id, data)
         return None
     return await _handle_screenshot_pick(context, session, game, picked, lang)
 
@@ -284,15 +360,67 @@ async def _handle_more_screenshots(
     button as well as the forward one — the callback has always encoded
     an absolute offset rather than a direction — so the confirmation
     names the range shown instead of saying "here are some more", which
-    would be wrong half the time."""
+    would be wrong half the time.
+
+    `cross_provider=True` unconditionally, like `resume_screenshot_gallery`
+    and for the same reason: the `screenshot_more:<provider>:<offset>`
+    payload has nowhere to carry the flag (Telegram caps callback_data at
+    64 bytes, so an extra field is expensive), and rendering "Wrong
+    anime? Search again" on every page is the right side to err on —
+    paging is precisely what a starter does when the auto-resolved title
+    looks wrong, so dropping the escape hatch on page 2 took it away at
+    the exact moment it was wanted.
+
+    Drawing that button means arming the picker, exactly as
+    `resume_screenshot_gallery` does for the same reason: tapping it
+    re-arms the column itself, but a *typed* correction has only the
+    column to route on, and search.py drops text with no provider being
+    resolved. Page 2 of a same-provider gallery therefore used to show
+    "Wrong anime? Search again" over a prompt that silently swallowed
+    anything typed under it. The write always names the provider whose
+    gallery is being drawn, so it cannot point the router at some other
+    provider's search."""
     provider, offset = more
     provider_id = _provider_id(game, provider)
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
     if isinstance(result, Fallback):
         return result
-    target = GalleryTarget(chat_id=game.starter_id, provider=provider, offset=offset)
-    await _show_gallery_page(context, target, result, lang)
+
     shown = len(result[offset : offset + GALLERY_PAGE_SIZE])
+    if not shown:
+        # A stale forward tap against a list that shrank since this page
+        # was drawn. Handing it to _show_gallery_page sent a bare "no
+        # screenshots" notice *and* let the caller edit this message's
+        # own keyboard away in favour of a nonsense range ("Screenshots
+        # 11-10 of 2"), leaving two messages with no buttons on either —
+        # the notice even names buttons ("pick another source below")
+        # that weren't there. It is an ordinary failure, so it takes the
+        # ordinary failure exit: the same notice, with the source menu
+        # under it and the picker re-armed (see reply_fallback).
+        logger.warning(
+            "Game {}: stale {} page at offset {} is past the end of {} url(s)",
+            game.id,
+            provider,
+            offset,
+            len(result),
+        )
+        return Fallback("dm_start.no_screenshots_available", provider)
+
+    game.screenshot_picker_provider = provider
+    target = GalleryTarget(
+        chat_id=game.starter_id, provider=provider, offset=offset, cross_provider=True
+    )
+    fallback = await _show_gallery_page(context, target, result, lang)
+    if fallback is not None:
+        return fallback
+
+    logger.debug(
+        "Game {}: showing {} gallery page at offset {} ({} url(s) total)",
+        game.id,
+        provider,
+        offset,
+        len(result),
+    )
     return i18n.t(
         "dm_start.gallery_page_sent",
         lang,
@@ -319,6 +447,19 @@ async def _handle_screenshot_pick(
         return result
     urls = result
     if index >= len(urls):
+        # Deliberately no reply: unlike the paging equivalent above, the
+        # gallery message this was tapped from is left exactly as it was,
+        # keyboard and all, so the starter still has every other
+        # screenshot to pick and nothing to be rescued from. What they
+        # don't get is any sign the tap registered, which is why it is at
+        # least a rejected action in the log.
+        logger.warning(
+            "Game {}: stale {} pick #{} against {} url(s)",
+            game.id,
+            provider,
+            index + 1,
+            len(urls),
+        )
         return None
 
     # These are external URLs (Shikimori/Jikan/TMDB), not Telegram
@@ -329,18 +470,26 @@ async def _handle_screenshot_pick(
     # same proxied, Bearer-authed client its search/screenshots calls
     # already use — TMDB's image CDN may be behind the same DNS block
     # as api.themoviedb.org (see ARCHITECTURE.md's connectivity notes).
+    # _IMAGE_DOWNLOAD_ERRORS, not _SEARCH_SERVICE_ERRORS: this is a plain
+    # GET against a CDN, so only a transport error means "the provider is
+    # unreachable" — see _shared.py for why the broader tuple is the
+    # wrong one to reuse here.
     download_client = _client_for_source(context, provider)
     try:
         response = await download_client.get(urls[index])
         response.raise_for_status()
-    except _SEARCH_SERVICE_ERRORS:
+    except _IMAGE_DOWNLOAD_ERRORS:
         logger.exception(
             "Game {}: downloading {} screenshot #{} failed", game.id, provider, index + 1
         )
         return Fallback("dm_start.screenshot_service_down", provider)
 
+    # The one place image provenance is written: these bytes really do
+    # come from `provider`'s *_id on file. The picker is done resolving
+    # at the same moment — the next screen is the confirmation preview.
     game.original_image = response.content
     game.screenshot_source = provider
+    game.screenshot_picker_provider = None
     logger.debug("Game {}: picked {} screenshot #{}", game.id, provider, index + 1)
 
     await _show_preview(context, session, game, lang)

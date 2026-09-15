@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import GameStatus, PixelStage
@@ -722,10 +723,35 @@ def test_has_answer_to_reveal_is_false_for_a_setup_game(session: Session) -> Non
 
 
 def test_has_answer_to_reveal_is_false_once_the_image_is_cleared(session: Session) -> None:
+    """clear_original_screenshot() only ever runs on a game that has just
+    reached a terminal outcome — every caller (guess.py, correct.py,
+    jobs/timers.py) posts the reveal and drops the bytes in the same
+    breath — so "the image is gone" and "the round is over" are one
+    state, and the status half alone answers for both."""
     game = _active_game(session)
+    game_service.force_unsolved(game)
     game_service.clear_original_screenshot(game)
 
     assert game_service.has_answer_to_reveal(game) is False
+
+
+def test_has_answer_to_reveal_does_not_load_the_deferred_image(session: Session) -> None:
+    """models/game.py defers original_image so routine queries don't drag
+    a multi-hundred-KB blob along; a bare `is not None` on it would
+    force-load exactly that, to learn one bit. Same discipline
+    _validate_guess applies on the /guess hot path.
+
+    `unloaded` is the proof rather than a mock: the attribute is only
+    absent from it once SQLAlchemy has actually fetched the column."""
+    game_id = _active_game(session).id
+    session.expunge_all()
+    game = session.get(Game, game_id)
+    assert game is not None
+    assert "original_image" in inspect(game).unloaded  # deferred, as declared
+
+    assert game_service.has_answer_to_reveal(game) is True
+
+    assert "original_image" in inspect(game).unloaded
 
 
 def test_force_win_sets_winner_and_hands_over_the_turn(session: Session) -> None:

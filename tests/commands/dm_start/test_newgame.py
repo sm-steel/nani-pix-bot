@@ -8,14 +8,17 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start import newgame
 from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
+    PREVIEW_CONFIRM_CALLBACK_DATA,
+    SCREENSHOT_UPLOAD_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
 )
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.bot_settings import BotSettings
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.enums import GameStatus, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
+from nani_pix_bot.services import i18n
 
 
 def _make_update(
@@ -48,6 +51,127 @@ def _set_language(session_factory, language: str) -> None:
     with session_factory() as session:
         session.add(BotSettings(id=1, language=language))
         session.commit()
+
+
+def _setup_in_progress(
+    session_factory, *, step: SetupStep, starter_id: int = 1, **overrides
+) -> int:
+    """A SETUP game the caller already owns, parked on `step` — what
+    every "I'm stuck, let me start over" /newgame runs into."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=starter_id))
+        session.commit()
+        game = Game(
+            starter_id=starter_id,
+            status=GameStatus.SETUP,
+            setup_step=step,
+            source="anilist",
+            anilist_id=99,
+            title_english="Frieren: Beyond Journey's End",
+            **overrides,
+        )
+        session.add(game)
+        session.commit()
+        return game.id
+
+
+def _reply_callbacks(update: MagicMock) -> list[str]:
+    _, kwargs = update.message.reply_text.await_args
+    markup = kwargs["reply_markup"]
+    return [button.callback_data for row in markup.inline_keyboard for button in row]
+
+
+async def test_newgame_mid_setup_reshows_the_method_screen_instead_of_refusing_the_turn(
+    session_factory,
+) -> None:
+    """can_start() is False whenever *any* SETUP game exists, including
+    the caller's own — which told the person whose setup is in progress
+    "it's not your turn", the one thing that is definitely untrue."""
+    game_id = _setup_in_progress(session_factory, step=SetupStep.PICKING_METHOD)
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory)
+
+    await newgame.newgame_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        assert session.query(Game).count() == 1  # no duplicate game
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.setup_step == SetupStep.PICKING_METHOD  # re-shown, not moved
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert "turn" not in reply_text.lower()
+    assert ANILIST_METHOD_CALLBACK_DATA in _reply_callbacks(update)
+    # Nothing restarted: no second "setup started" notice in the topic,
+    # and no second setup-abandon timer for the same row.
+    context.bot.send_message.assert_not_awaited()
+    context.job_queue.run_once.assert_not_called()
+
+
+async def test_newgame_mid_setup_reshows_the_screenshot_source_menu(session_factory) -> None:
+    _setup_in_progress(session_factory, step=SetupStep.PICKING_SCREENSHOT)
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory)
+
+    await newgame.newgame_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    callbacks = _reply_callbacks(update)
+    assert "screenshot_source:shikimori" in callbacks
+    assert SCREENSHOT_UPLOAD_CALLBACK_DATA in callbacks
+
+
+async def test_newgame_mid_setup_reshows_the_preview_buttons(session_factory) -> None:
+    _setup_in_progress(session_factory, step=SetupStep.CONFIRMING, original_image=b"already-staged")
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory)
+
+    await newgame.newgame_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert PREVIEW_CONFIRM_CALLBACK_DATA in _reply_callbacks(update)
+
+
+async def test_newgame_mid_setup_reshows_the_photo_prompt(session_factory) -> None:
+    """The two input-prompt steps have no keyboard of their own in the
+    flow either — the route forward is the photo/text being asked for,
+    which the prompt states. What matters is that it is the screen the
+    starter is actually on, rather than a refusal."""
+    _setup_in_progress(
+        session_factory, step=SetupStep.AWAITING_PHOTO_CHANGE, original_image=b"already-staged"
+    )
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory)
+
+    await newgame.newgame_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert update.message.reply_text.await_args.args[0] == i18n.t("dm_start.ask_new_photo", "EN")
+
+
+async def test_newgame_mid_setup_reshows_the_synonym_prompt(session_factory) -> None:
+    _setup_in_progress(
+        session_factory, step=SetupStep.AWAITING_SYNONYM, original_image=b"already-staged"
+    )
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory)
+
+    await newgame.newgame_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert update.message.reply_text.await_args.args[0] == i18n.t(
+        "dm_start.ask_extra_synonym", "EN"
+    )
+
+
+async def test_newgame_still_refuses_someone_elses_setup(session_factory) -> None:
+    """The turn check itself is unchanged — only the caller's *own*
+    setup stops being reported as somebody else's turn."""
+    _setup_in_progress(session_factory, step=SetupStep.PICKING_METHOD, starter_id=2)
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory)
+
+    await newgame.newgame_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        assert session.query(Game).count() == 1
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert "turn" in reply_text.lower()
 
 
 async def test_newgame_command_creates_a_setup_game_with_no_image_yet(session_factory) -> None:

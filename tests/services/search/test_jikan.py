@@ -70,6 +70,22 @@ async def test_search_sends_a_descriptive_user_agent() -> None:
     assert captured["user_agent"] == jikan._REQUEST_HEADERS["User-Agent"]
 
 
+async def test_search_requests_only_sfw_results() -> None:
+    """Results go into a shared group topic, so the one parameter Jikan
+    offers for this is cheap insurance (TMDB's `include_adult` already
+    defaults false)."""
+    captured: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["sfw"] = request.url.params.get("sfw")
+        return httpx.Response(200, json={"data": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await jikan.search(client, "frieren")
+
+    assert captured["sfw"] == "true"
+
+
 async def test_search_retries_after_rate_limit_then_succeeds() -> None:
     calls = {"n": 0}
 
@@ -195,6 +211,58 @@ async def test_screenshots_returns_empty_list_when_none_exist() -> None:
     assert urls == []
 
 
+async def test_search_raises_a_runtime_error_on_a_non_json_body() -> None:
+    """Jikan in front of a proxy can answer 200 with an HTML error page;
+    that has to become a RuntimeError the handlers already catch, not a
+    ValueError that strands the starter (issue #75)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>503 Service Unavailable</html>")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="non-JSON"):
+            await jikan.search(client, "frieren")
+
+
+async def test_search_raises_a_runtime_error_on_a_literal_null_body() -> None:
+    """A 200 carrying `null` decodes fine, so the decode guard misses it;
+    None then reaches `.get` as an AttributeError no handler catches."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="null", headers={"Content-Type": "application/json"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="answered 200"):
+            await jikan.search(client, "frieren")
+
+
+async def test_search_returns_nothing_when_the_data_container_is_null() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": None})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await jikan.search(client, "frieren") == []
+
+
+async def test_screenshots_returns_nothing_when_the_data_container_is_missing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await jikan.screenshots(client, 52991) == []
+
+
+async def test_get_by_id_returns_none_when_the_detail_body_has_no_entry() -> None:
+    """Jikan wraps its single detail entry in "data"; a body without one
+    is reported as "gone" rather than raising past every handler."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": None})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await jikan.get_by_id(client, 52991) is None
+
+
 async def test_screenshots_is_cached_for_repeated_calls() -> None:
     calls = {"n": 0}
 
@@ -207,3 +275,228 @@ async def test_screenshots_is_cached_for_repeated_calls() -> None:
         await jikan.screenshots(client, 52991)
 
     assert calls["n"] == 1
+
+
+async def test_search_skips_an_entry_with_no_mal_id() -> None:
+    """A third party controls these keys: one entry missing the one field
+    the parser indexes must not cost the starter the other results
+    (issue #83)."""
+    entries = [{"title": "No id here"}, {"mal_id": 52991, "title": "Sousou no Frieren"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entries})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await jikan.search(client, "frieren")
+
+    assert [result.jikan_id for result in results] == [52991]
+
+
+async def test_search_skips_scalar_entries() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [1, 2]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await jikan.search(client, "frieren")
+
+    assert results == []
+
+
+async def test_search_raises_when_the_data_container_is_not_an_array() -> None:
+    """A wholly-unusable container is an outage, not zero results — and
+    iterating a number is a TypeError no handler catches."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": 5})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="expected an array"):
+            await jikan.search(client, "frieren")
+
+
+async def test_get_by_id_returns_none_when_the_entry_has_no_mal_id() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"title": "Sousou no Frieren"}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await jikan.get_by_id(client, 52991)
+
+    assert result is None
+
+
+async def test_screenshots_skips_scalar_entries() -> None:
+    """entry.get("jpg") on an int is an AttributeError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [1, {"jpg": {"image_url": "a.jpg"}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await jikan.screenshots(client, 52991)
+
+    assert urls == ["a.jpg"]
+
+
+async def test_search_skips_an_entry_whose_id_is_null() -> None:
+    """`raw["mal_id"]` succeeds for a JSON null, so the missing-key guard
+    alone would stage a result with jikan_id=None and build a
+    `jikan_pick:None` button that cannot work (issue #83)."""
+    entries = [{"mal_id": None, "title": "Null id"}, {"mal_id": 52991, "title": "Frieren"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entries})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await jikan.search(client, "frieren")
+
+    assert [result.jikan_id for result in results] == [52991]
+
+
+async def test_get_by_id_returns_none_when_the_id_is_null() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"mal_id": None, "title": "Frieren"}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await jikan.get_by_id(client, 52991)
+
+    assert result is None
+
+
+_GOOD_ENTRY = {
+    "mal_id": 52991,
+    "title": "Sousou no Frieren",
+    "title_english": "Frieren: Beyond Journey's End",
+    "title_japanese": "葬送のフリーレン",
+    "title_synonyms": ["Frieren at the Funeral"],
+}
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        pytest.param({"title": 5}, id="title-is-a-number"),
+        pytest.param({"title_english": ["Frieren"]}, id="english-is-an-array"),
+        pytest.param({"title_japanese": {"jp": "x"}}, id="japanese-is-an-object"),
+        pytest.param({"title_synonyms": 5}, id="synonyms-is-a-number"),
+        pytest.param({"title_synonyms": "Frieren"}, id="synonyms-is-a-string"),
+        pytest.param({"title_synonyms": ["Frieren", 5]}, id="synonyms-holds-a-number"),
+        pytest.param({"title_synonyms": {"0": "Frieren"}}, id="synonyms-is-an-object"),
+    ],
+)
+async def test_search_skips_an_entry_with_a_malformed_field(field: dict) -> None:
+    """Same rule as every other provider: a field the parser can't hand
+    back usably takes the entry with it (issue #86)."""
+    bad = {**_GOOD_ENTRY, "mal_id": 1, **field}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [bad, _GOOD_ENTRY]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await jikan.search(client, "frieren")
+
+    assert [result.jikan_id for result in results] == [52991]
+
+
+async def test_search_never_expands_a_string_synonyms_into_characters() -> None:
+    entry = {**_GOOD_ENTRY, "title_synonyms": "Frieren"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [entry]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await jikan.search(client, "frieren")
+
+    assert results == []
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        pytest.param({"title": 5}, id="title-is-a-number"),
+        pytest.param({"title_synonyms": "Frieren"}, id="synonyms-is-a-string"),
+        pytest.param({"title_synonyms": [5]}, id="synonyms-holds-a-number"),
+    ],
+)
+async def test_get_by_id_returns_none_for_a_malformed_field(field: dict) -> None:
+    entry = {**_GOOD_ENTRY, **field}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await jikan.get_by_id(client, 52991) is None
+
+
+async def test_get_by_id_warns_naming_the_parser_when_a_field_is_malformed(
+    records: list[tuple[str, str]],
+) -> None:
+    entry = {**_GOOD_ENTRY, "title_synonyms": "Frieren"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await jikan.get_by_id(client, 52991)
+
+    warnings = [message for level, message in records if level == "WARNING"]
+    assert len(warnings) == 1
+    assert "Jikan" in warnings[0]
+    assert "title_synonyms" in warnings[0]
+
+
+@pytest.mark.parametrize(
+    "jpg",
+    [
+        pytest.param({"large_image_url": 5}, id="large-is-a-number"),
+        pytest.param({"large_image_url": {"url": "a.jpg"}}, id="large-is-an-object"),
+        pytest.param({"image_url": 5}, id="fallback-is-a-number"),
+        pytest.param({"large_image_url": None, "image_url": ["a.jpg"]}, id="fallback-is-an-array"),
+    ],
+)
+async def test_screenshots_skips_a_picture_whose_url_is_not_a_string(jpg: dict) -> None:
+    """`_picture_url` is declared `str | None` and its result goes
+    straight to `InputMediaPhoto(media=url)` — a bare int reached it
+    intact (issue #86)."""
+    entries = [{"jpg": jpg, "webp": {}}, {"jpg": {"large_image_url": "a-large.jpg"}, "webp": {}}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entries})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await jikan.screenshots(client, 52991)
+
+    assert urls == ["a-large.jpg"]
+
+
+@pytest.mark.parametrize(
+    "jpg",
+    [
+        pytest.param(
+            {"large_image_url": "a-large.jpg", "image_url": 5}, id="unused-fallback-is-a-number"
+        ),
+        pytest.param({"large_image_url": 5, "image_url": "a.jpg"}, id="preferred-is-a-number"),
+    ],
+)
+async def test_screenshots_treats_both_url_fields_alike(
+    jpg: dict, records: list[tuple[str, str]]
+) -> None:
+    """Whichever of the two is malformed, the picture goes — the
+    short-circuiting `or` used to check only the preferred field, so an
+    entry was kept or skipped depending on which half a provider had
+    mistyped rather than on whether it was mistyped at all.
+
+    Both alike rather than "fall back past the bad one" because that is
+    exactly what `_parse_result` already does for a malformed
+    `title_japanese` when `title` is fine: the entry is skipped, not
+    salvaged field by field (issue #86's review)."""
+    entries = [{"jpg": jpg, "webp": {}}, {"jpg": {"large_image_url": "b-large.jpg"}, "webp": {}}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entries})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await jikan.screenshots(client, 52991)
+
+    assert urls == ["b-large.jpg"]
+    warnings = [message for level, message in records if level == "WARNING"]
+    assert len(warnings) == 1
+    assert "_picture_url" in warnings[0]

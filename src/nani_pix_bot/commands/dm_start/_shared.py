@@ -1,12 +1,19 @@
 """Small helpers shared by more than one submodule of this package."""
 
 import re
+from typing import assert_never, cast
 
 import httpx
 from loguru import logger
-from telegram import InputMediaPhoto
+from telegram import InlineKeyboardMarkup, InputMediaPhoto
+from telegram.error import TelegramError
+from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start.keyboards import method_selection_keyboard, preview_keyboard
+from nani_pix_bot.commands.dm_start.keyboards import (
+    method_selection_keyboard,
+    preview_keyboard,
+    screenshot_source_keyboard,
+)
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -17,9 +24,43 @@ from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.settings import stage_config
 
-# Raised by anilist.py/shikimori.py on network failure or exhausted
-# rate-limit retries — see their _request() helpers.
-_SEARCH_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError)
+# "The provider is unreachable" in all the shapes it actually arrives in.
+#
+# httpx.HTTPError/RuntimeError are what services/search/ raises on a
+# network failure, exhausted rate-limit retries, or a body that came back
+# 200 but wasn't the JSON we asked for (a throttle page served as HTML,
+# say) — see rest.py's get_json()/http_retry(), which is where that
+# plumbing lives since the REST refactor deleted the per-provider
+# _request() helpers this comment used to point at.
+#
+# TelegramError is here because a Telegram failure can mean the same
+# thing: the gallery hands provider URLs to Telegram to fetch
+# server-side, so a hotlink block, an over-10MB frame or a dead CDN path
+# comes back as a telegram.error.BadRequest rather than as an httpx error
+# of our own. Note where that is actually caught, though — it is
+# screenshots.py's _show_gallery_page, and it catches `except
+# TelegramError` directly rather than this tuple. Deliberately: the only
+# statements in that try are the two sends, and widening it to this tuple
+# would put RuntimeError around the keyboard/i18n construction evaluated
+# inside the call, which is the "report a bug as a provider outage"
+# pattern _IMAGE_DOWNLOAD_ERRORS below exists to avoid.
+#
+# So the member is defensive, not load-bearing: no current `except
+# _SEARCH_SERVICE_ERRORS` site can raise one, since all six wrap provider
+# HTTP calls only. Keep it that way. Moving a Telegram call inside one of
+# those blocks would silently relabel its failure "the provider is down"
+# — give such a call its own `except TelegramError` instead, the way
+# _show_gallery_page does.
+_SEARCH_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError, TelegramError)
+
+# Deliberately narrower than the tuple above, for the one call that is a
+# plain httpx GET against a provider's CDN and nothing else:
+# screenshot_gallery.py's download of the picked screenshot's bytes.
+# Catching RuntimeError there would take any ordinary bug in that code
+# path, swallow its traceback and report it to the starter as "the
+# provider is down" — sending them round the source menu for a provider
+# that is working fine.
+_IMAGE_DOWNLOAD_ERRORS = (httpx.HTTPError,)
 
 _SERVICE_DISPLAY_NAMES = {
     "anilist": "AniList",
@@ -40,9 +81,51 @@ _SYNONYM_SPLIT_RE = re.compile(r"[,\n]")
 _TMDB_CLIENT_BOT_DATA_KEY = "tmdb_client"
 
 
-def _client_for_source(context, source: str):
+def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: str) -> httpx.AsyncClient:
+    """The httpx client to talk to `source` with. Annotated on both ends
+    on purpose: `bot_data` is an untyped dict, so an unannotated return
+    made this Unknown — and since every search, screenshot fetch and
+    image download in the package funnels through here, that one Unknown
+    was enough to stop `ty` checking a single call made on a client
+    anywhere downstream. app.py puts a real AsyncClient under both keys
+    (see build_application), so the cast states what is already true
+    rather than papering over a doubt."""
     key = _TMDB_CLIENT_BOT_DATA_KEY if source == "tmdb" else "search_client"
-    return context.bot_data[key]
+    return cast(httpx.AsyncClient, context.bot_data[key])
+
+
+def _log_stale_tap(data: str | None, user_id: int) -> None:
+    """The one thing every screen of the screenshot sub-flow has to say
+    when a button is tapped and there is no SETUP game left to act on:
+    the row was resolved (confirmed, stopped) or the setup-abandon timer
+    deleted it an hour in, while the messages it left behind stayed
+    tappable forever. It is a rejected action, so WARNING, per CLAUDE.md's
+    table.
+
+    The tap stays a no-op *on screen* only because there is no string to
+    say this in yet — every caller reads `lang` before the lookup that
+    lands here, so a `query.answer(text=...)` is perfectly reachable and
+    is what these sites want; it waits on a locale key this lane doesn't
+    own (issue #79). Nothing structural is in the way.
+
+    One helper rather than the same two lines at each of the six sites,
+    so the wording production greps for can't drift between them —
+    `opt(depth=1)` so loguru still stamps the *caller's* frame rather
+    than this one. Without it every site logged the same
+    `_shared:_log_stale_tap:<the logger.warning below>` — one fixed
+    location, whatever line it currently sits on — and two of them (the
+    pair inside screenshot_search_pick_callback_handler, which also
+    share a callback prefix) became byte-identical, erasing the only
+    thing that told a mundane hour-old tap apart from a row that
+    vanished mid-round-trip. No literal line number here on purpose:
+    the last one went stale twice over, and it was a comment about line
+    numbers that did it."""
+    logger.opt(depth=1).warning(
+        "Starter {} tapped {!r} with no SETUP game left — already resolved, or the "
+        "setup-abandon timer deleted the row",
+        user_id,
+        data,
+    )
 
 
 def _prefer_shikimori(lang: str) -> bool:
@@ -55,6 +138,103 @@ def _method_prompt_key(*, prefer_shikimori: bool) -> str:
         if prefer_shikimori
         else "dm_start.pick_method_prompt"
     )
+
+
+def _screenshot_capable_providers(game: Game) -> list[str]:
+    """All 3 screenshot-capable providers, same-provider-as-identification
+    first when it's one of them (so the common case — screenshot source
+    matches identification source — needs no cross-provider search at
+    all). Every provider is offered regardless of whether the game
+    already has an id for it — tapping one it doesn't triggers
+    cross-provider resolution (see screenshots.py's
+    _resolve_screenshot_source).
+
+    Lives here, not in screenshots.py where its callers are, because
+    `_current_setup_screen` below needs it too and screenshots.py
+    already imports this module — the other direction would be a cycle.
+    It is pure `game.source` arithmetic either way, with no dependency
+    on the screenshot sub-flow around it."""
+    candidates = ["shikimori", "jikan", "tmdb"]
+    if game.source in candidates:
+        candidates.remove(game.source)
+        candidates.insert(0, game.source)
+    return candidates
+
+
+def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
+    """The screen `game`'s own starter is already looking at, as the i18n
+    key and keyboard to re-send it with — see `_resume_setup`.
+
+    Every step is covered, and each returns the same prompt/keyboard
+    pair the step's own handler sends, so re-showing one can never
+    invent a screen the flow doesn't otherwise have. The two
+    input-prompt steps have no keyboard in the flow either: their route
+    forward is the photo or text being asked for, which the prompt
+    itself states.
+
+    What comes back is the step's *entry* screen, which for the two
+    steps that span several is not necessarily the exact sub-screen the
+    starter last saw: mid-search at PICKING_METHOD gets the method menu
+    rather than the "type a title" prompt, and mid-gallery at
+    PICKING_SCREENSHOT gets the source menu rather than that gallery
+    page. Both are one step back within the same step — which is what
+    "I'm stuck" is asking for anyway — and both are screens the flow
+    already produces there.
+
+    The final branch is spelled out rather than left as a fall-through,
+    with `assert_never` behind it: a sixth SetupStep would otherwise be
+    handed the synonym prompt in silence. It fails at type-check time
+    now, and loudly at runtime if one is ever added dynamically."""
+    if game.setup_step == SetupStep.PICKING_METHOD:
+        prefer_shikimori = _prefer_shikimori(lang)
+        return (
+            _method_prompt_key(prefer_shikimori=prefer_shikimori),
+            method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
+        )
+    if game.setup_step == SetupStep.PICKING_SCREENSHOT:
+        return (
+            "dm_start.pick_screenshot_source_prompt",
+            screenshot_source_keyboard(_screenshot_capable_providers(game), lang),
+        )
+    if game.setup_step == SetupStep.CONFIRMING:
+        return "dm_start.preview_confirm_prompt", preview_keyboard(lang)
+    if game.setup_step == SetupStep.AWAITING_PHOTO_CHANGE:
+        return "dm_start.ask_new_photo", None
+    if game.setup_step == SetupStep.AWAITING_SYNONYM:
+        return "dm_start.ask_extra_synonym", None
+    assert_never(game.setup_step)
+
+
+async def _resume_setup(message, game: Game, lang: str) -> None:
+    """ "Start a new game" from someone whose own setup is still open —
+    most often "I'm stuck, let me start over", which is exactly the
+    population the "never strand the starter" work was for.
+
+    `can_start()` answers False for them, because it is False whenever
+    *any* SETUP game exists, and the reply it drives (`not_your_turn`)
+    is then untrue in the one way that helps least: it is their turn,
+    they are mid-way through taking it. So put them back on the step
+    they are actually on instead — on that step's entry screen, which
+    is not always the exact sub-screen they last saw (see
+    `_current_setup_screen`). Nothing is written — no status, no
+    step, no picker column (#69's invariant is about screen
+    *transitions*; this re-sends a screen the game is already on) — and
+    the row keeps the setup-abandon timer it was created with, so
+    nothing is rescheduled either.
+
+    Genuinely starting over is still `/stop`, unchanged; this only stops
+    the bot from denying the setup exists. Saying so in the reply needs
+    a string the locale files don't have yet (issue #79 owns them), so
+    the screen has to carry the message on its own for now."""
+    key, keyboard = _current_setup_screen(game, lang)
+    logger.warning(
+        "Starter {} asked for a new game while their own setup (game {}) is still at {} — "
+        "re-showing that step instead of refusing them the turn",
+        game.starter_id,
+        game.id,
+        game.setup_step.value,
+    )
+    await message.reply_text(i18n.t(key, lang), reply_markup=keyboard)
 
 
 async def _reply_service_down(send, lang: str, source: str) -> None:
@@ -76,7 +256,14 @@ async def _start_new_game(
     shared by both entry points into the setup flow: `intake.py`'s
     `photo_handler` (real image bytes already in hand) and `newgame.py`'s
     `/newgame` command (no image yet — filled in later, either by
-    picking a screenshot or by falling back to an upload)."""
+    picking a screenshot or by falling back to an upload).
+
+    Unless the caller already has a setup of their own open, in which
+    case it re-shows that game's current step and creates nothing (see
+    `_resume_setup`). Both entry points get that for free by sharing
+    this helper: a second `/newgame`, and a photo sent on a step that
+    doesn't take one (intake.py handles the two that do), are the same
+    "my setup is already open" mistake arriving by different routes."""
     group_chat_id = context.bot_data["group_chat_id"]
     if not await is_group_member(context.bot, group_chat_id, user.id):
         with session_scope(session_factory) as session:
@@ -92,6 +279,13 @@ async def _start_new_game(
             await message.reply_text(i18n.t("dm_start.games_disabled", lang))
             return
         players.get_or_create_player(session, user.id, username=user.username)
+        # Whose SETUP game is in the way has to be settled *before*
+        # can_start(), which can't tell: it refuses on any SETUP game at
+        # all, the caller's own included (see _resume_setup).
+        own_setup = game_service.get_setup_game_for_starter(session, user.id)
+        if own_setup is not None:
+            await _resume_setup(message, own_setup, lang)
+            return
         if not game_service.can_start(session, user.id):
             logger.warning("{} tried to start a game out of turn", user.id)
             await message.reply_text(i18n.t("dm_start.not_your_turn", lang))

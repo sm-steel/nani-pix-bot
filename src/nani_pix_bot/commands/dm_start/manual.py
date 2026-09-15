@@ -54,10 +54,15 @@ async def _manual_synonyms_step(
             await _show_preview(context, session, setup_game, lang)
             message_key = "dm_start.preview_sent"
         else:
-            # Screenshot-less /newgame entry — manual has no external id
-            # to fetch screenshots by, so this always falls straight to
-            # asking for an upload (start_screenshot_picker handles that
-            # itself when no screenshot-capable provider is available).
+            # Screenshot-less /newgame entry — no image in hand yet.
+            # Manual entry has no external id of its own, but that
+            # stopped meaning "upload or nothing" when cross-provider
+            # resolution landed: _screenshot_capable_providers offers all
+            # three providers unconditionally, and tapping one silently
+            # searches it by the title just staged (stage_manual_entry
+            # puts it in title_english, which is what that search reads).
+            # So a manual game gets the full source menu, with "Upload my
+            # own instead" one button on it rather than the only route.
             await start_screenshot_picker(context, setup_game, lang)
             message_key = "dm_start.identification_staged"
 

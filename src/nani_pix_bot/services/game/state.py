@@ -391,11 +391,22 @@ def has_answer_to_reveal(game: Game) -> bool:
     SETUP game has never posted anything to the topic, and may not even
     have a title or an image staged yet, so there's nothing to reveal.
 
-    The image half is belt-and-braces — an ACTIVE game always still has
-    its bytes, since clear_original_screenshot() only runs on a terminal
-    outcome — mirroring the same guard in jobs/timers.py's timeout
-    callback."""
-    return game.status == GameStatus.ACTIVE and game.original_image is not None
+    Status is the whole test, deliberately. An ACTIVE game always still
+    has its bytes — clear_original_screenshot() only ever runs on a game
+    that has just reached a terminal outcome — so `original_image is not
+    None` added no information, and reading it here cost the entire blob:
+    models/game.py defers that column precisely so a query that only
+    wants to know *about* a game doesn't drag a multi-hundred-KB payload
+    across with it. Same reasoning as commands/game_flow/guess.py's
+    _validate_guess, which won't touch it either.
+
+    What this drives is a button, not the reveal itself. The two places
+    that actually post one — stop.py's _announce_stop and jobs/timers.py's
+    timeout callback — re-check the bytes where they are about to be
+    used, which is the one place the check is both free (they need them
+    loaded anyway) and load-bearing; _announce_stop falls back to the
+    plain notice and a WARNING if they are somehow gone."""
+    return game.status == GameStatus.ACTIVE
 
 
 def clear_original_screenshot(game: Game) -> None:

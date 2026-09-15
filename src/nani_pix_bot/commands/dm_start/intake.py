@@ -67,15 +67,16 @@ async def _replace_staged_photo_if_pending(
         if existing is None or existing.setup_step not in _PHOTO_ACCEPTING_STEPS:
             return False
         logger.debug("Starter {} sent a replacement photo for game {}", user.id, existing.id)
-        # A genuine upload replacing whatever was there before — clear
-        # screenshot_source (and the id it was pointing at) *before*
-        # writing the new bytes, so this isn't mistaken for an
-        # API-sourced screenshot afterward: the preview's "Change image"
-        # would otherwise wrongly offer "Pick a different screenshot"
-        # for the OLD provider, and "Re-search title" would delete the
-        # photo just uploaded (clear_screenshot_selection is a no-op
-        # once screenshot_source is already None, so this is safe to
-        # call unconditionally here too).
+        # A genuine upload replacing whatever was there before — leave
+        # the screenshot sub-flow *before* writing the new bytes, so
+        # this isn't mistaken for an API-sourced screenshot afterward:
+        # the preview's "Change image" would otherwise wrongly offer
+        # "Pick a different screenshot" for the OLD provider, and
+        # "Re-search title" would delete the photo just uploaded.
+        # Safe to call unconditionally: it only drops a provider id
+        # when an API-sourced image was actually staged, so uploading
+        # while merely *looking* at a provider's menu keeps the
+        # identification id intact (see clear_screenshot_selection).
         clear_screenshot_selection(existing)
         existing.original_image = image_bytes
         await _show_preview(context, session, existing, lang)
