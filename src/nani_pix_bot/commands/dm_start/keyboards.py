@@ -216,8 +216,17 @@ def _validated_index(raw: str, *, data: str) -> int | None:
     A bare `int()` on it raised ValueError out of the handler, which
     reached app's error handler as an unhandled exception and showed the
     starter nothing at all; every caller of these parsers already has a
-    "not a pick" path for None, so rejection goes down that one."""
-    if raw.isdigit():
+    "not a pick" path for None, so rejection goes down that one.
+
+    `.isdecimal()`, not `.isdigit()`: the latter is also True for
+    characters that merely carry the Unicode *digit* property, several of
+    which `int()` then refuses — `"²".isdigit()` is True and
+    `int("²")` raises, and a superscript two is two bytes of valid
+    UTF-8, well inside Telegram's callback-data cap. Guarding with
+    `.isdigit()` would have left exactly the ValueError this function
+    exists to prevent. ASCII is unaffected, and genuinely decimal
+    non-ASCII digits (`"٢"`) still convert cleanly."""
+    if raw.isdecimal():
         return int(raw)
     logger.warning("Rejected callback payload {!r}: {!r} is not an index", data, raw)
     return None

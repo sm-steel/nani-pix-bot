@@ -317,6 +317,9 @@ def test_parse_screenshot_search_pick_callback_data_returns_none_for_other_data(
         pytest.param(parse_pick_callback_data, "shikimori_pick:", id="pick-empty-id"),
         pytest.param(parse_pick_callback_data, "jikan_pick:-1", id="pick-negative-id"),
         pytest.param(parse_pick_callback_data, "tmdb_pick:1 OR 1", id="pick-injected-id"),
+        # str.isdigit() is True for these but int() refuses them, so the
+        # obvious guard would still have raised — see _validated_index.
+        pytest.param(parse_pick_callback_data, "anilist_pick:²", id="pick-non-decimal-digit"),
         pytest.param(
             parse_screenshot_pick_callback_data,
             "screenshot_pick:shikimori:x",
@@ -338,6 +341,11 @@ def test_parse_screenshot_search_pick_callback_data_returns_none_for_other_data(
             id="screenshot-pick-no-index-segment",
         ),
         pytest.param(
+            parse_screenshot_pick_callback_data,
+            "screenshot_pick:tmdb:²",
+            id="screenshot-pick-non-decimal-digit",
+        ),
+        pytest.param(
             parse_screenshot_more_callback_data,
             "screenshot_more:bogus:1",
             id="more-unknown-provider",
@@ -347,6 +355,11 @@ def test_parse_screenshot_search_pick_callback_data_returns_none_for_other_data(
         ),
         pytest.param(
             parse_screenshot_more_callback_data, "screenshot_more:tmdb", id="more-no-offset-segment"
+        ),
+        pytest.param(
+            parse_screenshot_more_callback_data,
+            "screenshot_more:tmdb:²",
+            id="more-non-decimal-digit",
         ),
         pytest.param(
             parse_screenshot_source_callback_data,
@@ -365,6 +378,11 @@ def test_parse_screenshot_search_pick_callback_data_returns_none_for_other_data(
             parse_screenshot_search_pick_callback_data,
             "screenshot_search_pick:tmdb:abc",
             id="search-pick-not-a-number",
+        ),
+        pytest.param(
+            parse_screenshot_search_pick_callback_data,
+            "screenshot_search_pick:tmdb:²",
+            id="search-pick-non-decimal-digit",
         ),
         pytest.param(
             parse_screenshot_search_again_callback_data,

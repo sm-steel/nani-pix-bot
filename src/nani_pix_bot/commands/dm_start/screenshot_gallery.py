@@ -63,10 +63,13 @@ async def screenshot_search_again_callback_handler(
     message to _screenshot_search_step below. No image is staged by any
     of this, so screenshot_source stays untouched.
 
-    The prompt carries the source-selection keyboard: a typed query is
-    only one of the three ways forward MECHANICS.md promises, and this
-    reply replaces the message whose buttons were the other two. Nothing
-    has failed here, so no provider is flagged."""
+    The prompt carries the source-selection keyboard because this reply
+    replaces the message whose buttons were the starter's other ways
+    forward (a different provider, their own upload) — leaving only a
+    typed query would be another buttonless prompt, which is what issue
+    #71 asks this button to stop landing on. Not the "When a provider
+    fails" rule from MECHANICS.md: nothing has failed on this screen, so
+    no provider is flagged either."""
     query = update.callback_query
     if query is None or query.data is None:
         return

@@ -335,6 +335,11 @@ async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix
     _, kwargs = status_message.edit_text.await_args
     callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
     assert "screenshot_search_pick:tmdb:209867" in callbacks
+    # Pins the retry end to end, against the prefix this step really
+    # builds: _retry_data_for derives the destination from pick_prefix,
+    # so a change to the format string above would silently fall back to
+    # identification's retry and re-open the cross-wiring.
+    assert "screenshot_search_again:tmdb" in callbacks
 
 
 async def test_screenshot_search_pick_callback_handler_resolves_and_shows_gallery(
