@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import preview, screenshot_gallery
+from nani_pix_bot.commands.dm_start.keyboards import SCREENSHOT_UPLOAD_CALLBACK_DATA
 from nani_pix_bot.commands.dm_start.screenshots import SourceMenu
 from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.models.game import Game
@@ -291,6 +292,29 @@ async def test_screenshot_search_again_callback_handler_asks_for_a_query(session
     # anime an already-uploaded image is from.
     text = update.callback_query.edit_message_text.await_args.args[0]
     assert text == i18n.t("dm_start.ask_search_screenshots", "en")
+
+
+async def test_screenshot_search_again_prompt_still_offers_buttons(session_factory) -> None:
+    """This prompt is where the cross-search's "None of these" now lands
+    (it used to fall into identification search's retry branch), and it
+    is where the gallery's "Wrong anime? Search again" has always landed.
+    A typed query is only one of the three ways forward MECHANICS.md
+    promises — the other two are buttons, so they have to be on screen."""
+    _staged_game(session_factory, source="anilist", anilist_id=99)
+    update = _make_callback_update(data="screenshot_search_again:tmdb")
+    context = _make_context(session_factory)
+
+    await screenshot_gallery.screenshot_search_again_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = update.callback_query.edit_message_text.await_args
+    callbacks = _source_callbacks(kwargs["reply_markup"])
+    assert "screenshot_source:shikimori" in callbacks
+    assert SCREENSHOT_UPLOAD_CALLBACK_DATA in callbacks
+    # Nothing failed here, so no provider is flagged.
+    labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert not any(label.startswith("⚠️") for label in labels)
 
 
 async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix(

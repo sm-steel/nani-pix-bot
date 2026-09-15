@@ -1,3 +1,5 @@
+import pytest
+
 from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
     JIKAN_METHOD_CALLBACK_DATA,
@@ -16,7 +18,11 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     method_selection_keyboard,
     parse_method_callback_data,
     parse_pick_callback_data,
+    parse_screenshot_more_callback_data,
+    parse_screenshot_pick_callback_data,
+    parse_screenshot_search_again_callback_data,
     parse_screenshot_search_pick_callback_data,
+    parse_screenshot_source_callback_data,
     preview_keyboard,
     screenshot_gallery_keyboard,
     screenshot_source_keyboard,
@@ -238,20 +244,43 @@ def test_tmdb_pick_callback_data_round_trips_the_tmdb_id() -> None:
     assert parse_pick_callback_data(data) == ("tmdb", 209867)
 
 
-def test_shikimori_keyboard_accepts_a_custom_pick_prefix_and_retry_data() -> None:
+def test_shikimori_keyboard_accepts_a_custom_pick_prefix() -> None:
     """Ticket 8's cross-provider "Wrong anime? Search again" flow reuses
     this exact keyboard builder for its own results, routed through a
     different callback prefix so its picks land on a different handler
     than identification search's own pick_callback_handler."""
     markup = shikimori_results_keyboard(
-        [_FRIEREN_SHIKIMORI],
-        lang="en",
-        pick_prefix="screenshot_search_pick:shikimori:",
-        retry_data="custom_retry",
+        [_FRIEREN_SHIKIMORI], lang="en", pick_prefix="screenshot_search_pick:shikimori:"
     )
 
     assert markup.inline_keyboard[0][0].callback_data == "screenshot_search_pick:shikimori:52991"
-    assert markup.inline_keyboard[-1][0].callback_data == "custom_retry"
+
+
+@pytest.mark.parametrize(
+    ("build", "results", "provider"),
+    [
+        pytest.param(shikimori_results_keyboard, [_FRIEREN_SHIKIMORI], "shikimori", id="shikimori"),
+        pytest.param(jikan_results_keyboard, [_FRIEREN_JIKAN], "jikan", id="jikan"),
+        pytest.param(tmdb_results_keyboard, [_FRIEREN_TMDB], "tmdb", id="tmdb"),
+    ],
+)
+def test_cross_search_keyboard_retries_into_the_screenshot_flow(build, results, provider) -> None:
+    """ "None of these" on a screenshot cross-search must come back to the
+    screenshot sub-flow, not to identification search's own retry — that
+    handler edits the message to "type a new search query" with no
+    keyboard at all, a buttonless prompt reached purely by accident."""
+    markup = build(results, lang="en", pick_prefix=f"screenshot_search_pick:{provider}:")
+
+    assert markup.inline_keyboard[-1][0].callback_data == f"screenshot_search_again:{provider}"
+
+
+def test_identification_keyboard_still_retries_into_the_identification_flow() -> None:
+    """The default routing is unchanged: a plain identification-search
+    results keyboard keeps sending "None of these" to
+    pick_callback_handler's own retry branch."""
+    markup = shikimori_results_keyboard([_FRIEREN_SHIKIMORI], lang="en")
+
+    assert markup.inline_keyboard[-1][0].callback_data == RETRY_CALLBACK_DATA
 
 
 def test_jikan_keyboard_accepts_a_custom_pick_prefix() -> None:
@@ -279,6 +308,117 @@ def test_parse_screenshot_search_pick_callback_data_round_trips() -> None:
 
 def test_parse_screenshot_search_pick_callback_data_returns_none_for_other_data() -> None:
     assert parse_screenshot_search_pick_callback_data("shikimori_pick:52991") is None
+
+
+@pytest.mark.parametrize(
+    ("parse", "data"),
+    [
+        pytest.param(parse_pick_callback_data, "anilist_pick:abc", id="pick-not-a-number"),
+        pytest.param(parse_pick_callback_data, "shikimori_pick:", id="pick-empty-id"),
+        pytest.param(parse_pick_callback_data, "jikan_pick:-1", id="pick-negative-id"),
+        pytest.param(parse_pick_callback_data, "tmdb_pick:1 OR 1", id="pick-injected-id"),
+        pytest.param(
+            parse_screenshot_pick_callback_data,
+            "screenshot_pick:shikimori:x",
+            id="screenshot-pick-not-a-number",
+        ),
+        pytest.param(
+            parse_screenshot_pick_callback_data,
+            "screenshot_pick:bogus:1",
+            id="screenshot-pick-unknown-provider",
+        ),
+        pytest.param(
+            parse_screenshot_pick_callback_data,
+            "screenshot_pick:anilist:0",
+            id="screenshot-pick-provider-without-screenshots",
+        ),
+        pytest.param(
+            parse_screenshot_pick_callback_data,
+            "screenshot_pick:shikimori",
+            id="screenshot-pick-no-index-segment",
+        ),
+        pytest.param(
+            parse_screenshot_more_callback_data,
+            "screenshot_more:bogus:1",
+            id="more-unknown-provider",
+        ),
+        pytest.param(
+            parse_screenshot_more_callback_data, "screenshot_more:tmdb:x", id="more-not-a-number"
+        ),
+        pytest.param(
+            parse_screenshot_more_callback_data, "screenshot_more:tmdb", id="more-no-offset-segment"
+        ),
+        pytest.param(
+            parse_screenshot_source_callback_data,
+            "screenshot_source:evil",
+            id="source-unknown-provider",
+        ),
+        pytest.param(
+            parse_screenshot_source_callback_data, "screenshot_source:", id="source-empty-provider"
+        ),
+        pytest.param(
+            parse_screenshot_search_pick_callback_data,
+            "screenshot_search_pick:bogus:1",
+            id="search-pick-unknown-provider",
+        ),
+        pytest.param(
+            parse_screenshot_search_pick_callback_data,
+            "screenshot_search_pick:tmdb:abc",
+            id="search-pick-not-a-number",
+        ),
+        pytest.param(
+            parse_screenshot_search_again_callback_data,
+            "screenshot_search_again:evil",
+            id="search-again-unknown-provider",
+        ),
+    ],
+)
+def test_parsers_reject_malformed_callback_payloads(parse, data: str) -> None:
+    """Every CallbackQueryHandler in app.py matches on prefix only, so
+    everything after that prefix is whatever the client chose to send —
+    an MTProto client can put arbitrary `data` on a tap. A payload that
+    carries a real prefix but a junk provider or index must come back as
+    None (the already-handled "not a pick" path) rather than raising
+    ValueError here, or KeyError later against _ID_ATTRS /
+    _SCREENSHOT_MODULES / _SERVICE_DISPLAY_NAMES."""
+    assert parse(data) is None
+
+
+@pytest.mark.parametrize(
+    ("parse", "data", "expected"),
+    [
+        pytest.param(parse_pick_callback_data, "anilist_pick:99", ("anilist", 99), id="pick"),
+        pytest.param(
+            parse_screenshot_pick_callback_data,
+            "screenshot_pick:shikimori:5",
+            ("shikimori", 5),
+            id="screenshot-pick",
+        ),
+        pytest.param(
+            parse_screenshot_more_callback_data,
+            "screenshot_more:jikan:10",
+            ("jikan", 10),
+            id="more",
+        ),
+        pytest.param(
+            parse_screenshot_source_callback_data, "screenshot_source:tmdb", "tmdb", id="source"
+        ),
+        pytest.param(
+            parse_screenshot_search_pick_callback_data,
+            "screenshot_search_pick:tmdb:209867",
+            ("tmdb", 209867),
+            id="search-pick",
+        ),
+        pytest.param(
+            parse_screenshot_search_again_callback_data,
+            "screenshot_search_again:tmdb",
+            "tmdb",
+            id="search-again",
+        ),
+    ],
+)
+def test_parsers_still_accept_well_formed_callback_payloads(parse, data: str, expected) -> None:
+    assert parse(data) == expected
 
 
 def test_method_selection_keyboard_defaults_to_anilist_first() -> None:

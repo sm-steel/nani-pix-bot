@@ -25,6 +25,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     parse_screenshot_pick_callback_data,
     parse_screenshot_search_again_callback_data,
     parse_screenshot_search_pick_callback_data,
+    screenshot_source_keyboard,
     shikimori_results_keyboard,
     tmdb_results_keyboard,
 )
@@ -54,12 +55,18 @@ async def screenshot_search_again_callback_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """ "Wrong anime? Search again" — tapped from a cross-provider
-    gallery to correct a bad auto-resolved top result. Just asks for a
-    query; screenshot_picker_provider (already set to `provider` by
-    whichever step showed this button, re-asserted here so a stale
-    button still routes) is what tells search_text_handler to send the
-    next text message to _screenshot_search_step below. No image is
-    staged by any of this, so screenshot_source stays untouched."""
+    gallery to correct a bad auto-resolved top result, or from a
+    cross-search's own "None of these". Asks for a query;
+    screenshot_picker_provider (already set to `provider` by whichever
+    step showed this button, re-asserted here so a stale button still
+    routes) is what tells search_text_handler to send the next text
+    message to _screenshot_search_step below. No image is staged by any
+    of this, so screenshot_source stays untouched.
+
+    The prompt carries the source-selection keyboard: a typed query is
+    only one of the three ways forward MECHANICS.md promises, and this
+    reply replaces the message whose buttons were the other two. Nothing
+    has failed here, so no provider is flagged."""
     query = update.callback_query
     if query is None or query.data is None:
         return
@@ -78,9 +85,15 @@ async def screenshot_search_again_callback_handler(
         if provider is None:
             return
         game.screenshot_picker_provider = provider
+        # Built while the game is still live — the keyboard below is
+        # sent after this block closes.
+        providers = source_menu_for(game, None).providers
         logger.debug("Game {}: re-searching {} screenshots by hand", game.id, provider)
 
-    await query.edit_message_text(i18n.t("dm_start.ask_search_screenshots", lang))
+    await query.edit_message_text(
+        i18n.t("dm_start.ask_search_screenshots", lang),
+        reply_markup=screenshot_source_keyboard(providers, lang),
+    )
 
 
 async def _screenshot_search_step(

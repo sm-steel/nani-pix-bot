@@ -17,6 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
+from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nani_pix_bot.services import game as game_service
@@ -55,94 +56,97 @@ _ResultT = TypeVar("_ResultT")
 
 @dataclass(frozen=True)
 class _ResultAccessors(Generic[_ResultT]):
-    """A provider's own display-label rule and id field — bundled with
-    `_CallbackRouting` below so `_results_keyboard` doesn't need a
-    5-argument signature (a qlty "many parameters" smell) on top of its
-    `results`/`lang`."""
+    """A provider's own display-label rule and id field — bundled into
+    one object so `_results_keyboard` doesn't need a 5-argument
+    signature (a qlty "many parameters" smell) on top of its
+    `results`/`lang`/`pick_prefix`."""
 
     label_fn: Callable[[_ResultT, str], str]
     id_fn: Callable[[_ResultT], int]
 
 
-@dataclass(frozen=True)
-class _CallbackRouting:
-    """Defaults to identification search's own callback data on every
-    public `*_results_keyboard` wrapper, but ticket 8's cross-provider
-    "Wrong anime? Search again" flow overrides both to route its picks
-    to a different handler (commands/dm_start/screenshot_gallery.py)
-    than identification search's own pick_callback_handler."""
-
-    pick_prefix: str
-    retry_data: str = RETRY_CALLBACK_DATA
-
-
 def _results_keyboard(
-    results: list[_ResultT],
-    lang: str,
-    accessors: _ResultAccessors[_ResultT],
-    routing: _CallbackRouting,
+    results: list[_ResultT], lang: str, accessors: _ResultAccessors[_ResultT], pick_prefix: str
 ) -> InlineKeyboardMarkup:
     """Shared body behind every `*_results_keyboard` builder below — one
-    button per result plus a trailing retry button."""
+    button per result plus a trailing retry button. Where that retry
+    lands follows from `pick_prefix` (see `_retry_data_for`), so the two
+    can't drift apart the way they did while the retry was its own
+    never-passed keyword."""
     buttons = [
         [
             InlineKeyboardButton(
                 accessors.label_fn(result, lang),
-                callback_data=f"{routing.pick_prefix}{accessors.id_fn(result)}",
+                callback_data=f"{pick_prefix}{accessors.id_fn(result)}",
             )
         ]
         for result in results
     ]
     buttons.append(
-        [InlineKeyboardButton(i18n.t("keyboards.retry", lang), callback_data=routing.retry_data)]
+        [
+            InlineKeyboardButton(
+                i18n.t("keyboards.retry", lang), callback_data=_retry_data_for(pick_prefix)
+            )
+        ]
     )
     return InlineKeyboardMarkup(buttons)
 
 
+def _retry_data_for(pick_prefix: str) -> str:
+    """Where this keyboard's "None of these" button lands, derived from
+    where its picks land.
+
+    Identification search's own results retry into
+    `pick_callback_handler`'s retry branch. The screenshot cross-search
+    (the one caller that overrides `pick_prefix`, to
+    "screenshot_search_pick:<provider>:") has to retry into *its* flow
+    instead: it used to inherit identification's retry, which edited the
+    message to "Okay, type a new search query." with no keyboard at all —
+    cross-wired, and a buttonless prompt reached by accident.
+
+    The prefixes below are defined further down in this module, with the
+    rest of the screenshot sub-flow's callback data; they're read when
+    this runs, not at import."""
+    if not pick_prefix.startswith(SCREENSHOT_SEARCH_PICK_PREFIX):
+        return RETRY_CALLBACK_DATA
+    provider = pick_prefix.removeprefix(SCREENSHOT_SEARCH_PICK_PREFIX).rstrip(":")
+    return f"{SCREENSHOT_SEARCH_AGAIN_PREFIX}{provider}"
+
+
 def anilist_results_keyboard(results: list[AniListResult], lang: str) -> InlineKeyboardMarkup:
     accessors = _ResultAccessors(label_fn=_anilist_label, id_fn=lambda result: result.anilist_id)
-    return _results_keyboard(results, lang, accessors, _CallbackRouting(_ANILIST_PICK_PREFIX))
+    return _results_keyboard(results, lang, accessors, _ANILIST_PICK_PREFIX)
 
 
 def shikimori_results_keyboard(
-    results: list[ShikimoriResult],
-    lang: str,
-    *,
-    pick_prefix: str = _SHIKIMORI_PICK_PREFIX,
-    retry_data: str = RETRY_CALLBACK_DATA,
+    results: list[ShikimoriResult], lang: str, *, pick_prefix: str = _SHIKIMORI_PICK_PREFIX
 ) -> InlineKeyboardMarkup:
-    """See _CallbackRouting's docstring for why `pick_prefix`/`retry_data`
-    are overridable."""
+    """`pick_prefix` is overridable so ticket 8's cross-provider "Wrong
+    anime? Search again" flow can route its picks to a different handler
+    (commands/dm_start/screenshot_gallery.py) than identification
+    search's own pick_callback_handler."""
     accessors = _ResultAccessors(
         label_fn=_shikimori_label, id_fn=lambda result: result.shikimori_id
     )
-    return _results_keyboard(results, lang, accessors, _CallbackRouting(pick_prefix, retry_data))
+    return _results_keyboard(results, lang, accessors, pick_prefix)
 
 
 def jikan_results_keyboard(
-    results: list[JikanResult],
-    lang: str,
-    *,
-    pick_prefix: str = _JIKAN_PICK_PREFIX,
-    retry_data: str = RETRY_CALLBACK_DATA,
+    results: list[JikanResult], lang: str, *, pick_prefix: str = _JIKAN_PICK_PREFIX
 ) -> InlineKeyboardMarkup:
-    """See _CallbackRouting's docstring for why `pick_prefix`/`retry_data`
-    are overridable."""
+    """See `shikimori_results_keyboard` for why `pick_prefix` is
+    overridable."""
     accessors = _ResultAccessors(label_fn=_jikan_label, id_fn=lambda result: result.jikan_id)
-    return _results_keyboard(results, lang, accessors, _CallbackRouting(pick_prefix, retry_data))
+    return _results_keyboard(results, lang, accessors, pick_prefix)
 
 
 def tmdb_results_keyboard(
-    results: list[TMDBResult],
-    lang: str,
-    *,
-    pick_prefix: str = _TMDB_PICK_PREFIX,
-    retry_data: str = RETRY_CALLBACK_DATA,
+    results: list[TMDBResult], lang: str, *, pick_prefix: str = _TMDB_PICK_PREFIX
 ) -> InlineKeyboardMarkup:
-    """See _CallbackRouting's docstring for why `pick_prefix`/`retry_data`
-    are overridable."""
+    """See `shikimori_results_keyboard` for why `pick_prefix` is
+    overridable."""
     accessors = _ResultAccessors(label_fn=_tmdb_label, id_fn=lambda result: result.tmdb_id)
-    return _results_keyboard(results, lang, accessors, _CallbackRouting(pick_prefix, retry_data))
+    return _results_keyboard(results, lang, accessors, pick_prefix)
 
 
 def _anilist_label(result: AniListResult, lang: str) -> str:
@@ -194,19 +198,43 @@ def _tmdb_label(result: TMDBResult, lang: str) -> str:
     return game_service.prioritized_title(variants, lang=lang)
 
 
+_PICK_PREFIX_SOURCES = {
+    _ANILIST_PICK_PREFIX: "anilist",
+    _SHIKIMORI_PICK_PREFIX: "shikimori",
+    _JIKAN_PICK_PREFIX: "jikan",
+    _TMDB_PICK_PREFIX: "tmdb",
+}
+
+
+def _validated_index(raw: str, *, data: str) -> int | None:
+    """The trailing id/index segment of a callback payload as an int, or
+    None if it isn't one.
+
+    Every `CallbackQueryHandler` in app.py matches on **prefix** only,
+    so everything after that prefix is whatever the client chose to put
+    there — an MTProto client can send arbitrary `data` for a button.
+    A bare `int()` on it raised ValueError out of the handler, which
+    reached app's error handler as an unhandled exception and showed the
+    starter nothing at all; every caller of these parsers already has a
+    "not a pick" path for None, so rejection goes down that one."""
+    if raw.isdigit():
+        return int(raw)
+    logger.warning("Rejected callback payload {!r}: {!r} is not an index", data, raw)
+    return None
+
+
 def parse_pick_callback_data(data: str) -> tuple[str, int] | None:
     """The picked result's (source, id), or None if `data` wasn't a pick
-    (e.g. retry). `source` is "anilist"/"shikimori"/"jikan"/"tmdb" — the
-    command layer uses it to know which service's get_by_id to re-fetch
-    from (restart-resilient, per issue #11)."""
-    if data.startswith(_ANILIST_PICK_PREFIX):
-        return "anilist", int(data.removeprefix(_ANILIST_PICK_PREFIX))
-    if data.startswith(_SHIKIMORI_PICK_PREFIX):
-        return "shikimori", int(data.removeprefix(_SHIKIMORI_PICK_PREFIX))
-    if data.startswith(_JIKAN_PICK_PREFIX):
-        return "jikan", int(data.removeprefix(_JIKAN_PICK_PREFIX))
-    if data.startswith(_TMDB_PICK_PREFIX):
-        return "tmdb", int(data.removeprefix(_TMDB_PICK_PREFIX))
+    (e.g. retry, or a client-forged id — see `_validated_index`).
+    `source` is "anilist"/"shikimori"/"jikan"/"tmdb" — the command layer
+    uses it to know which service's get_by_id to re-fetch from
+    (restart-resilient, per issue #11). It comes from the prefix rather
+    than the payload, so unlike the screenshot parsers below there is no
+    provider segment here that could need validating."""
+    for prefix, source in _PICK_PREFIX_SOURCES.items():
+        if data.startswith(prefix):
+            external_id = _validated_index(data.removeprefix(prefix), data=data)
+            return None if external_id is None else (source, external_id)
     return None
 
 
@@ -358,10 +386,36 @@ def screenshot_source_keyboard(
     return InlineKeyboardMarkup(buttons)
 
 
-def parse_screenshot_source_callback_data(data: str) -> str | None:
-    if data.startswith(SCREENSHOT_SOURCE_PREFIX):
-        return data.removeprefix(SCREENSHOT_SOURCE_PREFIX)
+def _validated_provider(raw: str, *, data: str) -> str | None:
+    """`raw` if it really is one of the screenshot-capable providers,
+    else None. Same reasoning as `_validated_index`: the provider
+    segment of a callback payload is client-controlled, and an unknown
+    string flowed straight into `_ID_ATTRS[provider]` /
+    `_SCREENSHOT_MODULES[provider]` / `_SERVICE_DISPLAY_NAMES[provider]`
+    and raised KeyError a few frames later — including once it had
+    already been written to `screenshot_picker_provider`."""
+    if raw in _SCREENSHOT_PROVIDER_LABELS:
+        return raw
+    logger.warning("Rejected callback payload {!r}: {!r} is not a screenshot provider", data, raw)
     return None
+
+
+def _parse_provider_and_index(payload: str, *, data: str) -> tuple[str, int] | None:
+    """Splits a "<provider>:<number>" callback suffix and validates both
+    halves — the shared shape behind every screenshot pick/page/search
+    pick payload. None if either half doesn't hold up."""
+    raw_provider, _, raw_index = payload.partition(":")
+    provider = _validated_provider(raw_provider, data=data)
+    index = _validated_index(raw_index, data=data)
+    if provider is None or index is None:
+        return None
+    return provider, index
+
+
+def parse_screenshot_source_callback_data(data: str) -> str | None:
+    if not data.startswith(SCREENSHOT_SOURCE_PREFIX):
+        return None
+    return _validated_provider(data.removeprefix(SCREENSHOT_SOURCE_PREFIX), data=data)
 
 
 @dataclass(frozen=True)
@@ -460,27 +514,22 @@ def screenshot_gallery_keyboard(page: GalleryPage, lang: str) -> InlineKeyboardM
 def parse_screenshot_pick_callback_data(data: str) -> tuple[str, int] | None:
     if not data.startswith(SCREENSHOT_PICK_PREFIX):
         return None
-    provider, _, index = data.removeprefix(SCREENSHOT_PICK_PREFIX).partition(":")
-    return provider, int(index)
+    return _parse_provider_and_index(data.removeprefix(SCREENSHOT_PICK_PREFIX), data=data)
 
 
 def parse_screenshot_more_callback_data(data: str) -> tuple[str, int] | None:
     if not data.startswith(SCREENSHOT_MORE_PREFIX):
         return None
-    provider, _, offset = data.removeprefix(SCREENSHOT_MORE_PREFIX).partition(":")
-    return provider, int(offset)
+    return _parse_provider_and_index(data.removeprefix(SCREENSHOT_MORE_PREFIX), data=data)
 
 
 def parse_screenshot_search_again_callback_data(data: str) -> str | None:
-    if data.startswith(SCREENSHOT_SEARCH_AGAIN_PREFIX):
-        return data.removeprefix(SCREENSHOT_SEARCH_AGAIN_PREFIX)
-    return None
+    if not data.startswith(SCREENSHOT_SEARCH_AGAIN_PREFIX):
+        return None
+    return _validated_provider(data.removeprefix(SCREENSHOT_SEARCH_AGAIN_PREFIX), data=data)
 
 
 def parse_screenshot_search_pick_callback_data(data: str) -> tuple[str, int] | None:
     if not data.startswith(SCREENSHOT_SEARCH_PICK_PREFIX):
         return None
-    provider, _, id_str = data.removeprefix(SCREENSHOT_SEARCH_PICK_PREFIX).partition(":")
-    if not id_str.isdigit():
-        return None
-    return provider, int(id_str)
+    return _parse_provider_and_index(data.removeprefix(SCREENSHOT_SEARCH_PICK_PREFIX), data=data)
