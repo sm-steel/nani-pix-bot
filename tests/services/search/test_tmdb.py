@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import pytest
 
@@ -277,3 +279,179 @@ async def test_screenshots_is_cached_for_repeated_calls() -> None:
         await tmdb.screenshots(client, 209867)
 
     assert calls["n"] == 2  # 1 show-detail + 1 episode call, not doubled
+
+
+def _show_handler(seasons: list[dict], still_paths: dict[tuple[int, int], str | None]):
+    """Routes /tv/{id} and /tv/{id}/season/{s}/episode/{e} like
+    `_season_episode_handler` above, but takes the show's raw `seasons`
+    array verbatim (so a test can hand TMDB a null field) and keys its
+    stills by `(season_number, episode_number)` rather than assuming one
+    season."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.count("/episode/") == 1:
+            season_number = int(path.split("/season/", 1)[1].split("/episode/", 1)[0])
+            episode_number = int(path.rsplit("/episode/", 1)[1])
+            still = still_paths.get((season_number, episode_number))
+            return httpx.Response(200, json={"still_path": still})
+        return httpx.Response(
+            200, json={"id": 1, "name": "Some Anime", "original_name": None, "seasons": seasons}
+        )
+
+    return handler
+
+
+async def test_screenshots_falls_through_to_later_seasons_for_stills() -> None:
+    """A show whose season 1 carries no stills still has a gallery if a
+    later season does — `seasons[0]` alone used to return nothing."""
+    handler = _show_handler(
+        seasons=[
+            {"season_number": 1, "episode_count": 2},
+            {"season_number": 2, "episode_count": 2},
+        ],
+        still_paths={(1, 1): None, (1, 2): None, (2, 1): "/s2e1.jpg", (2, 2): "/s2e2.jpg"},
+    )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await tmdb.screenshots(client, 1)
+
+    assert urls == [
+        f"{tmdb.TMDB_IMAGE_BASE_URL}/s2e1.jpg",
+        f"{tmdb.TMDB_IMAGE_BASE_URL}/s2e2.jpg",
+    ]
+
+
+async def test_screenshots_visits_seasons_in_ascending_order() -> None:
+    """The gallery resolves `screenshot_pick:tmdb:<index>` against this
+    list, so the order can't depend on how TMDB happened to sort its
+    own `seasons` array."""
+    handler = _show_handler(
+        seasons=[
+            {"season_number": 2, "episode_count": 1},
+            {"season_number": 1, "episode_count": 1},
+        ],
+        still_paths={(1, 1): "/s1e1.jpg", (2, 1): "/s2e1.jpg"},
+    )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await tmdb.screenshots(client, 1)
+
+    assert urls == [
+        f"{tmdb.TMDB_IMAGE_BASE_URL}/s1e1.jpg",
+        f"{tmdb.TMDB_IMAGE_BASE_URL}/s2e1.jpg",
+    ]
+
+
+async def test_screenshots_skips_a_season_whose_number_is_null() -> None:
+    """`s.get("season_number", 0)` returns None, not 0, when the key is
+    present and null — and `None >= 1` raises TypeError (issue #76)."""
+    handler = _show_handler(seasons=[{"season_number": None, "episode_count": 3}], still_paths={})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await tmdb.screenshots(client, 1) == []
+
+
+async def test_screenshots_treats_a_null_episode_count_as_no_episodes() -> None:
+    """Same shape as the null season_number above, one line down:
+    `min(None, 20)` raises TypeError (issue #76). The season with a real
+    count still contributes."""
+    handler = _show_handler(
+        seasons=[
+            {"season_number": 1, "episode_count": None},
+            {"season_number": 2, "episode_count": 1},
+        ],
+        still_paths={(2, 1): "/s2e1.jpg"},
+    )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await tmdb.screenshots(client, 1)
+
+    assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/s2e1.jpg"]
+
+
+async def test_screenshots_returns_empty_list_when_every_season_is_empty() -> None:
+    handler = _show_handler(seasons=[{"season_number": 1, "episode_count": None}], still_paths={})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await tmdb.screenshots(client, 1) == []
+
+
+async def test_screenshots_caps_total_episode_requests_across_all_seasons() -> None:
+    """The fetch limit bounds the whole call, not each season — walking
+    every season of a long-running show would be unbounded."""
+    seasons = [{"season_number": n, "episode_count": 15} for n in (1, 2, 3)]
+    still_paths: dict[tuple[int, int], str | None] = {
+        (season, episode): f"/s{season}e{episode}.jpg"
+        for season in (1, 2, 3)
+        for episode in range(1, 16)
+    }
+    episode_calls = []
+    handler = _show_handler(seasons=seasons, still_paths=still_paths)
+
+    def counting_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.count("/episode/") == 1:
+            episode_calls.append(request.url.path)
+        return handler(request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(counting_handler)) as client:
+        urls = await tmdb.screenshots(client, 1)
+
+    assert len(episode_calls) == tmdb.SCREENSHOT_FETCH_LIMIT
+    assert len(urls) == tmdb.SCREENSHOT_FETCH_LIMIT
+    assert urls[0] == f"{tmdb.TMDB_IMAGE_BASE_URL}/s1e1.jpg"
+    assert urls[-1] == f"{tmdb.TMDB_IMAGE_BASE_URL}/s2e5.jpg"
+
+
+async def test_screenshots_keeps_episode_order_when_responses_finish_out_of_order() -> None:
+    """Completion order must never leak into the returned list: the
+    gallery resolves `screenshot_pick:tmdb:<index>` against it. This
+    handler answers the *last* episode first."""
+    episode_count = 6
+    still_paths: dict[tuple[int, int], str | None] = {
+        (1, n): f"/s1e{n}.jpg" for n in range(1, episode_count + 1)
+    }
+    handler = _show_handler(
+        seasons=[{"season_number": 1, "episode_count": episode_count}], still_paths=still_paths
+    )
+
+    async def slow_handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.count("/episode/") == 1:
+            episode_number = int(path.rsplit("/episode/", 1)[1])
+            await asyncio.sleep(0.01 * (episode_count - episode_number))
+        return handler(request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(slow_handler)) as client:
+        urls = await tmdb.screenshots(client, 1)
+
+    assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/s1e{n}.jpg" for n in range(1, episode_count + 1)]
+
+
+async def test_screenshots_fetches_episodes_concurrently_but_bounded() -> None:
+    """20 sequential round trips through the amsterdam proxy is minutes
+    of the starter staring at nothing; firing all 20 at once at a single
+    tinyproxy is the other extreme."""
+    in_flight = 0
+    peak = 0
+    handler = _show_handler(
+        seasons=[{"season_number": 1, "episode_count": 20}],
+        still_paths={(1, n): f"/s1e{n}.jpg" for n in range(1, 21)},
+    )
+
+    async def tracking_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak
+        if request.url.path.count("/episode/") != 1:
+            return handler(request)
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.01)
+        in_flight -= 1
+        return handler(request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(tracking_handler)) as client:
+        urls = await tmdb.screenshots(client, 1)
+
+    assert len(urls) == 20
+    assert peak > 1
+    assert peak <= tmdb.SCREENSHOT_FETCH_CONCURRENCY
