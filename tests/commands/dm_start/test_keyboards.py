@@ -1,7 +1,6 @@
 import pytest
 
 from nani_pix_bot.commands.dm_start.keyboards import (
-    _PICK_PREFIX_SOURCES,
     ANILIST_METHOD_CALLBACK_DATA,
     JIKAN_METHOD_CALLBACK_DATA,
     MANUAL_METHOD_CALLBACK_DATA,
@@ -145,18 +144,23 @@ def test_every_provider_has_a_pick_prefix_in_the_expected_wire_format() -> None:
 
     app.py builds that pattern by interpolating every Provider member
     into "<provider>_pick:" rather than hand-listing four literals, and
-    `_PICK_PREFIX_SOURCES` is what turns a matched prefix back into the
-    member. Nothing else connects them: a prefix constant here renamed
-    (or a fifth member added to only one side) leaves both files
-    internally consistent and the buttons silently unroutable — which is
-    the exact bug that shipped when jikan/tmdb were added.
+    `parse_pick_callback_data` (via `Provider.pick_prefix`, issue #114)
+    is what turns a matched prefix back into the member. Nothing else
+    connects them: a prefix format changed here (or a fifth member added
+    to only one side) leaves both files internally consistent and the
+    buttons silently unroutable — which is the exact bug that shipped
+    when jikan/tmdb were added.
 
     test_app.py can't catch that on its own any more, because since #97
     both sides of its assertion derive from Provider. So the pairing is
-    pinned here instead, on the values *and* on the key format app.py
-    reconstructs independently."""
-    assert set(_PICK_PREFIX_SOURCES.values()) == set(Provider)
-    assert set(_PICK_PREFIX_SOURCES) == {f"{provider}_pick:" for provider in Provider}
+    pinned here instead: `pick_prefix`'s wire format on every member, and
+    that `parse_pick_callback_data` actually recovers each member from
+    its own prefix."""
+    assert {provider.pick_prefix for provider in Provider} == {
+        f"{provider}_pick:" for provider in Provider
+    }
+    for provider in Provider:
+        assert parse_pick_callback_data(f"{provider.pick_prefix}42") == (provider, 42)
 
 
 def test_parse_pick_callback_data_returns_none_for_retry() -> None:
@@ -418,8 +422,8 @@ def test_parsers_reject_malformed_callback_payloads(parse, data: str) -> None:
     an MTProto client can put arbitrary `data` on a tap. A payload that
     carries a real prefix but a junk provider or index must come back as
     None (the already-handled "not a pick" path) rather than raising
-    ValueError here, or KeyError later against _ID_ATTRS /
-    _SCREENSHOT_MODULES."""
+    ValueError here, or later against `Provider.id_attr_name` /
+    `Provider.screenshot_module`."""
     assert parse(data) is None
 
 

@@ -44,7 +44,6 @@ from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.search import jikan, shikimori, tmdb
 from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
@@ -60,25 +59,6 @@ GALLERY_PAGE_SIZE = 5
 # with nothing to tap. Placeholder-free, as SourceMenu.provider=None
 # requires.
 NO_SOURCE_PROMPT_KEY = "dm_start.pick_screenshot_source_prompt"
-
-# One provider id column per screenshot-capable provider — see
-# models/game.py's per-provider *_id columns.
-_ID_ATTRS = {
-    Provider.SHIKIMORI: "shikimori_id",
-    Provider.JIKAN: "jikan_id",
-    Provider.TMDB: "tmdb_id",
-}
-# Module references, not bound function references — a plain
-# {"shikimori": shikimori.screenshots, ...} dict would capture the
-# function object at import time, which stops respecting
-# monkeypatch.setattr(shikimori, "screenshots", ...) in tests (and,
-# more generally, would go stale if a provider module ever reassigned
-# its own screenshots name after import).
-_SCREENSHOT_MODULES = {
-    Provider.SHIKIMORI: shikimori,
-    Provider.JIKAN: jikan,
-    Provider.TMDB: tmdb,
-}
 
 
 @dataclass(frozen=True)
@@ -110,17 +90,17 @@ class Fallback:
 
 
 def _provider_id(game: Game, provider: Provider) -> int | None:
-    """Typed wrapper around the getattr(game, _ID_ATTRS[provider]) dance
-    used throughout this module — a bare getattr on a dynamic attribute
-    name is `Any` to `ty`, which silently let a stale/cleared id (e.g.
-    after clear_screenshot_selection) flow into a screenshot fetch as if
-    it were always a real int. Routing every read through here means a
-    caller has to explicitly deal with the `None` case."""
-    return getattr(game, _ID_ATTRS[provider])
+    """Typed wrapper around the getattr(game, provider.id_attr_name)
+    dance used throughout this module — a bare getattr on a dynamic
+    attribute name is `Any` to `ty`, which silently let a stale/cleared
+    id (e.g. after clear_screenshot_selection) flow into a screenshot
+    fetch as if it were always a real int. Routing every read through
+    here means a caller has to explicitly deal with the `None` case."""
+    return getattr(game, provider.id_attr_name)
 
 
 async def _fetch_screenshots(provider: Provider, client, provider_id: int) -> list[str]:
-    return await _SCREENSHOT_MODULES[provider].screenshots(client, provider_id)
+    return await provider.screenshot_module.screenshots(client, provider_id)
 
 
 async def _fetch_screenshots_or_fallback(
@@ -167,13 +147,13 @@ async def _fetch_screenshots_or_fallback(
 async def _search_provider(
     provider: Provider, client, query: str
 ) -> list[ShikimoriResult] | list[JikanResult] | list[TMDBResult]:
-    return await _SCREENSHOT_MODULES[provider].search(client, query)
+    return await provider.screenshot_module.search(client, query)
 
 
 async def _get_provider_by_id(
     provider: Provider, client, external_id: int
 ) -> ShikimoriResult | JikanResult | TMDBResult | None:
-    return await _SCREENSHOT_MODULES[provider].get_by_id(client, external_id)
+    return await provider.screenshot_module.get_by_id(client, external_id)
 
 
 @dataclass(frozen=True)
@@ -300,7 +280,10 @@ def clear_screenshot_selection(game: Game) -> None:
     game.screenshot_picker_provider = None
     if game.screenshot_source is None:
         return
-    setattr(game, _ID_ATTRS[game.screenshot_source], None)
+    # The column hands back a bare str, not a `Provider` (see
+    # `_stored_provider`), so `.id_attr_name` needs the conversion first
+    # — a plain str has no such attribute.
+    setattr(game, _stored_provider(game.screenshot_source).id_attr_name, None)
     game.original_image = None
     game.screenshot_source = None
 

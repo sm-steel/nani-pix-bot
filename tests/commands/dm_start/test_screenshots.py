@@ -13,6 +13,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.search import jikan, shikimori
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
 _FRIEREN_SHIKIMORI = ShikimoriResult(
@@ -122,7 +123,7 @@ async def test_screenshot_source_callback_handler_shows_the_gallery(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     urls = [f"https://shikimori.io/x/{i}.jpg" for i in range(3)]
-    monkeypatch.setattr(screenshots.shikimori, "screenshots", AsyncMock(return_value=urls))
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=urls))
     game_id = _staged_game(session_factory, shikimori_id=52991)
 
     update = _make_callback_update(data="screenshot_source:shikimori")
@@ -156,7 +157,7 @@ async def test_screenshot_source_callback_handler_paginates_when_more_than_a_pag
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     urls = [f"https://shikimori.io/x/{i}.jpg" for i in range(8)]
-    monkeypatch.setattr(screenshots.shikimori, "screenshots", AsyncMock(return_value=urls))
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=urls))
     _staged_game(session_factory, shikimori_id=52991)
 
     update = _make_callback_update(data="screenshot_source:shikimori")
@@ -196,11 +197,9 @@ async def test_screenshot_source_callback_handler_cross_provider_auto_resolves_t
 ) -> None:
     """Identified via AniList, screenshot requested from Shikimori (no
     shikimori_id on file yet) — ticket 8's silent top-result take."""
+    monkeypatch.setattr(shikimori, "search", AsyncMock(return_value=[_FRIEREN_SHIKIMORI]))
     monkeypatch.setattr(
-        screenshots.shikimori, "search", AsyncMock(return_value=[_FRIEREN_SHIKIMORI])
-    )
-    monkeypatch.setattr(
-        screenshots.shikimori,
+        shikimori,
         "screenshots",
         AsyncMock(return_value=["https://shikimori.io/x/0.jpg"]),
     )
@@ -238,9 +237,9 @@ async def test_screenshot_source_callback_handler_cross_provider_searches_a_nati
     all, so a game can reach the source menu identified by its native
     title alone. That used to be searched for as `""`."""
     search = AsyncMock(return_value=[_FRIEREN_SHIKIMORI])
-    monkeypatch.setattr(screenshots.shikimori, "search", search)
+    monkeypatch.setattr(shikimori, "search", search)
     monkeypatch.setattr(
-        screenshots.shikimori,
+        shikimori,
         "screenshots",
         AsyncMock(return_value=["https://shikimori.io/x/0.jpg"]),
     )
@@ -269,7 +268,7 @@ async def test_screenshot_source_callback_handler_cross_provider_searches_a_russ
     one, so a Shikimori identification with no English/romaji match
     leaves that as the only query there is."""
     search = AsyncMock(return_value=[])
-    monkeypatch.setattr(screenshots.jikan, "search", search)
+    monkeypatch.setattr(jikan, "search", search)
     _staged_game(
         session_factory,
         source="shikimori",
@@ -291,7 +290,7 @@ async def test_screenshot_source_callback_handler_cross_provider_searches_a_russ
 async def test_screenshot_source_callback_handler_cross_provider_no_match_asks_to_search(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(screenshots.shikimori, "search", AsyncMock(return_value=[]))
+    monkeypatch.setattr(shikimori, "search", AsyncMock(return_value=[]))
     game_id = _staged_game(session_factory, source="anilist", anilist_id=99)
 
     update = _make_callback_update(data="screenshot_source:shikimori")
@@ -322,9 +321,7 @@ async def test_screenshot_source_callback_handler_falls_back_when_the_fetch_fail
     propagate as an unhandled exception with no reply at all. Falls
     back to asking for an upload instead, distinct wording from a
     genuinely empty result."""
-    monkeypatch.setattr(
-        screenshots.shikimori, "screenshots", AsyncMock(side_effect=RuntimeError("boom"))
-    )
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(side_effect=RuntimeError("boom")))
     game_id = _staged_game(session_factory, shikimori_id=52991)
 
     update = _make_callback_update(data="screenshot_source:shikimori")
@@ -367,7 +364,7 @@ async def test_screenshot_source_callback_handler_falls_back_when_telegram_rejec
     is the provider's images that are unreachable, so it takes the same
     exit as the provider being down."""
     monkeypatch.setattr(
-        screenshots.shikimori,
+        shikimori,
         "screenshots",
         AsyncMock(return_value=["https://shikimori.io/x/0.jpg"]),
     )
@@ -403,7 +400,7 @@ async def test_screenshot_source_callback_handler_falls_back_on_a_malformed_prov
     with a 200, say) into RuntimeError, and this package treats that as
     the provider being unreachable rather than letting it escape."""
     monkeypatch.setattr(
-        screenshots.shikimori,
+        shikimori,
         "screenshots",
         AsyncMock(side_effect=RuntimeError("shikimori returned a non-JSON body")),
     )
@@ -512,9 +509,7 @@ async def test_a_live_source_tap_still_gets_its_bare_acknowledgement(
     """The other half of moving the answer: a tap that does work must
     still clear the spinner, and must not be answered twice (the second
     call is what Telegram rejects)."""
-    monkeypatch.setattr(
-        screenshots.shikimori, "screenshots", AsyncMock(return_value=["https://s.io/0.jpg"])
-    )
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=["https://s.io/0.jpg"]))
     _staged_game(session_factory, shikimori_id=52991)
     update = _make_callback_update(data="screenshot_source:shikimori")
     context = _make_context(session_factory)

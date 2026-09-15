@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import preview, screenshots, search
+from nani_pix_bot.commands.dm_start import preview, search
 from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
@@ -20,6 +20,7 @@ from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services.search import shikimori
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.settings import stage_config
 
@@ -208,7 +209,7 @@ async def test_preview_change_image_pick_screenshot_resumes_the_gallery(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     urls = ["https://shikimori.io/x/0.jpg"]
-    monkeypatch.setattr(screenshots.shikimori, "screenshots", AsyncMock(return_value=urls))
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=urls))
     _staged_setup_game(session_factory, screenshot_source="shikimori", shikimori_id=52991)
     update = _make_preview_callback_update(
         data=PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA, user_id=1

@@ -212,14 +212,6 @@ def _tmdb_label(result: TMDBResult, lang: str) -> str:
     return game_service.prioritized_title(variants, lang=lang)
 
 
-_PICK_PREFIX_SOURCES = {
-    _ANILIST_PICK_PREFIX: Provider.ANILIST,
-    _SHIKIMORI_PICK_PREFIX: Provider.SHIKIMORI,
-    _JIKAN_PICK_PREFIX: Provider.JIKAN,
-    _TMDB_PICK_PREFIX: Provider.TMDB,
-}
-
-
 def _validated_index(raw: str, *, data: str) -> int | None:
     """The trailing id/index segment of a callback payload as an int, or
     None if it isn't one.
@@ -253,8 +245,10 @@ def parse_pick_callback_data(data: str) -> tuple[Provider, int] | None:
     re-fetch from (restart-resilient, per issue #11). It comes from the
     prefix rather than the payload, so unlike the screenshot parsers
     below there is no provider segment here that could need validating —
-    a prefix that doesn't match any key simply isn't a pick."""
-    for prefix, source in _PICK_PREFIX_SOURCES.items():
+    a prefix that doesn't match any member's `pick_prefix` simply isn't a
+    pick."""
+    for source in Provider:
+        prefix = source.pick_prefix
         if data.startswith(prefix):
             external_id = _validated_index(data.removeprefix(prefix), data=data)
             return None if external_id is None else (source, external_id)
@@ -372,6 +366,9 @@ SCREENSHOT_UPLOAD_CALLBACK_DATA = "screenshot:upload"
 # screenshot-shaped payload must be rejected for. A tuple rather than
 # the label dict this used to double as: the labels themselves now come
 # from Provider.display_name, leaving only the membership question.
+# The single source of truth for that question — _shared.py's
+# _screenshot_capable_providers() imports this rather than
+# hand-restating the same 3-member list independently (issue #114).
 _SCREENSHOT_CAPABLE_PROVIDERS: tuple[Provider, ...] = (
     Provider.SHIKIMORI,
     Provider.JIKAN,
@@ -434,8 +431,8 @@ def _validated_provider(raw: str, *, data: str) -> Provider | None:
 
     Same reasoning as `_validated_index`: the provider segment of a
     callback payload is client-controlled, and an unknown string flowed
-    straight into `_ID_ATTRS[provider]` / `_SCREENSHOT_MODULES[provider]`
-    / a display-name lookup and raised KeyError a few frames later —
+    straight into `Provider(raw).id_attr_name` / `.screenshot_module` /
+    a display-name lookup and raised an error a few frames later —
     including once it had already been written to
     `screenshot_picker_provider`.
 
