@@ -721,6 +721,56 @@ async def test_get_by_id_returns_none_for_a_malformed_title(field: dict) -> None
         assert await tmdb.get_by_id(client, 209867) is None
 
 
+# issue #89: a well-typed entry whose titles are all null/absent/empty
+# stages an unwinnable game (an empty match_candidates() list) that looks
+# exactly like a working one. TMDB has no synonyms field at all (see the
+# module docstring), so unlike the other three providers there's no
+# "no title but has synonyms survives" case to test here — for TMDB the
+# general rule (parsing.has_answer_key) always reduces to "skip when both
+# titles are empty." Explicit per-case entries rather than merging over
+# _GOOD_ENTRY: the "absent entirely" case needs the keys gone, not
+# present-and-null, which a dict merge can't express.
+_NO_TITLE_ENTRIES = [
+    pytest.param({"id": 1, "name": None, "original_name": None}, id="all-titles-null"),
+    pytest.param({"id": 1, "name": "", "original_name": ""}, id="all-titles-empty-string"),
+    pytest.param({"id": 1}, id="titles-absent-entirely"),
+]
+
+
+@pytest.mark.parametrize("bad", _NO_TITLE_ENTRIES)
+async def test_search_skips_an_entry_with_no_title(bad: dict) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": [bad, _GOOD_ENTRY]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await tmdb.search(client, "frieren")
+
+    assert [result.tmdb_id for result in results] == [209867]
+
+
+@pytest.mark.parametrize("entry", _NO_TITLE_ENTRIES)
+async def test_get_by_id_returns_none_when_the_entry_has_no_title(entry: dict) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=entry)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await tmdb.get_by_id(client, 209867) is None
+
+
+async def test_search_keeps_a_legitimately_sparse_entry_with_one_title_variant() -> None:
+    """Regression guard: one populated title variant, the rest null, is
+    winnable and must not be caught by the no-title check."""
+    entry = {"id": 1, "name": "Some Anime", "original_name": None}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": [entry]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await tmdb.search(client, "frieren")
+
+    assert [result.tmdb_id for result in results] == [1]
+
+
 @pytest.mark.parametrize(
     "still_path",
     [

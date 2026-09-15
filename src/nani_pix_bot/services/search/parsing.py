@@ -84,6 +84,19 @@ sending an entry we can't use is a recoverable anomaly (we recover, by
 dropping it), not something broken in this codebase — ERROR would
 overstate it, and DEBUG would hide a provider quietly changing its
 schema on us.
+
+**`has_answer_key` (below) closes issue #89**, the gap this docstring
+used to describe as still open: a well-typed entry whose title fields
+are all null/absent/empty is not malformed — every helper above
+correctly lets it through — but staging it hands `match_candidates()`
+(`services/game/state.py`) an empty list, which is unwinnable by
+construction and looks exactly like a working game until a round is
+wasted on it. That is the same bad outcome the malformed-field skip
+above exists to prevent, reached from the one legitimate path instead
+of a malformation, so it gets the same treatment: the parse function
+returns None and `parse_entry`/`parse_entries` drop it, quietly, the
+same as any other "this entry isn't wanted" decision (a specials
+season, a screenshot with no path) — see `parse_entry`'s docstring.
 """
 
 from collections.abc import Callable, Iterable
@@ -241,3 +254,38 @@ def optional_str_list(raw: dict, key: str) -> list[str]:
         if not isinstance(item, str):
             raise TypeError(f"{key!r} holds a {type(item).__name__}, expected an array of strings")
     return value
+
+
+def has_answer_key(titles: Iterable[str | None], synonyms: list[str]) -> bool:
+    """Whether an entry has anything a `/guess` could ever match: at
+    least one non-empty title variant, or at least one synonym. See the
+    module docstring's note on issue #89 for why this check exists and
+    why it belongs here rather than in `require_int`/`optional_str`/
+    `optional_str_list` above — nothing about a well-typed, entirely
+    empty entry is malformed, so those helpers correctly let it through;
+    this is a judgement about *usability*, made once every field is
+    already known-good.
+
+    Deliberately `prioritized_title`-independent (`services/game/state.py`):
+    a parse function has no `lang` to call it with, and which single
+    variant the picker would end up *displaying* is beside the point —
+    the question here is whether *any* variant, in any language, has
+    content a guess could hit, not which one a button would show.
+
+    **Design decision, recorded here because it has to be consistent
+    across all four providers:** an entry with no title in any variant
+    but *nonempty* synonyms passes. The module docstring's "?" framing
+    is about the picker's button label, but the actual defect issue #89
+    closes is an empty `match_candidates()` list — and synonyms populate
+    that list directly (see `match_candidates`), title or no title. A
+    game staged from such an entry shows a "?" button and a "?" title
+    right up until a correct guess, but a correct guess is still
+    possible, which is the one property this check exists to guarantee.
+    Skipping it anyway would discard a genuinely winnable pick for a
+    display nicety — the same over-correction issue #83 already rejected
+    on the malformed-entry side of this same file. TMDB never benefits
+    from this half of the rule (it has no synonyms field at all, see
+    tmdb.py's module docstring), so for TMDB this check is equivalent to
+    "skip when both titles are empty" — not a special case, just what the
+    general rule reduces to when `synonyms` is always `[]`."""
+    return any(titles) or any(synonyms)

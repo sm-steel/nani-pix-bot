@@ -426,6 +426,135 @@ async def test_get_by_id_returns_none_for_a_malformed_field(field: dict) -> None
         assert await jikan.get_by_id(client, 52991) is None
 
 
+# issue #89: a well-typed entry whose titles are all null/absent/empty and
+# whose synonyms are also empty stages an unwinnable game (an empty
+# match_candidates() list) that looks exactly like a working one. Explicit
+# per-case entries rather than merging over _GOOD_ENTRY: the "absent
+# entirely" case needs the keys gone, not present-and-null, which a dict
+# merge over an entry that already has those keys set can't express.
+_NO_TITLE_NO_SYNONYMS_ENTRIES = [
+    pytest.param(
+        {
+            "mal_id": 1,
+            "title": None,
+            "title_english": None,
+            "title_japanese": None,
+            "title_synonyms": [],
+        },
+        id="all-titles-null",
+    ),
+    pytest.param(
+        {
+            "mal_id": 1,
+            "title": "",
+            "title_english": "",
+            "title_japanese": "",
+            "title_synonyms": [],
+        },
+        id="all-titles-empty-string",
+    ),
+    pytest.param({"mal_id": 1}, id="titles-absent-entirely"),
+    pytest.param(
+        {
+            "mal_id": 1,
+            "title": None,
+            "title_english": None,
+            "title_japanese": None,
+            "title_synonyms": ["", ""],
+        },
+        id="synonyms-nonempty-list-of-only-empty-strings",
+    ),
+]
+
+
+@pytest.mark.parametrize("bad", _NO_TITLE_NO_SYNONYMS_ENTRIES)
+async def test_search_skips_an_entry_with_no_title_and_no_synonyms(bad: dict) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [bad, _GOOD_ENTRY]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await jikan.search(client, "frieren")
+
+    assert [result.jikan_id for result in results] == [52991]
+
+
+@pytest.mark.parametrize("entry", _NO_TITLE_NO_SYNONYMS_ENTRIES)
+async def test_get_by_id_returns_none_when_the_entry_has_no_title_and_no_synonyms(
+    entry: dict,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await jikan.get_by_id(client, 52991) is None
+
+
+async def test_search_keeps_an_entry_with_no_title_but_nonempty_synonyms() -> None:
+    """Design decision (see parsing.has_answer_key): synonyms alone are
+    still a real answer key, even though the picker button reads "?"."""
+    entry = {
+        "mal_id": 1,
+        "title": None,
+        "title_english": None,
+        "title_japanese": None,
+        "title_synonyms": ["Frieren"],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [entry]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await jikan.search(client, "frieren")
+
+    assert results == [
+        jikan.JikanResult(
+            jikan_id=1,
+            title_romaji=None,
+            title_english=None,
+            title_native=None,
+            synonyms=["Frieren"],
+        )
+    ]
+
+
+async def test_get_by_id_keeps_an_entry_with_no_title_but_nonempty_synonyms() -> None:
+    entry = {
+        "mal_id": 1,
+        "title": None,
+        "title_english": None,
+        "title_japanese": None,
+        "title_synonyms": ["Frieren"],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await jikan.get_by_id(client, 1)
+
+    assert result == jikan.JikanResult(
+        jikan_id=1,
+        title_romaji=None,
+        title_english=None,
+        title_native=None,
+        synonyms=["Frieren"],
+    )
+
+
+async def test_search_keeps_a_legitimately_sparse_entry_with_one_title_variant() -> None:
+    """Regression guard: one populated title variant, the rest null, is
+    winnable and must not be caught by the no-title check."""
+    entry = {"mal_id": 1, "title": "Some Anime", "title_english": None, "title_japanese": None}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [entry]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await jikan.search(client, "frieren")
+
+    assert [result.jikan_id for result in results] == [1]
+
+
 async def test_get_by_id_warns_naming_the_parser_when_a_field_is_malformed(
     records: list[tuple[str, str]],
 ) -> None:

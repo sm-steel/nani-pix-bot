@@ -232,3 +232,27 @@ def test_optional_str_list_rejections_become_a_skip(records: list[tuple[str, str
 
     assert parsing.parse_entries("Example", entries, parse_synonyms) == [_Parsed(identifier=2)]
     assert [level for level, _ in records] == ["WARNING"]
+
+
+def test_has_answer_key_true_when_a_title_variant_is_nonempty() -> None:
+    assert parsing.has_answer_key((None, "", "Frieren"), []) is True
+
+
+def test_has_answer_key_true_when_synonyms_has_a_nonempty_entry() -> None:
+    assert parsing.has_answer_key((None, None, None), ["Frieren"]) is True
+
+
+def test_has_answer_key_false_when_titles_and_synonyms_are_all_empty() -> None:
+    assert parsing.has_answer_key((None, "", None), []) is False
+
+
+def test_has_answer_key_false_when_synonyms_is_a_nonempty_list_of_only_empty_strings() -> None:
+    """Regression guard for the exact gap this closed: `bool(["", ""])` is
+    True (the list itself is non-empty), but `match_candidates()`
+    (`services/game/state.py`) filters with `if candidate` — per-item
+    truthiness — so every one of those empty strings gets dropped and the
+    actual answer key ends up `[]`. `has_answer_key` has to agree with
+    that per-item filtering, not just check whether the list is
+    non-empty, or it reports an unwinnable entry as winnable — reopening
+    issue #89 through a narrower path."""
+    assert parsing.has_answer_key((None, "", None), ["", ""]) is False

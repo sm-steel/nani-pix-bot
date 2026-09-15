@@ -636,6 +636,121 @@ async def test_search_raises_when_shikimori_reports_graphql_errors_with_no_data(
             await shikimori.search(client, "frieren")
 
 
+# issue #89: a well-typed entry whose titles are all null/absent/empty
+# stages an unwinnable game (an empty match_candidates() list) that looks
+# exactly like a working one. The search endpoint never carries
+# synonyms/english (see the module docstring), so at search time this
+# reduces to "skip when both name and russian are empty" — the
+# "no title but has synonyms survives" half of the design decision can
+# only be exercised at get_by_id, the only call that ever sees synonyms.
+_NO_TITLE_SEARCH_ENTRIES = [
+    pytest.param({"id": "1", "name": None, "russian": None}, id="all-titles-null"),
+    pytest.param({"id": "1", "name": "", "russian": ""}, id="all-titles-empty-string"),
+    pytest.param({"id": "1"}, id="titles-absent-entirely"),
+]
+
+
+@pytest.mark.parametrize("bad", _NO_TITLE_SEARCH_ENTRIES)
+async def test_search_skips_an_entry_with_no_title(bad: dict) -> None:
+    good = {"id": "52991", "name": "Sousou no Frieren", "russian": "Фрирен"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_animes_payload([bad, good]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await shikimori.search(client, "frieren")
+
+    assert [result.shikimori_id for result in results] == [52991]
+
+
+async def test_search_keeps_a_legitimately_sparse_entry_with_one_title_variant() -> None:
+    """Regression guard: one populated title variant, the rest null, is
+    winnable and must not be caught by the no-title check."""
+    entry = {"id": "1", "name": "Some Anime", "russian": None}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_animes_payload([entry]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await shikimori.search(client, "frieren")
+
+    assert [result.shikimori_id for result in results] == [1]
+
+
+_NO_TITLE_NO_SYNONYMS_DETAIL_ENTRIES = [
+    pytest.param(
+        {"id": "1", "name": None, "russian": None, "english": None, "synonyms": []},
+        id="all-titles-null",
+    ),
+    pytest.param(
+        {"id": "1", "name": "", "russian": "", "english": "", "synonyms": []},
+        id="all-titles-empty-string",
+    ),
+    pytest.param({"id": "1"}, id="titles-absent-entirely"),
+    pytest.param(
+        {"id": "1", "name": None, "russian": None, "english": None, "synonyms": ["", ""]},
+        id="synonyms-nonempty-list-of-only-empty-strings",
+    ),
+]
+
+
+@pytest.mark.parametrize("entry", _NO_TITLE_NO_SYNONYMS_DETAIL_ENTRIES)
+async def test_get_by_id_returns_none_when_the_entry_has_no_title_and_no_synonyms(
+    entry: dict,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_animes_payload([entry]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await shikimori.get_by_id(client, 1) is None
+
+
+async def test_get_by_id_keeps_an_entry_with_no_title_but_nonempty_synonyms() -> None:
+    """Design decision (see parsing.has_answer_key): synonyms alone are
+    still a real answer key, even though the picker button reads "?"."""
+    entry = {
+        "id": "1",
+        "name": None,
+        "russian": None,
+        "english": None,
+        "synonyms": ["Frieren"],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_animes_payload([entry]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await shikimori.get_by_id(client, 1)
+
+    assert result == shikimori.ShikimoriResult(
+        shikimori_id=1,
+        title_romaji=None,
+        title_english=None,
+        title_russian=None,
+        synonyms=["Frieren"],
+    )
+
+
+async def test_get_by_id_keeps_a_legitimately_sparse_entry_with_one_title_variant() -> None:
+    """Regression guard: one populated title variant, the rest null/no
+    synonyms, is winnable and must not be caught by the no-title check."""
+    entry = {"id": "1", "name": "Some Anime", "russian": None, "english": None, "synonyms": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_animes_payload([entry]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await shikimori.get_by_id(client, 1)
+
+    assert result == shikimori.ShikimoriResult(
+        shikimori_id=1,
+        title_romaji="Some Anime",
+        title_english=None,
+        title_russian=None,
+        synonyms=[],
+    )
+
+
 async def test_search_logs_graphql_errors_even_when_data_came_back(monkeypatch) -> None:
     """GraphQL allows partial success — data alongside errors. The usable
     half is still used, but the errors never go unrecorded."""

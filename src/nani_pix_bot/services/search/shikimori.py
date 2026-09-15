@@ -253,17 +253,41 @@ def _parse_screenshot_url(raw: dict) -> str | None:
     return url or None
 
 
-def _parse_search_result(raw: dict) -> ShikimoriResult:
+def _parse_search_result(raw: dict) -> ShikimoriResult | None:
+    """Returns None (skipped quietly, same as any other "not wanted"
+    decision) when both `name` and `russian` are empty — see
+    `parsing.has_answer_key` (issue #89).
+
+    The search query never asks Shikimori for `english`/`synonyms` (see
+    module docstring), so this check can only judge the two title
+    variants search actually has — it can't see a synonym or an English
+    title that get_by_id might later fetch. In the extremely degenerate
+    case of a real anime with both `name` and `russian` null but
+    `english` or `synonyms` populated, this drops its picker button a
+    step earlier than get_by_id would have. That's a defensible
+    tradeoff, not a reopening of issue #89: the bug that issue closes
+    (an unwinnable *staged* game) is fully closed by
+    `_parse_detail_result` below, the only function whose output ever
+    reaches `stage_result()` (see `services/game/state.py`). This
+    function only decides whether a "?" button with nothing behind it —
+    as far as the light search query can tell — is worth showing at
+    all."""
+    shikimori_id = _parse_shikimori_id(raw)
+    title_romaji = parsing.optional_str(raw, "name")
+    title_russian = parsing.optional_str(raw, "russian")
+    if not parsing.has_answer_key((title_romaji, title_russian), []):
+        logger.debug("Shikimori id {} has no title in name/russian, skipping", shikimori_id)
+        return None
     return ShikimoriResult(
-        shikimori_id=_parse_shikimori_id(raw),
-        title_romaji=parsing.optional_str(raw, "name"),
+        shikimori_id=shikimori_id,
+        title_romaji=title_romaji,
         title_english=None,
-        title_russian=parsing.optional_str(raw, "russian"),
+        title_russian=title_russian,
         synonyms=[],
     )
 
 
-def _parse_detail_result(raw: dict) -> ShikimoriResult:
+def _parse_detail_result(raw: dict) -> ShikimoriResult | None:
     """The only call that fills in `english`/`synonyms`, so it's where a
     malformed one actually reaches the game's answer key (issue #86).
 
@@ -271,11 +295,28 @@ def _parse_detail_result(raw: dict) -> ShikimoriResult:
     did: GraphQL's `Anime.english` is a plain nullable `String` scalar
     (the actual fix for issue #103, not just a defensive rewrite), so
     `parsing.optional_str` covers it exactly the way it covers `name`/
-    `russian`."""
+    `russian`.
+
+    Returns None (skipped quietly, same as any other "not wanted"
+    decision) when every title variant is empty and there are no
+    synonyms either — see `parsing.has_answer_key` (issue #89): this is
+    the function whose output actually reaches `stage_result()`, so this
+    is the check that closes the unwinnable-game bug for real, not just
+    for the picker button (see `_parse_search_result` above)."""
+    shikimori_id = _parse_shikimori_id(raw)
+    title_romaji = parsing.optional_str(raw, "name")
+    title_english = parsing.optional_str(raw, "english")
+    title_russian = parsing.optional_str(raw, "russian")
+    synonyms = parsing.optional_str_list(raw, "synonyms")
+    if not parsing.has_answer_key((title_romaji, title_english, title_russian), synonyms):
+        logger.debug(
+            "Shikimori id {} has no title in any variant and no synonyms, skipping", shikimori_id
+        )
+        return None
     return ShikimoriResult(
-        shikimori_id=_parse_shikimori_id(raw),
-        title_romaji=parsing.optional_str(raw, "name"),
-        title_english=parsing.optional_str(raw, "english"),
-        title_russian=parsing.optional_str(raw, "russian"),
-        synonyms=parsing.optional_str_list(raw, "synonyms"),
+        shikimori_id=shikimori_id,
+        title_romaji=title_romaji,
+        title_english=title_english,
+        title_russian=title_russian,
+        synonyms=synonyms,
     )
