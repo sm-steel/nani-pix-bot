@@ -1,7 +1,7 @@
 """Small helpers shared by more than one submodule of this package."""
 
 import re
-from typing import cast
+from typing import assert_never, cast
 
 import httpx
 from loguru import logger
@@ -111,11 +111,15 @@ def _log_stale_tap(data: str | None, user_id: int) -> None:
     One helper rather than the same two lines at each of the six sites,
     so the wording production greps for can't drift between them —
     `opt(depth=1)` so loguru still stamps the *caller's* frame rather
-    than this one. Without it every site logged
-    `_shared:_log_stale_tap:94` and two of them (the pair inside
-    screenshot_search_pick_callback_handler, which also share a callback
-    prefix) became byte-identical, erasing the only thing that told a
-    mundane hour-old tap apart from a row that vanished mid-round-trip."""
+    than this one. Without it every site logged the same
+    `_shared:_log_stale_tap:<the logger.warning below>` — one fixed
+    location, whatever line it currently sits on — and two of them (the
+    pair inside screenshot_search_pick_callback_handler, which also
+    share a callback prefix) became byte-identical, erasing the only
+    thing that told a mundane hour-old tap apart from a row that
+    vanished mid-round-trip. No literal line number here on purpose:
+    the last one went stale twice over, and it was a comment about line
+    numbers that did it."""
     logger.opt(depth=1).warning(
         "Starter {} tapped {!r} with no SETUP game left — already resolved, or the "
         "setup-abandon timer deleted the row",
@@ -166,7 +170,21 @@ def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMar
     invent a screen the flow doesn't otherwise have. The two
     input-prompt steps have no keyboard in the flow either: their route
     forward is the photo or text being asked for, which the prompt
-    itself states."""
+    itself states.
+
+    What comes back is the step's *entry* screen, which for the two
+    steps that span several is not necessarily the exact sub-screen the
+    starter last saw: mid-search at PICKING_METHOD gets the method menu
+    rather than the "type a title" prompt, and mid-gallery at
+    PICKING_SCREENSHOT gets the source menu rather than that gallery
+    page. Both are one step back within the same step — which is what
+    "I'm stuck" is asking for anyway — and both are screens the flow
+    already produces there.
+
+    The final branch is spelled out rather than left as a fall-through,
+    with `assert_never` behind it: a sixth SetupStep would otherwise be
+    handed the synonym prompt in silence. It fails at type-check time
+    now, and loudly at runtime if one is ever added dynamically."""
     if game.setup_step == SetupStep.PICKING_METHOD:
         prefer_shikimori = _prefer_shikimori(lang)
         return (
@@ -182,7 +200,9 @@ def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMar
         return "dm_start.preview_confirm_prompt", preview_keyboard(lang)
     if game.setup_step == SetupStep.AWAITING_PHOTO_CHANGE:
         return "dm_start.ask_new_photo", None
-    return "dm_start.ask_extra_synonym", None  # AWAITING_SYNONYM, the last member
+    if game.setup_step == SetupStep.AWAITING_SYNONYM:
+        return "dm_start.ask_extra_synonym", None
+    assert_never(game.setup_step)
 
 
 async def _resume_setup(message, game: Game, lang: str) -> None:
@@ -194,7 +214,9 @@ async def _resume_setup(message, game: Game, lang: str) -> None:
     *any* SETUP game exists, and the reply it drives (`not_your_turn`)
     is then untrue in the one way that helps least: it is their turn,
     they are mid-way through taking it. So put them back on the step
-    they are actually on instead. Nothing is written — no status, no
+    they are actually on instead — on that step's entry screen, which
+    is not always the exact sub-screen they last saw (see
+    `_current_setup_screen`). Nothing is written — no status, no
     step, no picker column (#69's invariant is about screen
     *transitions*; this re-sends a screen the game is already on) — and
     the row keeps the setup-abandon timer it was created with, so

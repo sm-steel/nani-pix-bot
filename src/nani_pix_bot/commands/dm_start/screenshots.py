@@ -468,16 +468,33 @@ async def _resolve_cross_provider_id(
     # than breaking, but it asked the starter to type a title the game
     # already knows.
     #
-    # Same order as prioritized_title()'s non-RU one, and deliberately
-    # not display_title() itself: a *search query* must not follow the
-    # bot's display language (a RU bot would then send Jikan/TMDB a
-    # Russian title even when an English one is on file), and
-    # display_title's "?" fallback for a title-less game would be a
-    # query rather than the no-query this still wants. Native before
-    # Russian for the same reason — all three providers index the
-    # Japanese title, only Shikimori knows the Russian one.
-    query_text = (
-        game.title_english or game.title_romaji or game.title_native or game.title_russian or ""
+    # Same order as prioritized_title()'s non-RU one (services/game/
+    # state.py) — a fourth restatement of it, tied to that function by
+    # intent but not by code, so a reorder there wants a look here.
+    # Deliberately not display_title() itself, which is why this is a
+    # copy: a *search query* must not follow the bot's display language
+    # (a RU bot would then send Jikan/TMDB a Russian title even when an
+    # English one is on file), and display_title's "?" fallback for a
+    # title-less game would be a query rather than the no-query this
+    # still wants. Native before Russian for the same reason — all three
+    # providers index the Japanese title, only Shikimori knows the
+    # Russian one.
+    #
+    # next() over the tuple rather than an `or` chain: five chained
+    # operands are a qlty "complex binary expression", and the two read
+    # the same anyway (first truthy, else the default).
+    query_text = next(
+        (
+            title
+            for title in (
+                game.title_english,
+                game.title_romaji,
+                game.title_native,
+                game.title_russian,
+            )
+            if title
+        ),
+        "",
     )
     client = _client_for_source(context, provider)
     try:
