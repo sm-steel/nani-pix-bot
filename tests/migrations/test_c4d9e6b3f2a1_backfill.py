@@ -863,6 +863,7 @@ def test_an_operator_can_still_tell_the_proxy_failure_modes_apart(
         ("unknown-scheme", f"socks9://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080"),
         ("socks", f"socks5://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080"),
         ("bad-port", f"http://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:not-a-port"),
+        ("padded-scheme", f"  http  ://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080"),
     ):
         monkeypatch.setenv("TELEGRAM_PROXY_URL", raw_proxy)
         module._backfill_original_image_for_in_flight_games()  # must not raise
@@ -874,6 +875,9 @@ def test_an_operator_can_still_tell_the_proxy_failure_modes_apart(
     assert "ImportError" in warnings["socks"]
     assert "ValueError" in warnings["unknown-scheme"]
     assert "InvalidURL" in warnings["bad-port"]
+    # Padding is its own fault, not a fifth flavour of "bad scheme" --
+    # see test_a_padded_scheme_is_reported_as_padding_not_as_a_scheme.
+    assert "whitespace" in warnings["padded-scheme"]
     for output in warnings.values():
         _assert_absent(output, *_FAKE_AUTHORITY_COMPONENTS)
 
@@ -901,3 +905,321 @@ def test_a_per_row_telegram_400_is_still_identifiable_as_a_400(
     assert "HTTPStatusError (HTTP 400)" in output
     assert "game 23" in output
     _assert_absent(output, _FAKE_TOKEN, "api.telegram.org")
+
+
+# --------------------------------------------------------------------
+# issue #87 -- the fetch path absorbs by policy, not by enumeration.
+#
+# Six exception types were added to this file's except tuples one at a
+# time, each in response to one observed failure: httpx.HTTPError,
+# KeyError, ValueError, TypeError, httpx.InvalidURL, ImportError. Every
+# addition was correct and every one left the next type live;
+# OverflowError (issue #87) would have been the seventh. The tests below
+# pin the policy that ended the sequence -- catch every Exception on the
+# fetch path, let the three BaseExceptions that mean "stop now" through
+# -- rather than pinning one more member of a list that cannot be
+# completed by inspection.
+# --------------------------------------------------------------------
+
+
+class _UnenumeratedError(Exception):
+    """Stands in for whatever the next unlisted exception type turns out
+    to be. Defined here, in the test file, precisely so that no
+    enumeration written in the migration could ever have named it: a
+    test that passes for this type passes because of the policy, not
+    because somebody remembered to add it."""
+
+
+# Larger than C-long max, so socket.getaddrinfo raises OverflowError
+# while marshalling the port -- before any DNS lookup or connection
+# attempt, which is what keeps the test using it fast and offline.
+_OVERSIZED_PORT = 10**20
+
+
+def test_an_oversized_proxy_port_does_not_escape_upgrade(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Issue #87's reported escape, end to end through the real
+    httpx.Client and the real socket layer.
+
+    A port above C-long max parses fine as a Python int, so httpx builds
+    the client and the request without complaint; the failure lands much
+    lower down, in _socket.getaddrinfo, which cannot marshal the value
+    into a C long and raises OverflowError. That is an ArithmeticError,
+    not an httpx or a lookup error, so it matched neither except tuple
+    and propagated out of upgrade() -- after the five add_column
+    statements had already auto-committed on MariaDB, wedging every later
+    deploy on "Duplicate column name". Nothing here touches the network:
+    the port is rejected before resolution is attempted."""
+    conn, games = games_connection
+    _seed_one_in_flight_game(conn, games, 30)
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+    monkeypatch.setenv(
+        "TELEGRAM_PROXY_URL",
+        f"http://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:{_OVERSIZED_PORT}",
+    )
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[30] is None
+
+    output = capsys.readouterr().out
+    assert "WARNING" in output
+    assert "OverflowError" in output
+    assert "game 30" in output
+    # The port is the faulting component of TELEGRAM_PROXY_URL, so the
+    # containment invariant covers it exactly like the password does.
+    assert str(_OVERSIZED_PORT) not in output
+    _assert_absent(output, *_FAKE_AUTHORITY_COMPONENTS)
+
+
+def test_the_per_row_loop_absorbs_an_exception_nobody_enumerated(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The decision recorded in issue #87, stated as a test: the per-row
+    fetch absorbs anything an Exception, not just the types someone has
+    already met. The fetch path runs through httpx, httpcore, ssl, socket
+    and CPython's C layer -- the set of things it can raise is neither
+    documented nor owned by this project, so a tuple of names can only
+    ever be behind it."""
+    conn, games = games_connection
+    _seed_one_in_flight_game(conn, games, 31)
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+
+    def fake_fetch(client: httpx.Client, bot_token: str, file_id: str) -> bytes:
+        raise _UnenumeratedError("whatever the next unlisted failure turns out to be")
+
+    monkeypatch.setattr(module, "_fetch_telegram_file_bytes", fake_fetch)
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[31] is None
+
+    output = capsys.readouterr().out
+    assert "WARNING" in output
+    assert "game 31" in output
+    # The class name is what makes a broad catch diagnosable rather than
+    # silent: an operator reading the log can tell a ConnectTimeout from
+    # a bug in this file, even though both are skipped.
+    assert "_UnenumeratedError" in output
+    assert "whatever the next unlisted failure" not in output
+
+
+def test_client_construction_absorbs_an_exception_nobody_enumerated(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The same policy at the other guarded site. httpx.Client's
+    constructor reads TELEGRAM_PROXY_URL, and what it raises over that
+    value has already turned out to be three different types
+    (ValueError, httpx.InvalidURL, ImportError) discovered one round at a
+    time; there is no reason to believe the third was the last."""
+    conn, games = games_connection
+    _seed_one_in_flight_game(conn, games, 32)
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+
+    def explode(*args: object, **kwargs: object) -> httpx.Client:
+        raise _UnenumeratedError("some future httpx rejection")
+
+    monkeypatch.setattr(module.httpx, "Client", explode)
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[32] is None
+
+    output = capsys.readouterr().out
+    assert "WARNING" in output
+    assert "could not configure the Telegram HTTP client" in output
+    assert "_UnenumeratedError" in output
+    assert "some future httpx rejection" not in output
+
+
+@pytest.mark.parametrize("stopping", [KeyboardInterrupt, SystemExit])
+def test_a_stop_request_still_escapes_the_per_row_loop(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    stopping: type[BaseException],
+) -> None:
+    """The other half of the decision, and the reason the catch is
+    `Exception` rather than `BaseException` plus a re-raise list: an
+    operator pressing Ctrl-C on a running migration, or a sys.exit() from
+    underneath, means *stop*, and must not be turned into a warning and a
+    continue that keeps issuing DML afterwards.
+
+    A re-raise list would be an enumeration too -- the same failure mode
+    one level up, waiting for the BaseException subclass nobody listed.
+    Catching Exception delegates that boundary to CPython's own
+    hierarchy, where KeyboardInterrupt, SystemExit and GeneratorExit all
+    sit outside Exception by design, so it cannot be got wrong here."""
+    conn, games = games_connection
+    _seed_one_in_flight_game(conn, games, 33)
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+
+    def fake_fetch(client: httpx.Client, bot_token: str, file_id: str) -> bytes:
+        raise stopping
+
+    monkeypatch.setattr(module, "_fetch_telegram_file_bytes", fake_fetch)
+
+    with pytest.raises(stopping):
+        module._backfill_original_image_for_in_flight_games()
+
+
+@pytest.mark.parametrize("stopping", [KeyboardInterrupt, SystemExit])
+def test_a_stop_request_still_escapes_client_construction(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    stopping: type[BaseException],
+) -> None:
+    """Ctrl-C during the client's own construction has to propagate for
+    the same reason it does from the loop."""
+    conn, games = games_connection
+    _seed_one_in_flight_game(conn, games, 34)
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+
+    def explode(*args: object, **kwargs: object) -> httpx.Client:
+        raise stopping
+
+    monkeypatch.setattr(module.httpx, "Client", explode)
+
+    with pytest.raises(stopping):
+        module._backfill_original_image_for_in_flight_games()
+
+
+def test_a_successful_row_still_writes_under_the_broad_catch(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A broad catch's obvious failure mode is swallowing the whole
+    backfill, so the success path is re-pinned alongside it: one row
+    fails with an unenumerated type, the next still fetches, writes and
+    logs. The loop must keep going, not just stop raising."""
+    conn, games = games_connection
+    conn.execute(
+        games.insert(),
+        [
+            {"id": 35, "status": "ACTIVE", "original_file_id": "bad-id", "original_image": None},
+            {"id": 36, "status": "ACTIVE", "original_file_id": "good-id", "original_image": None},
+        ],
+    )
+    conn.commit()
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+
+    def fake_fetch(client: httpx.Client, bot_token: str, file_id: str) -> bytes:
+        if file_id == "bad-id":
+            raise _UnenumeratedError("unlisted")
+        return b"real-bytes"
+
+    monkeypatch.setattr(module, "_fetch_telegram_file_bytes", fake_fetch)
+
+    module._backfill_original_image_for_in_flight_games()
+
+    images = _image_by_id(conn, games)
+    assert images[35] is None
+    assert images[36] == b"real-bytes"
+    assert "Backfilled original_image for game 36" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------
+# issue #87's folded-in second item -- the padded-scheme hint.
+# --------------------------------------------------------------------
+
+# Spelled out here rather than read off the module, so the end-to-end
+# assertion below fails if the migration quietly redefines the existing
+# constant to the padded wording instead of adding a distinct one.
+_PROXY_SHAPE_HTTP_HINT = "TELEGRAM_PROXY_URL's scheme is http:// or https://"
+
+
+def test_a_padded_scheme_is_reported_as_padding_not_as_a_scheme() -> None:
+    """_describe_proxy_shape strips and casefolds before matching, so
+    "  http  " matched _HTTP_PROXY_SCHEMES and the operator was told
+    their scheme was fine. httpx does no such stripping: it rejects the
+    padded value outright, which is why the warning was printed at all.
+    The hint was therefore true of what the classifier computed and
+    useless about what actually went wrong -- incomplete rather than
+    false, carrying no security exposure, which is why it was left out of
+    the containment work (#84) and folded in here instead.
+
+    Padding dominates the scheme name, for socks as much as for http:
+    httpx rejects "  socks5  ://" on the whitespace, long before the
+    missing socksio package could matter."""
+    module = _load_migration_module()
+
+    for padded in (
+        f"  http  ://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080",
+        f" https://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080",
+        f"  socks5  ://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080",
+    ):
+        assert module._describe_proxy_shape(padded) == module._PROXY_SHAPE_PADDED_SCHEME
+
+    # Unpadded values are untouched by the new branch -- including the
+    # uppercase spelling httpx itself accepts, which must keep reading as
+    # a plain http:// scheme rather than as a fault.
+    assert (
+        module._describe_proxy_shape(f"http://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080")
+        == module._PROXY_SHAPE_HTTP
+    )
+    assert (
+        module._describe_proxy_shape(f"HTTP://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080")
+        == module._PROXY_SHAPE_HTTP
+    )
+    assert (
+        module._describe_proxy_shape(f"socks5://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080")
+        == module._PROXY_SHAPE_SOCKS
+    )
+
+
+def test_the_padded_scheme_hint_is_one_of_this_file_s_own_literals() -> None:
+    """The containment invariant applies to the new hint exactly as it
+    does to the other five: it is a member of the same fixed tuple, so it
+    cannot carry a fragment of the value that produced it."""
+    module = _load_migration_module()
+
+    assert module._PROXY_SHAPE_PADDED_SCHEME in module._PROXY_SHAPE_HINTS
+    assert len(set(module._PROXY_SHAPE_HINTS)) == 6
+
+
+def test_a_padded_scheme_warning_names_the_padding(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """End to end through the real httpx.Client: the operator gets told
+    about the whitespace rather than being reassured their scheme is
+    supported, and still learns nothing about the authority."""
+    conn, games = games_connection
+    _seed_one_in_flight_game(conn, games, 37)
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+    monkeypatch.setenv(
+        "TELEGRAM_PROXY_URL",
+        f"  http  ://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080",
+    )
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[37] is None
+
+    output = capsys.readouterr().out
+    assert "WARNING" in output
+    assert "whitespace" in output
+    assert _PROXY_SHAPE_HTTP_HINT not in output
+    _assert_absent(output, *_FAKE_AUTHORITY_COMPONENTS)
