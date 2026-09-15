@@ -41,9 +41,9 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 )
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
+from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.search import jikan, shikimori, tmdb
 from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
@@ -59,25 +59,6 @@ GALLERY_PAGE_SIZE = 5
 # with nothing to tap. Placeholder-free, as SourceMenu.provider=None
 # requires.
 NO_SOURCE_PROMPT_KEY = "dm_start.pick_screenshot_source_prompt"
-
-# One provider id column per screenshot-capable provider — see
-# models/game.py's per-provider *_id columns.
-_ID_ATTRS = {
-    Provider.SHIKIMORI: "shikimori_id",
-    Provider.JIKAN: "jikan_id",
-    Provider.TMDB: "tmdb_id",
-}
-# Module references, not bound function references — a plain
-# {"shikimori": shikimori.screenshots, ...} dict would capture the
-# function object at import time, which stops respecting
-# monkeypatch.setattr(shikimori, "screenshots", ...) in tests (and,
-# more generally, would go stale if a provider module ever reassigned
-# its own screenshots name after import).
-_SCREENSHOT_MODULES = {
-    Provider.SHIKIMORI: shikimori,
-    Provider.JIKAN: jikan,
-    Provider.TMDB: tmdb,
-}
 
 
 @dataclass(frozen=True)
@@ -98,7 +79,7 @@ class SourceMenu:
 
 
 @dataclass(frozen=True)
-class Fallback:
+class ScreenshotFailure:
     """A screenshot-sub-flow failure, propagated up to whichever handler
     owns the reply: the message to show and the provider to blame. Every
     one of these ends at `reply_with_source_menu` — carrying the provider
@@ -108,23 +89,23 @@ class Fallback:
     provider: Provider
 
 
-def _provider_id(game, provider: Provider) -> int | None:
-    """Typed wrapper around the getattr(game, _ID_ATTRS[provider]) dance
-    used throughout this module — a bare getattr on a dynamic attribute
-    name is `Any` to `ty`, which silently let a stale/cleared id (e.g.
-    after clear_screenshot_selection) flow into a screenshot fetch as if
-    it were always a real int. Routing every read through here means a
-    caller has to explicitly deal with the `None` case."""
-    return getattr(game, _ID_ATTRS[provider])
+def _provider_id(game: Game, provider: Provider) -> int | None:
+    """Typed wrapper around the getattr(game, provider.id_attr_name)
+    dance used throughout this module — a bare getattr on a dynamic
+    attribute name is `Any` to `ty`, which silently let a stale/cleared
+    id (e.g. after clear_screenshot_selection) flow into a screenshot
+    fetch as if it were always a real int. Routing every read through
+    here means a caller has to explicitly deal with the `None` case."""
+    return getattr(game, provider.id_attr_name)
 
 
 async def _fetch_screenshots(provider: Provider, client, provider_id: int) -> list[str]:
-    return await _SCREENSHOT_MODULES[provider].screenshots(client, provider_id)
+    return await provider.screenshot_module.screenshots(client, provider_id)
 
 
 async def _fetch_screenshots_or_fallback(
     context: ContextTypes.DEFAULT_TYPE, game, provider: Provider, provider_id: int | None
-) -> list[str] | Fallback:
+) -> list[str] | ScreenshotFailure:
     """Fetches `provider`'s screenshots for `provider_id` — the one
     chokepoint every screenshot-gallery call site routes through.
     Returns the url list on success (which can still legitimately be
@@ -145,7 +126,7 @@ async def _fetch_screenshots_or_fallback(
         logger.warning(
             "Game {}: no {} id on file for a screenshot fetch (stale button?)", game.id, provider
         )
-        return Fallback("dm_start.no_screenshots_available", provider)
+        return ScreenshotFailure("dm_start.no_screenshots_available", provider)
 
     client = _client_for_source(context, provider)
     try:
@@ -154,11 +135,11 @@ async def _fetch_screenshots_or_fallback(
         logger.exception(
             "Game {}: fetching {} screenshots failed for id {}", game.id, provider, provider_id
         )
-        return Fallback("dm_start.screenshot_service_down", provider)
+        return ScreenshotFailure("dm_start.screenshot_service_down", provider)
 
     if not urls:
         logger.info("Game {}: {} has no screenshots for id {}", game.id, provider, provider_id)
-        return Fallback("dm_start.no_screenshots_available", provider)
+        return ScreenshotFailure("dm_start.no_screenshots_available", provider)
 
     return urls
 
@@ -166,13 +147,13 @@ async def _fetch_screenshots_or_fallback(
 async def _search_provider(
     provider: Provider, client, query: str
 ) -> list[ShikimoriResult] | list[JikanResult] | list[TMDBResult]:
-    return await _SCREENSHOT_MODULES[provider].search(client, query)
+    return await provider.screenshot_module.search(client, query)
 
 
 async def _get_provider_by_id(
     provider: Provider, client, external_id: int
 ) -> ShikimoriResult | JikanResult | TMDBResult | None:
-    return await _SCREENSHOT_MODULES[provider].get_by_id(client, external_id)
+    return await provider.screenshot_module.get_by_id(client, external_id)
 
 
 @dataclass(frozen=True)
@@ -190,11 +171,11 @@ class GalleryTarget:
     cross_provider: bool = False
 
 
-def source_menu_for(game, provider: Provider | None) -> SourceMenu:
+def source_menu_for(game: Game, provider: Provider | None) -> SourceMenu:
     return SourceMenu(providers=_screenshot_capable_providers(game), provider=provider)
 
 
-async def reply_fallback(send, game, lang: str, fallback: Fallback) -> None:
+async def reply_fallback(send, game: Game, lang: str, fallback: ScreenshotFailure) -> None:
     """`reply_with_source_menu` for the common case where the caller has
     the game loaded and so can build the menu itself.
 
@@ -251,18 +232,20 @@ async def reply_with_source_menu(send, menu: SourceMenu, lang: str, key: str) ->
 
 async def gallery_page_or_fallback(
     context: ContextTypes.DEFAULT_TYPE, target: GalleryTarget, urls: list[str], lang: str
-) -> str | Fallback:
+) -> str | ScreenshotFailure:
     """`_show_gallery_page` for the callers whose own return value is
     "the i18n key for the message to edit the tapped message down to":
     the gallery's own confirmation once a page is up, or the page's
-    Fallback if Telegram wouldn't take it. Saves each of them repeating
+    ScreenshotFailure if Telegram wouldn't take it. Saves each of them repeating
     the same three-line None check around a call whose success value is
     always the same constant."""
     fallback = await _show_gallery_page(context, target, urls, lang)
     return fallback if fallback is not None else "dm_start.screenshot_source_picked"
 
 
-async def start_screenshot_picker(context: ContextTypes.DEFAULT_TYPE, game, lang: str) -> None:
+async def start_screenshot_picker(
+    context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
+) -> None:
     """Entry point from `search.py`'s `pick_callback_handler` (and
     `manual.py`'s synonym step) once identification is staged with no
     image yet — shows the screenshot-source-selection keyboard. Every
@@ -279,7 +262,7 @@ async def start_screenshot_picker(context: ContextTypes.DEFAULT_TYPE, game, lang
     )
 
 
-def clear_screenshot_selection(game) -> None:
+def clear_screenshot_selection(game: Game) -> None:
     """Leaves the screenshot sub-flow behind: the picker stops resolving
     anything, and an API-picked screenshot plus the provider id that
     resolved it are dropped. Used by preview.py's "Re-search title"
@@ -297,14 +280,17 @@ def clear_screenshot_selection(game) -> None:
     game.screenshot_picker_provider = None
     if game.screenshot_source is None:
         return
-    setattr(game, _ID_ATTRS[game.screenshot_source], None)
+    # The column hands back a bare str, not a `Provider` (see
+    # `_stored_provider`), so `.id_attr_name` needs the conversion first
+    # — a plain str has no such attribute.
+    setattr(game, _stored_provider(game.screenshot_source).id_attr_name, None)
     game.original_image = None
     game.screenshot_source = None
 
 
 async def resume_screenshot_gallery(
     context: ContextTypes.DEFAULT_TYPE, game, lang: str
-) -> str | Fallback:
+) -> str | ScreenshotFailure:
     """Re-shows `game.screenshot_source`'s gallery from the top using its
     already-resolved id — preview.py's "Change image" -> "Pick a
     different screenshot" branch, reached only when the current image
@@ -342,7 +328,7 @@ async def resume_screenshot_gallery(
     game.screenshot_picker_provider = provider
     provider_id = _provider_id(game, provider)
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
-    if isinstance(result, Fallback):
+    if isinstance(result, ScreenshotFailure):
         return result
 
     target = GalleryTarget(
@@ -435,7 +421,7 @@ async def screenshot_source_callback_handler(
 
 async def _resolve_screenshot_source(
     context: ContextTypes.DEFAULT_TYPE, game, provider: Provider, lang: str
-) -> Fallback | None:
+) -> ScreenshotFailure | None:
     """Runs once a screenshot-source button is tapped: same-provider (an
     id already on file) goes straight to the gallery; cross-provider
     silently searches by the confirmed title first (ticket 8) and only
@@ -453,10 +439,10 @@ async def _resolve_screenshot_source(
     if cross_provider:
         provider_id = await _resolve_cross_provider_id(context, game, provider)
         if provider_id is None:
-            return Fallback("dm_start.cross_provider_search_failed", provider)
+            return ScreenshotFailure("dm_start.cross_provider_search_failed", provider)
 
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
-    if isinstance(result, Fallback):
+    if isinstance(result, ScreenshotFailure):
         return result
 
     logger.debug("Game {}: fetched {} {} screenshot(s)", game.id, len(result), provider)
@@ -543,7 +529,7 @@ async def _resolve_cross_provider_id(
 
 async def _show_gallery_page(
     context: ContextTypes.DEFAULT_TYPE, target: GalleryTarget, urls: list[str], lang: str
-) -> Fallback | None:
+) -> ScreenshotFailure | None:
     """Sends an album of up to GALLERY_PAGE_SIZE numbered screenshots
     starting at `target.offset`, followed by the gallery's own buttons
     message. Telegram fetches media-group photos server-side from a URL
@@ -555,7 +541,7 @@ async def _show_gallery_page(
     fetch one (hotlink blocking, still over 10MB, a dead CDN path) it
     answers with a BadRequest, which used to escape every caller and
     reach app._error_handler with no reply going out at all. Returns a
-    Fallback instead, so it takes the same source-menu exit as the
+    ScreenshotFailure instead, so it takes the same source-menu exit as the
     provider timing out — every caller already had to handle one."""
     shown = urls[target.offset : target.offset + GALLERY_PAGE_SIZE]
     if not shown:
@@ -619,6 +605,6 @@ async def _show_gallery_page(
             target.offset,
             len(urls),
         )
-        return Fallback("dm_start.screenshot_service_down", target.provider)
+        return ScreenshotFailure("dm_start.screenshot_service_down", target.provider)
 
     return None

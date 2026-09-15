@@ -11,6 +11,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start.keyboards import (
+    _SCREENSHOT_CAPABLE_PROVIDERS,
     method_selection_keyboard,
     preview_keyboard,
     screenshot_source_keyboard,
@@ -219,8 +220,13 @@ def _screenshot_capable_providers(game: Game) -> list[Provider]:
     `_current_setup_screen` below needs it too and screenshots.py
     already imports this module — the other direction would be a cycle.
     It is pure `game.source` arithmetic either way, with no dependency
-    on the screenshot sub-flow around it."""
-    candidates = [Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB]
+    on the screenshot sub-flow around it.
+
+    `_SCREENSHOT_CAPABLE_PROVIDERS` (imported from keyboards.py, where
+    `_validated_provider` also needs it) is the one source of truth for
+    the membership question — this used to hand-restate the same
+    3-member list independently (issue #114)."""
+    candidates = list(_SCREENSHOT_CAPABLE_PROVIDERS)
     # `game.source` arrives as a bare str (see `_stored_provider`), and
     # can legitimately be "manual" — which is in neither list, so the
     # membership test settles both questions at once and nothing below it

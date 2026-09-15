@@ -99,7 +99,7 @@ def test_pick_callback_handler_pattern_matches_every_providers_prefix() -> None:
     assert len(handlers) == 1
     pattern = handlers[0].pattern
     assert isinstance(pattern, re.Pattern)
-    pick_examples = (*(f"{provider}_pick:1" for provider in Provider), "anilist_retry")
+    pick_examples = (*(f"{provider}_pick:1" for provider in Provider), "search_retry")
     for data in pick_examples:
         assert pattern.match(data), f"{data!r} should match the pick-callback pattern"
 

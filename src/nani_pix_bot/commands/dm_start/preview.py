@@ -25,7 +25,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 )
 from nani_pix_bot.commands.dm_start.screenshots import (
     NO_SOURCE_PROMPT_KEY,
-    Fallback,
+    ScreenshotFailure,
     clear_screenshot_selection,
     reply_fallback,
     reply_with_source_menu,
@@ -162,11 +162,11 @@ async def _preview_change_image_upload(query, game: Game, lang: str) -> None:
 async def _preview_change_image_pick_screenshot(context, query, game: Game, lang: str) -> None:
     logger.debug("Game {}: pick-a-different-screenshot requested from preview", game.id)
     # resume_screenshot_gallery owns the setup_step transition itself and
-    # returns either a plain reply key or a Fallback — the latter puts
+    # returns either a plain reply key or a ScreenshotFailure — the latter puts
     # the starter back on the source menu rather than leaving this
     # message buttonless (see screenshots.py's reply_with_source_menu).
     outcome = await resume_screenshot_gallery(context, game, lang)
-    if isinstance(outcome, Fallback):
+    if isinstance(outcome, ScreenshotFailure):
         await reply_fallback(query.edit_message_text, game, lang, outcome)
         return
     if outcome == NO_SOURCE_PROMPT_KEY:

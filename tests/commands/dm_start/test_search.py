@@ -15,7 +15,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
     MANUAL_METHOD_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
-    RETRY_CALLBACK_DATA,
+    SEARCH_RETRY_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
 )
 from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
@@ -487,7 +487,7 @@ async def test_search_text_handler_ignores_text_while_browsing_a_same_provider_g
 
 
 async def test_pick_callback_handler_retry_does_not_touch_the_database(session_factory) -> None:
-    update = _make_callback_update(data=RETRY_CALLBACK_DATA)
+    update = _make_callback_update(data=SEARCH_RETRY_CALLBACK_DATA)
     context = _make_callback_context(session_factory)
 
     await search.pick_callback_handler(

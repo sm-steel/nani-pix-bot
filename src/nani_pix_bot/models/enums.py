@@ -1,4 +1,5 @@
 import enum
+from types import ModuleType
 from typing import assert_never
 
 
@@ -61,6 +62,122 @@ class Provider(enum.StrEnum):
             return "Jikan"
         if self is Provider.TMDB:
             return "TMDB"
+        assert_never(self)
+
+    @property
+    def pick_prefix(self) -> str:
+        """The callback-data prefix an identification-search result's
+        pick button carries for this provider, e.g. `"shikimori_pick:"`
+        — see `keyboards.py`'s `parse_pick_callback_data`, which strips
+        this prefix back off a tapped button's data to recover which
+        provider it belongs to.
+
+        Replaces the old `_PICK_PREFIX_SOURCES` dict (issue #114): the
+        prefix was always exactly `f"{self}_pick:"` for every member, so
+        keeping that as an external dict was one more restatement of a
+        rule this enum already exists to hold in one place."""
+        return f"{self}_pick:"
+
+    @property
+    def method_callback_data(self) -> str:
+        """The callback data for this provider's button on the
+        identification-method picker, e.g. `"method:shikimori"` — see
+        `keyboards.py::method_selection_keyboard`.
+
+        `keyboards.py`'s `ANILIST_METHOD_CALLBACK_DATA` etc. stay named
+        module constants derived from this property, rather than moving
+        onto `Provider` outright the way `pick_prefix`/`id_attr_name` did:
+        several `dm_start` test files import those constants directly, and
+        `MANUAL_METHOD_CALLBACK_DATA` has no `Provider` member to hang off
+        of (see this enum's own docstring on `"manual"`) — so a plain
+        f-string restatement here is what #114 was about eliminating, not
+        the named constants themselves."""
+        return f"method:{self}"
+
+    @property
+    def id_attr_name(self) -> str:
+        """The `Game` column name that stores this provider's screenshot
+        id — see `models/game.py`'s `shikimori_id`/`jikan_id`/`tmdb_id`
+        columns.
+
+        AniList identifies an anime but has no screenshot endpoint (see
+        `screenshot_module` below) and so has no id column of its own —
+        accessing this on `Provider.ANILIST` raises, the same way
+        `screenshot_module` does. Every real call site only reaches this
+        for a provider already known to be screenshot-capable (see
+        `keyboards.py`'s `_SCREENSHOT_CAPABLE_PROVIDERS`), so the raise
+        is defensive, not a path anything is expected to hit.
+
+        Replaces the old `_ID_ATTRS` dict (issue #114)."""
+        if self is Provider.SHIKIMORI:
+            return "shikimori_id"
+        if self is Provider.JIKAN:
+            return "jikan_id"
+        if self is Provider.TMDB:
+            return "tmdb_id"
+        raise ValueError(f"Provider.{self.name} has no screenshot id column")
+
+    @property
+    def screenshot_module(self) -> ModuleType:
+        """The `services.search` module that can fetch this provider's
+        screenshots — a **module** reference, not a bound function:
+        commands/dm_start's tests patch
+        `monkeypatch.setattr(shikimori, "screenshots", ...)` directly on
+        the module object, which only keeps working if every caller
+        looks the attribute up on the module at call time rather than
+        capturing the function once.
+
+        The import is lazy — inside this property's body, re-run on
+        every access — deliberately not at module level and not behind
+        `TYPE_CHECKING` (the module object is needed at runtime, not
+        just for type-checking). `services/search/shikimori.py` (and
+        `jikan.py`/`tmdb.py`) already import `Provider` from this module
+        at their own top level, so a module-level import back here would
+        be a real two-hop cycle (`models.enums` <-> `services.search.*`)
+        — a lazy per-call import avoids it, since by the time this runs
+        both modules have already finished importing once.
+
+        AniList has no screenshot endpoint, so it isn't covered here —
+        accessing this on `Provider.ANILIST` raises, mirroring
+        `id_attr_name` above.
+
+        Replaces the old `_SCREENSHOT_MODULES` dict (issue #114)."""
+        from nani_pix_bot.services.search import jikan, shikimori, tmdb
+
+        if self is Provider.SHIKIMORI:
+            return shikimori
+        if self is Provider.JIKAN:
+            return jikan
+        if self is Provider.TMDB:
+            return tmdb
+        raise ValueError(f"Provider.{self.name} has no screenshot module")
+
+    @property
+    def search_module(self) -> ModuleType:
+        """The `services.search` module that can search/identify with
+        this provider — all four members, including AniList (contrast
+        `screenshot_module` above, which only covers the three that can
+        also supply screenshots).
+
+        Deliberately not unified with `screenshot_module`: widening the
+        3-provider set to 4 would silently turn a stray AniList
+        screenshot-lookup failure into a different kind of error
+        elsewhere — an invisible-to-tests behavior change for no
+        benefit. Same lazy-import reasoning as `screenshot_module` above
+        — see its docstring for why the import lives inside this getter
+        rather than at module level.
+
+        Replaces the old `_SEARCH_MODULES` dict (issue #114)."""
+        from nani_pix_bot.services.search import anilist, jikan, shikimori, tmdb
+
+        if self is Provider.ANILIST:
+            return anilist
+        if self is Provider.SHIKIMORI:
+            return shikimori
+        if self is Provider.JIKAN:
+            return jikan
+        if self is Provider.TMDB:
+            return tmdb
         assert_never(self)
 
 

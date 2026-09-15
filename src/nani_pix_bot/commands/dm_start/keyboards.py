@@ -35,18 +35,19 @@ from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
-RETRY_CALLBACK_DATA = "anilist_retry"
-# Derived from Provider, not hand-spelled — app.py's routing pattern is built
-# the same way, and the two used to be independent copies of one wire format.
-_ANILIST_PICK_PREFIX = f"{Provider.ANILIST}_pick:"
-_SHIKIMORI_PICK_PREFIX = f"{Provider.SHIKIMORI}_pick:"
-_JIKAN_PICK_PREFIX = f"{Provider.JIKAN}_pick:"
-_TMDB_PICK_PREFIX = f"{Provider.TMDB}_pick:"
+SEARCH_RETRY_CALLBACK_DATA = "search_retry"
 
-ANILIST_METHOD_CALLBACK_DATA = "method:anilist"
-SHIKIMORI_METHOD_CALLBACK_DATA = "method:shikimori"
-JIKAN_METHOD_CALLBACK_DATA = "method:jikan"
-TMDB_METHOD_CALLBACK_DATA = "method:tmdb"
+# Kept as named module constants (not inlined like the pick-prefix values
+# below) because several dm_start test files import these directly — but
+# derived from Provider.method_callback_data, not an independent
+# f"method:{...}" restatement, so the wire format still has one source of
+# truth (issue #114).
+ANILIST_METHOD_CALLBACK_DATA = Provider.ANILIST.method_callback_data
+SHIKIMORI_METHOD_CALLBACK_DATA = Provider.SHIKIMORI.method_callback_data
+JIKAN_METHOD_CALLBACK_DATA = Provider.JIKAN.method_callback_data
+TMDB_METHOD_CALLBACK_DATA = Provider.TMDB.method_callback_data
+# "manual" is deliberately not a Provider member (see its docstring) —
+# stays a standalone literal.
 MANUAL_METHOD_CALLBACK_DATA = "method:manual"
 
 PREVIEW_CONFIRM_CALLBACK_DATA = "preview:confirm"
@@ -118,18 +119,18 @@ def _retry_data_for(pick_prefix: str) -> str:
     rest of the screenshot sub-flow's callback data; they're read when
     this runs, not at import."""
     if not pick_prefix.startswith(SCREENSHOT_SEARCH_PICK_PREFIX):
-        return RETRY_CALLBACK_DATA
+        return SEARCH_RETRY_CALLBACK_DATA
     provider = pick_prefix.removeprefix(SCREENSHOT_SEARCH_PICK_PREFIX).rstrip(":")
     return f"{SCREENSHOT_SEARCH_AGAIN_PREFIX}{provider}"
 
 
 def anilist_results_keyboard(results: list[AniListResult], lang: str) -> InlineKeyboardMarkup:
     accessors = _ResultAccessors(label_fn=_anilist_label, id_fn=lambda result: result.anilist_id)
-    return _results_keyboard(results, lang, accessors, _ANILIST_PICK_PREFIX)
+    return _results_keyboard(results, lang, accessors, Provider.ANILIST.pick_prefix)
 
 
 def shikimori_results_keyboard(
-    results: list[ShikimoriResult], lang: str, *, pick_prefix: str = _SHIKIMORI_PICK_PREFIX
+    results: list[ShikimoriResult], lang: str, *, pick_prefix: str = Provider.SHIKIMORI.pick_prefix
 ) -> InlineKeyboardMarkup:
     """`pick_prefix` is overridable so ticket 8's cross-provider "Wrong
     anime? Search again" flow can route its picks to a different handler
@@ -142,7 +143,7 @@ def shikimori_results_keyboard(
 
 
 def jikan_results_keyboard(
-    results: list[JikanResult], lang: str, *, pick_prefix: str = _JIKAN_PICK_PREFIX
+    results: list[JikanResult], lang: str, *, pick_prefix: str = Provider.JIKAN.pick_prefix
 ) -> InlineKeyboardMarkup:
     """See `shikimori_results_keyboard` for why `pick_prefix` is
     overridable."""
@@ -151,7 +152,7 @@ def jikan_results_keyboard(
 
 
 def tmdb_results_keyboard(
-    results: list[TMDBResult], lang: str, *, pick_prefix: str = _TMDB_PICK_PREFIX
+    results: list[TMDBResult], lang: str, *, pick_prefix: str = Provider.TMDB.pick_prefix
 ) -> InlineKeyboardMarkup:
     """See `shikimori_results_keyboard` for why `pick_prefix` is
     overridable."""
@@ -208,14 +209,6 @@ def _tmdb_label(result: TMDBResult, lang: str) -> str:
     return game_service.prioritized_title(variants, lang=lang)
 
 
-_PICK_PREFIX_SOURCES = {
-    _ANILIST_PICK_PREFIX: Provider.ANILIST,
-    _SHIKIMORI_PICK_PREFIX: Provider.SHIKIMORI,
-    _JIKAN_PICK_PREFIX: Provider.JIKAN,
-    _TMDB_PICK_PREFIX: Provider.TMDB,
-}
-
-
 def _validated_index(raw: str, *, data: str) -> int | None:
     """The trailing id/index segment of a callback payload as an int, or
     None if it isn't one.
@@ -249,8 +242,10 @@ def parse_pick_callback_data(data: str) -> tuple[Provider, int] | None:
     re-fetch from (restart-resilient, per issue #11). It comes from the
     prefix rather than the payload, so unlike the screenshot parsers
     below there is no provider segment here that could need validating —
-    a prefix that doesn't match any key simply isn't a pick."""
-    for prefix, source in _PICK_PREFIX_SOURCES.items():
+    a prefix that doesn't match any member's `pick_prefix` simply isn't a
+    pick."""
+    for source in Provider:
+        prefix = source.pick_prefix
         if data.startswith(prefix):
             external_id = _validated_index(data.removeprefix(prefix), data=data)
             return None if external_id is None else (source, external_id)
@@ -368,6 +363,9 @@ SCREENSHOT_UPLOAD_CALLBACK_DATA = "screenshot:upload"
 # screenshot-shaped payload must be rejected for. A tuple rather than
 # the label dict this used to double as: the labels themselves now come
 # from Provider.display_name, leaving only the membership question.
+# The single source of truth for that question — _shared.py's
+# _screenshot_capable_providers() imports this rather than
+# hand-restating the same 3-member list independently (issue #114).
 _SCREENSHOT_CAPABLE_PROVIDERS: tuple[Provider, ...] = (
     Provider.SHIKIMORI,
     Provider.JIKAN,
@@ -430,8 +428,8 @@ def _validated_provider(raw: str, *, data: str) -> Provider | None:
 
     Same reasoning as `_validated_index`: the provider segment of a
     callback payload is client-controlled, and an unknown string flowed
-    straight into `_ID_ATTRS[provider]` / `_SCREENSHOT_MODULES[provider]`
-    / a display-name lookup and raised KeyError a few frames later —
+    straight into `Provider(raw).id_attr_name` / `.screenshot_module` /
+    a display-name lookup and raised an error a few frames later —
     including once it had already been written to
     `screenshot_picker_provider`.
 
