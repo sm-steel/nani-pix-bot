@@ -386,3 +386,72 @@ async def test_get_by_id_returns_none_when_the_id_is_null() -> None:
         result = await anilist.get_by_id(client, 154587)
 
     assert result is None
+
+
+def _responding(body: Any) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    return httpx.MockTransport(handler)
+
+
+# AniList is the only provider that reads a container *nested inside* the
+# body, so the `expect=` guard the REST three get from rest.get_json never
+# covers it (issue #85). Two nested objects are read on the way to an
+# entry — the `data` object itself, which both entry points go through,
+# and the `Page` object inside it — and a scalar in either position used
+# to escape as an AttributeError that _SEARCH_SERVICE_ERRORS doesn't
+# catch. Probed as entry point x malformed shape rather than one case per
+# shape: a fix at only one of the two reads leaves the other live.
+_MALFORMED_DATA_BODIES = [
+    pytest.param({"data": 5}, id="data-is-a-number"),
+    pytest.param({"data": [1]}, id="data-is-an-array"),
+    pytest.param({"data": "Page"}, id="data-is-a-string"),
+    pytest.param({"data": True}, id="data-is-a-bool"),
+]
+
+
+@pytest.mark.parametrize("body", _MALFORMED_DATA_BODIES)
+async def test_search_raises_when_data_is_not_an_object(body: dict) -> None:
+    async with httpx.AsyncClient(transport=_responding(body)) as client:
+        with pytest.raises(RuntimeError, match="expected an object"):
+            await anilist.search(client, "frieren")
+
+
+@pytest.mark.parametrize("body", _MALFORMED_DATA_BODIES)
+async def test_get_by_id_raises_when_data_is_not_an_object(body: dict) -> None:
+    """The second site, and the easy one to miss: a scalar `data` blows up
+    on the *first* nested read, before `Page`/`Media` is ever looked at."""
+    async with httpx.AsyncClient(transport=_responding(body)) as client:
+        with pytest.raises(RuntimeError, match="expected an object"):
+            await anilist.get_by_id(client, 154587)
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        pytest.param(5, id="page-is-a-number"),
+        pytest.param([1], id="page-is-an-array"),
+        pytest.param("media", id="page-is-a-string"),
+    ],
+)
+async def test_search_raises_when_the_page_container_is_not_an_object(page: Any) -> None:
+    async with httpx.AsyncClient(transport=_responding({"data": {"Page": page}})) as client:
+        with pytest.raises(RuntimeError, match="expected an object"):
+            await anilist.search(client, "frieren")
+
+
+async def test_search_returns_nothing_when_the_page_container_is_null() -> None:
+    """Absent is not malformed: a null container key keeps yielding the
+    empty result the pickers already report as "nothing found"."""
+    async with httpx.AsyncClient(transport=_responding({"data": {"Page": None}})) as client:
+        assert await anilist.search(client, "frieren") == []
+
+
+async def test_get_by_id_returns_none_when_the_media_entry_is_a_scalar() -> None:
+    """`Media` is nested the same way `Page` is, but it is the *entry*, not
+    a container of them — so it keeps issue #83's WARNING-and-skip, which
+    the picker renders as "this pick is gone", rather than being pulled
+    into the container guard and turned into an outage."""
+    async with httpx.AsyncClient(transport=_responding({"data": {"Media": 5}})) as client:
+        assert await anilist.get_by_id(client, 154587) is None

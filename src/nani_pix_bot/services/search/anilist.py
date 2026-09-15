@@ -5,6 +5,7 @@ title/synonyms.
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 from loguru import logger
@@ -61,10 +62,9 @@ async def search(
     """Search AniList anime titles matching `query`. Cached briefly (see
     cache.py) so a starter repeating the same query doesn't re-hit the
     API each time."""
-    data = await _request(
-        client, query=_SEARCH_QUERY, variables={"search": query, "perPage": limit}
-    )
-    page = data.get("Page") or {}
+    variables = {"search": query, "perPage": limit}
+    data = await _request(client, query=_SEARCH_QUERY, variables=variables)
+    page = _require_object(data.get("Page"), label="Page", variables=variables)
     results = parsing.parse_entries("AniList", page.get("media") or [], _parse_result)
     logger.debug("AniList search {!r} returned {} result(s)", query, len(results))
     return results
@@ -84,9 +84,12 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
     if media is None:
         logger.debug("AniList id {} no longer found", anilist_id)
         return None
-    # An entry that arrives but can't be parsed lands on the same None
-    # as a missing one: there's nothing to stage either way, and "this
-    # pick is gone" is what the starter needs to hear (issue #83).
+    # `Media` sits in the same nested position `Page` does, but it is the
+    # entry itself rather than a container of them, so it deliberately
+    # does *not* go through `_require_object`: an entry that arrives but
+    # can't be parsed — scalar, missing `id`, whatever — lands on the same
+    # None as a missing one, because there's nothing to stage either way
+    # and "this pick is gone" is what the starter needs to hear (#83).
     return parsing.parse_entry("AniList", media, _parse_result)
 
 
@@ -108,7 +111,14 @@ async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) ->
     starter "no results found" / "your pick is gone" — both flat lies
     about a search that never ran. A null `data` with no `errors`
     alongside it is just a missing container key, and does yield an empty
-    object."""
+    object.
+
+    The `data` object itself gets the same treatment as the body around
+    it, which is what makes the `-> dict` above true rather than
+    aspirational: `return data or {}` handed a `{"data": 5}` body's
+    scalar straight to the callers, where it detonated on their first
+    `.get` — before the container they were actually reading was ever
+    looked at (issue #85)."""
 
     async def make_request() -> httpx.Response:
         return await client.post(
@@ -140,7 +150,39 @@ async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) ->
         logger.error(msg)
         if not data:
             raise RuntimeError(msg)
-    return data or {}
+    return _require_object(data, label="data", variables=variables)
+
+
+def _require_object(value: Any, *, label: str, variables: dict) -> dict:
+    """`value` as a JSON object, `{}` when it simply isn't there, and a
+    `RuntimeError` when it is there but isn't one.
+
+    AniList is the only provider reading a container *nested inside* the
+    body, so `rest.get_json`'s `expect=` — which the other three lean on —
+    never covers it: GraphQL has no by-id URL and no 404 semantics, so
+    `anilist.py` shares none of that plumbing (see `rest.py`'s docstring),
+    and that asymmetry is exactly where issue #85's leak lived. Both
+    nested objects this module reads, `data` and the `Page` inside it,
+    come back through here, so no caller is left holding an unvalidated
+    container: `parsing.py`'s rule is that a guard's boundary is the
+    return, and a `dict` return is the boundary being honoured.
+
+    Absent and malformed stay two different answers, the same split
+    `require_int` draws: a null container key is an empty result the
+    pickers already render as "nothing found", while a number where an
+    object belongs is a provider we can't read at all — `RuntimeError`,
+    which is in `_SEARCH_SERVICE_ERRORS`, unlike the `AttributeError`
+    the unguarded `.get` used to raise."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        msg = (
+            f"AniList answered 200 with a {type(value).__name__} in {label!r} "
+            f"for variables {variables!r}, expected an object"
+        )
+        logger.error(msg)
+        raise RuntimeError(msg)
+    return value
 
 
 def _parse_result(raw: dict) -> AniListResult:
