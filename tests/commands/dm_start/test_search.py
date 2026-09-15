@@ -568,6 +568,10 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
 
     context.job_queue.run_once.assert_not_called()
     update.callback_query.edit_message_text.assert_awaited_once()
+    # The success path's bare acknowledgement moved below the stale-row
+    # lookup (#95) — pin the count, not just that it happened, so a
+    # regression back to a double-answer (or a dropped one) fails here.
+    update.callback_query.answer.assert_awaited_once()
 
 
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(

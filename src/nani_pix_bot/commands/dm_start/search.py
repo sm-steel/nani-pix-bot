@@ -218,6 +218,11 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         return
     user = query.from_user
     if user is None:
+        # Never acknowledged on this branch, unlike before the reorder
+        # below: Telegram marks `from_user` required on a CallbackQuery,
+        # so this is unreachable in practice — same shape as the
+        # equivalent guard in screenshot_gallery.py's handlers, none of
+        # which answer here either.
         return
 
     session_factory = context.bot_data["session_factory"]
