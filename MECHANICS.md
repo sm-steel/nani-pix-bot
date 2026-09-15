@@ -162,22 +162,42 @@ screenshot instead of asking for an upload outright:
    **Cross-provider resolution**: tapping any other provider silently
    searches it by the already-confirmed title and takes the **top
    result** — no extra confirmation tap — recording that provider's own
-   id on the game (`Game.screenshot_source` also starts tracking which
-   provider is in play at this point) without touching the
-   identification fields a real re-search would. If that search finds
-   nothing, the bot asks the starter to type a query for it themselves
-   instead (see "When a provider fails" below).
+   id on the game (`Game.screenshot_picker_provider` starts tracking
+   which provider the picker is *resolving*, so a typed correction knows
+   which service to search; `Game.screenshot_source` is untouched, since
+   no image has been chosen yet) without touching the identification
+   fields a real re-search would. If that search finds nothing, the bot
+   asks the starter to type a query for it themselves instead (see "When
+   a provider fails" below).
 3. **The gallery** — up to 5 numbered screenshots at a time (sent as one
    album; Telegram fetches them directly from the provider's URL, no
    download until one's actually picked), followed by a buttons message:
-   numbered picks, **"More screenshots"** (next batch, same provider),
-   **"Wrong anime? Search again"** (shown once a cross-provider
-   resolution is in play — re-opens that same search-and-pick step for
-   a correction), and **"Upload my own instead"**.
+   numbered picks, a paging row of **"◀️ Back"** and/or **"More ▶️"**
+   (either is absent at the respective end of the list, and the whole
+   row is dropped for a gallery that fits on one page — both encode an
+   absolute offset rather than a direction, and the provider's url list
+   is cached, so paging either way costs no extra API call),
+   **"Wrong anime? Search again"** (re-opens the search-and-pick step
+   for a correction, and its prompt carries the source menu so a
+   different provider or an upload stays one tap away), and
+   **"Upload my own instead"**.
+   The correction button is on every gallery except one: the **first
+   page of a same-provider gallery** reached straight from the source
+   menu, which is the one case where nothing is being resolved — the id
+   came from identification. Page 2 of that same gallery has it, as does
+   every cross-provider gallery and every gallery re-opened from the
+   preview's "Pick a different screenshot": paging is exactly what a
+   starter does when the auto-resolved title looks wrong, so dropping
+   the escape hatch there took it away at the moment it was wanted.
 4. Picking a numbered screenshot downloads its bytes, stores them on
    `Game.original_image` (`Game.screenshot_source` records which
-   provider it came from), and lands on the same confirmation preview
+   provider the bytes came from — the one place image provenance is
+   written — and the picker column is cleared, since there is nothing
+   left to resolve), and lands on the same confirmation preview
    described below — same as if the starter had uploaded it themselves.
+   A numbered button whose index no longer exists (the list shrank
+   between pages) changes nothing and says so in a notification,
+   leaving the gallery and its keyboard exactly as they were.
 
 **A DM photo is accepted at any point in this sub-flow**, not only after
 tapping "Upload my own instead" — someone staring at the source menu who
@@ -201,6 +221,23 @@ paths can leave a `SETUP` game with no buttons on screen. Before this,
 failure replies went out bare: a down provider produced a literal loop
 (type a query, get an error, repeat) whose only exits were `/stop` or the
 1-hour setup-abandon timer.
+
+#### Buttons that outlived their round
+
+Every screen above leaves messages in the DM that stay tappable forever,
+while the `SETUP` row behind them can end at any moment — confirmed,
+`/stop`ped, or deleted by the 1-hour setup-abandon timer. A button
+tapped after that **says so in an alert** ("that round isn't being set
+up anymore", plus how to start another) rather than doing nothing at
+all, which is what it used to do.
+
+`/newgame` sent while the starter's *own* setup is still open is the
+same mistake arriving from the other direction, and gets the same
+answer: rather than "it's not your turn" — which is false, they're
+mid-turn — the bot re-shows the step they're on. On the two steps that
+have no keyboard of their own (waiting for a new photo, waiting for an
+extra synonym) it says the setup is still open and that `/stop`
+abandons it, since the prompt alone would read as a fresh question.
 
 ### The confirmation preview
 
@@ -333,12 +370,17 @@ what's actually live — these get retuned):
 | `STAGE_4` | 192px | 3 |
 | `STAGE_5` | 512px (clearest pixelated stage) | 3 |
 
-No image bytes are stored on disk or in the database. The starter's
-original screenshot is kept only as a Telegram `file_id` on the `Game`
-row; every stage image is regenerated on demand — download the original
-via that `file_id`, run it through the Pillow pipeline, send it, discard
-the bytes — so a bot restart mid-game loses nothing (the `file_id` and
-`current_stage` are all that's needed to pick back up).
+No image bytes are stored on disk. The starter's original screenshot
+lives on the `Game` row itself, as raw bytes in a deferred column
+(`Game.original_image`) rather than as a Telegram `file_id` — nothing
+then depends on Telegram continuing to serve a given file for the life
+of a round, and an upload and an API-picked screenshot are handled
+identically ("obtain bytes once, store them"). Every stage image is
+regenerated on demand — load the original, run it through the Pillow
+pipeline, send it, discard the result — so a bot restart mid-game loses
+nothing (the stored bytes and `current_stage` are all that's needed to
+pick back up), and the bytes themselves are dropped once the reveal
+message is confirmed sent (see "Cleanup" below).
 
 **Each stage allows a different number of wrong `/guess` attempts
 before the game advances to the next one**, per its configured
@@ -503,11 +545,17 @@ There are **two** ways to say yes:
 
 - **"Yes, stop it"** — stops quietly.
 - **"Stop and reveal"** — stops *and* tells the group what the anime
-  was. Offered only for an `ACTIVE` round that still has its image
-  (`game_service.has_answer_to_reveal`): a `SETUP` game has never posted
-  anything to the topic, and may not even have a title staged yet, so
-  there's nothing anyone is waiting to find out. The confirmation for a
-  `SETUP` game is therefore still a plain Yes/No.
+  was. Offered only for an `ACTIVE` round — which is the whole of what
+  `game_service.has_answer_to_reveal` tests: a `SETUP` game has never
+  posted anything to the topic, and may not even have a title staged
+  yet, so there's nothing anyone is waiting to find out. The
+  confirmation for a `SETUP` game is therefore still a plain Yes/No.
+  An `ACTIVE` round always still has its image — the bytes are dropped
+  only once a round reaches a terminal outcome — so the button does not
+  re-check them, and reading them here would have pulled the whole blob
+  to decide whether to draw a button. The two paths that actually post a
+  reveal re-check the bytes where they use them, and fall back to the
+  plain notice if they are somehow gone.
 
 On either confirmation, the bot:
 1. Cancels whatever timer(s) were pending for that game — its 2-day

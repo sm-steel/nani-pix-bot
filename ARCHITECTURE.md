@@ -3,7 +3,8 @@
 ## Overview
 
 A Python Telegram bot running a single guessing game in one topic of one
-group chat. A player DMs the bot a screenshot and identifies its anime
+group chat. A player DMs the bot a screenshot — or sends `/newgame` and
+picks one from a provider's gallery instead — and identifies its anime
 (see `MECHANICS.md` for exactly how); the bot pixelates it hard and posts
 it into the group's game topic, then progressively reveals clearer
 versions as wrong `/guess` attempts accumulate, until someone's right,
@@ -215,6 +216,22 @@ src/nani_pix_bot/
     gamesenabled.py  # /setgamesenabled — DM-only, admin-gated toggle for
                    # whether a *new* game may be started at all
     onboarding.py # /start, /help
+    testpixels.py # /testpixels — TEMPORARY diagnostic, DELETE ME (both
+                   # modules say so in their own docstrings). Posts the
+                   # tmp/example*.* images under one or every candidate
+                   # obfuscation algorithm so they can be compared in
+                   # the chat they'll be played in. Deliberately
+                   # ungated (owner's decision — anyone who can message
+                   # the bot may run it), deliberately untranslated and
+                   # untested: it is a short-lived probe, not a feature,
+                   # and paying i18n/test cost for it would be paying
+                   # for something built to be deleted
+    testpixels_algos.py  # the candidate algorithms /testpixels renders,
+                   # kept out of services/ on purpose — services/ is the
+                   # production layer this repo holds to TDD, and this
+                   # is throwaway exploration importing the live
+                   # pixelate() unchanged as its baseline. Goes when
+                   # testpixels.py does
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
                    # (membership.py), the one inline keyboard genuinely
@@ -264,6 +281,15 @@ src/nani_pix_bot/
                    #                 parsed type, so each module's
                    #                 get_by_id keeps its own concrete
                    #                 return type (issue #68)
+                   #   parsing.py    the entry-level guards all four
+                   #                 share: skip a result whose shape
+                   #                 the provider's own _parse_* can't
+                   #                 index, and validate the fields it
+                   #                 hands back. Here rather than in
+                   #                 rest.py because anilist.py needs
+                   #                 them too and deliberately shares
+                   #                 none of the REST plumbing (issue
+                   #                 #83)
                    #   http_retry.py the 429/Retry-After retry loop
                    #                 shared by all four
                    #   cache.py      short-TTL, in-process, keyed-by-

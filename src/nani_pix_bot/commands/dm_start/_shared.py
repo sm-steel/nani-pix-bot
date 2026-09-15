@@ -5,7 +5,7 @@ from typing import assert_never, cast
 
 import httpx
 from loguru import logger
-from telegram import InlineKeyboardMarkup, InputMediaPhoto
+from telegram import CallbackQuery, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
@@ -94,25 +94,36 @@ def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: str) -> httpx
     return cast(httpx.AsyncClient, context.bot_data[key])
 
 
-def _log_stale_tap(data: str | None, user_id: int) -> None:
+async def _reject_stale_tap(query: CallbackQuery, user_id: int, lang: str) -> None:
     """The one thing every screen of the screenshot sub-flow has to say
     when a button is tapped and there is no SETUP game left to act on:
     the row was resolved (confirmed, stopped) or the setup-abandon timer
     deleted it an hour in, while the messages it left behind stayed
     tappable forever. It is a rejected action, so WARNING, per CLAUDE.md's
-    table.
+    table — and an alert on screen, so the starter tapping a dead
+    keyboard is told why nothing happens (issue #79).
 
-    The tap stays a no-op *on screen* only because there is no string to
-    say this in yet — every caller reads `lang` before the lookup that
-    lands here, so a `query.answer(text=...)` is perfectly reachable and
-    is what these sites want; it waits on a locale key this lane doesn't
-    own (issue #79). Nothing structural is in the way.
+    An **alert**, not a plain toast: the screen these sites answer for is
+    finished, so the message has to survive being read. The two things it
+    says are the two things that are true of every one of them — the
+    round is gone, and here is how to start another. Not
+    `dm_start.setup_abandoned`, the nearest existing string: that one is
+    worded as a group announcement and asserts the turn is open to
+    anyone, which is false when the row went away via /stop or because
+    the game actually started.
 
-    One helper rather than the same two lines at each of the six sites,
-    so the wording production greps for can't drift between them —
+    **The alert is the handler's only `query.answer` on this path.**
+    Telegram invalidates a callback query id the moment it is answered,
+    so a bare acknowledgement above the lookup would spend the answer
+    these sites need and leave the text with nowhere to go. Every caller
+    therefore acknowledges a *successful* tap below this branch instead
+    — see each handler for where its own single answer sits.
+
+    One helper rather than the same lines at each of the six sites, so
+    the wording production greps for can't drift between them —
     `opt(depth=1)` so loguru still stamps the *caller's* frame rather
     than this one. Without it every site logged the same
-    `_shared:_log_stale_tap:<the logger.warning below>` — one fixed
+    `_shared:_reject_stale_tap:<the logger.warning below>` — one fixed
     location, whatever line it currently sits on — and two of them (the
     pair inside screenshot_search_pick_callback_handler, which also
     share a callback prefix) became byte-identical, erasing the only
@@ -124,8 +135,9 @@ def _log_stale_tap(data: str | None, user_id: int) -> None:
         "Starter {} tapped {!r} with no SETUP game left — already resolved, or the "
         "setup-abandon timer deleted the row",
         user_id,
-        data,
+        query.data,
     )
+    await query.answer(i18n.t("dm_start.setup_gone", lang), show_alert=True)
 
 
 def _prefer_shikimori(lang: str) -> bool:
@@ -223,10 +235,20 @@ async def _resume_setup(message, game: Game, lang: str) -> None:
     nothing is rescheduled either.
 
     Genuinely starting over is still `/stop`, unchanged; this only stops
-    the bot from denying the setup exists. Saying so in the reply needs
-    a string the locale files don't have yet (issue #79 owns them), so
-    the screen has to carry the message on its own for now."""
+    the bot from denying the setup exists — and says so, on the two steps
+    where the screen alone cannot (issue #79, routed from #73)."""
     key, keyboard = _current_setup_screen(game, lang)
+    text = i18n.t(key, lang)
+    if keyboard is None:
+        # AWAITING_PHOTO_CHANGE and AWAITING_SYNONYM: the two steps whose
+        # route forward is the photo or text being asked for, so there is
+        # no keyboard to make this recognisable *as* a re-show. On its
+        # own the prompt reads as a fresh question and answers the
+        # /newgame with nothing, which is the same "the bot is ignoring
+        # me" this function exists to end — so the one thing the screen
+        # can't say (your setup is still open, and /stop abandons it)
+        # goes above it.
+        text = f"{i18n.t('dm_start.setup_already_open', lang)}\n\n{text}"
     logger.warning(
         "Starter {} asked for a new game while their own setup (game {}) is still at {} — "
         "re-showing that step instead of refusing them the turn",
@@ -234,7 +256,7 @@ async def _resume_setup(message, game: Game, lang: str) -> None:
         game.id,
         game.setup_step.value,
     )
-    await message.reply_text(i18n.t(key, lang), reply_markup=keyboard)
+    await message.reply_text(text, reply_markup=keyboard)
 
 
 async def _reply_service_down(send, lang: str, source: str) -> None:
