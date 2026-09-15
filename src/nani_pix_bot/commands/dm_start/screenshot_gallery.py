@@ -19,6 +19,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
     _reject_stale_tap,
+    _search_and_build_keyboard,
     _show_preview,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
@@ -171,21 +172,32 @@ async def _screenshot_search_step(
     client = _client_for_source(context, provider)
     pick_prefix = f"{SCREENSHOT_SEARCH_PICK_PREFIX}{provider}:"
     try:
-        # Dispatched inline (rather than through a provider->function
-        # dict, like _fetch_screenshots/_search_provider use) since each
-        # branch's *_results_keyboard builder needs its own specific
-        # result type — a dict of them collapses to a union ty can't
-        # narrow back down per call. Mirrors search.py's own
-        # _search_step for the same reason.
+        # Each branch's *_results_keyboard builder needs its own specific
+        # result type, which is exactly what _search_and_build_keyboard's
+        # TypeVar-generic body preserves — see search.py's own
+        # _search_step, which collapses onto the same helper for the
+        # same reason.
         if provider == Provider.SHIKIMORI:
-            results = await shikimori.search(client, message.text)
-            keyboard = shikimori_results_keyboard(results, lang, pick_prefix=pick_prefix)
+            results, keyboard = await _search_and_build_keyboard(
+                client,
+                message.text,
+                shikimori.search,
+                lambda rs: shikimori_results_keyboard(rs, lang, pick_prefix=pick_prefix),
+            )
         elif provider == Provider.JIKAN:
-            results = await jikan.search(client, message.text)
-            keyboard = jikan_results_keyboard(results, lang, pick_prefix=pick_prefix)
+            results, keyboard = await _search_and_build_keyboard(
+                client,
+                message.text,
+                jikan.search,
+                lambda rs: jikan_results_keyboard(rs, lang, pick_prefix=pick_prefix),
+            )
         else:
-            results = await tmdb.search(client, message.text)
-            keyboard = tmdb_results_keyboard(results, lang, pick_prefix=pick_prefix)
+            results, keyboard = await _search_and_build_keyboard(
+                client,
+                message.text,
+                tmdb.search,
+                lambda rs: tmdb_results_keyboard(rs, lang, pick_prefix=pick_prefix),
+            )
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} screenshot cross-search failed for query {!r}", provider, message.text)
         await reply_with_source_menu(

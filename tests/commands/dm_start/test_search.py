@@ -21,7 +21,9 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tmdb import TMDBResult
 
 _FRIEREN = AniListResult(
     anilist_id=99,
@@ -38,6 +40,22 @@ _FRIEREN_SHIKIMORI = ShikimoriResult(
     title_english="Frieren: Beyond Journey's End",
     title_russian="Провожающая в последний путь Фрирен",
     synonyms=["Frieren at the Funeral"],
+)
+
+_FRIEREN_JIKAN = JikanResult(
+    jikan_id=52991,
+    title_romaji="Sousou no Frieren",
+    title_english="Frieren: Beyond Journey's End",
+    title_native="葬送のフリーレン",
+    synonyms=["Frieren at the Funeral"],
+)
+
+_FRIEREN_TMDB = TMDBResult(
+    tmdb_id=209867,
+    title_romaji=None,
+    title_english="Frieren: Beyond Journey's End",
+    title_native=None,
+    synonyms=[],
 )
 
 
@@ -265,6 +283,40 @@ async def test_search_text_handler_uses_shikimori_when_that_is_the_chosen_source
     status_message = update.message.reply_text.return_value
     _, kwargs = status_message.edit_text.await_args
     assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "shikimori_pick:52991"
+
+
+async def test_search_text_handler_uses_jikan_when_that_is_the_chosen_source(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _create_setup_game(session_factory, starter_id=1, source=Provider.JIKAN)
+    search_mock = AsyncMock(return_value=[_FRIEREN_JIKAN])
+    monkeypatch.setattr(search.jikan, "search", search_mock)
+    update = _make_text_update(user_id=1)
+    context = _make_context(session_factory, search_client=MagicMock())
+
+    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    search_mock.assert_awaited_once_with(context.bot_data["search_client"], "frieren")
+    status_message = update.message.reply_text.return_value
+    _, kwargs = status_message.edit_text.await_args
+    assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "jikan_pick:52991"
+
+
+async def test_search_text_handler_uses_tmdb_when_that_is_the_chosen_source(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _create_setup_game(session_factory, starter_id=1, source=Provider.TMDB)
+    search_mock = AsyncMock(return_value=[_FRIEREN_TMDB])
+    monkeypatch.setattr(search.tmdb, "search", search_mock)
+    update = _make_text_update(user_id=1)
+    context = _make_context(session_factory, search_client=MagicMock(), tmdb_client=MagicMock())
+
+    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    search_mock.assert_awaited_once_with(context.bot_data["tmdb_client"], "frieren")
+    status_message = update.message.reply_text.return_value
+    _, kwargs = status_message.edit_text.await_args
+    assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "tmdb_pick:209867"
 
 
 async def test_search_text_handler_reshows_method_keyboard_when_the_service_errors(
@@ -496,6 +548,56 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(
         assert fetched.setup_step == SetupStep.CONFIRMING
         assert fetched.source == "shikimori"
         assert fetched.title_russian == "Провожающая в последний путь Фрирен"
+
+
+async def test_pick_callback_handler_shows_a_preview_on_a_valid_jikan_pick(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    get_by_id_mock = AsyncMock(return_value=_FRIEREN_JIKAN)
+    monkeypatch.setattr(search.jikan, "get_by_id", get_by_id_mock)
+    _create_setup_game(session_factory, starter_id=1, source=Provider.JIKAN)
+
+    update = _make_callback_update(data="jikan_pick:52991", user_id=1)
+    context = _make_callback_context(session_factory)
+
+    await search.pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    get_by_id_mock.assert_awaited_once_with(context.bot_data["search_client"], 52991)
+    context.bot.send_media_group.assert_awaited_once()
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.status == GameStatus.SETUP
+        assert fetched.setup_step == SetupStep.CONFIRMING
+        assert fetched.source == "jikan"
+
+
+async def test_pick_callback_handler_shows_a_preview_on_a_valid_tmdb_pick(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    get_by_id_mock = AsyncMock(return_value=_FRIEREN_TMDB)
+    monkeypatch.setattr(search.tmdb, "get_by_id", get_by_id_mock)
+    _create_setup_game(session_factory, starter_id=1, source=Provider.TMDB)
+
+    update = _make_callback_update(data="tmdb_pick:209867", user_id=1)
+    context = _make_callback_context(session_factory, tmdb_client=MagicMock())
+
+    await search.pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    get_by_id_mock.assert_awaited_once_with(context.bot_data["tmdb_client"], 209867)
+    context.bot.send_media_group.assert_awaited_once()
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.status == GameStatus.SETUP
+        assert fetched.setup_step == SetupStep.CONFIRMING
+        assert fetched.source == "tmdb"
 
 
 async def test_pick_callback_handler_reshows_method_keyboard_when_get_by_id_errors(

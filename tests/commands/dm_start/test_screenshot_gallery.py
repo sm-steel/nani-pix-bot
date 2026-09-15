@@ -18,7 +18,9 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
-from nani_pix_bot.services.search import shikimori, tmdb
+from nani_pix_bot.services.search import jikan, shikimori, tmdb
+from nani_pix_bot.services.search.jikan import JikanResult
+from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 _FRIEREN_TMDB = TMDBResult(
@@ -27,6 +29,22 @@ _FRIEREN_TMDB = TMDBResult(
     title_english="Frieren: Beyond Journey's End",
     title_native=None,
     synonyms=[],
+)
+
+_FRIEREN_SHIKIMORI = ShikimoriResult(
+    shikimori_id=52991,
+    title_romaji="Sousou no Frieren",
+    title_english="Frieren: Beyond Journey's End",
+    title_russian="Провожающая в последний путь Фрирен",
+    synonyms=["Frieren at the Funeral"],
+)
+
+_FRIEREN_JIKAN = JikanResult(
+    jikan_id=52991,
+    title_romaji="Sousou no Frieren",
+    title_english="Frieren: Beyond Journey's End",
+    title_native="葬送のフリーレン",
+    synonyms=["Frieren at the Funeral"],
 )
 
 
@@ -158,6 +176,18 @@ def _source_callbacks(markup) -> list[str]:
 def _tmdb_menu() -> SourceMenu:
     return SourceMenu(
         providers=[Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB], provider=Provider.TMDB
+    )
+
+
+def _shikimori_menu() -> SourceMenu:
+    return SourceMenu(
+        providers=[Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB], provider=Provider.SHIKIMORI
+    )
+
+
+def _jikan_menu() -> SourceMenu:
+    return SourceMenu(
+        providers=[Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB], provider=Provider.JIKAN
     )
 
 
@@ -558,6 +588,48 @@ async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix
     assert "screenshot_search_again:tmdb" in callbacks
 
 
+async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix_shikimori(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(shikimori, "search", AsyncMock(return_value=[_FRIEREN_SHIKIMORI]))
+    context = _make_context(session_factory)
+    status_message = MagicMock()
+    status_message.edit_text = AsyncMock()
+    message = MagicMock()
+    message.text = "Frieren"
+    message.reply_text = AsyncMock(return_value=status_message)
+
+    await screenshot_gallery._screenshot_search_step(message, context, "en", _shikimori_menu())
+
+    status_message.edit_text.assert_awaited_once()
+    assert status_message.edit_text.await_args is not None
+    _, kwargs = status_message.edit_text.await_args
+    callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert "screenshot_search_pick:shikimori:52991" in callbacks
+    assert "screenshot_search_again:shikimori" in callbacks
+
+
+async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix_jikan(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(jikan, "search", AsyncMock(return_value=[_FRIEREN_JIKAN]))
+    context = _make_context(session_factory)
+    status_message = MagicMock()
+    status_message.edit_text = AsyncMock()
+    message = MagicMock()
+    message.text = "Frieren"
+    message.reply_text = AsyncMock(return_value=status_message)
+
+    await screenshot_gallery._screenshot_search_step(message, context, "en", _jikan_menu())
+
+    status_message.edit_text.assert_awaited_once()
+    assert status_message.edit_text.await_args is not None
+    _, kwargs = status_message.edit_text.await_args
+    callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert "screenshot_search_pick:jikan:52991" in callbacks
+    assert "screenshot_search_again:jikan" in callbacks
+
+
 async def test_screenshot_search_pick_callback_handler_resolves_and_shows_gallery(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -640,6 +712,58 @@ async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_i
     assert any(label.startswith("⚠️") and "TMDB" in label for label in labels)
 
 
+async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_is_down_shikimori(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(shikimori, "search", AsyncMock(side_effect=RuntimeError("504")))
+    context = _make_context(session_factory)
+    status_message = MagicMock()
+    status_message.edit_text = AsyncMock()
+    message = MagicMock()
+    message.text = "Shokugeki no Soma"
+    message.reply_text = AsyncMock(return_value=status_message)
+
+    await screenshot_gallery._screenshot_search_step(message, context, "en", _shikimori_menu())
+
+    assert status_message.edit_text.await_args is not None
+    args, kwargs = status_message.edit_text.await_args
+    assert "Shikimori" in args[0]
+    assert _source_callbacks(kwargs["reply_markup"]) == [
+        "screenshot_source:shikimori",
+        "screenshot_source:jikan",
+        "screenshot_source:tmdb",
+        "screenshot:upload",
+    ]
+    labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert any(label.startswith("⚠️") and "Shikimori" in label for label in labels)
+
+
+async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_is_down_jikan(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(jikan, "search", AsyncMock(side_effect=RuntimeError("504")))
+    context = _make_context(session_factory)
+    status_message = MagicMock()
+    status_message.edit_text = AsyncMock()
+    message = MagicMock()
+    message.text = "Shokugeki no Soma"
+    message.reply_text = AsyncMock(return_value=status_message)
+
+    await screenshot_gallery._screenshot_search_step(message, context, "en", _jikan_menu())
+
+    assert status_message.edit_text.await_args is not None
+    args, kwargs = status_message.edit_text.await_args
+    assert "Jikan" in args[0]
+    assert _source_callbacks(kwargs["reply_markup"]) == [
+        "screenshot_source:shikimori",
+        "screenshot_source:jikan",
+        "screenshot_source:tmdb",
+        "screenshot:upload",
+    ]
+    labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert any(label.startswith("⚠️") and "Jikan" in label for label in labels)
+
+
 async def test_screenshot_search_step_offers_the_source_menu_when_nothing_matches(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -654,6 +778,42 @@ async def test_screenshot_search_step_offers_the_source_menu_when_nothing_matche
     message.reply_text = AsyncMock(return_value=status_message)
 
     await screenshot_gallery._screenshot_search_step(message, context, "en", _tmdb_menu())
+
+    assert status_message.edit_text.await_args is not None
+    _, kwargs = status_message.edit_text.await_args
+    assert kwargs["reply_markup"] is not None
+
+
+async def test_screenshot_search_step_offers_the_source_menu_when_nothing_matches_shikimori(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(shikimori, "search", AsyncMock(return_value=[]))
+    context = _make_context(session_factory)
+    status_message = MagicMock()
+    status_message.edit_text = AsyncMock()
+    message = MagicMock()
+    message.text = "zzzz"
+    message.reply_text = AsyncMock(return_value=status_message)
+
+    await screenshot_gallery._screenshot_search_step(message, context, "en", _shikimori_menu())
+
+    assert status_message.edit_text.await_args is not None
+    _, kwargs = status_message.edit_text.await_args
+    assert kwargs["reply_markup"] is not None
+
+
+async def test_screenshot_search_step_offers_the_source_menu_when_nothing_matches_jikan(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(jikan, "search", AsyncMock(return_value=[]))
+    context = _make_context(session_factory)
+    status_message = MagicMock()
+    status_message.edit_text = AsyncMock()
+    message = MagicMock()
+    message.text = "zzzz"
+    message.reply_text = AsyncMock(return_value=status_message)
+
+    await screenshot_gallery._screenshot_search_step(message, context, "en", _jikan_menu())
 
     assert status_message.edit_text.await_args is not None
     _, kwargs = status_message.edit_text.await_args
