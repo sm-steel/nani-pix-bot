@@ -1,6 +1,7 @@
 import pytest
 
 from nani_pix_bot.commands.dm_start.keyboards import (
+    _PICK_PREFIX_SOURCES,
     ANILIST_METHOD_CALLBACK_DATA,
     JIKAN_METHOD_CALLBACK_DATA,
     MANUAL_METHOD_CALLBACK_DATA,
@@ -137,6 +138,25 @@ def test_pick_callback_data_round_trips_the_anilist_id() -> None:
 
     assert isinstance(data, str)
     assert parse_pick_callback_data(data) == ("anilist", 99)
+
+
+def test_every_provider_has_a_pick_prefix_in_the_expected_wire_format() -> None:
+    """Both halves of the pairing app.py's routing pattern depends on.
+
+    app.py builds that pattern by interpolating every Provider member
+    into "<provider>_pick:" rather than hand-listing four literals, and
+    `_PICK_PREFIX_SOURCES` is what turns a matched prefix back into the
+    member. Nothing else connects them: a prefix constant here renamed
+    (or a fifth member added to only one side) leaves both files
+    internally consistent and the buttons silently unroutable — which is
+    the exact bug that shipped when jikan/tmdb were added.
+
+    test_app.py can't catch that on its own any more, because since #97
+    both sides of its assertion derive from Provider. So the pairing is
+    pinned here instead, on the values *and* on the key format app.py
+    reconstructs independently."""
+    assert set(_PICK_PREFIX_SOURCES.values()) == set(Provider)
+    assert set(_PICK_PREFIX_SOURCES) == {f"{provider}_pick:" for provider in Provider}
 
 
 def test_parse_pick_callback_data_returns_none_for_retry() -> None:

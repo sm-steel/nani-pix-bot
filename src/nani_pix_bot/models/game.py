@@ -56,7 +56,9 @@ class Game(Base):
     # these three deliberately must not. Guarded by
     # tests/models/test_game.py's
     # test_provider_columns_store_the_value_not_the_member_name.
-    source: Mapped[Provider | Literal["manual"]] = mapped_column(String(16), default="anilist")
+    source: Mapped[Provider | Literal["manual"]] = mapped_column(
+        String(16), default=Provider.ANILIST
+    )
     # Image provenance, and nothing else: which provider's *_id column
     # above is currently backing original_image, or None when there is
     # no API-sourced image — a genuine

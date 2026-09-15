@@ -142,10 +142,13 @@ def test_provider_columns_store_the_value_not_the_member_name(session: Session) 
 
 
 def test_game_source_defaults_to_the_anilist_value(session: Session) -> None:
-    # The column default is the bare literal the migration wrote, so it
-    # has to keep meaning `Provider.ANILIST` — the same name-vs-value
-    # trap as the round trip above, reached without anyone passing a
-    # `Provider` at all.
+    # The column default is `Provider.ANILIST`, but the migration wrote
+    # the bare string "anilist" as this column's server_default — so the
+    # member has to still land as its lowercase value, the same
+    # name-vs-value trap as the round trip above, reached without any
+    # caller passing a `Provider` at all. Asserted on the raw column for
+    # the same reason: `fetched.source == Provider.ANILIST` alone would
+    # hold even if the member name had been stored.
     starter = _make_starter(session)
     game = Game(starter_id=starter.telegram_user_id)
     session.add(game)

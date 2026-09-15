@@ -160,10 +160,20 @@ def _stored_provider(stored: str) -> Provider:
     `AttributeError: 'str' object has no attribute 'display_name'` from
     three failure screens, i.e. only when a provider was already down.
 
-    So conversion happens once, here, at each of the three sites that
+    So conversion happens once, here, at each of the four sites that
     read one of those columns into a `Provider`-typed slot — rather than
     defensively at every `.display_name` — and `ty` is right about
-    everything downstream of it."""
+    everything downstream of it. Those four: `search.py`'s
+    `search_text_handler` (twice — the picker column and `source`),
+    `screenshots.py`'s `resume_screenshot_gallery`, and
+    `_screenshot_capable_providers` just below.
+
+    That last one is the load-bearing one, and the reason "only failure
+    screens are affected" understates this. It puts its result in a
+    `list[Provider]` that the source menu is drawn from, so without the
+    conversion a bare `str` reaches `_source_label`'s `.display_name` on
+    the ordinary screenshot-source screen — the happy path, not a
+    failure path."""
     return Provider(stored)
 
 
