@@ -529,8 +529,8 @@ async def test_gallery_fallback_notifies_the_starter_if_the_row_vanishes_before_
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The second of the review's two other vanished-row sites:
-    screenshot_gallery_callback_handler's own outer Fallback branch,
-    reached whenever _dispatch_gallery_action returns a Fallback — here,
+    screenshot_gallery_callback_handler's own outer ScreenshotFailure branch,
+    reached whenever _dispatch_gallery_action returns a ScreenshotFailure — here,
     the paging fetch itself failing. Proven the same way as the two
     tests above: delete the row from a separate session inside the
     failing fetch's mock, so the handler's later re-read genuinely finds

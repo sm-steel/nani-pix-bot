@@ -36,8 +36,8 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 )
 from nani_pix_bot.commands.dm_start.screenshots import (
     GALLERY_PAGE_SIZE,
-    Fallback,
     GalleryTarget,
+    ScreenshotFailure,
     SourceMenu,
     _fetch_screenshots_or_fallback,
     _get_provider_by_id,
@@ -59,7 +59,7 @@ from nani_pix_bot.services.search.tmdb import TMDBResult
 
 
 @dataclass(frozen=True)
-class Tap:
+class TapReply:
     """How to talk to the starter about the gallery button they just
     tapped: the language to say it in, and the one `answer` the query
     gets.
@@ -84,7 +84,7 @@ class _FreshRead:
     """How to re-read the tapped game's row fresh in a brand-new session
     once whatever network work needed doing before a write is done, and
     how to tell the starter directly if that re-read comes back empty —
-    bundled for the same reason `Tap` above is: all four travel together
+    bundled for the same reason `TapReply` above is: all four travel together
     through every post-network write site issue #82's restructuring
     introduced below, and threading them as loose parameters put several
     of those functions, and `_fresh_game_or_warn`/`_notify_setup_gone`
@@ -358,7 +358,7 @@ async def screenshot_search_pick_callback_handler(
         # detached object; only a *write* would need a fresh row.
 
     outcome = await _show_search_pick_gallery(context, game, provider, external_id, lang)
-    if isinstance(outcome, Fallback):
+    if isinstance(outcome, ScreenshotFailure):
         await _reply_search_pick_fallback(
             query, _FreshRead(session_factory, user.id, context, lang), game, outcome
         )
@@ -366,12 +366,14 @@ async def screenshot_search_pick_callback_handler(
         await query.edit_message_text(i18n.t(outcome, lang))
 
 
-async def _reply_search_pick_fallback(query, fresh: _FreshRead, game, fallback: Fallback) -> None:
+async def _reply_search_pick_fallback(
+    query, fresh: _FreshRead, game, fallback: ScreenshotFailure
+) -> None:
     """Shows `fallback` with the source menu — split out of
     `screenshot_search_pick_callback_handler` to keep that handler's own
     return count under qlty's threshold, and because it needs its own
     fresh row: that handler's write session already closed by the time a
-    Fallback can reach here (issue #82), so `reply_fallback`'s writes
+    ScreenshotFailure can reach here (issue #82), so `reply_fallback`'s writes
     (setup_step, screenshot_picker_provider) need a session of their
     own, not the caller's now-detached snapshot. `game` here is that
     snapshot — read-only, for `starter_id`/`id` only (see
@@ -396,14 +398,14 @@ async def _reply_search_pick_fallback(query, fresh: _FreshRead, game, fallback: 
 
 async def _show_search_pick_gallery(
     context: ContextTypes.DEFAULT_TYPE, game, provider: Provider, external_id: int, lang: str
-) -> str | Fallback:
+) -> str | ScreenshotFailure:
     """Lists the picked title's screenshots and puts its first gallery
     page up — `cross_provider=True` because arriving here *is* the
     cross-provider correction, so the page keeps offering "Wrong anime?
     Search again" for another go. Returns the i18n key for the caller's
-    own message edit, or the Fallback that fetching/sending produced."""
+    own message edit, or the ScreenshotFailure that fetching/sending produced."""
     fetched = await _fetch_screenshots_or_fallback(context, game, provider, external_id)
-    if isinstance(fetched, Fallback):
+    if isinstance(fetched, ScreenshotFailure):
         return fetched
 
     target = GalleryTarget(
@@ -495,9 +497,9 @@ async def screenshot_gallery_callback_handler(
 
     fresh = _FreshRead(session_factory, user.id, context, lang)
     outcome = await _dispatch_gallery_action(
-        context, fresh, game, query.data, Tap(lang, query.answer)
+        context, fresh, game, query.data, TapReply(lang, query.answer)
     )
-    if isinstance(outcome, Fallback):
+    if isinstance(outcome, ScreenshotFailure):
         # A fresh short session of its own: `reply_fallback` writes
         # (setup_step, screenshot_picker_provider), so it needs a live
         # row, not the snapshot above — see the docstring. The
@@ -521,8 +523,8 @@ async def screenshot_gallery_callback_handler(
 
 
 async def _dispatch_gallery_action(
-    context: ContextTypes.DEFAULT_TYPE, fresh: _FreshRead, game, data: str, tap: Tap
-) -> str | Fallback | None:
+    context: ContextTypes.DEFAULT_TYPE, fresh: _FreshRead, game, data: str, tap: TapReply
+) -> str | ScreenshotFailure | None:
     """Runs the gallery action `data` encodes (a "More screenshots" page
     or a numbered pick) and returns the rendered text for the
     resulting message, or None for a no-op — split out of
@@ -535,7 +537,7 @@ async def _dispatch_gallery_action(
     same read-only snapshot.
 
     Every branch answers `tap` exactly once, at its own decision
-    point — see `Tap`."""
+    point — see `TapReply`."""
     more = parse_screenshot_more_callback_data(data)
     if more is not None:
         return await _handle_more_screenshots(context, fresh, game, more, tap)
@@ -560,8 +562,8 @@ async def _handle_more_screenshots(
     fresh: _FreshRead,
     game,
     more: tuple[Provider, int],
-    tap: Tap,
-) -> str | Fallback | None:
+    tap: TapReply,
+) -> str | ScreenshotFailure | None:
     """Renders the gallery page at the tapped offset. Serves the back
     button as well as the forward one — the callback has always encoded
     an absolute offset rather than a direction — so the confirmation
@@ -595,7 +597,7 @@ async def _handle_more_screenshots(
     await tap.answer()
     provider_id = _provider_id(game, provider)
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
-    if isinstance(result, Fallback):
+    if isinstance(result, ScreenshotFailure):
         return result
 
     shown = len(result[offset : offset + GALLERY_PAGE_SIZE])
@@ -616,7 +618,7 @@ async def _handle_more_screenshots(
             offset,
             len(result),
         )
-        return Fallback("dm_start.no_screenshots_available", provider)
+        return ScreenshotFailure("dm_start.no_screenshots_available", provider)
 
     # The fetch above is done, so this is where the write happens — in a
     # fresh, short session of its own rather than on the pre-fetch
@@ -672,8 +674,8 @@ async def _handle_screenshot_pick(
     fresh: _FreshRead,
     game,
     picked: tuple[Provider, int],
-    tap: Tap,
-) -> str | Fallback | None:
+    tap: TapReply,
+) -> str | ScreenshotFailure | None:
     """Downloads the picked screenshot's bytes and shows the
     confirmation preview. Returns the i18n key for the caller's own
     follow-up message edit, or None for a stale-button no-op (the
@@ -682,7 +684,7 @@ async def _handle_screenshot_pick(
     _fetch_screenshots_or_fallback already turns into its own fallback
     key and setup_step transition).
 
-    This is the branch `Tap.answer` is threaded down for: the
+    This is the branch `TapReply.answer` is threaded down for: the
     stale-index verdict is known right after the (normally cached) url
     listing and before the download, so the tap gets answered — with
     text, in that one case — without the starter waiting out a download
@@ -690,7 +692,7 @@ async def _handle_screenshot_pick(
     provider, index = picked
     provider_id = _provider_id(game, provider)
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
-    if isinstance(result, Fallback):
+    if isinstance(result, ScreenshotFailure):
         await tap.answer()
         return result
     urls = result
@@ -738,7 +740,7 @@ async def _handle_screenshot_pick(
         logger.exception(
             "Game {}: downloading {} screenshot #{} failed", game.id, provider, index + 1
         )
-        return Fallback("dm_start.screenshot_service_down", provider)
+        return ScreenshotFailure("dm_start.screenshot_service_down", provider)
 
     # The download is done, so this is where the write happens — on a
     # freshly re-read row rather than the pre-download snapshot `game`
