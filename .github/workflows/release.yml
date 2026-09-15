@@ -37,10 +37,13 @@ jobs:
           # and GITHUB_TOKEN can't push a branch update around that. Tags
           # live in a different ref namespace (refs/tags/*, not
           # refs/heads/master) so push+tag alone never touches the
-          # protected branch. pyproject.toml still gets the version
-          # stamped on disk for the build step below to read; that change
-          # is just never committed. See python-semantic-release's own
-          # "avoid committing during release" guidance.
+          # protected branch. pyproject.toml is intentionally NOT stamped
+          # with the release version (no version_toml config) -- nothing
+          # in this repo reads its own version from pyproject.toml at
+          # runtime, and stamping it would desync uv.lock's own recorded
+          # project version, breaking the Dockerfile's `uv sync --frozen`
+          # in the build step below. The version lives only in the git
+          # tag and the image tag.
           commit: false
           push: true
           tag: true
