@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 
 import httpx
 import pytest
@@ -281,7 +282,7 @@ async def test_screenshots_is_cached_for_repeated_calls() -> None:
     assert calls["n"] == 2  # 1 show-detail + 1 episode call, not doubled
 
 
-def _show_handler(seasons: list[dict], still_paths: dict[tuple[int, int], str | None]):
+def _show_handler(seasons: list[Any], still_paths: dict[tuple[int, int], str | None]):
     """Routes /tv/{id} and /tv/{id}/season/{s}/episode/{e} like
     `_season_episode_handler` above, but takes the show's raw `seasons`
     array verbatim (so a test can hand TMDB a null field) and keys its
@@ -495,3 +496,60 @@ async def test_screenshots_stops_issuing_requests_once_an_episode_fails() -> Non
     # is what `gather` produced.
     assert len(issued) <= tmdb.SCREENSHOT_FETCH_CONCURRENCY + 1
     assert 12 not in issued
+
+
+async def test_search_skips_an_entry_with_no_id() -> None:
+    """A third party controls these keys: one entry missing the one field
+    the parser indexes must not cost the starter the other results
+    (issue #83)."""
+    entries = [{"name": "No id here"}, {"id": 209867, "name": "Frieren"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": entries})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await tmdb.search(client, "frieren")
+
+    assert [result.tmdb_id for result in results] == [209867]
+
+
+async def test_search_skips_scalar_entries() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": [1, 2]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await tmdb.search(client, "frieren")
+
+    assert results == []
+
+
+async def test_get_by_id_returns_none_when_the_entry_has_no_id() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"name": "Frieren"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await tmdb.get_by_id(client, 209867)
+
+    assert result is None
+
+
+async def test_screenshots_skips_a_scalar_season_entry() -> None:
+    """season.get("season_number") on an int is an AttributeError — the
+    season list is third-party-controlled the same way a result list is."""
+    handler = _show_handler([1, {"season_number": 1, "episode_count": 1}], {(1, 1): "/still1.jpg"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await tmdb.screenshots(client, 209867)
+
+    assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/still1.jpg"]
+
+
+async def test_screenshots_skips_a_season_with_no_season_number() -> None:
+    handler = _show_handler(
+        [{"episode_count": 3}, {"season_number": 1, "episode_count": 1}], {(1, 1): "/still1.jpg"}
+    )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await tmdb.screenshots(client, 209867)
+
+    assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/still1.jpg"]

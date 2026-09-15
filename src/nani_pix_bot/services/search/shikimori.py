@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import httpx
 from loguru import logger
 
-from nani_pix_bot.services.search import cache, rest
+from nani_pix_bot.services.search import cache, parsing, rest
 
 # Shikimori's older shikimori.one domain now permanently 301-redirects
 # here — and shikimori.one is itself unreachable directly from moscow,
@@ -61,7 +61,7 @@ async def search(
     repeating the same query doesn't re-hit the API each time."""
     params = {"search": query, "limit": limit}
     entries = await rest.get_json(_API, client, SHIKIMORI_BASE_URL, params, expect=list)
-    results = [_parse_search_result(entry) for entry in entries]
+    results = parsing.parse_entries(_API.name, entries, _parse_search_result)
     logger.debug("Shikimori search {!r} returned {} result(s)", query, len(results))
     return results
 
@@ -91,13 +91,21 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
     entries = await rest.get_json(
         _API, client, f"{SHIKIMORI_BASE_URL}/{shikimori_id}/screenshots", {}, expect=list
     )
-    urls = [
-        f"{SHIKIMORI_HOST}{path}"
-        for entry in entries[:SCREENSHOT_FETCH_LIMIT]
-        if (path := entry.get("original"))
-    ]
+    # Through `parse_entries` rather than the inline comprehension this
+    # used to be: `entry.get("original")` on a scalar is an
+    # AttributeError, and this endpoint's entries are third-party data
+    # exactly like the search endpoint's (issue #83).
+    urls = parsing.parse_entries(_API.name, entries, _parse_screenshot_url)[:SCREENSHOT_FETCH_LIMIT]
     logger.debug("Shikimori id {} has {} screenshot(s) available", shikimori_id, len(entries))
     return urls
+
+
+def _parse_screenshot_url(raw: dict) -> str | None:
+    """None for a screenshot with no usable path — a decision, not a
+    malformation, so `parse_entries` drops it without a warning (the
+    same way jikan.py's `_picture_url` does)."""
+    path = raw.get("original")
+    return f"{SHIKIMORI_HOST}{path}" if path else None
 
 
 def _parse_search_result(raw: dict) -> ShikimoriResult:

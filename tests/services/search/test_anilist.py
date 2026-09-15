@@ -1,3 +1,5 @@
+from typing import Any
+
 import httpx
 import pytest
 
@@ -11,7 +13,7 @@ def _clear_cache():
     cache.clear()
 
 
-def _media_payload(entries: list[dict]) -> dict:
+def _media_payload(entries: list[Any]) -> dict:
     return {"data": {"Page": {"media": entries}}}
 
 
@@ -282,3 +284,75 @@ async def test_search_sends_a_referer_header() -> None:
         await anilist.search(client, "frieren")
 
     assert captured["referer"] == "https://anilist.co/"
+
+
+async def test_search_skips_an_entry_with_no_id() -> None:
+    """A third party controls these keys: one entry missing a field the
+    parser indexes must not cost the starter the other results
+    (issue #83)."""
+    entries = [{"title": {"romaji": "No id here"}}, {"id": 154587, "title": {"romaji": "Frieren"}}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_media_payload(entries))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await anilist.search(client, "frieren")
+
+    assert [result.anilist_id for result in results] == [154587]
+
+
+async def test_search_skips_an_entry_with_no_title_object() -> None:
+    entries = [{"id": 1}, {"id": 154587, "title": {"romaji": "Frieren"}}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_media_payload(entries))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await anilist.search(client, "frieren")
+
+    assert [result.anilist_id for result in results] == [154587]
+
+
+async def test_search_skips_an_entry_whose_title_is_a_scalar() -> None:
+    """title.get("romaji") on a string is an AttributeError."""
+    entries = [{"id": 1, "title": "Frieren"}, {"id": 154587, "title": {"romaji": "Frieren"}}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_media_payload(entries))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await anilist.search(client, "frieren")
+
+    assert [result.anilist_id for result in results] == [154587]
+
+
+async def test_search_skips_scalar_entries() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_media_payload([1, 2]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await anilist.search(client, "frieren")
+
+    assert results == []
+
+
+async def test_search_raises_when_the_media_container_is_not_an_array() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"Page": {"media": 5}}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="expected an array"):
+            await anilist.search(client, "frieren")
+
+
+async def test_get_by_id_returns_none_when_the_media_entry_has_no_title() -> None:
+    """Nothing usable came back for this pick, which the picker already
+    reports the same way it reports a removed entry."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"Media": {"id": 154587}}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await anilist.get_by_id(client, 154587)
+
+    assert result is None

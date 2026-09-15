@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import httpx
 from loguru import logger
 
-from nani_pix_bot.services.search import cache, rest
+from nani_pix_bot.services.search import cache, parsing, rest
 
 JIKAN_BASE_URL = "https://api.jikan.moe/v4/anime"
 SEARCH_RESULT_LIMIT = 5
@@ -53,7 +53,7 @@ async def search(
     via its `include_adult` default."""
     params = {"q": query, "limit": limit, "sfw": "true"}
     data = await rest.get_json(_API, client, JIKAN_BASE_URL, params)
-    results = [_parse_result(raw) for raw in data.get("data") or []]
+    results = parsing.parse_entries(_API.name, data.get("data") or [], _parse_result)
     logger.debug("Jikan search {!r} returned {} result(s)", query, len(results))
     return results
 
@@ -82,8 +82,7 @@ async def screenshots(client: httpx.AsyncClient, jikan_id: int) -> list[str]:
     the API every time."""
     data = await rest.get_json(_API, client, f"{JIKAN_BASE_URL}/{jikan_id}/pictures", {})
     pictures = data.get("data") or []
-    entries = pictures[:SCREENSHOT_FETCH_LIMIT]
-    urls = [url for entry in entries if (url := _picture_url(entry)) is not None]
+    urls = parsing.parse_entries(_API.name, pictures, _picture_url)[:SCREENSHOT_FETCH_LIMIT]
     logger.debug("Jikan id {} has {} picture(s) available", jikan_id, len(pictures))
     return urls
 

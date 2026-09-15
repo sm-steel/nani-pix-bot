@@ -275,3 +275,62 @@ async def test_screenshots_is_cached_for_repeated_calls() -> None:
         await jikan.screenshots(client, 52991)
 
     assert calls["n"] == 1
+
+
+async def test_search_skips_an_entry_with_no_mal_id() -> None:
+    """A third party controls these keys: one entry missing the one field
+    the parser indexes must not cost the starter the other results
+    (issue #83)."""
+    entries = [{"title": "No id here"}, {"mal_id": 52991, "title": "Sousou no Frieren"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entries})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await jikan.search(client, "frieren")
+
+    assert [result.jikan_id for result in results] == [52991]
+
+
+async def test_search_skips_scalar_entries() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [1, 2]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await jikan.search(client, "frieren")
+
+    assert results == []
+
+
+async def test_search_raises_when_the_data_container_is_not_an_array() -> None:
+    """A wholly-unusable container is an outage, not zero results — and
+    iterating a number is a TypeError no handler catches."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": 5})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="expected an array"):
+            await jikan.search(client, "frieren")
+
+
+async def test_get_by_id_returns_none_when_the_entry_has_no_mal_id() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"title": "Sousou no Frieren"}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await jikan.get_by_id(client, 52991)
+
+    assert result is None
+
+
+async def test_screenshots_skips_scalar_entries() -> None:
+    """entry.get("jpg") on an int is an AttributeError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [1, {"jpg": {"image_url": "a.jpg"}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await jikan.screenshots(client, 52991)
+
+    assert urls == ["a.jpg"]

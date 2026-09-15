@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import httpx
 from loguru import logger
 
-from nani_pix_bot.services.search import cache, http_retry
+from nani_pix_bot.services.search import cache, http_retry, parsing
 
 ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
 SEARCH_RESULT_LIMIT = 5
@@ -65,7 +65,7 @@ async def search(
         client, query=_SEARCH_QUERY, variables={"search": query, "perPage": limit}
     )
     page = data.get("Page") or {}
-    results = [_parse_result(raw) for raw in page.get("media") or []]
+    results = parsing.parse_entries("AniList", page.get("media") or [], _parse_result)
     logger.debug("AniList search {!r} returned {} result(s)", query, len(results))
     return results
 
@@ -84,7 +84,10 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
     if media is None:
         logger.debug("AniList id {} no longer found", anilist_id)
         return None
-    return _parse_result(media)
+    # An entry that arrives but can't be parsed lands on the same None
+    # as a missing one: there's nothing to stage either way, and "this
+    # pick is gone" is what the starter needs to hear (issue #83).
+    return parsing.parse_entry("AniList", media, _parse_result)
 
 
 async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) -> dict:

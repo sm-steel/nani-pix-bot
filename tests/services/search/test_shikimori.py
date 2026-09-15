@@ -285,3 +285,57 @@ async def test_screenshots_is_cached_for_repeated_calls() -> None:
         await shikimori.screenshots(client, 52991)
 
     assert calls["n"] == 1
+
+
+async def test_search_skips_an_entry_with_no_id() -> None:
+    """A third party controls these keys: one entry missing the one field
+    the parser indexes must not cost the starter the other results
+    (issue #83)."""
+    entries = [{"name": "No id here"}, {"id": 52991, "name": "Sousou no Frieren"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=entries)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await shikimori.search(client, "frieren")
+
+    assert [result.shikimori_id for result in results] == [52991]
+
+
+async def test_search_skips_scalar_entries() -> None:
+    """An array of scalars where an array of objects belongs — `raw["id"]`
+    on an int is a TypeError no handler catches."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[1, 2])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await shikimori.search(client, "frieren")
+
+    assert results == []
+
+
+async def test_get_by_id_returns_none_when_the_entry_has_no_id() -> None:
+    """Nothing usable came back for this pick, which the picker already
+    reports the same way it reports a 404."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"name": "Sousou no Frieren"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await shikimori.get_by_id(client, 52991)
+
+    assert result is None
+
+
+async def test_screenshots_skips_scalar_entries() -> None:
+    """`entry.get("original")` on an int is an AttributeError — the
+    inline comprehension needs the same guard the parse functions get."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[1, {"original": "/x/a.jpg"}])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await shikimori.screenshots(client, 52991)
+
+    assert urls == ["https://shikimori.io/x/a.jpg"]

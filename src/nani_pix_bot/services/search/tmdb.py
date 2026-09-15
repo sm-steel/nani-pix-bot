@@ -24,7 +24,7 @@ from dataclasses import dataclass
 import httpx
 from loguru import logger
 
-from nani_pix_bot.services.search import cache, rest
+from nani_pix_bot.services.search import cache, parsing, rest
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/original"
@@ -69,7 +69,7 @@ async def search(
     applied client-side. Cached briefly (see cache.py) so a starter
     repeating the same query doesn't re-hit the API each time."""
     data = await rest.get_json(_API, client, f"{TMDB_BASE_URL}/search/tv", {"query": query})
-    results = [_parse_result(raw) for raw in (data.get("results") or [])[:limit]]
+    results = parsing.parse_entries(_API.name, data.get("results") or [], _parse_result)[:limit]
     logger.debug("TMDB search {!r} returned {} result(s)", query, len(results))
     return results
 
@@ -202,17 +202,14 @@ def _episode_targets(show: dict) -> list[tuple[int, int]]:
     result is a deterministic prefix of "every episode this show has"
     however TMDB chose to order its own array.
 
-    `or 0` rather than `.get(key, 0)` on both counts: TMDB sends these
-    keys present-but-null for placeholder seasons, and `None >= 1` /
-    `range(1, None + 1)` are both a `TypeError` no handler catches
-    (issue #76)."""
-    seasons = [s for s in show.get("seasons") or [] if (s.get("season_number") or 0) >= 1]
-    seasons.sort(key=lambda season: season["season_number"])
+    The season array is third-party data like any result list, so it
+    goes through `parsing.parse_entries` too — a scalar in there would
+    otherwise be an `AttributeError` (issue #83)."""
+    seasons = parsing.parse_entries(_API.name, show.get("seasons") or [], _parse_season)
+    seasons.sort(key=lambda season: season[0])
 
     targets: list[tuple[int, int]] = []
-    for season in seasons:
-        season_number = season["season_number"]
-        episode_count = season.get("episode_count") or 0
+    for season_number, episode_count in seasons:
         remaining = SCREENSHOT_FETCH_LIMIT - len(targets)
         if remaining <= 0:
             break
@@ -221,6 +218,21 @@ def _episode_targets(show: dict) -> list[tuple[int, int]]:
             for episode_number in range(1, min(episode_count, remaining) + 1)
         )
     return targets
+
+
+def _parse_season(raw: dict) -> tuple[int, int] | None:
+    """One season as `(season_number, episode_count)`, or None for a
+    season this function deliberately doesn't want — a special (season 0)
+    or a placeholder TMDB sent with a null number.
+
+    `or 0` rather than `.get(key, 0)` on both counts: TMDB sends these
+    keys present-but-null for placeholder seasons, and `None >= 1` /
+    `range(1, None + 1)` are both a `TypeError` no handler catches
+    (issue #76)."""
+    season_number = raw.get("season_number") or 0
+    if season_number < 1:
+        return None
+    return season_number, raw.get("episode_count") or 0
 
 
 def _parse_result(raw: dict) -> TMDBResult:
