@@ -15,3 +15,4 @@ docs/superpowers/
 .qlty/out
 .qlty/plugin_cachedir
 .qlty/results
+.worktrees/
