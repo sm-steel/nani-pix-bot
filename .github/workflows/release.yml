@@ -37,13 +37,17 @@ jobs:
           # and GITHUB_TOKEN can't push a branch update around that. Tags
           # live in a different ref namespace (refs/tags/*, not
           # refs/heads/master) so push+tag alone never touches the
-          # protected branch. pyproject.toml is intentionally NOT stamped
-          # with the release version (no version_toml config) -- nothing
-          # in this repo reads its own version from pyproject.toml at
-          # runtime, and stamping it would desync uv.lock's own recorded
-          # project version, breaking the Dockerfile's `uv sync --frozen`
-          # in the build step below. The version lives only in the git
-          # tag and the image tag.
+          # protected branch. pyproject.toml's version IS still stamped
+          # on disk (see version_toml in pyproject.toml) even with
+          # commit: false -- that change is just never committed/pushed.
+          # Verified live (v1.0.0 run) that the stamped, uv.lock-drifted
+          # version does NOT break the Dockerfile's `uv sync --frozen`:
+          # this project's root package is `source = { editable = "." }`
+          # in uv.lock, and uv builds an editable root package fresh from
+          # the working tree rather than enforcing its locked version --
+          # that strict check only applies to real, hash-pinned
+          # dependencies. Don't assume this generalizes to a non-editable
+          # install without re-checking.
           commit: false
           push: true
           tag: true
