@@ -41,6 +41,7 @@ from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
 from nani_pix_bot.config import Config, load_config
 from nani_pix_bot.jobs.timers import rearm_pending_timeouts
 from nani_pix_bot.logging_config import setup_logging
+from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services import settings
 
 # python-telegram-bot's ApplicationBuilder defaults this to 1 (general
@@ -57,6 +58,15 @@ GET_UPDATES_CONNECTION_POOL_SIZE = 4
 # than literal so tests can assert "before the commands" instead of
 # hard-coding -1 in two places.
 _PLAYER_TRACKING_GROUP = -1
+
+# Which identification-search pick prefixes route to
+# pick_callback_handler. Built from Provider's members rather than typed
+# out as four literals: this pattern decides which handler even *sees* an
+# update, so a fifth provider added to the enum and to keyboards.py but
+# forgotten here would produce buttons whose taps silently reach nothing
+# at all. See keyboards.py's `<provider>_pick:` prefixes, which this has
+# to keep matching.
+_PICK_PREFIX_PATTERN = "|".join(re.escape(f"{provider}_pick:") for provider in Provider)
 
 
 def build_application(config: Config) -> Application:
@@ -124,10 +134,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(
         CallbackQueryHandler(
             dm_start.pick_callback_handler,
-            pattern=(
-                rf"^({re.escape(RETRY_CALLBACK_DATA)}|"
-                r"anilist_pick:|shikimori_pick:|jikan_pick:|tmdb_pick:)"
-            ),
+            pattern=rf"^({re.escape(RETRY_CALLBACK_DATA)}|{_PICK_PREFIX_PATTERN})",
         )
     )
     application.add_handler(
