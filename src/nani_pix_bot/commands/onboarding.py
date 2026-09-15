@@ -47,7 +47,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await context.bot.send_message(chat_id=user.id, text=i18n.t("onboarding.help", lang))
     except Forbidden:
         logger.warning("Couldn't DM /help to {} — they haven't started the bot", user.id)
-        bot_username = context.bot_data.get("bot_username", "")
-        await message.reply_text(
-            i18n.t("onboarding.help_dm_failed", lang, bot_username=bot_username)
-        )
+        # bot_data["bot_username"] is written by app.py's _post_init, so it
+        # is absent until the first getMe answers (and in tests). The old
+        # "" default put a dangling "@" in the middle of the sentence,
+        # which reads as a bug; dropping the handle drops the mention
+        # clause instead (see correct.py/skip.py, #81, same window).
+        bot_username = context.bot_data.get("bot_username")
+        key = "onboarding.help_dm_failed" if bot_username else "onboarding.help_dm_failed_no_handle"
+        await message.reply_text(i18n.t(key, lang, bot_username=bot_username))

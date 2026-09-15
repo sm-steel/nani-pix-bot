@@ -100,3 +100,23 @@ async def test_help_command_in_group_falls_back_when_dm_fails(session_factory) -
     update.message.reply_text.assert_awaited_once()
     reply_text = update.message.reply_text.await_args.args[0]
     assert "nani_pix_bot" in reply_text
+
+
+async def test_help_command_drops_the_mention_when_the_bot_has_no_handle_yet(
+    session_factory,
+) -> None:
+    """Same window as /correct's and /skip's (#81): bot_data["bot_username"]
+    is only written by _post_init, so it is absent in tests and for the
+    first moments of a real start-up. The old "" default rendered "…first
+    — @ — then try" — a dangling @ reads as a bug, while a sentence that
+    simply omits the handle reads as normal."""
+    update = _make_group_update()
+    context = _make_context(session_factory)
+    context.bot.send_message = AsyncMock(side_effect=Forbidden("bot was blocked"))
+    del context.bot_data["bot_username"]
+
+    await onboarding.help_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    update.message.reply_text.assert_awaited_once()
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert "@" not in reply_text
