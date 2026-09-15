@@ -265,6 +265,24 @@ truth for what's done/in progress/planned.
 > indexed by anyone/anything crawling GitHub; there is no private fallback
 > to catch a slip.
 
+## Commit messages: Conventional Commits
+
+This repo uses [Conventional Commits](https://www.conventionalcommits.org/)
+— required once semantic-release is wired in (tracked in
+priv-vps-infrastructure's M9), harmless before that.
+
+Format: `<type>(<optional scope>): <description>`
+
+- `feat: ...` — a new capability. Triggers a **minor** version bump.
+- `fix: ...` — a bug fix. Triggers a **patch** version bump.
+- `feat!: ...` or a `BREAKING CHANGE: ...` footer — triggers a **major**
+  bump. Rare for a bot this size; use deliberately.
+- `chore:`, `docs:`, `refactor:`, `test:`, `style:`, `ci:`, `build:` — no
+  version bump. Use for anything that isn't a user-facing fix or feature.
+
+One logical change per commit, same as always — this doesn't change that,
+it just adds a prefix that says what kind of change it is.
+
 ## Coding practices
 
 - **KISS.** This is a small social game for one group chat, not a
