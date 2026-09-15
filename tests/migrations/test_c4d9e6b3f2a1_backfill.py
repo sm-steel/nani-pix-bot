@@ -363,6 +363,86 @@ def test_a_malformed_proxy_url_skips_the_whole_backfill_and_completes(
     assert "<redacted>" in output
 
 
+def test_a_scheme_less_proxy_url_does_not_leak_the_authority(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """.env.example documents TELEGRAM_PROXY_URL as
+    "http://USERNAME:PASSWORD@PROXY_HOST:PROXY_PORT" -- so dropping the
+    scheme is the single most likely way to mistype it, and it is
+    exactly the shape _redact_secrets's pattern-based half cannot touch
+    (it anchors on "scheme://"). httpx does not treat a scheme-less
+    value as a URL at all in this case: it fails immediately and hands
+    the whole raw string, password included, to str(exc) -- httpx's own
+    "[secure]" password masking never even engages, since that requires
+    a successfully parsed scheme. known_secret's fail-closed fallback
+    has to catch what the pattern can't: not just the host, but the
+    username and password too."""
+    conn, games = games_connection
+    conn.execute(
+        games.insert(),
+        [{"id": 12, "status": "ACTIVE", "original_file_id": "some-id", "original_image": None}],
+    )
+    conn.commit()
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+    monkeypatch.setenv(
+        "TELEGRAM_PROXY_URL",
+        "fakeuser:fakepass@fake-proxy-host.example.invalid:1080",
+    )
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[12] is None
+
+    output = capsys.readouterr().out
+    assert "WARNING" in output
+    assert "TELEGRAM_PROXY_URL" in output
+    assert "fakeuser" not in output
+    assert "fakepass" not in output
+    assert "fake-proxy-host" not in output
+
+
+def test_a_socks_proxy_url_does_not_escape_upgrade(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A well-formed socks5://, socks5h:// or socks4:// TELEGRAM_PROXY_URL
+    makes httpx.Client's constructor raise ImportError ("the 'socksio'
+    package is not installed") since this project has no [socks] extra
+    on httpx -- unrelated to whether the URL itself parses fine. Before
+    round 5 this wasn't in the except tuple at all, so it escaped
+    upgrade() after the five add_column calls had already committed,
+    the exact wedge this ticket exists to close, just via a different
+    exception type than Finding A's."""
+    conn, games = games_connection
+    conn.execute(
+        games.insert(),
+        [{"id": 13, "status": "ACTIVE", "original_file_id": "some-id", "original_image": None}],
+    )
+    conn.commit()
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+    monkeypatch.setenv(
+        "TELEGRAM_PROXY_URL",
+        "socks5://fakeuser:fakepass@fake-proxy-host.example.invalid:1080",
+    )
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[13] is None
+
+    output = capsys.readouterr().out
+    assert "WARNING" in output
+    assert "TELEGRAM_PROXY_URL" in output
+    assert "fakeuser" not in output
+    assert "fake-proxy-host" not in output
+
+
 def test_redaction_survives_a_token_with_a_trailing_space(
     games_connection: tuple[sa.Connection, sa.Table],
     monkeypatch: pytest.MonkeyPatch,

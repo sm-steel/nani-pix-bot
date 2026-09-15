@@ -27,7 +27,7 @@ depends_on: str | Sequence[str] | None = None
 _IMAGE_COLUMN_LENGTH = 2**32 - 1
 
 
-def _redact_secrets(message: str) -> str:
+def _redact_secrets(exc: Exception, known_secret: str | None) -> str:
     """Scrub anything an exception message from this backfill could
     carry that has no business in a public place, before it ever
     reaches a print() that deploy.yml's `docker compose run --rm` step
@@ -43,28 +43,40 @@ def _redact_secrets(message: str) -> str:
     them for real on a misconfiguration would undo that at the one
     moment it matters.
 
-    One pattern closes both: anything after a "scheme://" up to the
-    next '/', whitespace, or quote/paren gets replaced wholesale,
-    scheme kept. That's deliberately blanket rather than picking apart
-    "is this bit the token, the host, or just an informational link" --
-    a message destined for a public log doesn't get to keep whatever
-    URL text happens to be judged harmless, and a message with no URL
-    in it (e.g. httpx's own "Invalid port: '...'") passes through
-    unchanged since there's nothing matching the pattern.
+    The primary defence is pattern-based: everything after a
+    "scheme://" up to the next whitespace, single-quote, double-quote,
+    or close-paren is replaced wholesale, scheme kept -- deliberately
+    NOT stopping at the next '/', since the sensitive text (a token, an
+    authority) can be anywhere in the rest of the URL, path included,
+    and a message with no URL in it at all (e.g. httpx's own "Invalid
+    port: '...'") passes through untouched since nothing matches.
 
-    Pattern-based rather than a literal substring match against a known
-    value (the raw bot_token, or the raw TELEGRAM_PROXY_URL) for the
-    same reason in both cases: a misconfigured .env can hand this
-    migration a value with a stray leading/trailing space (Compose
-    preserves literal whitespace in .env values) or an embedded '#',
-    and httpx reshapes those bytes (percent-encoding, its own
-    "[secure]" masking) before they reach an exception's message -- so
-    a literal match would miss the reshaped form and print the secret
-    in the clear on exactly the misconfiguration that makes either
-    error path run in the first place."""
-    return re.sub(
-        r"([A-Za-z][A-Za-z0-9+.-]*)://[^\s'\")]+", lambda m: m.group(1) + "://<redacted>", message
+    That pattern only fires on a "scheme://" anchor, though, and a
+    TELEGRAM_PROXY_URL missing its scheme entirely -- the single most
+    likely way to mistype .env.example's documented
+    "http://USERNAME:PASSWORD@PROXY_HOST:PROXY_PORT" shape -- is not a
+    URL by this pattern's definition at all. httpx still fails on it,
+    but hands the whole raw authority, password included (its "[secure]"
+    masking never engages without a scheme to parse), straight to
+    str(exc). Rather than keep enumerating every shape a
+    credential-bearing string can take without a scheme, known_secret
+    is a second, fail-closed layer: pass the raw environment value the
+    caller already has in scope (bot_token, or TELEGRAM_PROXY_URL's raw
+    value), and if it's still sitting in the message after the
+    pattern-based pass, discard the message entirely and report only
+    the exception's type -- which still tells the operator *that*
+    something failed and roughly *what kind* (ImportError, ValueError,
+    InvalidURL, ...), without risking the raw value under any input
+    the pattern above didn't anticipate."""
+    message = str(exc)
+    redacted = re.sub(
+        r"([A-Za-z][A-Za-z0-9+.-]*)://[^\s'\")]+",
+        lambda m: m.group(1) + "://<redacted>",
+        message,
     )
+    if known_secret and known_secret in redacted:
+        return type(exc).__name__
+    return redacted
 
 
 def upgrade() -> None:
@@ -145,23 +157,31 @@ def _backfill_original_image_for_in_flight_games() -> None:
     proxy = os.environ.get("TELEGRAM_PROXY_URL") or None
     try:
         client = httpx.Client(proxy=proxy, timeout=30.0)
-    except (ValueError, httpx.InvalidURL) as exc:
+    except (ValueError, httpx.InvalidURL, ImportError) as exc:
         # A malformed TELEGRAM_PROXY_URL (unknown scheme, invalid port,
         # ...) raises straight out of the client's constructor, before
         # any per-row fetch even starts -- the same "escape upgrade()
         # after the add_column calls already committed" wedge as
         # everything caught inside the loop below, just triggered by
         # client setup instead of a bad file_id, so it gets the same
-        # warn-and-skip treatment. httpx already renders a proxy URL's
-        # password as "[secure]" in its own exception text, but the
-        # username and host would otherwise still print here in clear
-        # -- exactly the owned-infrastructure detail this project's own
-        # convention (aliases like "amsterdam", placeholders like
-        # PROXY_HOST) keeps out of anything public, and this migration
-        # runs on a GitHub-hosted Actions runner against this public
-        # repo. _redact_secrets closes that the same way it closes the
-        # bot-token leak below.
-        safe_message = _redact_secrets(str(exc))
+        # warn-and-skip treatment. ImportError covers a well-formed
+        # socks5://, socks5h:// or socks4:// value: httpx defers to the
+        # optional "socksio" package for SOCKS support, which is not a
+        # dependency of this project (no [socks] extra in pyproject.toml
+        # or uv.lock), so any such value raises here, unrelated to
+        # whether the URL itself is otherwise valid.
+        #
+        # httpx renders a proxy URL's password as "[secure]" in its own
+        # exception text, but only once it has successfully parsed a
+        # scheme -- a TELEGRAM_PROXY_URL missing its scheme entirely
+        # (the single most likely way to mistype .env.example's
+        # documented "http://USERNAME:PASSWORD@PROXY_HOST:PROXY_PORT"
+        # shape) hands the whole raw authority, password included,
+        # straight to str(exc), unmasked. _redact_secrets's known_secret
+        # fallback is what actually closes that -- see its own
+        # docstring -- rather than the pattern-based half alone, which
+        # only fires on a "scheme://" it can anchor on.
+        safe_message = _redact_secrets(exc, known_secret=proxy)
         print(
             f"WARNING: could not configure the Telegram HTTP client from "
             f"TELEGRAM_PROXY_URL: {safe_message} — skipping live-fetch "
@@ -228,7 +248,7 @@ def _backfill_original_image_for_in_flight_games() -> None:
                 # text itself; see _redact_secrets's own docstring
                 # for why that's pattern-based rather than a literal
                 # substring match against bot_token.
-                safe_message = _redact_secrets(str(exc))
+                safe_message = _redact_secrets(exc, known_secret=bot_token)
                 print(
                     f"WARNING: could not backfill game {row.id}: {safe_message} — "
                     f"leaving original_image NULL"
