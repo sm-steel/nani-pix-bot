@@ -16,6 +16,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
     _reply_service_down,
+    _search_and_build_keyboard,
     _show_preview,
     _stored_provider,
 )
@@ -173,17 +174,24 @@ async def _search_step(
     client = _client_for_source(context, source)
     try:
         if source == Provider.SHIKIMORI:
-            results = await shikimori.search(client, message.text)
-            keyboard = shikimori_results_keyboard(results, lang)
+            results, keyboard = await _search_and_build_keyboard(
+                client,
+                message.text,
+                shikimori.search,
+                lambda rs: shikimori_results_keyboard(rs, lang),
+            )
         elif source == Provider.JIKAN:
-            results = await jikan.search(client, message.text)
-            keyboard = jikan_results_keyboard(results, lang)
+            results, keyboard = await _search_and_build_keyboard(
+                client, message.text, jikan.search, lambda rs: jikan_results_keyboard(rs, lang)
+            )
         elif source == Provider.TMDB:
-            results = await tmdb.search(client, message.text)
-            keyboard = tmdb_results_keyboard(results, lang)
+            results, keyboard = await _search_and_build_keyboard(
+                client, message.text, tmdb.search, lambda rs: tmdb_results_keyboard(rs, lang)
+            )
         else:
-            results = await anilist.search(client, message.text)
-            keyboard = anilist_results_keyboard(results, lang)
+            results, keyboard = await _search_and_build_keyboard(
+                client, message.text, anilist.search, lambda rs: anilist_results_keyboard(rs, lang)
+            )
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} search failed for query {!r}", source, message.text)
         await _reply_service_down(status_message.edit_text, lang, source)
