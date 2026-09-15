@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Literal, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -15,7 +15,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     RETRY_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
 )
-from nani_pix_bot.models.enums import GameStatus, SetupStep
+from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
@@ -85,7 +85,7 @@ def _create_setup_game(
     *,
     starter_id: int = 1,
     image: bytes | None = b"file123",
-    source: str = "anilist",
+    source: Provider | Literal["manual"] = Provider.ANILIST,
 ) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=starter_id))
@@ -237,7 +237,7 @@ async def test_search_text_handler_finds_the_pending_game_from_the_db(
 async def test_search_text_handler_shows_keyboard_on_anilist_results(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _create_setup_game(session_factory, starter_id=1, source="anilist")
+    _create_setup_game(session_factory, starter_id=1, source=Provider.ANILIST)
     monkeypatch.setattr(search.anilist, "search", AsyncMock(return_value=[_FRIEREN]))
     update = _make_text_update(user_id=1)
     context = _make_context(session_factory, search_client=MagicMock())
@@ -253,7 +253,7 @@ async def test_search_text_handler_shows_keyboard_on_anilist_results(
 async def test_search_text_handler_uses_shikimori_when_that_is_the_chosen_source(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _create_setup_game(session_factory, starter_id=1, source="shikimori")
+    _create_setup_game(session_factory, starter_id=1, source=Provider.SHIKIMORI)
     search_mock = AsyncMock(return_value=[_FRIEREN_SHIKIMORI])
     monkeypatch.setattr(search.shikimori, "search", search_mock)
     update = _make_text_update(user_id=1)
@@ -270,7 +270,7 @@ async def test_search_text_handler_uses_shikimori_when_that_is_the_chosen_source
 async def test_search_text_handler_reshows_method_keyboard_when_the_service_errors(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _create_setup_game(session_factory, starter_id=1, source="anilist")
+    _create_setup_game(session_factory, starter_id=1, source=Provider.ANILIST)
     monkeypatch.setattr(search.anilist, "search", AsyncMock(side_effect=httpx.ConnectError("boom")))
     update = _make_text_update(user_id=1)
     context = _make_context(session_factory, search_client=MagicMock())
@@ -302,9 +302,9 @@ async def test_search_text_handler_routes_to_screenshot_search_while_resolving_a
         session.add(Player(telegram_user_id=1))
         session.commit()
         game = game_service.create_setup_game(session, starter_id=1)
-        game.source = "anilist"
+        game.source = Provider.ANILIST
         game.setup_step = SetupStep.PICKING_SCREENSHOT
-        game.screenshot_picker_provider = "tmdb"
+        game.screenshot_picker_provider = Provider.TMDB
         session.commit()
 
     step_mock = AsyncMock()
@@ -337,13 +337,13 @@ async def test_search_text_handler_routes_to_screenshot_search_even_with_an_old_
         session.add(Player(telegram_user_id=1))
         session.commit()
         game = game_service.create_setup_game(session, starter_id=1, original_image=b"old-pick")
-        game.source = "anilist"
+        game.source = Provider.ANILIST
         game.setup_step = SetupStep.PICKING_SCREENSHOT
         # The old pick's provenance and the re-opened picker's provider
         # happen to agree here — they are still two separate columns,
         # and it's the picker one this must route on.
-        game.screenshot_source = "tmdb"
-        game.screenshot_picker_provider = "tmdb"
+        game.screenshot_source = Provider.TMDB
+        game.screenshot_picker_provider = Provider.TMDB
         session.commit()
 
     step_mock = AsyncMock()
@@ -373,7 +373,7 @@ async def test_search_text_handler_ignores_text_while_still_on_the_source_keyboa
         session.add(Player(telegram_user_id=1))
         session.commit()
         game = game_service.create_setup_game(session, starter_id=1)
-        game.source = "anilist"
+        game.source = Provider.ANILIST
         game.setup_step = SetupStep.PICKING_SCREENSHOT
         session.commit()
 
@@ -400,7 +400,7 @@ async def test_search_text_handler_ignores_text_while_browsing_a_same_provider_g
         session.add(Player(telegram_user_id=1))
         session.commit()
         game = game_service.create_setup_game(session, starter_id=1)
-        game.source = "shikimori"
+        game.source = Provider.SHIKIMORI
         game.shikimori_id = 52991
         game.setup_step = SetupStep.PICKING_SCREENSHOT
         game.screenshot_picker_provider = None
@@ -435,7 +435,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
 ) -> None:
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
     monkeypatch.setattr(search.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
-    _create_setup_game(session_factory, starter_id=1, source="anilist")
+    _create_setup_game(session_factory, starter_id=1, source=Provider.ANILIST)
 
     update = _make_callback_update(data="anilist_pick:99", user_id=1)
     context = _make_callback_context(session_factory)
@@ -478,7 +478,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
     get_by_id_mock = AsyncMock(return_value=_FRIEREN_SHIKIMORI)
     monkeypatch.setattr(search.shikimori, "get_by_id", get_by_id_mock)
-    _create_setup_game(session_factory, starter_id=1, source="shikimori")
+    _create_setup_game(session_factory, starter_id=1, source=Provider.SHIKIMORI)
 
     update = _make_callback_update(data="shikimori_pick:52991", user_id=1)
     context = _make_callback_context(session_factory)
@@ -504,7 +504,7 @@ async def test_pick_callback_handler_reshows_method_keyboard_when_get_by_id_erro
     monkeypatch.setattr(
         search.anilist, "get_by_id", AsyncMock(side_effect=httpx.ConnectError("boom"))
     )
-    _create_setup_game(session_factory, starter_id=1, source="anilist")
+    _create_setup_game(session_factory, starter_id=1, source=Provider.ANILIST)
 
     update = _make_callback_update(data="anilist_pick:99", user_id=1)
     context = _make_callback_context(session_factory)

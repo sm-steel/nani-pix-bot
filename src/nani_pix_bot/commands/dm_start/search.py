@@ -4,16 +4,18 @@ steps (`CONFIRMING`/`AWAITING_SYNONYM`/`AWAITING_PHOTO_CHANGE`) are
 dispatched from here too, since they all arrive as the same kind of DM
 text message — see `search_text_handler`."""
 
+from typing import Literal
+
 from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
-    _SERVICE_DISPLAY_NAMES,
     _client_for_source,
     _reply_service_down,
     _show_preview,
+    _stored_provider,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     RETRY_CALLBACK_DATA,
@@ -30,7 +32,7 @@ from nani_pix_bot.commands.dm_start.screenshot_gallery import _screenshot_search
 from nani_pix_bot.commands.dm_start.screenshots import source_menu_for, start_screenshot_picker
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import SetupStep
+from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.search import anilist, jikan, shikimori, tmdb
@@ -40,7 +42,7 @@ from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 
-def _search_prompt_key(*, source: str, has_image: bool) -> str:
+def _search_prompt_key(*, source: Provider | Literal["manual"], has_image: bool) -> str:
     """Which "now tell me what it is" prompt to show after a method pick.
     The photo-first entry point already has the screenshot in hand, so it
     can say "what anime is *this* from?"; `/newgame` has nothing to point
@@ -111,7 +113,9 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         # after this block closes and needs the source menu to fall back
         # onto if the provider is down or finds nothing.
         screenshot_menu = (
-            source_menu_for(setup_game, picker_provider) if picker_provider is not None else None
+            source_menu_for(setup_game, _stored_provider(picker_provider))
+            if picker_provider is not None
+            else None
         )
 
     if setup_step == SetupStep.AWAITING_SYNONYM:
@@ -145,10 +149,16 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         else:
             await _manual_title_step(message, context, lang, user)
     else:
-        await _search_step(message, context, lang, source)
+        # Everything that isn't "manual" is one of the four providers, so
+        # this is where the column's bare string becomes a real member
+        # (see `_stored_provider`) — `_search_step` names it on two
+        # screens via `.display_name`.
+        await _search_step(message, context, lang, _stored_provider(source))
 
 
-async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, source: str) -> None:
+async def _search_step(
+    message, context: ContextTypes.DEFAULT_TYPE, lang: str, source: Provider
+) -> None:
     """An AniList/Shikimori search query: search and show a results
     keyboard, or fail back to the method-selection keyboard. Sends a
     "searching" message immediately — the round-trip can take a few
@@ -160,13 +170,13 @@ async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, s
 
     client = _client_for_source(context, source)
     try:
-        if source == "shikimori":
+        if source == Provider.SHIKIMORI:
             results = await shikimori.search(client, message.text)
             keyboard = shikimori_results_keyboard(results, lang)
-        elif source == "jikan":
+        elif source == Provider.JIKAN:
             results = await jikan.search(client, message.text)
             keyboard = jikan_results_keyboard(results, lang)
-        elif source == "tmdb":
+        elif source == Provider.TMDB:
             results = await tmdb.search(client, message.text)
             keyboard = tmdb_results_keyboard(results, lang)
         else:
@@ -180,7 +190,7 @@ async def _search_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, s
     logger.debug("{} search for {!r} returned {} results", source, message.text, len(results))
     if not results:
         await status_message.edit_text(
-            i18n.t("dm_start.no_results", lang, service=_SERVICE_DISPLAY_NAMES[source])
+            i18n.t("dm_start.no_results", lang, service=source.display_name)
         )
         return
 
@@ -230,7 +240,7 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def _resolve_picked_result(
     query, context: ContextTypes.DEFAULT_TYPE, lang: str
-) -> tuple[str, int, AniListResult | ShikimoriResult | JikanResult | TMDBResult] | None:
+) -> tuple[Provider, int, AniListResult | ShikimoriResult | JikanResult | TMDBResult] | None:
     """Handles the "none of these" retry tap and resolves a valid pick to
     its (source, external_id, result) triple. Replies and returns None
     for every already-handled outcome: retry tapped, unparseable
@@ -247,11 +257,11 @@ async def _resolve_picked_result(
 
     client = _client_for_source(context, source)
     try:
-        if source == "shikimori":
+        if source == Provider.SHIKIMORI:
             result = await shikimori.get_by_id(client, external_id)
-        elif source == "jikan":
+        elif source == Provider.JIKAN:
             result = await jikan.get_by_id(client, external_id)
-        elif source == "tmdb":
+        elif source == Provider.TMDB:
             result = await tmdb.get_by_id(client, external_id)
         else:
             result = await anilist.get_by_id(client, external_id)
@@ -263,7 +273,7 @@ async def _resolve_picked_result(
     if result is None:
         logger.warning("{} id {} picked but no longer found", source, external_id)
         await query.edit_message_text(
-            i18n.t("dm_start.not_found_anymore", lang, service=_SERVICE_DISPLAY_NAMES[source])
+            i18n.t("dm_start.not_found_anymore", lang, service=source.display_name)
         )
         return None
 

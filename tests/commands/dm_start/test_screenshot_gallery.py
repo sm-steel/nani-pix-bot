@@ -13,7 +13,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start import preview, screenshot_gallery, search
 from nani_pix_bot.commands.dm_start.keyboards import SCREENSHOT_UPLOAD_CALLBACK_DATA
 from nani_pix_bot.commands.dm_start.screenshots import SourceMenu
-from nani_pix_bot.models.enums import SetupStep
+from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
@@ -156,7 +156,9 @@ def _source_callbacks(markup) -> list[str]:
 
 
 def _tmdb_menu() -> SourceMenu:
-    return SourceMenu(providers=["shikimori", "jikan", "tmdb"], provider="tmdb")
+    return SourceMenu(
+        providers=[Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB], provider=Provider.TMDB
+    )
 
 
 async def test_screenshot_gallery_callback_handler_pick_falls_back_when_the_fetch_is_now_empty(
