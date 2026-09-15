@@ -372,7 +372,16 @@ async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> N
     """Fires INACTIVITY_NUDGE_DELAY after the last guess (or activation)
     on an ACTIVE game. Points at whatever's currently pinned so the
     nudge visually references the last posted image, without revealing
-    the title."""
+    the title.
+
+    Clears inactivity_nudge_at after a successful send — a one-shot
+    reminder, not a repeating one (see clear_inactivity_nudge's
+    docstring): leaving the deadline stuck in the past would otherwise
+    make rearm_pending_timeouts re-derive and re-fire this same nudge on
+    every subsequent redeploy, since JobQueue jobs never survive a
+    process restart. Session stays open across the send (like
+    timeout_job_callback/inactivity_advance_job_callback) so the clear
+    commits only if the send didn't raise."""
     job = context.job
     if job is None:
         return
@@ -387,13 +396,14 @@ async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> N
             return
         pinned_message_id = settings.get_pinned_message_id(session)
 
-    logger.info("Game {} nudged after inactivity", game_id)
-    await context.bot.send_message(
-        chat_id=context.bot_data["group_chat_id"],
-        message_thread_id=context.bot_data["game_topic_id"],
-        text=i18n.t("guess.inactivity_nudge", lang),
-        reply_to_message_id=pinned_message_id,
-    )
+        logger.info("Game {} nudged after inactivity", game_id)
+        await context.bot.send_message(
+            chat_id=context.bot_data["group_chat_id"],
+            message_thread_id=context.bot_data["game_topic_id"],
+            text=i18n.t("guess.inactivity_nudge", lang),
+            reply_to_message_id=pinned_message_id,
+        )
+        game_service.clear_inactivity_nudge(game)
 
 
 async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:

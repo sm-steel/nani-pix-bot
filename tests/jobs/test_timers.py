@@ -503,6 +503,36 @@ async def test_inactivity_nudge_job_callback_posts_a_message_replying_to_the_pin
     assert kwargs["reply_to_message_id"] == 777
 
 
+async def test_inactivity_nudge_job_callback_clears_the_nudge_deadline_after_sending(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory)
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        game_service.reset_inactivity_clock(game)
+        session.commit()
+    with session_factory() as session:
+        # Refetched (rather than kept from the write above) so it round-
+        # trips through SQLite as naive, matching what the callback's own
+        # later read/compare sees.
+        advance_at_before = session.get(Game, game_id).inactivity_advance_at
+    context = _make_job_context(session_factory, game_id=game_id)
+    context.bot.send_message = AsyncMock()
+
+    await timeout_module.inactivity_nudge_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        # Cleared so a later redeploy's rearm_pending_timeouts doesn't
+        # re-derive and re-fire the same already-sent nudge from a stale
+        # past deadline.
+        assert fetched.inactivity_nudge_at is None
+        # Untouched — the auto-advance timer keeps its own independent 6h
+        # deadline.
+        assert fetched.inactivity_advance_at == advance_at_before
+
+
 async def test_inactivity_nudge_job_callback_is_a_noop_if_not_active(session_factory) -> None:
     game_id = _active_game(session_factory, status=GameStatus.WON, winner_id=1)
     context = _make_job_context(session_factory, game_id=game_id)
