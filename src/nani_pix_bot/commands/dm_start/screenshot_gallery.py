@@ -7,7 +7,7 @@ is first shown) once that file's total complexity grew past qlty's
 threshold; see MECHANICS.md's "Starting a game" section for the
 player-facing flow both files implement together."""
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from loguru import logger
 from telegram import Update
@@ -17,7 +17,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _IMAGE_DOWNLOAD_ERRORS,
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
-    _log_stale_tap,
+    _reject_stale_tap,
     _show_preview,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
@@ -55,6 +55,23 @@ from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 
+@dataclass(frozen=True)
+class Toast:
+    """A gallery action that changed nothing and is deliberately leaving
+    the tapped message exactly as it was, keyboard and all — the i18n key
+    for the notification that says so.
+
+    Distinct from `Fallback`, which replaces the screen because the
+    starter has been left with nothing to tap, and distinct from
+    returning `None`, which the dispatch still uses for the one outcome
+    that wants no feedback at all (a forged payload). The only way to
+    say something without touching the screen is the callback answer,
+    which only the handler holds — hence a return value rather than a
+    reply made in place."""
+
+    key: str
+
+
 async def screenshot_search_again_callback_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -85,7 +102,6 @@ async def screenshot_search_again_callback_handler(
     query = update.callback_query
     if query is None or query.data is None:
         return
-    await query.answer()
     user = query.from_user
     if user is None:
         return
@@ -95,8 +111,12 @@ async def screenshot_search_again_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
-            _log_stale_tap(query.data, user.id)
+            await _reject_stale_tap(query, user.id, lang)
             return
+        # One answer per query id, so the bare acknowledgement waits
+        # until the stale branch above has had its chance at it (see
+        # _reject_stale_tap).
+        await query.answer()
         provider = parse_screenshot_search_again_callback_data(query.data)
         if provider is None:
             # keyboards.py logged what was wrong with the payload; this
@@ -189,7 +209,6 @@ async def screenshot_search_pick_callback_handler(
     query = update.callback_query
     if query is None or query.data is None:
         return
-    await query.answer()
     user = query.from_user
     if user is None:
         return
@@ -199,15 +218,23 @@ async def screenshot_search_pick_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
-            _log_stale_tap(query.data, user.id)
+            await _reject_stale_tap(query, user.id, lang)
             return
         # Built here, where the game is loaded anyway, so the failure
         # paths below can re-show the source menu without a second
         # lookup. The provider is filled in once the pick is parsed.
         menu = source_menu_for(game, None)
 
+    # Deliberately not acknowledged yet, unlike this file's other
+    # handlers: the *second* lookup below is another stale-row site, and
+    # a query id can only be answered once (see _reject_stale_tap). So
+    # the spinner runs for the length of the get_by_id round-trip —
+    # which is work actually happening — and every path answers exactly
+    # once after it.
     resolved = await _resolve_screenshot_search_pick(query, context, lang, menu)
     if resolved is None:
+        # Whatever went wrong already said so on the message itself.
+        await query.answer()
         return
     provider, external_id, result = resolved
 
@@ -220,13 +247,14 @@ async def screenshot_search_pick_callback_handler(
             # site's, and the line number is the only thing that tells
             # the two apart in a log — these two also share a callback
             # prefix, so `data` doesn't. That line number is the
-            # *caller's* solely because _log_stale_tap logs through
+            # *caller's* solely because _reject_stale_tap logs through
             # `logger.opt(depth=1)`: plain loguru stamps the frame of the
             # logger.warning call itself, which is one line inside the
             # helper and identical for every site. Drop that opt() and
             # this pair goes back to being byte-identical.
-            _log_stale_tap(query.data, user.id)
+            await _reject_stale_tap(query, user.id, lang)
             return
+        await query.answer()
         game_service.set_screenshot_provider_id(game, result)
         logger.debug(
             "Game {}: cross-provider search resolved {} -> id {}", game.id, provider, external_id
@@ -302,39 +330,49 @@ async def screenshot_gallery_callback_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """A numbered screenshot or "More screenshots" button tapped from
-    the gallery's own keyboard."""
+    the gallery's own keyboard.
+
+    Answered once, at the end: a query id can only be answered once, and
+    both outcomes that need a *text* answer — a setup row that is gone,
+    and a Toast from deep inside the dispatch — only become known after
+    the work. So the spinner runs for the length of the fetch/send, then
+    clears with whatever there is to say."""
     query = update.callback_query
     if query is None or query.data is None:
         return
-    await query.answer()
     user = query.from_user
     if user is None:
         return
 
+    toast: str | None = None
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
-            _log_stale_tap(query.data, user.id)
+            await _reject_stale_tap(query, user.id, lang)
             return
         outcome = await _dispatch_gallery_action(context, session, game, query.data, lang)
         # Replied inside the session block — a Fallback's source menu is
         # built from the still-live `game`.
         if isinstance(outcome, Fallback):
             await reply_fallback(query.edit_message_text, game, lang, outcome)
+        elif isinstance(outcome, Toast):
+            toast = i18n.t(outcome.key, lang)
         elif outcome is not None:
             # Already-rendered text, not an i18n key — the paging
             # confirmation needs format kwargs the caller doesn't have.
             await query.edit_message_text(outcome)
+    await query.answer(toast)
 
 
 async def _dispatch_gallery_action(
     context: ContextTypes.DEFAULT_TYPE, session, game, data: str, lang: str
-) -> str | Fallback | None:
+) -> str | Fallback | Toast | None:
     """Runs the gallery action `data` encodes (a "More screenshots" page
-    or a numbered pick) and returns the rendered text for the
-    resulting message, or None for a stale-button no-op — split out of
+    or a numbered pick) and returns the rendered text for the resulting
+    message, a `Toast` for a no-op worth acknowledging, or None for the
+    one no-op that wants no feedback — split out of
     `screenshot_gallery_callback_handler` itself to keep that handler's
     own return count under qlty's "many returns" threshold."""
     more = parse_screenshot_more_callback_data(data)
@@ -432,10 +470,10 @@ async def _handle_more_screenshots(
 
 async def _handle_screenshot_pick(
     context: ContextTypes.DEFAULT_TYPE, session, game, picked: tuple[str, int], lang: str
-) -> str | Fallback | None:
+) -> str | Fallback | Toast | None:
     """Downloads the picked screenshot's bytes and shows the
     confirmation preview. Returns the i18n key for the caller's own
-    follow-up message edit, or None for a stale-button no-op (the
+    follow-up message edit, or a `Toast` for a stale-button no-op (the
     tapped index is out of range against a still-successful fetch —
     distinct from a fetch failure/empty result, which
     _fetch_screenshots_or_fallback already turns into its own fallback
@@ -447,12 +485,13 @@ async def _handle_screenshot_pick(
         return result
     urls = result
     if index >= len(urls):
-        # Deliberately no reply: unlike the paging equivalent above, the
-        # gallery message this was tapped from is left exactly as it was,
-        # keyboard and all, so the starter still has every other
+        # Deliberately no message *edit*: unlike the paging equivalent
+        # above, the gallery this was tapped from is left exactly as it
+        # was, keyboard and all, so the starter still has every other
         # screenshot to pick and nothing to be rescued from. What they
-        # don't get is any sign the tap registered, which is why it is at
-        # least a rejected action in the log.
+        # were missing is any sign the tap registered at all — hence the
+        # plain toast (no alert: nothing here needs dismissing) on top of
+        # the log line a rejected action gets.
         logger.warning(
             "Game {}: stale {} pick #{} against {} url(s)",
             game.id,
@@ -460,7 +499,7 @@ async def _handle_screenshot_pick(
             index + 1,
             len(urls),
         )
-        return None
+        return Toast("dm_start.screenshot_gone")
 
     # These are external URLs (Shikimori/Jikan/TMDB), not Telegram
     # file_ids — the gallery album itself lets Telegram fetch them

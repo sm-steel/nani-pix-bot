@@ -133,7 +133,12 @@ async def test_newgame_mid_setup_reshows_the_photo_prompt(session_factory) -> No
     """The two input-prompt steps have no keyboard of their own in the
     flow either — the route forward is the photo/text being asked for,
     which the prompt states. What matters is that it is the screen the
-    starter is actually on, rather than a refusal."""
+    starter is actually on, rather than a refusal.
+
+    With no buttons to make the re-show visible *as* a re-show, the bare
+    prompt read as a fresh question and said nothing about the /newgame
+    that was just refused — so these two carry the "your setup is still
+    open" line above the prompt (#79, routed from #73)."""
     _setup_in_progress(
         session_factory, step=SetupStep.AWAITING_PHOTO_CHANGE, original_image=b"already-staged"
     )
@@ -142,7 +147,9 @@ async def test_newgame_mid_setup_reshows_the_photo_prompt(session_factory) -> No
 
     await newgame.newgame_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    assert update.message.reply_text.await_args.args[0] == i18n.t("dm_start.ask_new_photo", "EN")
+    reply = update.message.reply_text.await_args.args[0]
+    assert i18n.t("dm_start.ask_new_photo", "EN") in reply
+    assert i18n.t("dm_start.setup_already_open", "EN") in reply
 
 
 async def test_newgame_mid_setup_reshows_the_synonym_prompt(session_factory) -> None:
@@ -154,9 +161,24 @@ async def test_newgame_mid_setup_reshows_the_synonym_prompt(session_factory) -> 
 
     await newgame.newgame_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    assert update.message.reply_text.await_args.args[0] == i18n.t(
-        "dm_start.ask_extra_synonym", "EN"
-    )
+    reply = update.message.reply_text.await_args.args[0]
+    assert i18n.t("dm_start.ask_extra_synonym", "EN") in reply
+    assert i18n.t("dm_start.setup_already_open", "EN") in reply
+
+
+async def test_newgame_mid_setup_leaves_the_keyboard_steps_alone(session_factory) -> None:
+    """Only the two keyboard-less steps get that line. A step whose
+    screen comes back with its own buttons is already visibly a screen
+    being re-shown, and the keyboard is the route forward — nothing is
+    stranded there to explain."""
+    _setup_in_progress(session_factory, step=SetupStep.PICKING_METHOD)
+    update = _make_update(user_id=1)
+    context = _make_context(session_factory)
+
+    await newgame.newgame_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    reply = update.message.reply_text.await_args.args[0]
+    assert i18n.t("dm_start.setup_already_open", "EN") not in reply
 
 
 async def test_newgame_still_refuses_someone_elses_setup(session_factory) -> None:
