@@ -11,7 +11,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import GameStatus, PixelStage
+from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import matching, players
 from nani_pix_bot.services.game import turns
@@ -188,14 +188,19 @@ def stage_result(
     game: Game,
     result: AniListResult | ShikimoriResult | JikanResult | TMDBResult,
     *,
-    source: str,
+    source: Provider,
 ) -> None:
     """Assign a picked search result's title/synonyms onto a still-SETUP
     game — doesn't post anything or change status. This is the shared
     landing spot for every identification method (AniList, Shikimori,
     Jikan, TMDB, and eventually manual entry); the confirmation-screen
     ticket (#19) is what will show a preview between this and
-    activate_game()."""
+    activate_game().
+
+    `source` is a `Provider`, never `"manual"`: every caller arrives
+    holding a real result from one of the four services. Manual entry has
+    no result to stage and goes through `stage_manual_entry` below, which
+    writes the bare `"manual"` string itself."""
     game.title_romaji = result.title_romaji
     game.title_english = result.title_english
     game.synonyms = result.synonyms
