@@ -64,14 +64,18 @@ def _make_text_update(*, text: str, user_id: int = 1) -> MagicMock:
 
 
 @contextmanager
-def _captured_warnings() -> Iterator[list[str]]:
+def _captured_warnings(fmt: str = "{message}") -> Iterator[list[str]]:
     """Every WARNING+ line the code under test emits. A silent return is
     only acceptable on screen if it is *not* silent in the logs — which
     is a property of the handler worth pinning, not an implementation
     detail, since the whole point is that production has nothing else to
-    go on when a starter reports "I tapped it and nothing happened"."""
+    go on when a starter reports "I tapped it and nothing happened".
+
+    `fmt` defaults to the message alone; pass one carrying `{name}`/
+    `{function}`/`{line}` to assert on which call site a line came
+    from, which is the half a shared log helper can quietly erase."""
     captured: list[str] = []
-    sink_id = logger.add(captured.append, level="WARNING", format="{message}")
+    sink_id = logger.add(captured.append, level="WARNING", format=fmt)
     try:
         yield captured
     finally:
@@ -479,6 +483,51 @@ async def test_screenshot_search_again_routes_a_typed_query_after_confirming(
     shikimori_search.assert_awaited_once()
     assert shikimori_search.await_args is not None
     assert shikimori_search.await_args.args[1] == "Frieren"
+
+
+async def test_the_two_stale_row_sites_in_one_handler_stay_distinguishable(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """screenshot_search_pick_callback_handler looks the row up twice, and
+    both misses log through the same shared helper with the same
+    `screenshot_search_pick:` payload — so the message alone cannot
+    separate them and only the call site can. They are not the same event:
+    the first is a mundane tap on an hour-old keyboard, the second means
+    the row vanished *during* a live get_by_id round-trip, which points at
+    a concurrent /stop or a racing game start. A bare logger.warning()
+    inside the helper stamped the helper's own frame and made the two
+    byte-identical; opt(depth=1) stamps the caller."""
+
+    def _resolve_then_lose_the_row(*_args, **_kwargs) -> TMDBResult:
+        """get_by_id succeeds, but the row is gone by the time the handler
+        re-opens its session — the second site's actual trigger."""
+        with session_factory() as session:
+            session.query(Game).delete()
+            session.commit()
+        return _FRIEREN_TMDB
+
+    monkeypatch.setattr(tmdb, "get_by_id", AsyncMock(side_effect=_resolve_then_lose_the_row))
+    context = _make_context(session_factory)
+    data = "screenshot_search_pick:tmdb:209867"
+
+    with _captured_warnings("{name}:{function}:{line} - {message}") as warnings:
+        # First site: nothing to find on the very first lookup.
+        await screenshot_gallery.screenshot_search_pick_callback_handler(
+            cast(Update, _make_callback_update(data=data)),
+            cast(ContextTypes.DEFAULT_TYPE, context),
+        )
+        _staged_game(session_factory, source="anilist", anilist_id=99, tmdb_id=209867)
+        # Second site: found, resolved, then gone before the write.
+        await screenshot_gallery.screenshot_search_pick_callback_handler(
+            cast(Update, _make_callback_update(data=data)),
+            cast(ContextTypes.DEFAULT_TYPE, context),
+        )
+
+    assert len(warnings) == 2
+    assert warnings[0] != warnings[1]
+    # Not the helper's own frame, which is what made them identical.
+    assert not any("_log_stale_tap" in line for line in warnings)
+    assert all("screenshot_search_pick_callback_handler" in line for line in warnings)
 
 
 async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix(

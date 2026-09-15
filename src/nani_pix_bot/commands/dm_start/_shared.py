@@ -29,13 +29,24 @@ from nani_pix_bot.services.settings import stage_config
 # plumbing lives since the REST refactor deleted the per-provider
 # _request() helpers this comment used to point at.
 #
-# TelegramError belongs with them because the gallery hands provider URLs
-# to Telegram to fetch server-side (see screenshots.py's
-# _show_gallery_page): a hotlink block, an over-10MB frame or a dead CDN
-# path surfaces as a telegram.error.BadRequest on our side rather than as
-# an httpx error of our own. Same cause, same thing to tell the starter,
-# so the same exit — and until it was in here it escaped every handler in
-# this package and left them on a SETUP row with a dead keyboard.
+# TelegramError is here because a Telegram failure can mean the same
+# thing: the gallery hands provider URLs to Telegram to fetch
+# server-side, so a hotlink block, an over-10MB frame or a dead CDN path
+# comes back as a telegram.error.BadRequest rather than as an httpx error
+# of our own. Note where that is actually caught, though — it is
+# screenshots.py's _show_gallery_page, and it catches `except
+# TelegramError` directly rather than this tuple. Deliberately: the only
+# statements in that try are the two sends, and widening it to this tuple
+# would put RuntimeError around the keyboard/i18n construction evaluated
+# inside the call, which is the "report a bug as a provider outage"
+# pattern _IMAGE_DOWNLOAD_ERRORS below exists to avoid.
+#
+# So the member is defensive, not load-bearing: no current `except
+# _SEARCH_SERVICE_ERRORS` site can raise one, since all six wrap provider
+# HTTP calls only. Keep it that way. Moving a Telegram call inside one of
+# those blocks would silently relabel its failure "the provider is down"
+# — give such a call its own `except TelegramError` instead, the way
+# _show_gallery_page does.
 _SEARCH_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError, TelegramError)
 
 # Deliberately narrower than the tuple above, for the one call that is a
@@ -84,14 +95,24 @@ def _log_stale_tap(data: str | None, user_id: int) -> None:
     when a button is tapped and there is no SETUP game left to act on:
     the row was resolved (confirmed, stopped) or the setup-abandon timer
     deleted it an hour in, while the messages it left behind stayed
-    tappable forever. Nothing can be replied to usefully — there is no
-    game to read a language or a provider list off — so the tap is a
-    no-op on screen, which makes the log the only trace it happened at
-    all. It is a rejected action, so WARNING, per CLAUDE.md's table.
+    tappable forever. It is a rejected action, so WARNING, per CLAUDE.md's
+    table.
+
+    The tap stays a no-op *on screen* only because there is no string to
+    say this in yet — every caller reads `lang` before the lookup that
+    lands here, so a `query.answer(text=...)` is perfectly reachable and
+    is what these sites want; it waits on a locale key this lane doesn't
+    own (issue #79). Nothing structural is in the way.
 
     One helper rather than the same two lines at each of the six sites,
-    so the wording production greps for can't drift between them."""
-    logger.warning(
+    so the wording production greps for can't drift between them —
+    `opt(depth=1)` so loguru still stamps the *caller's* frame rather
+    than this one. Without it every site logged
+    `_shared:_log_stale_tap:94` and two of them (the pair inside
+    screenshot_search_pick_callback_handler, which also share a callback
+    prefix) became byte-identical, erasing the only thing that told a
+    mundane hour-old tap apart from a row that vanished mid-round-trip."""
+    logger.opt(depth=1).warning(
         "Starter {} tapped {!r} with no SETUP game left — already resolved, or the "
         "setup-abandon timer deleted the row",
         user_id,
