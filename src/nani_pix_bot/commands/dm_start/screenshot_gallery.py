@@ -43,6 +43,7 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     source_menu_for,
 )
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.search import jikan, shikimori, tmdb
@@ -62,6 +63,14 @@ async def screenshot_search_again_callback_handler(
     routes) is what tells search_text_handler to send the next text
     message to _screenshot_search_step below. No image is staged by any
     of this, so screenshot_source stays untouched.
+
+    `setup_step` is re-asserted for the same reason the picker is, and
+    it is the other half of the same routing: this button rides on a
+    gallery message that stays tappable after the preview has already
+    moved the game to CONFIRMING, and search_text_handler's CONFIRMING
+    branch drops typed text on the floor. Setting only the picker put
+    the starter in front of a prompt whose answer went nowhere — 0
+    replies, 0 searches — which no keyboard on that prompt can fix.
 
     The prompt carries the source-selection keyboard because this reply
     replaces the message whose buttons were the starter's other ways
@@ -87,6 +96,7 @@ async def screenshot_search_again_callback_handler(
         provider = parse_screenshot_search_again_callback_data(query.data)
         if provider is None:
             return
+        game.setup_step = SetupStep.PICKING_SCREENSHOT
         game.screenshot_picker_provider = provider
         # Built while the game is still live — the keyboard below is
         # sent after this block closes.
@@ -312,9 +322,17 @@ async def _handle_more_screenshots(
     anime? Search again" on every page is the right side to err on —
     paging is precisely what a starter does when the auto-resolved title
     looks wrong, so dropping the escape hatch on page 2 took it away at
-    the exact moment it was wanted. The button re-arms
-    screenshot_picker_provider itself when tapped, so it still routes on
-    a page whose gallery never armed it."""
+    the exact moment it was wanted.
+
+    Drawing that button means arming the picker, exactly as
+    `resume_screenshot_gallery` does for the same reason: tapping it
+    re-arms the column itself, but a *typed* correction has only the
+    column to route on, and search.py drops text with no provider being
+    resolved. Page 2 of a same-provider gallery therefore used to show
+    "Wrong anime? Search again" over a prompt that silently swallowed
+    anything typed under it. The write always names the provider whose
+    gallery is being drawn, so it cannot point the router at some other
+    provider's search."""
     provider, offset = more
     provider_id = _provider_id(game, provider)
     result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
@@ -341,6 +359,7 @@ async def _handle_more_screenshots(
         )
         return Fallback("dm_start.no_screenshots_available", provider)
 
+    game.screenshot_picker_provider = provider
     target = GalleryTarget(
         chat_id=game.starter_id, provider=provider, offset=offset, cross_provider=True
     )

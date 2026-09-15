@@ -5,7 +5,7 @@ import pytest
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import preview, screenshot_gallery
+from nani_pix_bot.commands.dm_start import preview, screenshot_gallery, search
 from nani_pix_bot.commands.dm_start.keyboards import SCREENSHOT_UPLOAD_CALLBACK_DATA
 from nani_pix_bot.commands.dm_start.screenshots import SourceMenu
 from nani_pix_bot.models.enums import SetupStep
@@ -44,6 +44,17 @@ def _make_callback_update(*, data: str, user_id: int = 1) -> MagicMock:
     update.callback_query.from_user.id = user_id
     update.callback_query.answer = AsyncMock()
     update.callback_query.edit_message_text = AsyncMock()
+    return update
+
+
+def _make_text_update(*, text: str, user_id: int = 1) -> MagicMock:
+    """A plain DM text message — what the starter types at any of the
+    screenshot sub-flow's "type a search query" prompts."""
+    update = MagicMock()
+    update.effective_user.id = user_id
+    update.effective_chat.type = "private"
+    update.message.text = text
+    update.message.reply_text = AsyncMock()
     return update
 
 
@@ -315,6 +326,53 @@ async def test_screenshot_search_again_prompt_still_offers_buttons(session_facto
     # Nothing failed here, so no provider is flagged.
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
     assert not any(label.startswith("⚠️") for label in labels)
+
+
+async def test_screenshot_search_again_routes_a_typed_query_after_confirming(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression (#72): "Wrong anime? Search again" lives on a gallery
+    message that stays tappable long after the preview moved the game to
+    CONFIRMING. Arming the picker is only half the routing — until this
+    tap also puts the game back on PICKING_SCREENSHOT, search.py's text
+    router takes its CONFIRMING branch and drops the typed answer
+    (probed live: 0 replies, 0 searches). The prompt's own buttons made
+    it look answered; the reply went nowhere."""
+    monkeypatch.setattr(shikimori, "search", AsyncMock(return_value=[]))
+    game_id = _staged_game(
+        session_factory,
+        source="anilist",
+        anilist_id=99,
+        original_image=b"already-picked",
+        screenshot_source="tmdb",
+        setup_step=SetupStep.CONFIRMING,
+    )
+    context = _make_context(session_factory)
+
+    await screenshot_gallery.screenshot_search_again_callback_handler(
+        cast(Update, _make_callback_update(data="screenshot_search_again:shikimori")),
+        cast(ContextTypes.DEFAULT_TYPE, context),
+    )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        assert fetched.screenshot_picker_provider == "shikimori"
+        # Still pure picker state: the previously picked image and its
+        # provenance survive until a new screenshot is actually chosen.
+        assert fetched.screenshot_source == "tmdb"
+        assert fetched.original_image == b"already-picked"
+
+    await search.search_text_handler(
+        cast(Update, _make_text_update(text="Frieren")),
+        cast(ContextTypes.DEFAULT_TYPE, context),
+    )
+
+    shikimori_search = cast(AsyncMock, shikimori.search)
+    shikimori_search.assert_awaited_once()
+    assert shikimori_search.await_args is not None
+    assert shikimori_search.await_args.args[1] == "Frieren"
 
 
 async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix(
@@ -615,6 +673,46 @@ async def test_screenshot_gallery_paging_past_the_end_still_offers_the_source_me
         assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
         # The source menu is up, so a retyped query has to route again.
         assert fetched.screenshot_picker_provider == "shikimori"
+
+
+async def test_screenshot_gallery_paging_arms_the_picker_for_a_typed_correction(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression (#72): every page is drawn `cross_provider=True`, so it
+    carries "Wrong anime? Search again" — and the rule
+    `resume_screenshot_gallery` states in its own words is that such a
+    gallery has to arm the picker, because a *typed* correction routes on
+    that column alone. Paging off a same-provider gallery (picker None)
+    used to draw the button while search.py silently dropped anything
+    typed under it."""
+    urls = [f"https://shikimori.io/x/{i}.jpg" for i in range(8)]
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=urls))
+    monkeypatch.setattr(shikimori, "search", AsyncMock(return_value=[]))
+    # Exactly the state a shown *same-provider* gallery leaves behind.
+    game_id = _staged_game(session_factory, shikimori_id=52991, screenshot_picker_provider=None)
+    context = _make_context(session_factory)
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, _make_callback_update(data="screenshot_more:shikimori:5")),
+        cast(ContextTypes.DEFAULT_TYPE, context),
+    )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.screenshot_picker_provider == "shikimori"
+        # Pure picker state — paging stages no image.
+        assert fetched.screenshot_source is None
+
+    await search.search_text_handler(
+        cast(Update, _make_text_update(text="Frieren")),
+        cast(ContextTypes.DEFAULT_TYPE, context),
+    )
+
+    shikimori_search = cast(AsyncMock, shikimori.search)
+    shikimori_search.assert_awaited_once()
+    assert shikimori_search.await_args is not None
+    assert shikimori_search.await_args.args[1] == "Frieren"
 
 
 async def test_screenshot_gallery_paging_looks_the_url_list_up_once_per_page(
