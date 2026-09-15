@@ -230,7 +230,9 @@ async def _screenshot_search_step(
     Jikan outage on 2026-09-14 did exactly that). The menu is built by
     the caller, whose session is already closed by the time we run."""
     provider = menu.provider
-    assert provider is not None  # search is always for a specific provider
+    if provider is None:
+        # search is always for a specific provider
+        raise RuntimeError("menu.provider is None in _screenshot_search_step")
     status_message = await message.reply_text(i18n.t("dm_start.searching", lang))
     logger.debug("{} screenshot cross-search started for query {!r}", provider, message.text)
 

@@ -16,6 +16,27 @@ from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.settings import stage_config
 
 
+def _require_original_image(game: Game, situation: str) -> bytes:
+    """Restores the type narrowing lost across guess_command's WON/
+    STAGE_ADVANCED/UNSOLVED branches for original_image, converting the
+    old bare `assert` at each site to a real exception (S101, issue
+    #117) so it can't silently vanish under `python -O`. Hoisted out of
+    guess_command into its own function (rather than an inline
+    `if ... raise` at each of the three call sites) purely to keep
+    guess_command's own cyclomatic complexity under qlty's threshold —
+    see CLAUDE.md's Tooling section.
+
+    original_image is deliberately NOT checked/loaded any earlier than
+    this: it's a deferred column (see models/game.py), and a WRONG
+    guess — by far the most common outcome — never reads it. Checking
+    it up front would force-load the blob on every single /guess; each
+    branch that actually needs the bytes calls this once, right where
+    it's used."""
+    if game.original_image is None:
+        raise RuntimeError(f"game.original_image is None on {situation}")
+    return game.original_image
+
+
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     user = update.effective_user
@@ -43,12 +64,8 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             return
         # _validate_guess already checked this is set — restores the type
         # narrowing lost by returning `game` across a function boundary.
-        # original_image is deliberately NOT checked/asserted here: it's a
-        # deferred column (see models/game.py), and a WRONG guess — by far
-        # the most common outcome — never reads it. Asserting it up front
-        # would force-load the blob on every single /guess. Each branch
-        # below that actually needs the bytes asserts it locally instead.
-        assert game.current_stage is not None
+        if game.current_stage is None:
+            raise RuntimeError("game.current_stage is None despite _validate_guess's check")
 
         players.get_or_create_player(session, user.id, username=user.username)
         logger.debug("{} guessed {!r} on game {}", user.id, guess_text, game.id)
@@ -57,7 +74,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
 
         if outcome is game_service.GuessOutcome.WON:
-            assert game.original_image is not None
+            original_bytes = _require_original_image(game, "a WON outcome")
             timeout_module.cancel_timeout(context.job_queue, game.id)
             timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
             turn_state = game_service.get_turn_state(session)
@@ -66,7 +83,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await timeout_module.post_current_image(
                 context,
                 session,
-                photo=game.original_image,
+                photo=original_bytes,
                 caption=i18n.t(
                     "guess.won_caption",
                     lang,
@@ -90,9 +107,8 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 )
             )
         elif outcome is game_service.GuessOutcome.STAGE_ADVANCED:
-            assert game.original_image is not None
-            original_bytes = game.original_image
-            target_width = stage_config.get_stage_config(session)[game.current_stage].target_width
+            original_bytes = _require_original_image(game, "a STAGE_ADVANCED outcome")
+            target_width = stage_config.get_stage_config(session, game.current_stage).target_width
             pixelated = pixelate_service.pixelate(original_bytes, target_width)
             progress = game_service.stage_progress(session, game)
             game_service.reset_inactivity_clock(game)
@@ -111,12 +127,12 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 ),
             )
         elif outcome is game_service.GuessOutcome.UNSOLVED:
-            assert game.original_image is not None
+            original_bytes = _require_original_image(game, "an UNSOLVED outcome")
             timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
             await timeout_module.post_current_image(
                 context,
                 session,
-                photo=game.original_image,
+                photo=original_bytes,
                 caption=i18n.t(
                     "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
                 ),

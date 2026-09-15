@@ -55,10 +55,11 @@ async def _finalize_and_post(context, session, game: Game, lang: str, starter_na
     game_service.stage_progress(), which needs an already-ACTIVE game;
     activate_game() only runs a couple of lines below."""
     timeout_module.cancel_setup_abandon(context.job_queue, game.id)
-    assert game.original_image is not None
+    if game.original_image is None:
+        raise RuntimeError("game.original_image is None in _finalize_and_post")
     original_bytes = game.original_image
     first_stage = game_service.STAGE_ORDER[0]
-    first_stage_settings = stage_config.get_stage_config(session)[first_stage]
+    first_stage_settings = stage_config.get_stage_config(session, first_stage)
     pixelated = pixelate_service.pixelate(original_bytes, first_stage_settings.target_width)
     caption = i18n.t(
         "dm_start.game_started_caption",

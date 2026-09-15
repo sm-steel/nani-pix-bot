@@ -31,7 +31,7 @@ DEFAULT_STAGE_CONFIG: dict[PixelStage, StageSettings] = {
 }
 
 
-def get_stage_config(session: Session) -> dict[PixelStage, StageSettings]:
+def get_stage_configs(session: Session) -> dict[PixelStage, StageSettings]:
     rows = {row.stage: row for row in session.scalars(select(StageConfig))}
     return {
         stage: StageSettings(rows[stage].target_width, rows[stage].wrong_guess_limit)
@@ -39,6 +39,13 @@ def get_stage_config(session: Session) -> dict[PixelStage, StageSettings]:
         else DEFAULT_STAGE_CONFIG[stage]
         for stage in PixelStage
     }
+
+
+def get_stage_config(session: Session, stage: PixelStage) -> StageSettings:
+    row = session.get(StageConfig, stage)
+    if row is None:
+        return DEFAULT_STAGE_CONFIG[stage]
+    return StageSettings(row.target_width, row.wrong_guess_limit)
 
 
 def set_stage_config(

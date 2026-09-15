@@ -68,12 +68,9 @@ select = [
     "S",     # flake8-bandit (security)
     "RUF",   # ruff-specific rules
 ]
-ignore = [
-    "S101",  # assert is fine outside tests too
-]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["ARG"]  # pytest fixtures are passed but often unused
+"tests/*" = ["ARG", "S101"]  # pytest fixtures are passed but often unused; assert is the idiom in tests
 
 [tool.ty.rules]
 division-by-zero = "warn"          # default: ignore
