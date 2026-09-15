@@ -425,6 +425,145 @@ async def test_more_screenshots_failure_keeps_a_typed_query_routable(
     context.bot.send_media_group.assert_not_awaited()
 
 
+async def test_more_screenshots_runs_its_fetch_with_no_write_transaction_open(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #82: a "More screenshots" tap's own screenshot-listing fetch
+    used to run inside the same open write transaction as the
+    screenshot_picker_provider write and the page's own send — this
+    proves it no longer does, the same way
+    test_the_two_stale_row_sites_in_one_handler_stay_distinguishable
+    proves it for the search-pick handler: delete the row from a
+    *separate* session from inside the fetch mock itself. If the
+    handler's own session were still open and holding the row at that
+    point, this deletion wouldn't be a real, externally-visible fact by
+    the time the handler re-reads afterward — it is, so the re-read
+    correctly finds nothing and skips the now-pointless write, logging
+    it rather than crashing on a None attribute set. The page still goes
+    out regardless: the tap was already answered before the fetch ran
+    (unaffected by this fix), and pre-#82 behavior never re-checked at
+    all, so there is nothing to roll back and nothing new to tell the
+    starter."""
+    urls = [f"https://shikimori.io/x/{i}.jpg" for i in range(8)]
+
+    def _fetch_then_lose_the_row(*_args, **_kwargs) -> list[str]:
+        with session_factory() as session:
+            session.query(Game).delete()
+            session.commit()
+        return urls
+
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(side_effect=_fetch_then_lose_the_row))
+    _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_more:shikimori:5")
+    context = _make_context(session_factory)
+
+    with _captured_warnings() as warnings:
+        await screenshot_gallery.screenshot_gallery_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    context.bot.send_media_group.assert_awaited_once()
+    update.callback_query.answer.assert_awaited_once_with()
+    assert any("vanished" in line and "shikimori" in line for line in warnings)
+
+
+async def test_screenshot_pick_runs_its_download_with_no_write_transaction_open(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The download-then-write half of the same fix: the picked
+    screenshot's bytes are downloaded with no write transaction open, and
+    the write (original_image, screenshot_source, screenshot_picker_provider)
+    plus the confirmation preview happen against a freshly re-read row
+    afterward, in a short session of its own. Unlike the paging case
+    above, there is no live row left to attach a preview album to if it
+    vanished in that gap — and the tap is already answered by the time
+    the download starts, so there's no alert left to give either (see
+    _reject_stale_tap). This can only drop the pick, not show anything —
+    but it must still *say* so directly (a plain follow-up message,
+    since the callback query's one answer is already spent): silently
+    logging and leaving the starter with nothing on screen is exactly
+    the #72/#79/#95 failure class this codebase has zero tolerance for
+    reintroducing, and this race is a real one — jobs/timers.py's
+    setup_abandon_job_callback deletes an abandoned SETUP row on its own
+    JobQueue task, unserialized against update handling, an hour after
+    creation. Proven the same way as the paging test above: delete the
+    row from a separate session inside the download mock."""
+    monkeypatch.setattr(
+        shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
+    )
+    _staged_game(session_factory, shikimori_id=52991)
+
+    download_response = MagicMock(content=b"real-screenshot-bytes")
+    download_response.raise_for_status = MagicMock()
+
+    async def _download_then_lose_the_row(_url):
+        with session_factory() as session:
+            session.query(Game).delete()
+            session.commit()
+        return download_response
+
+    update = _make_callback_update(data="screenshot_pick:shikimori:0")
+    context = _make_context(session_factory)
+    context.bot_data["search_client"].get = AsyncMock(side_effect=_download_then_lose_the_row)
+
+    with _captured_warnings() as warnings:
+        await screenshot_gallery.screenshot_gallery_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    context.bot.send_media_group.assert_not_awaited()  # no live row to preview
+    update.callback_query.edit_message_text.assert_not_awaited()  # outcome is None
+    # Just the one bare answer from before the download — nothing left to
+    # spend a second answer on once the row turned up gone.
+    update.callback_query.answer.assert_awaited_once_with()
+    # No alert possible (the query's one answer is already spent), so the
+    # starter is told directly via a plain follow-up message instead.
+    context.bot.send_message.assert_awaited_once_with(
+        chat_id=1, text=i18n.t("dm_start.setup_gone", "EN")
+    )
+    assert any("vanished" in line and "downloading" in line for line in warnings)
+
+
+async def test_gallery_fallback_notifies_the_starter_if_the_row_vanishes_before_it_can_be_shown(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second of the review's two other vanished-row sites:
+    screenshot_gallery_callback_handler's own outer Fallback branch,
+    reached whenever _dispatch_gallery_action returns a Fallback — here,
+    the paging fetch itself failing. Proven the same way as the two
+    tests above: delete the row from a separate session inside the
+    failing fetch's mock, so the handler's later re-read genuinely finds
+    it gone rather than the deletion being masked by a still-open
+    transaction. Must still say so directly, for the same #72/#79/#95
+    reason: nothing else on this path shows the starter anything once
+    the fetch itself has failed."""
+
+    def _fetch_then_lose_the_row(*_args, **_kwargs):
+        with session_factory() as session:
+            session.query(Game).delete()
+            session.commit()
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(side_effect=_fetch_then_lose_the_row))
+    _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_more:shikimori:5")
+    context = _make_context(session_factory)
+
+    with _captured_warnings() as warnings:
+        await screenshot_gallery.screenshot_gallery_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    context.bot.send_media_group.assert_not_awaited()
+    update.callback_query.edit_message_text.assert_not_awaited()
+    context.bot.send_message.assert_awaited_once_with(
+        chat_id=1, text=i18n.t("dm_start.setup_gone", "EN")
+    )
+    assert any("vanished" in line and "gallery fallback" in line for line in warnings)
+
+
 async def test_screenshot_search_again_callback_handler_asks_for_a_query(session_factory) -> None:
     game_id = _staged_game(session_factory, source="anilist", anilist_id=99)
     update = _make_callback_update(data="screenshot_search_again:tmdb")
@@ -659,6 +798,47 @@ async def test_screenshot_search_pick_callback_handler_resolves_and_shows_galler
     callbacks = [b.callback_data for row in msg_kwargs["reply_markup"].inline_keyboard for b in row]
     assert "screenshot_search_again:tmdb" in callbacks
     update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_search_pick_fallback_notifies_the_starter_if_the_row_vanishes_before_it_can_be_shown(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The third of the review's two other vanished-row sites:
+    _reply_search_pick_fallback's own re-read, reached whenever the
+    gallery fetch that follows a successful id-write fails. By this
+    point the id write has already committed and the query is already
+    answered, so — like the other two vanished-row sites — there's no
+    alert left to give (see _reject_stale_tap); only a plain follow-up
+    message can still tell the starter. Deletes the row from a separate
+    session inside the failing fetch's mock, same technique as the other
+    two."""
+
+    def _fetch_then_lose_the_row(*_args, **_kwargs):
+        with session_factory() as session:
+            session.query(Game).delete()
+            session.commit()
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(tmdb, "get_by_id", AsyncMock(return_value=_FRIEREN_TMDB))
+    monkeypatch.setattr(tmdb, "screenshots", AsyncMock(side_effect=_fetch_then_lose_the_row))
+    _staged_game(
+        session_factory, source="anilist", anilist_id=99, screenshot_picker_provider="tmdb"
+    )
+
+    update = _make_callback_update(data="screenshot_search_pick:tmdb:209867")
+    context = _make_context(session_factory)
+
+    with _captured_warnings() as warnings:
+        await screenshot_gallery.screenshot_search_pick_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    context.bot.send_media_group.assert_not_awaited()
+    update.callback_query.edit_message_text.assert_not_awaited()
+    context.bot.send_message.assert_awaited_once_with(
+        chat_id=1, text=i18n.t("dm_start.setup_gone", "EN")
+    )
+    assert any("vanished" in line and "search-pick fallback" in line for line in warnings)
 
 
 async def test_screenshot_search_pick_callback_handler_handles_a_stale_id(

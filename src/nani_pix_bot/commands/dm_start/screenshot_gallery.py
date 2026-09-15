@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 
 from loguru import logger
+from sqlalchemy.orm import Session, sessionmaker
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -78,6 +79,65 @@ class Tap:
     answer: Callable[..., Awaitable[bool]]
 
 
+@dataclass(frozen=True)
+class _FreshRead:
+    """How to re-read the tapped game's row fresh in a brand-new session
+    once whatever network work needed doing before a write is done, and
+    how to tell the starter directly if that re-read comes back empty —
+    bundled for the same reason `Tap` above is: all four travel together
+    through every post-network write site issue #82's restructuring
+    introduced below, and threading them as loose parameters put several
+    of those functions, and `_fresh_game_or_warn`/`_notify_setup_gone`
+    themselves, over qlty's "many parameters" threshold."""
+
+    session_factory: sessionmaker[Session]
+    user_id: int
+    context: ContextTypes.DEFAULT_TYPE
+    lang: str
+
+
+def _fresh_game_or_warn(session, fresh: _FreshRead, log_msg: str, *log_args: object):
+    """Re-reads the tapped game fresh inside `session` and, if the row is
+    gone, logs `log_msg` — deliberately *not* async and deliberately not
+    the one that tells the starter: this runs while `session` (from the
+    caller's own `with session_scope(...)`) is still open, and awaiting
+    the Telegram round-trip here would hold that transaction open across
+    a network call — the exact issue #82 problem this task exists to
+    fix, just narrowed down to this rare vanished-row edge case rather
+    than eliminated. Every caller instead checks the return value *after*
+    its own `with` block has closed and, only then, calls
+    `_notify_setup_gone` — see each call site.
+
+    This is not a defensive, can't-really-happen check: `jobs/timers.py`'s
+    setup_abandon_job_callback deletes an abandoned SETUP row an hour in,
+    on its own JobQueue-scheduled task — not serialized against update
+    handling (app.py never sets `concurrent_updates`) — so an ordinary
+    screenshot download or search-pick round-trip that happens to still
+    be in flight when that hour ticks over hits exactly this branch.
+    Logging it and saying nothing on screen is the #72/#79/#95 silent-
+    failure class this codebase has zero tolerance for reintroducing,
+    even in a new, narrower spot than those three originally covered.
+
+    Returns the fresh row, or None once it's logged the miss — every
+    caller's own None-branch, once its session has closed, is then just
+    "tell the starter and stop"."""
+    fresh_game = game_service.get_setup_game_for_starter(session, fresh.user_id)
+    if fresh_game is None:
+        logger.warning(log_msg, *log_args)
+    return fresh_game
+
+
+async def _notify_setup_gone(fresh: _FreshRead, chat_id: int) -> None:
+    """The plain follow-up message every vanished-row site sends once its
+    own `_fresh_game_or_warn` session has closed — the same
+    `dm_start.setup_gone` text `_reject_stale_tap`'s alert uses, sent as
+    a message instead of an alert, since every call site that reaches
+    here has already spent its one callback-query answer."""
+    await fresh.context.bot.send_message(
+        chat_id=chat_id, text=i18n.t("dm_start.setup_gone", fresh.lang)
+    )
+
+
 async def screenshot_search_again_callback_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -119,20 +179,16 @@ async def screenshot_search_again_callback_handler(
         if game is None:
             await _reject_stale_tap(query, user.id, lang)
             return
-        # One answer per query id, so the bare acknowledgement waits
-        # until the stale branch above has had its chance at it (see
-        # _reject_stale_tap).
-        # Inside the open write transaction, like every other await in
-        # this block — see issue #82, which is filed against exactly
-        # that shape here; this is one more call for its sweep to move,
-        # not a new pattern.
-        await query.answer()
         provider = parse_screenshot_search_again_callback_data(query.data)
         if provider is None:
             # keyboards.py logged what was wrong with the payload; this
             # names the game whose picker it would otherwise have aimed
-            # at a provider that doesn't exist (see #71).
+            # at a provider that doesn't exist (see #71). Answered here,
+            # not left for the line below: this branch returns before
+            # ever reaching it, and a real client can't produce this
+            # payload but still deserves its spinner cleared.
             logger.warning("Game {}: rejected search-again tap {!r}", game.id, query.data)
+            await query.answer()
             return
         game.setup_step = SetupStep.PICKING_SCREENSHOT
         game.screenshot_picker_provider = provider
@@ -141,6 +197,15 @@ async def screenshot_search_again_callback_handler(
         providers = source_menu_for(game, None).providers
         logger.debug("Game {}: re-searching {} screenshots by hand", game.id, provider)
 
+    # Both awaits below used to sit inside the block above, alongside the
+    # writes — holding the write transaction open across a Telegram
+    # round-trip for no reason, since neither call's outcome feeds back
+    # into anything written there (see issue #82). The writes are already
+    # committed by the time either runs. One answer per query id, so the
+    # bare acknowledgement still waits until the stale/forged branches
+    # above have had their chance at it (see _reject_stale_tap and the
+    # rejected-payload branch, each of which answers for its own path).
+    await query.answer()
     await query.edit_message_text(
         i18n.t("dm_start.ask_search_screenshots", lang),
         reply_markup=screenshot_source_keyboard(providers, lang),
@@ -275,22 +340,58 @@ async def screenshot_search_pick_callback_handler(
             # this pair goes back to being byte-identical.
             await _reject_stale_tap(query, user.id, lang)
             return
-        # Inside the open write transaction, like every other await in
-        # this block — see issue #82, which is filed against exactly that
-        # shape here; one more call for its sweep to move, not a new
-        # pattern.
         await query.answer()
         game_service.set_screenshot_provider_id(game, result)
         logger.debug(
             "Game {}: cross-provider search resolved {} -> id {}", game.id, provider, external_id
         )
-        outcome = await _show_search_pick_gallery(context, game, provider, external_id, lang)
-        # if/else rather than an early return purely to keep this
-        # handler's return count under qlty's threshold.
-        if isinstance(outcome, Fallback):
-            await reply_fallback(query.edit_message_text, game, lang, outcome)
-        else:
-            await query.edit_message_text(i18n.t(outcome, lang))
+        # `game` is read only (never written) past this point — the block
+        # closes right here, committing the id write above, before the
+        # gallery's own screenshot-listing fetch and its send run. That
+        # fetch/send pair used to run inside this same open write
+        # transaction (issue #82); neither one's outcome feeds back into
+        # the write that already happened, so there's nothing left for
+        # this transaction to stay open for. `game` stays safe to read
+        # below regardless — session_factory's sessions never expire
+        # attributes on commit, so the columns already loaded here (id,
+        # starter_id, the provider id just written) are still there on a
+        # detached object; only a *write* would need a fresh row.
+
+    outcome = await _show_search_pick_gallery(context, game, provider, external_id, lang)
+    if isinstance(outcome, Fallback):
+        await _reply_search_pick_fallback(
+            query, _FreshRead(session_factory, user.id, context, lang), game, outcome
+        )
+    else:
+        await query.edit_message_text(i18n.t(outcome, lang))
+
+
+async def _reply_search_pick_fallback(query, fresh: _FreshRead, game, fallback: Fallback) -> None:
+    """Shows `fallback` with the source menu — split out of
+    `screenshot_search_pick_callback_handler` to keep that handler's own
+    return count under qlty's threshold, and because it needs its own
+    fresh row: that handler's write session already closed by the time a
+    Fallback can reach here (issue #82), so `reply_fallback`'s writes
+    (setup_step, screenshot_picker_provider) need a session of their
+    own, not the caller's now-detached snapshot. `game` here is that
+    snapshot — read-only, for `starter_id`/`id` only (see
+    `_fresh_game_or_warn`).
+
+    The vanished-row notify (if any) runs *after* the `with` block below
+    closes, not inside it — `_fresh_game_or_warn` only reads and logs, no
+    network, precisely so this function doesn't reintroduce issue #82 on
+    its own new-row-vanished path."""
+    with session_scope(fresh.session_factory) as session:
+        fresh_game = _fresh_game_or_warn(
+            session,
+            fresh,
+            "Game {}: setup vanished before its search-pick fallback could be shown",
+            game.id,
+        )
+        if fresh_game is not None:
+            await reply_fallback(query.edit_message_text, fresh_game, fresh.lang, fallback)
+    if fresh_game is None:
+        await _notify_setup_gone(fresh, game.starter_id)
 
 
 async def _show_search_pick_gallery(
@@ -366,7 +467,17 @@ async def screenshot_gallery_callback_handler(
     the album send and the image download, leaving the spinner running
     across the slowest work in the flow for every tap that *works*.
     Each branch answers at its own decision point instead, exactly
-    once."""
+    once.
+
+    The initial lookup below is a short, read-only session — closed
+    before `_dispatch_gallery_action` ever runs, so the screenshot
+    fetch, the image download and the album/message sends it goes on to
+    do all happen with no write transaction open (issue #82). `game` is
+    handed down anyway as a plain, already-detached snapshot: every read
+    of it after this point (ids, `starter_id`) is safe off already-loaded
+    columns, but any *write* re-reads a fresh row of its own in a new,
+    short session right before it happens, rather than writing through
+    this one."""
     query = update.callback_query
     if query is None or query.data is None:
         return
@@ -381,21 +492,36 @@ async def screenshot_gallery_callback_handler(
         if game is None:
             await _reject_stale_tap(query, user.id, lang)
             return
-        outcome = await _dispatch_gallery_action(
-            context, session, game, query.data, Tap(lang, query.answer)
-        )
-        # Replied inside the session block — a Fallback's source menu is
-        # built from the still-live `game`.
-        if isinstance(outcome, Fallback):
-            await reply_fallback(query.edit_message_text, game, lang, outcome)
-        elif outcome is not None:
-            # Already-rendered text, not an i18n key — the paging
-            # confirmation needs format kwargs the caller doesn't have.
-            await query.edit_message_text(outcome)
+
+    fresh = _FreshRead(session_factory, user.id, context, lang)
+    outcome = await _dispatch_gallery_action(
+        context, fresh, game, query.data, Tap(lang, query.answer)
+    )
+    if isinstance(outcome, Fallback):
+        # A fresh short session of its own: `reply_fallback` writes
+        # (setup_step, screenshot_picker_provider), so it needs a live
+        # row, not the snapshot above — see the docstring. The
+        # vanished-row notify (if any) runs after this block closes, not
+        # inside it — see _fresh_game_or_warn's own docstring for why.
+        with session_scope(session_factory) as session:
+            fresh_game = _fresh_game_or_warn(
+                session,
+                fresh,
+                "Game {}: setup vanished before its gallery fallback could be shown",
+                game.id,
+            )
+            if fresh_game is not None:
+                await reply_fallback(query.edit_message_text, fresh_game, lang, outcome)
+        if fresh_game is None:
+            await _notify_setup_gone(fresh, game.starter_id)
+    elif outcome is not None:
+        # Already-rendered text, not an i18n key — the paging
+        # confirmation needs format kwargs the caller doesn't have.
+        await query.edit_message_text(outcome)
 
 
 async def _dispatch_gallery_action(
-    context: ContextTypes.DEFAULT_TYPE, session, game, data: str, tap: Tap
+    context: ContextTypes.DEFAULT_TYPE, fresh: _FreshRead, game, data: str, tap: Tap
 ) -> str | Fallback | None:
     """Runs the gallery action `data` encodes (a "More screenshots" page
     or a numbered pick) and returns the rendered text for the
@@ -403,11 +529,16 @@ async def _dispatch_gallery_action(
     `screenshot_gallery_callback_handler` itself to keep that handler's
     own return count under qlty's "many returns" threshold.
 
+    Takes `fresh` (how to re-read the row later) rather than a live
+    session, like its two branches below — see
+    `screenshot_gallery_callback_handler`'s docstring; `game` here is the
+    same read-only snapshot.
+
     Every branch answers `tap` exactly once, at its own decision
     point — see `Tap`."""
     more = parse_screenshot_more_callback_data(data)
     if more is not None:
-        return await _handle_more_screenshots(context, game, more, tap)
+        return await _handle_more_screenshots(context, fresh, game, more, tap)
 
     picked = parse_screenshot_pick_callback_data(data)
     if picked is None:
@@ -421,11 +552,15 @@ async def _dispatch_gallery_action(
         # payload — but the spinner still has to stop.
         await tap.answer()
         return None
-    return await _handle_screenshot_pick(context, session, game, picked, tap)
+    return await _handle_screenshot_pick(context, fresh, game, picked, tap)
 
 
 async def _handle_more_screenshots(
-    context: ContextTypes.DEFAULT_TYPE, game, more: tuple[Provider, int], tap: Tap
+    context: ContextTypes.DEFAULT_TYPE,
+    fresh: _FreshRead,
+    game,
+    more: tuple[Provider, int],
+    tap: Tap,
 ) -> str | Fallback | None:
     """Renders the gallery page at the tapped offset. Serves the back
     button as well as the forward one — the callback has always encoded
@@ -483,7 +618,32 @@ async def _handle_more_screenshots(
         )
         return Fallback("dm_start.no_screenshots_available", provider)
 
-    game.screenshot_picker_provider = provider
+    # The fetch above is done, so this is where the write happens — in a
+    # fresh, short session of its own rather than on the pre-fetch
+    # snapshot `game`, and closed *before* the page's own send runs
+    # (issue #82: that send used to run inside this same transaction).
+    # Deliberately not `_fresh_game_or_warn`/`_notify_setup_gone` here,
+    # unlike this file's other three re-read sites: the page still goes
+    # out below regardless of whether the row is gone (see the comment
+    # on that branch), so this is the one re-read whose vanished-row
+    # case isn't actually silent — notifying here on top of that page
+    # would double up on the starter, not fix a silence.
+    with session_scope(fresh.session_factory) as session:
+        fresh_game = game_service.get_setup_game_for_starter(session, fresh.user_id)
+        if fresh_game is None:
+            # The tap is already answered and Telegram doesn't know the
+            # row exists either, so the page still goes out below exactly
+            # as it would have before this re-read existed — there is
+            # simply nothing left to write it onto.
+            logger.warning(
+                "Game {}: setup vanished while paging {} screenshots — sending the page "
+                "anyway, dropping the now-pointless picker-provider write",
+                game.id,
+                provider,
+            )
+        else:
+            fresh_game.screenshot_picker_provider = provider
+
     target = GalleryTarget(
         chat_id=game.starter_id, provider=provider, offset=offset, cross_provider=True
     )
@@ -508,7 +668,11 @@ async def _handle_more_screenshots(
 
 
 async def _handle_screenshot_pick(
-    context: ContextTypes.DEFAULT_TYPE, session, game, picked: tuple[Provider, int], tap: Tap
+    context: ContextTypes.DEFAULT_TYPE,
+    fresh: _FreshRead,
+    game,
+    picked: tuple[Provider, int],
+    tap: Tap,
 ) -> str | Fallback | None:
     """Downloads the picked screenshot's bytes and shows the
     confirmation preview. Returns the i18n key for the caller's own
@@ -576,13 +740,39 @@ async def _handle_screenshot_pick(
         )
         return Fallback("dm_start.screenshot_service_down", provider)
 
-    # The one place image provenance is written: these bytes really do
-    # come from `provider`'s *_id on file. The picker is done resolving
-    # at the same moment — the next screen is the confirmation preview.
-    game.original_image = response.content
-    game.screenshot_source = provider
-    game.screenshot_picker_provider = None
-    logger.debug("Game {}: picked {} screenshot #{}", game.id, provider, index + 1)
+    # The download is done, so this is where the write happens — on a
+    # freshly re-read row rather than the pre-download snapshot `game`
+    # (issue #82). _show_preview runs inside this same short session,
+    # unlike the paging page above: it needs a live session of its own
+    # (it writes setup_step and reads the stage config), so — like every
+    # other call site of it in this package — it stays paired with its
+    # write rather than moving outside it. The vanished-row notify (if
+    # any) is the one thing that does *not* run in here — it runs after
+    # this block closes, not inside it (see _fresh_game_or_warn).
+    with session_scope(fresh.session_factory) as session:
+        fresh_game = _fresh_game_or_warn(
+            session,
+            fresh,
+            "Game {}: setup vanished after downloading {} screenshot #{} — dropping the pick",
+            game.id,
+            provider,
+            index + 1,
+        )
+        if fresh_game is not None:
+            # The one place image provenance is written: these bytes
+            # really do come from `provider`'s *_id on file. The picker
+            # is done resolving at the same moment — the next screen is
+            # the confirmation preview.
+            fresh_game.original_image = response.content
+            fresh_game.screenshot_source = provider
+            fresh_game.screenshot_picker_provider = None
+            logger.debug("Game {}: picked {} screenshot #{}", fresh_game.id, provider, index + 1)
 
-    await _show_preview(context, session, game, tap.lang)
+            await _show_preview(context, session, fresh_game, tap.lang)
+    if fresh_game is None:
+        # There is no live row left to show a preview album for either
+        # way, but the starter still needs telling — now that the
+        # session above has closed, not while it was open.
+        await _notify_setup_gone(fresh, game.starter_id)
+        return None
     return i18n.t("dm_start.preview_sent", tap.lang)
