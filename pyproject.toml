@@ -75,3 +75,10 @@ select = [
 [tool.ty.rules]
 division-by-zero = "warn"          # default: ignore
 blanket-ignore-comment = "warn"    # default: ignore; require rule-specific `ty: ignore[...]`
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+
+[tool.semantic_release.branches.main]
+match = "^(main|master)$"
+prerelease = false
