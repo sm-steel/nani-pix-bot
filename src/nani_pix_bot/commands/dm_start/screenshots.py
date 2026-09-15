@@ -41,6 +41,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 )
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
+from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.search import jikan, shikimori, tmdb
@@ -108,7 +109,7 @@ class Fallback:
     provider: Provider
 
 
-def _provider_id(game, provider: Provider) -> int | None:
+def _provider_id(game: Game, provider: Provider) -> int | None:
     """Typed wrapper around the getattr(game, _ID_ATTRS[provider]) dance
     used throughout this module — a bare getattr on a dynamic attribute
     name is `Any` to `ty`, which silently let a stale/cleared id (e.g.
@@ -190,11 +191,11 @@ class GalleryTarget:
     cross_provider: bool = False
 
 
-def source_menu_for(game, provider: Provider | None) -> SourceMenu:
+def source_menu_for(game: Game, provider: Provider | None) -> SourceMenu:
     return SourceMenu(providers=_screenshot_capable_providers(game), provider=provider)
 
 
-async def reply_fallback(send, game, lang: str, fallback: Fallback) -> None:
+async def reply_fallback(send, game: Game, lang: str, fallback: Fallback) -> None:
     """`reply_with_source_menu` for the common case where the caller has
     the game loaded and so can build the menu itself.
 
@@ -262,7 +263,9 @@ async def gallery_page_or_fallback(
     return fallback if fallback is not None else "dm_start.screenshot_source_picked"
 
 
-async def start_screenshot_picker(context: ContextTypes.DEFAULT_TYPE, game, lang: str) -> None:
+async def start_screenshot_picker(
+    context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
+) -> None:
     """Entry point from `search.py`'s `pick_callback_handler` (and
     `manual.py`'s synonym step) once identification is staged with no
     image yet — shows the screenshot-source-selection keyboard. Every
@@ -279,7 +282,7 @@ async def start_screenshot_picker(context: ContextTypes.DEFAULT_TYPE, game, lang
     )
 
 
-def clear_screenshot_selection(game) -> None:
+def clear_screenshot_selection(game: Game) -> None:
     """Leaves the screenshot sub-flow behind: the picker stops resolving
     anything, and an API-picked screenshot plus the provider id that
     resolved it are dropped. Used by preview.py's "Re-search title"
