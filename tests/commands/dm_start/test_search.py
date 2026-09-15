@@ -1,8 +1,11 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Literal, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from loguru import logger
 from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
@@ -120,6 +123,20 @@ def _make_method_callback_update(*, data: str, user_id: int = 1) -> MagicMock:
     update.callback_query.answer = AsyncMock()
     update.callback_query.edit_message_text = AsyncMock()
     return update
+
+
+@contextmanager
+def _captured_warnings(fmt: str = "{message}") -> Iterator[list[str]]:
+    """Every WARNING+ line the code under test emits — mirrors
+    test_screenshot_gallery.py's helper of the same name, since a silent
+    return is only acceptable on screen if it is *not* silent in the
+    logs (see #79/#95)."""
+    captured: list[str] = []
+    sink_id = logger.add(captured.append, level="WARNING", format=fmt)
+    try:
+        yield captured
+    finally:
+        logger.remove(sink_id)
 
 
 def _make_callback_update(
@@ -482,6 +499,35 @@ async def test_pick_callback_handler_retry_does_not_touch_the_database(session_f
     context.bot.send_photo.assert_not_awaited()
 
 
+async def test_pick_callback_handler_says_so_when_the_setup_row_is_gone(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The one remaining silent-drop site from issue #79's sweep (#95):
+    unlike the other five call sites of _reject_stale_tap, this
+    handler's own stale-row lookup — after _resolve_picked_result's
+    provider round-trip — used to `return` with no log and no reply.
+    Must answer exactly once, with the alert, so the bare acknowledgement
+    a successful pick gets has to move below this branch instead of
+    sitting above it as a second (rejected) answer on the same query
+    id."""
+    monkeypatch.setattr(search.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
+    update = _make_callback_update(data="anilist_pick:99", user_id=7)
+    context = _make_callback_context(session_factory)  # no SETUP row for starter 7 at all
+
+    with _captured_warnings() as warnings:
+        await search.pick_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    assert len(warnings) == 1
+    assert "7" in warnings[0]
+    assert "anilist_pick:99" in warnings[0]
+    update.callback_query.answer.assert_awaited_once_with(
+        i18n.t("dm_start.setup_gone", "EN"), show_alert=True
+    )
+    context.bot.send_media_group.assert_not_awaited()
+
+
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -522,6 +568,10 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
 
     context.job_queue.run_once.assert_not_called()
     update.callback_query.edit_message_text.assert_awaited_once()
+    # The success path's bare acknowledgement moved below the stale-row
+    # lookup (#95) — pin the count, not just that it happened, so a
+    # regression back to a double-answer (or a dropped one) fails here.
+    update.callback_query.answer.assert_awaited_once()
 
 
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(

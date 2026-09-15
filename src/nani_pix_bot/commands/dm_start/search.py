@@ -15,6 +15,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
+    _reject_stale_tap,
     _reply_service_down,
     _search_and_build_keyboard,
     _show_preview,
@@ -215,25 +216,44 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     if query is None or query.data is None:
         return
-    await query.answer()
+    user = query.from_user
+    if user is None:
+        # Never acknowledged on this branch, unlike before the reorder
+        # below: Telegram marks `from_user` required on a CallbackQuery,
+        # so this is unreachable in practice — same shape as the
+        # equivalent guard in screenshot_gallery.py's handlers, none of
+        # which answer here either.
+        return
 
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
 
-    user = query.from_user
-    if user is None:
-        return
-
+    # Deliberately not acknowledged yet: _resolve_picked_result runs a
+    # provider round-trip, and the SETUP row can vanish while it's in
+    # flight — the lookup below is a stale-row site (issue #95, the one
+    # remaining silent one from #79's sweep), and a query id can only be
+    # answered once (see _reject_stale_tap). Every already-handled
+    # outcome inside _resolve_picked_result replies via
+    # `query.edit_message_text` instead of `query.answer`, so the bare
+    # answer just below still lands as this handler's one acknowledgement
+    # for those paths.
     resolved = await _resolve_picked_result(query, context, lang)
     if resolved is None:
+        await query.answer()
         return
     source, external_id, result = resolved
 
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
+            await _reject_stale_tap(query, user.id, lang)
             return
+        # Inside the open write transaction, like every other await in
+        # this block — see issue #82, which is filed against exactly
+        # that shape here; this is one more call for its sweep to move,
+        # not a new pattern.
+        await query.answer()
         game_service.stage_result(setup_game, result, source=source)
         logger.debug("Game {}: staged {} result {}", setup_game.id, source, external_id)
         if setup_game.original_image is not None:
