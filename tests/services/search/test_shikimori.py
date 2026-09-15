@@ -1,3 +1,6 @@
+import json
+from typing import Any
+
 import httpx
 import pytest
 
@@ -11,15 +14,26 @@ def _clear_cache():
     cache.clear()
 
 
+def _animes_payload(entries: list[Any]) -> dict:
+    return {"data": {"animes": entries}}
+
+
+def _responding(body: Any) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    return httpx.MockTransport(handler)
+
+
 async def test_search_parses_a_result() -> None:
     entry = {
-        "id": 52991,
+        "id": "52991",
         "name": "Sousou no Frieren",
         "russian": "Провожающая в последний путь Фрирен",
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[entry])
+        return httpx.Response(200, json=_animes_payload([entry]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         results = await shikimori.search(client, "frieren")
@@ -36,10 +50,10 @@ async def test_search_parses_a_result() -> None:
 
 
 async def test_search_handles_missing_russian_title() -> None:
-    entry = {"id": 1, "name": "Some Anime", "russian": None}
+    entry = {"id": "1", "name": "Some Anime", "russian": None}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[entry])
+        return httpx.Response(200, json=_animes_payload([entry]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         results = await shikimori.search(client, "some anime")
@@ -60,12 +74,48 @@ async def test_search_sends_a_descriptive_user_agent() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["user_agent"] = request.headers.get("user-agent")
-        return httpx.Response(200, json=[])
+        return httpx.Response(200, json=_animes_payload([]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         await shikimori.search(client, "frieren")
 
     assert captured["user_agent"] == shikimori._REQUEST_HEADERS["User-Agent"]
+
+
+async def test_search_sends_the_query_and_limit_as_graphql_variables() -> None:
+    """Request-assertion targets move from URL params (REST) to the POST
+    body's query/variables (GraphQL) — this pins the wiring so a typo in
+    the variable names fails loudly instead of silently searching for
+    nothing."""
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json=_animes_payload([]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await shikimori.search(client, "frieren", limit=3)
+
+    assert captured["url"] == shikimori.SHIKIMORI_GRAPHQL_URL
+    assert captured["json"]["variables"] == {"search": "frieren", "limit": 3}
+    assert "animes" in captured["json"]["query"]
+
+
+async def test_get_by_id_sends_the_id_as_a_string_variable() -> None:
+    """Shikimori's `ids` argument is typed String, confirmed live as
+    `animes(ids: "817")` — the int id this module's callers pass in must
+    be stringified before it goes on the wire."""
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json=_animes_payload([]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await shikimori.get_by_id(client, 52991)
+
+    assert captured["json"]["variables"] == {"ids": "52991"}
 
 
 async def test_search_retries_after_rate_limit_then_succeeds() -> None:
@@ -75,7 +125,7 @@ async def test_search_retries_after_rate_limit_then_succeeds() -> None:
         calls["n"] += 1
         if calls["n"] == 1:
             return httpx.Response(429, headers={"Retry-After": "0"})
-        return httpx.Response(200, json=[])
+        return httpx.Response(200, json=_animes_payload([]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         results = await shikimori.search(client, "frieren")
@@ -95,16 +145,15 @@ async def test_search_raises_after_exhausting_rate_limit_retries() -> None:
 
 async def test_get_by_id_parses_the_richer_detail_fields() -> None:
     entry = {
-        "id": 52991,
+        "id": "52991",
         "name": "Sousou no Frieren",
         "russian": "Провожающая в последний путь Фрирен",
-        "english": ["Frieren: Beyond Journey's End"],
-        "japanese": ["葬送のフリーレン"],
+        "english": "Frieren: Beyond Journey's End",
         "synonyms": ["Фрирен, провожающая в последний путь", "Frieren at the Funeral"],
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=entry)
+        return httpx.Response(200, json=_animes_payload([entry]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await shikimori.get_by_id(client, 52991)
@@ -119,10 +168,10 @@ async def test_get_by_id_parses_the_richer_detail_fields() -> None:
 
 
 async def test_get_by_id_handles_missing_english_and_synonyms() -> None:
-    entry = {"id": 1, "name": "Some Anime", "russian": None}
+    entry = {"id": "1", "name": "Some Anime", "russian": None}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=entry)
+        return httpx.Response(200, json=_animes_payload([entry]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await shikimori.get_by_id(client, 1)
@@ -137,8 +186,12 @@ async def test_get_by_id_handles_missing_english_and_synonyms() -> None:
 
 
 async def test_get_by_id_returns_none_when_shikimori_has_no_such_anime() -> None:
+    """Confirmed live contract: an unknown id answers `{"data":
+    {"animes": []}}`, HTTP 200, no `errors` — not REST's 404 status,
+    which this test used to mock."""
+
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(404, json={"error": "not found"})
+        return httpx.Response(200, json=_animes_payload([]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await shikimori.get_by_id(client, 999999)
@@ -151,7 +204,7 @@ async def test_search_is_cached_for_repeated_identical_queries() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
-        return httpx.Response(200, json=[])
+        return httpx.Response(200, json=_animes_payload([]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         await shikimori.search(client, "frieren")
@@ -161,12 +214,12 @@ async def test_search_is_cached_for_repeated_identical_queries() -> None:
 
 
 async def test_get_by_id_is_cached_for_repeated_identical_ids() -> None:
-    entry = {"id": 52991, "name": "Sousou no Frieren", "russian": None}
+    entry = {"id": "52991", "name": "Sousou no Frieren", "russian": None}
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
-        return httpx.Response(200, json=entry)
+        return httpx.Response(200, json=_animes_payload([entry]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         await shikimori.get_by_id(client, 52991)
@@ -175,14 +228,17 @@ async def test_get_by_id_is_cached_for_repeated_identical_ids() -> None:
     assert calls["n"] == 1
 
 
-async def test_screenshots_parses_and_prefixes_relative_urls() -> None:
+async def test_screenshots_parses_absolute_urls() -> None:
+    """GraphQL's `originalUrl` is already absolute (confirmed live) —
+    unlike REST's `original`, a host-relative path this module used to
+    prefix with SHIKIMORI_HOST by hand."""
     entries = [
-        {"original": "/system/screenshots/original/a.jpg?1", "preview": "/x/a.jpg?1"},
-        {"original": "/system/screenshots/original/b.jpg?2", "preview": "/x/b.jpg?2"},
+        {"originalUrl": "https://shikimori.io/system/screenshots/original/a.jpg?1"},
+        {"originalUrl": "https://shikimori.io/system/screenshots/original/b.jpg?2"},
     ]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=entries)
+        return httpx.Response(200, json=_animes_payload([{"screenshots": entries}]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         urls = await shikimori.screenshots(client, 52991)
@@ -194,13 +250,10 @@ async def test_screenshots_parses_and_prefixes_relative_urls() -> None:
 
 
 async def test_screenshots_caps_at_the_fetch_limit() -> None:
-    entries = [
-        {"original": f"/system/screenshots/original/{i}.jpg", "preview": f"/x/{i}.jpg"}
-        for i in range(30)
-    ]
+    entries = [{"originalUrl": f"https://shikimori.io/x/{i}.jpg"} for i in range(30)]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=entries)
+        return httpx.Response(200, json=_animes_payload([{"screenshots": entries}]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         urls = await shikimori.screenshots(client, 52991)
@@ -210,10 +263,20 @@ async def test_screenshots_caps_at_the_fetch_limit() -> None:
 
 async def test_screenshots_returns_empty_list_when_none_exist() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[])
+        return httpx.Response(200, json=_animes_payload([{"screenshots": []}]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         urls = await shikimori.screenshots(client, 1)
+
+    assert urls == []
+
+
+async def test_screenshots_returns_empty_list_when_the_anime_is_not_found() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_animes_payload([]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await shikimori.screenshots(client, 999999)
 
     assert urls == []
 
@@ -232,10 +295,6 @@ async def test_search_raises_a_runtime_error_on_a_non_json_body() -> None:
 
 
 async def test_search_raises_a_runtime_error_on_a_literal_null_body() -> None:
-    """Shikimori's list endpoints answer with a bare array; a 200 that
-    decodes to `null` instead is not an empty list, and iterating it
-    raises a TypeError no handler catches."""
-
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="null", headers={"Content-Type": "application/json"})
 
@@ -244,33 +303,34 @@ async def test_search_raises_a_runtime_error_on_a_literal_null_body() -> None:
             await shikimori.search(client, "frieren")
 
 
-async def test_screenshots_raises_when_an_object_arrives_instead_of_an_array() -> None:
-    """The screenshots endpoint is declared as a list endpoint, so an
-    error object where the array should be is an outage, not zero
-    screenshots."""
+async def test_screenshots_raises_when_the_screenshots_field_is_not_an_array() -> None:
+    """`screenshots` is declared as a list field, so an error object
+    where the array should be is an outage, not zero screenshots."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"message": "something went wrong"})
+        return httpx.Response(
+            200, json=_animes_payload([{"screenshots": {"message": "something went wrong"}}])
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        with pytest.raises(RuntimeError, match="expected list"):
+        with pytest.raises(RuntimeError, match="expected an array"):
             await shikimori.screenshots(client, 52991)
 
 
-async def test_screenshots_skips_entries_with_no_original_path() -> None:
+async def test_screenshots_skips_entries_with_no_original_url() -> None:
     entries = [
-        {"original": "/system/screenshots/original/a.jpg?1", "preview": "/x/a.jpg?1"},
-        {"preview": "/x/b.jpg?2"},
-        {"original": None, "preview": "/x/c.jpg?3"},
+        {"originalUrl": "https://shikimori.io/x/a.jpg?1"},
+        {"other": "https://shikimori.io/x/b.jpg?2"},
+        {"originalUrl": None},
     ]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=entries)
+        return httpx.Response(200, json=_animes_payload([{"screenshots": entries}]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         urls = await shikimori.screenshots(client, 52991)
 
-    assert urls == ["https://shikimori.io/system/screenshots/original/a.jpg?1"]
+    assert urls == ["https://shikimori.io/x/a.jpg?1"]
 
 
 async def test_screenshots_is_cached_for_repeated_calls() -> None:
@@ -278,7 +338,7 @@ async def test_screenshots_is_cached_for_repeated_calls() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
-        return httpx.Response(200, json=[])
+        return httpx.Response(200, json=_animes_payload([{"screenshots": []}]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         await shikimori.screenshots(client, 52991)
@@ -291,10 +351,10 @@ async def test_search_skips_an_entry_with_no_id() -> None:
     """A third party controls these keys: one entry missing the one field
     the parser indexes must not cost the starter the other results
     (issue #83)."""
-    entries = [{"name": "No id here"}, {"id": 52991, "name": "Sousou no Frieren"}]
+    entries = [{"name": "No id here"}, {"id": "52991", "name": "Sousou no Frieren"}]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=entries)
+        return httpx.Response(200, json=_animes_payload(entries))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         results = await shikimori.search(client, "frieren")
@@ -303,11 +363,11 @@ async def test_search_skips_an_entry_with_no_id() -> None:
 
 
 async def test_search_skips_scalar_entries() -> None:
-    """An array of scalars where an array of objects belongs — `raw["id"]`
-    on an int is a TypeError no handler catches."""
+    """An array of scalars where an array of objects belongs — a plain
+    dict-indexing on an int is a TypeError no handler catches."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[1, 2])
+        return httpx.Response(200, json=_animes_payload([1, 2]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         results = await shikimori.search(client, "frieren")
@@ -317,10 +377,10 @@ async def test_search_skips_scalar_entries() -> None:
 
 async def test_get_by_id_returns_none_when_the_entry_has_no_id() -> None:
     """Nothing usable came back for this pick, which the picker already
-    reports the same way it reports a 404."""
+    reports the same way it reports a not-found result."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"name": "Sousou no Frieren"})
+        return httpx.Response(200, json=_animes_payload([{"name": "Sousou no Frieren"}]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await shikimori.get_by_id(client, 52991)
@@ -329,11 +389,12 @@ async def test_get_by_id_returns_none_when_the_entry_has_no_id() -> None:
 
 
 async def test_screenshots_skips_scalar_entries() -> None:
-    """`entry.get("original")` on an int is an AttributeError — the
+    """`entry.get("originalUrl")` on an int is an AttributeError — the
     inline comprehension needs the same guard the parse functions get."""
+    entries = [1, {"originalUrl": "https://shikimori.io/x/a.jpg"}]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[1, {"original": "/x/a.jpg"}])
+        return httpx.Response(200, json=_animes_payload([{"screenshots": entries}]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         urls = await shikimori.screenshots(client, 52991)
@@ -342,13 +403,13 @@ async def test_screenshots_skips_scalar_entries() -> None:
 
 
 async def test_search_skips_an_entry_whose_id_is_null() -> None:
-    """`raw["id"]` succeeds for a JSON null, so the missing-key guard alone
-    would stage a result with shikimori_id=None and build a
-    `shikimori_pick:None` button that cannot work (issue #83)."""
-    entries = [{"id": None, "name": "Null id"}, {"id": 52991, "name": "Sousou no Frieren"}]
+    """A JSON null `id` must not stage a result with shikimori_id=None
+    and build a `shikimori_pick:None` button that cannot work
+    (issue #83)."""
+    entries = [{"id": None, "name": "Null id"}, {"id": "52991", "name": "Sousou no Frieren"}]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=entries)
+        return httpx.Response(200, json=_animes_payload(entries))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         results = await shikimori.search(client, "frieren")
@@ -356,11 +417,29 @@ async def test_search_skips_an_entry_whose_id_is_null() -> None:
     assert [result.shikimori_id for result in results] == [52991]
 
 
-async def test_search_skips_an_entry_whose_id_is_a_string() -> None:
-    entries = [{"id": "52991", "name": "Stringly typed"}, {"id": 1, "name": "Some Anime"}]
+@pytest.mark.parametrize(
+    "raw_id",
+    [
+        # A plain JSON int is *not* the confirmed shape here, unlike
+        # AniList's Media.id: Shikimori's GraphQL `Anime.id` is a GraphQL
+        # `ID` scalar, confirmed live to serialize as a numeric *string*
+        # ("id": "52991") for both `animes(search: ...)` and
+        # `animes(ids: ...)`. An int id is exactly as wrong as any other
+        # shape here.
+        pytest.param(52991, id="id-is-an-int"),
+        pytest.param(52991.0, id="id-is-a-float"),
+        pytest.param(True, id="id-is-a-bool"),
+        pytest.param(["52991"], id="id-is-an-array"),
+        pytest.param({"value": "52991"}, id="id-is-an-object"),
+        pytest.param("52991a", id="id-is-a-non-numeric-string"),
+        pytest.param("", id="id-is-an-empty-string"),
+    ],
+)
+async def test_search_skips_an_entry_with_a_malformed_id(raw_id: object) -> None:
+    entries = [{"id": raw_id, "name": "Bad id"}, {"id": "1", "name": "Some Anime"}]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=entries)
+        return httpx.Response(200, json=_animes_payload(entries))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         results = await shikimori.search(client, "frieren")
@@ -369,8 +448,10 @@ async def test_search_skips_an_entry_whose_id_is_a_string() -> None:
 
 
 async def test_get_by_id_returns_none_when_the_id_is_null() -> None:
+    entry = {"id": None, "name": "Sousou no Frieren"}
+
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"id": None, "name": "Sousou no Frieren"})
+        return httpx.Response(200, json=_animes_payload([entry]))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await shikimori.get_by_id(client, 52991)
@@ -378,19 +459,12 @@ async def test_get_by_id_returns_none_when_the_id_is_null() -> None:
     assert result is None
 
 
-def _responding(body) -> httpx.MockTransport:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=body)
-
-    return httpx.MockTransport(handler)
-
-
-_GOOD_SEARCH_ENTRY = {"id": 52991, "name": "Sousou no Frieren", "russian": "Фрирен"}
+_GOOD_SEARCH_ENTRY = {"id": "52991", "name": "Sousou no Frieren", "russian": "Фрирен"}
 _GOOD_DETAIL_ENTRY = {
-    "id": 52991,
+    "id": "52991",
     "name": "Sousou no Frieren",
     "russian": "Фрирен",
-    "english": ["Frieren: Beyond Journey's End"],
+    "english": "Frieren: Beyond Journey's End",
     "synonyms": ["Frieren at the Funeral"],
 }
 
@@ -408,10 +482,11 @@ async def test_search_skips_an_entry_with_a_malformed_title(field: dict) -> None
     """A non-string title reaches `", ".join(...)` in the setup preview.
     The entry goes whole rather than keeping its id and dropping the
     field: an all-None title set renders as "?" (issue #86)."""
-    bad = {**_GOOD_SEARCH_ENTRY, "id": 1, **field}
+    bad = {**_GOOD_SEARCH_ENTRY, "id": "1", **field}
+    body = _animes_payload([bad, _GOOD_SEARCH_ENTRY])
 
-    async with httpx.AsyncClient(transport=_responding([bad, _GOOD_SEARCH_ENTRY])) as client:
-        results = await shikimori.search(client, "frieren")
+    async with httpx.AsyncClient(transport=_responding(body)) as c:
+        results = await shikimori.search(c, "frieren")
 
     assert [result.shikimori_id for result in results] == [52991]
 
@@ -423,42 +498,30 @@ async def test_search_skips_an_entry_with_a_malformed_title(field: dict) -> None
         pytest.param({"synonyms": "Frieren"}, id="synonyms-is-a-string"),
         pytest.param({"synonyms": ["Frieren", 5]}, id="synonyms-holds-a-number"),
         pytest.param({"synonyms": {"0": "Frieren"}}, id="synonyms-is-an-object"),
-        pytest.param({"english": "Frieren"}, id="english-is-a-string"),
-        pytest.param({"english": [5]}, id="english-holds-a-number"),
         pytest.param({"english": 5}, id="english-is-a-number"),
+        pytest.param({"english": ["Frieren"]}, id="english-is-an-array"),
         pytest.param({"english": {"0": "Frieren"}}, id="english-is-an-object"),
+        pytest.param({"english": True}, id="english-is-a-bool"),
         pytest.param({"name": 5}, id="name-is-a-number"),
     ],
 )
 async def test_get_by_id_returns_none_for_a_malformed_field(field: dict) -> None:
-    """The detail endpoint is the only one that returns synonyms/english,
-    so it is where the answer key actually gets populated.
-
-    `english` was the half-covered case: `english[0]` already raised
-    inside the guard for a number (TypeError) and an object (KeyError),
-    but a bare string sliced to its first *character* and a `[5]` handed
-    back an int — neither raised, and both are exactly the corruption the
-    indexing looked like it was preventing."""
+    """The detail query is the only one that returns synonyms/english,
+    so it is where the answer key actually gets populated. Unlike REST's
+    `english: [None | str]` shape, GraphQL's `Anime.english` is a plain
+    nullable String scalar (the fix for issue #103) — so a bare string
+    `english` is no longer a malformed shape at all, it's the norm; what
+    replaces it here are the shapes a String scalar genuinely can't be."""
     entry = {**_GOOD_DETAIL_ENTRY, **field}
 
-    async with httpx.AsyncClient(transport=_responding(entry)) as client:
-        assert await shikimori.get_by_id(client, 52991) is None
-
-
-async def test_get_by_id_never_slices_a_string_english_to_one_character() -> None:
-    """Pinned separately from the parametrize above because the old
-    behaviour here wasn't a crash: it staged a game whose English title
-    was "F"."""
-    entry = {**_GOOD_DETAIL_ENTRY, "english": "Frieren"}
-
-    async with httpx.AsyncClient(transport=_responding(entry)) as client:
+    async with httpx.AsyncClient(transport=_responding(_animes_payload([entry]))) as client:
         assert await shikimori.get_by_id(client, 52991) is None
 
 
 async def test_get_by_id_never_expands_a_string_synonyms_into_characters() -> None:
     entry = {**_GOOD_DETAIL_ENTRY, "synonyms": "Frieren"}
 
-    async with httpx.AsyncClient(transport=_responding(entry)) as client:
+    async with httpx.AsyncClient(transport=_responding(_animes_payload([entry]))) as client:
         assert await shikimori.get_by_id(client, 52991) is None
 
 
@@ -467,7 +530,7 @@ async def test_get_by_id_warns_naming_the_parser_when_a_field_is_malformed(
 ) -> None:
     entry = {**_GOOD_DETAIL_ENTRY, "synonyms": "Frieren"}
 
-    async with httpx.AsyncClient(transport=_responding(entry)) as client:
+    async with httpx.AsyncClient(transport=_responding(_animes_payload([entry]))) as client:
         await shikimori.get_by_id(client, 52991)
 
     warnings = [message for level, message in records if level == "WARNING"]
@@ -478,21 +541,55 @@ async def test_get_by_id_warns_naming_the_parser_when_a_field_is_malformed(
 
 
 @pytest.mark.parametrize(
-    "original",
+    "original_url",
     [
-        pytest.param({"a": 1}, id="original-is-an-object"),
-        pytest.param(5, id="original-is-a-number"),
-        pytest.param(["/x/a.jpg"], id="original-is-an-array"),
-        pytest.param(True, id="original-is-a-bool"),
+        pytest.param({"a": 1}, id="original-url-is-an-object"),
+        pytest.param(5, id="original-url-is-a-number"),
+        pytest.param(["/x/a.jpg"], id="original-url-is-an-array"),
+        pytest.param(True, id="original-url-is-a-bool"),
     ],
 )
-async def test_screenshots_skips_an_entry_whose_original_is_not_a_string(original: object) -> None:
-    """`f"{SHIKIMORI_HOST}{path}"` interpolates anything at all — an
-    object became the URL "https://shikimori.io{'a': 1}", which only
-    fails later at `InputMediaPhoto(media=url)`."""
-    entries = [{"original": original}, {"original": "/x/a.jpg"}]
+async def test_screenshots_skips_an_entry_whose_original_url_is_not_a_string(
+    original_url: object,
+) -> None:
+    entries = [{"originalUrl": original_url}, {"originalUrl": "https://shikimori.io/x/a.jpg"}]
 
-    async with httpx.AsyncClient(transport=_responding(entries)) as client:
+    async with httpx.AsyncClient(
+        transport=_responding(_animes_payload([{"screenshots": entries}]))
+    ) as client:
         urls = await shikimori.screenshots(client, 52991)
 
     assert urls == ["https://shikimori.io/x/a.jpg"]
+
+
+async def test_search_raises_when_shikimori_reports_graphql_errors_with_no_data() -> None:
+    """A GraphQL error response with a null `data` is an explicit "I am
+    broken" signal, not an empty result — has to reach
+    _SEARCH_SERVICE_ERRORS as a RuntimeError, not "nothing found"."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": None, "errors": [{"message": "boom"}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="GraphQL error"):
+            await shikimori.search(client, "frieren")
+
+
+async def test_search_logs_graphql_errors_even_when_data_came_back(monkeypatch) -> None:
+    """GraphQL allows partial success — data alongside errors. The usable
+    half is still used, but the errors never go unrecorded."""
+    entry = {"id": "1", "name": "Some Anime", "russian": None}
+    logged: list[tuple] = []
+    monkeypatch.setattr(shikimori.logger, "error", lambda *args: logged.append(args))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"data": {"animes": [entry]}, "errors": [{"message": "deprecated"}]}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await shikimori.search(client, "some anime")
+
+    assert [r.shikimori_id for r in results] == [1]
+    assert len(logged) == 1
+    assert "deprecated" in str(logged[0])
