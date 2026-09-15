@@ -228,16 +228,27 @@ def _parse_season(raw: dict) -> tuple[int, int] | None:
     `or 0` rather than `.get(key, 0)` on both counts: TMDB sends these
     keys present-but-null for placeholder seasons, and `None >= 1` /
     `range(1, None + 1)` are both a `TypeError` no handler catches
-    (issue #76)."""
+    (issue #76).
+
+    `episode_count` is validated here rather than left to the guard around
+    this function, because the guard's boundary is this `return`:
+    `_episode_targets` consumes the count at `min(episode_count, remaining)`
+    *after* the guard has let go, so an `episode_count` of `"3"` escaped as a
+    raw `TypeError` even with every reading of it protected. Raising inside
+    the guard instead routes it through the same skip everything else gets
+    (issue #83). `season_number` needs no such call: it's compared right here,
+    inside the guard, which is what made the count the one that got away."""
     season_number = raw.get("season_number") or 0
     if season_number < 1:
         return None
-    return season_number, raw.get("episode_count") or 0
+    if raw.get("episode_count") is None:
+        return season_number, 0
+    return season_number, parsing.require_int(raw, "episode_count")
 
 
 def _parse_result(raw: dict) -> TMDBResult:
     return TMDBResult(
-        tmdb_id=raw["id"],
+        tmdb_id=parsing.require_int(raw, "id"),
         title_romaji=None,
         title_english=raw.get("name"),
         title_native=raw.get("original_name"),

@@ -36,6 +36,14 @@ wholly unusable, there is no partial result to salvage, and iterating it
 is a `TypeError` — so that raises `RuntimeError`, which
 `_SEARCH_SERVICE_ERRORS` catches.
 
+Note where the guard's boundary actually is: it wraps the *reading* of a
+field, so it ends at the parse function's `return`. A field handed back
+unvalidated — an `id` that was JSON `null`, an `episode_count` that
+arrived as `"3"` — is outside it, and blows up later at whatever consumes
+it. That's what `require_int` below is for, and why parse functions
+validate before returning rather than trusting the try/except around
+them to have covered it.
+
 Skips are logged at WARNING per `CLAUDE.md`'s table: a third party
 sending an entry we can't use is a recoverable anomaly (we recover, by
 dropping it), not something broken in this codebase — ERROR would
@@ -69,18 +77,24 @@ def parse_entry(api_name: str, entry: Any, parse: Callable[[Any], _T | None]) ->
     here: that's the parse function's own judgement that the entry isn't
     wanted (a specials season, a screenshot with no path), and it logs
     for itself if that's worth saying."""
+    # The parse function's name, not just the provider's: four providers
+    # with two or three parsers each otherwise produce indistinguishable
+    # warnings, and telling a payload bug from a bug in a `_parse_*`
+    # function is most of what these lines are for.
+    parser = getattr(parse, "__name__", repr(parse))
     if not isinstance(entry, dict):
         logger.warning(
-            "{} sent a {} where an entry object belongs, skipping it: {!r}",
+            "{} sent a {} where an entry object belongs, skipping it in {}: {!r}",
             api_name,
             type(entry).__name__,
+            parser,
             entry,
         )
         return None
     try:
         return parse(entry)
     except _MALFORMED_ENTRY_ERRORS as exc:
-        logger.warning("{} sent an entry this parser can't read ({!r}): {!r}", api_name, exc, entry)
+        logger.warning("{} sent an entry {} can't read ({!r}): {!r}", api_name, parser, exc, entry)
         return None
 
 
@@ -101,3 +115,27 @@ def parse_entries(api_name: str, container: Any, parse: Callable[[Any], _T | Non
         raise RuntimeError(msg)
     parsed: Iterable[_T | None] = (parse_entry(api_name, entry, parse) for entry in container)
     return [result for result in parsed if result is not None]
+
+
+def require_int(raw: dict, key: str) -> int:
+    """`raw[key]`, but only if it really is an integer.
+
+    The guard above ends at the parse function's `return`: it protects the
+    *reading* of a field, not the value read. `raw["id"]` succeeds perfectly
+    well when the value is JSON `null` or a string, and the result then
+    carries `id=None` all the way to a `..._pick:None` callback button that
+    cannot work — the null-shaped twin of the missing-key case, and the same
+    lesson `rest.get_json` learned about `null` sailing through a guard built
+    for the other shape of "absent".
+
+    Raising rather than returning None is the point: a `TypeError` here is
+    caught by `parse_entry` and becomes the same WARNING-and-skip every other
+    malformation gets, instead of a second mechanism doing the same job
+    differently. A missing key stays a `KeyError` for the same reason.
+
+    `bool` is excluded explicitly because it is an `int` subclass in Python,
+    but `str(True)` is `"True"` — the same broken button by a subtler route."""
+    value = raw[key]
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise TypeError(f"{key!r} is a {type(value).__name__}, expected an integer")
+    return value

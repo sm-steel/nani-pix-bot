@@ -146,7 +146,7 @@ async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) ->
 def _parse_result(raw: dict) -> AniListResult:
     title = raw["title"]
     return AniListResult(
-        anilist_id=raw["id"],
+        anilist_id=parsing.require_int(raw, "id"),
         title_romaji=title.get("romaji"),
         title_english=title.get("english"),
         title_native=title.get("native"),

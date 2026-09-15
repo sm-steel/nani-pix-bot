@@ -334,3 +334,28 @@ async def test_screenshots_skips_scalar_entries() -> None:
         urls = await jikan.screenshots(client, 52991)
 
     assert urls == ["a.jpg"]
+
+
+async def test_search_skips_an_entry_whose_id_is_null() -> None:
+    """`raw["mal_id"]` succeeds for a JSON null, so the missing-key guard
+    alone would stage a result with jikan_id=None and build a
+    `jikan_pick:None` button that cannot work (issue #83)."""
+    entries = [{"mal_id": None, "title": "Null id"}, {"mal_id": 52991, "title": "Frieren"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entries})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await jikan.search(client, "frieren")
+
+    assert [result.jikan_id for result in results] == [52991]
+
+
+async def test_get_by_id_returns_none_when_the_id_is_null() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"mal_id": None, "title": "Frieren"}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await jikan.get_by_id(client, 52991)
+
+    assert result is None

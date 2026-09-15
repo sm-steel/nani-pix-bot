@@ -110,7 +110,7 @@ def _parse_screenshot_url(raw: dict) -> str | None:
 
 def _parse_search_result(raw: dict) -> ShikimoriResult:
     return ShikimoriResult(
-        shikimori_id=raw["id"],
+        shikimori_id=parsing.require_int(raw, "id"),
         title_romaji=raw.get("name"),
         title_english=None,
         title_russian=raw.get("russian"),
@@ -121,7 +121,7 @@ def _parse_search_result(raw: dict) -> ShikimoriResult:
 def _parse_detail_result(raw: dict) -> ShikimoriResult:
     english = raw.get("english") or []
     return ShikimoriResult(
-        shikimori_id=raw["id"],
+        shikimori_id=parsing.require_int(raw, "id"),
         title_romaji=raw.get("name"),
         title_english=english[0] if english else None,
         title_russian=raw.get("russian"),

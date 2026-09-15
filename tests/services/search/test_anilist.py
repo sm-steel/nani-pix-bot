@@ -356,3 +356,33 @@ async def test_get_by_id_returns_none_when_the_media_entry_has_no_title() -> Non
         result = await anilist.get_by_id(client, 154587)
 
     assert result is None
+
+
+async def test_search_skips_an_entry_whose_id_is_null() -> None:
+    """`raw["id"]` succeeds for a JSON null, so the missing-key guard alone
+    would stage a result with anilist_id=None and build an
+    `anilist_pick:None` button that cannot work (issue #83)."""
+    entries = [
+        {"id": None, "title": {"romaji": "Null id"}},
+        {"id": 154587, "title": {"romaji": "Frieren"}},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_media_payload(entries))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await anilist.search(client, "frieren")
+
+    assert [result.anilist_id for result in results] == [154587]
+
+
+async def test_get_by_id_returns_none_when_the_id_is_null() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"data": {"Media": {"id": None, "title": {"romaji": "Frieren"}}}}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await anilist.get_by_id(client, 154587)
+
+    assert result is None

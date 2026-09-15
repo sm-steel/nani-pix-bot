@@ -108,7 +108,7 @@ def _parse_detail_result(raw: dict) -> JikanResult | None:
 
 def _parse_result(raw: dict) -> JikanResult:
     return JikanResult(
-        jikan_id=raw["mal_id"],
+        jikan_id=parsing.require_int(raw, "mal_id"),
         title_romaji=raw.get("title"),
         title_english=raw.get("title_english"),
         title_native=raw.get("title_japanese"),

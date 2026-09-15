@@ -553,3 +553,71 @@ async def test_screenshots_skips_a_season_with_no_season_number() -> None:
         urls = await tmdb.screenshots(client, 209867)
 
     assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/still1.jpg"]
+
+
+async def test_search_skips_an_entry_whose_id_is_null() -> None:
+    """`raw["id"]` succeeds for a JSON null, so the missing-key guard alone
+    would stage a result with tmdb_id=None and build a `tmdb_pick:None`
+    button that cannot work (issue #83)."""
+    entries = [{"id": None, "name": "Null id"}, {"id": 209867, "name": "Frieren"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": entries})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await tmdb.search(client, "frieren")
+
+    assert [result.tmdb_id for result in results] == [209867]
+
+
+async def test_get_by_id_returns_none_when_the_id_is_null() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"id": None, "name": "Frieren"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await tmdb.get_by_id(client, 209867)
+
+    assert result is None
+
+
+async def test_screenshots_skips_a_season_whose_episode_count_is_a_string() -> None:
+    """`episode_count` is consumed at `min(episode_count, remaining)` after
+    the guard has already returned, so a non-integer there escaped as a raw
+    TypeError no handler catches. Validating it inside `_parse_season` routes
+    it through the same skip every other malformation gets (issue #83)."""
+    handler = _show_handler(
+        [
+            {"season_number": 1, "episode_count": "3"},
+            {"season_number": 2, "episode_count": 1},
+        ],
+        {(2, 1): "/still2.jpg"},
+    )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await tmdb.screenshots(client, 209867)
+
+    assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/still2.jpg"]
+
+
+async def test_screenshots_skips_a_season_whose_episode_count_is_a_float() -> None:
+    handler = _show_handler(
+        [{"season_number": 1, "episode_count": 2.5}, {"season_number": 2, "episode_count": 1}],
+        {(2, 1): "/still2.jpg"},
+    )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await tmdb.screenshots(client, 209867)
+
+    assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/still2.jpg"]
+
+
+async def test_screenshots_skips_a_season_whose_episode_count_is_a_list() -> None:
+    handler = _show_handler(
+        [{"season_number": 1, "episode_count": [1]}, {"season_number": 2, "episode_count": 1}],
+        {(2, 1): "/still2.jpg"},
+    )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await tmdb.screenshots(client, 209867)
+
+    assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/still2.jpg"]

@@ -112,3 +112,57 @@ def test_parse_entry_names_the_provider_in_its_warning(records: list[tuple[str, 
     parsing.parse_entry("Shikimori", {"name": "no id"}, _parse)
 
     assert "Shikimori" in records[0][1]
+
+
+def test_parse_entry_names_the_failing_parser_in_its_warning(
+    records: list[tuple[str, str]],
+) -> None:
+    """Four providers times two or three parsers each: without the parse
+    function's name, a payload bug and a code bug produce indistinguishable
+    warnings, and "a code bug shows up as a flood of identical warnings" stops
+    being a way to tell them apart."""
+    parsing.parse_entry("Shikimori", {"name": "no id"}, _parse)
+
+    assert "_parse" in records[0][1]
+
+
+def test_parse_entry_names_the_failing_parser_for_a_scalar_entry(
+    records: list[tuple[str, str]],
+) -> None:
+    parsing.parse_entry("Shikimori", 5, _parse)
+
+    assert "_parse" in records[0][1]
+
+
+def test_require_int_returns_an_integer_field() -> None:
+    assert parsing.require_int({"id": 7}, "id") == 7
+
+
+def test_require_int_raises_key_error_when_the_field_is_absent() -> None:
+    """Absent stays a KeyError — `parse_entry` already turns that into a
+    skip, and this helper shouldn't grow a second way of saying it."""
+    with pytest.raises(KeyError):
+        parsing.require_int({"name": "no id"}, "id")
+
+
+@pytest.mark.parametrize("value", [None, "7", 7.5, [7], {"id": 7}, True])
+def test_require_int_rejects_a_non_integer_field(value: object) -> None:
+    """`raw["id"]` succeeds for a JSON null and for a string, so the
+    missing-key guard alone lets an unusable id through into a button that
+    cannot work. A bool is an int in Python but `str(True)` is "True", which
+    is the same broken button."""
+    with pytest.raises(TypeError, match="id"):
+        parsing.require_int({"id": value}, "id")
+
+
+def test_require_int_rejections_become_a_skip(records: list[tuple[str, str]]) -> None:
+    """The point of raising TypeError rather than returning None: it routes
+    through the guard every other malformation already goes through."""
+
+    def parse_id(raw: dict) -> _Parsed:
+        return _Parsed(identifier=parsing.require_int(raw, "id"))
+
+    assert parsing.parse_entries("Example", [{"id": None}, {"id": 2}], parse_id) == [
+        _Parsed(identifier=2)
+    ]
+    assert [level for level, _ in records] == ["WARNING"]

@@ -339,3 +339,40 @@ async def test_screenshots_skips_scalar_entries() -> None:
         urls = await shikimori.screenshots(client, 52991)
 
     assert urls == ["https://shikimori.io/x/a.jpg"]
+
+
+async def test_search_skips_an_entry_whose_id_is_null() -> None:
+    """`raw["id"]` succeeds for a JSON null, so the missing-key guard alone
+    would stage a result with shikimori_id=None and build a
+    `shikimori_pick:None` button that cannot work (issue #83)."""
+    entries = [{"id": None, "name": "Null id"}, {"id": 52991, "name": "Sousou no Frieren"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=entries)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await shikimori.search(client, "frieren")
+
+    assert [result.shikimori_id for result in results] == [52991]
+
+
+async def test_search_skips_an_entry_whose_id_is_a_string() -> None:
+    entries = [{"id": "52991", "name": "Stringly typed"}, {"id": 1, "name": "Some Anime"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=entries)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await shikimori.search(client, "frieren")
+
+    assert [result.shikimori_id for result in results] == [1]
+
+
+async def test_get_by_id_returns_none_when_the_id_is_null() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"id": None, "name": "Sousou no Frieren"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await shikimori.get_by_id(client, 52991)
+
+    assert result is None
