@@ -1,7 +1,8 @@
 """Small helpers shared by more than one submodule of this package."""
 
 import re
-from typing import assert_never, cast
+from collections.abc import Awaitable, Callable
+from typing import TypeVar, assert_never, cast
 
 import httpx
 from loguru import logger
@@ -72,6 +73,50 @@ _SYNONYM_SPLIT_RE = re.compile(r"[,\n]")
 # Used by search.py's search/pick flow and both screenshots.py's/
 # screenshot_gallery.py's gallery flow.
 _TMDB_CLIENT_BOT_DATA_KEY = "tmdb_client"
+
+_ResultT = TypeVar("_ResultT")
+
+
+async def _search_and_build_keyboard(
+    client: httpx.AsyncClient,
+    query: str,
+    search_fn: Callable[[httpx.AsyncClient, str], Awaitable[list[_ResultT]]],
+    keyboard_fn: Callable[[list[_ResultT]], InlineKeyboardMarkup],
+) -> tuple[list[_ResultT], InlineKeyboardMarkup | None]:
+    """Search + build-the-results-keyboard, shared by search.py's
+    `_search_step` and screenshot_gallery.py's `_screenshot_search_step`
+    — the two call sites that pair a provider search with a
+    provider-specific `*_results_keyboard` builder, and so are exactly
+    where the concrete result type matters (unlike
+    search.py's own `_get_identification_result`, which never needs a
+    keyboard and collapses straight into a `Provider`-keyed dict
+    instead). A `TypeVar`-generic helper is how `rest.py`'s
+    `fetch_by_id` and `keyboards.py`'s `_results_keyboard` already solve
+    the same "one provider's concrete type has to survive the call"
+    problem — reused here rather than introducing `Protocol`/`@overload`
+    as a first use of either in this codebase.
+
+    `keyboard_fn` is a one-argument callable on purpose: each call site
+    passes a lambda that already closes over `lang` (and, for the
+    screenshot variant, `pick_prefix`), the same way `keyboards.py`'s own
+    `_ResultAccessors` instantiations bind their per-provider closures
+    rather than widening a shared function's parameter list. This helper
+    never needs to know either exists.
+
+    Returns `(results, keyboard)`, not just the keyboard: both callers
+    log `len(results)` in their own debug line right after this returns,
+    and handing `results` back means they keep doing that rather than
+    recomputing or losing it. `keyboard` is None for an empty result
+    list — the caller's own empty-results branch decides what to say
+    about that.
+
+    Deliberately doesn't catch anything: the two call sites' failure
+    handling genuinely differs (different fallback screens), so each
+    keeps its own `try/except _SEARCH_SERVICE_ERRORS` wrapped around a
+    call to this helper, unchanged in shape from before."""
+    results = await search_fn(client, query)
+    keyboard = keyboard_fn(results) if results else None
+    return results, keyboard
 
 
 def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: Provider) -> httpx.AsyncClient:
