@@ -42,6 +42,22 @@ WHAT THIS DOES NOT CATCH — the SQLite-vs-MariaDB limit
       production rejects the new member.
     * Server defaults, indexes, unique constraints, collation, charset
       and storage engine.
+    * Whether a migration's DDL would even execute against a *populated*
+      table. The scratch database is empty, so an `op.add_column` of a
+      NOT NULL column with no `server_default` — which aborts on a live
+      table with rows, and is exactly the hazard `a5ef10f74e63`'s own
+      comment documents — applies cleanly here and this test stays
+      green. That is a production-relevant blind spot on the same order
+      as the ENUM one, because `deploy.yml` migrates before `bot`
+      starts: the failure lands in the deploy, not in CI. Note this is
+      a different gap from the data-migration bullet below — that one is
+      about whether a backfill moved the right rows, this one is about
+      whether the statement runs at all.
+    * Foreign-key referential actions. The FK test compares
+      `(constrained_columns, referred_table, referred_columns)` and
+      nothing else, so `ondelete`/`onupdate` and constraint names are
+      not checked. Latent today (no model declares either), but the test
+      name is broader than what it verifies.
     * DDL that MariaDB would reject but SQLite accepts (a length over a
       row/index limit, say) — the chain never touches MariaDB here.
     * Whether a data migration moved the right data. The scratch
@@ -115,6 +131,21 @@ def _sqlite_ignoring_column_type_changes() -> Iterator[None]:
 
     The cost is stated in the module docstring: an ENUM widening is
     invisible to this test. It is a real gap, not a hidden one.
+
+    A WARNING FOR WHOEVER HITS THIS NEXT. The "raises rather than
+    swallows" property above is forward-looking, and the first future
+    migration that does an ordinary `op.alter_column(..., nullable=
+    False)` — routine MariaDB practice — will not fail in one test, it
+    will kill this whole module at fixture setup with the same SQLite
+    syntax error. The tempting fix is to widen this shim to drop
+    `nullable` too. DO NOT: that silently guts
+    `test_chain_matches_the_models_nullability`, which would then
+    compare the model's nullability against a schema this shim had
+    stopped applying it to, and pass. The fix belongs in the migration
+    instead — wrap the change in `op.batch_alter_table`, which Alembic
+    implements on SQLite by rebuilding the table and which MariaDB
+    executes as a plain ALTER. Widening the shim trades a loud failure
+    for a green test that checks nothing.
     """
     original = SQLiteImpl.__dict__.get("alter_column")
 
@@ -164,6 +195,15 @@ def _telegram_credentials_unset() -> Iterator[None]:
     the worst the backfill can do is print its "BOT_TOKEN not set"
     warning and return. Restoring afterwards keeps this module from
     changing what any other test in the same session sees.
+
+    Scope caveat: the fixture holds this open for the module's whole
+    lifetime, not just the few milliseconds the chain runs, so a test in
+    another module interleaved between these would observe both
+    variables missing. Same class of caveat as the `SQLiteImpl` class
+    patch — harmless for how pytest runs this suite today (single
+    process, module by module; `pytest-xdist` would isolate it further
+    by using separate processes), worth knowing before anything here is
+    made concurrent.
     """
     saved = {name: os.environ.pop(name, None) for name in ("BOT_TOKEN", "TELEGRAM_PROXY_URL")}
     try:
