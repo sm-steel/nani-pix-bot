@@ -10,10 +10,19 @@ from typing import Any
 import httpx
 from loguru import logger
 
+from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, http_retry, parsing
 
 ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
 SEARCH_RESULT_LIMIT = 5
+
+# The brand spelling this module identifies itself by in logs and in the
+# `{service}` half of every message about it. A module constant because
+# AniList talks GraphQL rather than going through `rest.RestApi` (which
+# is where the other three keep the same string, as `RestApi.name`) — and
+# because it is needed at three separate sites below, which is exactly
+# how the same literal came to be written out three times.
+_API_NAME = Provider.ANILIST.display_name
 
 # AniList (via Cloudflare) 403s requests with no Referer, regardless of
 # source IP/proxy — a browser-like Referer is enough, discovered against
@@ -65,7 +74,7 @@ async def search(
     variables = {"search": query, "perPage": limit}
     data = await _request(client, query=_SEARCH_QUERY, variables=variables)
     page = _require_object(data.get("Page"), label="Page", variables=variables)
-    results = parsing.parse_entries("AniList", page.get("media") or [], _parse_result)
+    results = parsing.parse_entries(_API_NAME, page.get("media") or [], _parse_result)
     logger.debug("AniList search {!r} returned {} result(s)", query, len(results))
     return results
 
@@ -90,7 +99,7 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
     # can't be parsed — scalar, missing `id`, whatever — lands on the same
     # None as a missing one, because there's nothing to stage either way
     # and "this pick is gone" is what the starter needs to hear (#83).
-    return parsing.parse_entry("AniList", media, _parse_result)
+    return parsing.parse_entry(_API_NAME, media, _parse_result)
 
 
 async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) -> dict:
@@ -128,7 +137,7 @@ async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) ->
         )
 
     response = await http_retry.request_with_retry(
-        make_request, service_name="AniList", context=f"variables {variables!r}"
+        make_request, service_name=_API_NAME, context=f"variables {variables!r}"
     )
     try:
         body = response.json()

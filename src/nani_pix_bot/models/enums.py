@@ -1,4 +1,67 @@
 import enum
+from typing import assert_never
+
+
+class Provider(enum.StrEnum):
+    """Which external service a game's identification, screenshot or
+    picker state refers to — the single source of truth for both halves
+    of the vocabulary that used to be six hand-maintained dicts and a
+    routing regex (issue #97): the lowercase routing key (callback data,
+    the three `Game` columns) *is* the member's value, and the
+    capitalized brand spelling is `display_name` below.
+
+    **The only `str`-mixin enum in this module, deliberately.**
+    `GameStatus`/`PixelStage`/`SetupStep` are plain `enum.Enum` and get
+    native `sa.Enum` columns, created by their own migrations, which
+    store each member's *name*. These four values are already in the
+    database as lowercase strings in plain `String` columns, and this
+    refactor ships no migration — so `Provider` has to compare and
+    persist as its value, in both directions, for every existing row to
+    keep meaning what it means. See `models/game.py`'s three columns,
+    which must keep their explicit `String(...)` argument for exactly
+    that reason.
+
+    `enum.StrEnum` (stdlib since 3.11) rather than a hand-rolled
+    `class Provider(str, enum.Enum)`: the latter's `__str__`/`__format__`
+    can render `"Provider.JIKAN"` instead of `"jikan"` depending on the
+    Python version, and nearly every log line in this codebase is built
+    by loguru interpolation — that failure mode would corrupt log output
+    with no error anywhere.
+
+    **`"manual"` is not a member.** It is the fifth legal value of
+    `Game.source`, but it means "no automatic provider" — there is no
+    service behind it to search, fetch screenshots from, or name in a
+    message — so it lives in the `Literal["manual"]` half of that
+    column's union instead, and only appears in the
+    identification-method-selection context."""
+
+    ANILIST = "anilist"
+    SHIKIMORI = "shikimori"
+    JIKAN = "jikan"
+    TMDB = "tmdb"
+
+    @property
+    def display_name(self) -> str:
+        """The brand spelling shown to a starter — button labels, and the
+        `{service}` placeholder in every provider-naming i18n string.
+        Deliberately untranslated in both languages (see CLAUDE.md's i18n
+        section): these are third-party brand names, not UI text.
+
+        A property with an exhaustive if/elif rather than a dict, for the
+        same reason this enum exists: a same-shaped external dict would
+        just be one more restatement of the mapping. The `assert_never`
+        tail matches `_shared.py::_current_setup_screen`'s precedent — a
+        fifth member added without a label fails type-checking rather
+        than silently falling through to someone else's name."""
+        if self is Provider.ANILIST:
+            return "AniList"
+        if self is Provider.SHIKIMORI:
+            return "Shikimori"
+        if self is Provider.JIKAN:
+            return "Jikan"
+        if self is Provider.TMDB:
+            return "TMDB"
+        assert_never(self)
 
 
 class GameStatus(enum.Enum):

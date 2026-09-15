@@ -24,6 +24,7 @@ from dataclasses import dataclass
 import httpx
 from loguru import logger
 
+from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, parsing, rest
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
@@ -48,7 +49,7 @@ SCREENSHOT_FETCH_CONCURRENCY = 5
 
 # No per-request headers: the v4 Read Access Token is set as a default
 # Authorization header on the client itself (app.py), not here.
-_API = rest.RestApi(name="TMDB")
+_API = rest.RestApi(name=Provider.TMDB.display_name)
 
 
 @dataclass(frozen=True)

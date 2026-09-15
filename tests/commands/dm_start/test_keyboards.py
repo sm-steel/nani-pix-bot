@@ -1,6 +1,7 @@
 import pytest
 
 from nani_pix_bot.commands.dm_start.keyboards import (
+    _PICK_PREFIX_SOURCES,
     ANILIST_METHOD_CALLBACK_DATA,
     JIKAN_METHOD_CALLBACK_DATA,
     MANUAL_METHOD_CALLBACK_DATA,
@@ -29,6 +30,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     shikimori_results_keyboard,
     tmdb_results_keyboard,
 )
+from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
@@ -136,6 +138,25 @@ def test_pick_callback_data_round_trips_the_anilist_id() -> None:
 
     assert isinstance(data, str)
     assert parse_pick_callback_data(data) == ("anilist", 99)
+
+
+def test_every_provider_has_a_pick_prefix_in_the_expected_wire_format() -> None:
+    """Both halves of the pairing app.py's routing pattern depends on.
+
+    app.py builds that pattern by interpolating every Provider member
+    into "<provider>_pick:" rather than hand-listing four literals, and
+    `_PICK_PREFIX_SOURCES` is what turns a matched prefix back into the
+    member. Nothing else connects them: a prefix constant here renamed
+    (or a fifth member added to only one side) leaves both files
+    internally consistent and the buttons silently unroutable — which is
+    the exact bug that shipped when jikan/tmdb were added.
+
+    test_app.py can't catch that on its own any more, because since #97
+    both sides of its assertion derive from Provider. So the pairing is
+    pinned here instead, on the values *and* on the key format app.py
+    reconstructs independently."""
+    assert set(_PICK_PREFIX_SOURCES.values()) == set(Provider)
+    assert set(_PICK_PREFIX_SOURCES) == {f"{provider}_pick:" for provider in Provider}
 
 
 def test_parse_pick_callback_data_returns_none_for_retry() -> None:
@@ -398,7 +419,7 @@ def test_parsers_reject_malformed_callback_payloads(parse, data: str) -> None:
     carries a real prefix but a junk provider or index must come back as
     None (the already-handled "not a pick" path) rather than raising
     ValueError here, or KeyError later against _ID_ATTRS /
-    _SCREENSHOT_MODULES / _SERVICE_DISPLAY_NAMES."""
+    _SCREENSHOT_MODULES."""
     assert parse(data) is None
 
 
@@ -437,6 +458,61 @@ def test_parsers_reject_malformed_callback_payloads(parse, data: str) -> None:
 )
 def test_parsers_still_accept_well_formed_callback_payloads(parse, data: str, expected) -> None:
     assert parse(data) == expected
+
+
+@pytest.mark.parametrize(
+    ("parsed_provider", "expected"),
+    [
+        pytest.param(parse_pick_callback_data("anilist_pick:99"), Provider.ANILIST, id="pick"),
+        pytest.param(
+            parse_screenshot_pick_callback_data("screenshot_pick:shikimori:5"),
+            Provider.SHIKIMORI,
+            id="screenshot-pick",
+        ),
+        pytest.param(
+            parse_screenshot_more_callback_data("screenshot_more:jikan:10"),
+            Provider.JIKAN,
+            id="more",
+        ),
+        pytest.param(
+            parse_screenshot_source_callback_data("screenshot_source:tmdb"),
+            Provider.TMDB,
+            id="source",
+        ),
+        pytest.param(
+            parse_screenshot_search_pick_callback_data("screenshot_search_pick:tmdb:209867"),
+            Provider.TMDB,
+            id="search-pick",
+        ),
+        pytest.param(
+            parse_screenshot_search_again_callback_data("screenshot_search_again:tmdb"),
+            Provider.TMDB,
+            id="search-again",
+        ),
+        pytest.param(
+            parse_method_callback_data(TMDB_METHOD_CALLBACK_DATA), Provider.TMDB, id="method"
+        ),
+    ],
+)
+def test_parsers_hand_back_real_provider_members(parsed_provider, expected: Provider) -> None:
+    """The one place client-forged callback data becomes a typed value.
+
+    `==` would pass against a bare string too (Provider is a StrEnum), so
+    these assert identity: the provider segment has to *become* a
+    Provider here rather than travel on as an unchecked string into a
+    `getattr`/dict lookup several frames later — which is how an unknown
+    provider used to reach a KeyError, in one case after it had already
+    been written to `screenshot_picker_provider`."""
+    provider = parsed_provider[0] if isinstance(parsed_provider, tuple) else parsed_provider
+    assert provider is expected
+
+
+def test_parse_method_callback_data_keeps_manual_a_bare_string() -> None:
+    """ "manual" names the absence of an automatic provider, so it is
+    deliberately outside Provider — and must stay outside it here, where
+    search.py's `if source == "manual":` branch reads it."""
+    assert parse_method_callback_data(MANUAL_METHOD_CALLBACK_DATA) == "manual"
+    assert not isinstance(parse_method_callback_data(MANUAL_METHOD_CALLBACK_DATA), Provider)
 
 
 def test_method_selection_keyboard_defaults_to_anilist_first() -> None:
@@ -531,7 +607,7 @@ def test_screenshot_source_keyboard_marks_the_provider_that_just_failed() -> Non
     it may be the only source with screenshots for this title — but it's
     flagged so it isn't retried by accident."""
     markup = screenshot_source_keyboard(
-        ["shikimori", "jikan", "tmdb"], "en", failed_provider="jikan"
+        [Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB], "en", failed_provider=Provider.JIKAN
     )
 
     labels = dict(_source_rows(markup))
@@ -543,14 +619,14 @@ def test_screenshot_source_keyboard_marks_the_provider_that_just_failed() -> Non
 
 
 def test_screenshot_source_keyboard_marks_nothing_by_default() -> None:
-    markup = screenshot_source_keyboard(["shikimori", "jikan", "tmdb"], "en")
+    markup = screenshot_source_keyboard([Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB], "en")
 
     assert not any(text.startswith("⚠️") for text, _ in _source_rows(markup))
 
 
 def test_screenshot_source_keyboard_always_offers_upload_instead() -> None:
     """The upload escape has to survive on the failure screen too."""
-    markup = screenshot_source_keyboard(["jikan"], "en", failed_provider="jikan")
+    markup = screenshot_source_keyboard([Provider.JIKAN], "en", failed_provider=Provider.JIKAN)
 
     callbacks = [data for _, data in _source_rows(markup)]
     assert SCREENSHOT_UPLOAD_CALLBACK_DATA in callbacks
@@ -566,7 +642,7 @@ def test_screenshot_gallery_keyboard_numbers_match_the_album_captions() -> None:
     photos captioned 6,7,8 told the starter the wrong thing (the
     callback data was right all along)."""
     page = GalleryPage(
-        provider="shikimori",
+        provider=Provider.SHIKIMORI,
         offset=5,
         count=3,
         has_more=False,
@@ -585,7 +661,7 @@ def test_screenshot_gallery_keyboard_numbers_match_the_album_captions() -> None:
 
 def test_screenshot_gallery_keyboard_offers_back_past_the_first_page() -> None:
     page = GalleryPage(
-        provider="shikimori",
+        provider=Provider.SHIKIMORI,
         offset=5,
         count=5,
         has_more=True,
@@ -602,7 +678,7 @@ def test_screenshot_gallery_keyboard_offers_back_past_the_first_page() -> None:
 
 def test_screenshot_gallery_keyboard_has_no_back_button_on_the_first_page() -> None:
     page = GalleryPage(
-        provider="shikimori",
+        provider=Provider.SHIKIMORI,
         offset=0,
         count=5,
         has_more=True,
@@ -619,7 +695,7 @@ def test_screenshot_gallery_keyboard_has_no_back_button_on_the_first_page() -> N
 
 def test_screenshot_gallery_keyboard_puts_both_paging_buttons_on_one_row() -> None:
     page = GalleryPage(
-        provider="shikimori",
+        provider=Provider.SHIKIMORI,
         offset=5,
         count=5,
         has_more=True,

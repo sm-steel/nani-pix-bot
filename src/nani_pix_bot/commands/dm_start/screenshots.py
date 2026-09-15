@@ -28,10 +28,10 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
-    _SERVICE_DISPLAY_NAMES,
     _client_for_source,
     _reject_stale_tap,
     _screenshot_capable_providers,
+    _stored_provider,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     GalleryPage,
@@ -40,7 +40,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     screenshot_source_keyboard,
 )
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import SetupStep
+from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.search import jikan, shikimori, tmdb
@@ -62,14 +62,22 @@ NO_SOURCE_PROMPT_KEY = "dm_start.pick_screenshot_source_prompt"
 
 # One provider id column per screenshot-capable provider — see
 # models/game.py's per-provider *_id columns.
-_ID_ATTRS = {"shikimori": "shikimori_id", "jikan": "jikan_id", "tmdb": "tmdb_id"}
+_ID_ATTRS = {
+    Provider.SHIKIMORI: "shikimori_id",
+    Provider.JIKAN: "jikan_id",
+    Provider.TMDB: "tmdb_id",
+}
 # Module references, not bound function references — a plain
 # {"shikimori": shikimori.screenshots, ...} dict would capture the
 # function object at import time, which stops respecting
 # monkeypatch.setattr(shikimori, "screenshots", ...) in tests (and,
 # more generally, would go stale if a provider module ever reassigned
 # its own screenshots name after import).
-_SCREENSHOT_MODULES = {"shikimori": shikimori, "jikan": jikan, "tmdb": tmdb}
+_SCREENSHOT_MODULES = {
+    Provider.SHIKIMORI: shikimori,
+    Provider.JIKAN: jikan,
+    Provider.TMDB: tmdb,
+}
 
 
 @dataclass(frozen=True)
@@ -81,12 +89,12 @@ class SourceMenu:
     caller's session has closed and so can't look the game up itself —
     can be handed everything it needs to draw the menu in one value."""
 
-    providers: list[str]
+    providers: list[Provider]
     # None only for the one failure with no provider to blame: a stale
     # "pick a different screenshot" button on a game whose
     # screenshot_source was cleared meanwhile. Nothing gets flagged and
     # the message carries no {service}.
-    provider: str | None
+    provider: Provider | None
 
 
 @dataclass(frozen=True)
@@ -97,10 +105,10 @@ class Fallback:
     along means no caller has to remember which one it was asking about."""
 
     key: str
-    provider: str
+    provider: Provider
 
 
-def _provider_id(game, provider: str) -> int | None:
+def _provider_id(game, provider: Provider) -> int | None:
     """Typed wrapper around the getattr(game, _ID_ATTRS[provider]) dance
     used throughout this module — a bare getattr on a dynamic attribute
     name is `Any` to `ty`, which silently let a stale/cleared id (e.g.
@@ -110,12 +118,12 @@ def _provider_id(game, provider: str) -> int | None:
     return getattr(game, _ID_ATTRS[provider])
 
 
-async def _fetch_screenshots(provider: str, client, provider_id: int) -> list[str]:
+async def _fetch_screenshots(provider: Provider, client, provider_id: int) -> list[str]:
     return await _SCREENSHOT_MODULES[provider].screenshots(client, provider_id)
 
 
 async def _fetch_screenshots_or_fallback(
-    context: ContextTypes.DEFAULT_TYPE, game, provider: str, provider_id: int | None
+    context: ContextTypes.DEFAULT_TYPE, game, provider: Provider, provider_id: int | None
 ) -> list[str] | Fallback:
     """Fetches `provider`'s screenshots for `provider_id` — the one
     chokepoint every screenshot-gallery call site routes through.
@@ -156,13 +164,13 @@ async def _fetch_screenshots_or_fallback(
 
 
 async def _search_provider(
-    provider: str, client, query: str
+    provider: Provider, client, query: str
 ) -> list[ShikimoriResult] | list[JikanResult] | list[TMDBResult]:
     return await _SCREENSHOT_MODULES[provider].search(client, query)
 
 
 async def _get_provider_by_id(
-    provider: str, client, external_id: int
+    provider: Provider, client, external_id: int
 ) -> ShikimoriResult | JikanResult | TMDBResult | None:
     return await _SCREENSHOT_MODULES[provider].get_by_id(client, external_id)
 
@@ -177,12 +185,12 @@ class GalleryTarget:
     cross-provider-resolution path."""
 
     chat_id: int
-    provider: str
+    provider: Provider
     offset: int
     cross_provider: bool = False
 
 
-def source_menu_for(game, provider: str | None) -> SourceMenu:
+def source_menu_for(game, provider: Provider | None) -> SourceMenu:
     return SourceMenu(providers=_screenshot_capable_providers(game), provider=provider)
 
 
@@ -232,7 +240,7 @@ async def reply_with_source_menu(send, menu: SourceMenu, lang: str, key: str) ->
     (see SourceMenu.provider), where `key` must be a placeholder-free
     one, since i18n.t's `.format` raises on a missing kwarg."""
     logger.debug("Screenshot flow: falling back to the source menu with {!r}", key)
-    service = {"service": _SERVICE_DISPLAY_NAMES[menu.provider]} if menu.provider else {}
+    service = {"service": menu.provider.display_name} if menu.provider else {}
     await send(
         i18n.t(key, lang, **service),
         reply_markup=screenshot_source_keyboard(
@@ -314,14 +322,18 @@ async def resume_screenshot_gallery(
     NO_SOURCE_PROMPT_KEY, which the caller must render *with* the source
     menu (there is no gallery message to carry buttons in that case)."""
     game.setup_step = SetupStep.PICKING_SCREENSHOT
-    provider = game.screenshot_source
-    if provider is None:
+    stored = game.screenshot_source
+    if stored is None:
         logger.warning(
             "Game {}: resume_screenshot_gallery called with no screenshot_source (stale button)",
             game.id,
         )
         # No provider to name or flag — just re-offer the plain menu.
         return NO_SOURCE_PROMPT_KEY
+
+    # The column hands back a bare str, so this is the one place in this
+    # module that has to say so — see `_stored_provider`.
+    provider = _stored_provider(stored)
 
     # The gallery below is drawn cross_provider=True, so it carries
     # "Wrong anime? Search again" — which means a typed correction has
@@ -422,7 +434,7 @@ async def screenshot_source_callback_handler(
 
 
 async def _resolve_screenshot_source(
-    context: ContextTypes.DEFAULT_TYPE, game, provider: str, lang: str
+    context: ContextTypes.DEFAULT_TYPE, game, provider: Provider, lang: str
 ) -> Fallback | None:
     """Runs once a screenshot-source button is tapped: same-provider (an
     id already on file) goes straight to the gallery; cross-provider
@@ -461,7 +473,7 @@ async def _resolve_screenshot_source(
 
 
 async def _resolve_cross_provider_id(
-    context: ContextTypes.DEFAULT_TYPE, game, provider: str
+    context: ContextTypes.DEFAULT_TYPE, game, provider: Provider
 ) -> int | None:
     """Silently searches `provider` by the already-confirmed title and
     stages its top result's id onto the game
@@ -568,7 +580,7 @@ async def _show_gallery_page(
             text=i18n.t(
                 "dm_start.no_screenshots_available",
                 lang,
-                service=_SERVICE_DISPLAY_NAMES[target.provider],
+                service=target.provider.display_name,
             ),
         )
         return None

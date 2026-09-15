@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Literal, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -7,7 +7,7 @@ from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import preview, search
-from nani_pix_bot.models.enums import GameStatus, SetupStep
+from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
@@ -59,7 +59,7 @@ def _create_setup_game(
     # None for the screenshot-less /newgame path, where no image exists
     # until one is picked or uploaded later (see create_setup_game).
     image: bytes | None = b"file123",
-    source: str = "anilist",
+    source: Provider | Literal["manual"] = Provider.ANILIST,
 ) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=starter_id))

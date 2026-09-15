@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import GameStatus, PixelStage
+from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
@@ -275,7 +275,7 @@ def test_stage_result_assigns_anilist_fields_without_changing_status(session: Se
     game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
-    game_service.stage_result(game, _FRIEREN, source="anilist")
+    game_service.stage_result(game, _FRIEREN, source=Provider.ANILIST)
     session.commit()
 
     fetched = session.get(Game, game.id)
@@ -294,7 +294,7 @@ def test_stage_result_assigns_shikimori_fields_including_russian_title(session: 
     game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
-    game_service.stage_result(game, _FRIEREN_SHIKIMORI, source="shikimori")
+    game_service.stage_result(game, _FRIEREN_SHIKIMORI, source=Provider.SHIKIMORI)
     session.commit()
 
     fetched = session.get(Game, game.id)
@@ -314,7 +314,7 @@ def test_stage_result_assigns_jikan_fields_including_native_title(session: Sessi
     game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
-    game_service.stage_result(game, _FRIEREN_JIKAN, source="jikan")
+    game_service.stage_result(game, _FRIEREN_JIKAN, source=Provider.JIKAN)
     session.commit()
 
     fetched = session.get(Game, game.id)
@@ -334,7 +334,7 @@ def test_stage_result_assigns_tmdb_fields_including_native_title(session: Sessio
     game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
-    game_service.stage_result(game, _FRIEREN_TMDB, source="tmdb")
+    game_service.stage_result(game, _FRIEREN_TMDB, source=Provider.TMDB)
     session.commit()
 
     fetched = session.get(Game, game.id)
@@ -356,7 +356,7 @@ def test_set_screenshot_provider_id_sets_only_the_ids_column(session: Session) -
     session.add(Player(telegram_user_id=1))
     session.commit()
     game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
-    game_service.stage_result(game, _FRIEREN_SHIKIMORI, source="shikimori")
+    game_service.stage_result(game, _FRIEREN_SHIKIMORI, source=Provider.SHIKIMORI)
     session.commit()
 
     game_service.set_screenshot_provider_id(game, _FRIEREN_TMDB)
@@ -415,7 +415,7 @@ def test_activate_game_sets_active_state_and_opens_the_turn(session: Session) ->
     game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
-    game_service.stage_result(game, _FRIEREN, source="anilist")
+    game_service.stage_result(game, _FRIEREN, source=Provider.ANILIST)
     game_service.activate_game(session, game)
     session.commit()
 
@@ -438,7 +438,7 @@ def test_activate_game_creates_turn_state_row_if_missing(session: Session) -> No
     game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
-    game_service.stage_result(game, _FRIEREN, source="anilist")
+    game_service.stage_result(game, _FRIEREN, source=Provider.ANILIST)
     game_service.activate_game(session, game)
     session.commit()
 
@@ -454,7 +454,7 @@ def test_activate_game_schedules_the_timeout_two_days_out(session: Session) -> N
     session.commit()
     before = datetime.now(UTC).replace(tzinfo=None)  # DATETIME columns round-trip as naive UTC
 
-    game_service.stage_result(game, _FRIEREN, source="anilist")
+    game_service.stage_result(game, _FRIEREN, source=Provider.ANILIST)
     game_service.activate_game(session, game)
     session.commit()
 
@@ -470,7 +470,7 @@ def test_activate_game_sets_the_initial_inactivity_deadlines(session: Session) -
     session.commit()
     before = datetime.now(UTC).replace(tzinfo=None)  # DATETIME columns round-trip as naive UTC
 
-    game_service.stage_result(game, _FRIEREN, source="anilist")
+    game_service.stage_result(game, _FRIEREN, source=Provider.ANILIST)
     game_service.activate_game(session, game)
     session.commit()
 

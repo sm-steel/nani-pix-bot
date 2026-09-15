@@ -2,11 +2,18 @@
 MECHANICS.md's "Starting a game" section.
 
 Button labels are routed through `i18n.t()` like every other user-facing
-string, with two deliberate exceptions: the "AniList"/"Shikimori"/
-"Jikan"/"TMDB" method-picker labels (third-party brand names, not
-translatable UI text) and the language picker's own native-name labels
-in `commands/language.py` (a language switcher inherently shows each
-option in its own name).
+string, with two deliberate exceptions: the method-picker and
+screenshot-source brand labels (`Provider.display_name` — third-party
+brand names, not translatable UI text) and the language picker's own
+native-name labels in `commands/language.py` (a language switcher
+inherently shows each option in its own name).
+
+This module is also the trust boundary for provider identity. Every
+`CallbackQueryHandler` in app.py matches on prefix only, so the rest of
+a payload is whatever the client chose to send; the parsers below are
+where a provider segment stops being an arbitrary string and becomes a
+`Provider` (see `_validated_provider`), so nothing downstream has to
+re-check it.
 
 `stop_confirm_keyboard()` lives in `commands/helpers/keyboards.py`
 instead — it's shared across this package and `commands/stageconfig.py`,
@@ -15,11 +22,12 @@ not specific to the setup flow.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
 from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.search.anilist import AniListResult
@@ -28,10 +36,12 @@ from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 RETRY_CALLBACK_DATA = "anilist_retry"
-_ANILIST_PICK_PREFIX = "anilist_pick:"
-_SHIKIMORI_PICK_PREFIX = "shikimori_pick:"
-_JIKAN_PICK_PREFIX = "jikan_pick:"
-_TMDB_PICK_PREFIX = "tmdb_pick:"
+# Derived from Provider, not hand-spelled — app.py's routing pattern is built
+# the same way, and the two used to be independent copies of one wire format.
+_ANILIST_PICK_PREFIX = f"{Provider.ANILIST}_pick:"
+_SHIKIMORI_PICK_PREFIX = f"{Provider.SHIKIMORI}_pick:"
+_JIKAN_PICK_PREFIX = f"{Provider.JIKAN}_pick:"
+_TMDB_PICK_PREFIX = f"{Provider.TMDB}_pick:"
 
 ANILIST_METHOD_CALLBACK_DATA = "method:anilist"
 SHIKIMORI_METHOD_CALLBACK_DATA = "method:shikimori"
@@ -199,10 +209,10 @@ def _tmdb_label(result: TMDBResult, lang: str) -> str:
 
 
 _PICK_PREFIX_SOURCES = {
-    _ANILIST_PICK_PREFIX: "anilist",
-    _SHIKIMORI_PICK_PREFIX: "shikimori",
-    _JIKAN_PICK_PREFIX: "jikan",
-    _TMDB_PICK_PREFIX: "tmdb",
+    _ANILIST_PICK_PREFIX: Provider.ANILIST,
+    _SHIKIMORI_PICK_PREFIX: Provider.SHIKIMORI,
+    _JIKAN_PICK_PREFIX: Provider.JIKAN,
+    _TMDB_PICK_PREFIX: Provider.TMDB,
 }
 
 
@@ -232,14 +242,14 @@ def _validated_index(raw: str, *, data: str) -> int | None:
     return None
 
 
-def parse_pick_callback_data(data: str) -> tuple[str, int] | None:
+def parse_pick_callback_data(data: str) -> tuple[Provider, int] | None:
     """The picked result's (source, id), or None if `data` wasn't a pick
-    (e.g. retry, or a client-forged id — see `_validated_index`).
-    `source` is "anilist"/"shikimori"/"jikan"/"tmdb" — the command layer
-    uses it to know which service's get_by_id to re-fetch from
-    (restart-resilient, per issue #11). It comes from the prefix rather
-    than the payload, so unlike the screenshot parsers below there is no
-    provider segment here that could need validating."""
+    (e.g. retry, or a client-forged id — see `_validated_index`). The
+    command layer uses `source` to know which service's get_by_id to
+    re-fetch from (restart-resilient, per issue #11). It comes from the
+    prefix rather than the payload, so unlike the screenshot parsers
+    below there is no provider segment here that could need validating —
+    a prefix that doesn't match any key simply isn't a pick."""
     for prefix, source in _PICK_PREFIX_SOURCES.items():
         if data.startswith(prefix):
             external_id = _validated_index(data.removeprefix(prefix), data=data)
@@ -255,12 +265,18 @@ def method_selection_keyboard(*, prefer_shikimori: bool, lang: str) -> InlineKey
     RU-specific reason to move around, so they're always third/fourth,
     before manual entry. "AniList"/"Shikimori"/"Jikan"/"TMDB" are brand
     names and stay untranslated regardless of `lang`."""
-    anilist_button = InlineKeyboardButton("AniList", callback_data=ANILIST_METHOD_CALLBACK_DATA)
-    shikimori_button = InlineKeyboardButton(
-        "Shikimori", callback_data=SHIKIMORI_METHOD_CALLBACK_DATA
+    anilist_button = InlineKeyboardButton(
+        Provider.ANILIST.display_name, callback_data=ANILIST_METHOD_CALLBACK_DATA
     )
-    jikan_button = InlineKeyboardButton("Jikan", callback_data=JIKAN_METHOD_CALLBACK_DATA)
-    tmdb_button = InlineKeyboardButton("TMDB", callback_data=TMDB_METHOD_CALLBACK_DATA)
+    shikimori_button = InlineKeyboardButton(
+        Provider.SHIKIMORI.display_name, callback_data=SHIKIMORI_METHOD_CALLBACK_DATA
+    )
+    jikan_button = InlineKeyboardButton(
+        Provider.JIKAN.display_name, callback_data=JIKAN_METHOD_CALLBACK_DATA
+    )
+    tmdb_button = InlineKeyboardButton(
+        Provider.TMDB.display_name, callback_data=TMDB_METHOD_CALLBACK_DATA
+    )
     manual_button = InlineKeyboardButton(
         i18n.t("keyboards.manual_entry", lang), callback_data=MANUAL_METHOD_CALLBACK_DATA
     )
@@ -275,18 +291,21 @@ def method_selection_keyboard(*, prefer_shikimori: bool, lang: str) -> InlineKey
     return InlineKeyboardMarkup([[button] for button in ordered])
 
 
-_METHOD_CALLBACK_DATA_TO_SOURCE = {
-    ANILIST_METHOD_CALLBACK_DATA: "anilist",
-    SHIKIMORI_METHOD_CALLBACK_DATA: "shikimori",
-    JIKAN_METHOD_CALLBACK_DATA: "jikan",
-    TMDB_METHOD_CALLBACK_DATA: "tmdb",
+_METHOD_CALLBACK_DATA_TO_SOURCE: dict[str, Provider | Literal["manual"]] = {
+    ANILIST_METHOD_CALLBACK_DATA: Provider.ANILIST,
+    SHIKIMORI_METHOD_CALLBACK_DATA: Provider.SHIKIMORI,
+    JIKAN_METHOD_CALLBACK_DATA: Provider.JIKAN,
+    TMDB_METHOD_CALLBACK_DATA: Provider.TMDB,
     MANUAL_METHOD_CALLBACK_DATA: "manual",
 }
 
 
-def parse_method_callback_data(data: str) -> str | None:
-    """ "anilist"/"shikimori"/"jikan"/"tmdb"/"manual", or None if `data`
-    isn't a method pick."""
+def parse_method_callback_data(data: str) -> Provider | Literal["manual"] | None:
+    """The identification method picked, or None if `data` isn't a method
+    pick. The one parser whose result isn't purely a `Provider`: manual
+    entry is the fifth button but not a fifth provider, so it stays the
+    bare string `Game.source` has always stored for it (see `Provider`'s
+    docstring)."""
     return _METHOD_CALLBACK_DATA_TO_SOURCE.get(data)
 
 
@@ -344,22 +363,29 @@ SCREENSHOT_SEARCH_AGAIN_PREFIX = "screenshot_search_again:"
 SCREENSHOT_SEARCH_PICK_PREFIX = "screenshot_search_pick:"
 SCREENSHOT_UPLOAD_CALLBACK_DATA = "screenshot:upload"
 
-# Brand names, same untranslated-label convention as the method-picker
-# buttons above.
-_SCREENSHOT_PROVIDER_LABELS = {"shikimori": "Shikimori", "jikan": "Jikan", "tmdb": "TMDB"}
+# The three providers that can supply screenshots — AniList identifies
+# an anime but has no screenshot endpoint, so it is the one Provider a
+# screenshot-shaped payload must be rejected for. A tuple rather than
+# the label dict this used to double as: the labels themselves now come
+# from Provider.display_name, leaving only the membership question.
+_SCREENSHOT_CAPABLE_PROVIDERS: tuple[Provider, ...] = (
+    Provider.SHIKIMORI,
+    Provider.JIKAN,
+    Provider.TMDB,
+)
 # Marks the provider that just failed on a re-shown source menu. A bare
 # sign rather than an i18n'd word so the brand-name labels stay
 # untranslated (see CLAUDE.md) and the buttons stay short.
 _FAILED_PROVIDER_MARK = "⚠️"
 
 
-def _source_label(provider: str, *, failed: bool) -> str:
-    label = _SCREENSHOT_PROVIDER_LABELS[provider]
+def _source_label(provider: Provider, *, failed: bool) -> str:
+    label = provider.display_name
     return f"{_FAILED_PROVIDER_MARK} {label}" if failed else label
 
 
 def screenshot_source_keyboard(
-    providers: list[str], lang: str, *, failed_provider: str | None = None
+    providers: list[Provider], lang: str, *, failed_provider: Provider | None = None
 ) -> InlineKeyboardMarkup:
     """One button per screenshot-capable provider in `providers`
     (already ordered by the caller — same provider as identification
@@ -379,6 +405,10 @@ def screenshot_source_keyboard(
         [
             InlineKeyboardButton(
                 _source_label(provider, failed=provider == failed_provider),
+                # Interpolates as the value, not "Provider.TMDB" — that
+                # is what StrEnum guarantees and why it was chosen (see
+                # Provider's docstring); same for every other callback
+                # payload built from a member in this module.
                 callback_data=f"{SCREENSHOT_SOURCE_PREFIX}{provider}",
             )
         ]
@@ -395,21 +425,36 @@ def screenshot_source_keyboard(
     return InlineKeyboardMarkup(buttons)
 
 
-def _validated_provider(raw: str, *, data: str) -> str | None:
-    """`raw` if it really is one of the screenshot-capable providers,
-    else None. Same reasoning as `_validated_index`: the provider
-    segment of a callback payload is client-controlled, and an unknown
-    string flowed straight into `_ID_ATTRS[provider]` /
-    `_SCREENSHOT_MODULES[provider]` / `_SERVICE_DISPLAY_NAMES[provider]`
-    and raised KeyError a few frames later — including once it had
-    already been written to `screenshot_picker_provider`."""
-    if raw in _SCREENSHOT_PROVIDER_LABELS:
-        return raw
-    logger.warning("Rejected callback payload {!r}: {!r} is not a screenshot provider", data, raw)
-    return None
+def _validated_provider(raw: str, *, data: str) -> Provider | None:
+    """`raw` as a screenshot-capable `Provider`, or None.
+
+    Same reasoning as `_validated_index`: the provider segment of a
+    callback payload is client-controlled, and an unknown string flowed
+    straight into `_ID_ATTRS[provider]` / `_SCREENSHOT_MODULES[provider]`
+    / a display-name lookup and raised KeyError a few frames later —
+    including once it had already been written to
+    `screenshot_picker_provider`.
+
+    Two checks, not one. `Provider(raw)` rejects anything that isn't a
+    provider at all (and is what makes this the point where forged data
+    becomes a typed value for everything downstream); the membership test
+    then rejects a real Provider that has no screenshots to offer —
+    `anilist`, the only one. The dict-key lookup this replaces did both
+    at once only because the label dict happened to omit AniList."""
+    try:
+        provider = Provider(raw)
+    except ValueError:
+        logger.warning("Rejected callback payload {!r}: {!r} is not a provider", data, raw)
+        return None
+    if provider not in _SCREENSHOT_CAPABLE_PROVIDERS:
+        logger.warning(
+            "Rejected callback payload {!r}: {!r} has no screenshots to offer", data, raw
+        )
+        return None
+    return provider
 
 
-def _parse_provider_and_index(payload: str, *, data: str) -> tuple[str, int] | None:
+def _parse_provider_and_index(payload: str, *, data: str) -> tuple[Provider, int] | None:
     """Splits a "<provider>:<number>" callback suffix and validates both
     halves — the shared shape behind every screenshot pick/page/search
     pick payload. None if either half doesn't hold up."""
@@ -421,7 +466,7 @@ def _parse_provider_and_index(payload: str, *, data: str) -> tuple[str, int] | N
     return provider, index
 
 
-def parse_screenshot_source_callback_data(data: str) -> str | None:
+def parse_screenshot_source_callback_data(data: str) -> Provider | None:
     if not data.startswith(SCREENSHOT_SOURCE_PREFIX):
         return None
     return _validated_provider(data.removeprefix(SCREENSHOT_SOURCE_PREFIX), data=data)
@@ -436,7 +481,7 @@ class GalleryPage:
     `screenshot_gallery_keyboard` doesn't need a 6-argument signature
     (a qlty "many parameters" smell)."""
 
-    provider: str
+    provider: Provider
     offset: int
     count: int
     has_more: bool
@@ -520,25 +565,25 @@ def screenshot_gallery_keyboard(page: GalleryPage, lang: str) -> InlineKeyboardM
     return InlineKeyboardMarkup(rows)
 
 
-def parse_screenshot_pick_callback_data(data: str) -> tuple[str, int] | None:
+def parse_screenshot_pick_callback_data(data: str) -> tuple[Provider, int] | None:
     if not data.startswith(SCREENSHOT_PICK_PREFIX):
         return None
     return _parse_provider_and_index(data.removeprefix(SCREENSHOT_PICK_PREFIX), data=data)
 
 
-def parse_screenshot_more_callback_data(data: str) -> tuple[str, int] | None:
+def parse_screenshot_more_callback_data(data: str) -> tuple[Provider, int] | None:
     if not data.startswith(SCREENSHOT_MORE_PREFIX):
         return None
     return _parse_provider_and_index(data.removeprefix(SCREENSHOT_MORE_PREFIX), data=data)
 
 
-def parse_screenshot_search_again_callback_data(data: str) -> str | None:
+def parse_screenshot_search_again_callback_data(data: str) -> Provider | None:
     if not data.startswith(SCREENSHOT_SEARCH_AGAIN_PREFIX):
         return None
     return _validated_provider(data.removeprefix(SCREENSHOT_SEARCH_AGAIN_PREFIX), data=data)
 
 
-def parse_screenshot_search_pick_callback_data(data: str) -> tuple[str, int] | None:
+def parse_screenshot_search_pick_callback_data(data: str) -> tuple[Provider, int] | None:
     if not data.startswith(SCREENSHOT_SEARCH_PICK_PREFIX):
         return None
     return _parse_provider_and_index(data.removeprefix(SCREENSHOT_SEARCH_PICK_PREFIX), data=data)

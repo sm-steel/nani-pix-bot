@@ -14,7 +14,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 )
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.bot_settings import BotSettings
-from nani_pix_bot.models.enums import GameStatus, SetupStep
+from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
@@ -95,8 +95,8 @@ def _staged_setup_game(session_factory, *, starter_id: int = 1) -> None:
         game = game_service.create_setup_game(
             session, starter_id=starter_id, original_image=b"file123"
         )
-        game.source = "anilist"
-        game_service.stage_result(game, _FRIEREN, source="anilist")
+        game.source = Provider.ANILIST
+        game_service.stage_result(game, _FRIEREN, source=Provider.ANILIST)
         game.setup_step = SetupStep.CONFIRMING
         session.commit()
 
@@ -341,11 +341,11 @@ async def test_photo_handler_upload_keeps_the_identification_provider_id(
         session.add(Player(telegram_user_id=1))
         session.commit()
         game = game_service.create_setup_game(session, starter_id=1)
-        game.source = "shikimori"
+        game.source = Provider.SHIKIMORI
         game.shikimori_id = 52991
         game.title_english = "Frieren: Beyond Journey's End"
         game.setup_step = SetupStep.PICKING_SCREENSHOT
-        game.screenshot_picker_provider = "shikimori"
+        game.screenshot_picker_provider = Provider.SHIKIMORI
         session.commit()
 
     update = _make_update(user_id=1, photo_file_id="own-screenshot")

@@ -47,7 +47,7 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     source_menu_for,
 )
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import SetupStep
+from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.search import jikan, shikimori, tmdb
@@ -177,10 +177,10 @@ async def _screenshot_search_step(
         # result type — a dict of them collapses to a union ty can't
         # narrow back down per call. Mirrors search.py's own
         # _search_step for the same reason.
-        if provider == "shikimori":
+        if provider == Provider.SHIKIMORI:
             results = await shikimori.search(client, message.text)
             keyboard = shikimori_results_keyboard(results, lang, pick_prefix=pick_prefix)
-        elif provider == "jikan":
+        elif provider == Provider.JIKAN:
             results = await jikan.search(client, message.text)
             keyboard = jikan_results_keyboard(results, lang, pick_prefix=pick_prefix)
         else:
@@ -282,7 +282,7 @@ async def screenshot_search_pick_callback_handler(
 
 
 async def _show_search_pick_gallery(
-    context: ContextTypes.DEFAULT_TYPE, game, provider: str, external_id: int, lang: str
+    context: ContextTypes.DEFAULT_TYPE, game, provider: Provider, external_id: int, lang: str
 ) -> str | Fallback:
     """Lists the picked title's screenshots and puts its first gallery
     page up — `cross_provider=True` because arriving here *is* the
@@ -301,7 +301,7 @@ async def _show_search_pick_gallery(
 
 async def _resolve_screenshot_search_pick(
     query, context: ContextTypes.DEFAULT_TYPE, lang: str, menu: SourceMenu
-) -> tuple[str, int, ShikimoriResult | JikanResult | TMDBResult] | None:
+) -> tuple[Provider, int, ShikimoriResult | JikanResult | TMDBResult] | None:
     """Parses the pick and re-fetches the full result via get_by_id
     (restart-resilient, same reasoning as search.py's own
     `_resolve_picked_result`). Replies and returns None for every
@@ -413,7 +413,7 @@ async def _dispatch_gallery_action(
 
 
 async def _handle_more_screenshots(
-    context: ContextTypes.DEFAULT_TYPE, game, more: tuple[str, int], tap: Tap
+    context: ContextTypes.DEFAULT_TYPE, game, more: tuple[Provider, int], tap: Tap
 ) -> str | Fallback | None:
     """Renders the gallery page at the tapped offset. Serves the back
     button as well as the forward one — the callback has always encoded
@@ -496,7 +496,7 @@ async def _handle_more_screenshots(
 
 
 async def _handle_screenshot_pick(
-    context: ContextTypes.DEFAULT_TYPE, session, game, picked: tuple[str, int], tap: Tap
+    context: ContextTypes.DEFAULT_TYPE, session, game, picked: tuple[Provider, int], tap: Tap
 ) -> str | Fallback | None:
     """Downloads the picked screenshot's bytes and shows the
     confirmation preview. Returns the i18n key for the caller's own

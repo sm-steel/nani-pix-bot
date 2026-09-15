@@ -17,7 +17,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.models.enums import SetupStep
+from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
@@ -62,13 +62,6 @@ _SEARCH_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError, TelegramError)
 # that is working fine.
 _IMAGE_DOWNLOAD_ERRORS = (httpx.HTTPError,)
 
-_SERVICE_DISPLAY_NAMES = {
-    "anilist": "AniList",
-    "shikimori": "Shikimori",
-    "jikan": "Jikan",
-    "tmdb": "TMDB",
-}
-
 # Used by both manual.py's second-message step and preview.py's
 # "add a synonym" step.
 _SYNONYM_SPLIT_RE = re.compile(r"[,\n]")
@@ -81,7 +74,7 @@ _SYNONYM_SPLIT_RE = re.compile(r"[,\n]")
 _TMDB_CLIENT_BOT_DATA_KEY = "tmdb_client"
 
 
-def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: str) -> httpx.AsyncClient:
+def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: Provider) -> httpx.AsyncClient:
     """The httpx client to talk to `source` with. Annotated on both ends
     on purpose: `bot_data` is an untyped dict, so an unannotated return
     made this Unknown — and since every search, screenshot fetch and
@@ -90,7 +83,7 @@ def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: str) -> httpx
     anywhere downstream. app.py puts a real AsyncClient under both keys
     (see build_application), so the cast states what is already true
     rather than papering over a doubt."""
-    key = _TMDB_CLIENT_BOT_DATA_KEY if source == "tmdb" else "search_client"
+    key = _TMDB_CLIENT_BOT_DATA_KEY if source == Provider.TMDB else "search_client"
     return cast(httpx.AsyncClient, context.bot_data[key])
 
 
@@ -152,7 +145,39 @@ def _method_prompt_key(*, prefer_shikimori: bool) -> str:
     )
 
 
-def _screenshot_capable_providers(game: Game) -> list[str]:
+def _stored_provider(stored: str) -> Provider:
+    """A provider value read back off one of `Game`'s three
+    `Provider`-typed columns, as a real `Provider` member.
+
+    Those columns are deliberately `String`-backed (see models/game.py),
+    which means SQLAlchemy has no idea they are enum-shaped: `ty` reads
+    the `Mapped[Provider...]` annotation and sees a `Provider`, but at
+    runtime a plain `str` comes back. Everything `Provider` inherits from
+    `str` works on it regardless — `==` in both directions, `in` against
+    a list of members, even a dict keyed by members (a StrEnum hashes as
+    its value) — so the *only* thing that breaks is member-specific
+    attribute access, and `.display_name` is exactly that. It raised
+    `AttributeError: 'str' object has no attribute 'display_name'` from
+    three failure screens, i.e. only when a provider was already down.
+
+    So conversion happens once, here, at each of the four sites that
+    read one of those columns into a `Provider`-typed slot — rather than
+    defensively at every `.display_name` — and `ty` is right about
+    everything downstream of it. Those four: `search.py`'s
+    `search_text_handler` (twice — the picker column and `source`),
+    `screenshots.py`'s `resume_screenshot_gallery`, and
+    `_screenshot_capable_providers` just below.
+
+    That last one is the load-bearing one, and the reason "only failure
+    screens are affected" understates this. It puts its result in a
+    `list[Provider]` that the source menu is drawn from, so without the
+    conversion a bare `str` reaches `_source_label`'s `.display_name` on
+    the ordinary screenshot-source screen — the happy path, not a
+    failure path."""
+    return Provider(stored)
+
+
+def _screenshot_capable_providers(game: Game) -> list[Provider]:
     """All 3 screenshot-capable providers, same-provider-as-identification
     first when it's one of them (so the common case — screenshot source
     matches identification source — needs no cross-provider search at
@@ -166,10 +191,15 @@ def _screenshot_capable_providers(game: Game) -> list[str]:
     already imports this module — the other direction would be a cycle.
     It is pure `game.source` arithmetic either way, with no dependency
     on the screenshot sub-flow around it."""
-    candidates = ["shikimori", "jikan", "tmdb"]
+    candidates = [Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB]
+    # `game.source` arrives as a bare str (see `_stored_provider`), and
+    # can legitimately be "manual" — which is in neither list, so the
+    # membership test settles both questions at once and nothing below it
+    # ever converts a non-provider.
     if game.source in candidates:
-        candidates.remove(game.source)
-        candidates.insert(0, game.source)
+        identified_by = _stored_provider(game.source)
+        candidates.remove(identified_by)
+        candidates.insert(0, identified_by)
     return candidates
 
 
@@ -259,14 +289,14 @@ async def _resume_setup(message, game: Game, lang: str) -> None:
     await message.reply_text(text, reply_markup=keyboard)
 
 
-async def _reply_service_down(send, lang: str, source: str) -> None:
+async def _reply_service_down(send, lang: str, source: Provider) -> None:
     """Shared failure path for both the search step and the pick step:
     tell the starter the chosen service looks unreachable and hand them
     back the method-selection keyboard rather than leaving them stuck
     with a dead-end SETUP game (see issue #11's orphaned-row incident)."""
     prefer_shikimori = _prefer_shikimori(lang)
     await send(
-        i18n.t("dm_start.search_failed", lang, service=_SERVICE_DISPLAY_NAMES[source]),
+        i18n.t("dm_start.search_failed", lang, service=source.display_name),
         reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
     )
 
