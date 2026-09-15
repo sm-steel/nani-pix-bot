@@ -70,6 +70,22 @@ async def test_search_sends_a_descriptive_user_agent() -> None:
     assert captured["user_agent"] == jikan._REQUEST_HEADERS["User-Agent"]
 
 
+async def test_search_requests_only_sfw_results() -> None:
+    """Results go into a shared group topic, so the one parameter Jikan
+    offers for this is cheap insurance (TMDB's `include_adult` already
+    defaults false)."""
+    captured: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["sfw"] = request.url.params.get("sfw")
+        return httpx.Response(200, json={"data": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await jikan.search(client, "frieren")
+
+    assert captured["sfw"] == "true"
+
+
 async def test_search_retries_after_rate_limit_then_succeeds() -> None:
     calls = {"n": 0}
 

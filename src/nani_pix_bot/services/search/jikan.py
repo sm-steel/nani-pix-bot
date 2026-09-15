@@ -46,8 +46,12 @@ async def search(
 ) -> list[JikanResult]:
     """Search Jikan anime titles matching `query`. Cached briefly (see
     cache.py) so a starter repeating the same query doesn't re-hit the
-    API each time."""
-    params = {"q": query, "limit": limit}
+    API each time.
+
+    `sfw=true` because whatever the starter picks here ends up posted
+    into a shared group topic — the same insurance TMDB gives for free
+    via its `include_adult` default."""
+    params = {"q": query, "limit": limit, "sfw": "true"}
     data = await rest.get_json(_API, client, JIKAN_BASE_URL, params)
     results = [_parse_result(raw) for raw in data.get("data") or []]
     logger.debug("Jikan search {!r} returned {} result(s)", query, len(results))

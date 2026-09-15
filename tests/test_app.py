@@ -241,3 +241,45 @@ def test_build_application_registers_player_tracking_before_the_commands() -> No
     }
     assert command_groups
     assert min(command_groups) > app._PLAYER_TRACKING_GROUP
+
+
+async def test_post_shutdown_closes_both_search_clients() -> None:
+    """They're process-lifetime objects in production, but every test
+    that builds an Application leaks two of them otherwise."""
+    application = app.build_application(_config())
+    search_client = application.bot_data["search_client"]
+    tmdb_client = application.bot_data["tmdb_client"]
+
+    await app._post_shutdown(application)
+
+    assert search_client.is_closed
+    assert tmdb_client.is_closed
+
+
+def test_build_application_warns_once_when_the_tmdb_token_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The token is optional by design, but without this a fresh clone
+    just shows an identification method that can only ever 401."""
+    warnings = []
+    monkeypatch.setattr(app.logger, "warning", lambda *args: warnings.append(args))
+
+    app.build_application(_config(tmdb_read_access_token=None))
+
+    assert len(warnings) == 1
+    assert "TMDB_READ_ACCESS_TOKEN" in warnings[0][0]
+
+
+def test_build_application_says_nothing_about_a_tmdb_token_that_is_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No warning when it's configured — and the repo is public, so no
+    log line may ever carry the token itself either."""
+    logged = []
+    for level in ("debug", "info", "warning", "error"):
+        monkeypatch.setattr(app.logger, level, lambda *args: logged.append(args))
+    token = "tmdb-token-placeholder"  # noqa: S105 - test fixture, not a real token
+
+    app.build_application(_config(tmdb_read_access_token=token))
+
+    assert not logged
