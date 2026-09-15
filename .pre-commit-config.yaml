@@ -34,8 +34,21 @@ repos:
         always_run: true
 
       - id: qlty-smells
-        name: qlty smells (complexity + duplication + secrets)
+        name: qlty smells (complexity + duplication)
         entry: uv run python scripts/qlty_smells_gate.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # `qlty smells` never runs plugins (trufflehog included) regardless
+      # of .qlty/qlty.toml's config — it's a different subcommand entirely,
+      # scoped to complexity/duplication. This is the actual secret scan.
+      # Unlike `qlty smells`, `qlty check` already exits non-zero on real
+      # findings by default (verified directly: --fail-level defaults to
+      # "fmt", not gated behind --no-fail) — no gate-script wrapper needed.
+      - id: qlty-check-trufflehog
+        name: qlty check --filter trufflehog (secret scan)
+        entry: qlty check --filter trufflehog --all
         language: system
         pass_filenames: false
         always_run: true

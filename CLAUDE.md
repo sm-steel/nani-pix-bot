@@ -84,12 +84,31 @@ plugin, are enabled; every other third-party linter plugin it can also run
 (ruff, bandit, radarlint, hadolint, ripgrep) is explicitly disabled —
 `ruff`/`ty` via `uv run` stay the only linter/type-checker, and `qlty` adds
 capabilities they don't have (complexity/duplication, secret scanning)
-rather than a second copy of one they already do.
+rather than a second copy of one they already do. **These are two separate
+subcommands, invoked separately, not one check that covers both**: `qlty
+smells` never runs plugins (trufflehog included) regardless of what's
+enabled in `.qlty/qlty.toml` — only `qlty check` does.
 
 ```sh
-qlty smells --all --no-snippets   # complexity + duplication findings
+qlty smells --all --no-snippets           # complexity + duplication findings
+qlty check --filter trufflehog --all      # secret scan
 qlty metrics --all --sort complexity --limit 15   # per-file complexity/LOC table
 ```
+
+**The secret scan only catches *verified* secrets by default** — qlty's
+bundled trufflehog driver hardcodes `--only-verified`
+(`trufflehog filesystem --json --fail --only-verified --no-update`), and
+there is no documented `.qlty/qlty.toml` setting to change that without
+editing trufflehog's own plugin definition (out of scope, and it
+wouldn't survive a fresh `qlty` install anyway since it's not something
+this repo commits). In practice this means the check only fires on a
+secret trufflehog can actually confirm is live against the issuing
+service's API (or, for private keys, a known-compromised-key match) —
+not on any secret-shaped string. A plausible-looking but fake or already-
+revoked credential will **not** trip it; a real, still-valid one will.
+This narrows the safety net considerably versus what "secret scanning is
+enabled" might suggest — worth knowing before relying on it as the sole
+backstop for something sensitive.
 
 **Never resolve a qlty finding (or a ruff/ty finding) by loosening its
 check (raising a threshold, disabling a rule, excluding a path) — fix the
@@ -100,16 +119,19 @@ be a false positive on inspection (not just inconvenient), say so
 explicitly and get confirmation before touching the config — don't default
 to loosening it.
 
-**All four checks — `ruff check`, `ruff format --check`, `ty check`, `qlty
-smells` (which includes the `trufflehog` secret scan) — run as a git
-pre-commit hook** via [pre-commit](https://pre-commit.com)
-(`.pre-commit-config.yaml`, installed as a `uv` dev dependency — `uv run
-pre-commit install` sets up the hook once per clone) — though `qlty smells`
-itself always exits 0 regardless of findings, so its hook entry is
-`scripts/qlty_smells_gate.py`, a small wrapper that turns a non-empty
-`--quiet` result into a failing exit code; every other hook entry shells out
-to the real tool directly, this one doesn't. A commit is blocked if
-any of them fail. Every hook is a `local` entry (`language: system`) that
+**All five checks — `ruff check`, `ruff format --check`, `ty check`, `qlty
+smells` (complexity + duplication), `qlty check --filter trufflehog`
+(secret scan) — run as a git pre-commit hook** via
+[pre-commit](https://pre-commit.com) (`.pre-commit-config.yaml`, installed
+as a `uv` dev dependency — `uv run pre-commit install` sets up the hook
+once per clone). `qlty smells` itself always exits 0 regardless of
+findings, so its hook entry is `scripts/qlty_smells_gate.py`, a small
+wrapper that turns a non-empty `--quiet` result into a failing exit code;
+`qlty check` doesn't have that problem — verified directly, it already
+exits non-zero on a real finding by default (`--fail-level` defaults to
+`fmt`, not gated behind an opt-in flag), so its hook entry shells out to
+it directly, no wrapper needed. A commit is blocked if any check fails.
+Every hook is a `local` entry (`language: system`) that
 shells out to the project's own `uv run ruff`/`uv run ty` — deliberately
 **not** the hosted `astral-sh/ruff-pre-commit` repo, which pins its own
 separate tool version independent of this project's `uv.lock` and could
@@ -204,10 +226,10 @@ tests/path/to/test_thing.py` while iterating). A change isn't finished if
 any of the four fail — don't leave known ruff/ty findings for later or
 describe work as complete while they're still red.
 
-The first three (not `pytest`) plus `qlty smells` also run automatically as
-a git pre-commit hook (see Tooling above) — committing re-verifies them
-regardless, but running them yourself first means the commit doesn't just
-fail on the first attempt.
+The first three (not `pytest`) plus `qlty smells` and `qlty check --filter
+trufflehog` also run automatically as a git pre-commit hook (see Tooling
+above) — committing re-verifies them regardless, but running them yourself
+first means the commit doesn't just fail on the first attempt.
 
 ## Test-driven development
 

@@ -99,7 +99,8 @@ mode = "disabled"
 # Deliberately left ENABLED, unlike ley-shards-bot's template — see
 # CLAUDE.md's Tooling section and the repo-wide "no secrets ever get
 # pushed" rule. This gives every commit (locally via pre-commit, and in
-# CI) an automated secret scan on top of ruff/ty/complexity checks.
-# [[plugin]]
-# name = "trufflehog"
-# mode = "disabled"
+# CI) an automated secret scan on top of ruff/ty/complexity checks. Run
+# via `qlty check --filter trufflehog` (not `qlty smells`, which never
+# invokes plugins regardless of this config — see .pre-commit-config.yaml).
+[[plugin]]
+name = "trufflehog"
