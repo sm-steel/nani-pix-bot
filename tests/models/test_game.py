@@ -35,6 +35,7 @@ def test_new_game_defaults_to_setup_with_no_wrong_guesses(session: Session) -> N
     assert fetched.jikan_id is None
     assert fetched.tmdb_id is None
     assert fetched.screenshot_source is None
+    assert fetched.screenshot_picker_provider is None
 
 
 def test_game_can_be_created_with_no_image_yet(session: Session) -> None:
@@ -71,6 +72,31 @@ def test_game_stores_provider_ids_independently(session: Session) -> None:
     assert fetched.jikan_id == 123
     assert fetched.tmdb_id == 456
     assert fetched.screenshot_source == "tmdb"
+
+
+def test_game_picker_provider_does_not_claim_an_image_source(session: Session) -> None:
+    # The two meanings live in two columns: the screenshot picker being
+    # mid-resolution on a provider says nothing about where the stored
+    # image came from — and with no image at all, screenshot_source has
+    # to stay None. Before the split, one column meant both, which is
+    # what let a genuine upload clear an identification provider id.
+    starter = _make_starter(session)
+    game = Game(
+        starter_id=starter.telegram_user_id,
+        shikimori_id=52991,
+        screenshot_picker_provider="shikimori",
+    )
+    session.add(game)
+    session.commit()
+    session.expire_all()
+
+    fetched = session.get(Game, game.id)
+
+    assert fetched is not None
+    assert fetched.screenshot_picker_provider == "shikimori"
+    assert fetched.screenshot_source is None
+    assert fetched.original_image is None
+    assert fetched.shikimori_id == 52991
 
 
 def test_game_original_image_round_trips_binary_data(session: Session) -> None:

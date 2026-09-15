@@ -17,7 +17,10 @@ from nani_pix_bot.commands.helpers.scoping import is_private_chat
 
 async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """DM-only, same eligibility checks as the photo-first entry point
-    (membership/games_enabled/can_start), via the shared helper."""
+    (membership/games_enabled/can_start), via the shared helper — which
+    also answers a second `/newgame` sent mid-setup by re-showing the
+    step the starter is on, rather than telling them it isn't their
+    turn (see `_resume_setup`)."""
     message = update.message
     if not is_private_chat(update) or message is None:
         return
