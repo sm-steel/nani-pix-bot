@@ -890,6 +890,19 @@ def test_reset_inactivity_clock_sets_both_deadlines_from_now(session: Session) -
     )
 
 
+def test_clear_inactivity_nudge_clears_only_the_nudge_deadline(session: Session) -> None:
+    game = _active_game(session)
+    game_service.reset_inactivity_clock(game)
+    advance_at_before = game.inactivity_advance_at
+
+    game_service.clear_inactivity_nudge(game)
+
+    assert game.inactivity_nudge_at is None
+    # Untouched — the auto-advance timer keeps counting toward its own
+    # 6h deadline independently of the one-shot nudge.
+    assert game.inactivity_advance_at == advance_at_before
+
+
 def test_advance_stage_moves_to_the_next_stage_and_resets_wrong_guess_count(
     session: Session,
 ) -> None:

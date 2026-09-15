@@ -311,6 +311,22 @@ def reset_inactivity_clock(game: Game) -> None:
     game.inactivity_advance_at = now + INACTIVITY_ADVANCE_DELAY
 
 
+def clear_inactivity_nudge(game: Game) -> None:
+    """Clears `inactivity_nudge_at` after the nudge has actually been sent
+    (jobs/timers.py's inactivity_nudge_job_callback) — the nudge is a
+    one-shot reminder within a silence window, not a repeating one, so
+    unlike reset_inactivity_clock() this leaves inactivity_advance_at
+    alone; it keeps counting toward its own separate 6h deadline.
+
+    Without this, inactivity_nudge_at stays stuck in the past once it's
+    due, and since JobQueue jobs never survive a process restart,
+    rearm_pending_timeouts re-derives an already-overdue nudge job from
+    that stale timestamp on every subsequent redeploy — reposting the
+    same nudge on every restart until the next real /guess or
+    auto-advance resets the clock."""
+    game.inactivity_nudge_at = None
+
+
 def advance_stage(game: Game) -> GuessOutcome:
     """Move `game` to the next PixelStage, or end it UNSOLVED if it was
     already on the last one — the shared landing spot for both a
