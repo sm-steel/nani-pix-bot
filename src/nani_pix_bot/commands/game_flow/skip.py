@@ -58,13 +58,13 @@ async def _pass_turn(
     target = players.find_player_by_username(session, target_username)
     if target is None:
         logger.warning("/skip: unknown username {!r}", target_username)
+        # Same handle-less window as correct.py's identical lookup — see
+        # the comment there for why the fallback drops the sentence
+        # rather than rendering a bare "@".
+        bot_username = context.bot_data.get("bot_username")
+        key = "skip.unknown_username" if bot_username else "skip.unknown_username_no_handle"
         await message.reply_text(
-            i18n.t(
-                "skip.unknown_username",
-                lang,
-                username=target_username,
-                bot_username=context.bot_data.get("bot_username", ""),
-            )
+            i18n.t(key, lang, username=target_username, bot_username=bot_username)
         )
         return
 

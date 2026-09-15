@@ -110,13 +110,15 @@ async def _resolve_target_player(
     target = players.find_player_by_username(session, target_username)
     if target is None:
         logger.warning("/correct: unknown username {!r}", target_username)
+        # bot_data["bot_username"] is written by app.py's _post_init, so
+        # it is absent until the first getMe answers (and in tests). The
+        # old "" default put a dangling "@" at the end of the sentence,
+        # which reads as a bug; dropping the handle drops the sentence
+        # with it (see skip.py, which has the same window).
+        bot_username = context.bot_data.get("bot_username")
+        key = "correct.unknown_username" if bot_username else "correct.unknown_username_no_handle"
         await message.reply_text(
-            i18n.t(
-                "correct.unknown_username",
-                lang,
-                username=target_username,
-                bot_username=context.bot_data.get("bot_username", ""),
-            )
+            i18n.t(key, lang, username=target_username, bot_username=bot_username)
         )
         return None
     return target

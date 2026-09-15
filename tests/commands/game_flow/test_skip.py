@@ -180,3 +180,29 @@ async def test_skip_command_rejects_an_unknown_username(session_factory) -> None
     assert "@nani_pix_bot" in text
     with session_factory() as session:
         assert session.get(TurnState, 1) is None
+
+
+async def test_skip_command_drops_the_mention_when_the_bot_has_no_handle_yet(
+    session_factory,
+) -> None:
+    """bot_data["bot_username"] is only filled in by _post_init, so it is
+    absent in tests and for the first moments of a real start-up. The old
+    "" default rendered "…first: @" — a dangling @ reads as a bug, while
+    a sentence that simply stops after "message me first" reads as
+    normal, so the handle-less wording is a different string rather than
+    the same one with a hole in it (#81)."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@stranger"])
+    context = _make_context(session_factory, args=["@stranger"])
+    del context.bot_data["bot_username"]
+
+    await skip_command_module.skip_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    text = update.message.reply_text.await_args.args[0]
+    assert "stranger" in text.lower()
+    assert "@" not in text.replace("@stranger", "")
