@@ -17,7 +17,11 @@ keeps its own `_parse_*` and its own concretely-typed public
 than collapsing into a union of all three that callers would have to
 narrow back down by hand — the same constraint that keeps
 `screenshot_gallery.py::_screenshot_search_step` dispatching on an
-if/elif chain instead of a provider->function dict."""
+if/elif chain instead of a provider->function dict.
+
+What those per-provider parse functions *do* share is the guard around
+them, which lives in `parsing.py` rather than here — anilist.py needs
+that one too, and can't import this module."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,7 +31,7 @@ from typing import Any, TypeVar
 import httpx
 from loguru import logger
 
-from nani_pix_bot.services.search import http_retry
+from nani_pix_bot.services.search import http_retry, parsing
 
 _T = TypeVar("_T")
 
@@ -45,15 +49,31 @@ class RestApi:
     headers: dict[str, str] | None = None
 
 
-async def get_json(api: RestApi, client: httpx.AsyncClient, url: str, params: dict) -> Any:
+async def get_json(
+    api: RestApi, client: httpx.AsyncClient, url: str, params: dict, expect: type = dict
+) -> Any:
     """GET `url` and decode the body. Returns `Any` rather than `dict`
     because providers disagree on the shape: Shikimori's list endpoints
     answer with a bare JSON array while Jikan and TMDB wrap everything
-    in an object. Callers know their own provider's shape and index
-    into it directly.
+    in an object — hence `expect`, which is the *container* the calling
+    endpoint is documented to answer with (`list` for Shikimori's two,
+    `dict` everywhere else). Callers know their own provider's shape and
+    index into it directly.
 
     Rate limits (429) are retried inside `http_retry.request_with_retry`;
-    every other error status raises."""
+    every other error status raises.
+
+    Two kinds of malformed 200 become a `RuntimeError` here rather than
+    the `ValueError`/`AttributeError`/`TypeError` they would otherwise
+    raise somewhere downstream: a body that isn't JSON at all (a throttle
+    page served as HTML, a proxy error page, a truncated response), and a
+    body that decodes but isn't the expected container — `null`, a bare
+    string, a number, or an array where an object belongs. `null` is the
+    easy one to miss: `json.loads("null")` succeeds, so only the `expect`
+    check catches it. `RuntimeError` is in the handlers'
+    `_SEARCH_SERVICE_ERRORS` tuple, so the starter gets the "service is
+    down" reply instead of being stranded on a SETUP row with a dead
+    keyboard (issue #75)."""
 
     async def make_request() -> httpx.Response:
         return await client.get(url, params=params, headers=api.headers)
@@ -61,11 +81,28 @@ async def get_json(api: RestApi, client: httpx.AsyncClient, url: str, params: di
     response = await http_retry.request_with_retry(
         make_request, service_name=api.name, context=f"url {url!r}, params {params!r}"
     )
-    return response.json()
+    try:
+        body = response.json()
+    except ValueError as exc:
+        msg = f"{api.name} returned a non-JSON body for {url!r}"
+        logger.error(msg)
+        raise RuntimeError(msg) from exc
+    if not isinstance(body, expect):
+        msg = (
+            f"{api.name} answered 200 with a {type(body).__name__} body "
+            f"for {url!r}, expected {expect.__name__}"
+        )
+        logger.error(msg)
+        raise RuntimeError(msg)
+    return body
 
 
 async def fetch_by_id(
-    api: RestApi, client: httpx.AsyncClient, url: str, entity_id: int, parse: Callable[[Any], _T]
+    api: RestApi,
+    client: httpx.AsyncClient,
+    url: str,
+    entity_id: int,
+    parse: Callable[[Any], _T | None],
 ) -> _T | None:
     """Re-fetch a single entity by id, returning None if the provider no
     longer has it.
@@ -75,7 +112,13 @@ async def fetch_by_id(
     them so (`dm_start.not_found_anymore`). Anything else — including a
     provider being down — propagates, so it reaches the caller's
     `_SEARCH_SERVICE_ERRORS` handling and is reported as an outage
-    rather than silently looking like a missing entry."""
+    rather than silently looking like a missing entry.
+
+    An entry that arrives but can't be parsed (no `id`, a scalar where
+    an object belongs) lands on that same None: there is nothing to
+    stage, and "this pick is gone" is what the starter needs to hear
+    either way. See `parsing.py` for why that's a skip rather than a
+    raise (issue #83)."""
     try:
         raw = await get_json(api, client, url, {})
     except httpx.HTTPStatusError as exc:
@@ -83,4 +126,4 @@ async def fetch_by_id(
             logger.debug("{} id {} no longer found", api.name, entity_id)
             return None
         raise
-    return parse(raw)
+    return parsing.parse_entry(api.name, raw, parse)

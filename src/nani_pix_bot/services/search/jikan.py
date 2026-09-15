@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import httpx
 from loguru import logger
 
-from nani_pix_bot.services.search import cache, rest
+from nani_pix_bot.services.search import cache, parsing, rest
 
 JIKAN_BASE_URL = "https://api.jikan.moe/v4/anime"
 SEARCH_RESULT_LIMIT = 5
@@ -46,10 +46,14 @@ async def search(
 ) -> list[JikanResult]:
     """Search Jikan anime titles matching `query`. Cached briefly (see
     cache.py) so a starter repeating the same query doesn't re-hit the
-    API each time."""
-    params = {"q": query, "limit": limit}
+    API each time.
+
+    `sfw=true` because whatever the starter picks here ends up posted
+    into a shared group topic — the same insurance TMDB gives for free
+    via its `include_adult` default."""
+    params = {"q": query, "limit": limit, "sfw": "true"}
     data = await rest.get_json(_API, client, JIKAN_BASE_URL, params)
-    results = [_parse_result(raw) for raw in data["data"]]
+    results = parsing.parse_entries(_API.name, data.get("data") or [], _parse_result)
     logger.debug("Jikan search {!r} returned {} result(s)", query, len(results))
     return results
 
@@ -77,28 +81,62 @@ async def screenshots(client: httpx.AsyncClient, jikan_id: int) -> list[str]:
     the same anime re-slices the same cached list instead of re-hitting
     the API every time."""
     data = await rest.get_json(_API, client, f"{JIKAN_BASE_URL}/{jikan_id}/pictures", {})
-    entries = data["data"][:SCREENSHOT_FETCH_LIMIT]
-    urls = [url for entry in entries if (url := _picture_url(entry)) is not None]
-    logger.debug("Jikan id {} has {} picture(s) available", jikan_id, len(data["data"]))
+    pictures = data.get("data") or []
+    urls = parsing.parse_entries(_API.name, pictures, _picture_url)[:SCREENSHOT_FETCH_LIMIT]
+    logger.debug("Jikan id {} has {} picture(s) available", jikan_id, len(pictures))
     return urls
 
 
 def _picture_url(entry: dict) -> str | None:
+    """The declared `str | None` is enforced rather than assumed: this
+    result goes straight to `InputMediaPhoto(media=url)` in the gallery,
+    and `{"jpg": {"large_image_url": 5}}` handed it the bare int (#86).
+
+    **Both fields are read before either is chosen**, rather than letting
+    `or` short-circuit past the fallback. Short-circuiting made the check
+    depend on *which half* a provider had mistyped instead of on whether
+    it had: a bad `image_url` behind a good `large_image_url` was kept
+    silently, while a bad `large_image_url` in front of a perfectly good
+    `image_url` — the case the fallback exists for — skipped the picture.
+    One function, two opposite answers to the same malformation.
+
+    Treating them alike, rather than falling back past the bad one, is
+    what the rest of this package already does: `_parse_result` above
+    skips an entry whose `title_japanese` is malformed even when `title`
+    would have displayed fine. A malformed sibling field is a malformed
+    entry, and per-field salvage is the second mechanism `parsing.py`'s
+    docstring argues against. It also keeps the WARNING, which is the
+    only signal that a provider has quietly changed its schema — and
+    the cost here is the mildest in the package: one picture out of a
+    gallery of twenty, not a game."""
     jpg = entry.get("jpg") or {}
-    return jpg.get("large_image_url") or jpg.get("image_url")
+    preferred = parsing.optional_str(jpg, "large_image_url")
+    fallback = parsing.optional_str(jpg, "image_url")
+    return preferred or fallback
 
 
-def _parse_detail_result(raw: dict) -> JikanResult:
+def _parse_detail_result(raw: dict) -> JikanResult | None:
     """The by-id endpoint wraps its single entry in a "data" object,
-    unlike the search endpoint's list of bare entries."""
-    return _parse_result(raw["data"])
+    unlike the search endpoint's list of bare entries.
+
+    A body with no entry in it is reported the same way a 404 is — the
+    picker says the pick is gone — rather than raising a `KeyError` no
+    handler catches (issue #75)."""
+    entry = raw.get("data")
+    if not entry:
+        logger.error('Jikan answered 200 with no "data" entry to parse')
+        return None
+    return _parse_result(entry)
 
 
 def _parse_result(raw: dict) -> JikanResult:
+    """Titles and synonyms are validated alongside the id, because the
+    guard around this function stops at the `return` — see
+    `parsing.optional_str`/`optional_str_list` (issue #86)."""
     return JikanResult(
-        jikan_id=raw["mal_id"],
-        title_romaji=raw.get("title"),
-        title_english=raw.get("title_english"),
-        title_native=raw.get("title_japanese"),
-        synonyms=raw.get("title_synonyms") or [],
+        jikan_id=parsing.require_int(raw, "mal_id"),
+        title_romaji=parsing.optional_str(raw, "title"),
+        title_english=parsing.optional_str(raw, "title_english"),
+        title_native=parsing.optional_str(raw, "title_japanese"),
+        synonyms=parsing.optional_str_list(raw, "title_synonyms"),
     )

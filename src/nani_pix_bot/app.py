@@ -66,7 +66,7 @@ def build_application(config: Config) -> Application:
         builder = builder.proxy(config.telegram_proxy_url).get_updates_proxy(
             config.telegram_proxy_url
         )
-    application = builder.post_init(_post_init).build()
+    application = builder.post_init(_post_init).post_shutdown(_post_shutdown).build()
 
     engine = db.get_engine(config.database_url)
     application.bot_data["session_factory"] = db.make_session_factory(engine)
@@ -75,6 +75,16 @@ def build_application(config: Config) -> Application:
     # headers per request). All three are reachable direct from moscow,
     # no proxy needed.
     application.bot_data["search_client"] = httpx.AsyncClient(timeout=30)
+    if not config.tmdb_read_access_token:
+        # Optional by design (config.py) — but without this, a fresh
+        # clone offers a TMDB identification method whose every call
+        # 401s and reads to the starter as "the service is down", with
+        # nothing anywhere saying why. Never log the token itself: this
+        # repo is public and so are the deploy logs' audience.
+        logger.warning(
+            "TMDB_READ_ACCESS_TOKEN is not set — TMDB search and screenshots will "
+            "fail as if the service were down until it is configured (see .env.example)"
+        )
     # tmdb.py needs its own client: TMDB is DNS-blocked directly from
     # moscow (reachable via the same amsterdam proxy Telegram already
     # uses — see ARCHITECTURE.md's connectivity section) and needs a
@@ -210,6 +220,19 @@ async def _post_init(application: Application) -> None:
     await refresh_command_menu(
         application.bot, group_chat_id=application.bot_data["group_chat_id"], lang=lang
     )
+
+
+async def _post_shutdown(application: Application) -> None:
+    """The two `httpx.AsyncClient`s built in build_application() are
+    ours, not PTB's, so nothing else closes them. In production they're
+    process-lifetime objects and this is just tidiness on the way out;
+    in tests, where an Application is built per case, it's what stops
+    two clients leaking every time."""
+    for key in ("search_client", "tmdb_client"):
+        client = application.bot_data.get(key)
+        if client is not None:
+            await client.aclose()
+    logger.debug("Closed the search HTTP clients")
 
 
 def main() -> None:
