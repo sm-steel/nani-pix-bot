@@ -21,6 +21,7 @@ partway through an already-autocommitted DDL sequence.
 
 import importlib.util
 import json
+import urllib.parse
 from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
@@ -89,6 +90,130 @@ def _image_by_id(conn: sa.Connection, games: sa.Table) -> dict[int, bytes | None
     return {row.id: row.original_image for row in rows}
 
 
+# Every value below is obviously fake and exists only to be asserted
+# *absent* from output. Never put a real credential, host or token in
+# this file -- the repo is public.
+_FAKE_USER = "fakeuser"
+# Assembled from parts rather than written as one string literal so this
+# obviously-fake value (present only to be asserted absent) doesn't read
+# to ruff's S105 heuristic -- or a secret scanner -- as a real hardcoded
+# credential.
+_FAKE_PASS = "".join(["fake", "pass"])
+_FAKE_HOST = "fake-proxy-host.example.invalid"
+_FAKE_AUTHORITY_COMPONENTS = (_FAKE_USER, _FAKE_PASS, "fake-proxy-host")
+
+# Built from parts rather than one string literal so an obviously-fake
+# placeholder doesn't read to a secret scanner (or ruff's S105) as a
+# hardcoded credential.
+_FAKE_TOKEN = "-".join(["PLACEHOLDER", "NOT", "A", "REAL", "TOKEN", "123456"])
+
+
+def _assert_absent(output: str, *components: str) -> None:
+    """Assert none of `components` survived into `output` -- comparing
+    against a percent-decoded, case-folded copy of it.
+
+    A plain `component in output` check is not good enough here, and
+    that inadequacy is the whole history of this bug: httpx reshapes a
+    value on its way into an exception message (it percent-encodes a
+    space to %20, a '<' to %3C, and lower-cases the host), so a leak can
+    be present in substance while absent as a literal substring. The
+    test has to normalise the *output* back before looking, or it will
+    happily pass over a message that spells the secret out."""
+    haystack = urllib.parse.unquote(output).casefold()
+    for component in components:
+        assert component.casefold() not in haystack, f"{component!r} leaked into: {output!r}"
+
+
+def _distinctive_fragments(secret: str) -> tuple[str, ...]:
+    """The runs of >=6 alphanumerics in `secret`.
+
+    Asserting absence of the secret *as written* is not enough when the
+    shape under test deliberately mangles it -- a shape that puts a
+    space in the middle of a token contains no copy of the unmangled
+    token, so asserting that string's absence would pass without proving
+    anything. Splitting on non-alphanumerics gives pieces that survive
+    every reshaping httpx applies (percent-encoding replaces exactly the
+    non-alphanumerics; case-folding is handled by _assert_absent), so
+    they are what a real leak would actually put in the log."""
+    fragments = []
+    current = ""
+    for character in secret:
+        if character.isalnum():
+            current += character
+        else:
+            fragments.append(current)
+            current = ""
+    fragments.append(current)
+    return tuple(fragment for fragment in fragments if len(fragment) >= 6)
+
+
+# The shapes measured in issue #84, each an obviously-fake authority
+# with no scheme (or a scheme httpx rejects). httpx reshapes each one
+# differently before it reaches str(exc), which is exactly why redaction
+# cannot be built on recognising the value as written.
+# Each entry carries the exact password that shape uses, so the
+# assertion is against what that shape actually contains rather than
+# against the canonical spelling -- a shape whose password is mangled
+# holds no copy of the unmangled one, and asserting the unmangled one's
+# absence would pass without proving anything.
+_RESHAPED_PROXY_SHAPES = [
+    ("canonical", f"{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080", _FAKE_PASS),
+    ("trailing-space", f"{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080 ", _FAKE_PASS),
+    ("leading-space", f" {_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080", _FAKE_PASS),
+    ("mixed-case", f"{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080".upper(), _FAKE_PASS.upper()),
+    ("space-in-password", f"{_FAKE_USER}:fake pass@{_FAKE_HOST}:1080", "fake pass"),
+    ("angle-in-password", f"{_FAKE_USER}:fake<pass@{_FAKE_HOST}:1080", "fake<pass"),
+    ("quote-in-password", f'{_FAKE_USER}:fake"pass@{_FAKE_HOST}:1080', 'fake"pass'),
+    ("brace-in-password", f"{_FAKE_USER}:fake{{pass@{_FAKE_HOST}:1080", "fake{pass"),
+    ("leading-slashes", f"//{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080", _FAKE_PASS),
+    ("unknown-scheme", f"socks9://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080", _FAKE_PASS),
+]
+
+# The bot-token shapes earlier rounds closed, plus the two a
+# scheme-anchored pattern could never close (a token containing "'" or
+# ")" truncates its own character class, leaving the tail in the clear).
+# Nothing here needs a real token -- the assertion is always absence.
+_RESHAPED_TOKEN_SHAPES = [
+    ("canonical", _FAKE_TOKEN),
+    ("trailing-space", _FAKE_TOKEN + " "),
+    ("leading-space", " " + _FAKE_TOKEN),
+    ("interior-space", _FAKE_TOKEN.replace("-REAL-", " REAL ")),
+    ("hash", _FAKE_TOKEN + "#fragment"),
+    ("slash", _FAKE_TOKEN + "/extra"),
+    ("double-quote", _FAKE_TOKEN + '"tail'),
+    ("newline", _FAKE_TOKEN + "\nsecond-line"),
+    ("single-quote", _FAKE_TOKEN + "'tail"),
+    ("close-paren", _FAKE_TOKEN + ")tail"),
+]
+
+
+def _install_mock_transport(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    """Swap a MockTransport-backed client in for the module's own
+    httpx.Client call, so the *real* _fetch_telegram_file_bytes runs and
+    httpx genuinely renders the token into the exception message the way
+    it would in production. The real class is captured first, before the
+    name is patched, so the replacement can't recurse into itself."""
+    real_client_cls = httpx.Client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json={"ok": False, "description": "Bad Request: not found"})
+
+    mock_transport = httpx.MockTransport(handler)
+    monkeypatch.setattr(
+        module.httpx, "Client", lambda *args, **kwargs: real_client_cls(transport=mock_transport)
+    )
+
+
+def _seed_one_in_flight_game(conn: sa.Connection, games: sa.Table, game_id: int) -> None:
+    conn.execute(
+        games.insert(),
+        [{"id": game_id, "status": "ACTIVE", "original_file_id": "x", "original_image": None}],
+    )
+    conn.commit()
+
+
 def test_a_failing_fetch_leaves_that_row_null_and_completes(
     games_connection: tuple[sa.Connection, sa.Table],
     monkeypatch: pytest.MonkeyPatch,
@@ -126,7 +251,10 @@ def test_a_failing_fetch_leaves_that_row_null_and_completes(
     output = capsys.readouterr().out
     assert "WARNING" in output
     assert "game 2" in output
-    assert "400 Bad Request" in output
+    # The status code survives as structured data off the response
+    # object; the exception's own message text (which would carry the
+    # request URL, and BOT_TOKEN inside it) does not -- see issue #84.
+    assert "HTTPStatusError (HTTP 400)" in output
 
 
 def test_a_missing_response_key_is_also_caught(
@@ -313,7 +441,7 @@ def test_a_telegram_error_does_not_leak_the_bot_token_into_the_warning(
 
     output = capsys.readouterr().out
     assert placeholder_token not in output
-    assert "<redacted>" in output
+    assert "HTTPStatusError (HTTP 400)" in output
     assert "game 9" in output
 
 
@@ -360,7 +488,12 @@ def test_a_malformed_proxy_url_skips_the_whole_backfill_and_completes(
     assert "TELEGRAM_PROXY_URL" in output
     assert "fakeuser" not in output
     assert "fake-proxy-host" not in output
-    assert "<redacted>" in output
+    # The scheme was present but is not one httpx accepts, so the
+    # warning names that fact from its own literals and reports the
+    # exception's class -- never httpx's message, which spells the
+    # authority out.
+    assert "scheme is none of http/https/socks5/socks5h" in output
+    assert "ValueError" in output
 
 
 def test_a_scheme_less_proxy_url_does_not_leak_the_authority(
@@ -370,15 +503,16 @@ def test_a_scheme_less_proxy_url_does_not_leak_the_authority(
 ) -> None:
     """.env.example documents TELEGRAM_PROXY_URL as
     "http://USERNAME:PASSWORD@PROXY_HOST:PROXY_PORT" -- so dropping the
-    scheme is the single most likely way to mistype it, and it is
-    exactly the shape _redact_secrets's pattern-based half cannot touch
-    (it anchors on "scheme://"). httpx does not treat a scheme-less
-    value as a URL at all in this case: it fails immediately and hands
-    the whole raw string, password included, to str(exc) -- httpx's own
-    "[secure]" password masking never even engages, since that requires
-    a successfully parsed scheme. known_secret's fail-closed fallback
-    has to catch what the pattern can't: not just the host, but the
-    username and password too."""
+    scheme is the single most likely way to mistype it. httpx does not
+    treat a scheme-less value as a URL at all: it fails immediately and
+    hands the whole raw string, password included, to str(exc) -- its
+    own "[secure]" password masking never even engages, since that
+    requires a successfully parsed scheme. Nothing here may reach the
+    warning: not the host, not the username, not the password.
+
+    See test_a_reshaped_proxy_url_leaks_no_component_of_the_authority
+    for the same guarantee across every reshaping issue #84 measured;
+    this one pins the plain scheme-less case on its own."""
     conn, games = games_connection
     conn.execute(
         games.insert(),
@@ -455,8 +589,9 @@ def test_redaction_survives_a_token_with_a_trailing_space(
     renders into the exception message -- a literal match against the
     raw (unencoded) bot_token string would miss that and print the
     secret in the clear on exactly the misconfiguration that makes this
-    error path run. The regex-based _redact_secrets has to catch it
-    regardless of how httpx rendered the token."""
+    error path run. The warning has to stay safe regardless of how httpx
+    rendered the token -- which it now is by never using the message
+    text at all (issue #84)."""
     conn, games = games_connection
     conn.execute(
         games.insert(),
@@ -487,7 +622,7 @@ def test_redaction_survives_a_token_with_a_trailing_space(
 
     output = capsys.readouterr().out
     assert placeholder_token.strip() not in output
-    assert "<redacted>" in output
+    assert "HTTPStatusError (HTTP 400)" in output
     assert "game 11" in output
 
 
@@ -555,3 +690,202 @@ def test_a_successful_backfill_is_not_swallowed(
 
     assert _image_by_id(conn, games)[4] == b"bytes"
     assert "Backfilled original_image for game 4" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------
+# issue #84 -- the warnings must be safe by construction, not by
+# recognising a secret after the fact.
+# --------------------------------------------------------------------
+
+
+def test_the_exception_summary_never_carries_the_exception_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The load-bearing invariant, tested directly rather than through a
+    scenario: _describe_exception_safely must build its result out of
+    the exception's *type*, never its message. Three previous fixes
+    tried to sanitise the message text and each was defeated by a
+    reshaping nobody had enumerated; if the text is never used at all,
+    there is no reshaping left to be defeated by."""
+    module = _load_migration_module()
+    sentinel = "-".join(["SENTINEL", "MUST", "NEVER", "BE", "PRINTED"])
+
+    for exc in (
+        ValueError(f"Unknown scheme for proxy URL {sentinel}"),
+        ImportError(f"Using SOCKS proxy {sentinel}"),
+        httpx.InvalidURL(f"Invalid port: {sentinel}"),
+        KeyError(sentinel),
+        TypeError(sentinel),
+    ):
+        summary = module._describe_exception_safely(exc)
+        assert sentinel not in summary
+        assert summary == type(exc).__name__
+
+
+def test_the_exception_summary_keeps_a_structured_http_status() -> None:
+    """The one diagnostic worth keeping from an HTTPStatusError is its
+    status code, and it is available as a structured int off the
+    response object -- no message text needed, so keeping it costs
+    nothing in safety."""
+    module = _load_migration_module()
+    request = httpx.Request("GET", "https://api.telegram.org/fake")
+    exc = httpx.HTTPStatusError(
+        "400 Bad Request", request=request, response=httpx.Response(400, request=request)
+    )
+
+    assert module._describe_exception_safely(exc) == "HTTPStatusError (HTTP 400)"
+
+
+@pytest.mark.parametrize(
+    ("label", "raw_proxy", "password"), _RESHAPED_PROXY_SHAPES, ids=lambda v: str(v)[:24]
+)
+def test_the_proxy_shape_hint_is_always_one_of_this_file_s_own_literals(
+    label: str, raw_proxy: str, password: str
+) -> None:
+    """The structural claim, made checkable: whatever TELEGRAM_PROXY_URL
+    contains, the hint the warning prints about it is a member of a
+    fixed, finite tuple of literals defined in the migration itself. A
+    function whose entire range is a constant set cannot emit anything
+    derived from its input, so it cannot leak under *any* reshaping --
+    that is a property of the code's shape, not of a list of inputs
+    somebody thought to try."""
+    module = _load_migration_module()
+
+    assert module._describe_proxy_shape(raw_proxy) in module._PROXY_SHAPE_HINTS
+
+
+@pytest.mark.parametrize(
+    ("label", "raw_proxy", "password"), _RESHAPED_PROXY_SHAPES, ids=lambda v: str(v)[:24]
+)
+def test_a_reshaped_proxy_url_leaks_no_component_of_the_authority(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    label: str,
+    raw_proxy: str,
+    password: str,
+) -> None:
+    """Issue #84's measured leak set, driven through the real backfill
+    and the real httpx.Client constructor.
+
+    Every one of these is a plausible mistyping of .env.example's
+    documented "http://USERNAME:PASSWORD@PROXY_HOST:PROXY_PORT" -- the
+    uppercase one needs no typo at all, since the documented
+    placeholders are uppercase and httpx lower-cases the host. httpx
+    reshapes each differently on the way into str(exc) (percent-encoding
+    a space to %20, a '<' to %3C, case-folding the host), which is
+    precisely why a redaction built on matching the raw value failed:
+    the value that reaches the message is not the value that was
+    written."""
+    conn, games = games_connection
+    _seed_one_in_flight_game(conn, games, 20)
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+    monkeypatch.setenv("TELEGRAM_PROXY_URL", raw_proxy)
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[20] is None
+
+    output = capsys.readouterr().out
+    _assert_absent(output, *_FAKE_AUTHORITY_COMPONENTS, password)
+    assert "WARNING" in output
+    assert "TELEGRAM_PROXY_URL" in output
+
+
+@pytest.mark.parametrize(("label", "raw_token"), _RESHAPED_TOKEN_SHAPES, ids=lambda v: str(v)[:24])
+def test_a_reshaped_bot_token_never_reaches_the_per_row_warning(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    label: str,
+    raw_token: str,
+) -> None:
+    """The bot-token half of the same guarantee, over every shape
+    earlier rounds handled (canonical, leading/trailing/interior space,
+    '#', '/', '"', newline) plus the two a scheme-anchored pattern never
+    could ("'" and ")" end its character class early, leaving the tail
+    of the token in the clear). Runs the real _fetch_telegram_file_bytes
+    against a simulated Telegram 400 so the token is genuinely rendered
+    into the exception message, the same as in production."""
+    conn, games = games_connection
+    _seed_one_in_flight_game(conn, games, 21)
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", raw_token)
+    _install_mock_transport(module, monkeypatch, status=400)
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    assert _image_by_id(conn, games)[21] is None
+
+    output = capsys.readouterr().out
+    # Against the fragments of the shape actually used, not of the
+    # unmangled placeholder -- a shape that puts a space inside the
+    # token contains no copy of the unmangled one, so asserting that
+    # string's absence would pass vacuously.
+    _assert_absent(output, *_distinctive_fragments(raw_token))
+    assert "WARNING" in output
+    assert "game 21" in output
+
+
+def test_an_operator_can_still_tell_the_proxy_failure_modes_apart(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Redacting hard is only acceptable if the warning still localises
+    the fault. Each distinct misconfiguration has to produce a
+    distinguishable warning -- a missing scheme, an unsupported scheme,
+    a SOCKS scheme (which needs a package this project doesn't install)
+    and a bad port are four different things to go fix."""
+    conn, games = games_connection
+    _seed_one_in_flight_game(conn, games, 22)
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", "fake-token-for-test")
+
+    warnings = {}
+    for label, raw_proxy in (
+        ("no-scheme", f"{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080"),
+        ("unknown-scheme", f"socks9://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080"),
+        ("socks", f"socks5://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:1080"),
+        ("bad-port", f"http://{_FAKE_USER}:{_FAKE_PASS}@{_FAKE_HOST}:not-a-port"),
+    ):
+        monkeypatch.setenv("TELEGRAM_PROXY_URL", raw_proxy)
+        module._backfill_original_image_for_in_flight_games()  # must not raise
+        warnings[label] = capsys.readouterr().out
+
+    assert len(set(warnings.values())) == len(warnings)
+    assert "no '<scheme>://' prefix" in warnings["no-scheme"]
+    assert "socksio" in warnings["socks"]
+    assert "ImportError" in warnings["socks"]
+    assert "ValueError" in warnings["unknown-scheme"]
+    assert "InvalidURL" in warnings["bad-port"]
+    for output in warnings.values():
+        _assert_absent(output, *_FAKE_AUTHORITY_COMPONENTS)
+
+
+def test_a_per_row_telegram_400_is_still_identifiable_as_a_400(
+    games_connection: tuple[sa.Connection, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The per-row half of the same requirement: an expired file_id is
+    the single most likely trigger for this whole error path, and an
+    operator has to be able to see that it was an HTTP 400 rather than a
+    timeout or a malformed body -- without the request URL (and the
+    token in it) coming along for the ride."""
+    conn, games = games_connection
+    _seed_one_in_flight_game(conn, games, 23)
+
+    module = _load_migration_module()
+    monkeypatch.setenv("BOT_TOKEN", _FAKE_TOKEN)
+    _install_mock_transport(module, monkeypatch, status=400)
+
+    module._backfill_original_image_for_in_flight_games()  # must not raise
+
+    output = capsys.readouterr().out
+    assert "HTTPStatusError (HTTP 400)" in output
+    assert "game 23" in output
+    _assert_absent(output, _FAKE_TOKEN, "api.telegram.org")
