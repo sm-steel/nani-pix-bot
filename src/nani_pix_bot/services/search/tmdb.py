@@ -144,9 +144,13 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
                 f"{TMDB_BASE_URL}/tv/{tmdb_id}/season/{season_number}/episode/{episode_number}",
                 {},
             )
-        still_path = episode.get("still_path")
-        if still_path:
-            stills[index] = f"{TMDB_IMAGE_BASE_URL}{still_path}"
+        # Through `parse_entry` like every other provider's screenshot
+        # read: the still is third-party data, and this one sits inside
+        # the TaskGroup rather than inside a `_parse_*` call, so a raise
+        # here would leave the group as a `TypeError` that
+        # `_SEARCH_SERVICE_ERRORS` doesn't match — a dead keyboard for
+        # one bad episode out of twenty (issue #86).
+        stills[index] = parsing.parse_entry(_API.name, episode, _parse_still_url)
 
     try:
         async with asyncio.TaskGroup() as group:
@@ -253,11 +257,26 @@ def _parse_season(raw: dict) -> tuple[int, int] | None:
     return season_number, parsing.require_int(raw, "episode_count")
 
 
+def _parse_still_url(episode: dict) -> str | None:
+    """One episode's still as a full image URL, or None for an episode
+    that simply has no still — the same decision-not-malformation split
+    `shikimori._parse_screenshot_url` draws, and the same reason: the
+    f-string interpolates whatever it's given, so an unvalidated
+    `still_path` reached `InputMediaPhoto(media=url)` as a stringified
+    object (issue #86)."""
+    still_path = parsing.optional_str(episode, "still_path")
+    return f"{TMDB_IMAGE_BASE_URL}{still_path}" if still_path else None
+
+
 def _parse_result(raw: dict) -> TMDBResult:
+    """TMDB has no synonyms field to corrupt (see the module docstring),
+    but its two title fields are validated for the same reason every
+    other provider's are — the entry guard ends at this `return`
+    (issue #86)."""
     return TMDBResult(
         tmdb_id=parsing.require_int(raw, "id"),
         title_romaji=None,
-        title_english=raw.get("name"),
-        title_native=raw.get("original_name"),
+        title_english=parsing.optional_str(raw, "name"),
+        title_native=parsing.optional_str(raw, "original_name"),
         synonyms=[],
     )

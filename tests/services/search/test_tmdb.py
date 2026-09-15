@@ -662,3 +662,101 @@ async def test_screenshots_skips_a_season_whose_number_is_a_string() -> None:
         urls = await tmdb.screenshots(client, 209867)
 
     assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/still2.jpg"]
+
+
+_GOOD_ENTRY = {"id": 209867, "name": "Frieren", "original_name": "葬送のフリーレン"}
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        pytest.param({"name": 5}, id="name-is-a-number"),
+        pytest.param({"name": ["Frieren"]}, id="name-is-an-array"),
+        pytest.param({"original_name": {"jp": "x"}}, id="original-name-is-an-object"),
+        pytest.param({"original_name": True}, id="original-name-is-a-bool"),
+    ],
+)
+async def test_search_skips_an_entry_with_a_malformed_title(field: dict) -> None:
+    """TMDB has no synonyms to corrupt, but its two title fields are the
+    same defect as everyone else's (issue #86)."""
+    bad = {**_GOOD_ENTRY, "id": 1, **field}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": [bad, _GOOD_ENTRY]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await tmdb.search(client, "frieren")
+
+    assert [result.tmdb_id for result in results] == [209867]
+
+
+async def test_search_warns_naming_the_parser_when_a_title_is_malformed(
+    records: list[tuple[str, str]],
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": [{**_GOOD_ENTRY, "name": 5}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await tmdb.search(client, "frieren")
+
+    warnings = [message for level, message in records if level == "WARNING"]
+    assert len(warnings) == 1
+    assert "TMDB" in warnings[0]
+    assert "_parse_result" in warnings[0]
+    assert "name" in warnings[0]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        pytest.param({"name": 5}, id="name-is-a-number"),
+        pytest.param({"original_name": ["x"]}, id="original-name-is-an-array"),
+    ],
+)
+async def test_get_by_id_returns_none_for_a_malformed_title(field: dict) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={**_GOOD_ENTRY, **field})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await tmdb.get_by_id(client, 209867) is None
+
+
+@pytest.mark.parametrize(
+    "still_path",
+    [
+        pytest.param({"a": 1}, id="still-path-is-an-object"),
+        pytest.param(5, id="still-path-is-a-number"),
+        pytest.param(["/still1.jpg"], id="still-path-is-an-array"),
+        pytest.param(True, id="still-path-is-a-bool"),
+    ],
+)
+async def test_screenshots_drops_an_episode_whose_still_path_is_not_a_string(
+    still_path: object,
+) -> None:
+    """The still read sits inside the TaskGroup rather than inside a
+    `_parse_*` function, so it had no guard at all — and a raise there
+    would surface as a TypeError `_SEARCH_SERVICE_ERRORS` doesn't match.
+    It goes through `parse_entry` for exactly that reason: one unusable
+    episode costs its own still, not the gallery (issue #86)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.count("/episode/") == 1:
+            episode_number = int(path.rsplit("/episode/", 1)[1])
+            return httpx.Response(
+                200, json={"still_path": still_path if episode_number == 1 else "/still2.jpg"}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "id": 209867,
+                "name": "Frieren",
+                "original_name": None,
+                "seasons": [{"season_number": 1, "episode_count": 2}],
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        urls = await tmdb.screenshots(client, 209867)
+
+    assert urls == [f"{tmdb.TMDB_IMAGE_BASE_URL}/still2.jpg"]

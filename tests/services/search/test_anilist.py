@@ -466,3 +466,85 @@ async def test_get_by_id_returns_none_when_the_media_entry_is_a_scalar() -> None
     into the container guard and turned into an outage."""
     async with httpx.AsyncClient(transport=_responding({"data": {"Media": 5}})) as client:
         assert await anilist.get_by_id(client, 154587) is None
+
+
+_GOOD_ENTRY = {
+    "id": 154587,
+    "title": {"romaji": "Sousou no Frieren", "english": None, "native": None},
+    "synonyms": ["Frieren"],
+    "startDate": {"year": 2023},
+}
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        pytest.param({"title": {"romaji": 5}}, id="romaji-is-a-number"),
+        pytest.param({"title": {"english": ["Frieren"]}}, id="english-is-an-array"),
+        pytest.param({"title": {"native": {"jp": "x"}}}, id="native-is-an-object"),
+        pytest.param({"synonyms": 5}, id="synonyms-is-a-number"),
+        pytest.param({"synonyms": "Frieren"}, id="synonyms-is-a-string"),
+        pytest.param({"synonyms": ["Frieren", 5]}, id="synonyms-holds-a-number"),
+        pytest.param({"synonyms": {"0": "Frieren"}}, id="synonyms-is-an-object"),
+        pytest.param({"startDate": {"year": "2023"}}, id="year-is-a-string"),
+    ],
+)
+async def test_search_skips_an_entry_with_a_malformed_field(field: dict) -> None:
+    """A field the parser hands back unvalidated is outside the entry
+    guard — it detonates at whatever consumes it instead (issue #86). The
+    entry is skipped whole rather than kept with the bad field dropped:
+    a result with no usable title stages a game whose answer key renders
+    as "?"."""
+    bad = {**_GOOD_ENTRY, **field}
+
+    async with httpx.AsyncClient(transport=_responding(_media_payload([bad, _GOOD_ENTRY]))) as c:
+        results = await anilist.search(c, "frieren")
+
+    assert [result.anilist_id for result in results] == [154587]
+    assert [result.synonyms for result in results] == [["Frieren"]]
+
+
+async def test_search_never_expands_a_string_synonyms_into_characters() -> None:
+    """The one defect in this family that doesn't raise: a string is
+    iterable, so `{"synonyms": "Frieren"}` reached `match_candidates` as
+    ['F','r','i','e','r','e','n'] and single letters became winning
+    guesses — silently (issue #86)."""
+    entry = {**_GOOD_ENTRY, "synonyms": "Frieren"}
+
+    async with httpx.AsyncClient(transport=_responding(_media_payload([entry]))) as client:
+        results = await anilist.search(client, "frieren")
+
+    assert results == []
+
+
+async def test_search_warns_naming_the_parser_when_a_field_is_malformed(
+    records: list[tuple[str, str]],
+) -> None:
+    entry = {**_GOOD_ENTRY, "synonyms": "Frieren"}
+
+    async with httpx.AsyncClient(transport=_responding(_media_payload([entry]))) as client:
+        await anilist.search(client, "frieren")
+
+    warnings = [message for level, message in records if level == "WARNING"]
+    assert len(warnings) == 1
+    assert "AniList" in warnings[0]
+    assert "_parse_result" in warnings[0]
+    assert "synonyms" in warnings[0]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        pytest.param({"title": {"romaji": 5}}, id="romaji-is-a-number"),
+        pytest.param({"synonyms": "Frieren"}, id="synonyms-is-a-string"),
+        pytest.param({"synonyms": [5]}, id="synonyms-holds-a-number"),
+        pytest.param({"startDate": {"year": True}}, id="year-is-a-bool"),
+    ],
+)
+async def test_get_by_id_returns_none_for_a_malformed_field(field: dict) -> None:
+    """The by-id path has nothing left once its one entry is skipped —
+    None, which the picker already reports as "this pick is gone"."""
+    entry = {**_GOOD_ENTRY, **field}
+
+    async with httpx.AsyncClient(transport=_responding({"data": {"Media": entry}})) as client:
+        assert await anilist.get_by_id(client, 154587) is None

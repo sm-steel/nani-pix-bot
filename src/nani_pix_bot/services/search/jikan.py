@@ -88,8 +88,15 @@ async def screenshots(client: httpx.AsyncClient, jikan_id: int) -> list[str]:
 
 
 def _picture_url(entry: dict) -> str | None:
+    """The declared `str | None` is enforced rather than assumed: this
+    result goes straight to `InputMediaPhoto(media=url)` in the gallery,
+    and `{"jpg": {"large_image_url": 5}}` handed it the bare int (#86).
+
+    A malformed `large_image_url` raises rather than falling through to
+    `image_url` — a picture entry this provider typed wrongly isn't one to
+    go looking for a second opinion inside."""
     jpg = entry.get("jpg") or {}
-    return jpg.get("large_image_url") or jpg.get("image_url")
+    return parsing.optional_str(jpg, "large_image_url") or parsing.optional_str(jpg, "image_url")
 
 
 def _parse_detail_result(raw: dict) -> JikanResult | None:
@@ -107,10 +114,13 @@ def _parse_detail_result(raw: dict) -> JikanResult | None:
 
 
 def _parse_result(raw: dict) -> JikanResult:
+    """Titles and synonyms are validated alongside the id, because the
+    guard around this function stops at the `return` — see
+    `parsing.optional_str`/`optional_str_list` (issue #86)."""
     return JikanResult(
         jikan_id=parsing.require_int(raw, "mal_id"),
-        title_romaji=raw.get("title"),
-        title_english=raw.get("title_english"),
-        title_native=raw.get("title_japanese"),
-        synonyms=raw.get("title_synonyms") or [],
+        title_romaji=parsing.optional_str(raw, "title"),
+        title_english=parsing.optional_str(raw, "title_english"),
+        title_native=parsing.optional_str(raw, "title_japanese"),
+        synonyms=parsing.optional_str_list(raw, "title_synonyms"),
     )

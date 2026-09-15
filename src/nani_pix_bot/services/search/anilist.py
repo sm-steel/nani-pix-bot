@@ -186,12 +186,25 @@ def _require_object(value: Any, *, label: str, variables: dict) -> dict:
 
 
 def _parse_result(raw: dict) -> AniListResult:
+    """Every field is validated, not just the id: the guard around this
+    function ends at the `return`, so a title that arrived as a number or
+    a `synonyms` that arrived as a bare string used to sail out of here
+    and detonate (or, for the string, quietly corrupt the answer key) at
+    whatever consumed it — see `parsing.optional_str_list` (issue #86).
+
+    `year` is the one field that takes `require_int` behind an `is None`
+    pre-check rather than an `optional_*` helper, which is the split
+    `require_int`'s docstring describes: it's optional here and nowhere
+    else, so the pre-check says something at this one call site instead of
+    being copy-pasted ahead of a dozen."""
     title = raw["title"]
+    start_date = raw.get("startDate") or {}
+    year = None if start_date.get("year") is None else parsing.require_int(start_date, "year")
     return AniListResult(
         anilist_id=parsing.require_int(raw, "id"),
-        title_romaji=title.get("romaji"),
-        title_english=title.get("english"),
-        title_native=title.get("native"),
-        synonyms=raw.get("synonyms") or [],
-        year=(raw.get("startDate") or {}).get("year"),
+        title_romaji=parsing.optional_str(title, "romaji"),
+        title_english=parsing.optional_str(title, "english"),
+        title_native=parsing.optional_str(title, "native"),
+        synonyms=parsing.optional_str_list(raw, "synonyms"),
+        year=year,
     )

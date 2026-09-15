@@ -103,27 +103,43 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
 def _parse_screenshot_url(raw: dict) -> str | None:
     """None for a screenshot with no usable path — a decision, not a
     malformation, so `parse_entries` drops it without a warning (the
-    same way jikan.py's `_picture_url` does)."""
-    path = raw.get("original")
+    same way jikan.py's `_picture_url` does). A path that *is* there but
+    isn't a string is the other thing entirely, and warns: the f-string
+    below interpolates anything, so `{"original": {"a": 1}}` used to
+    produce the URL `https://shikimori.io{'a': 1}` and only fail later,
+    at `InputMediaPhoto(media=url)` (issue #86)."""
+    path = parsing.optional_str(raw, "original")
     return f"{SHIKIMORI_HOST}{path}" if path else None
 
 
 def _parse_search_result(raw: dict) -> ShikimoriResult:
     return ShikimoriResult(
         shikimori_id=parsing.require_int(raw, "id"),
-        title_romaji=raw.get("name"),
+        title_romaji=parsing.optional_str(raw, "name"),
         title_english=None,
-        title_russian=raw.get("russian"),
+        title_russian=parsing.optional_str(raw, "russian"),
         synonyms=[],
     )
 
 
 def _parse_detail_result(raw: dict) -> ShikimoriResult:
-    english = raw.get("english") or []
+    """The only call that fills in `english`/`synonyms`, so it's where a
+    malformed one actually reaches the game's answer key (issue #86).
+
+    `english[0]` looked like it was already guarded, and half of it was:
+    indexing a number raises `TypeError` and indexing an object raises
+    `KeyError`, both inside `parse_entry`. The half it missed is the half
+    that matters — `"Frieren"[0]` is `"F"`, so a string `english` staged a
+    game titled "F" without raising anything, and `[5][0]` handed back a
+    non-string title that detonated later in the preview's `", ".join`.
+    Coverage by accident, in other words, and only against the shapes
+    nobody minds losing. `optional_str_list` covers all four shapes on
+    purpose, and keeps covering them if this read is ever rewritten."""
+    english = parsing.optional_str_list(raw, "english")
     return ShikimoriResult(
         shikimori_id=parsing.require_int(raw, "id"),
-        title_romaji=raw.get("name"),
+        title_romaji=parsing.optional_str(raw, "name"),
         title_english=english[0] if english else None,
-        title_russian=raw.get("russian"),
-        synonyms=raw.get("synonyms") or [],
+        title_russian=parsing.optional_str(raw, "russian"),
+        synonyms=parsing.optional_str_list(raw, "synonyms"),
     )
