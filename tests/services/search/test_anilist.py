@@ -565,6 +565,10 @@ _NO_TITLE_NO_SYNONYMS_ENTRIES = [
         id="all-titles-empty-string",
     ),
     pytest.param({"title": {}, "synonyms": []}, id="titles-absent-entirely"),
+    pytest.param(
+        {"title": {"romaji": None, "english": None, "native": None}, "synonyms": ["", ""]},
+        id="synonyms-nonempty-list-of-only-empty-strings",
+    ),
 ]
 
 

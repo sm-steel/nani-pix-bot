@@ -6,6 +6,7 @@ near-identical 429/Retry-After retry loop each; this factors it out to
 one place so there's a single implementation to get right."""
 
 import asyncio
+import math
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -23,6 +24,14 @@ DEFAULT_RETRY_AFTER_SECONDS = 5.0
 # staring at a keyboard) should honor to the letter. Without a bound, a
 # `Retry-After: 86400` response combined with MAX_RATE_LIMIT_RETRIES could
 # park a handler for hours.
+#
+# That bound is per sleep, not per request: `request_with_retry` can hit
+# this path up to MAX_RATE_LIMIT_RETRIES times for a single logical
+# request, so the aggregate worst case is
+# MAX_RATE_LIMIT_RETRIES * MAX_RETRY_AFTER_SECONDS = 150s of sleeping
+# alone, before adding the httpx per-request timeout each of those retries
+# can also spend. Raising MAX_RATE_LIMIT_RETRIES multiplies this bound
+# directly — factor that in before doing so.
 MAX_RETRY_AFTER_SECONDS = 30.0
 
 
@@ -35,9 +44,10 @@ def _parse_retry_after(raw_value: str | None, *, service_name: str) -> float:
     back to parsing an HTTP-date via the stdlib's own parser
     (`email.utils.parsedate_to_datetime`) and measuring the delta from
     now — Cloudflare (fronting AniList, see anilist.py's module comment)
-    commonly sends the HTTP-date form. A value that is neither, or that
-    parses but resolves to a negative or absurdly large delay, falls back
-    to `DEFAULT_RETRY_AFTER_SECONDS` / gets clamped to
+    commonly sends the HTTP-date form. A value that is neither, that
+    resolves to `nan`/`inf`/`-inf` (`float()` parses those strings without
+    raising), or that resolves to a negative or absurdly large delay,
+    falls back to `DEFAULT_RETRY_AFTER_SECONDS` / gets clamped to
     `MAX_RETRY_AFTER_SECONDS` rather than trusted outright — honoring a
     malformed or hostile value literally is exactly the "crash" or "park
     a handler indefinitely" failure modes this function exists to
@@ -61,6 +71,26 @@ def _parse_retry_after(raw_value: str | None, *, service_name: str) -> float:
         if retry_at.tzinfo is None:
             retry_at = retry_at.replace(tzinfo=UTC)
         delay = (retry_at - datetime.now(UTC)).total_seconds()
+    # `float()` accepts "nan"/"inf"/"-inf" without raising, so a header
+    # like `Retry-After: nan` reaches here as a non-finite `delay` rather
+    # than the ValueError branch above. `max(0.0, min(delay, ...))` happens
+    # to resolve `nan` to `0.0` today, but only because of how CPython's
+    # min/max order NaN comparisons — an accident of implementation, not a
+    # documented guarantee, and `asyncio.sleep(nan)` hangs forever if a
+    # future refactor of this expression stops relying on it. Treat
+    # non-finite the same as any other value this function can't honor
+    # literally: fall back to the default rather than trust the clamp to
+    # keep saving it.
+    if not math.isfinite(delay):
+        logger.warning(
+            "{} sent a Retry-After header ({!r}) resolving to a non-finite delay ({}), "
+            "using the default {}s delay",
+            service_name,
+            raw_value,
+            delay,
+            DEFAULT_RETRY_AFTER_SECONDS,
+        )
+        return DEFAULT_RETRY_AFTER_SECONDS
     bounded_delay = max(0.0, min(delay, MAX_RETRY_AFTER_SECONDS))
     if bounded_delay != delay:
         logger.warning(

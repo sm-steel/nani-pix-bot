@@ -185,3 +185,36 @@ async def test_request_with_retry_clamps_absurdly_large_retry_after(
     assert sleeps == [http_retry.MAX_RETRY_AFTER_SECONDS]
     warnings = [message for level, message in records if level == "WARNING"]
     assert any("86400" in w for w in warnings)
+
+
+@pytest.mark.parametrize("header_value", ["nan", "inf", "-inf"])
+async def test_request_with_retry_falls_back_to_default_on_non_finite_retry_after(
+    header_value: str,
+    monkeypatch: pytest.MonkeyPatch,
+    records: list[tuple[str, str]],
+) -> None:
+    """`float()` parses "nan"/"inf"/"-inf" without raising, so these reach
+    the clamp expression as a non-finite `delay` rather than the
+    unparseable-garbage branch. Pinning this by test (rather than trusting
+    the clamp's accidental NaN-ordering behavior) is the point: a future
+    refactor of `max(0.0, min(delay, MAX_RETRY_AFTER_SECONDS))` could
+    silently reintroduce `asyncio.sleep(nan)`, which hangs forever."""
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(http_retry.asyncio, "sleep", fake_sleep)
+    calls = {"n": 0}
+
+    async def make_request() -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _error_response(429, headers={"Retry-After": header_value})
+        return _error_response(200)
+
+    await http_retry.request_with_retry(make_request, service_name="Test", context="ctx")
+
+    assert sleeps == [http_retry.DEFAULT_RETRY_AFTER_SECONDS]
+    warnings = [message for level, message in records if level == "WARNING"]
+    assert any(header_value in w for w in warnings)

@@ -288,4 +288,4 @@ def has_answer_key(titles: Iterable[str | None], synonyms: list[str]) -> bool:
     tmdb.py's module docstring), so for TMDB this check is equivalent to
     "skip when both titles are empty" — not a special case, just what the
     general rule reduces to when `synonyms` is always `[]`."""
-    return any(titles) or bool(synonyms)
+    return any(titles) or any(synonyms)
