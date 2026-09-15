@@ -71,7 +71,7 @@ async def stageconfig_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             logger.warning("Non-admin {} tried /stageconfig", user.id)
             await message.reply_text(i18n.t("commands.admins_only", lang))
             return
-        config = stage_config.get_stage_config(session)
+        config = stage_config.get_stage_configs(session)
 
     await message.reply_text(_render_table(lang, config), parse_mode="HTML")
 
@@ -163,7 +163,7 @@ async def _apply_stage_changes(
             stage_config.set_stage_config(
                 session, stage, target_width=width, wrong_guess_limit=limit
             )
-        config = stage_config.get_stage_config(session)
+        config = stage_config.get_stage_configs(session)
 
     await message.reply_text(_render_table(lang, config), parse_mode="HTML")
     await _send_preview(message, context, lang, changes)

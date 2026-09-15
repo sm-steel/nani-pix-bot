@@ -193,7 +193,7 @@ async def testpixels_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
-        config = stage_config.get_stage_config(session)
+        config = stage_config.get_stage_configs(session)
     stage_widths = [config[stage].target_width for stage in PixelStage]
 
     args = context.args or []

@@ -428,7 +428,7 @@ async def _show_preview(context, session, game: Game, lang: str) -> None:
     preview.py."""
     assert game.original_image is not None
     original_bytes = game.original_image
-    config = stage_config.get_stage_config(session)
+    config = stage_config.get_stage_configs(session)
     title = game_service.display_title(game, lang)
     # Every stored title variant is already an accepted /guess — not just
     # the manually-typed synonyms — so show all of them here too, minus

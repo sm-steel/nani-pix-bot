@@ -122,9 +122,9 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
     # wrong guesses that stage allows before the image clears.
     assert "1/5" in kwargs["caption"]
     with session_factory() as session:
-        limit = stage_config.get_stage_config(session)[
-            game_service.STAGE_ORDER[0]
-        ].wrong_guess_limit
+        limit = stage_config.get_stage_config(
+            session, game_service.STAGE_ORDER[0]
+        ).wrong_guess_limit
     assert f"{limit}/{limit}" in kwargs["caption"]
 
     with session_factory() as session:

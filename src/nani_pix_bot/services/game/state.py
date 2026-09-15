@@ -285,7 +285,7 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
         return GuessOutcome.WON
 
     game.wrong_guess_count += 1
-    limit = stage_config.get_stage_config(session)[game.current_stage].wrong_guess_limit
+    limit = stage_config.get_stage_config(session, game.current_stage).wrong_guess_limit
     if game.wrong_guess_count < limit:
         logger.debug(
             "Game {}: wrong guess {}/{} at stage {}",
@@ -358,7 +358,7 @@ def stage_progress(session: Session, game: Game) -> StageProgress:
         raise ValueError(msg)
 
     stage_number = STAGE_ORDER.index(game.current_stage) + 1
-    limit = stage_config.get_stage_config(session)[game.current_stage].wrong_guess_limit
+    limit = stage_config.get_stage_config(session, game.current_stage).wrong_guess_limit
     remaining = limit - game.wrong_guess_count
     return StageProgress(stage_number, len(STAGE_ORDER), remaining, limit)
 

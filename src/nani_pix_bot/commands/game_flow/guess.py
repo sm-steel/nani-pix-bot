@@ -92,7 +92,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         elif outcome is game_service.GuessOutcome.STAGE_ADVANCED:
             assert game.original_image is not None
             original_bytes = game.original_image
-            target_width = stage_config.get_stage_config(session)[game.current_stage].target_width
+            target_width = stage_config.get_stage_config(session, game.current_stage).target_width
             pixelated = pixelate_service.pixelate(original_bytes, target_width)
             progress = game_service.stage_progress(session, game)
             game_service.reset_inactivity_clock(game)
