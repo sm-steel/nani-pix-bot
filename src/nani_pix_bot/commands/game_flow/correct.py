@@ -47,7 +47,10 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # _validate_active_game_for_starter already checked this — restores
         # the type narrowing lost by returning `game` across a function
         # boundary.
-        assert game.original_image is not None
+        if game.original_image is None:
+            raise AssertionError(
+                "game.original_image is None despite _validate_active_game_for_starter's check"
+            )
 
         game_service.force_win(session, game, winner_id=target.telegram_user_id)
         logger.info(

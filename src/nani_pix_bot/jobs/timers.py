@@ -416,7 +416,16 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
                 "Inactivity advance fired for game {} but it's not ACTIVE — no-op", game_id
             )
             return
-        assert game.original_image is not None
+        if game.original_image is None:
+            # Genuine internal invariant, not a type-narrowing artifact: an
+            # ACTIVE game always has its bytes (see state.py's
+            # has_answer_to_reveal docstring), and unlike guess.py's /
+            # correct's handlers, nothing earlier in this background job
+            # callback loaded or checked original_image — there is no
+            # synchronous caller here to otherwise notice a silent failure.
+            msg = f"Game {game_id}: inactivity-advance fired but original_image is missing"
+            logger.error(msg)
+            raise RuntimeError(msg)
 
         outcome = game_service.advance_stage(game)
 

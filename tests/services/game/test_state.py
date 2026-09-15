@@ -913,6 +913,21 @@ def test_advance_stage_ends_unsolved_when_already_on_the_final_stage(session: Se
     assert game.current_stage == PixelStage.STAGE_5  # left as-is, only status changes
 
 
+def test_advance_stage_raises_runtime_error_when_current_stage_is_none(
+    session: Session,
+) -> None:
+    """Genuine internal-invariant guard (issue #117): every real caller
+    (record_guess, jobs/timers.py's inactivity-advance callback) already
+    checks current_stage before calling in, so this path is never
+    reachable by a player — but it used to be a bare `assert`, silently
+    stripped under `python -O`. Now it's a real RuntimeError."""
+    game = _active_game(session)
+    game.current_stage = None
+
+    with pytest.raises(RuntimeError, match="no current_stage"):
+        game_service.advance_stage(game)
+
+
 def test_record_guess_wrong_guess_limit_hit_delegates_to_advance_stage(session: Session) -> None:
     # record_guess's own stage-exhaustion tests above already cover the
     # observable behavior; this just pins that it's the same advance_stage()

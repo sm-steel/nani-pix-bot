@@ -321,10 +321,17 @@ def advance_stage(game: Game) -> GuessOutcome:
     inline before this was extracted."""
     # Every caller only invokes this on an ACTIVE game with a stage
     # already set (record_guess checks this itself; the inactivity job
-    # callback re-checks status == ACTIVE before calling in) — asserted
-    # rather than re-raising ValueError like record_guess does, since
-    # this is an internal invariant, not user input to validate.
-    assert game.current_stage is not None, "advance_stage called with no current_stage"
+    # callback re-checks status == ACTIVE before calling in). This used
+    # to be a bare `assert` on the reasoning that it's an internal
+    # invariant, not user input to validate — but S101 (issue #117)
+    # reverses that: a bare assert silently vanishes under `python -O`.
+    # Still an internal invariant rather than user input (hence
+    # RuntimeError, not record_guess's ValueError above), just enforced
+    # with a real exception now instead of one that could disappear.
+    if game.current_stage is None:
+        msg = f"advance_stage called on game {game.id} with no current_stage"
+        logger.error(msg)
+        raise RuntimeError(msg)
     game.wrong_guess_count = 0
     next_index = STAGE_ORDER.index(game.current_stage) + 1
     if next_index >= len(STAGE_ORDER):

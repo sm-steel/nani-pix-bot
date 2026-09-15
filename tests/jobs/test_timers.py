@@ -577,6 +577,26 @@ async def test_inactivity_advance_job_callback_is_a_noop_if_not_active(session_f
     context.bot.send_photo.assert_not_awaited()
 
 
+async def test_inactivity_advance_job_callback_raises_runtime_error_if_no_image(
+    session_factory,
+) -> None:
+    """Genuine internal-invariant guard (issue #117): an ACTIVE game
+    always has its original_image, but unlike guess.py/correct.py this
+    background job callback never checked it before — it used to be a
+    bare `assert`, silently stripped under `python -O`. Now it's a real
+    RuntimeError, so a broken invariant doesn't fail silently in a
+    background job with no synchronous caller to notice."""
+    game_id = _active_game(session_factory, original_image=None)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    with pytest.raises(RuntimeError, match="original_image is missing"):
+        await timeout_module.inactivity_advance_job_callback(
+            cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    context.bot.send_photo.assert_not_awaited()
+
+
 def _make_post_image_context(session_factory) -> MagicMock:
     context = MagicMock()
     context.bot_data = {

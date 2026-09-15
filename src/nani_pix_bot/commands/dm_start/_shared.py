@@ -426,7 +426,8 @@ async def _show_preview(context, session, game: Game, lang: str) -> None:
     preview.py's own add-synonym step), and the screenshot-picker flow
     (screenshot_gallery.py's pick), hence living here rather than in
     preview.py."""
-    assert game.original_image is not None
+    if game.original_image is None:
+        raise AssertionError("game.original_image is None in _show_preview")
     original_bytes = game.original_image
     config = stage_config.get_stage_configs(session)
     title = game_service.display_title(game, lang)
