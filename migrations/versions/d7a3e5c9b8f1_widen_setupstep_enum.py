@@ -18,6 +18,15 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _OLD_VALUES = ("PICKING_METHOD", "AWAITING_PHOTO_CHANGE", "AWAITING_SYNONYM", "CONFIRMING")
+# Appends PICKING_SCREENSHOT last, while models/enums.py's SetupStep
+# declares it second (right after PICKING_METHOD). That is a deliberate
+# divergence, not a bug to fix by reordering: SQLAlchemy's Enum type
+# stores and compares member *names*, never the ordinal position, so
+# round-tripping is unaffected either way — but this list mirrors the
+# ALTER TABLE that already ran against the live DB, and rewriting it to
+# match the model's order would desync the file from the ENUM ordinals
+# actually deployed there. Expect this to show up as harmless noise if
+# `alembic revision --autogenerate` is ever run against this column.
 _NEW_VALUES = (*_OLD_VALUES, "PICKING_SCREENSHOT")
 
 
