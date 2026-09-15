@@ -345,12 +345,25 @@ src/nani_pix_bot/
     turn_state.py # TurnState (singleton row)
     bot_settings.py  # BotSettings (singleton row — language, games_enabled)
     stage_config.py  # StageConfig (one row per PixelStage)
-    enums.py      # GameStatus, PixelStage, SetupStep
+    enums.py      # GameStatus, PixelStage, SetupStep, and Provider — the
+                   # latter also exposes pick_prefix/id_attr_name/
+                   # screenshot_module/search_module as properties, the
+                   # single source of truth for what used to be four
+                   # hand-maintained Provider-keyed dicts (issue #114)
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout
 scripts/          # one-off / operational scripts, if any turn out to be needed
 Dockerfile, docker-compose.yml   # bot + mariadb, see "Infrastructure" above
 ```
+
+`Provider.screenshot_module`/`search_module` resolve to real
+`services.search.*` module objects, but the import backing each one lives
+*inside* the property getter, re-run on every access, instead of at
+`enums.py`'s module level — `services/search/*.py` already imports
+`Provider` from `models.enums` at its own top level, so a module-level
+import back here would be a real two-hop cycle
+(`models.enums` <-> `services.search.*`). Don't "simplify" this into a
+top-level import; it was tried and the cycle is real.
 
 ### Before adding something new
 

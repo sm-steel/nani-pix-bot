@@ -60,13 +60,13 @@ GET_UPDATES_CONNECTION_POOL_SIZE = 4
 _PLAYER_TRACKING_GROUP = -1
 
 # Which identification-search pick prefixes route to
-# pick_callback_handler. Built from Provider's members rather than typed
+# pick_callback_handler. Built from Provider.pick_prefix rather than typed
 # out as four literals: this pattern decides which handler even *sees* an
 # update, so a fifth provider added to the enum and to keyboards.py but
 # forgotten here would produce buttons whose taps silently reach nothing
-# at all. See keyboards.py's `<provider>_pick:` prefixes, which this has
-# to keep matching.
-_PICK_PREFIX_PATTERN = "|".join(re.escape(f"{provider}_pick:") for provider in Provider)
+# at all. See keyboards.py's `<provider>_pick:` prefixes (also read off
+# Provider.pick_prefix), which this has to keep matching.
+_PICK_PREFIX_PATTERN = "|".join(re.escape(provider.pick_prefix) for provider in Provider)
 
 
 def build_application(config: Config) -> Application:

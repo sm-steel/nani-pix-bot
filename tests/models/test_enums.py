@@ -5,7 +5,11 @@ plain `enum.Enum`, never compared against a bare string, and their values
 are pinned by the migrations that created their native `sa.Enum`
 columns."""
 
+import pytest
+
 from nani_pix_bot.models.enums import Provider
+from nani_pix_bot.models.game import Game
+from nani_pix_bot.services.search import anilist, jikan, shikimori, tmdb
 
 
 def test_provider_values_are_the_lowercase_routing_keys() -> None:
@@ -55,3 +59,67 @@ def test_every_provider_has_a_display_name() -> None:
     # added without a label fails type-checking — this catches it at
     # runtime too, the same belt-and-braces `_current_setup_screen` uses.
     assert all(provider.display_name for provider in Provider)
+
+
+def test_provider_pick_prefixes_are_the_wire_format_every_member_uses() -> None:
+    # Replaces the old `_PICK_PREFIX_SOURCES` dict (issue #114) — every
+    # member's prefix is exactly f"{value}_pick:", used verbatim by
+    # keyboards.py's callback data and app.py's routing pattern.
+    assert Provider.ANILIST.pick_prefix == "anilist_pick:"
+    assert Provider.SHIKIMORI.pick_prefix == "shikimori_pick:"
+    assert Provider.JIKAN.pick_prefix == "jikan_pick:"
+    assert Provider.TMDB.pick_prefix == "tmdb_pick:"
+
+
+def test_provider_id_attr_names_are_the_game_column_names() -> None:
+    # Replaces the old `_ID_ATTRS` dict (issue #114).
+    assert Provider.SHIKIMORI.id_attr_name == "shikimori_id"
+    assert Provider.JIKAN.id_attr_name == "jikan_id"
+    assert Provider.TMDB.id_attr_name == "tmdb_id"
+
+
+def test_provider_id_attr_names_are_real_attributes_on_game() -> None:
+    # The reviewer's specific gap: `getattr(game, provider.id_attr_name)`
+    # is typed `Any`, so a typo in one of the three column-name string
+    # literals above would only surface if an integration test happened
+    # to exercise that exact provider. This asserts the attribute genuinely
+    # exists on a real `Game` instance for every screenshot-capable
+    # provider, independent of any specific caller exercising it.
+    game = Game()
+    for provider in (Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB):
+        assert hasattr(game, provider.id_attr_name)
+
+
+def test_provider_id_attr_name_raises_for_anilist() -> None:
+    # AniList identifies an anime but has no screenshot endpoint, so it has
+    # no id column of its own — accessing this on Provider.ANILIST raises
+    # rather than returning a nonexistent column name.
+    with pytest.raises(ValueError, match=r"Provider\.ANILIST"):
+        _ = Provider.ANILIST.id_attr_name
+
+
+def test_provider_screenshot_module_resolves_to_the_real_search_module() -> None:
+    # `is`, not `==`: dm_start's tests patch attributes directly on the
+    # module object (monkeypatch.setattr(shikimori, "screenshots", ...)),
+    # so this property has to keep returning that exact object, not an
+    # equal-but-different one.
+    assert Provider.SHIKIMORI.screenshot_module is shikimori
+    assert Provider.JIKAN.screenshot_module is jikan
+    assert Provider.TMDB.screenshot_module is tmdb
+
+
+def test_provider_screenshot_module_raises_for_anilist() -> None:
+    # AniList has no screenshot endpoint — mirrors id_attr_name above.
+    with pytest.raises(ValueError, match=r"Provider\.ANILIST"):
+        _ = Provider.ANILIST.screenshot_module
+
+
+def test_provider_search_module_covers_all_four_providers_including_anilist() -> None:
+    # Deliberately not unified with screenshot_module: search_module covers
+    # all four providers (AniList can be searched/identified even though it
+    # has no screenshot endpoint), so unlike id_attr_name/screenshot_module
+    # this must NOT raise for ANILIST.
+    assert Provider.ANILIST.search_module is anilist
+    assert Provider.SHIKIMORI.search_module is shikimori
+    assert Provider.JIKAN.search_module is jikan
+    assert Provider.TMDB.search_module is tmdb

@@ -36,12 +36,13 @@ from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 SEARCH_RETRY_CALLBACK_DATA = "search_retry"
-# Derived from Provider, not hand-spelled — app.py's routing pattern is built
-# the same way, and the two used to be independent copies of one wire format.
-_ANILIST_PICK_PREFIX = f"{Provider.ANILIST}_pick:"
-_SHIKIMORI_PICK_PREFIX = f"{Provider.SHIKIMORI}_pick:"
-_JIKAN_PICK_PREFIX = f"{Provider.JIKAN}_pick:"
-_TMDB_PICK_PREFIX = f"{Provider.TMDB}_pick:"
+# Read off Provider.pick_prefix, not re-derived — app.py's routing pattern
+# is built the same way, and the two used to be independent copies of one
+# wire format (issue #114).
+_ANILIST_PICK_PREFIX = Provider.ANILIST.pick_prefix
+_SHIKIMORI_PICK_PREFIX = Provider.SHIKIMORI.pick_prefix
+_JIKAN_PICK_PREFIX = Provider.JIKAN.pick_prefix
+_TMDB_PICK_PREFIX = Provider.TMDB.pick_prefix
 
 # Derived from Provider, not hand-spelled — same reasoning as the
 # pick-prefix constants above.
