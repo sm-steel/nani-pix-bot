@@ -1,8 +1,6 @@
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 import pytest
-from loguru import logger
 
 from nani_pix_bot.services.search import parsing
 
@@ -19,18 +17,6 @@ def _parse(raw: dict) -> _Parsed:
 def _parse_optional(raw: dict) -> _Parsed | None:
     identifier = raw.get("id")
     return _Parsed(identifier=identifier) if identifier else None
-
-
-@pytest.fixture
-def records() -> Iterator[list[tuple[str, str]]]:
-    """Every log record emitted while the test runs, as (level, message)."""
-    captured: list[tuple[str, str]] = []
-    sink_id = logger.add(
-        lambda message: captured.append((message.record["level"].name, message.record["message"])),
-        level="DEBUG",
-    )
-    yield captured
-    logger.remove(sink_id)
 
 
 def test_parse_entries_parses_every_well_formed_entry() -> None:
@@ -165,4 +151,84 @@ def test_require_int_rejections_become_a_skip(records: list[tuple[str, str]]) ->
     assert parsing.parse_entries("Example", [{"id": None}, {"id": 2}], parse_id) == [
         _Parsed(identifier=2)
     ]
+    assert [level for level, _ in records] == ["WARNING"]
+
+
+def test_optional_str_returns_a_string_field() -> None:
+    assert parsing.optional_str({"name": "Frieren"}, "name") == "Frieren"
+
+
+@pytest.mark.parametrize("raw", [{}, {"name": None}])
+def test_optional_str_defaults_to_none_when_the_field_is_absent_or_null(raw: dict) -> None:
+    """Unlike an id, a title genuinely may not be there — every provider
+    has fields the others don't — so absent keeps the dataclass's own
+    `str | None` default instead of raising."""
+    assert parsing.optional_str(raw, "name") is None
+
+
+@pytest.mark.parametrize("value", [5, 7.5, True, ["Frieren"], {"romaji": "Frieren"}])
+def test_optional_str_rejects_a_present_but_non_string_field(value: object) -> None:
+    """Present-but-unusable stays an outright rejection: a non-string title
+    reaches `", ".join(...)` in the setup preview as a TypeError, and a
+    non-string screenshot URL is interpolated into a Telegram send."""
+    with pytest.raises(TypeError, match="name"):
+        parsing.optional_str({"name": value}, "name")
+
+
+def test_optional_str_list_returns_a_list_of_strings() -> None:
+    assert parsing.optional_str_list({"synonyms": ["a", "b"]}, "synonyms") == ["a", "b"]
+
+
+@pytest.mark.parametrize("raw", [{}, {"synonyms": None}, {"synonyms": []}])
+def test_optional_str_list_defaults_to_empty_when_the_field_is_absent_or_null(raw: dict) -> None:
+    assert parsing.optional_str_list(raw, "synonyms") == []
+
+
+def test_optional_str_list_rejects_a_bare_string() -> None:
+    """The defect this helper exists for. A string is iterable, so
+    `*(game.synonyms or [])` expands `"Frieren"` into the per-character
+    match candidates ['F','r','i','e','r','e','n'] and single letters
+    become winning guesses — no exception, no log, just a silently
+    corrupted answer key (issue #86)."""
+    with pytest.raises(TypeError, match="synonyms"):
+        parsing.optional_str_list({"synonyms": "Frieren"}, "synonyms")
+
+
+@pytest.mark.parametrize("value", [5, 7.5, True, {"0": "Frieren"}])
+def test_optional_str_list_rejects_a_non_array_field(value: object) -> None:
+    with pytest.raises(TypeError, match="synonyms"):
+        parsing.optional_str_list({"synonyms": value}, "synonyms")
+
+
+@pytest.mark.parametrize("item", [5, None, True, ["Frieren"], {"a": 1}])
+def test_optional_str_list_rejects_an_array_holding_a_non_string(item: object) -> None:
+    """A list of the right shape holding one wrong member is the same
+    defect one level in: it survives the JSON column and detonates at
+    `", ".join(...)` instead."""
+    with pytest.raises(TypeError, match="synonyms"):
+        parsing.optional_str_list({"synonyms": ["Frieren", item]}, "synonyms")
+
+
+def test_optional_str_rejections_become_a_skip(records: list[tuple[str, str]]) -> None:
+    """Same routing `require_int` gets — a raise inside the guard, not a
+    second mechanism returning a sentinel."""
+
+    def parse_name(raw: dict) -> _Parsed:
+        parsing.optional_str(raw, "name")
+        return _Parsed(identifier=raw["id"])
+
+    assert parsing.parse_entries("Example", [{"id": 1, "name": 5}, {"id": 2}], parse_name) == [
+        _Parsed(identifier=2)
+    ]
+    assert [level for level, _ in records] == ["WARNING"]
+
+
+def test_optional_str_list_rejections_become_a_skip(records: list[tuple[str, str]]) -> None:
+    def parse_synonyms(raw: dict) -> _Parsed:
+        parsing.optional_str_list(raw, "synonyms")
+        return _Parsed(identifier=raw["id"])
+
+    entries = [{"id": 1, "synonyms": "Frieren"}, {"id": 2}]
+
+    assert parsing.parse_entries("Example", entries, parse_synonyms) == [_Parsed(identifier=2)]
     assert [level for level, _ in records] == ["WARNING"]

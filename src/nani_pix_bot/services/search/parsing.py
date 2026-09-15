@@ -39,10 +39,40 @@ is a `TypeError` — so that raises `RuntimeError`, which
 Note where the guard's boundary actually is: it wraps the *reading* of a
 field, so it ends at the parse function's `return`. A field handed back
 unvalidated — an `id` that was JSON `null`, an `episode_count` that
-arrived as `"3"` — is outside it, and blows up later at whatever consumes
-it. That's what `require_int` below is for, and why parse functions
-validate before returning rather than trusting the try/except around
-them to have covered it.
+arrived as `"3"`, a `synonyms` that arrived as a bare string — is outside
+it, and blows up later at whatever consumes it. That's what `require_int`,
+`optional_str` and `optional_str_list` below are for, and why parse
+functions validate before returning rather than trusting the try/except
+around them to have covered it.
+
+**A malformed field skips the whole entry, exactly as a malformed id
+does** — it does not keep the usable half and drop the bad field. The
+tempting distinction is that an entry with a good id and a bad title
+could still make a working button, unlike one with no usable id at all.
+It can't, usefully:
+
+- Dropping a title leaves the field None, and `prioritized_title` renders
+  an all-None result as `"?"`. That isn't a degraded button, it's a
+  button labelled "?" that stages a game whose stored answer key is "?"
+  — unwinnable, and indistinguishable from a working game until a whole
+  round has been wasted on it. Skipping costs one of five buttons;
+  keeping costs a game.
+- Dropping a *synonym list* is worse still, because the field is the
+  answer key: a game quietly missing the answers a player would actually
+  type is the same class of silent game-rule corruption the bare-string
+  `synonyms` bug is, just reached from the other side.
+- Keeping-but-dropping needs a second mechanism — a per-field recovery
+  path with its own defaults, running alongside the raise-and-skip every
+  other malformation already uses. Two mechanisms answering the same
+  question differently is precisely what `require_int` refused to grow.
+- The parse function can't tell which field the picker will end up
+  displaying without duplicating `prioritized_title`'s language-dependent
+  priority order into every provider, so "is this entry still usable?"
+  isn't even answerable here.
+
+So the rule stays the single one issue #83 set: an entry this codebase
+can't read in full is an entry it skips, whichever field made it
+unreadable.
 
 Skips are logged at WARNING per `CLAUDE.md`'s table: a third party
 sending an entry we can't use is a recoverable anomaly (we recover, by
@@ -143,4 +173,66 @@ def require_int(raw: dict, key: str) -> int:
     value = raw[key]
     if not isinstance(value, int) or isinstance(value, bool):
         raise TypeError(f"{key!r} is a {type(value).__name__}, expected an integer")
+    return value
+
+
+def optional_str(raw: dict, key: str) -> str | None:
+    """`raw[key]` as a string, None when it simply isn't there, and a
+    `TypeError` when it is there but isn't one.
+
+    The sibling of `require_int` for every field a `_parse_*` function hands
+    back as `str | None` — the four providers' title variants, and the
+    screenshot/still paths they interpolate into an image URL. Those all
+    reached a consumer that raises: a non-string title detonates at
+    `", ".join(...)` in the DM setup preview, and a non-string URL is handed
+    to `InputMediaPhoto(media=...)` (issue #86).
+
+    Unlike `require_int` this one *does* carry a default, because unlike an
+    id these fields are genuinely optional at every single call site — no
+    provider fills in all of them (Shikimori has no `native`, AniList no
+    `russian`), so the `if raw.get(key) is None: return <default>` pre-check
+    `require_int`'s docstring prescribes would be copied verbatim ahead of a
+    dozen calls and say nothing at any of them. The rule behind that
+    docstring note is unchanged and still the point: absent and
+    present-but-unusable stay two visibly different answers. They're just
+    split by which helper you call rather than by a pre-check, which is
+    worth doing only when "absent is fine" is the norm for a whole class of
+    field rather than a one-off — a field that's optional *here* and
+    mandatory elsewhere still gets the pre-check (see `anilist._parse_result`'s
+    `year`, which reads `require_int` behind one)."""
+    value = raw.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"{key!r} is a {type(value).__name__}, expected a string")
+    return value
+
+
+def optional_str_list(raw: dict, key: str) -> list[str]:
+    """`raw[key]` as a list of strings, `[]` when it isn't there, and a
+    `TypeError` when it is there but isn't one.
+
+    The synonyms field, in other words — and the one member of this family
+    whose defect is silent. `{"synonyms": 5}` at least announces itself, at
+    `*(game.synonyms or [])` in `services/game/state.py::match_candidates`,
+    as a `TypeError` outside anyone's `except`. `{"synonyms": "Frieren"}`
+    raises nothing at all: a string is iterable, so it expands into the
+    per-character candidates `['F','r','i','e','r','e','n']` and single
+    letters quietly become winning guesses. Nothing in the pipeline objects
+    — it stores fine in the JSON column, it renders fine in the preview —
+    until a player types "e" and wins. That is why the check is
+    `isinstance(value, list)` rather than "is it iterable": every wrong
+    shape here is wrong, and the iterable one is the dangerous one.
+
+    Members are checked too, not just the container. A list holding one
+    integer survives storage exactly as happily and detonates one step
+    later, at the same `", ".join(...)` a non-string title does."""
+    value = raw.get(key)
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise TypeError(f"{key!r} is a {type(value).__name__}, expected an array of strings")
+    for item in value:
+        if not isinstance(item, str):
+            raise TypeError(f"{key!r} holds a {type(item).__name__}, expected an array of strings")
     return value
