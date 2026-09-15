@@ -1,7 +1,7 @@
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import GameStatus, PixelStage, SetupStep
+from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 
@@ -97,6 +97,86 @@ def test_game_picker_provider_does_not_claim_an_image_source(session: Session) -
     assert fetched.screenshot_source is None
     assert fetched.original_image is None
     assert fetched.shikimori_id == 52991
+
+
+def test_provider_columns_store_the_value_not_the_member_name(session: Session) -> None:
+    """The three `Provider`-typed columns must stay `String`-backed.
+
+    Typing them as `Mapped[Provider | ...]` without keeping the explicit
+    `mapped_column(String(...))` argument would let SQLAlchemy auto-infer
+    a native `sa.Enum(Provider)` column instead — which stores each
+    member's *name* (`"SHIKIMORI"`) rather than its *value*
+    (`"shikimori"`), silently reinterpreting every existing row with no
+    migration to match (`GameStatus`/`PixelStage`/`SetupStep` genuinely
+    do get native `sa.Enum` columns; these three deliberately must not).
+
+    The assertion has to read the **raw** column, not the ORM attribute:
+    `Provider` is a `StrEnum`, so a native-enum column would hand back
+    `Provider.SHIKIMORI`, which compares equal to `"shikimori"` anyway —
+    an ORM-level round trip would pass either way and prove nothing."""
+    starter = _make_starter(session)
+    game = Game(
+        starter_id=starter.telegram_user_id,
+        source=Provider.SHIKIMORI,
+        screenshot_source=Provider.JIKAN,
+        screenshot_picker_provider=Provider.TMDB,
+    )
+    session.add(game)
+    session.commit()
+    session.expire_all()
+
+    stored = session.execute(
+        text(
+            "SELECT source, screenshot_source, screenshot_picker_provider FROM games WHERE id = :id"
+        ),
+        {"id": game.id},
+    ).one()
+    assert stored == ("shikimori", "jikan", "tmdb")
+
+    fetched = session.get(Game, game.id)
+
+    assert fetched is not None
+    assert fetched.source == Provider.SHIKIMORI
+    assert fetched.screenshot_source == Provider.JIKAN
+    assert fetched.screenshot_picker_provider == Provider.TMDB
+
+
+def test_game_source_defaults_to_the_anilist_value(session: Session) -> None:
+    # The column default is the bare literal the migration wrote, so it
+    # has to keep meaning `Provider.ANILIST` — the same name-vs-value
+    # trap as the round trip above, reached without anyone passing a
+    # `Provider` at all.
+    starter = _make_starter(session)
+    game = Game(starter_id=starter.telegram_user_id)
+    session.add(game)
+    session.commit()
+    session.expire_all()
+
+    stored = session.execute(
+        text("SELECT source FROM games WHERE id = :id"), {"id": game.id}
+    ).scalar_one()
+    assert stored == "anilist"
+
+    fetched = session.get(Game, game.id)
+
+    assert fetched is not None
+    assert fetched.source == Provider.ANILIST
+
+
+def test_game_source_still_accepts_manual(session: Session) -> None:
+    # "manual" means "no automatic provider", not a provider identity, so
+    # it is deliberately outside `Provider` — and still a legal value of
+    # this column (services/game/state.py's stage_manual_entry writes it).
+    starter = _make_starter(session)
+    game = Game(starter_id=starter.telegram_user_id, source="manual")
+    session.add(game)
+    session.commit()
+    session.expire_all()
+
+    fetched = session.get(Game, game.id)
+
+    assert fetched is not None
+    assert fetched.source == "manual"
 
 
 def test_game_original_image_round_trips_binary_data(session: Session) -> None:
