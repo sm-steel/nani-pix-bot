@@ -1,55 +1,48 @@
 """Shared in-memory TTL cache for external search/screenshot API
 responses — read-only *performance* caching, not authoritative flow
-state. Losing this on a restart just costs one extra API call to
-whichever provider is asked next; this is nothing like this project's
-hard-won "flow state must be DB-derived, never cached in memory"
-principle (issue #11), which is about a completely different kind of
-state (what step a starter is on).
+state (that must stay DB-derived per issue #11, which covers a
+completely different kind of state: what step a starter is on). Losing
+this on a restart just costs one extra API call to whichever provider
+is asked next.
 
 Exists specifically to avoid re-hitting a provider's API (and risking
 429s) when a starter repeats an action during setup — re-running the
 same search, tapping "More screenshots" back and forth, etc.
 
 A decorator, not a function each caller invokes by hand: every
-provider's search()/get_by_id()/screenshots() needs the exact same
-caching shape, so hand-writing `cache.cached(client, "provider.search",
-..., fetch=lambda: _search(...))` at each call site meant a hand-typed
-cache-key string plus a private `_search`-shaped twin of every public
-function that existed purely to be wrapped — duplication for the sake
-of decoration. `@cache.cached()` collapses each pair back into one
-function, the same way `functools.lru_cache` would if it supported
-async functions and TTL expiry (it does neither, hence hand-rolling
-this rather than reaching for a stdlib decorator).
+provider's search()/get_by_id()/screenshots() needs identical caching,
+and hand-writing the cache-key/fetch-lambda boilerplate at each call
+site meant a private `_search`-shaped twin of every public function
+that existed purely to be wrapped. `@cache.cached()` collapses that
+pair into one function — what `functools.lru_cache` would do here if
+it supported async functions and TTL expiry (it supports neither,
+hence hand-rolling this instead of reaching for a stdlib decorator).
 
 Each decorated function gets its own private cache dict (a closure
-variable, one per `@cached()` application) rather than every function
-sharing one `dict[..., object]` — that would need every read to unbox
-via `cast`/`# type: ignore`, since one shared dict can't statically
-know which of many decorated functions' return types a given entry
-holds. A private dict per function needs no such cast: its value type
-is exactly that function's own `_T`, known at decoration time, so
-`entry.get(key)` is already correctly typed on the way back out. The
-only cost is `clear()` (test-only) reaching every private dict via a
-list of their own `.clear` bound methods, rather than clearing one
-dict directly — `Callable[[], None]` doesn't depend on `_T`, so that
-list itself needs no cast either.
+variable) rather than every function sharing one `dict[..., object]` —
+a shared dict couldn't statically know which of many decorated
+functions' return types a given entry holds, needing `cast`/
+`# type: ignore` on every read. A private dict's value type is exactly
+that function's own `_T`, known at decoration time, so reads come back
+already correctly typed. The only cost: `clear()` (test-only) needs a
+list of each private dict's own `.clear` bound method, rather than
+clearing one dict directly.
 
 Keyed by the calling `httpx.AsyncClient` itself — a
 `weakref.WeakKeyDictionary` of per-client caches, not a flat dict keyed
 by `id(client)`. In production there's exactly one long-lived client
 per provider family (`app.py`'s `search_client`/`tmdb_client`), so this
-just means "cached for as long as that client is alive" — and in tests,
-where every test constructs its own fresh client, this gives natural
-per-test isolation for free, without needing a shared clear-the-cache
-fixture (see test_cache.py). The weak key is what makes that literally
-true rather than aspirational: `id(client)` kept no reference to the
-client, so a collected client's entries stayed in the dict forever
-(nothing ever purges, entries are only overwritten by a same-key
-re-call) and CPython readily recycles addresses — a later client
-allocated where a dead one used to live would read the dead one's value
-back. Near-impossible in production (two clients, never replaced),
-but exactly the shape of a rare, unreproducible test failure. Keying on
-the object drops each client's entries the moment it's collected.
+just means "cached for as long as that client is alive"; in tests,
+where every test constructs its own fresh client, it gives natural
+per-test isolation for free, without a shared clear-the-cache fixture
+(see test_cache.py). The weak key is what makes that literally true
+rather than aspirational: `id(client)` kept no reference to the client,
+so a collected client's entries stayed in the dict forever, and CPython
+readily recycles addresses — a later client allocated where a dead one
+used to live would read the dead one's value back. Near-impossible in
+production (two clients, never replaced), but exactly the shape of a
+rare, unreproducible test failure. Keying on the object drops each
+client's entries the moment it's collected.
 
 Two couplings worth knowing about before changing anything here:
 

@@ -20,20 +20,18 @@ restart-resilient by-id re-fetch issue #11 already established for
 AniList, except here it's forced by Shikimori's own schema shape rather
 than a design choice.
 
-`synonyms`' item-level nullability (whether Shikimori can ever answer a
-list *containing* a null, the same shape REST's `english` bug had) could
-not be confirmed via GraphQL introspection — the live API enforces a max
-query depth of 5, one hop short of what's needed to inspect a list
-field's inner item type. Empirically checked instead: 53 real anime
-entries sampled across a wide id range (ids 1-68 plus several higher/
-known-sparse ids, including 817 and 1790 — the original issue #103 repro
-titles) via live queries against `shikimori.io/api/graphql`. Every
-`synonyms` value observed was either `[]` or a list of real strings,
-never a list containing a null. No code change was needed either way:
-`parsing.optional_str_list` already raises (and `parse_entry` already
-skips) on a null member if one ever does appear, the same as it does for
-every other provider's list fields — this note just records that the
-shape was actually checked, not assumed.
+`synonyms`' item-level nullability (the same null-in-a-list shape
+REST's `english` bug had) couldn't be confirmed via GraphQL
+introspection — the live API caps query depth at 5, one hop short of
+inspecting a list field's inner item type. Empirically checked instead:
+53 real anime entries sampled across a wide id range (including 817 and
+1790, the original issue #103 repro titles) via live queries against
+`shikimori.io/api/graphql`. Every `synonyms` value observed was either
+`[]` or a list of real strings, never a list containing a null. No code
+change was needed either way — `parsing.optional_str_list` already
+raises (and `parse_entry` already skips) on a null member, the same as
+for every other provider's list fields — this note just records that
+the shape was actually checked, not assumed.
 """
 
 from dataclasses import dataclass

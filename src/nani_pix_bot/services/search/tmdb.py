@@ -89,16 +89,14 @@ async def get_by_id(client: httpx.AsyncClient, tmdb_id: int) -> TMDBResult | Non
 @cache.cached()
 async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
     """Real per-episode stills (not promotional art) for a
-    TMDB-identified show — used by the screenshot-picker gallery.
-    Unlike Shikimori/Jikan's single-call screenshot endpoints, TMDB has
-    no bulk "all stills for this show" resource: the per-episode detail
-    endpoint (`/tv/{id}/season/{s}/episode/{e}`) already includes a
-    `still_path` directly, so this fetches the show's season list once,
-    then one extra call per episode (up to SCREENSHOT_FETCH_LIMIT
-    across every season, see `_episode_targets`) — more chatty than the
+    TMDB-identified show, for the screenshot-picker gallery. TMDB has no
+    bulk "all stills for this show" endpoint like Shikimori/Jikan; the
+    per-episode detail endpoint (`/tv/{id}/season/{s}/episode/{e}`)
+    already includes `still_path`, so this fetches the season list
+    once, then one extra call per episode (up to SCREENSHOT_FETCH_LIMIT
+    across every season, see `_episode_targets`) — chattier than the
     other two providers, but the whole result is cached as one unit
-    (see cache.py) so repeating this for the same show costs nothing
-    further until the TTL expires.
+    (see cache.py), so repeats cost nothing until the TTL expires.
 
     Those per-episode calls run concurrently, bounded by
     SCREENSHOT_FETCH_CONCURRENCY: sequentially they were up to 20 round
@@ -107,27 +105,24 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
 
     **The returned order is the episode order, never the completion
     order** — each fetch writes into its own slot of a pre-sized list,
-    indexed by the position `_episode_targets` gave it. That's a
-    correctness requirement, not a nicety: the gallery resolves a
+    indexed by the position `_episode_targets` gave it. This is a
+    correctness requirement: the gallery resolves a
     `screenshot_pick:tmdb:<index>` callback against this list's indices
-    (see cache.py's TTL note), so a list reordered by which request
-    happened to answer first would hand the starter a different image
-    than the one they tapped.
+    (see cache.py's TTL note), so reordering by completion would hand
+    the starter a different image than the one they tapped.
 
     A `TaskGroup` rather than `asyncio.gather`: gather propagates the
-    first failure but does *not* cancel its siblings, so a show whose
-    second episode 500s still issued all twenty requests, eleven of them
-    completing after the caller had already raised and replied. The
-    serial loop this replaced at least stopped asking. A TaskGroup
-    cancels the rest, so at most one queued episode per failing request
-    slips through before the abort — each failing task frees its own
-    semaphore slot while unwinding, and the episode waiting on that slot
-    resumes before the group's cancellation reaches it. Bounded by the
-    number of failures, then, not a flat +1, and never worse than gather
-    was. What it buys is the requests that are never issued at all, which
-    matters precisely because every one of them contends with Telegram's
-    own polling through the single `amsterdam` proxy, on the exact path
-    where the remote is already misbehaving."""
+    first failure but doesn't cancel its siblings, so one 500 still let
+    all twenty requests fire, most completing after the caller had
+    already raised and replied — worse than the serial loop this
+    replaced, which at least stopped asking. TaskGroup cancels the rest
+    instead; the bound is proportional to the number of failures (each
+    failing task frees its own semaphore slot on the way out, letting
+    one more queued request slip through before cancellation lands),
+    never worse than gather. What that buys — requests never issued at
+    all — matters because every one of them contends with Telegram's
+    own polling through the single `amsterdam` proxy, exactly where the
+    remote is already misbehaving."""
     show = await rest.get_json(_API, client, f"{TMDB_BASE_URL}/tv/{tmdb_id}", {})
     targets = _episode_targets(show)
     if not targets:

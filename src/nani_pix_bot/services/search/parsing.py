@@ -1,102 +1,72 @@
 """Entry-level guards shared by all four search providers.
 
-`rest.py` closed the *container* door (issue #75): a body that isn't
-JSON, or that decodes to something other than the array/object the
-endpoint is documented to answer with, becomes a `RuntimeError`. This
-module closes the door one level in — the container is well-formed, but
-an **entry inside it** isn't shaped the way that provider's `_parse_*`
-function indexes it. A result with no `id`, a `title` that arrived as a
-bare string instead of an object, an array of scalars where an array of
-objects belongs: every one of those raised a `KeyError`/`AttributeError`/
-`TypeError` that no handler catches, so it escaped to
+`rest.py` closed the *container* door (issue #75): a malformed
+container — not JSON, or the wrongly-shaped array/object — becomes a
+`RuntimeError`. This module closes the door one level in — the
+container is well-formed, but an **entry inside it** isn't shaped the
+way that provider's `_parse_*` function indexes it (a missing `id`, a
+`title` that arrived as a bare string, an array of scalars where
+objects belong). Unguarded, that raised a
+`KeyError`/`AttributeError`/`TypeError` that escaped to
 `app._error_handler` and left the starter on a SETUP row with a dead
 keyboard and no reply (issue #83).
 
 It lives here rather than in `rest.py` because `anilist.py` needs it
-too, and `anilist.py` deliberately doesn't import `rest.py` (see that
-module's docstring: GraphQL has no by-id URL and no 404 semantics, so
-it shares none of the REST plumbing). Parsing is the one thing all four
-providers genuinely do the same way.
+too and deliberately doesn't import `rest.py` (see that module's
+docstring) — parsing is the one thing all four providers genuinely do
+the same way.
 
-**An unusable entry is skipped, not raised on.** A provider returning
-four good results and one malformed one has given the starter a usable
-picker; turning that into `RuntimeError` would trade four working
-buttons for a "the service is down" message and a source menu, which is
-both a worse outcome and a false statement about a search that plainly
-ran. When *every* entry is unusable the skip yields an empty list, which
-the pickers already report as "nothing found" — the degradation is
-proportional to how much of the payload was actually broken. The
-single-entry (by-id) path skips the same way and ends up with None,
-which every caller already renders as "this pick is gone", exactly as it
-renders a 404.
+**An unusable entry is skipped, not raised on.** One malformed entry
+out of five shouldn't cost the starter all five buttons for a false
+"service is down" message. When every entry is unusable the skip
+yields an empty list, which the pickers already render as "nothing
+found". The single-entry (by-id) path skips the same way into `None`,
+rendered the same as a 404.
 
-The container itself is the opposite case and keeps `rest.py`'s answer:
-a `data`/`media`/`results` key holding a number rather than an array is
-wholly unusable, there is no partial result to salvage, and iterating it
-is a `TypeError` — so that raises `RuntimeError`, which
-`_SEARCH_SERVICE_ERRORS` catches.
+The container itself keeps `rest.py`'s answer and still raises
+`RuntimeError` (caught by `_SEARCH_SERVICE_ERRORS`): a `data`/`media`/
+`results` key holding a number instead of an array is wholly unusable,
+so there is no partial result to salvage.
 
-Note where the guard's boundary actually is: it wraps the *reading* of a
-field, so it ends at the parse function's `return`. A field handed back
-unvalidated — an `id` that was JSON `null`, an `episode_count` that
-arrived as `"3"`, a `synonyms` that arrived as a bare string — is outside
-it, and blows up later at whatever consumes it. That's what `require_int`,
-`optional_str` and `optional_str_list` below are for, and why parse
-functions validate before returning rather than trusting the try/except
-around them to have covered it.
+The guard's boundary is the parse function's `return` — it protects
+*reading* a field, not the value read. A field handed back unvalidated
+(an `id` that was JSON `null`, an `episode_count` that arrived as
+`"3"`, a bare-string `synonyms`) is outside it and blows up later at
+whatever consumes it. That's what `require_int`, `optional_str` and
+`optional_str_list` below are for, and why parse functions validate
+before returning rather than trusting the try/except around them.
 
 **A malformed field skips the whole entry, exactly as a malformed id
-does** — it does not keep the usable half and drop the bad field. The
-tempting distinction is that an entry with a good id and a bad title
-could still make a working button, unlike one with no usable id at all.
-It can't, usefully:
-
-- Dropping a title leaves the field None, which is worse than it looks.
-  `"?"` is only what `prioritized_title` *displays* for an all-None
-  result; what gets stored is an empty candidate list, because
-  `match_candidates` filters unset fields out. So the game isn't merely
-  badly labelled, it is unwinnable by construction — no guess can match
-  an empty list — and it looks exactly like a working game until a whole
-  round has been wasted on it. The claim here is not "we never produce a
-  `?` game": a well-typed entry whose titles happen to all be null does
-  that today by a legitimate path, which is its own issue (#89). It's
-  that we don't *newly create* one out of a malformation we could simply
-  have skipped. Skipping costs one of five buttons; keeping costs a game.
-- Dropping a *synonym list* is worse still, because the field is the
-  answer key: a game quietly missing the answers a player would actually
-  type is the same class of silent game-rule corruption the bare-string
-  `synonyms` bug is, just reached from the other side.
-- Keeping-but-dropping needs a second mechanism — a per-field recovery
-  path with its own defaults, running alongside the raise-and-skip every
-  other malformation already uses. Two mechanisms answering the same
-  question differently is precisely what `require_int` refused to grow.
-- The parse function can't tell which field the picker will end up
-  displaying without duplicating `prioritized_title`'s language-dependent
-  priority order into every provider, so "is this entry still usable?"
-  isn't even answerable here.
-
-So the rule stays the single one issue #83 set: an entry this codebase
+does** — it does not keep the usable half and drop the bad field.
+Dropping just a bad title leaves it `None`, which `match_candidates`
+turns into an empty candidate list: not merely badly labelled but
+unwinnable by construction, and indistinguishable from a working game
+until a round is wasted on it (a well-typed entry that's *legitimately*
+all-null is a separate case — issue #89, closed below by
+`has_answer_key`). Dropping a bad synonym list is worse, since that
+field is the answer key: a game silently missing the answers a player
+would actually type. And keeping-the-good-half needs a second recovery
+mechanism running alongside the raise-and-skip every other malformation
+uses — the exact duplication `require_int` refused to grow — while the
+parse function has no way to know which field the picker will end up
+displaying, so "is this entry still usable?" isn't even answerable
+here. So the rule stays the one issue #83 set: an entry this codebase
 can't read in full is an entry it skips, whichever field made it
 unreadable.
 
 Skips are logged at WARNING per `CLAUDE.md`'s table: a third party
-sending an entry we can't use is a recoverable anomaly (we recover, by
-dropping it), not something broken in this codebase — ERROR would
-overstate it, and DEBUG would hide a provider quietly changing its
-schema on us.
+sending an entry we can't use is a recoverable anomaly, not something
+broken in this codebase (ERROR would overstate it, DEBUG would hide a
+provider quietly changing its schema on us).
 
-**`has_answer_key` (below) closes issue #89**, the gap this docstring
-used to describe as still open: a well-typed entry whose title fields
-are all null/absent/empty is not malformed — every helper above
-correctly lets it through — but staging it hands `match_candidates()`
-(`services/game/state.py`) an empty list, which is unwinnable by
-construction and looks exactly like a working game until a round is
-wasted on it. That is the same bad outcome the malformed-field skip
-above exists to prevent, reached from the one legitimate path instead
-of a malformation, so it gets the same treatment: the parse function
-returns None and `parse_entry`/`parse_entries` drop it, quietly, the
-same as any other "this entry isn't wanted" decision (a specials
-season, a screenshot with no path) — see `parse_entry`'s docstring.
+**`has_answer_key` (below) closes issue #89:** a well-typed entry whose
+title fields are all null/absent/empty is not malformed — every helper
+above correctly lets it through — but staging it hands
+`match_candidates()` (`services/game/state.py`) an empty list, unwinnable
+by construction the same way a dropped-field entry is. So it gets the
+same treatment: the parse function returns None and
+`parse_entry`/`parse_entries` drop it, quietly, the same as any other
+"this entry isn't wanted" decision — see `parse_entry`'s docstring.
 """
 
 from collections.abc import Callable, Iterable
@@ -259,33 +229,24 @@ def optional_str_list(raw: dict, key: str) -> list[str]:
 def has_answer_key(titles: Iterable[str | None], synonyms: list[str]) -> bool:
     """Whether an entry has anything a `/guess` could ever match: at
     least one non-empty title variant, or at least one synonym. See the
-    module docstring's note on issue #89 for why this check exists and
-    why it belongs here rather than in `require_int`/`optional_str`/
-    `optional_str_list` above — nothing about a well-typed, entirely
-    empty entry is malformed, so those helpers correctly let it through;
-    this is a judgement about *usability*, made once every field is
-    already known-good.
+    module docstring's note on issue #89 for why this exists — it's a
+    judgement about *usability* on an already-well-typed entry, not
+    malformation, so it lives here rather than in
+    `require_int`/`optional_str`/`optional_str_list` above.
 
-    Deliberately `prioritized_title`-independent (`services/game/state.py`):
-    a parse function has no `lang` to call it with, and which single
-    variant the picker would end up *displaying* is beside the point —
-    the question here is whether *any* variant, in any language, has
-    content a guess could hit, not which one a button would show.
+    Deliberately `prioritized_title`-independent: a parse function has
+    no `lang` to call it with, and the question here is whether *any*
+    variant has content a guess could hit, not which one a button would
+    display.
 
-    **Design decision, recorded here because it has to be consistent
-    across all four providers:** an entry with no title in any variant
-    but *nonempty* synonyms passes. The module docstring's "?" framing
-    is about the picker's button label, but the actual defect issue #89
-    closes is an empty `match_candidates()` list — and synonyms populate
-    that list directly (see `match_candidates`), title or no title. A
-    game staged from such an entry shows a "?" button and a "?" title
-    right up until a correct guess, but a correct guess is still
-    possible, which is the one property this check exists to guarantee.
-    Skipping it anyway would discard a genuinely winnable pick for a
-    display nicety — the same over-correction issue #83 already rejected
-    on the malformed-entry side of this same file. TMDB never benefits
-    from this half of the rule (it has no synonyms field at all, see
-    tmdb.py's module docstring), so for TMDB this check is equivalent to
-    "skip when both titles are empty" — not a special case, just what the
-    general rule reduces to when `synonyms` is always `[]`."""
+    **Design decision, consistent across all four providers:** an entry
+    with no title but *nonempty* synonyms passes — the actual defect
+    #89 closes is an empty `match_candidates()` list, and synonyms
+    populate that list directly regardless of titles. Skipping such an
+    entry anyway would discard a genuinely winnable pick for a display
+    nicety, the same over-correction issue #83 already rejected. TMDB
+    has no synonyms field (see its module docstring), so for TMDB this
+    reduces to "skip when both titles are empty" — not a special case,
+    just what the general rule becomes when `synonyms` is always
+    `[]`."""
     return any(titles) or any(synonyms)
