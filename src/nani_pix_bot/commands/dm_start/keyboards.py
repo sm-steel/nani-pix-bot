@@ -35,7 +35,7 @@ from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
-RETRY_CALLBACK_DATA = "anilist_retry"
+SEARCH_RETRY_CALLBACK_DATA = "search_retry"
 # Derived from Provider, not hand-spelled — app.py's routing pattern is built
 # the same way, and the two used to be independent copies of one wire format.
 _ANILIST_PICK_PREFIX = f"{Provider.ANILIST}_pick:"
@@ -118,7 +118,7 @@ def _retry_data_for(pick_prefix: str) -> str:
     rest of the screenshot sub-flow's callback data; they're read when
     this runs, not at import."""
     if not pick_prefix.startswith(SCREENSHOT_SEARCH_PICK_PREFIX):
-        return RETRY_CALLBACK_DATA
+        return SEARCH_RETRY_CALLBACK_DATA
     provider = pick_prefix.removeprefix(SCREENSHOT_SEARCH_PICK_PREFIX).rstrip(":")
     return f"{SCREENSHOT_SEARCH_AGAIN_PREFIX}{provider}"
 

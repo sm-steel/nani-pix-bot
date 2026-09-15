@@ -22,7 +22,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _stored_provider,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
-    RETRY_CALLBACK_DATA,
+    SEARCH_RETRY_CALLBACK_DATA,
     anilist_results_keyboard,
     jikan_results_keyboard,
     parse_method_callback_data,
@@ -298,7 +298,7 @@ async def _resolve_picked_result(
     for every already-handled outcome: retry tapped, unparseable
     callback data, the search service erroring, or the id no longer
     existing."""
-    if query.data == RETRY_CALLBACK_DATA:
+    if query.data == SEARCH_RETRY_CALLBACK_DATA:
         await query.edit_message_text(i18n.t("dm_start.retry", lang))
         return None
 

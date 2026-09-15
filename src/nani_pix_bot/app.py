@@ -32,8 +32,8 @@ from nani_pix_bot.commands import (
     testpixels,  # TEMPORARY — see commands/testpixels.py
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
-    RETRY_CALLBACK_DATA,
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
+    SEARCH_RETRY_CALLBACK_DATA,
 )
 from nani_pix_bot.commands.helpers import player_tracking
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
@@ -134,7 +134,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(
         CallbackQueryHandler(
             dm_start.pick_callback_handler,
-            pattern=rf"^({re.escape(RETRY_CALLBACK_DATA)}|{_PICK_PREFIX_PATTERN})",
+            pattern=rf"^({re.escape(SEARCH_RETRY_CALLBACK_DATA)}|{_PICK_PREFIX_PATTERN})",
         )
     )
     application.add_handler(

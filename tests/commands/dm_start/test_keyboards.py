@@ -9,8 +9,8 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
     PREVIEW_RESEARCH_CALLBACK_DATA,
-    RETRY_CALLBACK_DATA,
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
+    SEARCH_RETRY_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
     TMDB_METHOD_CALLBACK_DATA,
     GalleryPage,
@@ -102,7 +102,7 @@ def test_keyboard_has_one_button_per_result_plus_a_retry_button() -> None:
     markup = anilist_results_keyboard([_FRIEREN, _NO_YEAR], lang="en")
 
     assert len(markup.inline_keyboard) == 3
-    assert markup.inline_keyboard[-1][0].callback_data == RETRY_CALLBACK_DATA
+    assert markup.inline_keyboard[-1][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
 
 
 def test_keyboard_button_label_prefers_english_title_and_shows_year() -> None:
@@ -160,14 +160,14 @@ def test_every_provider_has_a_pick_prefix_in_the_expected_wire_format() -> None:
 
 
 def test_parse_pick_callback_data_returns_none_for_retry() -> None:
-    assert parse_pick_callback_data(RETRY_CALLBACK_DATA) is None
+    assert parse_pick_callback_data(SEARCH_RETRY_CALLBACK_DATA) is None
 
 
 def test_shikimori_keyboard_has_one_button_per_result_plus_a_retry_button() -> None:
     markup = shikimori_results_keyboard([_FRIEREN_SHIKIMORI, _NO_RUSSIAN_TITLE], lang="en")
 
     assert len(markup.inline_keyboard) == 3
-    assert markup.inline_keyboard[-1][0].callback_data == RETRY_CALLBACK_DATA
+    assert markup.inline_keyboard[-1][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
 
 
 def test_shikimori_keyboard_button_label_prefers_the_russian_title_when_lang_is_ru() -> None:
@@ -215,7 +215,7 @@ def test_jikan_keyboard_has_one_button_per_result_plus_a_retry_button() -> None:
     markup = jikan_results_keyboard([_FRIEREN_JIKAN, _JIKAN_NO_ENGLISH_TITLE], lang="en")
 
     assert len(markup.inline_keyboard) == 3
-    assert markup.inline_keyboard[-1][0].callback_data == RETRY_CALLBACK_DATA
+    assert markup.inline_keyboard[-1][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
 
 
 def test_jikan_keyboard_button_label_prefers_english_title() -> None:
@@ -242,7 +242,7 @@ def test_tmdb_keyboard_has_one_button_per_result_plus_a_retry_button() -> None:
     markup = tmdb_results_keyboard([_FRIEREN_TMDB, _TMDB_NO_ENGLISH_TITLE], lang="en")
 
     assert len(markup.inline_keyboard) == 3
-    assert markup.inline_keyboard[-1][0].callback_data == RETRY_CALLBACK_DATA
+    assert markup.inline_keyboard[-1][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
 
 
 def test_tmdb_keyboard_button_label_prefers_english_title() -> None:
@@ -301,7 +301,7 @@ def test_identification_keyboard_still_retries_into_the_identification_flow() ->
     pick_callback_handler's own retry branch."""
     markup = shikimori_results_keyboard([_FRIEREN_SHIKIMORI], lang="en")
 
-    assert markup.inline_keyboard[-1][0].callback_data == RETRY_CALLBACK_DATA
+    assert markup.inline_keyboard[-1][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
 
 
 def test_jikan_keyboard_accepts_a_custom_pick_prefix() -> None:
@@ -572,7 +572,7 @@ def test_parse_method_callback_data_round_trips() -> None:
     assert parse_method_callback_data(JIKAN_METHOD_CALLBACK_DATA) == "jikan"
     assert parse_method_callback_data(TMDB_METHOD_CALLBACK_DATA) == "tmdb"
     assert parse_method_callback_data(MANUAL_METHOD_CALLBACK_DATA) == "manual"
-    assert parse_method_callback_data(RETRY_CALLBACK_DATA) is None
+    assert parse_method_callback_data(SEARCH_RETRY_CALLBACK_DATA) is None
 
 
 def test_preview_keyboard_has_the_four_expected_buttons() -> None:
