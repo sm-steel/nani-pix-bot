@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import httpx
 from loguru import logger
 
+from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, parsing, rest
 
 JIKAN_BASE_URL = "https://api.jikan.moe/v4/anime"
@@ -28,7 +29,7 @@ SCREENSHOT_FETCH_LIMIT = 20
 # shared, community-run resource rather than an anonymous default.
 _REQUEST_HEADERS = {"User-Agent": "nani-pix-bot (github.com/sm-steel/nani-pix-bot)"}
 
-_API = rest.RestApi(name="Jikan", headers=_REQUEST_HEADERS)
+_API = rest.RestApi(name=Provider.JIKAN.display_name, headers=_REQUEST_HEADERS)
 
 
 @dataclass(frozen=True)

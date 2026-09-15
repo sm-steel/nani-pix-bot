@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import httpx
 from loguru import logger
 
+from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, parsing, rest
 
 # Shikimori's older shikimori.one domain now permanently 301-redirects
@@ -39,7 +40,7 @@ SCREENSHOT_FETCH_LIMIT = 20
 # Shikimori research spike.
 _REQUEST_HEADERS = {"User-Agent": "nani-pix-bot (github.com/sm-steel/nani-pix-bot)"}
 
-_API = rest.RestApi(name="Shikimori", headers=_REQUEST_HEADERS)
+_API = rest.RestApi(name=Provider.SHIKIMORI.display_name, headers=_REQUEST_HEADERS)
 
 
 @dataclass(frozen=True)
