@@ -1141,11 +1141,6 @@ def test_a_successful_row_still_writes_under_the_broad_catch(
 # issue #87's folded-in second item -- the padded-scheme hint.
 # --------------------------------------------------------------------
 
-# Spelled out here rather than read off the module, so the end-to-end
-# assertion below fails if the migration quietly redefines the existing
-# constant to the padded wording instead of adding a distinct one.
-_PROXY_SHAPE_HTTP_HINT = "TELEGRAM_PROXY_URL's scheme is http:// or https://"
-
 
 def test_a_padded_scheme_is_reported_as_padding_not_as_a_scheme() -> None:
     """_describe_proxy_shape strips and casefolds before matching, so
@@ -1221,5 +1216,12 @@ def test_a_padded_scheme_warning_names_the_padding(
     output = capsys.readouterr().out
     assert "WARNING" in output
     assert "whitespace" in output
-    assert _PROXY_SHAPE_HTTP_HINT not in output
+    # Read off the module rather than duplicated as a literal here: a
+    # copy would go stale the moment _PROXY_SHAPE_HTTP is reworded, and
+    # a negative assertion against a stale literal is vacuously true --
+    # it would retire itself silently instead of reddening. The mistake
+    # a duplicate was meant to catch (redefining the existing constant
+    # instead of adding a sixth one) is already caught by the
+    # len(set(_PROXY_SHAPE_HINTS)) == 6 assertion above.
+    assert module._PROXY_SHAPE_HTTP not in output
     _assert_absent(output, *_FAKE_AUTHORITY_COMPONENTS)

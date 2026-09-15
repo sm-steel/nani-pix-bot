@@ -125,6 +125,23 @@ _IMAGE_COLUMN_LENGTH = 2**32 - 1
 # behaviour is still not to wedge the deploy; the bug gets fixed from
 # the log instead.
 #
+# The sharpest version of that cost is at the client-construction site,
+# and it is worth stating plainly rather than leaving at "a bug gets
+# absorbed". TypeError was NOT in the old tuple there, so an httpx API
+# break -- the proxies= to proxy= keyword rename really did happen,
+# across httpx 0.26 and 0.28 -- used to crash this migration loudly and
+# now degrades to a single warning and a wholesale-skipped backfill. Two
+# lines after the backfill returns, upgrade() runs
+# op.drop_column("games", "original_file_id"), which destroys the very
+# file_ids the backfill would have needed. So: the bug gets fixed from
+# the log; the rows do not come back. This is bounded (it is one
+# best-effort catch-up for games already in flight at one migration, not
+# an ongoing code path) and it is pre-existing rather than introduced
+# here (any unparseable TELEGRAM_PROXY_URL already skipped the whole
+# backfill the same way), and it still does not outweigh wedging every
+# future deploy. But it is the real shape of what widening buys and what
+# it costs, and a later reader deserves it unvarnished.
+#
 # WHAT IS DELIBERATELY STILL UNGUARDED, unchanged by any of this: the
 # op.add_column/op.drop_column statements in upgrade(), and the
 # bind.execute() UPDATE in the loop below, all sit outside every try. A
