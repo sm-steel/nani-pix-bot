@@ -31,6 +31,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _SERVICE_DISPLAY_NAMES,
     _client_for_source,
     _log_stale_tap,
+    _screenshot_capable_providers,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     GalleryPage,
@@ -251,20 +252,6 @@ async def gallery_page_or_fallback(
     always the same constant."""
     fallback = await _show_gallery_page(context, target, urls, lang)
     return fallback if fallback is not None else "dm_start.screenshot_source_picked"
-
-
-def _screenshot_capable_providers(game) -> list[str]:
-    """All 3 screenshot-capable providers, same-provider-as-identification
-    first when it's one of them (so the common case — screenshot source
-    matches identification source — needs no cross-provider search at
-    all). Every provider is offered regardless of whether the game
-    already has an id for it — tapping one it doesn't triggers
-    cross-provider resolution (see _resolve_screenshot_source)."""
-    candidates = ["shikimori", "jikan", "tmdb"]
-    if game.source in candidates:
-        candidates.remove(game.source)
-        candidates.insert(0, game.source)
-    return candidates
 
 
 async def start_screenshot_picker(context: ContextTypes.DEFAULT_TYPE, game, lang: str) -> None:

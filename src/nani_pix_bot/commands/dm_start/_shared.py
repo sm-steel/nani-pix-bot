@@ -5,11 +5,15 @@ from typing import cast
 
 import httpx
 from loguru import logger
-from telegram import InputMediaPhoto
+from telegram import InlineKeyboardMarkup, InputMediaPhoto
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start.keyboards import method_selection_keyboard, preview_keyboard
+from nani_pix_bot.commands.dm_start.keyboards import (
+    method_selection_keyboard,
+    preview_keyboard,
+    screenshot_source_keyboard,
+)
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -132,6 +136,85 @@ def _method_prompt_key(*, prefer_shikimori: bool) -> str:
     )
 
 
+def _screenshot_capable_providers(game: Game) -> list[str]:
+    """All 3 screenshot-capable providers, same-provider-as-identification
+    first when it's one of them (so the common case — screenshot source
+    matches identification source — needs no cross-provider search at
+    all). Every provider is offered regardless of whether the game
+    already has an id for it — tapping one it doesn't triggers
+    cross-provider resolution (see screenshots.py's
+    _resolve_screenshot_source).
+
+    Lives here, not in screenshots.py where its callers are, because
+    `_current_setup_screen` below needs it too and screenshots.py
+    already imports this module — the other direction would be a cycle.
+    It is pure `game.source` arithmetic either way, with no dependency
+    on the screenshot sub-flow around it."""
+    candidates = ["shikimori", "jikan", "tmdb"]
+    if game.source in candidates:
+        candidates.remove(game.source)
+        candidates.insert(0, game.source)
+    return candidates
+
+
+def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
+    """The screen `game`'s own starter is already looking at, as the i18n
+    key and keyboard to re-send it with — see `_resume_setup`.
+
+    Every step is covered, and each returns the same prompt/keyboard
+    pair the step's own handler sends, so re-showing one can never
+    invent a screen the flow doesn't otherwise have. The two
+    input-prompt steps have no keyboard in the flow either: their route
+    forward is the photo or text being asked for, which the prompt
+    itself states."""
+    if game.setup_step == SetupStep.PICKING_METHOD:
+        prefer_shikimori = _prefer_shikimori(lang)
+        return (
+            _method_prompt_key(prefer_shikimori=prefer_shikimori),
+            method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
+        )
+    if game.setup_step == SetupStep.PICKING_SCREENSHOT:
+        return (
+            "dm_start.pick_screenshot_source_prompt",
+            screenshot_source_keyboard(_screenshot_capable_providers(game), lang),
+        )
+    if game.setup_step == SetupStep.CONFIRMING:
+        return "dm_start.preview_confirm_prompt", preview_keyboard(lang)
+    if game.setup_step == SetupStep.AWAITING_PHOTO_CHANGE:
+        return "dm_start.ask_new_photo", None
+    return "dm_start.ask_extra_synonym", None  # AWAITING_SYNONYM, the last member
+
+
+async def _resume_setup(message, game: Game, lang: str) -> None:
+    """ "Start a new game" from someone whose own setup is still open —
+    most often "I'm stuck, let me start over", which is exactly the
+    population the "never strand the starter" work was for.
+
+    `can_start()` answers False for them, because it is False whenever
+    *any* SETUP game exists, and the reply it drives (`not_your_turn`)
+    is then untrue in the one way that helps least: it is their turn,
+    they are mid-way through taking it. So put them back on the step
+    they are actually on instead. Nothing is written — no status, no
+    step, no picker column (#69's invariant is about screen
+    *transitions*; this re-sends a screen the game is already on) — and
+    the row keeps the setup-abandon timer it was created with, so
+    nothing is rescheduled either.
+
+    Genuinely starting over is still `/stop`, unchanged; this only stops
+    the bot from denying the setup exists. Saying so in the reply needs
+    a string the locale files don't have yet (issue #79 owns them), so
+    the screen has to carry the message on its own for now."""
+    key, keyboard = _current_setup_screen(game, lang)
+    logger.warning(
+        "Starter {} asked for a new game while their own setup (game {}) is still at {} — "
+        "re-showing that step instead of refusing them the turn",
+        game.starter_id,
+        game.id,
+        game.setup_step.value,
+    )
+    await message.reply_text(i18n.t(key, lang), reply_markup=keyboard)
+
+
 async def _reply_service_down(send, lang: str, source: str) -> None:
     """Shared failure path for both the search step and the pick step:
     tell the starter the chosen service looks unreachable and hand them
@@ -151,7 +234,14 @@ async def _start_new_game(
     shared by both entry points into the setup flow: `intake.py`'s
     `photo_handler` (real image bytes already in hand) and `newgame.py`'s
     `/newgame` command (no image yet — filled in later, either by
-    picking a screenshot or by falling back to an upload)."""
+    picking a screenshot or by falling back to an upload).
+
+    Unless the caller already has a setup of their own open, in which
+    case it re-shows that game's current step and creates nothing (see
+    `_resume_setup`). Both entry points get that for free by sharing
+    this helper: a second `/newgame`, and a photo sent on a step that
+    doesn't take one (intake.py handles the two that do), are the same
+    "my setup is already open" mistake arriving by different routes."""
     group_chat_id = context.bot_data["group_chat_id"]
     if not await is_group_member(context.bot, group_chat_id, user.id):
         with session_scope(session_factory) as session:
@@ -167,6 +257,13 @@ async def _start_new_game(
             await message.reply_text(i18n.t("dm_start.games_disabled", lang))
             return
         players.get_or_create_player(session, user.id, username=user.username)
+        # Whose SETUP game is in the way has to be settled *before*
+        # can_start(), which can't tell: it refuses on any SETUP game at
+        # all, the caller's own included (see _resume_setup).
+        own_setup = game_service.get_setup_game_for_starter(session, user.id)
+        if own_setup is not None:
+            await _resume_setup(message, own_setup, lang)
+            return
         if not game_service.can_start(session, user.id):
             logger.warning("{} tried to start a game out of turn", user.id)
             await message.reply_text(i18n.t("dm_start.not_your_turn", lang))

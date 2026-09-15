@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start import intake, preview
 from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
+    PREVIEW_CONFIRM_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
 )
 from nani_pix_bot.jobs import timers as timeout_module
@@ -296,6 +297,34 @@ async def test_photo_handler_accepts_an_upload_while_picking_a_screenshot(
         assert fetched.setup_step == SetupStep.CONFIRMING
     context.bot.send_media_group.assert_awaited_once()  # the preview album
     update.message.reply_text.assert_not_awaited()  # no "not your turn"
+
+
+async def test_photo_handler_reshows_the_preview_on_a_step_that_takes_no_photo(
+    session_factory,
+) -> None:
+    """A photo at CONFIRMING isn't a replacement (that's what "Change
+    image" is for), so it falls through to _start_new_game — which used
+    to answer the starter's own setup with "it's not your turn". The
+    same non-sequitur as the PICKING_SCREENSHOT case above, from the
+    other side: here the answer is the screen they're on, not the
+    photo."""
+    _staged_setup_game(session_factory)  # parked on CONFIRMING
+
+    update = _make_update(user_id=1, photo_file_id="unexpected-photo")
+    context = _make_context(session_factory)
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        assert session.query(Game).count() == 1
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.CONFIRMING
+        assert fetched.original_image == b"file123"  # the staged image is kept
+    reply_text = update.message.reply_text.await_args.args[0]
+    assert "turn" not in reply_text.lower()
+    _, kwargs = update.message.reply_text.await_args
+    callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert PREVIEW_CONFIRM_CALLBACK_DATA in callbacks
 
 
 async def test_photo_handler_upload_keeps_the_identification_provider_id(
