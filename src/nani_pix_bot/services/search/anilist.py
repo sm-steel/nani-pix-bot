@@ -5,13 +5,12 @@ title/synonyms.
 """
 
 from dataclasses import dataclass
-from typing import Any
 
 import httpx
 from loguru import logger
 
 from nani_pix_bot.models.enums import Provider
-from nani_pix_bot.services.search import cache, http_retry, parsing
+from nani_pix_bot.services.search import cache, graphql, parsing
 
 ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
 SEARCH_RESULT_LIMIT = 5
@@ -28,6 +27,11 @@ _API_NAME = Provider.ANILIST.display_name
 # source IP/proxy — a browser-like Referer is enough, discovered against
 # the real API after deploy.
 _REQUEST_HEADERS = {"Referer": "https://anilist.co/"}
+
+# This module's identity for graphql.py's shared request/error-handling
+# plumbing (see graphql.py — anilist.py is its only caller today;
+# shikimori.py's GraphQL migration, issue #104, will be its second).
+_API = graphql.GraphQLApi(name=_API_NAME, url=ANILIST_GRAPHQL_URL, headers=_REQUEST_HEADERS)
 
 _SEARCH_QUERY = """
 query ($search: String, $perPage: Int) {
@@ -72,8 +76,8 @@ async def search(
     cache.py) so a starter repeating the same query doesn't re-hit the
     API each time."""
     variables = {"search": query, "perPage": limit}
-    data = await _request(client, query=_SEARCH_QUERY, variables=variables)
-    page = _require_object(data.get("Page"), label="Page", variables=variables)
+    data = await graphql.request(_API, client, query=_SEARCH_QUERY, variables=variables)
+    page = graphql.require_object(_API, data.get("Page"), label="Page", variables=variables)
     results = parsing.parse_entries(_API_NAME, page.get("media") or [], _parse_result)
     logger.debug("AniList search {!r} returned {} result(s)", query, len(results))
     return results
@@ -88,110 +92,19 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
     anilist_id itself surviving in the button's callback_data across a
     restart, not about this in-process cache, which is wiped on every
     restart same as everything else in it)."""
-    data = await _request(client, query=_BY_ID_QUERY, variables={"id": anilist_id})
+    data = await graphql.request(_API, client, query=_BY_ID_QUERY, variables={"id": anilist_id})
     media = data.get("Media")
     if media is None:
         logger.debug("AniList id {} no longer found", anilist_id)
         return None
     # `Media` sits in the same nested position `Page` does, but it is the
     # entry itself rather than a container of them, so it deliberately
-    # does *not* go through `_require_object`: an entry that arrives but
-    # can't be parsed — scalar, missing `id`, whatever — lands on the same
-    # None as a missing one, because there's nothing to stage either way
-    # and "this pick is gone" is what the starter needs to hear (#83).
+    # does *not* go through `graphql.require_object`: an entry that
+    # arrives but can't be parsed — scalar, missing `id`, whatever — lands
+    # on the same None as a missing one, because there's nothing to stage
+    # either way and "this pick is gone" is what the starter needs to
+    # hear (#83).
     return parsing.parse_entry(_API_NAME, media, _parse_result)
-
-
-async def _request(client: httpx.AsyncClient, *, query: str, variables: dict) -> dict:
-    """POST the GraphQL document and hand back its `data` object.
-
-    AniList sits behind Cloudflare, which answers with an HTML
-    interstitial often enough that a 200 is no guarantee of a JSON
-    object. A body that doesn't decode, and one that decodes to anything
-    other than an object (`null` decodes perfectly well and would reach
-    the callers below as an `AttributeError`), both become a
-    `RuntimeError` — which is in the handlers' `_SEARCH_SERVICE_ERRORS`
-    tuple, unlike what they'd otherwise raise (issue #75).
-
-    GraphQL reports failures in an `errors` array rather than in the
-    status code, so those are never dropped silently: they're always
-    logged at ERROR, and when nothing usable came back with them they
-    raise too. Falling back to an empty object there would have told the
-    starter "no results found" / "your pick is gone" — both flat lies
-    about a search that never ran. A null `data` with no `errors`
-    alongside it is just a missing container key, and does yield an empty
-    object.
-
-    The `data` object itself gets the same treatment as the body around
-    it, which is what makes the `-> dict` above true rather than
-    aspirational: `return data or {}` handed a `{"data": 5}` body's
-    scalar straight to the callers, where it detonated on their first
-    `.get` — before the container they were actually reading was ever
-    looked at (issue #85)."""
-
-    async def make_request() -> httpx.Response:
-        return await client.post(
-            ANILIST_GRAPHQL_URL,
-            json={"query": query, "variables": variables},
-            headers=_REQUEST_HEADERS,
-        )
-
-    response = await http_retry.request_with_retry(
-        make_request, service_name=_API_NAME, context=f"variables {variables!r}"
-    )
-    try:
-        body = response.json()
-    except ValueError as exc:
-        msg = f"AniList returned a non-JSON body for variables {variables!r}"
-        logger.error(msg)
-        raise RuntimeError(msg) from exc
-    if not isinstance(body, dict):
-        msg = (
-            f"AniList answered 200 with a {type(body).__name__} body "
-            f"for variables {variables!r}, expected an object"
-        )
-        logger.error(msg)
-        raise RuntimeError(msg)
-
-    data = body.get("data")
-    if errors := body.get("errors"):
-        msg = f"AniList reported GraphQL error(s) for variables {variables!r}: {errors!r}"
-        logger.error(msg)
-        if not data:
-            raise RuntimeError(msg)
-    return _require_object(data, label="data", variables=variables)
-
-
-def _require_object(value: Any, *, label: str, variables: dict) -> dict:
-    """`value` as a JSON object, `{}` when it simply isn't there, and a
-    `RuntimeError` when it is there but isn't one.
-
-    AniList is the only provider reading a container *nested inside* the
-    body, so `rest.get_json`'s `expect=` — which the other three lean on —
-    never covers it: GraphQL has no by-id URL and no 404 semantics, so
-    `anilist.py` shares none of that plumbing (see `rest.py`'s docstring),
-    and that asymmetry is exactly where issue #85's leak lived. Both
-    nested objects this module reads, `data` and the `Page` inside it,
-    come back through here, so no caller is left holding an unvalidated
-    container: `parsing.py`'s rule is that a guard's boundary is the
-    return, and a `dict` return is the boundary being honoured.
-
-    Absent and malformed stay two different answers, the same split
-    `require_int` draws: a null container key is an empty result the
-    pickers already render as "nothing found", while a number where an
-    object belongs is a provider we can't read at all — `RuntimeError`,
-    which is in `_SEARCH_SERVICE_ERRORS`, unlike the `AttributeError`
-    the unguarded `.get` used to raise."""
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        msg = (
-            f"AniList answered 200 with a {type(value).__name__} in {label!r} "
-            f"for variables {variables!r}, expected an object"
-        )
-        logger.error(msg)
-        raise RuntimeError(msg)
-    return value
 
 
 def _parse_result(raw: dict) -> AniListResult:
