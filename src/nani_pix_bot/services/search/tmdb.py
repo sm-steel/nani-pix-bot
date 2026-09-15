@@ -118,11 +118,15 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
     second episode 500s still issued all twenty requests, eleven of them
     completing after the caller had already raised and replied. The
     serial loop this replaced at least stopped asking. A TaskGroup
-    cancels the rest — including the ones still queued on the semaphore,
-    which never issue a request at all — which matters precisely because
-    every one of them contends with Telegram's own polling through the
-    single `amsterdam` proxy, on the exact path where the remote is
-    already misbehaving."""
+    cancels the rest, so at most one queued episode per failing request
+    slips through before the abort — each failing task frees its own
+    semaphore slot while unwinding, and the episode waiting on that slot
+    resumes before the group's cancellation reaches it. Bounded by the
+    number of failures, then, not a flat +1, and never worse than gather
+    was. What it buys is the requests that are never issued at all, which
+    matters precisely because every one of them contends with Telegram's
+    own polling through the single `amsterdam` proxy, on the exact path
+    where the remote is already misbehaving."""
     show = await rest.get_json(_API, client, f"{TMDB_BASE_URL}/tv/{tmdb_id}", {})
     targets = _episode_targets(show)
     if not targets:
@@ -153,14 +157,26 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
         # `_SEARCH_SERVICE_ERRORS` (httpx.HTTPError, RuntimeError) matches
         # the provider's own exception, not a group wrapping it — leaving
         # it wrapped would strand the starter on a dead keyboard, the same
-        # outcome issue #75 closed. Siblings that lost the race to fail
-        # are reported in the log line rather than silently dropped.
+        # outcome issue #75 closed.
+        #
+        # Every cause is logged, not just the one re-raised: `from None`
+        # suppresses the group as context, so the caller's
+        # `logger.exception` renders only the first traceback and a
+        # mixed-cause outage (a timeout, a 500 and a proxy error page at
+        # once) would otherwise show an operator one of three.
+        #
+        # This unwrap is single-level, which holds only while nothing
+        # under `rest.get_json` can raise a group of its own. Putting a
+        # nested TaskGroup or an anyio-based client inside a provider call
+        # would make `exceptions[0]` itself a group, and hand the caller
+        # something `_SEARCH_SERVICE_ERRORS` doesn't match — #75's door,
+        # reopened quietly. Flatten here if that day comes.
         logger.warning(
-            "TMDB id {} still fetch abandoned: {} of {} episode request(s) failed, first was {!r}",
+            "TMDB id {} still fetch abandoned: {} of {} episode request(s) failed: {}",
             tmdb_id,
             len(failures.exceptions),
             len(targets),
-            failures.exceptions[0],
+            [repr(failure) for failure in failures.exceptions],
         )
         raise failures.exceptions[0] from None
 
