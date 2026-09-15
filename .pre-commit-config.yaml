@@ -35,7 +35,7 @@ repos:
 
       - id: qlty-smells
         name: qlty smells (complexity + duplication + secrets)
-        entry: qlty smells --all --no-snippets
+        entry: uv run python scripts/qlty_smells_gate.py
         language: system
         pass_filenames: false
         always_run: true
