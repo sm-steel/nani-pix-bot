@@ -8,6 +8,7 @@
   "correct.not_starter": "Only the person who started this round can use /correct.",
   "correct.no_guesses_yet": "Nobody has guessed yet — /correct is for overriding a guess the matcher missed, not for skipping straight to the end.",
   "correct.unknown_username": "I don't know anyone called @{username} yet — they need to send me a direct message first: @{bot_username}",
+  "correct.unknown_username_no_handle": "I don't know anyone called @{username} yet — they need to send me a direct message first.",
   "correct.caption": "🎉 Correct! @{winner} got it — it was {title}. Your turn to start the next game!",
 
   "dm_start.not_a_member": "You need to be a member of the group to start a game.",
@@ -45,10 +46,13 @@
   "dm_start.posted": "Posted! Good luck to everyone guessing.",
   "dm_start.game_started_caption": "🎮 {starter} started a new round! Guess with /guess <title> in this topic.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
   "dm_start.setup_started_group_notice": "🎬 {starter} is preparing a new game — hang tight!",
-  "dm_start.setup_abandoned": "⌛ Setup timed out without finishing — it's open to anyone now! DM me a screenshot to begin.",
+  "dm_start.setup_already_open": "You're already setting up a game — send /stop if you'd rather abandon it and start over.",
+  "dm_start.setup_gone": "That round isn't being set up anymore — if it's your turn, DM me a screenshot or send /newgame to start a fresh one.",
+  "dm_start.screenshot_gone": "That screenshot isn't in the list anymore — pick another one above.",
+  "dm_start.setup_abandoned": "⌛ Setup timed out without finishing — it's open to anyone now! DM me a screenshot to begin, or send /newgame to pick one instead.",
 
   "guess.usage": "Usage: /guess <anime title>",
-  "guess.no_game": "No game is currently running. DM me a screenshot to start one!",
+  "guess.no_game": "No game is currently running. DM me a screenshot to start one, or send /newgame to pick one instead!",
   "guess.starter_cannot_guess": "You started this round — you already know the answer, so you can't guess on it!",
   "guess.won_caption": "🎉 {winner} got it! It was {title}. Your turn to start the next game!",
   "guess.unsolved_caption": "Nobody guessed it. It was {title}.",
@@ -64,16 +68,17 @@
   "skip.not_your_turn": "It's not your turn to skip.",
   "skip.opened": "Turn opened up — anyone can start the next game!",
   "skip.unknown_username": "I don't know anyone called @{username} yet — they need to send me a direct message first: @{bot_username}",
+  "skip.unknown_username_no_handle": "I don't know anyone called @{username} yet — they need to send me a direct message first.",
   "skip.passed": "Turn passed to @{username}.",
 
   "timeout.caption": "⏰ Nobody guessed it in time. It was {title}.",
 
-  "turn.reminder_dm": "⏰ Reminder: it's your turn to start a new game! DM me a screenshot whenever you're ready.",
-  "turn.reminder_group_fallback": "⏰ @{username}, it's your turn to start a new game — DM me a screenshot! (I couldn't reach you privately — message me first so reminders can find you next time.)",
+  "turn.reminder_dm": "⏰ Reminder: it's your turn to start a new game! DM me a screenshot whenever you're ready, or send /newgame to pick one instead.",
+  "turn.reminder_group_fallback": "⏰ @{username}, it's your turn to start a new game — DM me a screenshot, or send me /newgame to pick one instead! (I couldn't reach you privately — message me first so reminders can find you next time.)",
   "turn.reminder_group_fallback_unknown": "⏰ It's someone's turn to start a new game, but I can't reach them privately — /skip to open it up to anyone!",
-  "turn.expired": "⌛ Nobody started a new game in time — it's open to anyone now! DM me a screenshot to begin.",
+  "turn.expired": "⌛ Nobody started a new game in time — it's open to anyone now! DM me a screenshot to begin, or send /newgame to pick one instead.",
 
-  "onboarding.start": "👋 Welcome! I run an anime-screenshot guessing game in the group.\n\nWhen it's your turn, DM me a screenshot here and I'll walk you through picking the anime — or send /newgame if you'd rather skip the upload and pick a screenshot from AniList/Shikimori/Jikan/TMDB instead. Either way, I'll post a heavily pixelated version to the group for everyone to guess.\n\nUse /help anytime for the full rundown.",
+  "onboarding.start": "👋 Welcome! I run an anime-screenshot guessing game in the group.\n\nWhen it's your turn, DM me a screenshot here and I'll walk you through picking the anime — or send /newgame if you'd rather skip the upload and pick a screenshot from Shikimori/Jikan/TMDB instead. Either way, I'll post a heavily pixelated version to the group for everyone to guess.\n\nUse /help anytime for the full rundown.",
   "onboarding.help": "How to play:\n1. When it's your turn, DM me a screenshot here — or send /newgame to search without one.\n2. I'll ask you to search for the anime and pick the right result (or, from /newgame, pick a screenshot for it too).\n3. I'll post a pixelated version to the group's game topic.\n4. Everyone guesses with /guess <title> in that topic — it starts unforgiving (one wrong guess reveals more!) and gets more forgiving each stage.\n5. Whoever guesses right wins, and it's their turn next!\n\nIn the group topic:\n/guess <title> — make a guess\n/correct @username — (starter only) force a correct guess if the bot missed it\n/skip [@username] — pass your turn, open or to someone specific\n/leaderboard — see top winners\n\nIn DM:\n/start — this intro\n/help — this message\n/newgame — start a round without uploading a screenshot\n/language — (group admins) switch the bot's language\n/stop — (starter or admins) stop the current game, optionally revealing the answer\n/stageconfig, /setstageconfig, /setstage — (admins) view/tune pixelation stages\n/setgamesenabled — (admins) pause or resume starting new games",
   "onboarding.help_dm_failed": "Please message me privately first — @{bot_username} — then try /help again.",
 

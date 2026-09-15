@@ -30,7 +30,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
     _SERVICE_DISPLAY_NAMES,
     _client_for_source,
-    _log_stale_tap,
+    _reject_stale_tap,
     _screenshot_capable_providers,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
@@ -351,7 +351,6 @@ async def screenshot_upload_instead_callback_handler(
     query = update.callback_query
     if query is None:
         return
-    await query.answer()
     user = query.from_user
     if user is None:
         return
@@ -361,8 +360,12 @@ async def screenshot_upload_instead_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
-            _log_stale_tap(query.data, user.id)
+            await _reject_stale_tap(query, user.id, lang)
             return
+        # Acknowledged here rather than above the lookup: a query id can
+        # only be answered once, and the stale branch needs that answer
+        # to carry its alert (see _reject_stale_tap).
+        await query.answer()
         game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
         await query.edit_message_text(i18n.t("dm_start.ask_new_photo", lang))
 
@@ -376,7 +379,6 @@ async def screenshot_source_callback_handler(
     query = update.callback_query
     if query is None or query.data is None:
         return
-    await query.answer()
     user = query.from_user
     if user is None:
         return
@@ -386,8 +388,17 @@ async def screenshot_source_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
-            _log_stale_tap(query.data, user.id)
+            await _reject_stale_tap(query, user.id, lang)
             return
+        # One answer per query id, so this waits until the stale branch
+        # above has had its chance at it (see _reject_stale_tap). Still
+        # ahead of the provider round-trip below, so the spinner clears
+        # at the same moment it always did for a tap that works.
+        # Inside the open write transaction, like every other await in
+        # this block — see issue #82, which is filed against exactly
+        # that shape here; this is one more call for its sweep to move,
+        # not a new pattern.
+        await query.answer()
 
         provider = parse_screenshot_source_callback_data(query.data)
         if provider is None:

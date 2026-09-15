@@ -201,7 +201,8 @@ async def test_screenshot_gallery_callback_handler_pick_is_a_noop_for_a_stale_in
     screen alone — distinct from the fetch itself failing/emptying above,
     and safe to do because the gallery message that was tapped keeps its
     own keyboard. Leaving no *trace* is the part that isn't safe: it is a
-    rejected action, so it is logged as one."""
+    rejected action, so it is logged as one (and, since #79, said out
+    loud in a toast — asserted separately below)."""
     monkeypatch.setattr(
         shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
     )
@@ -526,7 +527,7 @@ async def test_the_two_stale_row_sites_in_one_handler_stay_distinguishable(
     assert len(warnings) == 2
     assert warnings[0] != warnings[1]
     # Not the helper's own frame, which is what made them identical.
-    assert not any("_log_stale_tap" in line for line in warnings)
+    assert not any("_reject_stale_tap" in line for line in warnings)
     assert all("screenshot_search_pick_callback_handler" in line for line in warnings)
 
 
@@ -603,6 +604,9 @@ async def test_screenshot_search_pick_callback_handler_handles_a_stale_id(
 
     context.bot.send_media_group.assert_not_awaited()
     update.callback_query.edit_message_text.assert_awaited_once()
+    # The failure already said everything on the message itself, so the
+    # tap only needs its acknowledgement — but it does need exactly one.
+    update.callback_query.answer.assert_awaited_once_with()
 
 
 async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_is_down(
@@ -891,3 +895,165 @@ async def test_screenshot_gallery_paging_looks_the_url_list_up_once_per_page(
         )
 
     assert screenshots_mock.await_count == 2  # one per page, not one per photo
+
+
+async def test_a_gallery_tap_with_no_setup_row_left_says_so_on_screen(session_factory) -> None:
+    """The stale-row family's other half (#79): #72 gave every one of
+    these a WARNING, which told production what happened and still left
+    the starter tapping a dead keyboard with nothing on screen.
+
+    Answered exactly once, and with the text — Telegram invalidates a
+    callback query id as soon as it is answered, so the bare
+    acknowledgement moved below this branch rather than sitting above it
+    and spending the only answer these sites have."""
+    context = _make_context(session_factory)  # no game row at all
+    update = _make_callback_update(data="screenshot_pick:shikimori:0")
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.answer.assert_awaited_once_with(
+        i18n.t("dm_start.setup_gone", "EN"), show_alert=True
+    )
+
+
+async def test_a_search_again_tap_with_no_setup_row_left_says_so_on_screen(
+    session_factory,
+) -> None:
+    context = _make_context(session_factory)
+    update = _make_callback_update(data="screenshot_search_again:shikimori")
+
+    await screenshot_gallery.screenshot_search_again_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.answer.assert_awaited_once_with(
+        i18n.t("dm_start.setup_gone", "EN"), show_alert=True
+    )
+
+
+async def test_both_stale_row_sites_in_the_search_pick_handler_say_so_on_screen(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both of this handler's lookups, including the narrow second one
+    where the row vanishes *during* the get_by_id round-trip. That one is
+    why the acknowledgement waits until after the round-trip here: it is
+    the same dead-keyboard experience for the starter, and answering
+    earlier would have left it with nothing to say it with."""
+
+    def _resolve_then_lose_the_row(*_args, **_kwargs) -> TMDBResult:
+        with session_factory() as session:
+            session.query(Game).delete()
+            session.commit()
+        return _FRIEREN_TMDB
+
+    monkeypatch.setattr(tmdb, "get_by_id", AsyncMock(side_effect=_resolve_then_lose_the_row))
+    context = _make_context(session_factory)
+    data = "screenshot_search_pick:tmdb:209867"
+
+    first_tap = _make_callback_update(data=data)
+    await screenshot_gallery.screenshot_search_pick_callback_handler(
+        cast(Update, first_tap), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _staged_game(session_factory, source="anilist", anilist_id=99, tmdb_id=209867)
+    second_tap = _make_callback_update(data=data)
+    await screenshot_gallery.screenshot_search_pick_callback_handler(
+        cast(Update, second_tap), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    for tap in (first_tap, second_tap):
+        tap.callback_query.answer.assert_awaited_once_with(
+            i18n.t("dm_start.setup_gone", "EN"), show_alert=True
+        )
+
+
+async def test_a_stale_index_is_acknowledged_without_disturbing_the_gallery(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unlike the stale-row family, the tapped message here is still a
+    working gallery — so this one gets the plain toast rather than an
+    alert, and the message itself is left alone, keyboard and all. What
+    it must not stay is unacknowledged: the tap looked like it did
+    nothing."""
+    monkeypatch.setattr(
+        shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
+    )
+    _staged_game(session_factory, shikimori_id=52991, setup_step=SetupStep.PICKING_SCREENSHOT)
+
+    update = _make_callback_update(data="screenshot_pick:shikimori:5")
+    context = _make_context(session_factory)
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.edit_message_text.assert_not_awaited()
+    update.callback_query.answer.assert_awaited_once_with(i18n.t("dm_start.screenshot_gone", "EN"))
+    # Answered at the decision point, so nothing was downloaded first.
+    context.bot_data["search_client"].get.assert_not_called()
+
+
+async def test_a_live_gallery_tap_is_answered_before_the_album_goes_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tap that does work is answered once, with nothing to say — and
+    *before* the slow part. Paging sends an album Telegram fetches from
+    five remote URLs; answering after it would leave the spinner running
+    on the flow's most-tapped button for as long as that takes, and would
+    put the answer outside the window Telegram accepts it in if the send
+    dragged. Asserted as an ordering, not a count, because a count passes
+    either way."""
+    urls = [f"https://shikimori.io/x/{i}.jpg" for i in range(8)]
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=urls))
+    _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_more:shikimori:5")
+    context = _make_context(session_factory)
+    answered_before_send: list[bool] = []
+    context.bot.send_media_group = AsyncMock(
+        side_effect=lambda **_: answered_before_send.append(
+            update.callback_query.answer.await_count == 1
+        )
+    )
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert answered_before_send == [True]
+    update.callback_query.answer.assert_awaited_once_with()
+
+
+async def test_a_gallery_pick_is_answered_before_the_download_starts(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half: a real numbered pick is answered once the pick is
+    known to be real — after the (normally cached) url listing, before
+    the download and the five-stage preview album, which together are the
+    longest stretch in the flow."""
+    monkeypatch.setattr(
+        shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
+    )
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_pick:shikimori:0")
+    context = _make_context(session_factory)
+    answered_before_download: list[bool] = []
+    download_response = MagicMock(content=b"real-screenshot-bytes")
+    download_response.raise_for_status = MagicMock()
+
+    async def _download(_url):
+        answered_before_download.append(update.callback_query.answer.await_count == 1)
+        return download_response
+
+    context.bot_data["search_client"].get = AsyncMock(side_effect=_download)
+
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert answered_before_download == [True]
+    update.callback_query.answer.assert_awaited_once_with()

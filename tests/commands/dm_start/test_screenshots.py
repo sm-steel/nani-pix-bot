@@ -7,10 +7,12 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import screenshots
+from nani_pix_bot.commands.dm_start.keyboards import SCREENSHOT_UPLOAD_CALLBACK_DATA
 from nani_pix_bot.models.enums import GameStatus, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
 _FRIEREN_SHIKIMORI = ShikimoriResult(
@@ -466,3 +468,59 @@ def test_clear_screenshot_selection_drops_an_api_sourced_image_and_its_id(sessio
         assert fetched.shikimori_id is None
         assert fetched.original_image is None
         assert fetched.screenshot_source is None
+
+
+async def test_a_source_tap_with_no_setup_row_left_says_so_on_screen(session_factory) -> None:
+    """The setup-abandon timer deletes the row an hour in, but every
+    button it left behind stays tappable forever. Logging that (#72) told
+    production what happened; it still left the starter tapping a dead
+    keyboard with nothing on screen, which is what the toast is for.
+
+    Answered exactly once, with the text: Telegram invalidates a callback
+    query id the moment it is answered, so the bare acknowledgement now
+    waits until this branch has had its chance to carry a message."""
+    context = _make_context(session_factory)  # no game row at all
+    update = _make_callback_update(data="screenshot_source:shikimori")
+
+    await screenshots.screenshot_source_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.answer.assert_awaited_once_with(
+        i18n.t("dm_start.setup_gone", "EN"), show_alert=True
+    )
+
+
+async def test_an_upload_instead_tap_with_no_setup_row_left_says_so_on_screen(
+    session_factory,
+) -> None:
+    context = _make_context(session_factory)
+    update = _make_callback_update(data=SCREENSHOT_UPLOAD_CALLBACK_DATA)
+
+    await screenshots.screenshot_upload_instead_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.answer.assert_awaited_once_with(
+        i18n.t("dm_start.setup_gone", "EN"), show_alert=True
+    )
+
+
+async def test_a_live_source_tap_still_gets_its_bare_acknowledgement(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of moving the answer: a tap that does work must
+    still clear the spinner, and must not be answered twice (the second
+    call is what Telegram rejects)."""
+    monkeypatch.setattr(
+        screenshots.shikimori, "screenshots", AsyncMock(return_value=["https://s.io/0.jpg"])
+    )
+    _staged_game(session_factory, shikimori_id=52991)
+    update = _make_callback_update(data="screenshot_source:shikimori")
+    context = _make_context(session_factory)
+
+    await screenshots.screenshot_source_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.answer.assert_awaited_once_with()

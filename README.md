@@ -10,9 +10,11 @@ group chat. Someone DMs the bot a screenshot — or sends `/newgame` and picks
 a real screenshot from Shikimori/Jikan/TMDB instead — and identifies the
 anime (see `MECHANICS.md` for exactly how); the bot posts it heavily
 pixelated into the group's game topic, and it gets progressively clearer
-every 5 wrong `/guess` attempts until someone's right or it's revealed
-unsolved. Runs on `moscow`, routing Telegram API traffic through
-`amsterdam`'s proxy (moscow has no direct route to `api.telegram.org`).
+as wrong `/guess` attempts accumulate — each of the five stages has its
+own admin-configurable wrong-guess limit (1/1/2/3/3 by default) — until
+someone's right or it's revealed unsolved. Runs on `moscow`, routing
+Telegram API traffic through `amsterdam`'s proxy (moscow has no direct
+route to `api.telegram.org`).
 
 See `MECHANICS.md` for the full rules and `ARCHITECTURE.md` for the system
 design.

@@ -6,8 +6,11 @@ group chat. A player either DMs the bot a screenshot directly, or sends
 either way, they identify the anime (see `MECHANICS.md` for exactly how —
 there are five identification methods) and the bot posts the screenshot
 heavily pixelated into the group's game topic, where players guess with
-`/guess`, watching the image get progressively clearer every 5 wrong
-guesses until someone's right or it's revealed unsolved. Runs as a Docker
+`/guess`, watching the image get progressively clearer as wrong guesses
+accumulate — each of the five stages has its own admin-configurable
+wrong-guess limit (1/1/2/3/3 by default, so it starts unforgiving and
+loosens), and the bot's replies count down the remaining guesses against
+it — until someone's right or it's revealed unsolved. Runs as a Docker
 Compose stack on the `moscow` VPS.
 
 **Read `ARCHITECTURE.md` before making non-trivial changes** — it covers the
@@ -40,8 +43,9 @@ logs an `ERROR` and returns the bare key rather than raising — a bad
 translation shouldn't crash a live bot.
 
 Two categories of text are **deliberately not translated**: third-party
-brand names (`"AniList"`/`"Shikimori"` in the method-picker keyboard,
-`_SERVICE_DISPLAY_NAMES` in `dm_start.py`) and the `/language` picker's
+brand names (`"AniList"`/`"Shikimori"`/`"Jikan"`/`"TMDB"` in the
+method-picker keyboard, `_SERVICE_DISPLAY_NAMES` in
+`commands/dm_start/_shared.py`) and the `/language` picker's
 own native-name labels (`"🇷🇺 Русский"`/`"🇬🇧 English"` — a language
 switcher inherently shows each option in its own name, so translating
 through the *currently selected* language would be circular).

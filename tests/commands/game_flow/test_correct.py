@@ -250,3 +250,25 @@ async def test_correct_command_allowed_after_at_least_one_guess(session_factory)
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.status == GameStatus.WON
+
+
+async def test_correct_command_drops_the_mention_when_the_bot_has_no_handle_yet(
+    session_factory,
+) -> None:
+    """Same window as /skip's (#81): bot_data["bot_username"] is written
+    by _post_init, so a reply built before that — or in any test — used
+    to end on a bare "@". Nothing is lost by omitting the sentence: the
+    player is being told to message the bot they are already talking
+    about."""
+    _active_game(session_factory, total_guess_count=1)
+    update = _make_update(user_id=1, args=["@stranger"])
+    context = _make_context(session_factory, args=["@stranger"])
+    del context.bot_data["bot_username"]
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    text = update.message.reply_text.await_args.args[0]
+    assert "stranger" in text.lower()
+    assert "@" not in text.replace("@stranger", "")
