@@ -36,10 +36,12 @@ from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 RETRY_CALLBACK_DATA = "anilist_retry"
-_ANILIST_PICK_PREFIX = "anilist_pick:"
-_SHIKIMORI_PICK_PREFIX = "shikimori_pick:"
-_JIKAN_PICK_PREFIX = "jikan_pick:"
-_TMDB_PICK_PREFIX = "tmdb_pick:"
+# Derived from Provider, not hand-spelled — app.py's routing pattern is built
+# the same way, and the two used to be independent copies of one wire format.
+_ANILIST_PICK_PREFIX = f"{Provider.ANILIST}_pick:"
+_SHIKIMORI_PICK_PREFIX = f"{Provider.SHIKIMORI}_pick:"
+_JIKAN_PICK_PREFIX = f"{Provider.JIKAN}_pick:"
+_TMDB_PICK_PREFIX = f"{Provider.TMDB}_pick:"
 
 ANILIST_METHOD_CALLBACK_DATA = "method:anilist"
 SHIKIMORI_METHOD_CALLBACK_DATA = "method:shikimori"
