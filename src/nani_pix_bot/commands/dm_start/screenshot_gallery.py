@@ -216,8 +216,15 @@ async def screenshot_search_pick_callback_handler(
         if game is None:
             # The second lookup, so this is the narrow window where the
             # row went away *during* the get_by_id round-trip above
-            # rather than before the tap. Same message, but loguru stamps
-            # the line number, so the two are still told apart in a log.
+            # rather than before the tap. Same message as the first
+            # site's, and the line number is the only thing that tells
+            # the two apart in a log — these two also share a callback
+            # prefix, so `data` doesn't. That line number is the
+            # *caller's* solely because _log_stale_tap logs through
+            # `logger.opt(depth=1)`: plain loguru stamps the frame of the
+            # logger.warning call itself, which is one line inside the
+            # helper and identical for every site. Drop that opt() and
+            # this pair goes back to being byte-identical.
             _log_stale_tap(query.data, user.id)
             return
         game_service.set_screenshot_provider_id(game, result)
