@@ -769,3 +769,65 @@ async def test_search_logs_graphql_errors_even_when_data_came_back(monkeypatch) 
     assert [r.shikimori_id for r in results] == [1]
     assert len(logged) == 1
     assert "deprecated" in str(logged[0])
+
+
+async def test_random_anime_sends_a_random_order_query() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        entry = {
+            "id": "1",
+            "name": "Some Anime",
+            "russian": None,
+            "english": "Some Anime",
+            "synonyms": [],
+        }
+        return httpx.Response(200, json=_animes_payload([entry]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await shikimori.random_anime(client)
+
+    assert "order" in captured["json"]["query"]
+    assert "random" in captured["json"]["query"].lower()
+    assert result == shikimori.ShikimoriResult(
+        shikimori_id=1,
+        title_romaji="Some Anime",
+        title_english="Some Anime",
+        title_russian=None,
+        synonyms=[],
+    )
+
+
+async def test_random_anime_returns_none_when_nothing_comes_back() -> None:
+    async with httpx.AsyncClient(transport=_responding(_animes_payload([]))) as client:
+        result = await shikimori.random_anime(client)
+
+    assert result is None
+
+
+async def test_random_anime_is_not_cached_across_calls() -> None:
+    """Unlike search()/get_by_id()/screenshots(), random_anime() must
+    genuinely re-hit the API on every call — @cache.cached() would
+    return the same "random" result for DEFAULT_TTL_SECONDS, defeating
+    both randomness and services/game/autostart.py's retry-a-different-
+    anime loop."""
+    calls = {"n": 0}
+    entries = [
+        {"id": "1", "name": "First", "russian": None},
+        {"id": "2", "name": "Second", "russian": None},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        entry = entries[calls["n"]]
+        calls["n"] += 1
+        return httpx.Response(200, json=_animes_payload([entry]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        first = await shikimori.random_anime(client)
+        second = await shikimori.random_anime(client)
+
+    assert calls["n"] == 2
+    assert first is not None
+    assert second is not None
+    assert first.shikimori_id != second.shikimori_id

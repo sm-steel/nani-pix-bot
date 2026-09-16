@@ -49,6 +49,13 @@ SEARCH_RESULT_LIMIT = 5
 # (some titles have 30+ screenshots; the gallery UI (ticket 7) does its
 # own client-side pagination/slicing of whatever this returns).
 SCREENSHOT_FETCH_LIMIT = 20
+# A floor on Shikimori's own score field, applied only to the random
+# pick (services/game/autostart.py) — biases toward anime popular/rated
+# enough to plausibly have screenshots on Shikimori/Jikan/TMDB, and
+# toward titles players are more likely to recognize. Not applied to
+# search()/get_by_id(), which answer a starter's own explicit query and
+# should never silently hide a low-scored title they typed themselves.
+RANDOM_PICK_MIN_SCORE = 6.5
 
 # Shikimori asks API consumers to identify themselves with a descriptive
 # User-Agent rather than a Referer (unlike AniList) — see the project's
@@ -91,6 +98,18 @@ query ($ids: String) {
     screenshots {
       originalUrl
     }
+  }
+}
+"""
+
+_RANDOM_QUERY = """
+query ($minScore: Float) {
+  animes(order: random, limit: 1, score: $minScore, censored: true) {
+    id
+    name
+    russian
+    english
+    synonyms
   }
 }
 """
@@ -154,6 +173,26 @@ async def get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriRe
     entry = _single_anime(data)
     if entry is None:
         logger.debug("Shikimori id {} no longer found", shikimori_id)
+        return None
+    return parsing.parse_entry(_API_NAME, entry, _parse_detail_result)
+
+
+async def random_anime(client: httpx.AsyncClient) -> ShikimoriResult | None:
+    """One anime, uniformly at random via Shikimori's own `order: random`
+    (confirmed against the published GraphQL schema — also has
+    `ranked_random`), filtered to `score >= RANDOM_PICK_MIN_SCORE` and
+    `censored: true` (excludes hentai/yaoi/yuri) since this feeds a
+    shared group topic — see services/game/autostart.py, the sole
+    caller. Reuses the full-detail query shape (title/english/russian/
+    synonyms) directly, unlike search()'s light query, since there's no
+    picker to show — this is the only pick that will ever be shown.
+
+    Deliberately NOT `@cache.cached()` — see test_random_anime_is_not_cached_across_calls."""
+    variables = {"minScore": RANDOM_PICK_MIN_SCORE}
+    data = await graphql.request(_API, client, query=_RANDOM_QUERY, variables=variables)
+    entry = _single_anime(data)
+    if entry is None:
+        logger.debug("Shikimori random pick returned nothing")
         return None
     return parsing.parse_entry(_API_NAME, entry, _parse_detail_result)
 
