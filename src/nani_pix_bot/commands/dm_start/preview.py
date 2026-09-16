@@ -30,10 +30,11 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     NO_SOURCE_PROMPT_KEY,
     ScreenshotFailure,
     clear_screenshot_selection,
-    reply_fallback,
     reply_with_source_menu,
     resume_screenshot_gallery,
+    send_fallback_notice,
     source_menu_for,
+    stage_fallback,
 )
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -136,6 +137,9 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
         if lang is not None:
             await query.edit_message_text(text=i18n.t("dm_start.posted", lang))
         return
+    if query.data == PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA:
+        await _handle_change_image_pick_screenshot_tap(context, session_factory, query, user)
+        return
 
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
@@ -147,8 +151,6 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
             await _preview_change_image(query, setup_game, lang)
         elif query.data == PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA:
             await _preview_change_image_upload(query, setup_game, lang)
-        elif query.data == PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA:
-            await _preview_change_image_pick_screenshot(context, query, setup_game, lang)
         elif query.data == PREVIEW_RESEARCH_CALLBACK_DATA:
             await _preview_research(query, setup_game, lang)
         elif query.data == PREVIEW_ADD_SYNONYM_CALLBACK_DATA:
@@ -205,15 +207,41 @@ async def _preview_change_image_upload(query, game: Game, lang: str) -> None:
     await query.edit_message_text(text=i18n.t("dm_start.ask_new_photo", lang))
 
 
-async def _preview_change_image_pick_screenshot(context, query, game: Game, lang: str) -> None:
-    logger.debug("Game {}: pick-a-different-screenshot requested from preview", game.id)
-    # resume_screenshot_gallery owns the setup_step transition itself and
-    # returns either a plain reply key or a ScreenshotFailure — the latter puts
-    # the starter back on the source menu rather than leaving this
-    # message buttonless (see screenshots.py's reply_with_source_menu).
-    outcome = await resume_screenshot_gallery(context, game, lang)
+async def _handle_change_image_pick_screenshot_tap(
+    context: ContextTypes.DEFAULT_TYPE, session_factory, query, user
+) -> None:
+    """Split out from preview_callback_handler's shared session: a
+    ScreenshotFailure outcome re-arms the setup_step/screenshot_picker_provider
+    columns (via stage_fallback), which must commit before the fallback
+    notice is attempted (see post_current_image's docstring) — the same
+    reason _handle_confirm_tap can't share a session with the other
+    branches either.
+
+    Note: resume_screenshot_gallery's own success path still sends its
+    gallery page from inside the session below (it owns that network
+    call internally, not this function) — narrower in scope than the
+    fallback-notice fix this split makes, and not addressed here."""
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        if setup_game is None:
+            return
+        logger.debug("Game {}: pick-a-different-screenshot requested from preview", setup_game.id)
+        # resume_screenshot_gallery owns the setup_step transition itself
+        # and returns either a plain reply key or a ScreenshotFailure —
+        # the latter puts the starter back on the source menu rather
+        # than leaving this message buttonless (see screenshots.py's
+        # reply_with_source_menu).
+        outcome = await resume_screenshot_gallery(context, setup_game, lang)
+        notice = None
+        if isinstance(outcome, ScreenshotFailure):
+            notice = stage_fallback(setup_game, outcome)
     if isinstance(outcome, ScreenshotFailure):
-        await reply_fallback(query.edit_message_text, game, lang, outcome)
+        if notice is None:
+            raise RuntimeError("stage_fallback was not called for a ScreenshotFailure outcome")
+        # Block closed and committed above — see stage_fallback's
+        # docstring for why the send has to happen after.
+        await send_fallback_notice(query.edit_message_text, notice, lang)
         return
     if outcome == NO_SOURCE_PROMPT_KEY:
         # A stale tap: the source this gallery would have resumed is
@@ -222,9 +250,11 @@ async def _preview_change_image_pick_screenshot(context, query, game: Game, lang
         # itself, plain — there is no provider at fault to flag — or the
         # starter reads "Where should I get a screenshot from?" with
         # nothing to tap (MECHANICS.md's "When a provider fails").
-        logger.warning("Game {}: stale pick-a-screenshot tap, re-offering the source menu", game.id)
+        logger.warning(
+            "Game {}: stale pick-a-screenshot tap, re-offering the source menu", setup_game.id
+        )
         await reply_with_source_menu(
-            query.edit_message_text, source_menu_for(game, None), lang, outcome
+            query.edit_message_text, source_menu_for(setup_game, None), lang, outcome
         )
         return
     await query.edit_message_text(text=i18n.t(outcome, lang))

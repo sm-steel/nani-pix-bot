@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram import Update
-from telegram.error import BadRequest
+from telegram.error import BadRequest, TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import screenshots
@@ -350,6 +350,28 @@ async def test_screenshot_source_callback_handler_falls_back_when_the_fetch_fail
     assert "screenshot:upload" in callbacks
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
     assert any(label.startswith("⚠️") and "Shikimori" in label for label in labels)
+
+
+async def test_screenshot_source_callback_handler_keeps_the_fallback_state_when_the_edit_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(side_effect=RuntimeError("boom")))
+    game_id = _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_source:shikimori")
+    context = _make_context(session_factory)
+    update.callback_query.edit_message_text = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await screenshots.screenshot_source_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        assert fetched.screenshot_picker_provider == "shikimori"
 
 
 async def test_screenshot_source_callback_handler_falls_back_when_telegram_rejects_the_album(

@@ -431,6 +431,31 @@ async def test_gallery_failure_keeps_a_typed_query_routable_to_the_provider(
         assert fetched.original_image is None
 
 
+async def test_gallery_failure_keeps_the_fallback_state_when_the_notice_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
+    )
+    game_id = _staged_game(session_factory, shikimori_id=52991, screenshot_picker_provider=None)
+
+    update = _make_callback_update(data="screenshot_pick:shikimori:0")
+    context = _make_context(session_factory)
+    context.bot_data["search_client"].get = AsyncMock(side_effect=httpx.ConnectError("boom"))
+    update.callback_query.edit_message_text = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await screenshot_gallery.screenshot_gallery_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        assert fetched.screenshot_picker_provider == "shikimori"
+
+
 async def test_more_screenshots_failure_keeps_a_typed_query_routable(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1065,6 +1090,32 @@ async def test_screenshot_search_pick_offers_the_source_menu_when_the_id_is_gone
 
     _, kwargs = update.callback_query.edit_message_text.await_args
     assert kwargs["reply_markup"] is not None
+
+
+async def test_screenshot_search_pick_keeps_the_fallback_state_when_the_edit_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(tmdb, "get_by_id", AsyncMock(return_value=_FRIEREN_TMDB))
+    monkeypatch.setattr(tmdb, "screenshots", AsyncMock(side_effect=RuntimeError("boom")))
+    game_id = _staged_game(
+        session_factory, source="anilist", anilist_id=99, screenshot_picker_provider="tmdb"
+    )
+    update = _make_callback_update(data="screenshot_search_pick:tmdb:209867")
+    context = _make_context(session_factory)
+    update.callback_query.edit_message_text = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await screenshot_gallery.screenshot_search_pick_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        # The id write already committed before the failing fetch ran.
+        assert fetched.tmdb_id == 209867
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        assert fetched.screenshot_picker_provider == "tmdb"
 
 
 async def test_screenshot_gallery_callback_handler_pages_back_to_the_previous_slice(

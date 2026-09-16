@@ -45,9 +45,10 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     _provider_id,
     _show_gallery_page,
     gallery_page_or_fallback,
-    reply_fallback,
     reply_with_source_menu,
+    send_fallback_notice,
     source_menu_for,
+    stage_fallback,
 )
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
@@ -386,6 +387,7 @@ async def _reply_search_pick_fallback(
     closes, not inside it — `_fresh_game_or_warn` only reads and logs, no
     network, precisely so this function doesn't reintroduce issue #82 on
     its own new-row-vanished path."""
+    notice = None
     with session_scope(fresh.session_factory) as session:
         fresh_game = _fresh_game_or_warn(
             session,
@@ -394,9 +396,11 @@ async def _reply_search_pick_fallback(
             game.id,
         )
         if fresh_game is not None:
-            await reply_fallback(query.edit_message_text, fresh_game, fresh.lang, fallback)
-    if fresh_game is None:
+            notice = stage_fallback(fresh_game, fallback)
+    if notice is None:
         await _notify_setup_gone(fresh, game.starter_id)
+        return
+    await send_fallback_notice(query.edit_message_text, notice, fresh.lang)
 
 
 async def _show_search_pick_gallery(
@@ -503,11 +507,13 @@ async def screenshot_gallery_callback_handler(
         context, fresh, game, query.data, TapReply(lang, query.answer)
     )
     if isinstance(outcome, ScreenshotFailure):
-        # A fresh short session of its own: `reply_fallback` writes
+        # A fresh short session of its own: `stage_fallback` writes
         # (setup_step, screenshot_picker_provider), so it needs a live
-        # row, not the snapshot above — see the docstring. The
-        # vanished-row notify (if any) runs after this block closes, not
-        # inside it — see _fresh_game_or_warn's own docstring for why.
+        # row, not the snapshot above — see its docstring. The
+        # vanished-row notify (if any), and the notice send itself, both
+        # run after this block closes, not inside it — see
+        # _fresh_game_or_warn's docstring, and stage_fallback's, for why.
+        notice = None
         with session_scope(session_factory) as session:
             fresh_game = _fresh_game_or_warn(
                 session,
@@ -516,9 +522,11 @@ async def screenshot_gallery_callback_handler(
                 game.id,
             )
             if fresh_game is not None:
-                await reply_fallback(query.edit_message_text, fresh_game, lang, outcome)
-        if fresh_game is None:
+                notice = stage_fallback(fresh_game, outcome)
+        if notice is None:
             await _notify_setup_gone(fresh, game.starter_id)
+        else:
+            await send_fallback_notice(query.edit_message_text, notice, lang)
     elif outcome is not None:
         # Already-rendered text, not an i18n key — the paging
         # confirmation needs format kwargs the caller doesn't have.
