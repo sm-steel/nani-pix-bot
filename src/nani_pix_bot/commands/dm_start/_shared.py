@@ -1,5 +1,6 @@
 """Small helpers shared by more than one submodule of this package."""
 
+import asyncio
 import re
 from collections.abc import Awaitable, Callable
 from typing import TypeVar, assert_never, cast
@@ -274,7 +275,7 @@ def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMar
             screenshot_source_keyboard(_screenshot_capable_providers(game), lang),
         )
     if game.setup_step == SetupStep.CONFIRMING:
-        return "dm_start.preview_confirm_prompt", preview_keyboard(lang)
+        return "dm_start.preview_confirm_prompt", preview_keyboard(lang, game.pixel_algorithm)
     if game.setup_step == SetupStep.AWAITING_PHOTO_CHANGE:
         return "dm_start.ask_new_photo", None
     if game.setup_step == SetupStep.AWAITING_SYNONYM:
@@ -434,16 +435,24 @@ async def _show_preview(context, session, game: Game, lang: str) -> None:
     answers = ", ".join(other_answers) or "—"
     caption = i18n.t("dm_start.preview_caption", lang, title=title, answers=answers)
     captions = [caption, *([None] * (len(game_service.STAGE_ORDER) - 1))]
-    media = [
-        InputMediaPhoto(
-            media=pixelate_service.pixelate(
+    # Off the event loop: five stages is ~80ms with the cheapest
+    # algorithm but several hundred with a rank filter (median/mode), and
+    # this runs inside a handler — blocking here stalls polling for every
+    # other chat, not just this DM.
+    stage_images = await asyncio.gather(
+        *(
+            asyncio.to_thread(
+                pixelate_service.pixelate,
                 original_bytes,
                 config[stage].target_width,
                 game.pixel_algorithm,
-            ),
-            caption=stage_caption,
+            )
+            for stage in game_service.STAGE_ORDER
         )
-        for stage, stage_caption in zip(game_service.STAGE_ORDER, captions, strict=True)
+    )
+    media = [
+        InputMediaPhoto(media=image, caption=stage_caption)
+        for image, stage_caption in zip(stage_images, captions, strict=True)
     ]
     game.setup_step = SetupStep.CONFIRMING
     logger.debug("Game {}: showing {}-stage confirmation preview album", game.id, len(media))
@@ -451,5 +460,5 @@ async def _show_preview(context, session, game: Game, lang: str) -> None:
     await context.bot.send_message(
         chat_id=game.starter_id,
         text=i18n.t("dm_start.preview_confirm_prompt", lang),
-        reply_markup=preview_keyboard(lang),
+        reply_markup=preview_keyboard(lang, game.pixel_algorithm),
     )

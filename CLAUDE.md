@@ -19,7 +19,7 @@ and the full directory/module layout
 ("Where things are"). `MECHANICS.md` covers the game rules themselves
 (pixelation stages, guess matching, turns, timeout, leaderboard) — read it
 before touching anything in `services/game/`, `services/matching.py`,
-`services/pixelate.py`, or `services/settings/stage_config.py`.
+`services/pixelate/`, or `services/settings/stage_config.py`.
 This file covers how to work in this repo day to day — tooling, testing,
 logging, and coding conventions — not where things live; that's
 `ARCHITECTURE.md`'s job, so it isn't duplicated here.
@@ -234,7 +234,7 @@ first means the commit doesn't just fail on the first attempt.
 Every unit in `services/` and `models/` gets a failing test written first,
 then the minimal implementation to make it pass, then refactor. This
 matters more here than in most bots: `services/matching.py`'s fuzzy-match
-threshold and `services/pixelate.py`'s width-scaling math are exactly the
+threshold and `services/pixelate/`'s width-scaling math are exactly the
 kind of logic that's easy to eyeball as "probably right" and quietly wrong
 at the edges — write the edge-case test (near-miss title, empty guess,
 already-at-the-final-stage exhaustion) before the implementation, not

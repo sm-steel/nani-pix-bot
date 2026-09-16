@@ -20,7 +20,7 @@ TITLE_LENGTH = 255
 # A Provider value plus headroom — same length as `source` below.
 SCREENSHOT_SOURCE_LENGTH = 16
 # A length this large just tells MariaDB to pick LONGBLOB over
-# BLOB/MEDIUMBLOB (see services/pixelate.py's docstring on why no image
+# BLOB/MEDIUMBLOB (see services/pixelate/render.py's docstring on why no image
 # bytes are ever this large in practice, but LONGBLOB costs nothing
 # extra to declare) — see ARCHITECTURE.md's schema table.
 IMAGE_COLUMN_LENGTH = 2**32 - 1

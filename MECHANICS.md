@@ -358,6 +358,39 @@ or `ACTIVE`**, offering a "stop the game" button right there instead
 visual preview — both fixed example images pixelated at the new
 width(s) — so the effect can be checked without a separate step.
 
+### Which algorithm colours the blocks
+
+The stage width decides *how wide* the mosaic is; a separate, orthogonal
+choice decides *how each block is coloured*. Five are offered
+(`services/pixelate/`):
+
+| Algorithm | Each block becomes |
+|---|---|
+| `median` | the block's median colour — **the default** |
+| `box` | the block's average colour (the canonical mosaic) |
+| `nearest` | one arbitrary pixel sampled from the block |
+| `lanczos` | a windowed resample — the sharpest block colours |
+| `mode` | the block's most frequent colour |
+
+`median` is the default because `nearest` — the original and only
+implementation until now — samples a single arbitrary pixel per block,
+so one bright speck can define a whole block and fine texture aliases
+into misleading patterns. `mode` is offered but **flagged as the worst
+choice in the picker**: `ModeFilter` falls back to the centre pixel
+whenever no colour repeats in its window, which on a real screenshot is
+most windows, so it speckles harder than the `nearest` it was meant to
+improve on.
+
+**The starter picks per game, from the confirmation preview** — a
+button showing the current choice opens a submenu listing all five with
+one-line descriptions. Picking one re-renders the whole preview album
+immediately, so the effect is visible before committing. The choice is
+stored on the game row (`games.pixel_algorithm`), not in a shared
+setting: stages 2-5 are rendered much later and from elsewhere (a
+`/guess` advance, the inactivity job), and a mid-round change to a
+shared setting would make a round's later stages look unlike the ones
+already posted.
+
 Current defaults, as seeded by the migration (run `/stageconfig` for
 what's actually live — these get retuned):
 

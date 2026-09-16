@@ -19,9 +19,15 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
+    PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA,
+    PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA,
+    PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX,
     PREVIEW_RESEARCH_CALLBACK_DATA,
+    algorithm_name,
     change_image_keyboard,
     method_selection_keyboard,
+    pixel_algorithm_keyboard,
+    preview_keyboard,
 )
 from nani_pix_bot.commands.dm_start.screenshots import (
     NO_SOURCE_PROMPT_KEY,
@@ -34,7 +40,7 @@ from nani_pix_bot.commands.dm_start.screenshots import (
 )
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.models.enums import SetupStep
+from nani_pix_bot.models.enums import DISCOURAGED_ALGORITHMS, PixelAlgorithm, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
@@ -133,6 +139,12 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
             await _preview_research(query, setup_game, lang)
         elif query.data == PREVIEW_ADD_SYNONYM_CALLBACK_DATA:
             await _preview_add_synonym(query, setup_game, lang)
+        elif query.data == PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA:
+            await _preview_pixel_algorithm(query, setup_game, lang)
+        elif query.data == PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA:
+            await _preview_pixel_algorithm_back(query, setup_game, lang)
+        elif query.data.startswith(PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX):
+            await _preview_pixel_algorithm_pick(context, session, query, setup_game, lang)
 
 
 async def _preview_confirm(context, session, game: Game, lang: str, starter_name: str) -> None:
@@ -207,3 +219,70 @@ async def _preview_add_synonym(query, game: Game, lang: str) -> None:
     logger.debug("Game {}: add-synonym requested from preview", game.id)
     game.setup_step = SetupStep.AWAITING_SYNONYM
     await query.edit_message_text(text=i18n.t("dm_start.ask_extra_synonym", lang))
+
+
+def _algorithm_options(lang: str) -> str:
+    """The submenu's body text: every algorithm with a one-line
+    description, the discouraged one saying so in words rather than only
+    as a button glyph. Which one is current is shown on the buttons
+    instead, so this text is the same whatever is selected."""
+    lines = []
+    for algorithm in PixelAlgorithm:
+        description = i18n.t(f"dm_start.algo_desc_{algorithm.value}", lang)
+        if algorithm in DISCOURAGED_ALGORITHMS:
+            description += i18n.t("dm_start.pixel_algorithm_worst_note", lang)
+        lines.append(
+            i18n.t(
+                "dm_start.pixel_algorithm_option",
+                lang,
+                name=algorithm_name(algorithm, lang),
+                description=description,
+            )
+        )
+    return "\n".join(lines)
+
+
+async def _preview_pixel_algorithm(query, game: Game, lang: str) -> None:
+    logger.debug("Game {}: pixelation submenu opened from preview", game.id)
+    await query.edit_message_text(
+        text=i18n.t(
+            "dm_start.pixel_algorithm_prompt",
+            lang,
+            options=_algorithm_options(lang),
+        ),
+        reply_markup=pixel_algorithm_keyboard(lang, game.pixel_algorithm),
+        parse_mode="HTML",
+    )
+
+
+async def _preview_pixel_algorithm_back(query, game: Game, lang: str) -> None:
+    """Leave the submenu without changing anything — back to the same
+    prompt and buttons the album's follow-up message started with."""
+    logger.debug("Game {}: pixelation submenu dismissed", game.id)
+    await query.edit_message_text(
+        text=i18n.t("dm_start.preview_confirm_prompt", lang),
+        reply_markup=preview_keyboard(lang, game.pixel_algorithm),
+    )
+
+
+async def _preview_pixel_algorithm_pick(context, session, query, game: Game, lang: str) -> None:
+    """Store the pick and re-show the whole preview, so the starter sees
+    every stage under the new algorithm rather than taking the change on
+    trust. The submenu message loses its keyboard first — _show_preview
+    posts a fresh album and a fresh button message, and two live
+    keyboards for one game would be ambiguous."""
+    value = query.data.removeprefix(PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX)
+    try:
+        algorithm = PixelAlgorithm(value)
+    except ValueError:
+        # Callback data is client-supplied; every handler here matches on
+        # prefix only (see keyboards.py's trust-boundary note).
+        logger.warning("Game {}: ignoring unknown pixelation algorithm {!r}", game.id, value)
+        return
+
+    game.pixel_algorithm = algorithm
+    logger.info("Game {}: pixelation algorithm set to {}", game.id, algorithm.value)
+    await query.edit_message_text(
+        text=i18n.t("dm_start.pixel_algorithm_updated", lang, name=algorithm_name(algorithm, lang))
+    )
+    await _show_preview(context, session, game, lang)
