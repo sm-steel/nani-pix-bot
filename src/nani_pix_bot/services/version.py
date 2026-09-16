@@ -61,7 +61,7 @@ async def fetch_release_notes(client: httpx.AsyncClient, version: str) -> str | 
     Cached for an hour: a published release's notes never change, so
     this just caps how often repeated /version calls hit GitHub's API
     (60 req/hr unauthenticated, shared with everything else proxied
-    through amsterdam)."""
+    through the configured proxy, if any)."""
     url = _RELEASE_URL_TEMPLATE.format(version=version)
     try:
         body = await get_json(_GITHUB_API, client, url, {})

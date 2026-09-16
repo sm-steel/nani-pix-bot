@@ -38,10 +38,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-    # Fleet-wide autoheal (tmknight/docker-autoheal, see the ops vault's
-    # инфраструктура/Autoheal.md) restarts any container Docker itself
-    # marks unhealthy — but only containers carrying these labels, since
-    # monitoring is opt-in fleet-wide.
+    # These labels are only meaningful if you separately run a watcher
+    # like tmknight/docker-autoheal, which restarts any container Docker
+    # marks unhealthy but only for containers carrying these labels —
+    # harmless no-ops otherwise. `restart: unless-stopped` above already
+    # handles most cases without one.
     labels:
       autoheal.monitor.enable: "true"
       autoheal.restart.enable: "true"

@@ -430,9 +430,9 @@ async def test_screenshots_keeps_episode_order_when_responses_finish_out_of_orde
 
 
 async def test_screenshots_fetches_episodes_concurrently_but_bounded() -> None:
-    """20 sequential round trips through the amsterdam proxy is minutes
-    of the starter staring at nothing; firing all 20 at once at a single
-    tinyproxy is the other extreme."""
+    """20 sequential round trips through a proxy is minutes of the
+    starter staring at nothing; firing all 20 at once at a single proxy
+    is the other extreme."""
     in_flight = 0
     peak = 0
     handler = _show_handler(

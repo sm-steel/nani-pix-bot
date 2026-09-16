@@ -1,7 +1,6 @@
 """Liveness heartbeat for the getUpdates polling loop, written to disk
 so a Docker HEALTHCHECK can detect it going stale (see
-docker-compose.yml's `bot` service and the ops vault's
-`инфраструктура/Autoheal.md`).
+docker-compose.yml's `bot` service).
 
 This exists because of a real incident (2026-09-13): a single `httpx`
 connection failing mid-TLS-handshake left python-telegram-bot's

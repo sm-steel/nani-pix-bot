@@ -12,5 +12,5 @@ dataclass, search()/get_by_id() pair, and service-specific quirks
 (AniList's GraphQL API vs. the other three's REST APIs, Shikimori's
 list/detail endpoint split vs. Jikan/TMDB returning the full field set
 on both, TMDB's API-key/proxy requirement vs. the other three being
-keyless and reachable direct from moscow) that don't collapse into one
-shared surface."""
+keyless and reachable directly) that don't collapse into one shared
+surface."""

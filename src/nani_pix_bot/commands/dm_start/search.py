@@ -165,9 +165,9 @@ async def _search_step(
     """An AniList/Shikimori search query: search and show a results
     keyboard, or fail back to the method-selection keyboard. Sends a
     "searching" message immediately — the round-trip can take a few
-    seconds (more for Shikimori, which goes through the amsterdam proxy)
-    — and edits that same message in place with the eventual outcome, so
-    the starter gets fast feedback without extra message clutter."""
+    seconds — and edits that same message in place with the eventual
+    outcome, so the starter gets fast feedback without extra message
+    clutter."""
     status_message = await message.reply_text(i18n.t("dm_start.searching", lang))
     logger.debug("{} search started for query {!r}", source, message.text)
 

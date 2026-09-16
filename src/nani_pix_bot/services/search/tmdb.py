@@ -4,8 +4,8 @@ movie/anime-specific endpoint. Called once per game, at setup time
 only, same as this package's anilist.py/shikimori.py/jikan.py.
 
 Unlike every other provider in this package, TMDB requires an API key
-(a v4 "Read Access Token", Bearer-auth) and is DNS-blocked directly
-from `moscow` — both handled by the caller's client construction
+(a v4 "Read Access Token", Bearer-auth) and may be blocked/unreachable
+on some hosts — both handled by the caller's client construction
 (`app.py` builds a dedicated proxied client with the token already set
 as a default `Authorization` header), not by this module. See
 ARCHITECTURE.md's connectivity section.
@@ -40,9 +40,10 @@ SEARCH_RESULT_LIMIT = 5
 SCREENSHOT_FETCH_LIMIT = 20
 # How many of those per-episode calls may be in flight at once. Not
 # `SCREENSHOT_FETCH_LIMIT` (i.e. all of them): every TMDB request goes
-# through the single `amsterdam` tinyproxy that Telegram's own traffic
-# shares (see ARCHITECTURE.md's connectivity section), so 20 simultaneous
-# tunnels would be rude to the proxy and to the bot's own polling. 5 turns
+# through the same single proxy Telegram's own traffic shares, if one is
+# configured (see ARCHITECTURE.md's connectivity section), so 20
+# simultaneous tunnels would be rude to the proxy and to the bot's own
+# polling. 5 turns
 # the worst case from 20 sequential round trips (minutes, with the starter
 # staring at nothing) into 4 waves, well inside TMDB's rate limit.
 SCREENSHOT_FETCH_CONCURRENCY = 5
@@ -100,8 +101,8 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
 
     Those per-episode calls run concurrently, bounded by
     SCREENSHOT_FETCH_CONCURRENCY: sequentially they were up to 20 round
-    trips through the `amsterdam` proxy, each with the client's 30s
-    timeout, which is minutes of a starter waiting on a gallery.
+    trips through the configured proxy (if any), each with the client's
+    30s timeout, which is minutes of a starter waiting on a gallery.
 
     **The returned order is the episode order, never the completion
     order** — each fetch writes into its own slot of a pre-sized list,
@@ -121,7 +122,7 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
     one more queued request slip through before cancellation lands),
     never worse than gather. What that buys — requests never issued at
     all — matters because every one of them contends with Telegram's
-    own polling through the single `amsterdam` proxy, exactly where the
+    own polling through the same shared proxy, exactly where the
     remote is already misbehaving."""
     show = await rest.get_json(_API, client, f"{TMDB_BASE_URL}/tv/{tmdb_id}", {})
     targets = _episode_targets(show)

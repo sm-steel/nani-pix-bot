@@ -68,9 +68,9 @@ _IMAGE_DOWNLOAD_ERRORS = (httpx.HTTPError,)
 # "add a synonym" step.
 _SYNONYM_SPLIT_RE = re.compile(r"[,\n]")
 
-# TMDB is the only provider needing its own client (DNS-blocked direct
-# from moscow, needs a proxy + Bearer-token auth — see app.py's
-# build_application()); every other provider shares "search_client".
+# TMDB is the only provider needing its own client (may need a proxy +
+# always needs Bearer-token auth — see app.py's build_application());
+# every other provider shares "search_client".
 # Used by search.py's search/pick flow and both screenshots.py's/
 # screenshot_gallery.py's gallery flow.
 _TMDB_CLIENT_BOT_DATA_KEY = "tmdb_client"

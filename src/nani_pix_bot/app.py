@@ -83,8 +83,8 @@ def build_application(config: Config) -> Application:
     application.bot_data["session_factory"] = db.make_session_factory(engine)
     # Shared by anilist.py/shikimori.py/jikan.py — a plain HTTP client,
     # nothing service-specific about it (each module sends its own
-    # headers per request). All three are reachable direct from moscow,
-    # no proxy needed.
+    # headers per request). All three are reachable directly, no proxy
+    # needed.
     application.bot_data["search_client"] = httpx.AsyncClient(timeout=30)
     if not config.tmdb_read_access_token:
         # Optional by design (config.py) — but without this, a fresh
@@ -96,11 +96,12 @@ def build_application(config: Config) -> Application:
             "TMDB_READ_ACCESS_TOKEN is not set — TMDB search and screenshots will "
             "fail as if the service were down until it is configured (see .env.example)"
         )
-    # tmdb.py needs its own client: TMDB is DNS-blocked directly from
-    # moscow (reachable via the same amsterdam proxy Telegram already
-    # uses — see ARCHITECTURE.md's connectivity section) and needs a
-    # Bearer-token Authorization header on every request, set here as a
-    # client default so tmdb.py itself never has to touch the secret.
+    # tmdb.py needs its own client: TMDB may be blocked/unreachable on
+    # some hosts (reachable via the same optional proxy Telegram already
+    # uses, if configured — see ARCHITECTURE.md's connectivity section)
+    # and needs a Bearer-token Authorization header on every request, set
+    # here as a client default so tmdb.py itself never has to touch the
+    # secret.
     application.bot_data["tmdb_client"] = httpx.AsyncClient(
         timeout=30,
         proxy=config.telegram_proxy_url,
