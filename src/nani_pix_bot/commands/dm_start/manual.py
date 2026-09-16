@@ -65,7 +65,7 @@ async def _manual_synonyms_step(
             # Screenshot-less /newgame entry — no image in hand yet.
             # Manual entry has no external id of its own, but that
             # stopped meaning "upload or nothing" when cross-provider
-            # resolution landed: _screenshot_capable_providers offers all
+            # resolution landed: game_service.screenshot_capable_providers offers all
             # three providers unconditionally, and tapping one silently
             # searches it by the title just staged (stage_manual_entry
             # puts it in title_english, which is what that search reads).

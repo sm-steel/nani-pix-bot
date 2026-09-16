@@ -26,7 +26,7 @@ def test_provider_is_a_str_so_a_bare_string_still_compares_equal() -> None:
     # this holding in both directions.
     read_back_from_a_string_column = "shikimori"
     assert read_back_from_a_string_column == Provider.SHIKIMORI
-    # The membership form too: `_screenshot_capable_providers` and
+    # The membership form too: `game_service.screenshot_capable_providers` and
     # `_validated_provider` both test a bare string against a container
     # of members rather than against one member.
     assert read_back_from_a_string_column in (Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB)
