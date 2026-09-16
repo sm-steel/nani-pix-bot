@@ -242,13 +242,29 @@ src/nani_pix_bot/
                    # like commands/, but scheduled callbacks rather than
                    # CommandHandler/CallbackQueryHandlers, so a sibling
                    # package rather than living under commands/
-    timers.py     # the 2-day game timeout, 1h setup-abandon, 15min/12h
-                   # win-turn reminder/expiry, 3h-nudge/6h-auto-advance
-                   # inactivity timers — schedule/cancel/rearm helpers,
-                   # the scheduling/naming primitives they're built on
-                   # (seconds_until, timeout_job_name, etc. — live here
-                   # rather than services/game/ since this module is
-                   # their only caller), and the job callbacks themselves
+    timers/       # split from a single module (2026-09) once it grew
+                   # past qlty's file-total-complexity threshold; every
+                   # public name is re-exported from __init__.py, so
+                   # existing callers (`from nani_pix_bot.jobs import
+                   # timers as timeout_module`) needed no changes:
+                   #   __init__.py        rearm_pending_timeouts (touches
+                   #                      every submodule below, so lives
+                   #                      here rather than in any one of
+                   #                      them) + the re-exports
+                   #   _shared.py         seconds_until/seconds_until_timeout
+                   #                      — pure scheduling math every
+                   #                      submodule needs
+                   #   current_image.py   post_current_image (the shared
+                   #                      "post + best-effort pin" send,
+                   #                      decoupled from any caller's own
+                   #                      DB transaction — see MECHANICS.md's
+                   #                      "Cleanup" note) + clear_image_if_sent
+                   #   game_timeout.py    the 2-day absolute timeout
+                   #   setup_abandon.py   the 1h setup-abandon timer
+                   #   turn_timers.py     the win-turn 15min-reminder/
+                   #                      12h-expiry timers
+                   #   inactivity.py      the 3h-nudge/6h-auto-advance
+                   #                      inactivity timers
   services/       # the actual game logic — framework-agnostic, no
                    # python-telegram-bot imports in this package
     search/       # anime identification + screenshot fetching, called

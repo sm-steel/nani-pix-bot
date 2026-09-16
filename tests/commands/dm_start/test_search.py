@@ -8,6 +8,7 @@ import pytest
 from loguru import logger
 from telegram import Update
 from telegram.constants import ChatMemberStatus
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import preview, search
@@ -572,6 +573,28 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
     # lookup (#95) — pin the count, not just that it happened, so a
     # regression back to a double-answer (or a dropped one) fails here.
     update.callback_query.answer.assert_awaited_once()
+
+
+async def test_pick_callback_handler_keeps_the_staged_result_when_the_preview_album_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(search.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
+    _create_setup_game(session_factory, starter_id=1, source=Provider.ANILIST)
+
+    update = _make_callback_update(data="anilist_pick:99", user_id=1)
+    context = _make_callback_context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await search.pick_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.CONFIRMING
+        assert fetched.anilist_id == 99
 
 
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(

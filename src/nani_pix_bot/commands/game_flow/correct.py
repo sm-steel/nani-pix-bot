@@ -51,6 +51,14 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             raise RuntimeError(
                 "game.original_image is None despite _validate_active_game_for_starter's check"
             )
+        game_id = game.id
+        original_bytes = game.original_image
+        caption = i18n.t(
+            "correct.caption",
+            lang,
+            winner=target_username,
+            title=game_service.display_title(game, lang),
+        )
 
         game_service.force_win(session, game, winner_id=target.telegram_user_id)
         logger.info(
@@ -64,18 +72,13 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         turn_state = game_service.get_turn_state(session)
         if turn_state is not None:
             timeout_module.schedule_turn_timers(context.job_queue, turn_state)
-        await timeout_module.post_current_image(
-            context,
-            session,
-            photo=game.original_image,
-            caption=i18n.t(
-                "correct.caption",
-                lang,
-                winner=target_username,
-                title=game_service.display_title(game, lang),
-            ),
-        )
-        game_service.clear_original_screenshot(game)
+    # Block closed and committed above — the win is durable now regardless
+    # of whether the reveal below actually reaches the group (see
+    # post_current_image's docstring).
+    sent = await timeout_module.post_current_image(
+        context, session_factory, photo=original_bytes, caption=caption
+    )
+    timeout_module.clear_image_if_sent(session_factory, game_id, sent)
 
 
 async def _validate_active_game_for_starter(session, message, user, lang: str) -> Game | None:
