@@ -61,3 +61,23 @@ def test_bot_settings_pinned_message_id_can_be_set(session: Session) -> None:
 
     assert fetched is not None
     assert fetched.pinned_message_id == 12345
+
+
+def test_bot_settings_autostart_enabled_defaults_to_false(session: Session) -> None:
+    session.add(BotSettings(id=1))
+    session.commit()
+
+    fetched = session.get(BotSettings, 1)
+
+    assert fetched is not None
+    assert fetched.autostart_enabled is False
+
+
+def test_bot_settings_autostart_enabled_can_be_set_true(session: Session) -> None:
+    session.add(BotSettings(id=1, autostart_enabled=True))
+    session.commit()
+
+    fetched = session.get(BotSettings, 1)
+
+    assert fetched is not None
+    assert fetched.autostart_enabled is True

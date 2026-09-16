@@ -4,6 +4,7 @@ from sqlalchemy import BigInteger, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nani_pix_bot.models.base import Base
+from nani_pix_bot.models.types import UTCDateTime
 
 
 class TurnState(Base):
@@ -27,3 +28,13 @@ class TurnState(Base):
     )
     reminder_at: Mapped[datetime | None] = mapped_column(default=None)
     expiry_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Absolute deadlines for the 24h idle-autostart backstop — see
+    # services/game/turns.py's set_next_starter()/mark_turn_open_if_unassigned().
+    # turn_opened_at is when the turn most recently became open to
+    # anyone with no game running; autostart_deadline_at is the JobQueue
+    # deadline read by jobs/timers/autostart.py's schedule_idle_autostart(),
+    # same "absolute deadline stored in DB" shape every other timer here
+    # uses. Both None whenever a specific player is designated or a game
+    # is running.
+    turn_opened_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    autostart_deadline_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
