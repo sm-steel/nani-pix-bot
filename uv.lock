@@ -317,6 +317,15 @@ wheels = [
 ]
 
 [[package]]
+name = "mistune"
+version = "3.3.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/92/328a294a6de83bacb95bed01f04e0eaff4e3616ee359fc821a5dfc539b02/mistune-3.3.4.tar.gz", hash = "sha256:58b5c96d6fcb61190dfe5fae498d2b2065f99cf61e9649418fd54cf1ada86dfe", size = 121426, upload-time = "2026-07-22T05:22:30.89Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/77/e4/288365afae98953bc01de09f686f40d8ee84578135aa7767d5d4e60b5278/mistune-3.3.4-py3-none-any.whl", hash = "sha256:ee015381e955e370962968befe1d729ab60fafb6a715ac6751763fbce38c8d4a", size = 66862, upload-time = "2026-07-22T05:22:29.419Z" },
+]
+
+[[package]]
 name = "nani-pix-bot"
 version = "0.1.0"
 source = { editable = "." }
@@ -324,6 +333,7 @@ dependencies = [
     { name = "alembic" },
     { name = "httpx" },
     { name = "loguru" },
+    { name = "mistune" },
     { name = "pillow" },
     { name = "pymysql" },
     { name = "python-dotenv" },
@@ -346,6 +356,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "loguru", specifier = ">=0.7.3" },
+    { name = "mistune", specifier = ">=3.3.4" },
     { name = "pillow", specifier = ">=11.0" },
     { name = "pymysql", specifier = ">=1.1" },
     { name = "python-dotenv", specifier = ">=1.0" },
