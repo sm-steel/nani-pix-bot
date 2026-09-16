@@ -41,8 +41,18 @@ uv run ty check          # type check
 
 ## Deployment
 
-Runs entirely in Docker (bot + MariaDB), via `docker-compose.yml`. On the
-target host (moscow):
+Runs entirely in Docker (bot + MariaDB), via `docker-compose.yml`.
+
+**Production (`moscow`)** deploys automatically, not from this repo:
+merging to `master` runs `release.yml`, which cuts a semantic-release
+version and, when a release actually happens, builds and pushes a
+versioned image to `ghcr.io/sm-steel/nani-pix-bot`. Rolling that image out
+to `moscow` is owned by `priv-vps-infrastructure`'s `nani_pix_bot` Ansible
+role — this repo has no deploy workflow, SSH key, or host-side build step
+of its own anymore.
+
+**Standing up the stack manually** (a throwaway test bot, local dev) still
+uses `docker-compose.yml` directly:
 
 ```sh
 cp .env.example .env     # fill in real secrets — see comments in the file
@@ -53,9 +63,9 @@ docker compose up -d
 docker compose logs -f bot
 ```
 
-Migrate before `bot` starts, not after — see `CLAUDE.md`'s CI/CD section
-for why (its startup queries the database immediately, and a crash-looping
-container can't be fixed by exec-ing into it).
+Migrate before `bot` starts, not after — its startup queries the database
+immediately, and a crash-looping container can't be fixed by exec-ing into
+it.
 
 `bot`'s `HEALTHCHECK` watches a heartbeat file (`src/nani_pix_bot/heartbeat.py`)
 that's only touched after a real, successful Telegram `getUpdates` cycle — a
@@ -73,8 +83,11 @@ bot connects to it over the compose network as `mariadb:3306`, not
 Two GitHub Actions workflows run on every push/PR — **Checks**
 (`.github/workflows/checks.yml`: `ruff`, `ty`, and `qlty smells`, via the
 same `.pre-commit-config.yaml` the local pre-commit hook uses) and **Tests**
-(`.github/workflows/tests.yml`: `pytest`). A third workflow, **Deploy**
-(`.github/workflows/deploy.yml`), runs only on a push to the default
-branch: it re-verifies both of the above, then SSHs into `moscow` and
-rebuilds/restarts the bot stack — merging is what ships a change, no manual
-deploy step. See `CLAUDE.md` for details.
+(`.github/workflows/tests.yml`: `pytest`). A third workflow, **Release**
+(`.github/workflows/release.yml`), runs only on a push to the default
+branch: it cuts a semantic-release version and, when a release actually
+happens, builds and pushes a versioned image to
+`ghcr.io/sm-steel/nani-pix-bot`. There is no deploy workflow in this repo
+anymore — rolling a released image out to `moscow` is owned by
+`priv-vps-infrastructure`'s `nani_pix_bot` Ansible role. See `CLAUDE.md`
+for details.

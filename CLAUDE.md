@@ -155,20 +155,21 @@ arbitrary code on one, including reading secrets):
   dependency here.
 - **`tests.yml`** (badge in `README.md`) — `uv run pytest -q`. No service
   containers: every test fixture uses an in-memory SQLite engine.
-- **`deploy.yml`** — only on a push to the default branch (never
-  `pull_request`, so a fork PR can never reach its secrets). Re-runs both
-  of the above as a `verify` job, then a `deploy` job SSHs into `moscow`
-  (via `webfactory/ssh-agent` + a dedicated `MOSCOW_SSH_KEY` deploy key —
-  **not** the personal key used to administer `moscow` interactively) and
-  runs `git pull --ff-only`, builds, brings up `mariadb`, runs the
-  migration via a throwaway `docker compose run --rm` container, then
-  `docker compose up -d` for everything — migrating before `bot` starts,
-  not after, since `bot`'s startup queries the `games` table (to re-arm
-  pending timeouts) and would otherwise crash-loop against a schema a
-  pending migration hasn't created yet. Secrets
-  (`MOSCOW_SSH_KEY`/`MOSCOW_HOST`/`MOSCOW_USER`) live in the repo's GitHub
-  Settings, never in a committed file — see the vault's infrastructure docs
-  for what "moscow"/"amsterdam" actually are.
+- **`release.yml`** — only on a push to the default branch (never
+  `pull_request`, so a fork PR can never reach its secrets). Runs
+  `python-semantic-release` against this repo's Conventional Commits
+  history and, when a release actually cuts, tags it and builds/pushes a
+  versioned image to `ghcr.io/sm-steel/nani-pix-bot`. This repo has no
+  deploy step of its own anymore: rolling a released image out to
+  `moscow` — including migrating before `bot` starts, since its startup
+  queries the `games` table (to re-arm pending timeouts) and would
+  otherwise crash-loop against a schema a pending migration hasn't
+  created yet — is owned by `priv-vps-infrastructure`'s `nani_pix_bot`
+  Ansible role, which replaced this repo's old SSH-based `deploy.yml`.
+  The `MOSCOW_SSH_KEY`/`MOSCOW_HOST`/`MOSCOW_USER`/`SOPS_AGE_KEY` secrets
+  that workflow used have been deleted from this repo's GitHub Settings —
+  see the vault's infrastructure docs for what "moscow"/"amsterdam"
+  actually are.
 
 If a local pre-commit pass ever disagrees with `checks.yml`'s result on the
 same commit, that's a bug in the CI setup worth fixing directly, not

@@ -3,8 +3,9 @@ name: Release
 # Fires after checks.yml/tests.yml would already have run on the same
 # push (both trigger on push to master too) -- semantic-release itself
 # doesn't gate on their success, so this assumes master is only ever
-# updated through a merge that already passed CI, same assumption
-# deploy.yml made before it.
+# updated through a merge that already passed CI, same assumption this
+# repo's deploy step has always made (this repo's own deploy.yml, before
+# it was retired in favor of priv-vps-infrastructure's Ansible role).
 on:
   push:
     branches: [master]
