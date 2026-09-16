@@ -155,3 +155,38 @@ def test_the_turn_and_no_game_prompts_name_both_entry_points() -> None:
         catalog = i18n._load(lang)
         for key in both_entry_points:
             assert "/newgame" in catalog[key], f"{key} ({lang}) never mentions /newgame"
+
+
+def test_real_variations_files_have_matching_keys() -> None:
+    """Same drift guard as the main locale files, above — a key added to
+    one language's variation pool but not the other would silently mean
+    one language never gets flavor text for that message."""
+    en_keys = set(i18n._load_variations("en"))
+    ru_keys = set(i18n._load_variations("ru"))
+
+    assert en_keys == ru_keys
+
+
+def test_real_variations_are_non_empty_lists() -> None:
+    for lang in ("en", "ru"):
+        for key, extras in i18n._load_variations(lang).items():
+            assert isinstance(extras, list), f"{key} ({lang}) is not a list"
+            assert extras, f"{key} ({lang}) has no extra variants"
+
+
+def test_real_variations_only_use_placeholders_the_canonical_template_uses() -> None:
+    """`t()` is called with exactly the kwargs the canonical template
+    needs — a variant with an extra placeholder name would raise
+    `KeyError` the moment it's picked, and a live bot shouldn't crash on
+    a wrong guess."""
+    for lang in ("en", "ru"):
+        catalog = i18n._load(lang)
+        variations = i18n._load_variations(lang)
+        for key, extras in variations.items():
+            allowed = _placeholders(catalog[key])
+            for extra in extras:
+                extra_placeholders = _placeholders(extra)
+                assert extra_placeholders <= allowed, (
+                    f"{key} ({lang}) variant uses {extra_placeholders - allowed} "
+                    f"not in the canonical template's {allowed}: {extra!r}"
+                )

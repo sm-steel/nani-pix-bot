@@ -1,5 +1,65 @@
 {
   "guess.wrong_feedback": [
-    "❌ Nope, not that one. Guesses until the next clue: {remaining}/{limit} (stage {stage}/{total})."
+    "❌ Nope, not that one. Guesses until the next clue: {remaining}/{limit} (stage {stage}/{total}).",
+    "🙅 Wrong! {remaining}/{limit} guesses left before stage {stage}/{total} clears up a bit.",
+    "😅 Missed it — {remaining}/{limit} guesses left before stage {stage}/{total} gets clearer.",
+    "❌ NANI?! That's not it. {remaining}/{limit} guesses left (stage {stage}/{total}).",
+    "🎭 Bold guess, but wrong — {remaining}/{limit} left at stage {stage}/{total}. Definitely not \"over 9000\" levels of correct."
+  ],
+  "guess.stage_advanced_caption": [
+    "📸 Getting clearer! Stage {stage}/{total} — {remaining}/{limit} guesses left before the next reveal.",
+    "🔍 A little sharper now. Stage {stage}/{total}, {remaining}/{limit} guesses remaining.",
+    "📸 Yare yare... one more layer of pixels gone. Stage {stage}/{total} ({remaining}/{limit} guesses left).",
+    "👀 The fog is lifting! Stage {stage}/{total} — {remaining}/{limit} guesses left."
+  ],
+  "guess.inactivity_advanced_caption": [
+    "😴 Everyone dozed off? Stage {stage}/{total} — here's a clearer look to wake you up.",
+    "📸 Silence... too much silence. Stage {stage}/{total}, a bit clearer now.",
+    "👋 Still there? Stage {stage}/{total} — the image just got sharper while you were gone.",
+    "📸 Nobody's home, huh. Stage {stage}/{total} — here's a clearer peek."
+  ],
+  "guess.inactivity_nudge": [
+    "😴 Hellooo? Anyone still guessing? /guess <anime title> before the picture clears up on its own.",
+    "👀 The pinned image is getting lonely. /guess <anime title> whenever you're ready!",
+    "🍿 Still stuck? No shame — /guess <anime title>, or just wait for it to clear up more.",
+    "👋 Senpai, notice the pinned image! /guess <anime title> to give it a shot."
+  ],
+  "dm_start.game_started_caption": [
+    "🎬 {starter} just dropped a new screenshot! Guess with /guess <title> in this topic.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
+    "🕹️ New round, courtesy of {starter}! /guess <title> in this topic to try your luck.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
+    "🎮 {starter} has entered a new challenge! Use /guess <title> here.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
+    "📸 A wild pixelated screenshot appears, thanks to {starter}! /guess <title> in this topic.\nStage {stage}/{total} — guesses: {remaining}/{limit}"
+  ],
+  "guess.won_caption": [
+    "🏆 {winner} nailed it! It was {title}. Your turn to start the next one!",
+    "🎉 GG {winner}! The answer was {title} all along. Go start the next round!",
+    "😤 {winner} really said \"I'll take this potato chip... and win it!\" It was {title}. Your turn!",
+    "🎊 Correct! {winner} spotted {title} like a true main character. Your turn to start next!",
+    "🎉 {winner} wins! It was {title} — over 9000 IQ plays only. Your turn!"
+  ],
+  "correct.caption": [
+    "🎉 Confirmed correct! @{winner} got {title}. Your turn to start the next game!",
+    "✅ The starter says it counts — @{winner} guessed {title}! Your turn next!",
+    "🎉 Official ruling: @{winner} was right, it's {title}. Your turn to start the next round!",
+    "😅 The bot missed it, but @{winner} got {title} right. Your turn to start next!"
+  ],
+  "guess.unsolved_caption": [
+    "Nobody got it this time. The answer was {title}.",
+    "😔 Stumped everyone! It was {title}.",
+    "🎭 Plot twist: it was {title}, and nobody saw it coming.",
+    "❌ Zero correct guesses. It was {title} all along.",
+    "😅 Tough one — the answer was {title}."
+  ],
+  "timeout.caption": [
+    "⏰ Time's up! It was {title}.",
+    "⌛ The clock won this round — it was {title}.",
+    "⏰ Too slow! The answer was {title}.",
+    "⌛ Nobody made it in time. It was {title}."
+  ],
+  "stop.stopped_reveal_caption": [
+    "🛑 Game called off. It was {title}.\nAnyone can start a new one now!",
+    "🛑 Someone hit the brakes — it was {title}.\nAnyone can start a fresh round now!",
+    "🛑 Round stopped early. The answer was {title}.\nAnyone can start a new one now!",
+    "🛑 That's a wrap. It was {title}.\nAnyone can start a new one now!"
   ]
 }
