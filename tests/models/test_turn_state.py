@@ -52,5 +52,5 @@ def test_turn_state_autostart_columns_can_be_set(session: Session) -> None:
     fetched = session.get(TurnState, 1)
 
     assert fetched is not None
-    assert fetched.turn_opened_at == opened_at
-    assert fetched.autostart_deadline_at == deadline
+    assert fetched.turn_opened_at == opened_at.replace(tzinfo=None)
+    assert fetched.autostart_deadline_at == deadline.replace(tzinfo=None)

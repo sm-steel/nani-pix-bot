@@ -4,7 +4,6 @@ from sqlalchemy import BigInteger, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nani_pix_bot.models.base import Base
-from nani_pix_bot.models.types import UTCDateTime
 
 
 class TurnState(Base):
@@ -36,5 +35,5 @@ class TurnState(Base):
     # same "absolute deadline stored in DB" shape every other timer here
     # uses. Both None whenever a specific player is designated or a game
     # is running.
-    turn_opened_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
-    autostart_deadline_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    turn_opened_at: Mapped[datetime | None] = mapped_column(default=None)
+    autostart_deadline_at: Mapped[datetime | None] = mapped_column(default=None)

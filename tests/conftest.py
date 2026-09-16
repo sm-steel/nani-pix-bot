@@ -1,8 +1,7 @@
 from collections.abc import Iterator
-from typing import Any
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from nani_pix_bot.db import make_session_factory
@@ -13,14 +12,6 @@ from nani_pix_bot.models.base import Base
 def session() -> Iterator[Session]:
     """An in-memory SQLite session with every model table created fresh."""
     engine = create_engine("sqlite:///:memory:")
-
-    @event.listens_for(engine, "connect")
-    def _sqlite_enable_foreign_keys(dbapi_connection: Any, _connection: Any) -> None:
-        """Enable foreign keys for SQLite."""
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         yield session
