@@ -61,5 +61,16 @@
     "🛑 Someone hit the brakes — it was {title}.\nAnyone can start a fresh round now!",
     "🛑 Round stopped early. The answer was {title}.\nAnyone can start a new one now!",
     "🛑 That's a wrap. It was {title}.\nAnyone can start a new one now!"
+  ],
+  "dm_start.game_started_caption_overthrow_winner": [
+    "😈 GG {winner} — but the throne's mine now. New round, courtesy of yours truly.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
+    "🏴‍☠️ Sorry {winner}, this one's mine. A pixel pirate never waits its turn.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}"
+  ],
+  "dm_start.game_started_caption_overthrow_open": [
+    "🤖 The silence was concerning. I'll take it from here.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
+    "😈 Nobody move — I've got this one.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}"
+  ],
+  "dm_start.game_started_caption_idle": [
+    "🤖 It's been quiet for too long. Here, have a round.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}"
   ]
 }
