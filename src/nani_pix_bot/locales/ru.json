@@ -136,6 +136,10 @@
   "gamesenabled.enabled": "Начало новых игр теперь разрешено.",
   "gamesenabled.disabled": "Начало новых игр теперь приостановлено.",
 
+  "autostart.usage": "Использование: /setautostart on|off",
+  "autostart.enabled": "Теперь бот может сам начинать игры (захват хода и автозапуск при бездействии).",
+  "autostart.disabled": "Бот больше не будет сам начинать игры.",
+
   "commands.version": "Показать версию бота",
   "version.reply": "🤖 <b>nani-pix-bot</b> v{version}\n\n{notes}",
   "version.no_notes": "🤖 <b>nani-pix-bot</b> v{version}"
