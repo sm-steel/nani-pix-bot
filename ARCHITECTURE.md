@@ -15,64 +15,55 @@ themselves; this doc covers the system design.
 ```mermaid
 flowchart LR
     Telegram["Telegram servers"]
-    subgraph moscow["moscow VPS (docker compose network)"]
+    subgraph Host["your Docker Compose host"]
         direction LR
         Bot["bot<br/>(container)"] --- MariaDB[("mariadb<br/>(container)")]
     end
-    Telegram <-->|"proxy (amsterdam)"| Bot
+    Telegram <-->|"optional proxy"| Bot
 ```
 
-No web-facing component exists (no admin panel, no Traefik/Keycloak
-involvement) — this bot is Telegram-only, unlike `ley-shards-bot`.
+No web-facing component exists (no admin panel, no reverse proxy or SSO
+involvement) — this bot is Telegram-only.
 
 ## Infrastructure
 
-- **Host:** internal alias `moscow` (see the ops vault for the actual
-  hostname/credentials).
 - **Docker Compose stack:**
   - `bot` — built from the repo `Dockerfile` (uv-based Python image).
   - `mariadb` — official `mariadb:11` image, data in a named volume. Not
-    installed on the host — deliberately containerized like everything else
-    deployed to these VPSes.
-- **Telegram connectivity:** `moscow` has no direct route to
-  `api.telegram.org`. The bot routes *all* Telegram API traffic — both
-  `getUpdates` long-polling and outgoing `send*` calls — through another
-  internal host's (`amsterdam`) tinyproxy
-  (`http://<user>:<pass>@<proxy-host>:<proxy-port>`), configured on
-  `ApplicationBuilder`'s `proxy` and `get_updates_proxy`. Real
-  hostname/port/credentials are documented in the ops vault, not here.
-  (`amsterdam` is used rather than `helsinki` — as of this bot's setup,
-  `helsinki`'s proxy is unreachable from both `moscow` and the outside; see
-  the ops vault for current status if this ever needs revisiting.)
+    installed on the host — deliberately containerized like everything
+    else this bot needs.
+- **Telegram connectivity:** most hosts can reach `api.telegram.org`
+  directly and don't need anything extra. If yours can't (geo-blocked,
+  firewalled, etc.), the bot can route *all* Telegram API traffic — both
+  `getUpdates` long-polling and outgoing `send*` calls — through an HTTP
+  proxy instead, configured via the optional `TELEGRAM_PROXY_URL` env var
+  (`http://<user>:<pass>@<proxy-host>:<proxy-port>`), applied to
+  `ApplicationBuilder`'s `proxy` and `get_updates_proxy`. See
+  README.md's Self-hosting section for setup.
 - **AniList/Shikimori/Jikan connectivity:** all three are reached
-  directly from `moscow`, no proxy involved —
-  `services/search/shikimori.py`'s `SHIKIMORI_GRAPHQL_URL` points at
-  `shikimori.io`. (Shikimori's older `shikimori.one` domain now
-  permanently redirects to `shikimori.io` and is itself unreachable
-  directly from `moscow` — worth remembering if that redirect target
-  ever changes again.)
-- **TMDB connectivity — DNS-blocked, needs the `amsterdam` proxy:**
-  unlike the three providers above, `api.themoviedb.org` resolves to
-  loopback (`::1`/`127.0.0.1`) via `moscow`'s configured DNS resolver
-  (Yandex DNS, `77.88.8.8`) — confirmed with `getent hosts`/`resolvectl
-  status`, not just a slow timeout. Routing the exact same request
-  through the `amsterdam` proxy (the one Telegram already uses, see
-  above) resolves and connects fine — confirmed by getting a real `401`
-  (valid endpoint, no API key yet) instead of a connection failure.
-  `services/search/tmdb.py` must therefore construct its `httpx` client
-  with the same proxy as `ApplicationBuilder`'s Telegram client, unlike
-  every other search service in this package, which are all
-  proxy-free. A TMDB API key also still needs to be issued and placed
-  in the ops vault + `.env` before ticket 4 (TMDB search service) can
-  be implemented against a real account.
-  **`image.tmdb.org` (the screenshot/still image CDN, a different host
-  from the API) has the exact same DNS block** — also confirmed via
-  `getent hosts` (resolves to loopback) and a proxied request getting a
-  real `404` for a made-up path instead of a connection failure.
+  directly, no proxy needed — `services/search/shikimori.py`'s
+  `SHIKIMORI_GRAPHQL_URL` points at `shikimori.io`. (Shikimori's older
+  `shikimori.one` domain now permanently redirects to `shikimori.io` —
+  worth remembering if that redirect target ever changes again.)
+- **TMDB connectivity — may need the same optional proxy:** TMDB
+  requires its own API key regardless (see below), but on some hosts
+  `api.themoviedb.org` and its image CDN (`image.tmdb.org`) may also be
+  blocked or misresolve outright (e.g. resolving to loopback instead of
+  timing out, which can be confirmed with `getent hosts`/`resolvectl
+  status`). If that happens, routing the same request through
+  `TELEGRAM_PROXY_URL` (if you've set one) should resolve and connect
+  fine. `services/search/tmdb.py` therefore always constructs its
+  `httpx` client with that same proxy configured, unlike every other
+  search service in this package, which are all proxy-free — this is a
+  no-op if you haven't set `TELEGRAM_PROXY_URL`. A TMDB API key (a v4
+  "Read Access Token") needs to be issued from themoviedb.org and placed
+  in `.env` — TMDB search/screenshots are optional; without a key,
+  everything else still works.
   `commands/dm_start/screenshot_gallery.py`'s screenshot download
   therefore routes through `_client_for_source(context, provider)` (the
-  same proxied client `tmdb.py` itself uses), not a bare unproxied
-  client — a TMDB screenshot pick would otherwise fail every time.
+  same client `tmdb.py` itself uses), not a bare client — a TMDB
+  screenshot pick would otherwise fail if a proxy is actually needed on
+  your host.
 - **Group admin permission:** the bot needs the group's "Pin messages"
   admin permission for the pinned-current-image behavior (see
   `MECHANICS.md`'s "Pixelation stages" section) to actually take effect.
@@ -273,9 +264,9 @@ src/nani_pix_bot/
                    #   jikan.py      Jikan (third-party MyAnimeList API)
                    #                 search + screenshots (httpx)
                    #   tmdb.py       TMDB search + screenshots (httpx) —
-                   #                 needs the amsterdam proxy + a
-                   #                 Bearer token, unlike the three
-                   #                 above (see "Infrastructure" above)
+                   #                 needs a proxied client + a Bearer
+                   #                 token, unlike the three above (see
+                   #                 "Infrastructure" above)
                    #   rest.py       the JSON-GET + by-id-or-404 plumbing
                    #                 shared by the two REST providers
                    #                 above (jikan.py, tmdb.py — not

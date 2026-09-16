@@ -23,7 +23,6 @@ just what's currently built.
 | Win-turn reminder (15min) + expiry (12h) | Implemented |
 | Manual stop with confirmation (`/stop`) | Implemented |
 | Leaderboard (`/leaderboard`) | Implemented |
-| Deployed to `moscow` | Implemented |
 
 ## Game lifecycle
 

@@ -11,11 +11,11 @@ accumulate — each of the five stages has its own admin-configurable
 wrong-guess limit (1/1/2/3/3 by default, so it starts unforgiving and
 loosens), and the bot's replies count down the remaining guesses against
 it — until someone's right or it's revealed unsolved. Runs as a Docker
-Compose stack on the `moscow` VPS.
+Compose stack (see README.md).
 
 **Read `ARCHITECTURE.md` before making non-trivial changes** — it covers the
-system design, data model, infra topology (why Telegram traffic is proxied
-through `amsterdam`, etc.), and the full directory/module layout
+system design, data model, infra topology (the optional proxy setup, etc.),
+and the full directory/module layout
 ("Where things are"). `MECHANICS.md` covers the game rules themselves
 (pixelation stages, guess matching, turns, timeout, leaderboard) — read it
 before touching anything in `services/game/`, `services/matching.py`,
@@ -160,16 +160,12 @@ arbitrary code on one, including reading secrets):
   `python-semantic-release` against this repo's Conventional Commits
   history and, when a release actually cuts, tags it and builds/pushes a
   versioned image to `ghcr.io/sm-steel/nani-pix-bot`. This repo has no
-  deploy step of its own anymore: rolling a released image out to
-  `moscow` — including migrating before `bot` starts, since its startup
-  queries the `games` table (to re-arm pending timeouts) and would
-  otherwise crash-loop against a schema a pending migration hasn't
-  created yet — is owned by `priv-vps-infrastructure`'s `nani_pix_bot`
-  Ansible role, which replaced this repo's old SSH-based `deploy.yml`.
-  The `MOSCOW_SSH_KEY`/`MOSCOW_HOST`/`MOSCOW_USER`/`SOPS_AGE_KEY` secrets
-  that workflow used have been deleted from this repo's GitHub Settings —
-  see the vault's infrastructure docs for what "moscow"/"amsterdam"
-  actually are.
+  deploy step of its own — rolling a released image out to your own
+  instance is up to you (see README.md's Self-hosting section). Whatever
+  you use, migrate the database (`alembic upgrade head`) before starting
+  `bot`: its startup queries the `games` table (to re-arm pending
+  timeouts) and will crash-loop against a schema a pending migration
+  hasn't created yet.
 
 If a local pre-commit pass ever disagrees with `checks.yml`'s result on the
 same commit, that's a bug in the CI setup worth fixing directly, not
@@ -257,20 +253,19 @@ truth for what's done/in progress/planned.
 > **Never put real logins, hostnames, IPs, passwords, API keys/tokens, SSH
 > keys, or any other credential into an issue title, issue body, issue
 > comment, PR description, PR comment, or commit message.** This includes
-> the owned VPS infrastructure this bot deploys to. Use the same
-> placeholders as the rest of this repo (`USERNAME`, `PASSWORD`,
-> `PROXY_HOST`, `PROXY_PORT`, `<user>`, `<pass>`, or an alias like `moscow`/
-> `amsterdam` with no FQDN) and point at "the ops vault" for real values —
-> never write them out, even "temporarily" or "just to explain the bug."
-> Everything in this repo — commits, issues, PRs, history — is public and
-> indexed by anyone/anything crawling GitHub; there is no private fallback
-> to catch a slip.
+> wherever you host your own instance. Use placeholders (`USERNAME`,
+> `PASSWORD`, `PROXY_HOST`, `PROXY_PORT`, `<user>`, `<pass>`, or a host
+> alias with no FQDN) and keep real infrastructure details in your own
+> private notes — never write them out here, even "temporarily" or "just
+> to explain the bug." Everything in this repo — commits, issues, PRs,
+> history — is public and indexed by anyone/anything crawling GitHub;
+> there is no private fallback to catch a slip.
 
 ## Commit messages: Conventional Commits
 
 This repo uses [Conventional Commits](https://www.conventionalcommits.org/)
-— required once semantic-release is wired in (tracked in
-priv-vps-infrastructure's M9), harmless before that.
+— required by the release automation (see the `release.yml` entry in the
+CI section above).
 
 Format: `<type>(<optional scope>): <description>`
 
