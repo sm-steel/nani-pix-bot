@@ -46,6 +46,26 @@ def set_games_enabled(session: Session, enabled: bool) -> None:
     logger.info("Starting new games {}", "enabled" if enabled else "disabled")
 
 
+DEFAULT_AUTOSTART_ENABLED = False
+
+
+def get_autostart_enabled(session: Session) -> bool:
+    """Whether the bot may start a game itself — see /setautostart.
+    Checked in addition to get_games_enabled, not instead of it."""
+    settings = session.get(BotSettings, SETTINGS_ID)
+    return settings.autostart_enabled if settings is not None else DEFAULT_AUTOSTART_ENABLED
+
+
+def set_autostart_enabled(session: Session, enabled: bool) -> None:
+    settings = session.get(BotSettings, SETTINGS_ID)
+    if settings is None:
+        settings = BotSettings(id=SETTINGS_ID, autostart_enabled=enabled)
+        session.add(settings)
+    else:
+        settings.autostart_enabled = enabled
+    logger.info("Bot-initiated games {}", "enabled" if enabled else "disabled")
+
+
 def get_pinned_message_id(session: Session) -> int | None:
     """The Telegram message_id of whatever "current image" is currently
     pinned in the game topic, if any — see jobs/timers.py's
