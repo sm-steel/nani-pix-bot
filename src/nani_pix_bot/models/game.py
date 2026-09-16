@@ -5,7 +5,14 @@ from sqlalchemy import JSON, BigInteger, ForeignKey, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from nani_pix_bot.models.base import Base
-from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider, SetupStep
+from nani_pix_bot.models.enums import (
+    DEFAULT_ALGORITHM,
+    GameStatus,
+    PixelAlgorithm,
+    PixelStage,
+    Provider,
+    SetupStep,
+)
 from nani_pix_bot.models.player import Player
 
 # Generous headroom over any observed anime title length.
@@ -101,6 +108,18 @@ class Game(Base):
     original_image: Mapped[bytes | None] = mapped_column(
         LargeBinary(length=IMAGE_COLUMN_LENGTH), deferred=True, default=None
     )
+    # How each pixelation block's colour is chosen, picked by the starter
+    # from the confirmation preview (see commands/dm_start/preview.py).
+    # Stored per game rather than read from a setting at render time
+    # because stages 2-5 are rendered much later, from other handlers and
+    # background jobs: a mid-round change to a shared setting would make
+    # a game's later stages look unlike the ones already posted.
+    #
+    # Unlike `source`/`screenshot_source` above, this is a genuine native
+    # sa.Enum column (like status/current_stage/setup_step) — the
+    # String(16) warning there is about columns whose existing rows hold
+    # Provider *values*; nothing predates this one.
+    pixel_algorithm: Mapped[PixelAlgorithm] = mapped_column(default=DEFAULT_ALGORITHM)
     status: Mapped[GameStatus] = mapped_column(default=GameStatus.SETUP)
     current_stage: Mapped[PixelStage | None] = mapped_column(default=None)
     wrong_guess_count: Mapped[int] = mapped_column(default=0)

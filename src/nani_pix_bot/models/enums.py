@@ -237,6 +237,25 @@ class PixelAlgorithm(enum.Enum):
     LANCZOS = "lanczos"
 
 
+# What a game gets unless its starter picks otherwise. MEDIAN rather than
+# the original NEAREST because NEAREST samples one arbitrary pixel per
+# block and visibly speckles on real screenshots, where a rank-based
+# mosaic holds the block's dominant tone.
+DEFAULT_ALGORITHM = PixelAlgorithm.MEDIAN
+
+# Offered, but flagged as the worst choice in the starter's picker.
+# ModeFilter falls back to the centre pixel whenever no colour repeats in
+# its window; on a real screenshot (gradient-heavy, softened by
+# compression) that is most windows, so it speckles harder than the
+# NEAREST it was supposed to improve on.
+DISCOURAGED_ALGORITHMS = frozenset({PixelAlgorithm.MODE})
+
+# Both constants live here rather than in services/pixelate because
+# models/game.py needs the default for its column and models must not
+# depend on services — services/pixelate re-exports them so callers still
+# have a single import site.
+
+
 class SetupStep(enum.Enum):
     """Where a SETUP game's starter currently is in the multi-step DM
     identification flow — see MECHANICS.md's "Starting a game" section.

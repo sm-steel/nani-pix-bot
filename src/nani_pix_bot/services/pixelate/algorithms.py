@@ -21,19 +21,6 @@ from PIL import Image, ImageFilter
 from nani_pix_bot.models.enums import PixelAlgorithm
 from nani_pix_bot.services.pixelate.render import OVERSAMPLE, mosaic, rank_mosaic
 
-# What a game gets unless its starter picks otherwise. MEDIAN rather
-# than the original NEAREST because NEAREST samples one arbitrary pixel
-# per block and visibly speckles on real screenshots, where a rank-based
-# mosaic holds the block's dominant tone.
-DEFAULT_ALGORITHM = PixelAlgorithm.MEDIAN
-
-# Offered, but flagged as the worst choice in the starter's picker.
-# ModeFilter falls back to the centre pixel whenever no colour repeats
-# in its window; on a real screenshot (gradient-heavy, softened by
-# compression) that is most windows, so it speckles harder than the
-# NEAREST it was supposed to improve on.
-DISCOURAGED = frozenset({PixelAlgorithm.MODE})
-
 ALGORITHMS: dict[PixelAlgorithm, Callable[[bytes, int], bytes]] = {
     PixelAlgorithm.NEAREST: partial(mosaic, down=Image.Resampling.NEAREST),
     PixelAlgorithm.BOX: partial(mosaic, down=Image.Resampling.BOX),

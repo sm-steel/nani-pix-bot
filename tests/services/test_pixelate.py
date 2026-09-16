@@ -3,13 +3,12 @@ import io
 import pytest
 from PIL import Image
 
-from nani_pix_bot.models.enums import PixelAlgorithm
-from nani_pix_bot.services.pixelate import (
-    ALGORITHMS,
+from nani_pix_bot.models.enums import (
     DEFAULT_ALGORITHM,
-    DISCOURAGED,
-    pixelate,
+    DISCOURAGED_ALGORITHMS,
+    PixelAlgorithm,
 )
+from nani_pix_bot.services.pixelate import ALGORITHMS, pixelate
 
 _TEST_IMAGE_SIZE = 192
 # Every algorithm must satisfy the shared mosaic properties below; which
@@ -55,8 +54,8 @@ def test_mode_is_the_only_discouraged_algorithm() -> None:
     pixel whenever no colour repeats in its window, which on a real
     (gradient-heavy, compression-softened) screenshot is most windows —
     so it speckles harder than the NEAREST it was meant to improve on."""
-    assert PixelAlgorithm.MODE in DISCOURAGED
-    assert len(DISCOURAGED) == 1
+    assert PixelAlgorithm.MODE in DISCOURAGED_ALGORITHMS
+    assert len(DISCOURAGED_ALGORITHMS) == 1
 
 
 def _legacy_pixelate(image_bytes: bytes, target_width: int) -> bytes:

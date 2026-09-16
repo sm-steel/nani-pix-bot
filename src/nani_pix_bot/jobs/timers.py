@@ -457,9 +457,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
         )
         original_bytes = game.original_image
         target_width = stage_config.get_stage_config(session, game.current_stage).target_width
-        pixelated = pixelate_service.pixelate(
-            original_bytes, target_width, pixelate_service.DEFAULT_ALGORITHM
-        )
+        pixelated = pixelate_service.pixelate(original_bytes, target_width, game.pixel_algorithm)
         progress = game_service.stage_progress(session, game)
         await post_current_image(
             context,

@@ -439,7 +439,7 @@ async def _show_preview(context, session, game: Game, lang: str) -> None:
             media=pixelate_service.pixelate(
                 original_bytes,
                 config[stage].target_width,
-                pixelate_service.DEFAULT_ALGORITHM,
+                game.pixel_algorithm,
             ),
             caption=stage_caption,
         )

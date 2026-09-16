@@ -19,10 +19,10 @@ from nani_pix_bot.commands.helpers.keyboards import stop_confirm_keyboard
 from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import PixelStage
+from nani_pix_bot.models.enums import DEFAULT_ALGORITHM, PixelStage
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.pixelate import DEFAULT_ALGORITHM, pixelate
+from nani_pix_bot.services.pixelate import pixelate
 from nani_pix_bot.services.settings import stage_config
 
 # Anchored to this module rather than the working directory, the same

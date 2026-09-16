@@ -110,7 +110,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             original_bytes = _require_original_image(game, "a STAGE_ADVANCED outcome")
             target_width = stage_config.get_stage_config(session, game.current_stage).target_width
             pixelated = pixelate_service.pixelate(
-                original_bytes, target_width, pixelate_service.DEFAULT_ALGORITHM
+                original_bytes, target_width, game.pixel_algorithm
             )
             progress = game_service.stage_progress(session, game)
             game_service.reset_inactivity_clock(game)
