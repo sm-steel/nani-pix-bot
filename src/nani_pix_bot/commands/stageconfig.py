@@ -25,7 +25,12 @@ from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.pixelate import pixelate
 from nani_pix_bot.services.settings import stage_config
 
-_EXAMPLE_IMAGES = [Path("tmp/example1.jpg"), Path("tmp/example2.png")]
+# Anchored to this module rather than the working directory, the same
+# way services/i18n.py resolves locales/ — these ship inside the
+# installed package, so a relative path would only work when the bot is
+# run from the repo root.
+_ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+_EXAMPLE_IMAGES = [_ASSETS_DIR / "example1.jpg", _ASSETS_DIR / "example2.png"]
 
 
 async def _is_admin(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
