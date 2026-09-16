@@ -157,8 +157,8 @@ Two GitHub Actions workflows run on every push/PR — **Checks**
 same `.pre-commit-config.yaml` the local pre-commit hook uses) and **Tests**
 (`.github/workflows/tests.yml`: `pytest`). A third workflow, **Release**
 (`.github/workflows/release.yml`), runs only on a push to `master` — this
-repo's dedicated release branch, not its default branch (see
-`CLAUDE.md`'s "Branching & workflow" section): it cuts a semantic-release
+repo's default and release branch (see `CLAUDE.md`'s "Branching &
+workflow" section): it cuts a semantic-release
 version and, when a release actually happens, builds and pushes a
 versioned image to `ghcr.io/sm-steel/nani-pix-bot`. There is no deploy
 workflow in this repo —
