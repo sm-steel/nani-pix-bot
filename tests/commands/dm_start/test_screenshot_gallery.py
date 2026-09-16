@@ -7,7 +7,7 @@ import httpx
 import pytest
 from loguru import logger
 from telegram import Update
-from telegram.error import BadRequest
+from telegram.error import BadRequest, TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import preview, screenshot_gallery, search
@@ -167,6 +167,34 @@ async def test_screenshot_gallery_callback_handler_pick_downloads_and_shows_prev
 
     context.bot.send_media_group.assert_awaited_once()  # the confirmation preview album
     update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_screenshot_gallery_callback_handler_pick_keeps_the_image_when_the_album_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    urls = ["https://shikimori.io/x/0.jpg", "https://shikimori.io/x/1.jpg"]
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=urls))
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    game_id = _staged_game(session_factory, shikimori_id=52991)
+
+    update = _make_callback_update(data="screenshot_pick:shikimori:1")
+    context = _make_context(session_factory)
+    download_response = MagicMock(content=b"real-screenshot-bytes")
+    download_response.raise_for_status = MagicMock()
+    context.bot_data["search_client"].get = AsyncMock(return_value=download_response)
+    context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await screenshot_gallery.screenshot_gallery_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.original_image == b"real-screenshot-bytes"
+        assert fetched.screenshot_source == "shikimori"
+        assert fetched.setup_step == SetupStep.CONFIRMING
 
 
 def _source_callbacks(markup) -> list[str]:

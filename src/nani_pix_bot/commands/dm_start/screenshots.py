@@ -243,22 +243,43 @@ async def gallery_page_or_fallback(
     return fallback if fallback is not None else "dm_start.screenshot_source_picked"
 
 
-async def start_screenshot_picker(
-    context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
-) -> None:
-    """Entry point from `search.py`'s `pick_callback_handler` (and
-    `manual.py`'s synonym step) once identification is staged with no
-    image yet — shows the screenshot-source-selection keyboard. Every
+@dataclass(frozen=True)
+class ScreenshotPickerPrompt:
+    """What send_screenshot_picker_prompt needs, captured while the
+    staging game's session was still open — see stage_screenshot_picker's
+    docstring for why the send happens after that session closes."""
+
+    starter_id: int
+    providers: list[Provider]
+
+
+def stage_screenshot_picker(game: Game) -> ScreenshotPickerPrompt:
+    """DB-phase half of the screenshot-source picker: moves the game to
+    PICKING_SCREENSHOT. The caller commits this in its own session_scope
+    block, then calls send_screenshot_picker_prompt with the result once
+    that block has closed — same "commit before send" reasoning as
+    _shared.py's _stage_preview/_post_preview_album split, and for the
+    same reason (see jobs/timers/current_image.py's post_current_image
+    docstring).
+
+    Called from `search.py`'s `pick_callback_handler` (and `manual.py`'s
+    synonym step) once identification is staged with no image yet. Every
     screenshot-capable provider is always offered (see
-    _screenshot_capable_providers) since cross-provider resolution
-    means even an AniList/manual identification can still get a
+    _screenshot_capable_providers) since cross-provider resolution means
+    even an AniList/manual identification can still get a
     Shikimori/Jikan/TMDB screenshot."""
     providers = _screenshot_capable_providers(game)
     game.setup_step = SetupStep.PICKING_SCREENSHOT
+    return ScreenshotPickerPrompt(starter_id=game.starter_id, providers=providers)
+
+
+async def send_screenshot_picker_prompt(
+    context: ContextTypes.DEFAULT_TYPE, prompt: ScreenshotPickerPrompt, lang: str
+) -> None:
     await context.bot.send_message(
-        chat_id=game.starter_id,
+        chat_id=prompt.starter_id,
         text=i18n.t("dm_start.pick_screenshot_source_prompt", lang),
-        reply_markup=screenshot_source_keyboard(providers, lang),
+        reply_markup=screenshot_source_keyboard(prompt.providers, lang),
     )
 
 

@@ -378,6 +378,31 @@ async def test_search_text_handler_appends_a_synonym_and_reshows_the_preview(
         assert fetched.setup_step == SetupStep.CONFIRMING
 
 
+async def test_search_text_handler_keeps_the_appended_synonym_when_the_album_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    _staged_setup_game(session_factory)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.setup_step = SetupStep.AWAITING_SYNONYM
+        session.commit()
+
+    update = _make_text_update(user_id=1, text="Frieren at the Funeral")
+    context = _make_callback_context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await search.search_text_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.synonyms == ["Frieren", "Frieren at the Funeral"]
+        assert fetched.setup_step == SetupStep.CONFIRMING
+
+
 async def test_search_text_handler_rejects_a_blank_extra_synonym(session_factory) -> None:
     _staged_setup_game(session_factory)
     with session_factory() as session:

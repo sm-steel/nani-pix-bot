@@ -35,11 +35,13 @@ Split across submodules by flow stage:
   _shared.py          small helpers used by more than one of the
                        above, including _start_new_game() (the
                        eligibility-check + game-creation logic both
-                       intake.py and newgame.py call) and
-                       _show_preview() (needed by every path that ends
-                       in "an image now exists for this game" — the
-                       traditional upload flow and
-                       screenshot_gallery.py's pick)
+                       intake.py and newgame.py call) and the
+                       _stage_preview()/_post_preview_album() pair
+                       (needed by every path that ends in "an image now
+                       exists for this game" — the traditional upload
+                       flow and screenshot_gallery.py's pick), split so
+                       the album send always happens after its game's
+                       session has committed
 
 This __init__ re-exports only the PTB handler entrypoints app.py
 registers — not a blanket re-export of every submodule's internals."""

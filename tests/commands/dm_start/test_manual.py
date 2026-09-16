@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from telegram import Update
 from telegram.constants import ChatMemberStatus
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import preview, search
@@ -177,3 +178,28 @@ async def test_manual_entry_second_message_stages_and_shows_a_preview(
         assert fetched.synonyms == ["Frieren", "Frieren at the Funeral"]
 
     update.message.reply_text.assert_awaited_once()
+
+
+async def test_manual_entry_second_message_keeps_the_staged_entry_when_the_album_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    _create_setup_game(session_factory, starter_id=1, source="manual")
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.title_english = "Sousou no Frieren"
+        session.commit()
+
+    update = _make_text_update(user_id=1, text="Frieren")
+    context = _make_callback_context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await search.search_text_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.CONFIRMING
+        assert fetched.synonyms == ["Frieren"]

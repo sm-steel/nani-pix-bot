@@ -19,9 +19,10 @@ from nani_pix_bot.commands.dm_start._shared import (
     _IMAGE_DOWNLOAD_ERRORS,
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
+    _post_preview_album,
     _reject_stale_tap,
     _search_and_build_keyboard,
-    _show_preview,
+    _stage_preview,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     SCREENSHOT_SEARCH_PICK_PREFIX,
@@ -746,13 +747,17 @@ async def _handle_screenshot_pick(
 
     # The download is done, so this is where the write happens — on a
     # freshly re-read row rather than the pre-download snapshot `game`
-    # (issue #82). _show_preview runs inside this same short session,
-    # unlike the paging page above: it needs a live session of its own
-    # (it writes setup_step and reads the stage config), so — like every
-    # other call site of it in this package — it stays paired with its
-    # write rather than moving outside it. The vanished-row notify (if
-    # any) is the one thing that does *not* run in here — it runs after
-    # this block closes, not inside it (see _fresh_game_or_warn).
+    # (issue #82). _stage_preview runs inside this same short session
+    # (it writes setup_step and reads the stage config), staying paired
+    # with the image-provenance write above it — but the actual preview
+    # album send (_post_preview_album) happens only after this block
+    # commits, same as every other _stage_preview call site: a Telegram
+    # timeout must never roll back the pick that was just written (see
+    # jobs/timers/current_image.py's post_current_image docstring). The
+    # vanished-row notify (if any) is the other thing that does *not* run
+    # in here — it runs after this block closes too (see
+    # _fresh_game_or_warn).
+    album = None
     with session_scope(fresh.session_factory) as session:
         fresh_game = _fresh_game_or_warn(
             session,
@@ -772,11 +777,12 @@ async def _handle_screenshot_pick(
             fresh_game.screenshot_picker_provider = None
             logger.debug("Game {}: picked {} screenshot #{}", fresh_game.id, provider, index + 1)
 
-            await _show_preview(context, session, fresh_game, tap.lang)
-    if fresh_game is None:
+            album = _stage_preview(session, fresh_game, tap.lang)
+    if album is None:
         # There is no live row left to show a preview album for either
         # way, but the starter still needs telling — now that the
         # session above has closed, not while it was open.
         await _notify_setup_gone(fresh, game.starter_id)
         return None
+    await _post_preview_album(context, album, tap.lang)
     return i18n.t("dm_start.preview_sent", tap.lang)

@@ -8,7 +8,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import screenshots
 from nani_pix_bot.commands.dm_start.keyboards import SCREENSHOT_UPLOAD_CALLBACK_DATA
-from nani_pix_bot.models.enums import GameStatus, SetupStep
+from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
@@ -63,7 +63,7 @@ def _staged_game(session_factory, *, starter_id: int = 1, **overrides) -> int:
         return game.id
 
 
-async def test_start_screenshot_picker_shows_the_source_keyboard(session_factory) -> None:
+async def test_stage_screenshot_picker_moves_to_picking_screenshot(session_factory) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
         session.commit()
@@ -76,9 +76,18 @@ async def test_start_screenshot_picker_shows_the_source_keyboard(session_factory
         )
         session.add(game)
         session.commit()
-        context = _make_context(session_factory)
 
-        await screenshots.start_screenshot_picker(context, game, "en")
+        prompt = screenshots.stage_screenshot_picker(game)
+
+        assert game.setup_step == SetupStep.PICKING_SCREENSHOT
+    assert prompt.starter_id == 1
+
+
+async def test_send_screenshot_picker_prompt_shows_the_source_keyboard(session_factory) -> None:
+    context = _make_context(session_factory)
+    prompt = screenshots.ScreenshotPickerPrompt(starter_id=1, providers=[Provider.SHIKIMORI])
+
+    await screenshots.send_screenshot_picker_prompt(context, prompt, "en")
 
     context.bot.send_message.assert_awaited_once()
     _, kwargs = context.bot.send_message.await_args
@@ -89,7 +98,7 @@ async def test_start_screenshot_picker_shows_the_source_keyboard(session_factory
     assert "screenshot_source:shikimori" in callbacks
 
 
-async def test_start_screenshot_picker_offers_all_three_providers_even_with_no_ids_yet(
+async def test_stage_screenshot_picker_offers_all_three_providers_even_with_no_ids_yet(
     session_factory,
 ) -> None:
     """Cross-provider resolution (ticket 8) means every screenshot-
@@ -103,20 +112,11 @@ async def test_start_screenshot_picker_offers_all_three_providers_even_with_no_i
         game = Game(starter_id=1, status=GameStatus.SETUP, source="anilist", anilist_id=99)
         session.add(game)
         session.commit()
-        context = _make_context(session_factory)
 
-        await screenshots.start_screenshot_picker(context, game, "en")
+        prompt = screenshots.stage_screenshot_picker(game)
 
         assert game.setup_step == SetupStep.PICKING_SCREENSHOT
-
-    context.bot.send_message.assert_awaited_once()
-    _, kwargs = context.bot.send_message.await_args
-    callbacks = [
-        button.callback_data for row in kwargs["reply_markup"].inline_keyboard for button in row
-    ]
-    assert "screenshot_source:shikimori" in callbacks
-    assert "screenshot_source:jikan" in callbacks
-    assert "screenshot_source:tmdb" in callbacks
+    assert set(prompt.providers) == {Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB}
 
 
 async def test_screenshot_source_callback_handler_shows_the_gallery(

@@ -12,8 +12,9 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start._shared import (
     _SYNONYM_SPLIT_RE,
     _method_prompt_key,
+    _post_preview_album,
     _prefer_shikimori,
-    _show_preview,
+    _stage_preview,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
@@ -109,7 +110,10 @@ async def _add_synonym_step(message, context: ContextTypes.DEFAULT_TYPE, lang: s
             return
         setup_game.synonyms = [*(setup_game.synonyms or []), *extra]
         logger.debug("Game {}: appended {} extra synonym(s)", setup_game.id, len(extra))
-        await _show_preview(context, session, setup_game, lang)
+        album = _stage_preview(session, setup_game, lang)
+    # Block closed and committed above — see _post_preview_album's
+    # docstring for why the send has to happen after.
+    await _post_preview_album(context, album, lang)
 
 
 async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
