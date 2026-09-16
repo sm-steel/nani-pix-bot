@@ -3,7 +3,7 @@ from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from telegram.error import BadRequest, Forbidden
+from telegram.error import BadRequest, Forbidden, TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.jobs import timers as timeout_module
@@ -97,6 +97,22 @@ async def test_timeout_job_callback_is_a_noop_if_already_won(session_factory) ->
     await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
     context.bot.send_photo.assert_not_awaited()
+
+
+async def test_timeout_job_callback_keeps_the_game_unsolved_when_the_reveal_times_out(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory)
+    context = _make_job_context(session_factory, game_id=game_id)
+    context.bot.send_photo = AsyncMock(side_effect=TimedOut())
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.UNSOLVED
+        assert fetched.original_image == b"file123"
 
 
 async def test_rearm_pending_timeouts_schedules_every_active_game(session_factory) -> None:
@@ -598,6 +614,41 @@ async def test_inactivity_advance_job_callback_ends_unsolved_on_final_stage(
         assert fetched.original_image is None
 
 
+async def test_inactivity_advance_job_callback_keeps_stage_advance_when_post_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "nani_pix_bot.services.pixelate.pixelate", lambda image_bytes, target_width: b"pixelated"
+    )
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_1)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+    context.bot.send_photo = AsyncMock(side_effect=TimedOut())
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.ACTIVE
+        assert fetched.current_stage == PixelStage.STAGE_2
+
+
+async def test_inactivity_advance_job_callback_keeps_unsolved_ending_when_reveal_times_out(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+    context.bot.send_photo = AsyncMock(side_effect=TimedOut())
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.UNSOLVED
+        assert fetched.original_image == b"file123"
+
+
 async def test_inactivity_advance_job_callback_is_a_noop_if_not_active(session_factory) -> None:
     game_id = _active_game(session_factory, status=GameStatus.WON, winner_id=1)
     context = _make_advance_job_context(session_factory, game_id=game_id)
@@ -648,17 +699,18 @@ async def test_post_current_image_pins_the_new_message_and_unpins_the_old_one(
         settings.set_pinned_message_id(session, 111)
         session.commit()
 
-        message = await timeout_module.post_current_image(
-            cast(ContextTypes.DEFAULT_TYPE, context),
-            session,
-            photo=b"bytes",
-            caption="a caption",
-        )
-        session.commit()
+    message = await timeout_module.post_current_image(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photo=b"bytes",
+        caption="a caption",
+    )
 
-        assert message.message_id == 999
-        context.bot.unpin_chat_message.assert_awaited_once_with(chat_id=555, message_id=111)
-        context.bot.pin_chat_message.assert_awaited_once()
+    assert message is not None
+    assert message.message_id == 999
+    context.bot.unpin_chat_message.assert_awaited_once_with(chat_id=555, message_id=111)
+    context.bot.pin_chat_message.assert_awaited_once()
+    with session_factory() as session:
         assert settings.get_pinned_message_id(session) == 999
 
 
@@ -666,13 +718,12 @@ async def test_post_current_image_does_not_unpin_when_nothing_was_pinned_yet(
     session_factory,
 ) -> None:
     context = _make_post_image_context(session_factory)
-    with session_factory() as session:
-        await timeout_module.post_current_image(
-            cast(ContextTypes.DEFAULT_TYPE, context),
-            session,
-            photo=b"bytes",
-            caption="a caption",
-        )
+    await timeout_module.post_current_image(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photo=b"bytes",
+        caption="a caption",
+    )
 
     context.bot.unpin_chat_message.assert_not_awaited()
 
@@ -680,14 +731,14 @@ async def test_post_current_image_does_not_unpin_when_nothing_was_pinned_yet(
 async def test_post_current_image_does_not_raise_when_pinning_fails(session_factory) -> None:
     context = _make_post_image_context(session_factory)
     context.bot.pin_chat_message = AsyncMock(side_effect=BadRequest("Not enough rights"))
-    with session_factory() as session:
-        message = await timeout_module.post_current_image(
-            cast(ContextTypes.DEFAULT_TYPE, context),
-            session,
-            photo=b"bytes",
-            caption="a caption",
-        )  # should not raise
+    message = await timeout_module.post_current_image(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photo=b"bytes",
+        caption="a caption",
+    )  # should not raise
 
+    assert message is not None
     assert message.message_id == 999
 
 
@@ -700,14 +751,32 @@ async def test_post_current_image_does_not_raise_when_unpinning_the_old_message_
         settings.set_pinned_message_id(session, 111)
         session.commit()
 
-        await timeout_module.post_current_image(
-            cast(ContextTypes.DEFAULT_TYPE, context),
-            session,
-            photo=b"bytes",
-            caption="a caption",
-        )  # should not raise
-        # Pinning the new message still happens despite the unpin failure.
-        context.bot.pin_chat_message.assert_awaited_once()
+    await timeout_module.post_current_image(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photo=b"bytes",
+        caption="a caption",
+    )  # should not raise
+    # Pinning the new message still happens despite the unpin failure.
+    context.bot.pin_chat_message.assert_awaited_once()
+
+
+async def test_post_current_image_returns_none_and_does_not_raise_when_send_photo_times_out(
+    session_factory,
+) -> None:
+    context = _make_post_image_context(session_factory)
+    context.bot.send_photo = AsyncMock(side_effect=TimedOut())
+
+    message = await timeout_module.post_current_image(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photo=b"bytes",
+        caption="a caption",
+    )  # should not raise
+
+    assert message is None
+    context.bot.pin_chat_message.assert_not_awaited()
+    context.bot.unpin_chat_message.assert_not_awaited()
 
 
 async def test_rearm_pending_timeouts_also_reschedules_inactivity_timers(session_factory) -> None:

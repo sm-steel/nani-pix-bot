@@ -2,6 +2,7 @@ from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 from telegram import Update
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import correct as correct_command_module
@@ -145,6 +146,36 @@ async def test_correct_command_forces_a_win_for_the_named_player(session_factory
         assert fetched.status == GameStatus.WON
         assert fetched.winner_id == 2
         assert fetched.original_image is None
+
+        winner = session.get(Player, 2)
+        assert winner is not None
+        assert winner.wins == 1
+
+
+async def test_correct_command_keeps_the_win_committed_when_the_announcement_times_out(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory, total_guess_count=1)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="winner"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+    context.bot.send_photo = AsyncMock(side_effect=TimedOut())
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.WON
+        assert fetched.winner_id == 2
+        # The reveal never sent, so the "confirmed sent" cleanup gate
+        # (MECHANICS.md's "Cleanup" note) must not have run either.
+        assert fetched.original_image == b"file123"
 
         winner = session.get(Player, 2)
         assert winner is not None

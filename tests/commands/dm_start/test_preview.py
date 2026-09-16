@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from telegram import Update
 from telegram.constants import ChatMemberStatus
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import preview, search
@@ -143,6 +144,24 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
         preview.timeout_module.setup_abandon_job_name(fetched.id)
     )
     update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_preview_confirm_activates_the_game_even_when_the_group_post_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    _staged_setup_game(session_factory)
+    update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_callback_context(session_factory)
+    context.bot.send_photo = AsyncMock(side_effect=TimedOut())
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.status == GameStatus.ACTIVE
 
 
 async def test_preview_change_image_awaits_a_new_photo_for_a_genuine_upload(

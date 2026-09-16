@@ -3,6 +3,8 @@ every pixelation stage, a follow-up message with confirm/change-image/
 research/add-synonym buttons, and (on confirm) the actual post to the
 group topic. See MECHANICS.md's "Starting a game" section."""
 
+from dataclasses import dataclass
+
 from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -42,11 +44,26 @@ from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.settings import stage_config
 
 
-async def _finalize_and_post(context, session, game: Game, lang: str, starter_name: str) -> None:
+@dataclass(frozen=True)
+class _FirstStagePost:
+    """What the confirm tap's announcement needs, captured while its
+    session was still open — post_current_image runs after that session
+    (and its commit) has already closed."""
+
+    photo: bytes
+    caption: str
+
+
+def _activate_and_stage_first_post(
+    session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str, starter_name: str
+) -> _FirstStagePost:
     """Shared tail end of every identification method (AniList, Shikimori,
-    manual): pixelate the original at the first (blockiest) stage, activate the game, post it to
-    the group topic, and schedule the timeout — canceling the setup-abandon
-    timer that's been running since the photo was first sent (issue #21).
+    manual): pixelate the original at the first (blockiest) stage, activate
+    the game, and schedule its timers — canceling the setup-abandon timer
+    that's been running since the photo was first sent (issue #21). The
+    actual group post happens after the caller's session commits (see
+    post_current_image's docstring) — activation must not be rolled back
+    by a Telegram hiccup on that send.
 
     Builds the group caption here rather than taking it prebuilt, because
     it names stage 1 and that stage's wrong-guess budget — both of which
@@ -56,7 +73,7 @@ async def _finalize_and_post(context, session, game: Game, lang: str, starter_na
     activate_game() only runs a couple of lines below."""
     timeout_module.cancel_setup_abandon(context.job_queue, game.id)
     if game.original_image is None:
-        raise RuntimeError("game.original_image is None in _finalize_and_post")
+        raise RuntimeError("game.original_image is None in _activate_and_stage_first_post")
     original_bytes = game.original_image
     first_stage = game_service.STAGE_ORDER[0]
     first_stage_settings = stage_config.get_stage_config(session, first_stage)
@@ -71,9 +88,9 @@ async def _finalize_and_post(context, session, game: Game, lang: str, starter_na
         limit=first_stage_settings.wrong_guess_limit,
     )
     game_service.activate_game(session, game)
-    await timeout_module.post_current_image(context, session, photo=pixelated, caption=caption)
     timeout_module.schedule_timeout(context.job_queue, game)
     timeout_module.schedule_inactivity_timers(context.job_queue, game)
+    return _FirstStagePost(photo=pixelated, caption=caption)
 
 
 async def _add_synonym_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, user) -> None:
@@ -110,16 +127,19 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
         return
 
     session_factory = context.bot_data["session_factory"]
+    if query.data == PREVIEW_CONFIRM_CALLBACK_DATA:
+        lang = await _handle_confirm_tap(context, session_factory, user)
+        if lang is not None:
+            await query.edit_message_text(text=i18n.t("dm_start.posted", lang))
+        return
+
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
             return
 
-        if query.data == PREVIEW_CONFIRM_CALLBACK_DATA:
-            await _preview_confirm(context, session, setup_game, lang, user.full_name)
-            await query.edit_message_text(text=i18n.t("dm_start.posted", lang))
-        elif query.data == PREVIEW_CHANGE_IMAGE_CALLBACK_DATA:
+        if query.data == PREVIEW_CHANGE_IMAGE_CALLBACK_DATA:
             await _preview_change_image(query, setup_game, lang)
         elif query.data == PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA:
             await _preview_change_image_upload(query, setup_game, lang)
@@ -131,9 +151,31 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
             await _preview_add_synonym(query, setup_game, lang)
 
 
-async def _preview_confirm(context, session, game: Game, lang: str, starter_name: str) -> None:
-    logger.debug("Game {}: confirmed from preview", game.id)
-    await _finalize_and_post(context, session, game, lang, starter_name)
+async def _handle_confirm_tap(
+    context: ContextTypes.DEFAULT_TYPE, session_factory, user
+) -> str | None:
+    """Returns the group's language if a game was actually confirmed (so
+    the caller can report the outcome), or None for a stale tap. Split
+    out from preview_callback_handler's shared session — activating the
+    game and posting stage 1 must commit before the announcement is
+    attempted (see post_current_image's docstring), so this branch can't
+    share a session with the other five, which don't post anything."""
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        if setup_game is None:
+            return None
+        logger.debug("Game {}: confirmed from preview", setup_game.id)
+        first_stage_post = _activate_and_stage_first_post(
+            session, context, setup_game, lang, user.full_name
+        )
+    # Block closed and committed above — activation is durable now
+    # regardless of whether the announcement below actually reaches the
+    # group (see post_current_image's docstring).
+    await timeout_module.post_current_image(
+        context, session_factory, photo=first_stage_post.photo, caption=first_stage_post.caption
+    )
+    return lang
 
 
 async def _preview_change_image(query, game: Game, lang: str) -> None:
