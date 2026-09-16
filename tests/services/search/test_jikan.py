@@ -629,3 +629,66 @@ async def test_screenshots_treats_both_url_fields_alike(
     warnings = [message for level, message in records if level == "WARNING"]
     assert len(warnings) == 1
     assert "_picture_url" in warnings[0]
+
+
+JIKAN_RANDOM_URL = "https://api.jikan.moe/v4/random/anime"
+
+
+async def test_random_anime_hits_the_random_endpoint_and_parses_the_result() -> None:
+    entry = {
+        "mal_id": 52991,
+        "title": "Sousou no Frieren",
+        "title_english": "Frieren: Beyond Journey's End",
+        "title_japanese": "葬送のフリーレン",
+        "title_synonyms": ["Frieren at the Funeral"],
+    }
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url).split("?")[0]
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await jikan.random_anime(client)
+
+    assert captured["url"] == JIKAN_RANDOM_URL
+    assert result == jikan.JikanResult(
+        jikan_id=52991,
+        title_romaji="Sousou no Frieren",
+        title_english="Frieren: Beyond Journey's End",
+        title_native="葬送のフリーレン",
+        synonyms=["Frieren at the Funeral"],
+    )
+
+
+async def test_random_anime_returns_none_when_the_data_container_is_null() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": None})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await jikan.random_anime(client) is None
+
+
+async def test_random_anime_is_not_cached_across_calls() -> None:
+    """See shikimori.py's identical test — a cached "random" pick would
+    return the same anime every call, defeating both genuine randomness
+    and services/game/autostart.py's retry-a-different-anime loop."""
+    calls = {"n": 0}
+    entries = [
+        {"mal_id": 1, "title": "First"},
+        {"mal_id": 2, "title": "Second"},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        entry = entries[calls["n"]]
+        calls["n"] += 1
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        first = await jikan.random_anime(client)
+        second = await jikan.random_anime(client)
+
+    assert calls["n"] == 2
+    assert first is not None
+    assert second is not None
+    assert first.jikan_id != second.jikan_id

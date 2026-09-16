@@ -17,6 +17,7 @@ from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, parsing, rest
 
 JIKAN_BASE_URL = "https://api.jikan.moe/v4/anime"
+JIKAN_RANDOM_URL = "https://api.jikan.moe/v4/random/anime"
 SEARCH_RESULT_LIMIT = 5
 # A fixed cap on how many pictures are ever fetched/cached per anime —
 # not a per-call parameter, so the cache key never needs to encode it
@@ -71,6 +72,20 @@ async def get_by_id(client: httpx.AsyncClient, jikan_id: int) -> JikanResult | N
     return await rest.fetch_by_id(
         _API, client, f"{JIKAN_BASE_URL}/{jikan_id}", jikan_id, _parse_detail_result
     )
+
+
+async def random_anime(client: httpx.AsyncClient) -> JikanResult | None:
+    """One anime, uniformly at random via Jikan's own `/random/anime`
+    endpoint — the fallback when Shikimori's random pick is unreachable
+    or empty (see services/game/autostart.py, the sole caller).
+
+    Reuses the by-id detail endpoint's response shape/parser
+    (`{"data": {...}}`, `_parse_detail_result`) — confirmed to match at
+    implementation time.
+
+    Deliberately NOT `@cache.cached()` — see test_random_anime_is_not_cached_across_calls."""
+    data = await rest.get_json(_API, client, JIKAN_RANDOM_URL, {})
+    return _parse_detail_result(data)
 
 
 @cache.cached()
