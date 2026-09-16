@@ -55,7 +55,7 @@ SCREENSHOT_FETCH_LIMIT = 20
 # toward titles players are more likely to recognize. Not applied to
 # search()/get_by_id(), which answer a starter's own explicit query and
 # should never silently hide a low-scored title they typed themselves.
-RANDOM_PICK_MIN_SCORE = 6.5
+RANDOM_PICK_MIN_SCORE = 7
 
 # Shikimori asks API consumers to identify themselves with a descriptive
 # User-Agent rather than a Referer (unlike AniList) — see the project's
@@ -103,7 +103,7 @@ query ($ids: String) {
 """
 
 _RANDOM_QUERY = """
-query ($minScore: Float) {
+query ($minScore: Int) {
   animes(order: random, limit: 1, score: $minScore, censored: true) {
     id
     name
