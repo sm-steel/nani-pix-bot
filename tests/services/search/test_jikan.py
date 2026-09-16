@@ -669,6 +669,37 @@ async def test_random_anime_returns_none_when_the_data_container_is_null() -> No
         assert await jikan.random_anime(client) is None
 
 
+async def test_random_anime_parses_the_rating_field() -> None:
+    """Jikan's own content-rating field, needed so
+    services/game/autostart.py can reject an explicit-rated random pick
+    (issue #159) — Shikimori's random_anime() already filters this
+    server-side, but Jikan's REST /random/anime endpoint has no
+    equivalent query parameter."""
+    entry = {"mal_id": 1, "title": "Some Hentai", "rating": "Rx - Hentai"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await jikan.random_anime(client)
+
+    assert result is not None
+    assert result.rating == "Rx - Hentai"
+
+
+async def test_random_anime_defaults_rating_to_none_when_absent() -> None:
+    entry = {"mal_id": 1, "title": "Some Anime"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await jikan.random_anime(client)
+
+    assert result is not None
+    assert result.rating is None
+
+
 async def test_random_anime_is_not_cached_across_calls() -> None:
     """See shikimori.py's identical test — a cached "random" pick would
     return the same anime every call, defeating both genuine randomness

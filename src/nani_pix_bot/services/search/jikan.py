@@ -40,6 +40,15 @@ class JikanResult:
     title_english: str | None
     title_native: str | None
     synonyms: list[str]
+    # Jikan's own MAL content-rating string (e.g. "Rx - Hentai"), not
+    # requested/used by search()'s or get_by_id()'s existing callers —
+    # added solely so services/game/autostart.py can reject an
+    # explicit-rated random pick (issue #159), since Jikan's
+    # /random/anime endpoint has no server-side SFW filter the way
+    # Shikimori's random_anime() does. Defaults to None so every
+    # existing keyword-based JikanResult(...) construction (tests
+    # included) stays valid unchanged.
+    rating: str | None = None
 
 
 @cache.cached()
@@ -169,4 +178,5 @@ def _parse_result(raw: dict) -> JikanResult | None:
         title_english=title_english,
         title_native=title_native,
         synonyms=synonyms,
+        rating=raw.get("rating"),
     )
