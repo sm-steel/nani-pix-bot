@@ -21,7 +21,17 @@ TURN_EXPIRY_JOB_NAME = "turn-expiry"
 def schedule_turn_timers(job_queue: JobQueue | None, turn_state: TurnState) -> None:
     """(Re)schedules both singleton jobs from the row's stored
     deadlines — cancels any existing ones first so calling this twice
-    (e.g. /skip re-assigning to someone else) never double-schedules."""
+    (e.g. /skip re-assigning to someone else) never double-schedules.
+
+    Each job carries `data=next_starter_id`: JobQueue scheduling isn't
+    transactional (a job, once scheduled, can't be undone by a later DB
+    rollback), so without this a win/skip that retargets the turn right
+    after an earlier one rolled back could leave a reminder/expiry job
+    live for a player who is no longer actually designated. Both
+    callbacks re-check `job.data` against the live `turn_state` and
+    no-op on a mismatch — the same defense-in-depth pattern the per-game
+    jobs (game_timeout.py, inactivity.py) already use via their own
+    game-id-specific job names."""
     if job_queue is None:
         return
     cancel_turn_timers(job_queue)
@@ -33,6 +43,7 @@ def schedule_turn_timers(job_queue: JobQueue | None, turn_state: TurnState) -> N
             turn_reminder_job_callback,
             when=delay,
             name=TURN_REMINDER_JOB_NAME,
+            data=next_starter_id,
         )
     if turn_state.expiry_at is not None:
         delay = seconds_until(turn_state.expiry_at)
@@ -41,6 +52,7 @@ def schedule_turn_timers(job_queue: JobQueue | None, turn_state: TurnState) -> N
             turn_expiry_job_callback,
             when=delay,
             name=TURN_EXPIRY_JOB_NAME,
+            data=next_starter_id,
         )
 
 
@@ -58,12 +70,22 @@ async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
     them a reminder; falls back to an @mention in the group if the DM
     fails (they've never started the bot), same pattern as onboarding's
     /help fallback."""
+    job = context.job
+    if job is None:
+        return
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         turn_state = game_service.get_turn_state(session)
         if turn_state is None or turn_state.next_starter_id is None:
             logger.debug("Turn-reminder fired but no turn is designated — no-op")
+            return
+        if turn_state.next_starter_id != job.data:
+            logger.debug(
+                "Turn-reminder fired for stale target {} (currently {}) — no-op",
+                job.data,
+                turn_state.next_starter_id,
+            )
             return
         if game_service.active_or_setup_game(session) is not None:
             logger.debug("Turn-reminder fired but a game is already running — no-op")
@@ -92,12 +114,22 @@ async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
 async def turn_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires 12h after a turn is designated to a real player, if they
     never started. Opens the turn to anyone and notifies the group."""
+    job = context.job
+    if job is None:
+        return
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         turn_state = game_service.get_turn_state(session)
         if turn_state is None or turn_state.next_starter_id is None:
             logger.debug("Turn-expiry fired but no turn is designated — no-op")
+            return
+        if turn_state.next_starter_id != job.data:
+            logger.debug(
+                "Turn-expiry fired for stale target {} (currently {}) — no-op",
+                job.data,
+                turn_state.next_starter_id,
+            )
             return
         if game_service.active_or_setup_game(session) is not None:
             logger.debug("Turn-expiry fired but a game is already running — no-op")

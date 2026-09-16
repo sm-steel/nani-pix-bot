@@ -246,6 +246,11 @@ def test_schedule_turn_timers_schedules_both_jobs(session_factory) -> None:
     names = [call.kwargs["name"] for call in job_queue.run_once.call_args_list]
     assert timeout_module.TURN_REMINDER_JOB_NAME in names
     assert timeout_module.TURN_EXPIRY_JOB_NAME in names
+    # Every job is targeted at the specific player it was scheduled for,
+    # so a stale-target job (superseded by a later retarget) can no-op
+    # instead of acting against the wrong player.
+    data_values = [call.kwargs["data"] for call in job_queue.run_once.call_args_list]
+    assert data_values == [2, 2]
 
 
 def test_schedule_turn_timers_schedules_nothing_when_the_turn_is_open() -> None:
@@ -276,6 +281,7 @@ async def test_turn_reminder_job_callback_dms_the_designated_player(session_fact
         session.commit()
 
     context = _make_group_job_context(session_factory)
+    context.job.data = 2
 
     await timeout_module.turn_reminder_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
@@ -293,6 +299,7 @@ async def test_turn_reminder_job_callback_falls_back_to_group_mention_when_dm_fa
         session.commit()
 
     context = _make_group_job_context(session_factory)
+    context.job.data = 2
     context.bot.send_message = AsyncMock(side_effect=[Forbidden("bot was blocked"), None])
 
     await timeout_module.turn_reminder_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
@@ -314,6 +321,26 @@ async def test_turn_reminder_job_callback_is_a_noop_if_a_game_is_already_running
         session.commit()
 
     context = _make_group_job_context(session_factory)
+    context.job.data = 2
+
+    await timeout_module.turn_reminder_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_message.assert_not_awaited()
+
+
+async def test_turn_reminder_job_callback_is_a_noop_if_targeted_at_a_stale_player(
+    session_factory,
+) -> None:
+    """A reminder scheduled for player 2, superseded by a later win/skip
+    that retargeted the turn to player 3 before this job fired, must not
+    DM player 2 — see schedule_turn_timers' data= hardening."""
+    with session_factory() as session:
+        session.add_all([Player(telegram_user_id=2), Player(telegram_user_id=3)])
+        session.add(TurnState(id=1, next_starter_id=3))
+        session.commit()
+
+    context = _make_group_job_context(session_factory)
+    context.job.data = 2
 
     await timeout_module.turn_reminder_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
@@ -329,6 +356,7 @@ async def test_turn_expiry_job_callback_opens_the_turn_and_notifies_the_group(
         session.commit()
 
     context = _make_group_job_context(session_factory)
+    context.job.data = 2
 
     await timeout_module.turn_expiry_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
@@ -339,6 +367,30 @@ async def test_turn_expiry_job_callback_opens_the_turn_and_notifies_the_group(
         turn_state = game_service.get_turn_state(session)
         assert turn_state is not None
         assert turn_state.next_starter_id is None
+
+
+async def test_turn_expiry_job_callback_is_a_noop_if_targeted_at_a_stale_player(
+    session_factory,
+) -> None:
+    """An expiry scheduled for player 2, superseded by a later win/skip
+    that retargeted the turn to player 3 before this job fired, must not
+    open player 3's turn back up — see schedule_turn_timers' data=
+    hardening."""
+    with session_factory() as session:
+        session.add_all([Player(telegram_user_id=2), Player(telegram_user_id=3)])
+        session.add(TurnState(id=1, next_starter_id=3))
+        session.commit()
+
+    context = _make_group_job_context(session_factory)
+    context.job.data = 2
+
+    await timeout_module.turn_expiry_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_message.assert_not_awaited()
+    with session_factory() as session:
+        turn_state = game_service.get_turn_state(session)
+        assert turn_state is not None
+        assert turn_state.next_starter_id == 3
 
 
 async def test_rearm_pending_timeouts_reschedules_setup_abandon_and_turn_timers(
