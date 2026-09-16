@@ -207,22 +207,6 @@ src/nani_pix_bot/
     gamesenabled.py  # /setgamesenabled — DM-only, admin-gated toggle for
                    # whether a *new* game may be started at all
     onboarding.py # /start, /help
-    testpixels.py # /testpixels — TEMPORARY diagnostic, DELETE ME (both
-                   # modules say so in their own docstrings). Posts the
-                   # tmp/example*.* images under one or every candidate
-                   # obfuscation algorithm so they can be compared in
-                   # the chat they'll be played in. Deliberately
-                   # ungated (owner's decision — anyone who can message
-                   # the bot may run it), deliberately untranslated and
-                   # untested: it is a short-lived probe, not a feature,
-                   # and paying i18n/test cost for it would be paying
-                   # for something built to be deleted
-    testpixels_algos.py  # the candidate algorithms /testpixels renders,
-                   # kept out of services/ on purpose — services/ is the
-                   # production layer this repo holds to TDD, and this
-                   # is throwaway exploration importing the live
-                   # pixelate() unchanged as its baseline. Goes when
-                   # testpixels.py does
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
                    # (membership.py), the one inline keyboard genuinely
