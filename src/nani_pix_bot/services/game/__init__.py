@@ -44,15 +44,21 @@ from nani_pix_bot.services.game.state import (
     stage_result,
 )
 from nani_pix_bot.services.game.turns import (
+    AUTOSTART_RETRY_DELAY,
+    IDLE_AUTOSTART_DELAY,
     TURN_EXPIRY_DELAY,
     TURN_REMINDER_DELAY,
     TURN_STATE_ID,
+    clear_autostart,
     clear_turn_timers,
     get_turn_state,
+    mark_turn_open_if_unassigned,
     set_next_starter,
 )
 
 __all__ = [
+    "AUTOSTART_RETRY_DELAY",
+    "IDLE_AUTOSTART_DELAY",
     "INACTIVITY_ADVANCE_DELAY",
     "INACTIVITY_NUDGE_DELAY",
     "SETUP_ABANDON_DELAY",
@@ -69,6 +75,7 @@ __all__ = [
     "active_or_setup_game",
     "advance_stage",
     "can_start",
+    "clear_autostart",
     "clear_inactivity_nudge",
     "clear_original_screenshot",
     "clear_turn_timers",
@@ -79,6 +86,7 @@ __all__ = [
     "get_setup_game_for_starter",
     "get_turn_state",
     "has_answer_to_reveal",
+    "mark_turn_open_if_unassigned",
     "match_candidates",
     "prioritized_title",
     "record_guess",
