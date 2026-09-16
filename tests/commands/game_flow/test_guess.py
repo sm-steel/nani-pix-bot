@@ -139,9 +139,7 @@ async def test_guess_command_correct_guess_reveals_and_clears_file_id(session_fa
 async def test_guess_command_wrong_guess_advances_stage_with_new_image(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        guess_command_module.pixelate_service, "pixelate", lambda data, width: b"x8-bytes"
-    )
+    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     # STAGE_1/STAGE_2's limit is only 1, so a stage with headroom (STAGE_3,
     # given a limit of 3 here) is needed to exercise "some wrong guesses,
     # then advances".
@@ -371,9 +369,7 @@ async def test_guess_command_wrong_guess_resets_and_reschedules_the_inactivity_c
 async def test_guess_command_stage_advanced_resets_and_reschedules_the_inactivity_clock(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        guess_command_module.pixelate_service, "pixelate", lambda data, width: b"x8-bytes"
-    )
+    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     game_id = _active_game(
         session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2, total_guess_count=3
     )
@@ -412,9 +408,7 @@ async def test_guess_command_stage_advance_caption_shows_the_new_stage_budget(
 ) -> None:
     """The advance caption names the stage's whole budget, not a bare
     cumulative guess counter with nothing to measure it against."""
-    monkeypatch.setattr(
-        guess_command_module.pixelate_service, "pixelate", lambda data, width: b"x8-bytes"
-    )
+    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     _active_game(session_factory, current_stage=PixelStage.STAGE_2, wrong_guess_count=0)
     _seed_stage_limit(session_factory, PixelStage.STAGE_2, wrong_guess_limit=1)
     _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=2)

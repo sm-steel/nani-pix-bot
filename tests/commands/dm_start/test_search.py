@@ -531,7 +531,7 @@ async def test_pick_callback_handler_says_so_when_the_setup_row_is_gone(
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     monkeypatch.setattr(search.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
     _create_setup_game(session_factory, starter_id=1, source=Provider.ANILIST)
 
@@ -577,7 +577,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     get_by_id_mock = AsyncMock(return_value=_FRIEREN_SHIKIMORI)
     monkeypatch.setattr(search.shikimori, "get_by_id", get_by_id_mock)
     _create_setup_game(session_factory, starter_id=1, source=Provider.SHIKIMORI)
@@ -603,7 +603,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_jikan_pick(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     get_by_id_mock = AsyncMock(return_value=_FRIEREN_JIKAN)
     monkeypatch.setattr(search.jikan, "get_by_id", get_by_id_mock)
     _create_setup_game(session_factory, starter_id=1, source=Provider.JIKAN)
@@ -628,7 +628,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_jikan_pick(
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_tmdb_pick(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     get_by_id_mock = AsyncMock(return_value=_FRIEREN_TMDB)
     monkeypatch.setattr(search.tmdb, "get_by_id", get_by_id_mock)
     _create_setup_game(session_factory, starter_id=1, source=Provider.TMDB)
@@ -684,7 +684,7 @@ async def test_pick_callback_handler_survives_a_restart_between_search_and_pick(
     # No cached search results anywhere — get_by_id re-fetches from AniList
     # using only the anilist_id embedded in the button's callback_data,
     # and the pending game is looked up fresh from the DB. See issue #11.
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     get_by_id_mock = AsyncMock(return_value=_FRIEREN)
     monkeypatch.setattr(search.anilist, "get_by_id", get_by_id_mock)
     _create_setup_game(session_factory, starter_id=1)
@@ -703,7 +703,7 @@ async def test_pick_callback_handler_survives_a_restart_between_search_and_pick(
 async def test_pick_callback_handler_preview_lists_every_accepted_answer(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     monkeypatch.setattr(search.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
     _create_setup_game(session_factory, starter_id=1)
 

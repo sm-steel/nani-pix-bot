@@ -22,7 +22,7 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import PixelStage
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.pixelate import pixelate
+from nani_pix_bot.services.pixelate import DEFAULT_ALGORITHM, pixelate
 from nani_pix_bot.services.settings import stage_config
 
 # Anchored to this module rather than the working directory, the same
@@ -189,7 +189,7 @@ async def _send_preview(
             if not image_path.exists():
                 logger.warning("stageconfig preview: missing example image {}", image_path)
                 continue
-            pixelated = pixelate(image_path.read_bytes(), width)
+            pixelated = pixelate(image_path.read_bytes(), width, DEFAULT_ALGORITHM)
             caption = (
                 i18n.t(
                     "stageconfig.preview_caption", lang, stage=stage.name, width=width, limit=limit

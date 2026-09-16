@@ -206,6 +206,37 @@ class PixelStage(enum.Enum):
     STAGE_5 = "stage_5"  # clearest stage before reveal
 
 
+class PixelAlgorithm(enum.Enum):
+    """How a pixelation block's single colour is chosen — see
+    MECHANICS.md's "Pixelation stages" section. Orthogonal to
+    `PixelStage`: the stage decides *how wide* the mosaic is, this
+    decides *how each block is coloured*, and the starter picks one per
+    game from the confirmation preview.
+
+    The five survive a head-to-head comparison of nine candidates; the
+    four that didn't were all whole-image blurs in some form, which
+    obscure a 1280px screenshot far more than a 3840px one and stop
+    being a mosaic at any useful strength. Implementations and the
+    registry live in services/pixelate/."""
+
+    # The original implementation, and every pre-existing game's look:
+    # samples one arbitrary source pixel per block, so a lone bright
+    # speck can define a whole block and fine texture aliases into
+    # misleading patterns.
+    NEAREST = "nearest"
+    # The canonical mosaic — each block is the mean of its pixels.
+    BOX = "box"
+    # The default: keeps the block's dominant tone where averaging
+    # muddies it toward grey.
+    MEDIAN = "median"
+    # Kept because it is cheap to offer and occasionally interesting on
+    # flat cel-shaded art, but marked worst in the picker — see
+    # services/pixelate's DISCOURAGED.
+    MODE = "mode"
+    # Sharpest block colours; can ring on high-contrast edges.
+    LANCZOS = "lanczos"
+
+
 class SetupStep(enum.Enum):
     """Where a SETUP game's starter currently is in the multi-step DM
     identification flow — see MECHANICS.md's "Starting a game" section.

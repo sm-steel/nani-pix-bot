@@ -436,7 +436,11 @@ async def _show_preview(context, session, game: Game, lang: str) -> None:
     captions = [caption, *([None] * (len(game_service.STAGE_ORDER) - 1))]
     media = [
         InputMediaPhoto(
-            media=pixelate_service.pixelate(original_bytes, config[stage].target_width),
+            media=pixelate_service.pixelate(
+                original_bytes,
+                config[stage].target_width,
+                pixelate_service.DEFAULT_ALGORITHM,
+            ),
             caption=stage_caption,
         )
         for stage, stage_caption in zip(game_service.STAGE_ORDER, captions, strict=True)

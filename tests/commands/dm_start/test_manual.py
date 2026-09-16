@@ -148,7 +148,7 @@ async def test_manual_entry_without_an_image_offers_every_screenshot_source(
 async def test_manual_entry_second_message_stages_and_shows_a_preview(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _create_setup_game(session_factory, starter_id=1, source="manual")
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()

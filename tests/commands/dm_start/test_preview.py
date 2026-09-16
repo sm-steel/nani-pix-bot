@@ -105,7 +105,7 @@ def _staged_setup_game(session_factory, *, starter_id: int = 1, **overrides) -> 
 async def test_preview_confirm_activates_and_posts_to_the_group(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
     context = _make_callback_context(session_factory)
@@ -338,7 +338,7 @@ async def test_preview_add_synonym_awaits_a_synonym_message(session_factory) -> 
 async def test_search_text_handler_appends_a_synonym_and_reshows_the_preview(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()

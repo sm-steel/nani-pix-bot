@@ -141,7 +141,7 @@ async def test_screenshot_gallery_callback_handler_pick_downloads_and_shows_prev
 ) -> None:
     urls = ["https://shikimori.io/x/0.jpg", "https://shikimori.io/x/1.jpg"]
     monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=urls))
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     game_id = _staged_game(session_factory, shikimori_id=52991)
 
     update = _make_callback_update(data="screenshot_pick:shikimori:1")
@@ -1378,7 +1378,7 @@ async def test_a_gallery_pick_is_answered_before_the_download_starts(
     monkeypatch.setattr(
         shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
     )
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_game(session_factory, shikimori_id=52991)
 
     update = _make_callback_update(data="screenshot_pick:shikimori:0")

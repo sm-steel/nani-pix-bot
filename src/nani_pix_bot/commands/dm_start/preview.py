@@ -60,7 +60,11 @@ async def _finalize_and_post(context, session, game: Game, lang: str, starter_na
     original_bytes = game.original_image
     first_stage = game_service.STAGE_ORDER[0]
     first_stage_settings = stage_config.get_stage_config(session, first_stage)
-    pixelated = pixelate_service.pixelate(original_bytes, first_stage_settings.target_width)
+    pixelated = pixelate_service.pixelate(
+        original_bytes,
+        first_stage_settings.target_width,
+        pixelate_service.DEFAULT_ALGORITHM,
+    )
     caption = i18n.t(
         "dm_start.game_started_caption",
         lang,
