@@ -155,10 +155,9 @@ arbitrary code on one, including reading secrets):
   dependency here.
 - **`tests.yml`** (badge in `README.md`) — `uv run pytest -q`. No service
   containers: every test fixture uses an in-memory SQLite engine.
-- **`release.yml`** — only on a push to `master`, this repo's dedicated
-  release branch (see "Branching & workflow" below — `master` is *not*
-  the default branch; never `pull_request`, so a fork PR can never reach
-  its secrets). Runs
+- **`release.yml`** — only on a push to `master`, this repo's default
+  and release branch (see "Branching & workflow" below; never
+  `pull_request`, so a fork PR can never reach its secrets). Runs
   `python-semantic-release` against this repo's Conventional Commits
   history and, when a release actually cuts, tags it and builds/pushes a
   versioned image to `ghcr.io/sm-steel/nani-pix-bot`. This repo has no
@@ -243,12 +242,19 @@ after.
 
 ## Branching & workflow
 
-`develop` is the integration branch and the GitHub default — every task
-branch gets PR'd there. `master` is release-only: it only moves via a
-deliberate `develop` → `master` PR when you actually want to cut a
-release, and that push is what triggers `release.yml` (see the CI
-section above). Both branches require a PR — no direct pushes, no force
-pushes, no deletions.
+`develop` is the integration branch — every task branch gets PR'd there.
+`master` is the GitHub **default** branch (what visitors see, what gets
+cloned) and release-only: it only moves via a deliberate `develop` →
+`master` PR when you actually want to cut a release, and that push is
+what triggers `release.yml` (see the CI section above). Both branches
+require a PR — no direct pushes, no force pushes, no deletions.
+
+Because `master`, not `develop`, is the GitHub default, **a new PR's
+base branch defaults to `master` and does not auto-select `develop`** —
+GitHub ties "default branch" and "default PR base branch" to the same
+setting, so this can't be fixed with a repo setting alone. Always target
+`develop` explicitly: `gh pr create --base develop …`, or pick `develop`
+from the base-branch dropdown in the GitHub UI.
 
 The standard flow for any task:
 
@@ -257,7 +263,8 @@ The standard flow for any task:
 3. Branch from `develop` (not `master`) as `<type>/<issue#>-<slug>` —
    `<type>` matches the Conventional Commits type (`feat/`, `fix/`,
    `chore/`, `docs/`, …), e.g. `feat/126-version-command`.
-4. Work and commit there, then open a PR targeting `develop`.
+4. Work and commit there, then open a PR explicitly targeting `develop`
+   (see above — it won't be preselected).
 
 Releasing is its own separate step, not something that happens as a side
 effect of a task PR: open a `develop` → `master` PR and merge it when
