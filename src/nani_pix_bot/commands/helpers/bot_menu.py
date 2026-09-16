@@ -22,6 +22,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("setstageconfig", i18n.t("commands.setstageconfig", lang)),
         BotCommand("setstage", i18n.t("commands.setstage", lang)),
         BotCommand("setgamesenabled", i18n.t("commands.setgamesenabled", lang)),
+        BotCommand("version", i18n.t("commands.version", lang)),
     ]
     group_commands = [
         BotCommand("guess", i18n.t("commands.guess", lang)),
@@ -29,6 +30,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("skip", i18n.t("commands.skip", lang)),
         BotCommand("leaderboard", i18n.t("commands.leaderboard", lang)),
         BotCommand("help", i18n.t("commands.help", lang)),
+        BotCommand("version", i18n.t("commands.version", lang)),
     ]
     await bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
     await bot.set_my_commands(group_commands, scope=BotCommandScopeChat(chat_id=group_chat_id))
