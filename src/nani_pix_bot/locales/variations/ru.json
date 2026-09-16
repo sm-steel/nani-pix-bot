@@ -1,0 +1,5 @@
+{
+  "guess.wrong_feedback": [
+    "❌ Мимо! Попыток до следующей подсказки: {remaining}/{limit} (этап {stage}/{total})."
+  ]
+}

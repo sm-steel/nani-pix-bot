@@ -1,0 +1,5 @@
+{
+  "guess.wrong_feedback": [
+    "❌ Nope, not that one. Guesses until the next clue: {remaining}/{limit} (stage {stage}/{total})."
+  ]
+}
