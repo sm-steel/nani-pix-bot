@@ -42,6 +42,27 @@ convention below). A key missing in `ru.json` falls back to `en.json`
 logs an `ERROR` and returns the bare key rather than raising — a bad
 translation shouldn't crash a live bot.
 
+**Some keys additionally get random phrasing variations**, so a message
+sent many times in one game (a wrong guess can fire up to ~10 times
+across the five stages) doesn't always read identically. These extra
+phrasings live in `locales/variations/en.json` and `.../variations/ru.json`
+— separate, much smaller files from the main `en.json`/`ru.json`, so
+adding a pool of playful alternates for a handful of keys doesn't bloat
+the ~125-key main files that every other string lives in. Each entry
+there maps a key already present in the main file to a list of *extra*
+strings only (the canonical wording from `en.json`/`ru.json` is not
+repeated); `t()` builds a pool of `[canonical, *extras]` and picks one
+at random every call — a key absent from the variations file just uses
+its single canonical wording, unchanged from before this existed. Only
+messages that repeat often within or across a game are worth adding
+here (see git history / issue #154 for the current list) — one-off
+admin/error replies don't need variation. Every extra variant must use
+only placeholder names the canonical template already uses (`t()` is
+always called with the same kwargs regardless of which pool member gets
+picked) — `tests/services/test_i18n.py` guards this, plus EN/RU key
+parity between the two variations files, the same way it already guards
+the main locale files.
+
 Two categories of text are **deliberately not translated**: third-party
 brand names (`"AniList"`/`"Shikimori"`/`"Jikan"`/`"TMDB"` — in the
 method-picker keyboard and everywhere else via `Provider.display_name`
