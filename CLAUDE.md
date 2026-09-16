@@ -155,8 +155,10 @@ arbitrary code on one, including reading secrets):
   dependency here.
 - **`tests.yml`** (badge in `README.md`) — `uv run pytest -q`. No service
   containers: every test fixture uses an in-memory SQLite engine.
-- **`release.yml`** — only on a push to the default branch (never
-  `pull_request`, so a fork PR can never reach its secrets). Runs
+- **`release.yml`** — only on a push to `master`, this repo's dedicated
+  release branch (see "Branching & workflow" below — `master` is *not*
+  the default branch; never `pull_request`, so a fork PR can never reach
+  its secrets). Runs
   `python-semantic-release` against this repo's Conventional Commits
   history and, when a release actually cuts, tags it and builds/pushes a
   versioned image to `ghcr.io/sm-steel/nani-pix-bot`. This repo has no
@@ -238,6 +240,28 @@ kind of logic that's easy to eyeball as "probably right" and quietly wrong
 at the edges — write the edge-case test (near-miss title, empty guess,
 already-at-the-final-stage exhaustion) before the implementation, not
 after.
+
+## Branching & workflow
+
+`develop` is the integration branch and the GitHub default — every task
+branch gets PR'd there. `master` is release-only: it only moves via a
+deliberate `develop` → `master` PR when you actually want to cut a
+release, and that push is what triggers `release.yml` (see the CI
+section above). Both branches require a PR — no direct pushes, no force
+pushes, no deletions.
+
+The standard flow for any task:
+
+1. Make sure it has a GitHub issue (see "Task tracking" below).
+2. Create an isolated worktree for it at `.claude/worktrees/<branch>`.
+3. Branch from `develop` (not `master`) as `<type>/<issue#>-<slug>` —
+   `<type>` matches the Conventional Commits type (`feat/`, `fix/`,
+   `chore/`, `docs/`, …), e.g. `feat/126-version-command`.
+4. Work and commit there, then open a PR targeting `develop`.
+
+Releasing is its own separate step, not something that happens as a side
+effect of a task PR: open a `develop` → `master` PR and merge it when
+you're ready to cut a version.
 
 ## Task tracking (GitHub Issues)
 
