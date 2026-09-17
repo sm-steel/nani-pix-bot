@@ -45,6 +45,18 @@ def cancel_timeout(job_queue: JobQueue | None, game_id: int) -> None:
 
 
 async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Fires 2 days after a game started with no ending yet.
+
+    Imports maybe_overthrow lazily (function-local, not at module level):
+    autostart.py already imports schedule_timeout from this module, so a
+    module-level import the other way round would be a real circular
+    import, not just the theoretical shape the sibling-import convention
+    is meant to dodge — Python's import system can't resolve two modules
+    that both need each other fully initialized at parse time. See
+    turn_timers.py's turn_expiry_job_callback for the identical
+    situation with schedule_idle_autostart."""
+    from nani_pix_bot.jobs.timers.autostart import maybe_overthrow
+
     job = context.job
     if job is None:
         return
@@ -60,6 +72,7 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
 
         logger.info("Game {} timed out after 2 days — ending unsolved", game_id)
         game_service.force_unsolved(game)
+        game_service.mark_turn_open_if_unassigned(session)
         cancel_inactivity_timers(context.job_queue, game.id)
         original_bytes = game.original_image
         caption = i18n.t("timeout.caption", lang, title=game_service.display_title(game, lang))
@@ -68,3 +81,4 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     # the group (see post_current_image's docstring).
     sent = await post_current_image(context, session_factory, photo=original_bytes, caption=caption)
     clear_image_if_sent(session_factory, game_id, sent)
+    await maybe_overthrow(context, session_factory)

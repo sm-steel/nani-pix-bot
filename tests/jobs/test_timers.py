@@ -90,6 +90,30 @@ async def test_timeout_job_callback_ends_the_game_unsolved(session_factory) -> N
         assert fetched.original_image is None
 
 
+async def test_timeout_job_callback_rolls_overthrow(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory)
+    context = _make_job_context(session_factory, game_id=game_id)
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    # Patched on autostart.py, not game_timeout.py: timeout_job_callback
+    # imports maybe_overthrow lazily (function-local) to dodge a real
+    # circular import (see the docstring on timeout_job_callback), so
+    # game_timeout.py never has a module-level `maybe_overthrow` name to
+    # patch — the lazy import re-reads autostart.maybe_overthrow fresh on
+    # every call, which is exactly what makes it patchable here.
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.autostart.maybe_overthrow", fake_maybe_overthrow)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert len(calls) == 1
+    assert calls[0].get("winner_id") is None
+
+
 async def test_timeout_job_callback_is_a_noop_if_already_won(session_factory) -> None:
     game_id = _active_game(session_factory, status=GameStatus.WON, winner_id=1)
     context = _make_job_context(session_factory, game_id=game_id)
