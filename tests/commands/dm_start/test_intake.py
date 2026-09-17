@@ -167,7 +167,7 @@ async def test_photo_handler_cancels_pending_idle_autostart(session_factory) -> 
     await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
     names = [call.args[0] for call in context.job_queue.get_jobs_by_name.call_args_list]
-    assert "idle-autostart" in names
+    assert timeout_module.IDLE_AUTOSTART_JOB_NAME in names
 
 
 async def test_photo_handler_shows_the_method_selection_keyboard(session_factory) -> None:

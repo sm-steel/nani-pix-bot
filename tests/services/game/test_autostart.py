@@ -37,6 +37,27 @@ class _StubAsyncClient(httpx.AsyncClient):
         pass
 
 
+def _patch_stub_get(monkeypatch: pytest.MonkeyPatch, *, content: bytes = b"bytes") -> None:
+    """Stubs _StubAsyncClient.get() to answer every download with `content`
+    — every gather_pick() test that reaches _download_screenshot needs
+    this same fake, extracted here rather than repeated per test (issue
+    #159's final review)."""
+
+    async def fake_get(url, **kwargs):
+        # `request=` is required: a bare httpx.Response with no request
+        # attached raises from raise_for_status() ("the request instance
+        # has not been set on this response"), which _download_screenshot
+        # calls on every fetch.
+        return httpx.Response(200, content=content, request=httpx.Request("GET", url))
+
+    # staticmethod(...): a plain function assigned to a class attribute is
+    # a descriptor, so `client.get(url)` would otherwise bind `client` as
+    # the fake's first positional argument (self) ahead of `url` — this
+    # keeps the fake's signature exactly `(url, **kwargs)`, matching
+    # httpx.AsyncClient.get's own call shape.
+    monkeypatch.setattr(_StubAsyncClient, "get", staticmethod(fake_get), raising=False)
+
+
 async def test_gather_pick_succeeds_on_shikimori_first_try(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_random_anime(client):
         return _SHIKI_RESULT
@@ -48,19 +69,7 @@ async def test_gather_pick_succeeds_on_shikimori_first_try(monkeypatch: pytest.M
     monkeypatch.setattr("nani_pix_bot.services.search.shikimori.random_anime", fake_random_anime)
     monkeypatch.setattr("nani_pix_bot.services.search.shikimori.screenshots", fake_screenshots)
 
-    async def fake_get(url, **kwargs):
-        # `request=` is required: a bare httpx.Response with no request
-        # attached raises from raise_for_status() ("the request instance
-        # has not been set on this response"), which _download_screenshot
-        # calls on every fetch.
-        return httpx.Response(200, content=b"bytes", request=httpx.Request("GET", url))
-
-    # staticmethod(...): a plain function assigned to a class attribute is
-    # a descriptor, so `client.get(url)` would otherwise bind `client` as
-    # the fake's first positional argument (self) ahead of `url` — this
-    # keeps the fake's signature exactly `(url, **kwargs)`, matching
-    # httpx.AsyncClient.get's own call shape.
-    monkeypatch.setattr(_StubAsyncClient, "get", staticmethod(fake_get), raising=False)
+    _patch_stub_get(monkeypatch)
 
     pick = await autostart.gather_pick(_StubAsyncClient(), _StubAsyncClient())
 
@@ -88,19 +97,7 @@ async def test_gather_pick_falls_back_to_jikan_when_shikimori_fails(
     monkeypatch.setattr("nani_pix_bot.services.search.jikan.random_anime", fake_jikan_random)
     monkeypatch.setattr("nani_pix_bot.services.search.jikan.screenshots", fake_screenshots)
 
-    async def fake_get(url, **kwargs):
-        # `request=` is required: a bare httpx.Response with no request
-        # attached raises from raise_for_status() ("the request instance
-        # has not been set on this response"), which _download_screenshot
-        # calls on every fetch.
-        return httpx.Response(200, content=b"bytes", request=httpx.Request("GET", url))
-
-    # staticmethod(...): a plain function assigned to a class attribute is
-    # a descriptor, so `client.get(url)` would otherwise bind `client` as
-    # the fake's first positional argument (self) ahead of `url` — this
-    # keeps the fake's signature exactly `(url, **kwargs)`, matching
-    # httpx.AsyncClient.get's own call shape.
-    monkeypatch.setattr(_StubAsyncClient, "get", staticmethod(fake_get), raising=False)
+    _patch_stub_get(monkeypatch)
 
     pick = await autostart.gather_pick(_StubAsyncClient(), _StubAsyncClient())
 
@@ -126,19 +123,7 @@ async def test_gather_pick_retries_a_different_anime_when_no_screenshots_exist(
     monkeypatch.setattr("nani_pix_bot.services.search.shikimori.random_anime", fake_random_anime)
     monkeypatch.setattr("nani_pix_bot.services.search.shikimori.screenshots", fake_screenshots)
 
-    async def fake_get(url, **kwargs):
-        # `request=` is required: a bare httpx.Response with no request
-        # attached raises from raise_for_status() ("the request instance
-        # has not been set on this response"), which _download_screenshot
-        # calls on every fetch.
-        return httpx.Response(200, content=b"bytes", request=httpx.Request("GET", url))
-
-    # staticmethod(...): a plain function assigned to a class attribute is
-    # a descriptor, so `client.get(url)` would otherwise bind `client` as
-    # the fake's first positional argument (self) ahead of `url` — this
-    # keeps the fake's signature exactly `(url, **kwargs)`, matching
-    # httpx.AsyncClient.get's own call shape.
-    monkeypatch.setattr(_StubAsyncClient, "get", staticmethod(fake_get), raising=False)
+    _patch_stub_get(monkeypatch)
 
     pick = await autostart.gather_pick(_StubAsyncClient(), _StubAsyncClient())
 
@@ -219,19 +204,7 @@ async def test_gather_pick_rejects_an_explicit_rated_jikan_pick_and_retries(
     monkeypatch.setattr("nani_pix_bot.services.search.jikan.random_anime", fake_jikan_random)
     monkeypatch.setattr("nani_pix_bot.services.search.jikan.screenshots", fake_screenshots)
 
-    async def fake_get(url, **kwargs):
-        # `request=` is required: a bare httpx.Response with no request
-        # attached raises from raise_for_status() ("the request instance
-        # has not been set on this response"), which _download_screenshot
-        # calls on every fetch.
-        return httpx.Response(200, content=b"bytes", request=httpx.Request("GET", url))
-
-    # staticmethod(...): a plain function assigned to a class attribute is
-    # a descriptor, so `client.get(url)` would otherwise bind `client` as
-    # the fake's first positional argument (self) ahead of `url` — this
-    # keeps the fake's signature exactly `(url, **kwargs)`, matching
-    # httpx.AsyncClient.get's own call shape.
-    monkeypatch.setattr(_StubAsyncClient, "get", staticmethod(fake_get), raising=False)
+    _patch_stub_get(monkeypatch)
 
     pick = await autostart.gather_pick(_StubAsyncClient(), _StubAsyncClient())
 

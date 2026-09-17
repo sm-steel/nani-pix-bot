@@ -165,7 +165,7 @@ async def test_skip_command_bare_schedules_idle_autostart(session_factory) -> No
     )
 
     names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
-    assert "idle-autostart" in names
+    assert skip_command_module.timeout_module.IDLE_AUTOSTART_JOB_NAME in names
 
 
 async def test_skip_command_with_username_hands_off_the_turn(session_factory) -> None:
@@ -222,7 +222,7 @@ async def test_skip_command_with_username_cancels_any_pending_idle_autostart(
     )
 
     names = [call.args[0] for call in context.job_queue.get_jobs_by_name.call_args_list]
-    assert "idle-autostart" in names
+    assert skip_command_module.timeout_module.IDLE_AUTOSTART_JOB_NAME in names
 
 
 async def test_skip_passes_the_turn_even_when_the_confirmation_reply_times_out(

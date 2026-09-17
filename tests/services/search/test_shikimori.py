@@ -790,6 +790,13 @@ async def test_random_anime_sends_a_random_order_query() -> None:
 
     assert "order" in captured["json"]["query"]
     assert "random" in captured["json"]["query"].lower()
+    # Regression guard for the exact bug that shipped once (issue #159's
+    # final review): the `minScore` GraphQL variable must be declared
+    # `Int`, not `Float` — a mismatch a mocked test suite otherwise can't
+    # catch, since httpx.MockTransport never validates the query against
+    # Shikimori's real schema the way a live API call would.
+    assert "$minScore: Int" in captured["json"]["query"]
+    assert isinstance(captured["json"]["variables"]["minScore"], int)
     assert result == shikimori.ShikimoriResult(
         shikimori_id=1,
         title_romaji="Some Anime",

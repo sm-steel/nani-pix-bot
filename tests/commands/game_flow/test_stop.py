@@ -208,7 +208,7 @@ async def test_stop_callback_handler_confirm_schedules_idle_autostart(session_fa
     )
 
     names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
-    assert "idle-autostart" in names
+    assert stop_command_module.timeout_module.IDLE_AUTOSTART_JOB_NAME in names
 
 
 async def test_stop_callback_handler_confirm_cancels_the_inactivity_timers(session_factory) -> None:
