@@ -79,8 +79,16 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         context, session_factory, photo=original_bytes, caption=caption
     )
     timeout_module.clear_image_if_sent(session_factory, game_id, sent)
-    await timeout_module.maybe_overthrow(
-        context, session_factory, winner_id=target.telegram_user_id, winner_name=target_username
+    # Fire-and-forget — see guess.py's identical comment: maybe_overthrow()
+    # can run several real HTTP round-trips, and awaiting it inline would
+    # block every other DM/group command bot-wide (app.py never enables
+    # concurrent_updates). update=update lets PTB's error handler attribute
+    # any exception to this update, same as an awaited call would.
+    context.application.create_task(
+        timeout_module.maybe_overthrow(
+            context, session_factory, winner_id=target.telegram_user_id, winner_name=target_username
+        ),
+        update=update,
     )
 
 

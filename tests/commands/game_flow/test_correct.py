@@ -41,7 +41,25 @@ def _make_context(session_factory, *, args: list[str] | None = None) -> MagicMoc
     context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
     context.bot.pin_chat_message = AsyncMock()
     context.bot.unpin_chat_message = AsyncMock()
+    # Default: close the scheduled coroutine so tests that don't care about
+    # maybe_overthrow's fire-and-forget scheduling don't leak "coroutine
+    # was never awaited" warnings. Tests that DO care override this via
+    # _capture_scheduled_tasks below.
+    context.application.create_task = MagicMock(side_effect=lambda coro, **kw: coro.close())
     return context
+
+
+def _capture_scheduled_tasks(context: MagicMock) -> list[tuple]:
+    """Fire-and-forget calls (correct.py uses context.application.create_task
+    rather than awaiting maybe_overthrow inline — see issue #159's final
+    review) hand back an asyncio.Task that nothing here runs. Tests that
+    need the scheduled coroutine's side effects capture and await it
+    directly instead."""
+    scheduled: list[tuple] = []
+    context.application.create_task = MagicMock(
+        side_effect=lambda coro, **kw: scheduled.append((coro, kw))
+    )
+    return scheduled
 
 
 def _active_game(session_factory, **overrides) -> int:
@@ -300,10 +318,18 @@ async def test_correct_calls_maybe_overthrow(
 
     update = _make_update(user_id=1, args=["@winner"])
     context = _make_context(session_factory, args=["@winner"])
+    scheduled = _capture_scheduled_tasks(context)
 
     await correct_command_module.correct_command(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
+
+    # /correct must schedule maybe_overthrow via context.application.create_task
+    # (fire-and-forget), not await it inline — see correct_command's comment.
+    assert len(scheduled) == 1
+    coro, kwargs = scheduled[0]
+    assert kwargs.get("update") is update
+    await coro
 
     assert len(calls) == 1
     assert calls[0]["winner_id"] == 2
