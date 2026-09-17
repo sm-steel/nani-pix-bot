@@ -716,6 +716,31 @@ async def test_inactivity_advance_job_callback_ends_unsolved_on_final_stage(
         assert fetched.original_image is None
 
 
+async def test_inactivity_advance_job_callback_rolls_overthrow_on_unsolved(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    # Patched on autostart.py, not inactivity.py: inactivity_advance_job_callback
+    # imports maybe_overthrow lazily (function-local) to dodge a real
+    # circular import (see the docstring on inactivity_advance_job_callback),
+    # so inactivity.py never has a module-level `maybe_overthrow` name to
+    # patch — the lazy import re-reads autostart.maybe_overthrow fresh on
+    # every call, which is exactly what makes it patchable here. Same
+    # pattern as test_timeout_job_callback_rolls_overthrow for game_timeout.py.
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.autostart.maybe_overthrow", fake_maybe_overthrow)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert len(calls) == 1
+    assert calls[0].get("winner_id") is None
+
+
 async def test_inactivity_advance_job_callback_keeps_stage_advance_when_post_times_out(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:

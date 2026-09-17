@@ -110,7 +110,18 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
     activation) on an ACTIVE game, with no guess in between to reset the
     clock. Advances the stage exactly like a guess-driven exhaustion
     would (via the shared advance_stage()), or ends the game unsolved
-    if it was already on the last stage."""
+    if it was already on the last stage.
+
+    Imports maybe_overthrow lazily (function-local, not at module level):
+    autostart.py already imports schedule_inactivity_timers from this
+    module, so a module-level import the other way round would be a real
+    circular import, not just the theoretical shape the sibling-import
+    convention is meant to dodge — Python's import system can't resolve
+    two modules that both need each other fully initialized at parse
+    time. See turn_timers.py's turn_expiry_job_callback and
+    game_timeout.py's timeout_job_callback for the identical situation."""
+    from nani_pix_bot.jobs.timers.autostart import maybe_overthrow
+
     job = context.job
     if job is None:
         return
@@ -137,6 +148,8 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
             raise RuntimeError(msg)
 
         outcome = game_service.advance_stage(game)
+        if outcome is game_service.GuessOutcome.UNSOLVED:
+            game_service.mark_turn_open_if_unassigned(session)
 
         if outcome is game_service.GuessOutcome.UNSOLVED:
             logger.info("Game {} auto-ended unsolved after repeated inactivity", game_id)
@@ -167,6 +180,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
             context, session_factory, photo=original_bytes, caption=unsolved_caption
         )
         clear_image_if_sent(session_factory, game_id, sent)
+        await maybe_overthrow(context, session_factory)
         return
 
     await post_current_image(context, session_factory, photo=pixelated, caption=advanced_caption)
