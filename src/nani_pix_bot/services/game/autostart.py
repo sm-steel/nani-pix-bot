@@ -104,7 +104,11 @@ def _is_explicit(result: JikanResult) -> bool:
     Shikimori's random_anime() already filters this server-side
     (censored: true in its GraphQL query) — Jikan's REST /random/anime
     endpoint has no equivalent query parameter, so this is the only
-    place that can catch it before a pick reaches the group topic."""
+    place that can catch it before a pick reaches the group topic.
+
+    Deliberately matches Shikimori's `censored: true` scope — hentai
+    only, not mild-content ratings like `R+ - Mild Nudity`, which this
+    intentionally lets through unrejected."""
     return result.rating is not None and result.rating.startswith("Rx")
 
 

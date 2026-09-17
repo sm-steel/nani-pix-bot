@@ -81,6 +81,7 @@ def mark_turn_open_if_unassigned(session: Session) -> TurnState:
     turn_state = get_or_create_turn_state(session)
     if turn_state.next_starter_id is None:
         _mark_turn_opened(turn_state)
+        logger.debug("Idle-autostart backstop armed — turn was already open")
     return turn_state
 
 
@@ -99,6 +100,7 @@ def clear_autostart(session: Session) -> None:
     turn_state = get_or_create_turn_state(session)
     turn_state.turn_opened_at = None
     turn_state.autostart_deadline_at = None
+    logger.debug("Idle-autostart backstop cleared — a game just started")
 
 
 def clear_turn_timers(session: Session) -> None:
