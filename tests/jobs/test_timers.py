@@ -404,6 +404,21 @@ async def test_turn_expiry_job_callback_is_a_noop_if_targeted_at_a_stale_player(
         assert turn_state.next_starter_id == 3
 
 
+async def test_turn_expiry_job_callback_schedules_idle_autostart(session_factory) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2))
+        session.add(TurnState(id=1, next_starter_id=2))
+        session.commit()
+
+    context = _make_group_job_context(session_factory)
+    context.job.data = 2
+
+    await timeout_module.turn_expiry_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert timeout_module.IDLE_AUTOSTART_JOB_NAME in names
+
+
 async def test_rearm_pending_timeouts_reschedules_setup_abandon_and_turn_timers(
     session_factory,
 ) -> None:

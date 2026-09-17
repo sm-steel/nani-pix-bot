@@ -113,7 +113,18 @@ async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def turn_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires 12h after a turn is designated to a real player, if they
-    never started. Opens the turn to anyone and notifies the group."""
+    never started. Opens the turn to anyone and notifies the group.
+
+    Imports schedule_idle_autostart lazily (function-local, not at module
+    level): autostart.py already imports cancel_turn_timers from this
+    module, so a module-level import the other way round would be a real
+    circular import, not just the theoretical shape the sibling-import
+    convention is meant to dodge — Python's import system can't resolve
+    two modules that both need each other fully initialized at parse
+    time. setup_abandon.py doesn't have this problem (autostart.py
+    doesn't import from it), so its import stays at module level."""
+    from nani_pix_bot.jobs.timers.autostart import schedule_idle_autostart
+
     job = context.job
     if job is None:
         return
@@ -135,10 +146,11 @@ async def turn_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.debug("Turn-expiry fired but a game is already running — no-op")
             return
         expired_id = turn_state.next_starter_id
-        game_service.set_next_starter(session, None)
+        turn_state = game_service.set_next_starter(session, None)
 
     logger.info("Turn for {} expired after 12h — opening to anyone", expired_id)
     cancel_turn_timers(context.job_queue)
+    schedule_idle_autostart(context.job_queue, turn_state)
     await context.bot.send_message(
         chat_id=context.bot_data["group_chat_id"],
         message_thread_id=context.bot_data["game_topic_id"],
