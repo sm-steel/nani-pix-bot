@@ -10,6 +10,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
@@ -588,6 +589,18 @@ def test_record_guess_ends_unsolved_after_final_stage_exhaustion(session: Sessio
 
     assert outcome is game_service.GuessOutcome.UNSOLVED
     assert game.status == GameStatus.UNSOLVED
+
+
+def test_record_guess_unsolved_arms_the_idle_autostart_backstop(session: Session) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_5, wrong_guess_count=7)
+    _seed_stage_limit(session, PixelStage.STAGE_5, wrong_guess_limit=8)
+
+    outcome = game_service.record_guess(session, game, guesser_id=2, guess_text="wrong answer")
+
+    assert outcome is game_service.GuessOutcome.UNSOLVED
+    turn_state = turns.get_turn_state(session)
+    assert turn_state is not None
+    assert turn_state.autostart_deadline_at is not None
 
 
 def test_record_guess_stage_1_advances_immediately_on_first_wrong_guess(session: Session) -> None:

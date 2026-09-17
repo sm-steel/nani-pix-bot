@@ -330,7 +330,10 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
         )
         return GuessOutcome.WRONG
 
-    return advance_stage(game)
+    outcome = advance_stage(game)
+    if outcome is GuessOutcome.UNSOLVED:
+        turns.mark_turn_open_if_unassigned(session)
+    return outcome
 
 
 def reset_inactivity_clock(game: Game) -> None:
