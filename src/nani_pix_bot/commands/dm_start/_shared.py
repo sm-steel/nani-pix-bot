@@ -352,8 +352,10 @@ async def _start_new_game(
         # They're clearly not missing their turn if they've already
         # started it — the setup-abandon timer takes over from here.
         game_service.clear_turn_timers(session)
+        game_service.clear_autostart(session)
 
     timeout_module.cancel_turn_timers(context.job_queue)
+    timeout_module.cancel_idle_autostart(context.job_queue)
     timeout_module.schedule_setup_abandon(context.job_queue, new_game)
     await context.bot.send_message(
         chat_id=group_chat_id,
