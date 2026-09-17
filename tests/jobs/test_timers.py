@@ -845,3 +845,23 @@ async def test_rearm_pending_timeouts_also_reschedules_inactivity_timers(session
     names = [call.kwargs["name"] for call in job_queue.run_once.call_args_list]
     assert timeout_module.inactivity_nudge_job_name(game_id) in names
     assert timeout_module.inactivity_advance_job_name(game_id) in names
+
+
+async def test_rearm_pending_timeouts_reschedules_idle_autostart(session_factory) -> None:
+    with session_factory() as session:
+        session.add(
+            TurnState(
+                id=1,
+                next_starter_id=None,
+                turn_opened_at=datetime.now(UTC),
+                autostart_deadline_at=datetime.now(UTC) + timedelta(hours=24),
+            )
+        )
+        session.commit()
+    job_queue = MagicMock()
+    job_queue.get_jobs_by_name.return_value = []
+
+    await timeout_module.rearm_pending_timeouts(job_queue, session_factory)
+
+    names = [call.kwargs["name"] for call in job_queue.run_once.call_args_list]
+    assert timeout_module.IDLE_AUTOSTART_JOB_NAME in names

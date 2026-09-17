@@ -29,6 +29,15 @@ from telegram.ext import JobQueue
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import seconds_until, seconds_until_timeout
+from nani_pix_bot.jobs.timers.autostart import (
+    IDLE_AUTOSTART_JOB_NAME,
+    AutostartTrigger,
+    cancel_idle_autostart,
+    idle_autostart_job_callback,
+    maybe_overthrow,
+    run_bot_autostart,
+    schedule_idle_autostart,
+)
 from nani_pix_bot.jobs.timers.current_image import clear_image_if_sent, post_current_image
 from nani_pix_bot.jobs.timers.game_timeout import (
     cancel_timeout,
@@ -61,19 +70,26 @@ from nani_pix_bot.jobs.timers.turn_timers import (
 from nani_pix_bot.services import game as game_service
 
 __all__ = [
+    "IDLE_AUTOSTART_JOB_NAME",
     "TURN_EXPIRY_JOB_NAME",
     "TURN_REMINDER_JOB_NAME",
+    "AutostartTrigger",
+    "cancel_idle_autostart",
     "cancel_inactivity_timers",
     "cancel_setup_abandon",
     "cancel_timeout",
     "cancel_turn_timers",
     "clear_image_if_sent",
+    "idle_autostart_job_callback",
     "inactivity_advance_job_callback",
     "inactivity_advance_job_name",
     "inactivity_nudge_job_callback",
     "inactivity_nudge_job_name",
+    "maybe_overthrow",
     "post_current_image",
     "rearm_pending_timeouts",
+    "run_bot_autostart",
+    "schedule_idle_autostart",
     "schedule_inactivity_timers",
     "schedule_setup_abandon",
     "schedule_timeout",
@@ -101,6 +117,7 @@ async def rearm_pending_timeouts(job_queue: JobQueue | None, session_factory) ->
         turn_state = game_service.get_turn_state(session)
         if turn_state is not None:
             schedule_turn_timers(job_queue, turn_state)
+            schedule_idle_autostart(job_queue, turn_state)
     logger.info(
         "Re-armed {} game timeout(s), {} setup-abandon timer(s) on startup",
         len(active),
