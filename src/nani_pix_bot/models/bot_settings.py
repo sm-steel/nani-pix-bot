@@ -24,3 +24,11 @@ class BotSettings(Base):
     # to persist across games (see services/settings/bot_settings.py's
     # get/set_pinned_message_id and jobs/timers.py's post_current_image).
     pinned_message_id: Mapped[int | None] = mapped_column(default=None)
+    # Admin-gated via /setautostart (see commands/setautostart.py) —
+    # whether the bot may start a game itself (idle auto-start, or
+    # "overthrow" right after a game concludes). Independent of, and
+    # checked in addition to, games_enabled above. Defaults False:
+    # unlike games_enabled (a safety valve for something that's always
+    # been possible), bot-initiated games are new behavior an admin
+    # should opt into.
+    autostart_enabled: Mapped[bool] = mapped_column(default=False)

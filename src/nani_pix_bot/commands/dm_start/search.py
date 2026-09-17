@@ -14,10 +14,11 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
+    _post_preview_album,
     _reject_stale_tap,
     _reply_service_down,
     _search_and_build_keyboard,
-    _show_preview,
+    _stage_preview,
     _stored_provider,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
@@ -32,7 +33,11 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 from nani_pix_bot.commands.dm_start.manual import _manual_synonyms_step, _manual_title_step
 from nani_pix_bot.commands.dm_start.preview import _add_synonym_step
 from nani_pix_bot.commands.dm_start.screenshot_gallery import _screenshot_search_step
-from nani_pix_bot.commands.dm_start.screenshots import source_menu_for, start_screenshot_picker
+from nani_pix_bot.commands.dm_start.screenshots import (
+    send_screenshot_picker_prompt,
+    source_menu_for,
+    stage_screenshot_picker,
+)
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
@@ -255,14 +260,22 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer()
         game_service.stage_result(setup_game, result, source=source)
         logger.debug("Game {}: staged {} result {}", setup_game.id, source, external_id)
-        if setup_game.original_image is not None:
+        has_image = setup_game.original_image is not None
+        if has_image:
             # Traditional photo-first entry — image already in hand.
-            await _show_preview(context, session, setup_game, lang)
+            album = _stage_preview(session, setup_game, lang)
             message_key = "dm_start.preview_sent"
         else:
             # Screenshot-less /newgame entry — pick a screenshot next.
-            await start_screenshot_picker(context, setup_game, lang)
+            picker_prompt = stage_screenshot_picker(setup_game)
             message_key = "dm_start.identification_staged"
+    # Block closed and committed above — see _post_preview_album's/
+    # send_screenshot_picker_prompt's docstrings for why the send has to
+    # happen after.
+    if has_image:
+        await _post_preview_album(context, album, lang)
+    else:
+        await send_screenshot_picker_prompt(context, picker_prompt, lang)
 
     await query.edit_message_text(i18n.t(message_key, lang))
 

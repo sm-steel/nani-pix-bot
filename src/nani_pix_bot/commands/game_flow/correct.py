@@ -51,6 +51,14 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             raise RuntimeError(
                 "game.original_image is None despite _validate_active_game_for_starter's check"
             )
+        game_id = game.id
+        original_bytes = game.original_image
+        caption = i18n.t(
+            "correct.caption",
+            lang,
+            winner=target_username,
+            title=game_service.display_title(game, lang),
+        )
 
         game_service.force_win(session, game, winner_id=target.telegram_user_id)
         logger.info(
@@ -64,18 +72,24 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         turn_state = game_service.get_turn_state(session)
         if turn_state is not None:
             timeout_module.schedule_turn_timers(context.job_queue, turn_state)
-        await timeout_module.post_current_image(
-            context,
-            session,
-            photo=game.original_image,
-            caption=i18n.t(
-                "correct.caption",
-                lang,
-                winner=target_username,
-                title=game_service.display_title(game, lang),
-            ),
-        )
-        game_service.clear_original_screenshot(game)
+    # Block closed and committed above — the win is durable now regardless
+    # of whether the reveal below actually reaches the group (see
+    # post_current_image's docstring).
+    sent = await timeout_module.post_current_image(
+        context, session_factory, photo=original_bytes, caption=caption
+    )
+    timeout_module.clear_image_if_sent(session_factory, game_id, sent)
+    # Fire-and-forget — see guess.py's identical comment: maybe_overthrow()
+    # can run several real HTTP round-trips, and awaiting it inline would
+    # block every other DM/group command bot-wide (app.py never enables
+    # concurrent_updates). update=update lets PTB's error handler attribute
+    # any exception to this update, same as an awaited call would.
+    context.application.create_task(
+        timeout_module.maybe_overthrow(
+            context, session_factory, winner_id=target.telegram_user_id, winner_name=target_username
+        ),
+        update=update,
+    )
 
 
 async def _validate_active_game_for_starter(session, message, user, lang: str) -> Game | None:
@@ -123,5 +137,15 @@ async def _resolve_target_player(
         await message.reply_text(
             i18n.t(key, lang, username=target_username, bot_username=bot_username)
         )
+        return None
+    if target.telegram_user_id == context.bot.id:
+        # The bot gets its own real `players` row once it starts its
+        # first game (issue #159's autostart/overthrow) — addressable by
+        # username with no special-casing otherwise, which would award
+        # the bot itself a win and a leaderboard entry. Unlike an unknown
+        # username, the player genuinely exists, so a dedicated reply
+        # rather than reusing correct.unknown_username.
+        logger.warning("/correct: rejected targeting the bot itself ({!r})", target_username)
+        await message.reply_text(i18n.t("correct.cannot_target_bot", lang))
         return None
     return target

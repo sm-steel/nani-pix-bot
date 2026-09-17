@@ -7,6 +7,9 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
+    PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA,
+    PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA,
+    PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX,
     PREVIEW_RESEARCH_CALLBACK_DATA,
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
     SEARCH_RETRY_CALLBACK_DATA,
@@ -23,13 +26,14 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     parse_screenshot_search_again_callback_data,
     parse_screenshot_search_pick_callback_data,
     parse_screenshot_source_callback_data,
+    pixel_algorithm_keyboard,
     preview_keyboard,
     screenshot_gallery_keyboard,
     screenshot_source_keyboard,
     shikimori_results_keyboard,
     tmdb_results_keyboard,
 )
-from nani_pix_bot.models.enums import Provider
+from nani_pix_bot.models.enums import DEFAULT_ALGORITHM, PixelAlgorithm, Provider
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
@@ -579,8 +583,8 @@ def test_parse_method_callback_data_round_trips() -> None:
     assert parse_method_callback_data(SEARCH_RETRY_CALLBACK_DATA) is None
 
 
-def test_preview_keyboard_has_the_four_expected_buttons() -> None:
-    markup = preview_keyboard(lang="en")
+def test_preview_keyboard_has_the_five_expected_buttons() -> None:
+    markup = preview_keyboard(lang="en", algorithm=DEFAULT_ALGORITHM)
 
     callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
     assert callbacks == [
@@ -588,12 +592,75 @@ def test_preview_keyboard_has_the_four_expected_buttons() -> None:
         PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
         PREVIEW_RESEARCH_CALLBACK_DATA,
         PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
+        PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA,
     ]
 
 
+def test_preview_keyboard_names_the_games_current_algorithm() -> None:
+    """The label is the only place the current choice is visible without
+    opening the submenu."""
+    default = preview_keyboard(lang="en", algorithm=DEFAULT_ALGORITHM)
+    lanczos = preview_keyboard(lang="en", algorithm=PixelAlgorithm.LANCZOS)
+
+    assert "Median" in default.inline_keyboard[-1][0].text
+    assert "Lanczos" in lanczos.inline_keyboard[-1][0].text
+
+
+def test_pixel_algorithm_keyboard_offers_every_algorithm_plus_back() -> None:
+    markup = pixel_algorithm_keyboard(lang="en", current=DEFAULT_ALGORITHM)
+
+    callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
+    assert callbacks == [
+        *(f"{PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX}{a.value}" for a in PixelAlgorithm),
+        PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA,
+    ]
+
+
+def test_pixel_algorithm_keyboard_marks_the_current_and_the_worst() -> None:
+    markup = pixel_algorithm_keyboard(lang="en", current=PixelAlgorithm.BOX)
+
+    labels = {
+        str(button.callback_data).removeprefix(PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX): button.text
+        for row in markup.inline_keyboard
+        for button in row
+        if str(button.callback_data).startswith(PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX)
+    }
+    assert "✅" in labels["box"]
+    assert "⚠️" in labels["mode"]
+    assert "✅" not in labels["mode"]
+    assert "⚠️" not in labels["box"]
+
+
+def test_pixel_algorithm_keyboard_can_mark_one_button_both_ways() -> None:
+    """The discouraged algorithm is still selectable, so it can be the
+    current one — and must then carry both markers rather than losing
+    the warning."""
+    markup = pixel_algorithm_keyboard(lang="en", current=PixelAlgorithm.MODE)
+
+    mode = next(
+        button.text
+        for row in markup.inline_keyboard
+        for button in row
+        if button.callback_data == f"{PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX}mode"
+    )
+    assert "✅" in mode
+    assert "⚠️" in mode
+
+
+def test_pixel_algorithm_keyboard_labels_are_translated() -> None:
+    markup_en = pixel_algorithm_keyboard(lang="en", current=DEFAULT_ALGORITHM)
+    markup_ru = pixel_algorithm_keyboard(lang="ru", current=DEFAULT_ALGORITHM)
+
+    labels_en = [button.text for row in markup_en.inline_keyboard for button in row]
+    labels_ru = [button.text for row in markup_ru.inline_keyboard for button in row]
+    assert labels_en != labels_ru
+    assert any("Median" in label for label in labels_en)
+    assert any("Медиана" in label for label in labels_ru)
+
+
 def test_preview_keyboard_labels_are_translated() -> None:
-    markup_en = preview_keyboard(lang="en")
-    markup_ru = preview_keyboard(lang="ru")
+    markup_en = preview_keyboard(lang="en", algorithm=DEFAULT_ALGORITHM)
+    markup_ru = preview_keyboard(lang="ru", algorithm=DEFAULT_ALGORITHM)
 
     labels_en = [button.text for row in markup_en.inline_keyboard for button in row]
     labels_ru = [button.text for row in markup_ru.inline_keyboard for button in row]

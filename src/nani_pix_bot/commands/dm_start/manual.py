@@ -5,8 +5,15 @@ synonym."""
 from loguru import logger
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start._shared import _SYNONYM_SPLIT_RE, _show_preview
-from nani_pix_bot.commands.dm_start.screenshots import start_screenshot_picker
+from nani_pix_bot.commands.dm_start._shared import (
+    _SYNONYM_SPLIT_RE,
+    _post_preview_album,
+    _stage_preview,
+)
+from nani_pix_bot.commands.dm_start.screenshots import (
+    send_screenshot_picker_prompt,
+    stage_screenshot_picker,
+)
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
@@ -49,21 +56,29 @@ async def _manual_synonyms_step(
             return
         game_service.stage_manual_entry(setup_game, title=title, synonyms=synonyms)
         logger.debug("Game {}: manual entry staged with {} synonyms", setup_game.id, len(synonyms))
-        if setup_game.original_image is not None:
+        has_image = setup_game.original_image is not None
+        if has_image:
             # Traditional photo-first entry — image already in hand.
-            await _show_preview(context, session, setup_game, lang)
+            album = _stage_preview(session, setup_game, lang)
             message_key = "dm_start.preview_sent"
         else:
             # Screenshot-less /newgame entry — no image in hand yet.
             # Manual entry has no external id of its own, but that
             # stopped meaning "upload or nothing" when cross-provider
-            # resolution landed: _screenshot_capable_providers offers all
+            # resolution landed: game_service.screenshot_capable_providers offers all
             # three providers unconditionally, and tapping one silently
             # searches it by the title just staged (stage_manual_entry
             # puts it in title_english, which is what that search reads).
             # So a manual game gets the full source menu, with "Upload my
             # own instead" one button on it rather than the only route.
-            await start_screenshot_picker(context, setup_game, lang)
+            picker_prompt = stage_screenshot_picker(setup_game)
             message_key = "dm_start.identification_staged"
+    # Block closed and committed above — see _post_preview_album's/
+    # send_screenshot_picker_prompt's docstrings for why the send has to
+    # happen after.
+    if has_image:
+        await _post_preview_album(context, album, lang)
+    else:
+        await send_screenshot_picker_prompt(context, picker_prompt, lang)
 
     await message.reply_text(i18n.t(message_key, lang))

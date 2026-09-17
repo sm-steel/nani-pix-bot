@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from telegram import Update
 from telegram.constants import ChatMemberStatus
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import preview, search
@@ -14,9 +15,18 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
+    PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA,
+    PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA,
+    PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX,
     PREVIEW_RESEARCH_CALLBACK_DATA,
 )
-from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
+from nani_pix_bot.models.enums import (
+    DEFAULT_ALGORITHM,
+    GameStatus,
+    PixelAlgorithm,
+    Provider,
+    SetupStep,
+)
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
@@ -105,7 +115,7 @@ def _staged_setup_game(session_factory, *, starter_id: int = 1, **overrides) -> 
 async def test_preview_confirm_activates_and_posts_to_the_group(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
     context = _make_callback_context(session_factory)
@@ -143,6 +153,24 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
         preview.timeout_module.setup_abandon_job_name(fetched.id)
     )
     update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_preview_confirm_activates_the_game_even_when_the_group_post_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    _staged_setup_game(session_factory)
+    update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_callback_context(session_factory)
+    context.bot.send_photo = AsyncMock(side_effect=TimedOut())
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.status == GameStatus.ACTIVE
 
 
 async def test_preview_change_image_awaits_a_new_photo_for_a_genuine_upload(
@@ -234,6 +262,28 @@ async def test_preview_change_image_pick_screenshot_resumes_the_gallery(
         # set, not merely the image's provenance.
         assert fetched.screenshot_picker_provider == "shikimori"
     update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_preview_change_image_pick_screenshot_keeps_the_fallback_when_the_edit_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(side_effect=RuntimeError("boom")))
+    _staged_setup_game(session_factory, screenshot_source="shikimori", shikimori_id=52991)
+    update = _make_preview_callback_update(
+        data=PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA, user_id=1
+    )
+    context = _make_context(session_factory, search_client=MagicMock())
+    update.callback_query.edit_message_text = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await preview.preview_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        assert fetched.screenshot_picker_provider == "shikimori"
 
 
 async def test_preview_change_image_pick_screenshot_reoffers_the_source_menu_when_it_is_stale(
@@ -338,7 +388,7 @@ async def test_preview_add_synonym_awaits_a_synonym_message(session_factory) -> 
 async def test_search_text_handler_appends_a_synonym_and_reshows_the_preview(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()
@@ -353,6 +403,31 @@ async def test_search_text_handler_appends_a_synonym_and_reshows_the_preview(
     context.bot.send_media_group.assert_awaited_once()
     _, kwargs = context.bot.send_media_group.await_args
     assert kwargs["chat_id"] == 1
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.synonyms == ["Frieren", "Frieren at the Funeral"]
+        assert fetched.setup_step == SetupStep.CONFIRMING
+
+
+async def test_search_text_handler_keeps_the_appended_synonym_when_the_album_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    _staged_setup_game(session_factory)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.setup_step = SetupStep.AWAITING_SYNONYM
+        session.commit()
+
+    update = _make_text_update(user_id=1, text="Frieren at the Funeral")
+    context = _make_callback_context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await search.search_text_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.synonyms == ["Frieren", "Frieren at the Funeral"]
@@ -405,3 +480,104 @@ async def test_search_text_handler_ignores_text_while_awaiting_a_photo_change(
 
     update.message.reply_text.assert_not_awaited()
     context.bot.send_photo.assert_not_awaited()
+
+
+async def _run_preview_callback(session_factory, data: str) -> MagicMock:
+    update = _make_preview_callback_update(data=data)
+    context = _make_callback_context(session_factory)
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+    return update
+
+
+def _stored_algorithm(session_factory) -> PixelAlgorithm:
+    with session_factory() as session:
+        game = session.query(Game).one()
+        return game.pixel_algorithm
+
+
+async def test_a_new_game_starts_on_the_default_algorithm(session_factory) -> None:
+    _staged_setup_game(session_factory)
+
+    assert _stored_algorithm(session_factory) is DEFAULT_ALGORITHM
+
+
+async def test_pixel_algorithm_button_opens_the_submenu(session_factory) -> None:
+    _staged_setup_game(session_factory)
+
+    update = await _run_preview_callback(session_factory, PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA)
+
+    kwargs = update.callback_query.edit_message_text.call_args.kwargs
+    callbacks = [
+        str(button.callback_data)
+        for row in kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert f"{PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX}median" in callbacks
+    assert PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA in callbacks
+    # Every algorithm's one-line description is in the body text, not on
+    # the buttons — including the warning on the discouraged one.
+    assert "not recommended" in kwargs["text"]
+
+
+async def test_picking_an_algorithm_stores_it_and_reshows_the_preview(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    _staged_setup_game(session_factory)
+
+    update = await _run_preview_callback(
+        session_factory, f"{PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX}lanczos"
+    )
+
+    assert _stored_algorithm(session_factory) is PixelAlgorithm.LANCZOS
+    # The submenu message loses its keyboard; the fresh preview arrives as
+    # a new album plus a new button message.
+    assert "reply_markup" not in update.callback_query.edit_message_text.call_args.kwargs
+
+
+async def test_picking_an_algorithm_reflects_it_in_the_new_preview_keyboard(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    _staged_setup_game(session_factory)
+    update = _make_preview_callback_update(data=f"{PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX}box")
+    context = _make_callback_context(session_factory)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    markup = context.bot.send_message.call_args.kwargs["reply_markup"]
+    assert "Box" in markup.inline_keyboard[-1][0].text
+
+
+async def test_an_unknown_algorithm_value_is_ignored(session_factory) -> None:
+    """Callback data is client-supplied and this branch matches on prefix
+    only, so the segment after it is an arbitrary string."""
+    _staged_setup_game(session_factory)
+
+    await _run_preview_callback(
+        session_factory, f"{PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX}not-an-algorithm"
+    )
+
+    assert _stored_algorithm(session_factory) is DEFAULT_ALGORITHM
+
+
+async def test_back_returns_to_the_preview_buttons(session_factory) -> None:
+    _staged_setup_game(session_factory, pixel_algorithm=PixelAlgorithm.MODE)
+
+    update = await _run_preview_callback(
+        session_factory, PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA
+    )
+
+    kwargs = update.callback_query.edit_message_text.call_args.kwargs
+    callbacks = [
+        str(button.callback_data)
+        for row in kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert PREVIEW_CONFIRM_CALLBACK_DATA in callbacks
+    # Nothing was changed by opening and dismissing the submenu.
+    assert _stored_algorithm(session_factory) is PixelAlgorithm.MODE

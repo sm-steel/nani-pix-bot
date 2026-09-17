@@ -11,24 +11,30 @@ existing `from nani_pix_bot.services import settings` +
 
 from nani_pix_bot.services.settings import stage_config
 from nani_pix_bot.services.settings.bot_settings import (
+    DEFAULT_AUTOSTART_ENABLED,
     DEFAULT_GAMES_ENABLED,
     DEFAULT_LANGUAGE,
     SETTINGS_ID,
+    get_autostart_enabled,
     get_games_enabled,
     get_language,
     get_pinned_message_id,
+    set_autostart_enabled,
     set_games_enabled,
     set_language,
     set_pinned_message_id,
 )
 
 __all__ = [
+    "DEFAULT_AUTOSTART_ENABLED",
     "DEFAULT_GAMES_ENABLED",
     "DEFAULT_LANGUAGE",
     "SETTINGS_ID",
+    "get_autostart_enabled",
     "get_games_enabled",
     "get_language",
     "get_pinned_message_id",
+    "set_autostart_enabled",
     "set_games_enabled",
     "set_language",
     "set_pinned_message_id",

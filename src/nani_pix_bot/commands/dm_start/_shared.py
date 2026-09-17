@@ -2,6 +2,7 @@
 
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import TypeVar, assert_never, cast
 
 import httpx
@@ -11,7 +12,6 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start.keyboards import (
-    _SCREENSHOT_CAPABLE_PROVIDERS,
     method_selection_keyboard,
     preview_keyboard,
     screenshot_source_keyboard,
@@ -19,7 +19,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.models.enums import Provider, SetupStep
+from nani_pix_bot.models.enums import PixelAlgorithm, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
@@ -200,42 +200,11 @@ def _stored_provider(stored: str) -> Provider:
     defensively at every `.display_name`: `search.py`'s
     `search_text_handler` (twice — the picker column and `source`),
     `screenshots.py`'s `resume_screenshot_gallery`, and
-    `_screenshot_capable_providers` below — the load-bearing one, since
-    its result feeds a `list[Provider]` the ordinary (non-failure)
-    screenshot-source screen draws its `.display_name` labels from, not
-    just a failure path."""
+    `game_service.screenshot_capable_providers` (services/game/state.py)
+    — the load-bearing one, since its result feeds a `list[Provider]` the
+    ordinary (non-failure) screenshot-source screen draws its
+    `.display_name` labels from, not just a failure path."""
     return Provider(stored)
-
-
-def _screenshot_capable_providers(game: Game) -> list[Provider]:
-    """All 3 screenshot-capable providers, same-provider-as-identification
-    first when it's one of them (so the common case — screenshot source
-    matches identification source — needs no cross-provider search at
-    all). Every provider is offered regardless of whether the game
-    already has an id for it — tapping one it doesn't triggers
-    cross-provider resolution (see screenshots.py's
-    _resolve_screenshot_source).
-
-    Lives here, not in screenshots.py where its callers are, because
-    `_current_setup_screen` below needs it too and screenshots.py
-    already imports this module — the other direction would be a cycle.
-    It is pure `game.source` arithmetic either way, with no dependency
-    on the screenshot sub-flow around it.
-
-    `_SCREENSHOT_CAPABLE_PROVIDERS` (imported from keyboards.py, where
-    `_validated_provider` also needs it) is the one source of truth for
-    the membership question — this used to hand-restate the same
-    3-member list independently (issue #114)."""
-    candidates = list(_SCREENSHOT_CAPABLE_PROVIDERS)
-    # `game.source` arrives as a bare str (see `_stored_provider`), and
-    # can legitimately be "manual" — which is in neither list, so the
-    # membership test settles both questions at once and nothing below it
-    # ever converts a non-provider.
-    if game.source in candidates:
-        identified_by = _stored_provider(game.source)
-        candidates.remove(identified_by)
-        candidates.insert(0, identified_by)
-    return candidates
 
 
 def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
@@ -271,10 +240,10 @@ def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMar
     if game.setup_step == SetupStep.PICKING_SCREENSHOT:
         return (
             "dm_start.pick_screenshot_source_prompt",
-            screenshot_source_keyboard(_screenshot_capable_providers(game), lang),
+            screenshot_source_keyboard(game_service.screenshot_capable_providers(game), lang),
         )
     if game.setup_step == SetupStep.CONFIRMING:
-        return "dm_start.preview_confirm_prompt", preview_keyboard(lang)
+        return "dm_start.preview_confirm_prompt", preview_keyboard(lang, game.pixel_algorithm)
     if game.setup_step == SetupStep.AWAITING_PHOTO_CHANGE:
         return "dm_start.ask_new_photo", None
     if game.setup_step == SetupStep.AWAITING_SYNONYM:
@@ -383,8 +352,10 @@ async def _start_new_game(
         # They're clearly not missing their turn if they've already
         # started it — the setup-abandon timer takes over from here.
         game_service.clear_turn_timers(session)
+        game_service.clear_autostart(session)
 
     timeout_module.cancel_turn_timers(context.job_queue)
+    timeout_module.cancel_idle_autostart(context.job_queue)
     timeout_module.schedule_setup_abandon(context.job_queue, new_game)
     await context.bot.send_message(
         chat_id=group_chat_id,
@@ -399,17 +370,28 @@ async def _start_new_game(
     )
 
 
-async def _show_preview(context, session, game: Game, lang: str) -> None:
-    """Send the starter a private preview of every pixelation stage for
-    the staged title/synonyms — one Telegram album (blockiest to
-    clearest, see MECHANICS.md) — so they see how the round will
-    actually look before committing to it. `sendMediaGroup` has no
-    `reply_markup` support, so the confirm/change-image/research/add-
-    synonym buttons go on a short separate follow-up text message right
-    after the album, not on the album itself. Nothing is posted to the
-    group until "Confirm and start" is tapped. Always the game's own
-    starter's DM — every caller looked this game up by starter_id in the
-    first place, so game.starter_id is the right chat_id.
+@dataclass(frozen=True)
+class _PreviewAlbum:
+    """What _post_preview_album needs, captured while the staging game's
+    session was still open — the send happens after that session (and
+    its setup_step=CONFIRMING commit) has already closed."""
+
+    starter_id: int
+    media: list[InputMediaPhoto]
+    # Read off the game row here so the network phase can label the
+    # keyboard without reaching back into a closed session.
+    algorithm: PixelAlgorithm
+
+
+def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum:
+    """DB-phase half of showing the starter a private preview of every
+    pixelation stage for the staged title/synonyms: builds the album
+    (blockiest to clearest, see MECHANICS.md) and moves the game to
+    CONFIRMING. The caller commits this in its own session_scope block,
+    then calls _post_preview_album with the result once that block has
+    closed — a Telegram send must never run before the setup_step
+    transition below it commits (see jobs/timers/current_image.py's
+    post_current_image docstring for why this class of bug matters).
 
     Shared by every path that ends in "an image now exists for this
     game" — the traditional upload flow (intake.py, manual.py,
@@ -417,7 +399,7 @@ async def _show_preview(context, session, game: Game, lang: str) -> None:
     (screenshot_gallery.py's pick), hence living here rather than in
     preview.py."""
     if game.original_image is None:
-        raise RuntimeError("game.original_image is None in _show_preview")
+        raise RuntimeError("game.original_image is None in _stage_preview")
     original_bytes = game.original_image
     config = stage_config.get_stage_configs(session)
     title = game_service.display_title(game, lang)
@@ -436,16 +418,41 @@ async def _show_preview(context, session, game: Game, lang: str) -> None:
     captions = [caption, *([None] * (len(game_service.STAGE_ORDER) - 1))]
     media = [
         InputMediaPhoto(
-            media=pixelate_service.pixelate(original_bytes, config[stage].target_width),
+            media=pixelate_service.pixelate(
+                original_bytes, config[stage].target_width, game.pixel_algorithm
+            ),
             caption=stage_caption,
         )
         for stage, stage_caption in zip(game_service.STAGE_ORDER, captions, strict=True)
     ]
     game.setup_step = SetupStep.CONFIRMING
     logger.debug("Game {}: showing {}-stage confirmation preview album", game.id, len(media))
-    await context.bot.send_media_group(chat_id=game.starter_id, media=media)
+    return _PreviewAlbum(starter_id=game.starter_id, media=media, algorithm=game.pixel_algorithm)
+
+
+async def _post_preview_album(
+    context: ContextTypes.DEFAULT_TYPE, album: _PreviewAlbum, lang: str
+) -> None:
+    """Network-phase half: no DB access, safe to call after the caller's
+    session_scope has committed and closed. `sendMediaGroup` has no
+    `reply_markup` support, so the confirm/change-image/research/add-
+    synonym buttons go on a short separate follow-up text message right
+    after the album, not on the album itself. Nothing is posted to the
+    group until "Confirm and start" is tapped — this is always the
+    game's own starter's DM.
+
+    Deliberately not wrapped to swallow a failure the way
+    post_current_image does: a failed album send here would otherwise
+    leave the starter's DM setup with setup_step already committed to
+    CONFIRMING but no visible next step and no fallback screen for this
+    specific failure — this codebase treats stranding a starter mid-flow
+    as zero-tolerance (see screenshot_gallery.py's comments on the same
+    principle). Letting it raise keeps the already-committed mutation
+    intact either way and surfaces the failure the normal way, via PTB's
+    own error handler."""
+    await context.bot.send_media_group(chat_id=album.starter_id, media=album.media)
     await context.bot.send_message(
-        chat_id=game.starter_id,
+        chat_id=album.starter_id,
         text=i18n.t("dm_start.preview_confirm_prompt", lang),
-        reply_markup=preview_keyboard(lang),
+        reply_markup=preview_keyboard(lang, album.algorithm),
     )

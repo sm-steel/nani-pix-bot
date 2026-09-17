@@ -1,6 +1,8 @@
 """The /guess command — see MECHANICS.md's "Guess matching" and
 "Pixelation stages" sections."""
 
+from dataclasses import dataclass
+
 from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -14,6 +16,65 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.settings import stage_config
+
+
+@dataclass(frozen=True)
+class _Announcement:
+    """What a WON/STAGE_ADVANCED/UNSOLVED outcome needs to post once its
+    session has committed — captured as plain values (not the ORM
+    object) since the announcement happens after that session closes."""
+
+    photo: bytes
+    caption: str
+
+
+def _prepare_won_announcement(
+    session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str, winner_name: str
+) -> _Announcement:
+    original_bytes = _require_original_image(game, "a WON outcome")
+    timeout_module.cancel_timeout(context.job_queue, game.id)
+    timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
+    turn_state = game_service.get_turn_state(session)
+    if turn_state is not None:
+        timeout_module.schedule_turn_timers(context.job_queue, turn_state)
+    caption = i18n.t(
+        "guess.won_caption", lang, winner=winner_name, title=game_service.display_title(game, lang)
+    )
+    return _Announcement(photo=original_bytes, caption=caption)
+
+
+def _prepare_stage_advanced_announcement(
+    session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
+) -> _Announcement:
+    # guess_command already checked this is set — restores the type
+    # narrowing lost by passing `game` across a function boundary, same
+    # as _require_original_image does for original_image below.
+    if game.current_stage is None:
+        raise RuntimeError("game.current_stage is None on a STAGE_ADVANCED outcome")
+    original_bytes = _require_original_image(game, "a STAGE_ADVANCED outcome")
+    target_width = stage_config.get_stage_config(session, game.current_stage).target_width
+    pixelated = pixelate_service.pixelate(original_bytes, target_width, game.pixel_algorithm)
+    progress = game_service.stage_progress(session, game)
+    game_service.reset_inactivity_clock(game)
+    timeout_module.schedule_inactivity_timers(context.job_queue, game)
+    caption = i18n.t(
+        "guess.stage_advanced_caption",
+        lang,
+        stage=progress.number,
+        total=progress.total,
+        remaining=progress.remaining,
+        limit=progress.limit,
+    )
+    return _Announcement(photo=pixelated, caption=caption)
+
+
+def _prepare_unsolved_announcement(
+    context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
+) -> _Announcement:
+    original_bytes = _require_original_image(game, "an UNSOLVED outcome")
+    timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
+    caption = i18n.t("guess.unsolved_caption", lang, title=game_service.display_title(game, lang))
+    return _Announcement(photo=original_bytes, caption=caption)
 
 
 def _require_original_image(game: Game, situation: str) -> bytes:
@@ -57,6 +118,8 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await message.reply_text(i18n.t("guess.usage", lang))
         return
 
+    announcement: _Announcement | None = None
+    needs_cleanup_after_send = False
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         game = await _validate_guess(session, message, user, lang)
@@ -72,26 +135,11 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         outcome = game_service.record_guess(
             session, game, guesser_id=user.id, guess_text=guess_text
         )
+        game_id = game.id
 
         if outcome is game_service.GuessOutcome.WON:
-            original_bytes = _require_original_image(game, "a WON outcome")
-            timeout_module.cancel_timeout(context.job_queue, game.id)
-            timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
-            turn_state = game_service.get_turn_state(session)
-            if turn_state is not None:
-                timeout_module.schedule_turn_timers(context.job_queue, turn_state)
-            await timeout_module.post_current_image(
-                context,
-                session,
-                photo=original_bytes,
-                caption=i18n.t(
-                    "guess.won_caption",
-                    lang,
-                    winner=user.full_name,
-                    title=game_service.display_title(game, lang),
-                ),
-            )
-            game_service.clear_original_screenshot(game)
+            announcement = _prepare_won_announcement(session, context, game, lang, user.full_name)
+            needs_cleanup_after_send = True
         elif outcome is game_service.GuessOutcome.WRONG:
             progress = game_service.stage_progress(session, game)
             game_service.reset_inactivity_clock(game)
@@ -107,37 +155,39 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 )
             )
         elif outcome is game_service.GuessOutcome.STAGE_ADVANCED:
-            original_bytes = _require_original_image(game, "a STAGE_ADVANCED outcome")
-            target_width = stage_config.get_stage_config(session, game.current_stage).target_width
-            pixelated = pixelate_service.pixelate(original_bytes, target_width)
-            progress = game_service.stage_progress(session, game)
-            game_service.reset_inactivity_clock(game)
-            timeout_module.schedule_inactivity_timers(context.job_queue, game)
-            await timeout_module.post_current_image(
-                context,
-                session,
-                photo=pixelated,
-                caption=i18n.t(
-                    "guess.stage_advanced_caption",
-                    lang,
-                    stage=progress.number,
-                    total=progress.total,
-                    remaining=progress.remaining,
-                    limit=progress.limit,
-                ),
-            )
+            announcement = _prepare_stage_advanced_announcement(session, context, game, lang)
         elif outcome is game_service.GuessOutcome.UNSOLVED:
-            original_bytes = _require_original_image(game, "an UNSOLVED outcome")
-            timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
-            await timeout_module.post_current_image(
-                context,
-                session,
-                photo=original_bytes,
-                caption=i18n.t(
-                    "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
-                ),
-            )
-            game_service.clear_original_screenshot(game)
+            announcement = _prepare_unsolved_announcement(context, game, lang)
+            needs_cleanup_after_send = True
+    # Block closed and committed above — the outcome is durable now
+    # regardless of whether the announcement below actually reaches the
+    # group (see post_current_image's docstring).
+    if announcement is not None:
+        sent = await timeout_module.post_current_image(
+            context, session_factory, photo=announcement.photo, caption=announcement.caption
+        )
+        if needs_cleanup_after_send:
+            timeout_module.clear_image_if_sent(session_factory, game_id, sent)
+
+    # Fire-and-forget: maybe_overthrow() can run gather_pick()'s several
+    # real HTTP round-trips (up to AUTOSTART_ATTEMPT_LIMIT attempts, each
+    # against 30s-timeout clients). app.py never enables
+    # concurrent_updates, so PTB processes updates one at a time —
+    # awaiting this inline would block every other DM/group command
+    # bot-wide for however long a hanging provider takes. `update=update`
+    # lets PTB's error handler attribute any exception to this update,
+    # same as it would for an awaited call.
+    if outcome is game_service.GuessOutcome.WON:
+        context.application.create_task(
+            timeout_module.maybe_overthrow(
+                context, session_factory, winner_id=user.id, winner_name=user.full_name
+            ),
+            update=update,
+        )
+    elif outcome is game_service.GuessOutcome.UNSOLVED:
+        context.application.create_task(
+            timeout_module.maybe_overthrow(context, session_factory), update=update
+        )
 
 
 async def _validate_guess(session, message, user, lang: str) -> Game | None:

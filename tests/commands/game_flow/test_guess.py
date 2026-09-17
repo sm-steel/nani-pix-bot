@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram import Update
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import guess as guess_command_module
@@ -46,7 +47,25 @@ def _make_context(session_factory, *, args: list[str] | None = None) -> MagicMoc
     context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
     context.bot.pin_chat_message = AsyncMock()
     context.bot.unpin_chat_message = AsyncMock()
+    # Default: close the scheduled coroutine so tests that don't care about
+    # maybe_overthrow's fire-and-forget scheduling don't leak "coroutine
+    # was never awaited" warnings. Tests that DO care override this via
+    # _capture_scheduled_tasks below.
+    context.application.create_task = MagicMock(side_effect=lambda coro, **kw: coro.close())
     return context
+
+
+def _capture_scheduled_tasks(context: MagicMock) -> list[tuple]:
+    """Fire-and-forget calls (guess.py uses context.application.create_task
+    rather than awaiting maybe_overthrow inline — see issue #159's final
+    review) hand back an asyncio.Task that nothing here runs. Tests that
+    need the scheduled coroutine's side effects capture and await it
+    directly instead."""
+    scheduled: list[tuple] = []
+    context.application.create_task = MagicMock(
+        side_effect=lambda coro, **kw: scheduled.append((coro, kw))
+    )
+    return scheduled
 
 
 def _active_game(session_factory, **overrides) -> int:
@@ -136,12 +155,76 @@ async def test_guess_command_correct_guess_reveals_and_clears_file_id(session_fa
         assert fetched.original_image is None
 
 
+async def test_guess_command_keeps_the_win_committed_when_the_announcement_times_out(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+    context.bot.send_photo = AsyncMock(side_effect=TimedOut())
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.WON
+        # The reveal never sent, so the "confirmed sent" cleanup gate
+        # (MECHANICS.md's "Cleanup" note) must not have run either.
+        assert fetched.original_image == b"file123"
+
+
+async def test_guess_command_keeps_the_stage_advance_committed_when_the_post_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
+    game_id = _active_game(
+        session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2, total_guess_count=3
+    )
+    _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=3)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_4, wrong_guess_limit=5)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+    context.bot.send_photo = AsyncMock(side_effect=TimedOut())
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.current_stage == PixelStage.STAGE_4
+        assert fetched.wrong_guess_count == 0
+        assert fetched.total_guess_count == 4
+
+
+async def test_guess_command_keeps_the_unsolved_ending_committed_when_the_post_times_out(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5, wrong_guess_count=7)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_5, wrong_guess_limit=8)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+    context.bot.send_photo = AsyncMock(side_effect=TimedOut())
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.UNSOLVED
+        assert fetched.original_image == b"file123"
+
+
 async def test_guess_command_wrong_guess_advances_stage_with_new_image(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        guess_command_module.pixelate_service, "pixelate", lambda data, width: b"x8-bytes"
-    )
+    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     # STAGE_1/STAGE_2's limit is only 1, so a stage with headroom (STAGE_3,
     # given a limit of 3 here) is needed to exercise "some wrong guesses,
     # then advances".
@@ -371,9 +454,7 @@ async def test_guess_command_wrong_guess_resets_and_reschedules_the_inactivity_c
 async def test_guess_command_stage_advanced_resets_and_reschedules_the_inactivity_clock(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        guess_command_module.pixelate_service, "pixelate", lambda data, width: b"x8-bytes"
-    )
+    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     game_id = _active_game(
         session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2, total_guess_count=3
     )
@@ -407,14 +488,69 @@ async def test_guess_command_wrong_feedback_shows_remaining_over_the_stage_limit
     assert "2/3" in text
 
 
+async def test_guess_won_calls_maybe_overthrow(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.maybe_overthrow", fake_maybe_overthrow)
+    _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+    scheduled = _capture_scheduled_tasks(context)
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    # A WON outcome must be scheduled via context.application.create_task
+    # (fire-and-forget), not awaited inline — see guess_command's comment.
+    assert len(scheduled) == 1
+    coro, kwargs = scheduled[0]
+    assert kwargs.get("update") is update
+    await coro
+
+    assert len(calls) == 1
+    assert calls[0]["winner_id"] == 2
+
+
+async def test_guess_unsolved_calls_maybe_overthrow_with_no_winner(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.maybe_overthrow", fake_maybe_overthrow)
+    _active_game(session_factory, current_stage=PixelStage.STAGE_5, wrong_guess_count=7)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_5, wrong_guess_limit=8)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+    scheduled = _capture_scheduled_tasks(context)
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert len(scheduled) == 1
+    coro, kwargs = scheduled[0]
+    assert kwargs.get("update") is update
+    await coro
+
+    assert len(calls) == 1
+    assert calls[0].get("winner_id") is None
+
+
 async def test_guess_command_stage_advance_caption_shows_the_new_stage_budget(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The advance caption names the stage's whole budget, not a bare
     cumulative guess counter with nothing to measure it against."""
-    monkeypatch.setattr(
-        guess_command_module.pixelate_service, "pixelate", lambda data, width: b"x8-bytes"
-    )
+    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     _active_game(session_factory, current_stage=PixelStage.STAGE_2, wrong_guess_count=0)
     _seed_stage_limit(session_factory, PixelStage.STAGE_2, wrong_guess_limit=1)
     _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=2)

@@ -125,6 +125,40 @@ def match_candidates(game: Game) -> list[str]:
     ]
 
 
+# The three providers that can supply screenshots — AniList identifies
+# an anime but has no screenshot endpoint, so it is the one Provider a
+# screenshot-shaped payload must be rejected for. Moved here from
+# commands/dm_start/keyboards.py (issue #159) so services/game/autostart.py
+# can reuse the same ordering rule without services/ importing commands/.
+SCREENSHOT_CAPABLE_PROVIDERS: tuple[Provider, ...] = (
+    Provider.SHIKIMORI,
+    Provider.JIKAN,
+    Provider.TMDB,
+)
+
+
+def screenshot_capable_providers(game: Game) -> list[Provider]:
+    """All 3 screenshot-capable providers, same-provider-as-identification
+    first when it's one of them (so the common case — screenshot source
+    matches identification source — needs no cross-provider search at
+    all). Every provider is offered regardless of whether the game
+    already has an id for it — a caller not finding one triggers
+    cross-provider resolution (see commands/dm_start/screenshots.py's
+    _resolve_screenshot_source, and services/game/autostart.py's
+    _pick_screenshot for the bot-initiated equivalent).
+
+    `game.source` arrives as a bare str (the Provider columns are
+    String-backed, not a native enum — see models/game.py), and can
+    legitimately be "manual", which is in neither list, so the
+    membership test settles both questions at once."""
+    candidates = list(SCREENSHOT_CAPABLE_PROVIDERS)
+    if game.source in candidates:
+        identified_by = Provider(game.source)
+        candidates.remove(identified_by)
+        candidates.insert(0, identified_by)
+    return candidates
+
+
 def active_or_setup_game(session: Session) -> Game | None:
     """The one game currently SETUP or ACTIVE, if any — there's never more
     than one (enforced here, not by a DB constraint; see ARCHITECTURE.md)."""
@@ -296,7 +330,10 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
         )
         return GuessOutcome.WRONG
 
-    return advance_stage(game)
+    outcome = advance_stage(game)
+    if outcome is GuessOutcome.UNSOLVED:
+        turns.mark_turn_open_if_unassigned(session)
+    return outcome
 
 
 def reset_inactivity_clock(game: Game) -> None:

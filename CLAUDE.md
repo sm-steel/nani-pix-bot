@@ -19,7 +19,7 @@ and the full directory/module layout
 ("Where things are"). `MECHANICS.md` covers the game rules themselves
 (pixelation stages, guess matching, turns, timeout, leaderboard) — read it
 before touching anything in `services/game/`, `services/matching.py`,
-`services/pixelate.py`, or `services/settings/stage_config.py`.
+`services/pixelate/`, or `services/settings/stage_config.py`.
 This file covers how to work in this repo day to day — tooling, testing,
 logging, and coding conventions — not where things live; that's
 `ARCHITECTURE.md`'s job, so it isn't duplicated here.
@@ -41,6 +41,27 @@ convention below). A key missing in `ru.json` falls back to `en.json`
 (logged as a `WARNING`, so gaps get noticed); a key missing even there
 logs an `ERROR` and returns the bare key rather than raising — a bad
 translation shouldn't crash a live bot.
+
+**Some keys additionally get random phrasing variations**, so a message
+sent many times in one game (a wrong guess can fire up to ~10 times
+across the five stages) doesn't always read identically. These extra
+phrasings live in `locales/variations/en.json` and `.../variations/ru.json`
+— separate, much smaller files from the main `en.json`/`ru.json`, so
+adding a pool of playful alternates for a handful of keys doesn't bloat
+the ~125-key main files that every other string lives in. Each entry
+there maps a key already present in the main file to a list of *extra*
+strings only (the canonical wording from `en.json`/`ru.json` is not
+repeated); `t()` builds a pool of `[canonical, *extras]` and picks one
+at random every call — a key absent from the variations file just uses
+its single canonical wording, unchanged from before this existed. Only
+messages that repeat often within or across a game are worth adding
+here (see git history / issue #154 for the current list) — one-off
+admin/error replies don't need variation. Every extra variant must use
+only placeholder names the canonical template already uses (`t()` is
+always called with the same kwargs regardless of which pool member gets
+picked) — `tests/services/test_i18n.py` guards this, plus EN/RU key
+parity between the two variations files, the same way it already guards
+the main locale files.
 
 Two categories of text are **deliberately not translated**: third-party
 brand names (`"AniList"`/`"Shikimori"`/`"Jikan"`/`"TMDB"` — in the
@@ -234,7 +255,7 @@ first means the commit doesn't just fail on the first attempt.
 Every unit in `services/` and `models/` gets a failing test written first,
 then the minimal implementation to make it pass, then refactor. This
 matters more here than in most bots: `services/matching.py`'s fuzzy-match
-threshold and `services/pixelate.py`'s width-scaling math are exactly the
+threshold and `services/pixelate/`'s width-scaling math are exactly the
 kind of logic that's easy to eyeball as "probably right" and quietly wrong
 at the edges — write the edge-case test (near-miss title, empty guess,
 already-at-the-final-stage exhaustion) before the implementation, not

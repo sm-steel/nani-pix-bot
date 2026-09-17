@@ -27,7 +27,7 @@ from typing import Generic, Literal, TypeVar
 from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from nani_pix_bot.models.enums import Provider
+from nani_pix_bot.models.enums import DISCOURAGED_ALGORITHMS, PixelAlgorithm, Provider
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.search.anilist import AniListResult
@@ -60,6 +60,12 @@ PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA = "preview:change_image:upload"
 PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA = "preview:change_image:pick_screenshot"
 PREVIEW_RESEARCH_CALLBACK_DATA = "preview:research"
 PREVIEW_ADD_SYNONYM_CALLBACK_DATA = "preview:add_synonym"
+# The pixelation-algorithm submenu (see pixel_algorithm_keyboard). The
+# pick prefix carries its own segment rather than being "preview:algo:"
+# directly, so it can never collide with the ":back" button's data.
+PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA = "preview:algo"
+PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA = "preview:algo:back"
+PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX = "preview:algo:pick:"
 
 
 _ResultT = TypeVar("_ResultT")
@@ -304,9 +310,19 @@ def parse_method_callback_data(data: str) -> Provider | Literal["manual"] | None
     return _METHOD_CALLBACK_DATA_TO_SOURCE.get(data)
 
 
-def preview_keyboard(lang: str) -> InlineKeyboardMarkup:
+def algorithm_name(algorithm: PixelAlgorithm, lang: str) -> str:
+    """The localized display name for a pixelation algorithm. Unlike the
+    provider brand names, these are ordinary words and do get
+    translated — see CLAUDE.md's i18n section on what doesn't."""
+    return i18n.t(f"dm_start.algo_name_{algorithm.value}", lang)
+
+
+def preview_keyboard(lang: str, algorithm: PixelAlgorithm) -> InlineKeyboardMarkup:
     """Buttons on the private preview shown before a game is posted to
-    the group — see MECHANICS.md's "Starting a game" section."""
+    the group — see MECHANICS.md's "Starting a game" section. The
+    pixelation button shows the game's current algorithm rather than a
+    static label, so the starter can see what they'd be changing without
+    opening the submenu."""
     confirm = InlineKeyboardButton(
         i18n.t("keyboards.preview_confirm", lang), callback_data=PREVIEW_CONFIRM_CALLBACK_DATA
     )
@@ -321,7 +337,50 @@ def preview_keyboard(lang: str) -> InlineKeyboardMarkup:
         i18n.t("keyboards.preview_add_synonym", lang),
         callback_data=PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     )
-    return InlineKeyboardMarkup([[confirm], [change_image], [research], [add_synonym]])
+    pixel_algorithm = InlineKeyboardButton(
+        i18n.t("keyboards.preview_pixel_algorithm", lang, name=algorithm_name(algorithm, lang)),
+        callback_data=PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA,
+    )
+    return InlineKeyboardMarkup(
+        [[confirm], [change_image], [research], [add_synonym], [pixel_algorithm]]
+    )
+
+
+def pixel_algorithm_keyboard(lang: str, current: PixelAlgorithm) -> InlineKeyboardMarkup:
+    """The pixelation submenu: every algorithm, the current one ticked
+    and the discouraged one flagged, plus a way back. Descriptions go in
+    the message text rather than on the buttons — a one-line explanation
+    per algorithm doesn't fit a button label at any sensible width."""
+    rows = [
+        [
+            InlineKeyboardButton(
+                _algorithm_button_label(algorithm, lang, current=current),
+                callback_data=f"{PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX}{algorithm.value}",
+            )
+        ]
+        for algorithm in PixelAlgorithm
+    ]
+    rows.append(
+        [
+            InlineKeyboardButton(
+                i18n.t("keyboards.pixel_algorithm_back", lang),
+                callback_data=PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA,
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def _algorithm_button_label(
+    algorithm: PixelAlgorithm, lang: str, *, current: PixelAlgorithm
+) -> str:
+    markers = []
+    if algorithm is current:
+        markers.append(i18n.t("dm_start.pixel_algorithm_current_marker", lang))
+    if algorithm in DISCOURAGED_ALGORITHMS:
+        markers.append(i18n.t("dm_start.pixel_algorithm_worst_marker", lang))
+    name = algorithm_name(algorithm, lang)
+    return f"{' '.join(markers)} {name}".strip()
 
 
 def change_image_keyboard(lang: str) -> InlineKeyboardMarkup:
@@ -358,19 +417,6 @@ SCREENSHOT_SEARCH_AGAIN_PREFIX = "screenshot_search_again:"
 SCREENSHOT_SEARCH_PICK_PREFIX = "screenshot_search_pick:"
 SCREENSHOT_UPLOAD_CALLBACK_DATA = "screenshot:upload"
 
-# The three providers that can supply screenshots — AniList identifies
-# an anime but has no screenshot endpoint, so it is the one Provider a
-# screenshot-shaped payload must be rejected for. A tuple rather than
-# the label dict this used to double as: the labels themselves now come
-# from Provider.display_name, leaving only the membership question.
-# The single source of truth for that question — _shared.py's
-# _screenshot_capable_providers() imports this rather than
-# hand-restating the same 3-member list independently (issue #114).
-_SCREENSHOT_CAPABLE_PROVIDERS: tuple[Provider, ...] = (
-    Provider.SHIKIMORI,
-    Provider.JIKAN,
-    Provider.TMDB,
-)
 # Marks the provider that just failed on a re-shown source menu. A bare
 # sign rather than an i18n'd word so the brand-name labels stay
 # untranslated (see CLAUDE.md) and the buttons stay short.
@@ -444,7 +490,7 @@ def _validated_provider(raw: str, *, data: str) -> Provider | None:
     except ValueError:
         logger.warning("Rejected callback payload {!r}: {!r} is not a provider", data, raw)
         return None
-    if provider not in _SCREENSHOT_CAPABLE_PROVIDERS:
+    if provider not in game_service.SCREENSHOT_CAPABLE_PROVIDERS:
         logger.warning(
             "Rejected callback payload {!r}: {!r} has no screenshots to offer", data, raw
         )

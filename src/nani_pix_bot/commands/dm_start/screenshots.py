@@ -30,7 +30,6 @@ from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
     _reject_stale_tap,
-    _screenshot_capable_providers,
     _stored_provider,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
@@ -172,12 +171,27 @@ class GalleryTarget:
 
 
 def source_menu_for(game: Game, provider: Provider | None) -> SourceMenu:
-    return SourceMenu(providers=_screenshot_capable_providers(game), provider=provider)
+    return SourceMenu(providers=game_service.screenshot_capable_providers(game), provider=provider)
 
 
-async def reply_fallback(send, game: Game, lang: str, fallback: ScreenshotFailure) -> None:
-    """`reply_with_source_menu` for the common case where the caller has
-    the game loaded and so can build the menu itself.
+@dataclass(frozen=True)
+class FallbackNotice:
+    """What send_fallback_notice needs, captured while the staging
+    game's session was still open — see stage_fallback's docstring for
+    why the send happens after that session closes."""
+
+    menu: SourceMenu
+    key: str
+
+
+def stage_fallback(game: Game, fallback: ScreenshotFailure) -> FallbackNotice:
+    """DB-phase half of showing `fallback` with the source menu — the
+    caller commits this in its own session_scope block, then calls
+    send_fallback_notice with the result once that block has closed:
+    same "commit before send" reasoning as _shared.py's
+    _stage_preview/_post_preview_album split, and post_current_image's
+    (see jobs/timers/current_image.py's docstring) — a Telegram timeout
+    on the notice must never roll back the re-arm below it.
 
     Puts the game back on PICKING_SCREENSHOT *and* points the picker at
     the provider being blamed, since that is literally the screen being
@@ -198,7 +212,11 @@ async def reply_fallback(send, game: Game, lang: str, fallback: ScreenshotFailur
     the source menu is *replacing* a gallery, never while one is up."""
     game.setup_step = SetupStep.PICKING_SCREENSHOT
     game.screenshot_picker_provider = fallback.provider
-    await reply_with_source_menu(send, source_menu_for(game, fallback.provider), lang, fallback.key)
+    return FallbackNotice(menu=source_menu_for(game, fallback.provider), key=fallback.key)
+
+
+async def send_fallback_notice(send, notice: FallbackNotice, lang: str) -> None:
+    await reply_with_source_menu(send, notice.menu, lang, notice.key)
 
 
 async def reply_with_source_menu(send, menu: SourceMenu, lang: str, key: str) -> None:
@@ -243,22 +261,43 @@ async def gallery_page_or_fallback(
     return fallback if fallback is not None else "dm_start.screenshot_source_picked"
 
 
-async def start_screenshot_picker(
-    context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
-) -> None:
-    """Entry point from `search.py`'s `pick_callback_handler` (and
-    `manual.py`'s synonym step) once identification is staged with no
-    image yet — shows the screenshot-source-selection keyboard. Every
+@dataclass(frozen=True)
+class ScreenshotPickerPrompt:
+    """What send_screenshot_picker_prompt needs, captured while the
+    staging game's session was still open — see stage_screenshot_picker's
+    docstring for why the send happens after that session closes."""
+
+    starter_id: int
+    providers: list[Provider]
+
+
+def stage_screenshot_picker(game: Game) -> ScreenshotPickerPrompt:
+    """DB-phase half of the screenshot-source picker: moves the game to
+    PICKING_SCREENSHOT. The caller commits this in its own session_scope
+    block, then calls send_screenshot_picker_prompt with the result once
+    that block has closed — same "commit before send" reasoning as
+    _shared.py's _stage_preview/_post_preview_album split, and for the
+    same reason (see jobs/timers/current_image.py's post_current_image
+    docstring).
+
+    Called from `search.py`'s `pick_callback_handler` (and `manual.py`'s
+    synonym step) once identification is staged with no image yet. Every
     screenshot-capable provider is always offered (see
-    _screenshot_capable_providers) since cross-provider resolution
-    means even an AniList/manual identification can still get a
+    game_service.screenshot_capable_providers) since cross-provider resolution means
+    even an AniList/manual identification can still get a
     Shikimori/Jikan/TMDB screenshot."""
-    providers = _screenshot_capable_providers(game)
+    providers = game_service.screenshot_capable_providers(game)
     game.setup_step = SetupStep.PICKING_SCREENSHOT
+    return ScreenshotPickerPrompt(starter_id=game.starter_id, providers=providers)
+
+
+async def send_screenshot_picker_prompt(
+    context: ContextTypes.DEFAULT_TYPE, prompt: ScreenshotPickerPrompt, lang: str
+) -> None:
     await context.bot.send_message(
-        chat_id=game.starter_id,
+        chat_id=prompt.starter_id,
         text=i18n.t("dm_start.pick_screenshot_source_prompt", lang),
-        reply_markup=screenshot_source_keyboard(providers, lang),
+        reply_markup=screenshot_source_keyboard(prompt.providers, lang),
     )
 
 
@@ -382,6 +421,7 @@ async def screenshot_source_callback_handler(
         return
 
     session_factory = context.bot_data["session_factory"]
+    notice = None
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
@@ -407,16 +447,19 @@ async def screenshot_source_callback_handler(
             return
         # The picker column is written by whichever screen this ends on,
         # not here: _resolve_screenshot_source sets it for the gallery it
-        # shows, and reply_fallback sets it for a failure screen. Note
+        # shows, and stage_fallback sets it for a failure screen. Note
         # it is never screenshot_source — no image exists yet, and this
         # tap must not claim one (see models/game.py).
         failure = await _resolve_screenshot_source(context, game, provider, lang)
-        # Replying inside the session block, while `game` is still live —
-        # the source menu is built from it.
-        if failure is None:
-            await query.edit_message_text(i18n.t("dm_start.screenshot_source_picked", lang))
-        else:
-            await reply_fallback(query.edit_message_text, game, lang, failure)
+        if failure is not None:
+            notice = stage_fallback(game, failure)
+    # Block closed and committed above — see stage_fallback's docstring
+    # for why the reply has to happen after (a failure) — and, now that
+    # this branch is split anyway, the success reply moves out here too.
+    if notice is not None:
+        await send_fallback_notice(query.edit_message_text, notice, lang)
+    else:
+        await query.edit_message_text(i18n.t("dm_start.screenshot_source_picked", lang))
 
 
 async def _resolve_screenshot_source(

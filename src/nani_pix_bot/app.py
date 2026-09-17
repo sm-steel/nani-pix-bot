@@ -28,8 +28,8 @@ from nani_pix_bot.commands import (
     language,
     leaderboard,
     onboarding,
+    setautostart,
     stageconfig,
-    testpixels,  # TEMPORARY — see commands/testpixels.py
     version,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
@@ -190,11 +190,11 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("language", language.language_command))
     application.add_handler(CommandHandler("start", onboarding.start_command))
     application.add_handler(CommandHandler("help", onboarding.help_command))
-    application.add_handler(CommandHandler("testpixels", testpixels.testpixels_command))
     application.add_handler(CommandHandler("stageconfig", stageconfig.stageconfig_command))
     application.add_handler(CommandHandler("setstageconfig", stageconfig.setstageconfig_command))
     application.add_handler(CommandHandler("setstage", stageconfig.setstage_command))
     application.add_handler(CommandHandler("setgamesenabled", gamesenabled.setgamesenabled_command))
+    application.add_handler(CommandHandler("setautostart", setautostart.setautostart_command))
     application.add_handler(CommandHandler("version", version.version_command))
     application.add_error_handler(_error_handler)
 

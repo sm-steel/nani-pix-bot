@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from telegram import Update
 from telegram.constants import ChatMemberStatus
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import intake, preview
@@ -156,6 +157,19 @@ async def test_photo_handler_cancels_turn_timers_when_the_designated_starter_beg
     assert context.job_queue.get_jobs_by_name.call_count >= 2
 
 
+async def test_photo_handler_cancels_pending_idle_autostart(session_factory) -> None:
+    """A human successfully starting a game must cancel any pending
+    idle-autostart timer, so "nobody started a game for 24h" stays
+    literally true regardless of who starts one next (issue #159)."""
+    update = _make_update(user_id=1, photo_file_id="file123")
+    context = _make_context(session_factory)
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    names = [call.args[0] for call in context.job_queue.get_jobs_by_name.call_args_list]
+    assert timeout_module.IDLE_AUTOSTART_JOB_NAME in names
+
+
 async def test_photo_handler_shows_the_method_selection_keyboard(session_factory) -> None:
     update = _make_update(user_id=1, photo_file_id="file123")
     context = _make_context(session_factory)
@@ -246,7 +260,7 @@ async def test_photo_handler_rejects_non_group_members(session_factory) -> None:
 async def test_photo_handler_updates_the_image_and_reshows_the_preview_when_changing(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()
@@ -270,6 +284,29 @@ async def test_photo_handler_updates_the_image_and_reshows_the_preview_when_chan
     assert kwargs["chat_id"] == 1
 
 
+async def test_photo_handler_keeps_the_new_image_when_the_preview_album_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    _staged_setup_game(session_factory)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
+        session.commit()
+
+    update = _make_update(user_id=1, photo_file_id="new-file-456")
+    context = _make_callback_context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.original_image == b"original-bytes"
+        assert fetched.setup_step == SetupStep.CONFIRMING
+
+
 async def test_photo_handler_accepts_an_upload_while_picking_a_screenshot(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -278,7 +315,7 @@ async def test_photo_handler_accepts_an_upload_while_picking_a_screenshot(
     say "use this one". It used to fall through to _start_new_game and
     come back as "it's not your turn", which made no sense: it's the
     starter's own setup."""
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()
@@ -336,7 +373,7 @@ async def test_photo_handler_upload_keeps_the_identification_provider_id(
     selection to clear, and shikimori_id (kept so a later cross-search
     can reuse it, see MECHANICS.md's "Starting a game") must survive.
     While one column carried both meanings, this upload deleted it."""
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda data, stage: b"pixelated")
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
         session.commit()

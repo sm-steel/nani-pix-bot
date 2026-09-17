@@ -3,8 +3,11 @@ admin, abort a SETUP or ACTIVE game after a confirmation; the outcome is
 still announced in the group topic, optionally revealing what the round's
 answer was. See MECHANICS.md's "Stopping a game" section."""
 
+from dataclasses import dataclass
+
 from loguru import logger
 from telegram import Update
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.keyboards import (
@@ -20,6 +23,15 @@ from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
+
+
+@dataclass(frozen=True)
+class _StoppedGame:
+    """What _announce_stop needs, captured while the row was still live
+    — it's already deleted by the time this runs."""
+
+    title: str
+    original_bytes: bytes | None
 
 
 async def _may_stop(
@@ -109,60 +121,74 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
 
         game_id = game.id
         was_active = game.status == GameStatus.ACTIVE
+        title = game_service.display_title(game, lang)
+        # Forces the deferred original_image column now, while the row is
+        # still live — _announce_stop runs after this session (and the row
+        # itself) is gone.
+        can_reveal_now = reveal and game.original_image is not None
+        original_bytes = game.original_image if can_reveal_now else None
+        if reveal and not can_reveal_now:
+            logger.warning("Game {}: reveal requested but no image is stored", game_id)
         if was_active:
             timeout_module.cancel_timeout(context.job_queue, game_id)
             timeout_module.cancel_inactivity_timers(context.job_queue, game_id)
         else:
             timeout_module.cancel_setup_abandon(context.job_queue, game_id)
-        # Announce before deleting: the reveal path reads the row's image
-        # and title, and post_current_image needs a live session to move
-        # the group's pin.
-        revealed = await _announce_stop(context, session, game, lang, reveal=reveal)
         session.delete(game)
-        game_service.set_next_starter(session, None)
-        logger.info(
-            "Game {} stopped by {} (was {}, answer {})",
-            game_id,
-            user.id,
-            "ACTIVE" if was_active else "SETUP",
-            "revealed" if revealed else "not revealed",
-        )
-
+        turn_state = game_service.set_next_starter(session, None)
+    # Block closed and committed above — the row deletion and turn-open
+    # are durable now regardless of whether the announcement below
+    # actually reaches the group (see post_current_image's docstring).
+    timeout_module.schedule_idle_autostart(context.job_queue, turn_state)
+    stopped_game = _StoppedGame(title=title, original_bytes=original_bytes)
+    revealed = await _announce_stop(context, session_factory, stopped_game, lang, reveal)
+    logger.info(
+        "Game {} stopped by {} (was {}, answer {})",
+        game_id,
+        user.id,
+        "ACTIVE" if was_active else "SETUP",
+        "revealed" if revealed else "not revealed",
+    )
     await query.edit_message_text(
         i18n.t("stop.confirmed_revealed" if revealed else "stop.confirmed", lang)
     )
 
 
 async def _announce_stop(
-    context: ContextTypes.DEFAULT_TYPE, session, game, lang: str, reveal: bool
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory,
+    stopped_game: _StoppedGame,
+    lang: str,
+    reveal: bool,
 ) -> bool:
     """Tells the group topic the round is over, and returns whether it
-    also revealed the answer. (`reveal` is positional-or-keyword rather
-    than keyword-only purely to stay inside qlty's parameter-count
-    threshold; the one caller still passes it by name.)
+    also revealed the answer — meaning the reveal message was *confirmed
+    sent* (see post_current_image's docstring), not merely attempted; the
+    game row is already gone by the time this runs, so there's nothing
+    left to gate on a successful send either way.
 
     Revealing posts the un-pixelated original captioned with the title —
     the same `post_current_image` the win/unsolved/timeout reveals use, so
     it becomes the topic's pinned image too. That caption already says the
     turn is open, so the reveal path posts one message rather than a photo
     plus a duplicate notice. Falls back to the plain notice if the button
-    was a stale tap on a game that no longer has its image."""
-    if reveal and game.original_image is not None:
-        await timeout_module.post_current_image(
+    was a stale tap on a game that no longer had its image (see the
+    caller's own warning log for that case)."""
+    if reveal and stopped_game.original_bytes is not None:
+        sent = await timeout_module.post_current_image(
             context,
-            session,
-            photo=game.original_image,
-            caption=i18n.t(
-                "stop.stopped_reveal_caption", lang, title=game_service.display_title(game, lang)
-            ),
+            session_factory,
+            photo=stopped_game.original_bytes,
+            caption=i18n.t("stop.stopped_reveal_caption", lang, title=stopped_game.title),
         )
-        return True
+        return sent is not None
 
-    if reveal:
-        logger.warning("Game {}: reveal requested but no image is stored", game.id)
-    await context.bot.send_message(
-        chat_id=context.bot_data["group_chat_id"],
-        message_thread_id=context.bot_data["game_topic_id"],
-        text=i18n.t("stop.confirmed_group_notice", lang),
-    )
+    try:
+        await context.bot.send_message(
+            chat_id=context.bot_data["group_chat_id"],
+            message_thread_id=context.bot_data["game_topic_id"],
+            text=i18n.t("stop.confirmed_group_notice", lang),
+        )
+    except TelegramError as exc:
+        logger.warning("Failed to send the /stop group notice: {}", exc)
     return False
