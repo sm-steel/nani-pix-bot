@@ -198,6 +198,19 @@ async def test_stop_callback_handler_confirm_deletes_active_game_and_notifies_gr
     update.callback_query.edit_message_text.assert_awaited_once()
 
 
+async def test_stop_callback_handler_confirm_schedules_idle_autostart(session_factory) -> None:
+    _active_game(session_factory, starter_id=1)
+    update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert "idle-autostart" in names
+
+
 async def test_stop_callback_handler_confirm_cancels_the_inactivity_timers(session_factory) -> None:
     game_id = _active_game(session_factory, starter_id=1)
     update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
