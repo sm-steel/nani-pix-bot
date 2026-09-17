@@ -1,0 +1,250 @@
+"""Bot-initiated game starting: the 24h idle-autostart timer, and the
+probabilistic "overthrow" trigger fired right after a game concludes —
+see the design behind issue #159. Builds on
+services/game/autostart.py's pure picking logic; this module owns the
+DB write, JobQueue scheduling, and Telegram posting around it."""
+
+import enum
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from loguru import logger
+from sqlalchemy.orm import Session
+from telegram.ext import ContextTypes, JobQueue
+
+from nani_pix_bot.db import session_scope
+from nani_pix_bot.jobs.timers._shared import seconds_until
+from nani_pix_bot.jobs.timers.current_image import post_current_image
+from nani_pix_bot.jobs.timers.game_timeout import schedule_timeout
+from nani_pix_bot.jobs.timers.inactivity import schedule_inactivity_timers
+from nani_pix_bot.jobs.timers.turn_timers import cancel_turn_timers
+from nani_pix_bot.models.game import Game
+from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.game import autostart as autostart_service
+from nani_pix_bot.services.settings import stage_config
+
+IDLE_AUTOSTART_JOB_NAME = "idle-autostart"
+
+
+class AutostartTrigger(enum.Enum):
+    OVERTHROW = "overthrow"
+    IDLE = "idle"
+
+
+@dataclass(frozen=True)
+class _FirstStagePost:
+    """What the group announcement needs, captured while the staging
+    game's session was still open — post_current_image runs after that
+    session (and its commit) has already closed, same pattern as
+    commands/dm_start/preview.py's _FirstStagePost."""
+
+    photo: bytes
+    caption: str
+
+
+@dataclass(frozen=True)
+class _Announcement:
+    """Which caption variant _build_first_stage_post should use, bundled
+    into one parameter so that function's own signature stays under
+    qlty's too-many-parameters threshold."""
+
+    trigger: AutostartTrigger
+    dethroned_winner_name: str | None
+
+
+def schedule_idle_autostart(job_queue: JobQueue | None, turn_state) -> None:
+    if job_queue is None:
+        return
+    cancel_idle_autostart(job_queue)
+    if turn_state.autostart_deadline_at is None:
+        return
+    delay = seconds_until(turn_state.autostart_deadline_at)
+    logger.debug("Scheduling idle-autostart in {:.0f}s", delay)
+    job_queue.run_once(idle_autostart_job_callback, when=delay, name=IDLE_AUTOSTART_JOB_NAME)
+
+
+def cancel_idle_autostart(job_queue: JobQueue | None) -> None:
+    if job_queue is None:
+        return
+    logger.debug("Canceling idle-autostart timer")
+    for job in job_queue.get_jobs_by_name(IDLE_AUTOSTART_JOB_NAME):
+        job.schedule_removal()
+
+
+def _autostart_gated(session: Session) -> bool:
+    if not settings.get_games_enabled(session):
+        return True
+    if not settings.get_autostart_enabled(session):
+        return True
+    return game_service.active_or_setup_game(session) is not None
+
+
+async def idle_autostart_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Fires IDLE_AUTOSTART_DELAY after the turn was last opened with no
+    game started since. Re-checks everything fresh before attempting a
+    claim — a job firing after a human already started a game (or the
+    turn was reassigned) must no-op rather than double-post. On a failed
+    pick, reschedules AUTOSTART_RETRY_DELAY later rather than going
+    silent until the next natural turn-open event."""
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        turn_state = game_service.get_turn_state(session)
+        if turn_state is None or turn_state.next_starter_id is not None:
+            logger.debug("Idle-autostart fired but the turn is no longer open — no-op")
+            return
+        if game_service.active_or_setup_game(session) is not None:
+            logger.debug("Idle-autostart fired but a game is already running — no-op")
+            return
+        if _autostart_gated(session):
+            logger.debug("Idle-autostart fired but autostart is disabled — no-op")
+            return
+
+    started = await run_bot_autostart(context, session_factory, trigger=AutostartTrigger.IDLE)
+    if started:
+        return
+
+    with session_scope(session_factory) as session:
+        turn_state = game_service.get_turn_state(session)
+        if turn_state is None or turn_state.next_starter_id is not None:
+            return
+        turn_state.autostart_deadline_at = datetime.now(UTC) + game_service.AUTOSTART_RETRY_DELAY
+        logger.info(
+            "Idle-autostart pick failed — retrying in {}", game_service.AUTOSTART_RETRY_DELAY
+        )
+        schedule_idle_autostart(context.job_queue, turn_state)
+
+
+async def maybe_overthrow(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory,
+    *,
+    winner_id: int | None = None,
+    winner_name: str | None = None,
+) -> None:
+    """Called right after a game concludes — a win (`winner_id` set) or
+    an unsolved/timeout ending (`winner_id` None) — from every one of
+    this feature's game-ending call sites. Rolls OVERTHROW_PROBABILITY
+    once; on a hit, attempts to claim the next game itself, dethroning
+    `winner_id` if one was given (they keep their win credit regardless
+    — only the next-turn privilege moves). On a miss, a disabled gate,
+    or a failed pick, falls through to (re)arming the 24h idle-autostart
+    backstop from whatever the normal outcome already committed."""
+    logger.debug(
+        "Rolling overthrow after a game ended (dethronable winner={})",
+        winner_id if winner_id is not None else "none — turn was already open",
+    )
+    with session_scope(session_factory) as session:
+        gated = _autostart_gated(session)
+
+    claimed = False
+    if not gated and autostart_service.roll_overthrow():
+        claimed = await run_bot_autostart(
+            context,
+            session_factory,
+            trigger=AutostartTrigger.OVERTHROW,
+            dethroned_winner_name=winner_name,
+        )
+    if claimed:
+        return
+
+    with session_scope(session_factory) as session:
+        turn_state = game_service.get_turn_state(session)
+        if turn_state is not None:
+            schedule_idle_autostart(context.job_queue, turn_state)
+
+
+def _build_first_stage_post(
+    session: Session,
+    context: ContextTypes.DEFAULT_TYPE,
+    game: Game,
+    lang: str,
+    announcement: _Announcement,
+) -> _FirstStagePost:
+    first_stage = game_service.STAGE_ORDER[0]
+    first_stage_settings = stage_config.get_stage_config(session, first_stage)
+    if game.original_image is None:
+        raise RuntimeError("game.original_image is None in _build_first_stage_post")
+    pixelated = pixelate_service.pixelate(game.original_image, first_stage_settings.target_width)
+    caption_kwargs = {
+        "stage": 1,
+        "total": len(game_service.STAGE_ORDER),
+        "remaining": first_stage_settings.wrong_guess_limit,
+        "limit": first_stage_settings.wrong_guess_limit,
+    }
+    if announcement.trigger is AutostartTrigger.IDLE:
+        caption = i18n.t("dm_start.game_started_caption_idle", lang, **caption_kwargs)
+    elif announcement.dethroned_winner_name is not None:
+        caption = i18n.t(
+            "dm_start.game_started_caption_overthrow_winner",
+            lang,
+            winner=announcement.dethroned_winner_name,
+            **caption_kwargs,
+        )
+    else:
+        caption = i18n.t("dm_start.game_started_caption_overthrow_open", lang, **caption_kwargs)
+    game_service.activate_game(session, game)
+    schedule_timeout(context.job_queue, game)
+    schedule_inactivity_timers(context.job_queue, game)
+    return _FirstStagePost(photo=pixelated, caption=caption)
+
+
+async def run_bot_autostart(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory,
+    *,
+    trigger: AutostartTrigger,
+    dethroned_winner_name: str | None = None,
+) -> bool:
+    """The shared "bot claims a game" routine both triggers delegate to
+    once a valid pick is in hand. Returns whether a game was actually
+    started. Deliberately doesn't reuse commands/dm_start/preview.py's
+    private _activate_and_stage_first_post(): that function lives inside
+    a DM-flow module jobs/ shouldn't import from, and a bot-started game
+    never passes through SETUP/setup-abandon the way a human one does
+    (no cancel_setup_abandon call here — none was ever scheduled)."""
+    search_client = context.bot_data["search_client"]
+    tmdb_client = context.bot_data["tmdb_client"]
+    pick = await autostart_service.gather_pick(search_client, tmdb_client)
+    if pick is None:
+        logger.warning(
+            "Bot autostart ({}) found no usable pick after {} attempt(s) — skipping this firing",
+            trigger.value,
+            autostart_service.AUTOSTART_ATTEMPT_LIMIT,
+        )
+        return False
+
+    bot_id = context.bot.id
+    with session_scope(session_factory) as session:
+        if game_service.active_or_setup_game(session) is not None:
+            logger.warning(
+                "Bot autostart ({}) aborted — a game was started in the meantime", trigger.value
+            )
+            return False
+        lang = settings.get_language(session)
+        players.get_or_create_player(session, bot_id, username=context.bot_data.get("bot_username"))
+        game = game_service.create_setup_game(session, starter_id=bot_id)
+        game_service.stage_result(game, pick.anime.result, source=pick.anime.source)
+        game.original_image = pick.screenshot.image_bytes
+        game.screenshot_source = pick.screenshot.provider
+        setattr(game, pick.screenshot.provider.id_attr_name, pick.screenshot.provider_id)
+        game_service.clear_turn_timers(session)
+        first_stage_post = _build_first_stage_post(
+            session, context, game, lang, _Announcement(trigger, dethroned_winner_name)
+        )
+        game_service.clear_autostart(session)
+        game_id = game.id
+
+    cancel_turn_timers(context.job_queue)
+    logger.info(
+        "Bot autostart ({}) claimed game {} — anime source={}, screenshot provider={}",
+        trigger.value,
+        game_id,
+        pick.anime.source,
+        pick.screenshot.provider,
+    )
+    await post_current_image(
+        context, session_factory, photo=first_stage_post.photo, caption=first_stage_post.caption
+    )
+    return True
