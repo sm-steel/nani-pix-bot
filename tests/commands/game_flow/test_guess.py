@@ -476,6 +476,49 @@ async def test_guess_command_wrong_feedback_shows_remaining_over_the_stage_limit
     assert "2/3" in text
 
 
+async def test_guess_won_calls_maybe_overthrow(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.maybe_overthrow", fake_maybe_overthrow)
+    _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["winner_id"] == 2
+
+
+async def test_guess_unsolved_calls_maybe_overthrow_with_no_winner(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.maybe_overthrow", fake_maybe_overthrow)
+    _active_game(session_factory, current_stage=PixelStage.STAGE_5, wrong_guess_count=7)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_5, wrong_guess_limit=8)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert len(calls) == 1
+    assert calls[0].get("winner_id") is None
+
+
 async def test_guess_command_stage_advance_caption_shows_the_new_stage_budget(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:

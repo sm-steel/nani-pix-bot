@@ -169,6 +169,13 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if needs_cleanup_after_send:
             timeout_module.clear_image_if_sent(session_factory, game_id, sent)
 
+    if outcome is game_service.GuessOutcome.WON:
+        await timeout_module.maybe_overthrow(
+            context, session_factory, winner_id=user.id, winner_name=user.full_name
+        )
+    elif outcome is game_service.GuessOutcome.UNSOLVED:
+        await timeout_module.maybe_overthrow(context, session_factory)
+
 
 async def _validate_guess(session, message, user, lang: str) -> Game | None:
     """The game must be ACTIVE (with current_stage set, which an ACTIVE
