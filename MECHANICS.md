@@ -607,6 +607,75 @@ moment the designated player actually starts their game (a DM photo, or
 `/newgame`); they're clearly not going to miss a turn they've already
 begun.
 
+## Bot-initiated games
+
+**Status: Implemented.**
+
+Two ways the bot can start a game itself instead of waiting for a human —
+both gated behind `autostart_enabled` (`/setautostart on|off`, DM-only,
+admin-gated, default **off**), checked *in addition to* `games_enabled`,
+and both no-ops while a game is already `SETUP`/`ACTIVE`.
+
+- **Idle auto-start (24h backstop)**: whenever the turn becomes open to
+  anyone with no game running — a bare `/skip`, or the "leave
+  `next_starter_id` alone" branch of an unsolved/timeout ending (see
+  "Ending unsolved" above) — a 24-hour absolute deadline is armed
+  (`turn_state.turn_opened_at`/`autostart_deadline_at`). If nobody has
+  started a game by the time it fires, and autostart is enabled, the bot
+  picks a random anime and screenshot for itself (see below) and starts
+  a game exactly as if it had DMed itself a screenshot. A failed pick
+  (every provider down, or no screenshot found for the anime it randomly
+  landed on) doesn't go silent — it retries again in 1 hour rather than
+  waiting for the next natural turn-open event. Any human starting a game
+  in the meantime — or the turn being reassigned via `/skip @user` —
+  cancels the backstop the normal way (`clear_autostart`/re-designation
+  already do this).
+- **Overthrow (~12% chance right when a game concludes)**: every
+  game-ending path — a win (whether by `/guess` or `/correct`), an
+  unsolved ending, or a timeout — rolls a weighted coin (`~12%`, tuned in
+  `services/game/autostart.py`'s `OVERTHROW_PROBABILITY`) for the bot to
+  claim the *next* game itself, right after committing that ending's own
+  normal outcome. On a win, this **dethrones the winner's next-turn
+  privilege** — the bot starts the next game instead of them — but
+  **the winner keeps full credit**: their `players.wins` increment, the
+  win reveal, and the "congratulations" caption are entirely unaffected,
+  exactly as if no overthrow had happened. On an unsolved/timeout ending
+  (turn already open to anyone), the bot simply claims that already-open
+  turn instead of leaving it for a human.
+
+**Picking a random anime + screenshot** (`services/game/autostart.py`,
+framework-agnostic, no DB writes until a full pick is in hand): a random
+Shikimori anime (`order: random`, `censored: true` — excludes hentai/
+yaoi/yuri, the same scope Jikan's own filter deliberately matches — see
+its docstring), falling back to Jikan's `/random/anime` on any failure or
+empty result, then a screenshot for it via the same same-provider-first,
+cross-search-fallback order human-started games use (see "Picking a
+screenshot" above). Up to 3 different-anime attempts per firing
+(`AUTOSTART_ATTEMPT_LIMIT`) before giving up silently for that firing —
+caps how many API calls one attempt can cost if a provider is down or an
+anime keeps coming up with no screenshots anywhere.
+
+**A bot-started game plays out identically to a human-started one** in
+every other respect — same pixelation stages, same guess matching, same
+timers — with one deliberate exception: **`/correct` has no recourse on
+it.** `/correct`'s starter-only check (`user.id == game.starter_id`)
+means only the game's starter may force a win, and for a bot-started
+game the starter *is* the bot — no human can ever satisfy that check.
+This is an accepted, deliberate limitation, not a bug: extending
+`/correct` with a second "admin can `/correct` a bot-started game" path
+would be new permission surface with its own risk, for a case `/stop`
+already has a (blunter) answer to. If a bot-started game's title has a
+legitimate answer the fuzzy matcher won't accept, an admin's `/stop`
+(with reveal) is the only recourse — it ends the round and reveals the
+title, but awards nobody the win, unlike a genuine `/correct`.
+
+The bot's own `/stop`-ability needs no special-casing either: once the
+bot has started its first game, it has a real `players` row like any
+other starter, and `/stop`'s existing starter-or-admin check
+(`commands/game_flow/stop.py::_may_stop`) already covers a bot-started
+game correctly — no human is ever "the starter" of one, so only a group
+admin/owner can stop it (the bot itself never calls `/stop`).
+
 ## Leaderboard
 
 **Status: Implemented.**
