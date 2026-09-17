@@ -700,6 +700,25 @@ async def test_random_anime_defaults_rating_to_none_when_absent() -> None:
     assert result.rating is None
 
 
+async def test_random_anime_skips_rather_than_raises_on_a_non_string_rating() -> None:
+    """A non-string `rating` must be caught by `parsing.optional_str`'s
+    type guard and skip the whole entry (like any other malformed field
+    — see parsing.py's module docstring), not raise out of random_anime()
+    into a JobQueue callback. Before this fix, `rating=raw.get("rating")`
+    bypassed the guard entirely, so a non-string value survived parsing
+    and only blew up later at `_is_explicit`'s `.startswith` call — see
+    issue #159's final review."""
+    entry = {"mal_id": 1, "title": "Some Anime", "rating": 3}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await jikan.random_anime(client)
+
+    assert result is None
+
+
 async def test_random_anime_is_not_cached_across_calls() -> None:
     """See shikimori.py's identical test — a cached "random" pick would
     return the same anime every call, defeating both genuine randomness

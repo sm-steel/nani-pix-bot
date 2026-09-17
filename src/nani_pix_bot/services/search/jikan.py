@@ -92,9 +92,17 @@ async def random_anime(client: httpx.AsyncClient) -> JikanResult | None:
     (`{"data": {...}}`, `_parse_detail_result`) — confirmed to match at
     implementation time.
 
+    Routed through `parsing.parse_entry` (unlike a bare
+    `_parse_detail_result(data)` call) so a malformed field — e.g. a
+    non-string `rating` tripping `optional_str`'s type guard — logs a
+    WARNING and skips this pick rather than raising out of the JobQueue
+    callback that ultimately calls this (see issue #159's final review):
+    `get_by_id` above gets this same protection for free via
+    `rest.fetch_by_id`, which this endpoint doesn't go through.
+
     Deliberately NOT `@cache.cached()` — see test_random_anime_is_not_cached_across_calls."""
     data = await rest.get_json(_API, client, JIKAN_RANDOM_URL, {})
-    return _parse_detail_result(data)
+    return parsing.parse_entry(_API.name, data, _parse_detail_result)
 
 
 @cache.cached()
@@ -178,5 +186,5 @@ def _parse_result(raw: dict) -> JikanResult | None:
         title_english=title_english,
         title_native=title_native,
         synonyms=synonyms,
-        rating=raw.get("rating"),
+        rating=parsing.optional_str(raw, "rating"),
     )
