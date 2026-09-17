@@ -79,6 +79,9 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         context, session_factory, photo=original_bytes, caption=caption
     )
     timeout_module.clear_image_if_sent(session_factory, game_id, sent)
+    await timeout_module.maybe_overthrow(
+        context, session_factory, winner_id=target.telegram_user_id, winner_name=target_username
+    )
 
 
 async def _validate_active_game_for_starter(session, message, user, lang: str) -> Game | None:

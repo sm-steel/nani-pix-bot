@@ -1,6 +1,7 @@
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from telegram import Update
 from telegram.error import TimedOut
 from telegram.ext import ContextTypes
@@ -281,6 +282,32 @@ async def test_correct_command_allowed_after_at_least_one_guess(session_factory)
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.status == GameStatus.WON
+
+
+async def test_correct_calls_maybe_overthrow(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.maybe_overthrow", fake_maybe_overthrow)
+    _active_game(session_factory, total_guess_count=1)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="winner"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["winner_id"] == 2
+    assert calls[0]["winner_name"] == "winner"
 
 
 async def test_correct_command_drops_the_mention_when_the_bot_has_no_handle_yet(
