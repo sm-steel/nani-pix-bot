@@ -7,12 +7,27 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.jobs.timers import autostart as autostart_timers
 from nani_pix_bot.models.bot_settings import BotSettings
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.enums import GameStatus, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.game import autostart as autostart_service
+from nani_pix_bot.services.game.autostart import AnimePick, GatheredPick, ScreenshotPick
+from nani_pix_bot.services.search.shikimori import ShikimoriResult
+
+
+def _fake_pick() -> GatheredPick:
+    """A GatheredPick with placeholder (non-image) screenshot bytes —
+    every test using it also monkeypatches pixelate.pixelate, or never
+    reaches it (the two new run_bot_autostart-abort tests below return
+    False before pixelation)."""
+    return GatheredPick(
+        anime=AnimePick(
+            result=ShikimoriResult(1, "Frieren", None, None, []), source=Provider.SHIKIMORI
+        ),
+        screenshot=ScreenshotPick(provider=Provider.SHIKIMORI, provider_id=1, image_bytes=b"x"),
+    )
 
 
 def test_schedule_idle_autostart_calls_run_once_from_the_stored_deadline() -> None:
@@ -170,19 +185,8 @@ async def test_maybe_overthrow_claims_the_game_on_a_hit(
         "nani_pix_bot.services.pixelate.pixelate", lambda image_bytes, target_width: b"pixelated"
     )
 
-    from nani_pix_bot.models.enums import Provider
-    from nani_pix_bot.services.game.autostart import AnimePick, GatheredPick, ScreenshotPick
-    from nani_pix_bot.services.search.shikimori import ShikimoriResult
-
-    fake_pick = GatheredPick(
-        anime=AnimePick(
-            result=ShikimoriResult(1, "Frieren", None, None, []), source=Provider.SHIKIMORI
-        ),
-        screenshot=ScreenshotPick(provider=Provider.SHIKIMORI, provider_id=1, image_bytes=b"x"),
-    )
-
     async def fake_gather_pick(search_client, tmdb_client):
-        return fake_pick
+        return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
 
@@ -200,3 +204,65 @@ async def test_maybe_overthrow_claims_the_game_on_a_hit(
         turn_state = game_service.get_turn_state(session)
         assert turn_state is not None
         assert turn_state.next_starter_id is None
+
+
+async def test_run_bot_autostart_aborts_when_a_game_appeared_in_the_meantime(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """gather_pick() is a multi-attempt, real-HTTP-round-trip call — long
+    enough for a human to have started a game by the time its result
+    comes back. The post-pick session block must re-check and abort
+    rather than create a second SETUP/ACTIVE game."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=None))
+        session.add(Game(starter_id=1, status=GameStatus.SETUP))
+        session.commit()
+    context = _make_context(session_factory)
+
+    async def fake_gather_pick(search_client, tmdb_client):
+        return _fake_pick()
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+
+    claim = autostart_timers._AutostartClaim(
+        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    )
+    started = await autostart_timers.run_bot_autostart(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
+    )
+
+    assert started is False
+    context.bot.send_photo.assert_not_awaited()
+
+
+async def test_run_bot_autostart_aborts_when_the_turn_was_claimed_in_the_meantime(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same race as above, but via /skip @user designating next_starter_id
+    instead of an outright game start — activate_game() would otherwise
+    silently wipe that designation back to None (issue found in review)."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
+        session.commit()
+    context = _make_context(session_factory)
+
+    async def fake_gather_pick(search_client, tmdb_client):
+        return _fake_pick()
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+
+    claim = autostart_timers._AutostartClaim(
+        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    )
+    started = await autostart_timers.run_bot_autostart(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
+    )
+
+    assert started is False
+    context.bot.send_photo.assert_not_awaited()
+    with session_factory() as session:
+        turn_state = game_service.get_turn_state(session)
+        assert turn_state is not None
+        assert turn_state.next_starter_id == 1
