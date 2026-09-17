@@ -76,7 +76,6 @@ def test_build_application_registers_every_command() -> None:
         "setstage",
         "setgamesenabled",
         "version",
-        "testpixels",  # TEMPORARY — see commands/testpixels.py
     }
 
 

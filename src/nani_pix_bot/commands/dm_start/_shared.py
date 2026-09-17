@@ -20,7 +20,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.models.enums import Provider, SetupStep
+from nani_pix_bot.models.enums import PixelAlgorithm, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
@@ -275,7 +275,7 @@ def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMar
             screenshot_source_keyboard(_screenshot_capable_providers(game), lang),
         )
     if game.setup_step == SetupStep.CONFIRMING:
-        return "dm_start.preview_confirm_prompt", preview_keyboard(lang)
+        return "dm_start.preview_confirm_prompt", preview_keyboard(lang, game.pixel_algorithm)
     if game.setup_step == SetupStep.AWAITING_PHOTO_CHANGE:
         return "dm_start.ask_new_photo", None
     if game.setup_step == SetupStep.AWAITING_SYNONYM:
@@ -408,6 +408,9 @@ class _PreviewAlbum:
 
     starter_id: int
     media: list[InputMediaPhoto]
+    # Read off the game row here so the network phase can label the
+    # keyboard without reaching back into a closed session.
+    algorithm: PixelAlgorithm
 
 
 def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum:
@@ -445,14 +448,16 @@ def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum:
     captions = [caption, *([None] * (len(game_service.STAGE_ORDER) - 1))]
     media = [
         InputMediaPhoto(
-            media=pixelate_service.pixelate(original_bytes, config[stage].target_width),
+            media=pixelate_service.pixelate(
+                original_bytes, config[stage].target_width, game.pixel_algorithm
+            ),
             caption=stage_caption,
         )
         for stage, stage_caption in zip(game_service.STAGE_ORDER, captions, strict=True)
     ]
     game.setup_step = SetupStep.CONFIRMING
     logger.debug("Game {}: showing {}-stage confirmation preview album", game.id, len(media))
-    return _PreviewAlbum(starter_id=game.starter_id, media=media)
+    return _PreviewAlbum(starter_id=game.starter_id, media=media, algorithm=game.pixel_algorithm)
 
 
 async def _post_preview_album(
@@ -479,5 +484,5 @@ async def _post_preview_album(
     await context.bot.send_message(
         chat_id=album.starter_id,
         text=i18n.t("dm_start.preview_confirm_prompt", lang),
-        reply_markup=preview_keyboard(lang),
+        reply_markup=preview_keyboard(lang, album.algorithm),
     )

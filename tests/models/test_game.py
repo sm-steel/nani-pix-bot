@@ -1,7 +1,14 @@
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider, SetupStep
+from nani_pix_bot.models.enums import (
+    DEFAULT_ALGORITHM,
+    GameStatus,
+    PixelAlgorithm,
+    PixelStage,
+    Provider,
+    SetupStep,
+)
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 
@@ -256,3 +263,40 @@ def test_game_winner_references_a_different_player(session: Session) -> None:
     assert fetched is not None
     assert fetched.winner_id == winner.telegram_user_id
     assert fetched.starter_id == starter.telegram_user_id
+
+
+def test_new_game_defaults_to_the_default_pixel_algorithm(session: Session) -> None:
+    """The starter can override this from the confirmation preview, but a
+    game that never touches the picker must still render with the
+    project-wide default rather than whatever the enum declares first."""
+    starter = _make_starter(session)
+    game = Game(starter_id=starter.telegram_user_id, original_image=b"file123")
+    session.add(game)
+    session.commit()
+
+    fetched = session.get(Game, game.id)
+
+    assert fetched is not None
+    assert fetched.pixel_algorithm is DEFAULT_ALGORITHM
+    assert fetched.pixel_algorithm is PixelAlgorithm.MEDIAN
+
+
+def test_game_remembers_a_chosen_pixel_algorithm(session: Session) -> None:
+    """Every stage after the first is rendered later, from a fresh
+    session — so the starter's pick has to survive on the row rather than
+    live in the handler that took it."""
+    starter = _make_starter(session)
+    game = Game(
+        starter_id=starter.telegram_user_id,
+        original_image=b"file123",
+        pixel_algorithm=PixelAlgorithm.LANCZOS,
+    )
+    session.add(game)
+    session.commit()
+    game_id = game.id
+    session.expunge_all()
+
+    fetched = session.get(Game, game_id)
+
+    assert fetched is not None
+    assert fetched.pixel_algorithm is PixelAlgorithm.LANCZOS

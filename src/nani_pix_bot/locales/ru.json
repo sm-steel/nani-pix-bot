@@ -138,5 +138,25 @@
 
   "commands.version": "Показать версию бота",
   "version.reply": "🤖 <b>nani-pix-bot</b> v{version}\n\n{notes}",
-  "version.no_notes": "🤖 <b>nani-pix-bot</b> v{version}"
+  "version.no_notes": "🤖 <b>nani-pix-bot</b> v{version}",
+
+  "keyboards.preview_pixel_algorithm": "🎨 Пикселизация: {name}",
+  "keyboards.pixel_algorithm_back": "⬅️ Назад",
+
+  "dm_start.pixel_algorithm_prompt": "Как пикселизовать скриншот?\n\n{options}",
+  "dm_start.pixel_algorithm_option": "<b>{name}</b> — {description}",
+  "dm_start.pixel_algorithm_current_marker": "✅",
+  "dm_start.pixel_algorithm_worst_marker": "⚠️",
+  "dm_start.pixel_algorithm_worst_note": " (худший — не рекомендуется)",
+  "dm_start.pixel_algorithm_updated": "Пикселизация: {name}. Новое превью:",
+  "dm_start.algo_name_nearest": "Ближайший",
+  "dm_start.algo_name_box": "Среднее",
+  "dm_start.algo_name_median": "Медиана",
+  "dm_start.algo_name_mode": "Мода",
+  "dm_start.algo_name_lanczos": "Ланцош",
+  "dm_start.algo_desc_nearest": "берёт один пиксель на блок; резко, но с шумом",
+  "dm_start.algo_desc_box": "усредняет блок; гладко и ровно",
+  "dm_start.algo_desc_median": "сохраняет основной тон блока; по умолчанию",
+  "dm_start.algo_desc_mode": "самый частый цвет в блоке; сильный шум",
+  "dm_start.algo_desc_lanczos": "самые чёткие блоки; возможны ореолы на резких краях"
 }

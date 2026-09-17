@@ -627,9 +627,7 @@ def _make_advance_job_context(session_factory, *, game_id: int) -> MagicMock:
 async def test_inactivity_advance_job_callback_advances_the_stage_and_reschedules(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        "nani_pix_bot.services.pixelate.pixelate", lambda image_bytes, target_width: b"pixelated"
-    )
+    monkeypatch.setattr("nani_pix_bot.services.pixelate.pixelate", lambda *_: b"pixelated")
     game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_1)
     context = _make_advance_job_context(session_factory, game_id=game_id)
 
@@ -669,9 +667,7 @@ async def test_inactivity_advance_job_callback_ends_unsolved_on_final_stage(
 async def test_inactivity_advance_job_callback_keeps_stage_advance_when_post_times_out(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        "nani_pix_bot.services.pixelate.pixelate", lambda image_bytes, target_width: b"pixelated"
-    )
+    monkeypatch.setattr("nani_pix_bot.services.pixelate.pixelate", lambda *_: b"pixelated")
     game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_1)
     context = _make_advance_job_context(session_factory, game_id=game_id)
     context.bot.send_photo = AsyncMock(side_effect=TimedOut())
