@@ -22,6 +22,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("setstageconfig", i18n.t("commands.setstageconfig", lang)),
         BotCommand("setstage", i18n.t("commands.setstage", lang)),
         BotCommand("setgamesenabled", i18n.t("commands.setgamesenabled", lang)),
+        BotCommand("setautostart", i18n.t("commands.setautostart", lang)),
         BotCommand("version", i18n.t("commands.version", lang)),
     ]
     group_commands = [
