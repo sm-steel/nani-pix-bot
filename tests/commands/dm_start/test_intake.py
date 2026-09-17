@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from telegram import Update
 from telegram.constants import ChatMemberStatus
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import intake, preview
@@ -268,6 +269,29 @@ async def test_photo_handler_updates_the_image_and_reshows_the_preview_when_chan
     context.bot.send_media_group.assert_awaited_once()
     _, kwargs = context.bot.send_media_group.await_args
     assert kwargs["chat_id"] == 1
+
+
+async def test_photo_handler_keeps_the_new_image_when_the_preview_album_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    _staged_setup_game(session_factory)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
+        session.commit()
+
+    update = _make_update(user_id=1, photo_file_id="new-file-456")
+    context = _make_callback_context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.original_image == b"original-bytes"
+        assert fetched.setup_step == SetupStep.CONFIRMING
 
 
 async def test_photo_handler_accepts_an_upload_while_picking_a_screenshot(

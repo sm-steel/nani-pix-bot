@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from telegram import Update
 from telegram.constants import ChatMemberStatus
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import preview, search
@@ -154,6 +155,24 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
     update.callback_query.edit_message_text.assert_awaited_once()
 
 
+async def test_preview_confirm_activates_the_game_even_when_the_group_post_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    _staged_setup_game(session_factory)
+    update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_callback_context(session_factory)
+    context.bot.send_photo = AsyncMock(side_effect=TimedOut())
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.status == GameStatus.ACTIVE
+
+
 async def test_preview_change_image_awaits_a_new_photo_for_a_genuine_upload(
     session_factory,
 ) -> None:
@@ -243,6 +262,28 @@ async def test_preview_change_image_pick_screenshot_resumes_the_gallery(
         # set, not merely the image's provenance.
         assert fetched.screenshot_picker_provider == "shikimori"
     update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_preview_change_image_pick_screenshot_keeps_the_fallback_when_the_edit_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(shikimori, "screenshots", AsyncMock(side_effect=RuntimeError("boom")))
+    _staged_setup_game(session_factory, screenshot_source="shikimori", shikimori_id=52991)
+    update = _make_preview_callback_update(
+        data=PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA, user_id=1
+    )
+    context = _make_context(session_factory, search_client=MagicMock())
+    update.callback_query.edit_message_text = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await preview.preview_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        assert fetched.screenshot_picker_provider == "shikimori"
 
 
 async def test_preview_change_image_pick_screenshot_reoffers_the_source_menu_when_it_is_stale(
@@ -362,6 +403,31 @@ async def test_search_text_handler_appends_a_synonym_and_reshows_the_preview(
     context.bot.send_media_group.assert_awaited_once()
     _, kwargs = context.bot.send_media_group.await_args
     assert kwargs["chat_id"] == 1
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.synonyms == ["Frieren", "Frieren at the Funeral"]
+        assert fetched.setup_step == SetupStep.CONFIRMING
+
+
+async def test_search_text_handler_keeps_the_appended_synonym_when_the_album_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    _staged_setup_game(session_factory)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.setup_step = SetupStep.AWAITING_SYNONYM
+        session.commit()
+
+    update = _make_text_update(user_id=1, text="Frieren at the Funeral")
+    context = _make_callback_context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await search.search_text_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.synonyms == ["Frieren", "Frieren at the Funeral"]

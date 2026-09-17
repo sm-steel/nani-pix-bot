@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from telegram import Update
 from telegram.constants import ChatMemberStatus
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import stop as stop_command_module
@@ -214,6 +215,25 @@ async def test_stop_callback_handler_confirm_cancels_the_inactivity_timers(sessi
     )
 
 
+async def test_stop_callback_handler_confirm_deletes_the_game_even_when_the_notice_times_out(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+    context.bot.send_message = AsyncMock(side_effect=TimedOut())
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
+        turn_state = session.get(TurnState, 1)
+        assert turn_state is None or turn_state.next_starter_id is None
+    update.callback_query.edit_message_text.assert_awaited_once()
+
+
 async def test_stop_callback_handler_confirm_deletes_setup_game(session_factory) -> None:
     game_id = _setup_game(session_factory, starter_id=1)
     update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
@@ -302,6 +322,29 @@ async def test_stop_callback_handler_reveal_posts_the_answer_and_deletes_the_gam
     # The reveal caption already says the turn is open — no second notice.
     context.bot.send_message.assert_not_awaited()
     update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_stop_callback_handler_reveal_deletes_the_game_even_when_the_reveal_times_out(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    update = _make_callback_update(data=STOP_REVEAL_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+    context.bot.send_photo = AsyncMock(side_effect=TimedOut())
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
+        turn_state = session.get(TurnState, 1)
+        assert turn_state is None or turn_state.next_starter_id is None
+    # The reveal never sent, so the confirming starter should be told
+    # "confirmed" (plain), not falsely told "confirmed, revealed".
+    update.callback_query.edit_message_text.assert_awaited_once()
+    text = update.callback_query.edit_message_text.await_args.args[0]
+    assert "revealed" not in text.lower()
 
 
 async def test_stop_callback_handler_reveal_cancels_the_timers(session_factory) -> None:

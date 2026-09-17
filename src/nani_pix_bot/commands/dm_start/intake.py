@@ -6,7 +6,11 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start._shared import _show_preview, _start_new_game
+from nani_pix_bot.commands.dm_start._shared import (
+    _post_preview_album,
+    _stage_preview,
+    _start_new_game,
+)
 from nani_pix_bot.commands.dm_start.screenshots import clear_screenshot_selection
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
@@ -79,5 +83,8 @@ async def _replace_staged_photo_if_pending(
         # identification id intact (see clear_screenshot_selection).
         clear_screenshot_selection(existing)
         existing.original_image = image_bytes
-        await _show_preview(context, session, existing, lang)
-        return True
+        album = _stage_preview(session, existing, lang)
+    # Block closed and committed above — see _post_preview_album's
+    # docstring for why the send has to happen after.
+    await _post_preview_album(context, album, lang)
+    return True

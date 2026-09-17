@@ -3,6 +3,7 @@ game. See MECHANICS.md's "Turn handoff" section."""
 
 from loguru import logger
 from telegram import Update
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
@@ -39,21 +40,36 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
 
         if not context.args:
-            await _open_turn(message, context, session, lang)
-            return
+            _open_turn(context, session)
+            reply_key, reply_kwargs = "skip.opened", {}
+        else:
+            target_username = await _pass_turn(message, context, session, lang, context.args[0])
+            if target_username is None:
+                return
+            reply_key, reply_kwargs = "skip.passed", {"username": target_username}
+    # Block closed and committed above — the turn-state change is durable
+    # now regardless of whether the confirmation below actually reaches
+    # the group (see jobs/timers/current_image.py's post_current_image
+    # docstring for the general principle).
+    try:
+        await message.reply_text(i18n.t(reply_key, lang, **reply_kwargs))
+    except TelegramError as exc:
+        logger.warning("Failed to send the /skip confirmation: {}", exc)
 
-        await _pass_turn(message, context, session, lang, context.args[0])
 
-
-async def _open_turn(message, context: ContextTypes.DEFAULT_TYPE, session, lang: str) -> None:
+def _open_turn(context: ContextTypes.DEFAULT_TYPE, session) -> None:
     game_service.set_next_starter(session, None)
     timeout_module.cancel_turn_timers(context.job_queue)
-    await message.reply_text(i18n.t("skip.opened", lang))
 
 
 async def _pass_turn(
     message, context: ContextTypes.DEFAULT_TYPE, session, lang: str, raw_username: str
-) -> None:
+) -> str | None:
+    """Returns the resolved username on success, or None for an unknown
+    username — that failure reply goes out here, inline: no mutation
+    happened on this path, so there's nothing for a timeout to roll
+    back (unlike the two successful outcomes, whose confirmation the
+    caller sends only after this whole session commits)."""
     target_username = raw_username.lstrip("@")
     target = players.find_player_by_username(session, target_username)
     if target is None:
@@ -66,8 +82,8 @@ async def _pass_turn(
         await message.reply_text(
             i18n.t(key, lang, username=target_username, bot_username=bot_username)
         )
-        return
+        return None
 
     turn_state = game_service.set_next_starter(session, target.telegram_user_id)
     timeout_module.schedule_turn_timers(context.job_queue, turn_state)
-    await message.reply_text(i18n.t("skip.passed", lang, username=target_username))
+    return target_username
