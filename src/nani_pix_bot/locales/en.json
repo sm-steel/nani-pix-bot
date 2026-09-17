@@ -9,6 +9,7 @@
   "correct.no_guesses_yet": "Nobody has guessed yet — /correct is for overriding a guess the matcher missed, not for skipping straight to the end.",
   "correct.unknown_username": "I don't know anyone called @{username} yet — they need to send me a direct message first: @{bot_username}",
   "correct.unknown_username_no_handle": "I don't know anyone called @{username} yet — they need to send me a direct message first.",
+  "correct.cannot_target_bot": "I can't award a win to myself — /correct is for crediting a player.",
   "correct.caption": "🎉 Correct! @{winner} got it — it was {title}. Your turn to start the next game!",
 
   "dm_start.not_a_member": "You need to be a member of the group to start a game.",
@@ -72,6 +73,7 @@
   "skip.opened": "Turn opened up — anyone can start the next game!",
   "skip.unknown_username": "I don't know anyone called @{username} yet — they need to send me a direct message first: @{bot_username}",
   "skip.unknown_username_no_handle": "I don't know anyone called @{username} yet — they need to send me a direct message first.",
+  "skip.cannot_target_bot": "I can't pass the turn to myself.",
   "skip.passed": "Turn passed to @{username}.",
 
   "timeout.caption": "⏰ Nobody guessed it in time. It was {title}.",

@@ -269,6 +269,29 @@ async def test_skip_command_rejects_an_unknown_username(session_factory) -> None
         assert session.get(TurnState, 1) is None
 
 
+async def test_skip_command_rejects_targeting_the_bot_itself(session_factory) -> None:
+    """Same guard as /correct's — the bot gets a real `players` row once
+    it starts its first game (issue #159's autostart/overthrow), so it's
+    otherwise addressable by `/skip @<bot_handle>` with no special-casing.
+    See MECHANICS.md's "Bot-initiated games"."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(Player(telegram_user_id=999, username="nani_pix_bot"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@nani_pix_bot"])
+    context = _make_context(session_factory, args=["@nani_pix_bot"])
+    context.bot.id = 999
+
+    await skip_command_module.skip_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_awaited_once()
+    with session_factory() as session:
+        assert session.get(TurnState, 1) is None
+
+
 async def test_skip_command_drops_the_mention_when_the_bot_has_no_handle_yet(
     session_factory,
 ) -> None:

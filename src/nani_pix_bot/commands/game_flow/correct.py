@@ -138,4 +138,14 @@ async def _resolve_target_player(
             i18n.t(key, lang, username=target_username, bot_username=bot_username)
         )
         return None
+    if target.telegram_user_id == context.bot.id:
+        # The bot gets its own real `players` row once it starts its
+        # first game (issue #159's autostart/overthrow) — addressable by
+        # username with no special-casing otherwise, which would award
+        # the bot itself a win and a leaderboard entry. Unlike an unknown
+        # username, the player genuinely exists, so a dedicated reply
+        # rather than reusing correct.unknown_username.
+        logger.warning("/correct: rejected targeting the bot itself ({!r})", target_username)
+        await message.reply_text(i18n.t("correct.cannot_target_bot", lang))
+        return None
     return target

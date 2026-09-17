@@ -88,6 +88,16 @@ async def _pass_turn(
             i18n.t(key, lang, username=target_username, bot_username=bot_username)
         )
         return None
+    if target.telegram_user_id == context.bot.id:
+        # Same guard as correct.py's — the bot gets a real `players` row
+        # once it starts its first game (issue #159), so it's otherwise
+        # addressable by username here too. Lower severity than
+        # /correct's (a self-designated bot turn self-heals via the 12h
+        # turn-expiry timer), but still not a turn worth handing to it
+        # explicitly.
+        logger.warning("/skip: rejected targeting the bot itself ({!r})", target_username)
+        await message.reply_text(i18n.t("skip.cannot_target_bot", lang))
+        return None
 
     turn_state = game_service.set_next_starter(session, target.telegram_user_id)
     timeout_module.cancel_idle_autostart(context.job_queue)
