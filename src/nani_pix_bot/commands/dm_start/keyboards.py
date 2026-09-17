@@ -417,19 +417,6 @@ SCREENSHOT_SEARCH_AGAIN_PREFIX = "screenshot_search_again:"
 SCREENSHOT_SEARCH_PICK_PREFIX = "screenshot_search_pick:"
 SCREENSHOT_UPLOAD_CALLBACK_DATA = "screenshot:upload"
 
-# The three providers that can supply screenshots — AniList identifies
-# an anime but has no screenshot endpoint, so it is the one Provider a
-# screenshot-shaped payload must be rejected for. A tuple rather than
-# the label dict this used to double as: the labels themselves now come
-# from Provider.display_name, leaving only the membership question.
-# The single source of truth for that question — _shared.py's
-# _screenshot_capable_providers() imports this rather than
-# hand-restating the same 3-member list independently (issue #114).
-_SCREENSHOT_CAPABLE_PROVIDERS: tuple[Provider, ...] = (
-    Provider.SHIKIMORI,
-    Provider.JIKAN,
-    Provider.TMDB,
-)
 # Marks the provider that just failed on a re-shown source menu. A bare
 # sign rather than an i18n'd word so the brand-name labels stay
 # untranslated (see CLAUDE.md) and the buttons stay short.
@@ -503,7 +490,7 @@ def _validated_provider(raw: str, *, data: str) -> Provider | None:
     except ValueError:
         logger.warning("Rejected callback payload {!r}: {!r} is not a provider", data, raw)
         return None
-    if provider not in _SCREENSHOT_CAPABLE_PROVIDERS:
+    if provider not in game_service.SCREENSHOT_CAPABLE_PROVIDERS:
         logger.warning(
             "Rejected callback payload {!r}: {!r} has no screenshots to offer", data, raw
         )

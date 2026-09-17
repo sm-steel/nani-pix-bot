@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
+from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 
@@ -32,15 +33,16 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await message.reply_text(i18n.t("skip.game_running", lang))
             return
 
-        turn_state = game_service.get_turn_state(session)
-        current = turn_state.next_starter_id if turn_state is not None else None
+        turn_state_check = game_service.get_turn_state(session)
+        current = turn_state_check.next_starter_id if turn_state_check is not None else None
         if current is not None and current != user.id:
             logger.warning("{} tried /skip out of turn (designated: {})", user.id, current)
             await message.reply_text(i18n.t("skip.not_your_turn", lang))
             return
 
+        turn_state: TurnState | None = None
         if not context.args:
-            _open_turn(context, session)
+            turn_state = _open_turn(context, session)
             reply_key, reply_kwargs = "skip.opened", {}
         else:
             target_username = await _pass_turn(message, context, session, lang, context.args[0])
@@ -51,15 +53,18 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     # now regardless of whether the confirmation below actually reaches
     # the group (see jobs/timers/current_image.py's post_current_image
     # docstring for the general principle).
+    if turn_state is not None:
+        timeout_module.schedule_idle_autostart(context.job_queue, turn_state)
     try:
         await message.reply_text(i18n.t(reply_key, lang, **reply_kwargs))
     except TelegramError as exc:
         logger.warning("Failed to send the /skip confirmation: {}", exc)
 
 
-def _open_turn(context: ContextTypes.DEFAULT_TYPE, session) -> None:
-    game_service.set_next_starter(session, None)
+def _open_turn(context: ContextTypes.DEFAULT_TYPE, session) -> TurnState:
+    turn_state = game_service.set_next_starter(session, None)
     timeout_module.cancel_turn_timers(context.job_queue)
+    return turn_state
 
 
 async def _pass_turn(
@@ -83,7 +88,18 @@ async def _pass_turn(
             i18n.t(key, lang, username=target_username, bot_username=bot_username)
         )
         return None
+    if target.telegram_user_id == context.bot.id:
+        # Same guard as correct.py's — the bot gets a real `players` row
+        # once it starts its first game (issue #159), so it's otherwise
+        # addressable by username here too. Lower severity than
+        # /correct's (a self-designated bot turn self-heals via the 12h
+        # turn-expiry timer), but still not a turn worth handing to it
+        # explicitly.
+        logger.warning("/skip: rejected targeting the bot itself ({!r})", target_username)
+        await message.reply_text(i18n.t("skip.cannot_target_bot", lang))
+        return None
 
     turn_state = game_service.set_next_starter(session, target.telegram_user_id)
+    timeout_module.cancel_idle_autostart(context.job_queue)
     timeout_module.schedule_turn_timers(context.job_queue, turn_state)
     return target_username

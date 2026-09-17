@@ -61,5 +61,16 @@
     "🛑 Кто-то нажал на тормоза — это было {title}.\nТеперь начать новый раунд может кто угодно!",
     "🛑 Раунд остановлен досрочно. Ответом было {title}.\nТеперь начать новую может кто угодно!",
     "🛑 На этом всё. Это было {title}.\nТеперь начать новую может кто угодно!"
+  ],
+  "dm_start.game_started_caption_overthrow_winner": [
+    "😈 GG, {winner} — но трон теперь мой. Новый раунд от меня лично.\n📸 Этап {stage}/{total} — попыток: {remaining}/{limit}",
+    "🏴‍☠️ Извини, {winner}, но это моё. Пиксельный пират своей очереди не ждёт.\n📸 Этап {stage}/{total} — попыток: {remaining}/{limit}"
+  ],
+  "dm_start.game_started_caption_overthrow_open": [
+    "🤖 Тишина настораживает. Беру дело в свои руки.\n📸 Этап {stage}/{total} — попыток: {remaining}/{limit}",
+    "😈 Всем стоять — этим займусь я.\n📸 Этап {stage}/{total} — попыток: {remaining}/{limit}"
+  ],
+  "dm_start.game_started_caption_idle": [
+    "🤖 Слишком долго было тихо. Держите раунд.\n📸 Этап {stage}/{total} — попыток: {remaining}/{limit}"
   ]
 }

@@ -9,6 +9,7 @@
   "correct.no_guesses_yet": "Nobody has guessed yet — /correct is for overriding a guess the matcher missed, not for skipping straight to the end.",
   "correct.unknown_username": "I don't know anyone called @{username} yet — they need to send me a direct message first: @{bot_username}",
   "correct.unknown_username_no_handle": "I don't know anyone called @{username} yet — they need to send me a direct message first.",
+  "correct.cannot_target_bot": "I can't award a win to myself — /correct is for crediting a player.",
   "correct.caption": "🎉 Correct! @{winner} got it — it was {title}. Your turn to start the next game!",
 
   "dm_start.not_a_member": "You need to be a member of the group to start a game.",
@@ -45,6 +46,9 @@
   "dm_start.not_found_anymore": "Couldn't find that on {service} anymore — try searching again.",
   "dm_start.posted": "Posted! Good luck to everyone guessing.",
   "dm_start.game_started_caption": "🎮 {starter} started a new round! Guess with /guess <title> in this topic.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
+  "dm_start.game_started_caption_overthrow_winner": "😈 Nice win, {winner}! But I'm stealing your turn — new round incoming.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
+  "dm_start.game_started_caption_overthrow_open": "😏 Since nobody else was going to... I'll start this one myself.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
+  "dm_start.game_started_caption_idle": "⏰ Nobody started a new round in a while, so here's one from me.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
   "dm_start.setup_started_group_notice": "🎬 {starter} is preparing a new game — hang tight!",
   "dm_start.setup_already_open": "You're already setting up a game — send /stop if you'd rather abandon it and start over.",
   "dm_start.setup_gone": "That round isn't being set up anymore — if it's your turn, DM me a screenshot or send /newgame to start a fresh one.",
@@ -69,6 +73,7 @@
   "skip.opened": "Turn opened up — anyone can start the next game!",
   "skip.unknown_username": "I don't know anyone called @{username} yet — they need to send me a direct message first: @{bot_username}",
   "skip.unknown_username_no_handle": "I don't know anyone called @{username} yet — they need to send me a direct message first.",
+  "skip.cannot_target_bot": "I can't pass the turn to myself.",
   "skip.passed": "Turn passed to @{username}.",
 
   "timeout.caption": "⏰ Nobody guessed it in time. It was {title}.",
@@ -79,7 +84,7 @@
   "turn.expired": "⌛ Nobody started a new game in time — it's open to anyone now! DM me a screenshot to begin, or send /newgame to pick one instead.",
 
   "onboarding.start": "👋 Welcome! I run an anime-screenshot guessing game in the group.\n\nWhen it's your turn, DM me a screenshot here and I'll walk you through picking the anime — or send /newgame if you'd rather skip the upload and pick a screenshot from Shikimori/Jikan/TMDB instead. Either way, I'll post a heavily pixelated version to the group for everyone to guess.\n\nUse /help anytime for the full rundown.",
-  "onboarding.help": "How to play:\n1. When it's your turn, DM me a screenshot here — or send /newgame to search without one.\n2. I'll ask you to search for the anime and pick the right result (or, from /newgame, pick a screenshot for it too).\n3. I'll post a pixelated version to the group's game topic.\n4. Everyone guesses with /guess <title> in that topic — it starts unforgiving (one wrong guess reveals more!) and gets more forgiving each stage.\n5. Whoever guesses right wins, and it's their turn next!\n\nIn the group topic:\n/guess <title> — make a guess\n/correct @username — (starter only) force a correct guess if the bot missed it\n/skip [@username] — pass your turn, open or to someone specific\n/leaderboard — see top winners\n\nIn DM:\n/start — this intro\n/help — this message\n/newgame — start a round without uploading a screenshot\n/language — (group admins) switch the bot's language\n/stop — (starter or admins) stop the current game, optionally revealing the answer\n/stageconfig, /setstageconfig, /setstage — (admins) view/tune pixelation stages\n/setgamesenabled — (admins) pause or resume starting new games\n/version — show the bot's version and release notes",
+  "onboarding.help": "How to play:\n1. When it's your turn, DM me a screenshot here — or send /newgame to search without one.\n2. I'll ask you to search for the anime and pick the right result (or, from /newgame, pick a screenshot for it too).\n3. I'll post a pixelated version to the group's game topic.\n4. Everyone guesses with /guess <title> in that topic — it starts unforgiving (one wrong guess reveals more!) and gets more forgiving each stage.\n5. Whoever guesses right wins, and it's their turn next!\n\nIn the group topic:\n/guess <title> — make a guess\n/correct @username — (starter only) force a correct guess if the bot missed it\n/skip [@username] — pass your turn, open or to someone specific\n/leaderboard — see top winners\n\nIn DM:\n/start — this intro\n/help — this message\n/newgame — start a round without uploading a screenshot\n/language — (group admins) switch the bot's language\n/stop — (starter or admins) stop the current game, optionally revealing the answer\n/stageconfig, /setstageconfig, /setstage — (admins) view/tune pixelation stages\n/setgamesenabled — (admins) pause or resume starting new games\n/setautostart — (admins) let the bot start games on its own\n/version — show the bot's version and release notes",
   "onboarding.help_dm_failed": "Please message me privately first — @{bot_username} — then try /help again.",
   "onboarding.help_dm_failed_no_handle": "Please message me privately first, then try /help again.",
 
@@ -96,6 +101,7 @@
   "commands.setstageconfig": "Set all 5 stages at once (admins)",
   "commands.setstage": "Set one pixelation stage (admins)",
   "commands.setgamesenabled": "Pause/resume starting new games (admins)",
+  "commands.setautostart": "Let the bot start games itself (admins)",
 
   "keyboards.retry": "None of these — search again",
   "keyboards.manual_entry": "Manual entry",
@@ -135,6 +141,10 @@
   "gamesenabled.usage": "Usage: /setgamesenabled on|off",
   "gamesenabled.enabled": "Starting new games is now enabled.",
   "gamesenabled.disabled": "Starting new games is now disabled.",
+
+  "autostart.usage": "Usage: /setautostart on|off",
+  "autostart.enabled": "The bot may now start games on its own (overthrow + idle auto-start).",
+  "autostart.disabled": "The bot will no longer start games on its own.",
 
   "commands.version": "Show bot version",
   "version.reply": "🤖 <b>nani-pix-bot</b> v{version}\n\n{notes}",

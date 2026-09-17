@@ -110,3 +110,35 @@ def test_set_pinned_message_id_can_clear_it_back_to_none(session: Session) -> No
     fetched = session.get(BotSettings, 1)
     assert fetched is not None
     assert fetched.pinned_message_id is None
+
+
+def test_get_autostart_enabled_defaults_to_false_when_no_row_exists(session: Session) -> None:
+    assert settings.get_autostart_enabled(session) is False
+
+
+def test_get_autostart_enabled_returns_the_stored_value(session: Session) -> None:
+    session.add(BotSettings(id=1, autostart_enabled=True))
+    session.commit()
+
+    assert settings.get_autostart_enabled(session) is True
+
+
+def test_set_autostart_enabled_creates_the_row_if_missing(session: Session) -> None:
+    settings.set_autostart_enabled(session, True)
+    session.commit()
+
+    fetched = session.get(BotSettings, 1)
+    assert fetched is not None
+    assert fetched.autostart_enabled is True
+
+
+def test_set_autostart_enabled_updates_an_existing_row(session: Session) -> None:
+    session.add(BotSettings(id=1, autostart_enabled=False))
+    session.commit()
+
+    settings.set_autostart_enabled(session, True)
+    session.commit()
+
+    fetched = session.get(BotSettings, 1)
+    assert fetched is not None
+    assert fetched.autostart_enabled is True

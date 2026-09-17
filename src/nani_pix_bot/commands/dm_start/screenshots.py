@@ -30,7 +30,6 @@ from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
     _reject_stale_tap,
-    _screenshot_capable_providers,
     _stored_provider,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
@@ -172,7 +171,7 @@ class GalleryTarget:
 
 
 def source_menu_for(game: Game, provider: Provider | None) -> SourceMenu:
-    return SourceMenu(providers=_screenshot_capable_providers(game), provider=provider)
+    return SourceMenu(providers=game_service.screenshot_capable_providers(game), provider=provider)
 
 
 @dataclass(frozen=True)
@@ -284,10 +283,10 @@ def stage_screenshot_picker(game: Game) -> ScreenshotPickerPrompt:
     Called from `search.py`'s `pick_callback_handler` (and `manual.py`'s
     synonym step) once identification is staged with no image yet. Every
     screenshot-capable provider is always offered (see
-    _screenshot_capable_providers) since cross-provider resolution means
+    game_service.screenshot_capable_providers) since cross-provider resolution means
     even an AniList/manual identification can still get a
     Shikimori/Jikan/TMDB screenshot."""
-    providers = _screenshot_capable_providers(game)
+    providers = game_service.screenshot_capable_providers(game)
     game.setup_step = SetupStep.PICKING_SCREENSHOT
     return ScreenshotPickerPrompt(starter_id=game.starter_id, providers=providers)
 

@@ -17,6 +17,7 @@ from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, parsing, rest
 
 JIKAN_BASE_URL = "https://api.jikan.moe/v4/anime"
+JIKAN_RANDOM_URL = "https://api.jikan.moe/v4/random/anime"
 SEARCH_RESULT_LIMIT = 5
 # A fixed cap on how many pictures are ever fetched/cached per anime —
 # not a per-call parameter, so the cache key never needs to encode it
@@ -39,6 +40,15 @@ class JikanResult:
     title_english: str | None
     title_native: str | None
     synonyms: list[str]
+    # Jikan's own MAL content-rating string (e.g. "Rx - Hentai"), not
+    # requested/used by search()'s or get_by_id()'s existing callers —
+    # added solely so services/game/autostart.py can reject an
+    # explicit-rated random pick (issue #159), since Jikan's
+    # /random/anime endpoint has no server-side SFW filter the way
+    # Shikimori's random_anime() does. Defaults to None so every
+    # existing keyword-based JikanResult(...) construction (tests
+    # included) stays valid unchanged.
+    rating: str | None = None
 
 
 @cache.cached()
@@ -71,6 +81,28 @@ async def get_by_id(client: httpx.AsyncClient, jikan_id: int) -> JikanResult | N
     return await rest.fetch_by_id(
         _API, client, f"{JIKAN_BASE_URL}/{jikan_id}", jikan_id, _parse_detail_result
     )
+
+
+async def random_anime(client: httpx.AsyncClient) -> JikanResult | None:
+    """One anime, uniformly at random via Jikan's own `/random/anime`
+    endpoint — the fallback when Shikimori's random pick is unreachable
+    or empty (see services/game/autostart.py, the sole caller).
+
+    Reuses the by-id detail endpoint's response shape/parser
+    (`{"data": {...}}`, `_parse_detail_result`) — confirmed to match at
+    implementation time.
+
+    Routed through `parsing.parse_entry` (unlike a bare
+    `_parse_detail_result(data)` call) so a malformed field — e.g. a
+    non-string `rating` tripping `optional_str`'s type guard — logs a
+    WARNING and skips this pick rather than raising out of the JobQueue
+    callback that ultimately calls this (see issue #159's final review):
+    `get_by_id` above gets this same protection for free via
+    `rest.fetch_by_id`, which this endpoint doesn't go through.
+
+    Deliberately NOT `@cache.cached()` — see test_random_anime_is_not_cached_across_calls."""
+    data = await rest.get_json(_API, client, JIKAN_RANDOM_URL, {})
+    return parsing.parse_entry(_API.name, data, _parse_detail_result)
 
 
 @cache.cached()
@@ -154,4 +186,5 @@ def _parse_result(raw: dict) -> JikanResult | None:
         title_english=title_english,
         title_native=title_native,
         synonyms=synonyms,
+        rating=parsing.optional_str(raw, "rating"),
     )

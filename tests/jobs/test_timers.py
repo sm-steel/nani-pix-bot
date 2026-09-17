@@ -90,6 +90,30 @@ async def test_timeout_job_callback_ends_the_game_unsolved(session_factory) -> N
         assert fetched.original_image is None
 
 
+async def test_timeout_job_callback_rolls_overthrow(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory)
+    context = _make_job_context(session_factory, game_id=game_id)
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    # Patched on autostart.py, not game_timeout.py: timeout_job_callback
+    # imports maybe_overthrow lazily (function-local) to dodge a real
+    # circular import (see the docstring on timeout_job_callback), so
+    # game_timeout.py never has a module-level `maybe_overthrow` name to
+    # patch — the lazy import re-reads autostart.maybe_overthrow fresh on
+    # every call, which is exactly what makes it patchable here.
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.autostart.maybe_overthrow", fake_maybe_overthrow)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert len(calls) == 1
+    assert calls[0].get("winner_id") is None
+
+
 async def test_timeout_job_callback_is_a_noop_if_already_won(session_factory) -> None:
     game_id = _active_game(session_factory, status=GameStatus.WON, winner_id=1)
     context = _make_job_context(session_factory, game_id=game_id)
@@ -229,6 +253,17 @@ async def test_setup_abandon_job_callback_is_a_noop_if_already_confirmed(
     context.bot.send_message.assert_not_awaited()
     with session_factory() as session:
         assert session.get(Game, game_id) is not None
+
+
+async def test_setup_abandon_job_callback_schedules_idle_autostart(session_factory) -> None:
+    game_id = _setup_game(session_factory)
+    context = _make_group_job_context(session_factory)
+    context.job.data = game_id
+
+    await timeout_module.setup_abandon_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert timeout_module.IDLE_AUTOSTART_JOB_NAME in names
 
 
 def test_schedule_turn_timers_schedules_both_jobs(session_factory) -> None:
@@ -391,6 +426,21 @@ async def test_turn_expiry_job_callback_is_a_noop_if_targeted_at_a_stale_player(
         turn_state = game_service.get_turn_state(session)
         assert turn_state is not None
         assert turn_state.next_starter_id == 3
+
+
+async def test_turn_expiry_job_callback_schedules_idle_autostart(session_factory) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2))
+        session.add(TurnState(id=1, next_starter_id=2))
+        session.commit()
+
+    context = _make_group_job_context(session_factory)
+    context.job.data = 2
+
+    await timeout_module.turn_expiry_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert timeout_module.IDLE_AUTOSTART_JOB_NAME in names
 
 
 async def test_rearm_pending_timeouts_reschedules_setup_abandon_and_turn_timers(
@@ -664,6 +714,31 @@ async def test_inactivity_advance_job_callback_ends_unsolved_on_final_stage(
         assert fetched.original_image is None
 
 
+async def test_inactivity_advance_job_callback_rolls_overthrow_on_unsolved(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    # Patched on autostart.py, not inactivity.py: inactivity_advance_job_callback
+    # imports maybe_overthrow lazily (function-local) to dodge a real
+    # circular import (see the docstring on inactivity_advance_job_callback),
+    # so inactivity.py never has a module-level `maybe_overthrow` name to
+    # patch — the lazy import re-reads autostart.maybe_overthrow fresh on
+    # every call, which is exactly what makes it patchable here. Same
+    # pattern as test_timeout_job_callback_rolls_overthrow for game_timeout.py.
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.autostart.maybe_overthrow", fake_maybe_overthrow)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert len(calls) == 1
+    assert calls[0].get("winner_id") is None
+
+
 async def test_inactivity_advance_job_callback_keeps_stage_advance_when_post_times_out(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -841,3 +916,23 @@ async def test_rearm_pending_timeouts_also_reschedules_inactivity_timers(session
     names = [call.kwargs["name"] for call in job_queue.run_once.call_args_list]
     assert timeout_module.inactivity_nudge_job_name(game_id) in names
     assert timeout_module.inactivity_advance_job_name(game_id) in names
+
+
+async def test_rearm_pending_timeouts_reschedules_idle_autostart(session_factory) -> None:
+    with session_factory() as session:
+        session.add(
+            TurnState(
+                id=1,
+                next_starter_id=None,
+                turn_opened_at=datetime.now(UTC),
+                autostart_deadline_at=datetime.now(UTC) + timedelta(hours=24),
+            )
+        )
+        session.commit()
+    job_queue = MagicMock()
+    job_queue.get_jobs_by_name.return_value = []
+
+    await timeout_module.rearm_pending_timeouts(job_queue, session_factory)
+
+    names = [call.kwargs["name"] for call in job_queue.run_once.call_args_list]
+    assert timeout_module.IDLE_AUTOSTART_JOB_NAME in names

@@ -47,7 +47,25 @@ def _make_context(session_factory, *, args: list[str] | None = None) -> MagicMoc
     context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
     context.bot.pin_chat_message = AsyncMock()
     context.bot.unpin_chat_message = AsyncMock()
+    # Default: close the scheduled coroutine so tests that don't care about
+    # maybe_overthrow's fire-and-forget scheduling don't leak "coroutine
+    # was never awaited" warnings. Tests that DO care override this via
+    # _capture_scheduled_tasks below.
+    context.application.create_task = MagicMock(side_effect=lambda coro, **kw: coro.close())
     return context
+
+
+def _capture_scheduled_tasks(context: MagicMock) -> list[tuple]:
+    """Fire-and-forget calls (guess.py uses context.application.create_task
+    rather than awaiting maybe_overthrow inline — see issue #159's final
+    review) hand back an asyncio.Task that nothing here runs. Tests that
+    need the scheduled coroutine's side effects capture and await it
+    directly instead."""
+    scheduled: list[tuple] = []
+    context.application.create_task = MagicMock(
+        side_effect=lambda coro, **kw: scheduled.append((coro, kw))
+    )
+    return scheduled
 
 
 def _active_game(session_factory, **overrides) -> int:
@@ -468,6 +486,63 @@ async def test_guess_command_wrong_feedback_shows_remaining_over_the_stage_limit
 
     text = update.message.reply_text.await_args.args[0]
     assert "2/3" in text
+
+
+async def test_guess_won_calls_maybe_overthrow(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.maybe_overthrow", fake_maybe_overthrow)
+    _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+    scheduled = _capture_scheduled_tasks(context)
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    # A WON outcome must be scheduled via context.application.create_task
+    # (fire-and-forget), not awaited inline — see guess_command's comment.
+    assert len(scheduled) == 1
+    coro, kwargs = scheduled[0]
+    assert kwargs.get("update") is update
+    await coro
+
+    assert len(calls) == 1
+    assert calls[0]["winner_id"] == 2
+
+
+async def test_guess_unsolved_calls_maybe_overthrow_with_no_winner(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.maybe_overthrow", fake_maybe_overthrow)
+    _active_game(session_factory, current_stage=PixelStage.STAGE_5, wrong_guess_count=7)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_5, wrong_guess_limit=8)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+    scheduled = _capture_scheduled_tasks(context)
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert len(scheduled) == 1
+    coro, kwargs = scheduled[0]
+    assert kwargs.get("update") is update
+    await coro
+
+    assert len(calls) == 1
+    assert calls[0].get("winner_id") is None
 
 
 async def test_guess_command_stage_advance_caption_shows_the_new_stage_budget(

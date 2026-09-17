@@ -135,10 +135,11 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
         else:
             timeout_module.cancel_setup_abandon(context.job_queue, game_id)
         session.delete(game)
-        game_service.set_next_starter(session, None)
+        turn_state = game_service.set_next_starter(session, None)
     # Block closed and committed above — the row deletion and turn-open
     # are durable now regardless of whether the announcement below
     # actually reaches the group (see post_current_image's docstring).
+    timeout_module.schedule_idle_autostart(context.job_queue, turn_state)
     stopped_game = _StoppedGame(title=title, original_bytes=original_bytes)
     revealed = await _announce_stop(context, session_factory, stopped_game, lang, reveal)
     logger.info(

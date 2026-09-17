@@ -142,7 +142,30 @@ async def test_skip_command_bare_cancels_the_turn_timers(session_factory) -> Non
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    assert context.job_queue.get_jobs_by_name.call_count == 2
+    # cancel_turn_timers looks up both turn-timer job names; a third
+    # lookup (idle-autostart) also happens now via schedule_idle_autostart's
+    # own cancel-then-reschedule, so this checks the specific names rather
+    # than a raw call count.
+    names = [call.args[0] for call in context.job_queue.get_jobs_by_name.call_args_list]
+    assert names.count(skip_command_module.timeout_module.TURN_REMINDER_JOB_NAME) == 1
+    assert names.count(skip_command_module.timeout_module.TURN_EXPIRY_JOB_NAME) == 1
+
+
+async def test_skip_command_bare_schedules_idle_autostart(session_factory) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
+        session.commit()
+
+    update = _make_update(user_id=1, args=[])
+    context = _make_context(session_factory, args=[])
+
+    await skip_command_module.skip_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert skip_command_module.timeout_module.IDLE_AUTOSTART_JOB_NAME in names
 
 
 async def test_skip_command_with_username_hands_off_the_turn(session_factory) -> None:
@@ -181,6 +204,25 @@ async def test_skip_command_with_username_schedules_the_turn_timers(session_fact
     names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
     assert skip_command_module.timeout_module.TURN_REMINDER_JOB_NAME in names
     assert skip_command_module.timeout_module.TURN_EXPIRY_JOB_NAME in names
+
+
+async def test_skip_command_with_username_cancels_any_pending_idle_autostart(
+    session_factory,
+) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(Player(telegram_user_id=2, username="friend"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@friend"])
+    context = _make_context(session_factory, args=["@friend"])
+
+    await skip_command_module.skip_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    names = [call.args[0] for call in context.job_queue.get_jobs_by_name.call_args_list]
+    assert skip_command_module.timeout_module.IDLE_AUTOSTART_JOB_NAME in names
 
 
 async def test_skip_passes_the_turn_even_when_the_confirmation_reply_times_out(
@@ -223,6 +265,29 @@ async def test_skip_command_rejects_an_unknown_username(session_factory) -> None
     # The reply has to tell them where to go: a bare @handle is
     # auto-linked by Telegram, so no parse_mode is involved.
     assert "@nani_pix_bot" in text
+    with session_factory() as session:
+        assert session.get(TurnState, 1) is None
+
+
+async def test_skip_command_rejects_targeting_the_bot_itself(session_factory) -> None:
+    """Same guard as /correct's — the bot gets a real `players` row once
+    it starts its first game (issue #159's autostart/overthrow), so it's
+    otherwise addressable by `/skip @<bot_handle>` with no special-casing.
+    See MECHANICS.md's "Bot-initiated games"."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(Player(telegram_user_id=999, username="nani_pix_bot"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@nani_pix_bot"])
+    context = _make_context(session_factory, args=["@nani_pix_bot"])
+    context.bot.id = 999
+
+    await skip_command_module.skip_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_awaited_once()
     with session_factory() as session:
         assert session.get(TurnState, 1) is None
 

@@ -169,6 +169,26 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if needs_cleanup_after_send:
             timeout_module.clear_image_if_sent(session_factory, game_id, sent)
 
+    # Fire-and-forget: maybe_overthrow() can run gather_pick()'s several
+    # real HTTP round-trips (up to AUTOSTART_ATTEMPT_LIMIT attempts, each
+    # against 30s-timeout clients). app.py never enables
+    # concurrent_updates, so PTB processes updates one at a time —
+    # awaiting this inline would block every other DM/group command
+    # bot-wide for however long a hanging provider takes. `update=update`
+    # lets PTB's error handler attribute any exception to this update,
+    # same as it would for an awaited call.
+    if outcome is game_service.GuessOutcome.WON:
+        context.application.create_task(
+            timeout_module.maybe_overthrow(
+                context, session_factory, winner_id=user.id, winner_name=user.full_name
+            ),
+            update=update,
+        )
+    elif outcome is game_service.GuessOutcome.UNSOLVED:
+        context.application.create_task(
+            timeout_module.maybe_overthrow(context, session_factory), update=update
+        )
+
 
 async def _validate_guess(session, message, user, lang: str) -> Game | None:
     """The game must be ACTIVE (with current_stage set, which an ACTIVE

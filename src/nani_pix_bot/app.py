@@ -28,6 +28,7 @@ from nani_pix_bot.commands import (
     language,
     leaderboard,
     onboarding,
+    setautostart,
     stageconfig,
     version,
 )
@@ -193,6 +194,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("setstageconfig", stageconfig.setstageconfig_command))
     application.add_handler(CommandHandler("setstage", stageconfig.setstage_command))
     application.add_handler(CommandHandler("setgamesenabled", gamesenabled.setgamesenabled_command))
+    application.add_handler(CommandHandler("setautostart", setautostart.setautostart_command))
     application.add_handler(CommandHandler("version", version.version_command))
     application.add_error_handler(_error_handler)
 

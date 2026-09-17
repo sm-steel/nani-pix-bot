@@ -12,7 +12,6 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start.keyboards import (
-    _SCREENSHOT_CAPABLE_PROVIDERS,
     method_selection_keyboard,
     preview_keyboard,
     screenshot_source_keyboard,
@@ -201,42 +200,11 @@ def _stored_provider(stored: str) -> Provider:
     defensively at every `.display_name`: `search.py`'s
     `search_text_handler` (twice — the picker column and `source`),
     `screenshots.py`'s `resume_screenshot_gallery`, and
-    `_screenshot_capable_providers` below — the load-bearing one, since
-    its result feeds a `list[Provider]` the ordinary (non-failure)
-    screenshot-source screen draws its `.display_name` labels from, not
-    just a failure path."""
+    `game_service.screenshot_capable_providers` (services/game/state.py)
+    — the load-bearing one, since its result feeds a `list[Provider]` the
+    ordinary (non-failure) screenshot-source screen draws its
+    `.display_name` labels from, not just a failure path."""
     return Provider(stored)
-
-
-def _screenshot_capable_providers(game: Game) -> list[Provider]:
-    """All 3 screenshot-capable providers, same-provider-as-identification
-    first when it's one of them (so the common case — screenshot source
-    matches identification source — needs no cross-provider search at
-    all). Every provider is offered regardless of whether the game
-    already has an id for it — tapping one it doesn't triggers
-    cross-provider resolution (see screenshots.py's
-    _resolve_screenshot_source).
-
-    Lives here, not in screenshots.py where its callers are, because
-    `_current_setup_screen` below needs it too and screenshots.py
-    already imports this module — the other direction would be a cycle.
-    It is pure `game.source` arithmetic either way, with no dependency
-    on the screenshot sub-flow around it.
-
-    `_SCREENSHOT_CAPABLE_PROVIDERS` (imported from keyboards.py, where
-    `_validated_provider` also needs it) is the one source of truth for
-    the membership question — this used to hand-restate the same
-    3-member list independently (issue #114)."""
-    candidates = list(_SCREENSHOT_CAPABLE_PROVIDERS)
-    # `game.source` arrives as a bare str (see `_stored_provider`), and
-    # can legitimately be "manual" — which is in neither list, so the
-    # membership test settles both questions at once and nothing below it
-    # ever converts a non-provider.
-    if game.source in candidates:
-        identified_by = _stored_provider(game.source)
-        candidates.remove(identified_by)
-        candidates.insert(0, identified_by)
-    return candidates
 
 
 def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
@@ -272,7 +240,7 @@ def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMar
     if game.setup_step == SetupStep.PICKING_SCREENSHOT:
         return (
             "dm_start.pick_screenshot_source_prompt",
-            screenshot_source_keyboard(_screenshot_capable_providers(game), lang),
+            screenshot_source_keyboard(game_service.screenshot_capable_providers(game), lang),
         )
     if game.setup_step == SetupStep.CONFIRMING:
         return "dm_start.preview_confirm_prompt", preview_keyboard(lang, game.pixel_algorithm)
@@ -384,8 +352,10 @@ async def _start_new_game(
         # They're clearly not missing their turn if they've already
         # started it — the setup-abandon timer takes over from here.
         game_service.clear_turn_timers(session)
+        game_service.clear_autostart(session)
 
     timeout_module.cancel_turn_timers(context.job_queue)
+    timeout_module.cancel_idle_autostart(context.job_queue)
     timeout_module.schedule_setup_abandon(context.job_queue, new_game)
     await context.bot.send_message(
         chat_id=group_chat_id,

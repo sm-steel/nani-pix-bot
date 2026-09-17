@@ -157,6 +157,19 @@ async def test_photo_handler_cancels_turn_timers_when_the_designated_starter_beg
     assert context.job_queue.get_jobs_by_name.call_count >= 2
 
 
+async def test_photo_handler_cancels_pending_idle_autostart(session_factory) -> None:
+    """A human successfully starting a game must cancel any pending
+    idle-autostart timer, so "nobody started a game for 24h" stays
+    literally true regardless of who starts one next (issue #159)."""
+    update = _make_update(user_id=1, photo_file_id="file123")
+    context = _make_context(session_factory)
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    names = [call.args[0] for call in context.job_queue.get_jobs_by_name.call_args_list]
+    assert timeout_module.IDLE_AUTOSTART_JOB_NAME in names
+
+
 async def test_photo_handler_shows_the_method_selection_keyboard(session_factory) -> None:
     update = _make_update(user_id=1, photo_file_id="file123")
     context = _make_context(session_factory)

@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import seconds_until
+from nani_pix_bot.jobs.timers.autostart import schedule_idle_autostart
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
@@ -58,8 +59,9 @@ async def setup_abandon_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
             return
         logger.info("Game {} setup abandoned after 1h — deleting and opening the turn", game_id)
         session.delete(game)
-        game_service.set_next_starter(session, None)
+        turn_state = game_service.set_next_starter(session, None)
 
+    schedule_idle_autostart(context.job_queue, turn_state)
     await context.bot.send_message(
         chat_id=context.bot_data["group_chat_id"],
         message_thread_id=context.bot_data["game_topic_id"],

@@ -105,7 +105,7 @@ class Provider(enum.StrEnum):
         accessing this on `Provider.ANILIST` raises, the same way
         `screenshot_module` does. Every real call site only reaches this
         for a provider already known to be screenshot-capable (see
-        `keyboards.py`'s `_SCREENSHOT_CAPABLE_PROVIDERS`), so the raise
+        `services/game/state.py`'s `SCREENSHOT_CAPABLE_PROVIDERS`), so the raise
         is defensive, not a path anything is expected to hit.
 
         Replaces the old `_ID_ATTRS` dict (issue #114)."""
