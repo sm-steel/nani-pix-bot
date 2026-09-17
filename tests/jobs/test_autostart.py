@@ -206,6 +206,44 @@ async def test_maybe_overthrow_claims_the_game_on_a_hit(
         assert turn_state.next_starter_id is None
 
 
+async def test_run_bot_autostart_cancels_the_idle_autostart_timer_on_success(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Symmetric with _start_new_game() (commands/dm_start/_shared.py),
+    which cancels both the DB deadline (clear_autostart) and the
+    JobQueue job (cancel_idle_autostart) — run_bot_autostart previously
+    only did the former, a theoretical gap closed defensively here even
+    though no reachable path currently exercises it (see issue #159's
+    final review)."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=None))
+        session.commit()
+    context = _make_context(session_factory)
+    monkeypatch.setattr(
+        "nani_pix_bot.services.pixelate.pixelate", lambda image_bytes, target_width: b"pixelated"
+    )
+
+    async def fake_gather_pick(search_client, tmdb_client):
+        return _fake_pick()
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+    cancel_calls = []
+    monkeypatch.setattr(
+        autostart_timers, "cancel_idle_autostart", lambda job_queue: cancel_calls.append(job_queue)
+    )
+
+    claim = autostart_timers._AutostartClaim(
+        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    )
+    started = await autostart_timers.run_bot_autostart(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
+    )
+
+    assert started is True
+    assert cancel_calls == [context.job_queue]
+
+
 async def test_run_bot_autostart_aborts_when_a_game_appeared_in_the_meantime(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:

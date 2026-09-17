@@ -270,6 +270,7 @@ async def run_bot_autostart(
         game_id = game.id
 
     cancel_turn_timers(context.job_queue)
+    cancel_idle_autostart(context.job_queue)
     logger.info(
         "Bot autostart ({}) claimed game {} — anime source={}, screenshot provider={}",
         claim.trigger.value,
