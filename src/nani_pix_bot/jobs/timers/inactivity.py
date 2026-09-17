@@ -150,8 +150,6 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
         outcome = game_service.advance_stage(game)
         if outcome is game_service.GuessOutcome.UNSOLVED:
             game_service.mark_turn_open_if_unassigned(session)
-
-        if outcome is game_service.GuessOutcome.UNSOLVED:
             logger.info("Game {} auto-ended unsolved after repeated inactivity", game_id)
             original_bytes = game.original_image
             unsolved_caption = i18n.t(
