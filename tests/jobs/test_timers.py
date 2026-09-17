@@ -231,6 +231,17 @@ async def test_setup_abandon_job_callback_is_a_noop_if_already_confirmed(
         assert session.get(Game, game_id) is not None
 
 
+async def test_setup_abandon_job_callback_schedules_idle_autostart(session_factory) -> None:
+    game_id = _setup_game(session_factory)
+    context = _make_group_job_context(session_factory)
+    context.job.data = game_id
+
+    await timeout_module.setup_abandon_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert timeout_module.IDLE_AUTOSTART_JOB_NAME in names
+
+
 def test_schedule_turn_timers_schedules_both_jobs(session_factory) -> None:
     job_queue = MagicMock()
     job_queue.get_jobs_by_name.return_value = []
