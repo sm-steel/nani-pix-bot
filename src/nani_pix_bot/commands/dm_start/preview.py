@@ -22,9 +22,15 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
+    PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA,
+    PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA,
+    PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX,
     PREVIEW_RESEARCH_CALLBACK_DATA,
+    algorithm_name,
     change_image_keyboard,
     method_selection_keyboard,
+    pixel_algorithm_keyboard,
+    preview_keyboard,
 )
 from nani_pix_bot.commands.dm_start.screenshots import (
     NO_SOURCE_PROMPT_KEY,
@@ -38,7 +44,7 @@ from nani_pix_bot.commands.dm_start.screenshots import (
 )
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.models.enums import SetupStep
+from nani_pix_bot.models.enums import DISCOURAGED_ALGORITHMS, PixelAlgorithm, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
@@ -79,7 +85,11 @@ def _activate_and_stage_first_post(
     original_bytes = game.original_image
     first_stage = game_service.STAGE_ORDER[0]
     first_stage_settings = stage_config.get_stage_config(session, first_stage)
-    pixelated = pixelate_service.pixelate(original_bytes, first_stage_settings.target_width)
+    pixelated = pixelate_service.pixelate(
+        original_bytes,
+        first_stage_settings.target_width,
+        game.pixel_algorithm,
+    )
     caption = i18n.t(
         "dm_start.game_started_caption",
         lang,
@@ -132,13 +142,7 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
         return
 
     session_factory = context.bot_data["session_factory"]
-    if query.data == PREVIEW_CONFIRM_CALLBACK_DATA:
-        lang = await _handle_confirm_tap(context, session_factory, user)
-        if lang is not None:
-            await query.edit_message_text(text=i18n.t("dm_start.posted", lang))
-        return
-    if query.data == PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA:
-        await _handle_change_image_pick_screenshot_tap(context, session_factory, query, user)
+    if await _handle_posting_tap(context, session_factory, query, user):
         return
 
     with session_scope(session_factory) as session:
@@ -155,6 +159,36 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
             await _preview_research(query, setup_game, lang)
         elif query.data == PREVIEW_ADD_SYNONYM_CALLBACK_DATA:
             await _preview_add_synonym(query, setup_game, lang)
+        elif query.data == PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA:
+            await _preview_pixel_algorithm(query, setup_game, lang)
+        elif query.data == PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA:
+            await _preview_pixel_algorithm_back(query, setup_game, lang)
+
+
+async def _handle_posting_tap(
+    context: ContextTypes.DEFAULT_TYPE, session_factory, query, user
+) -> bool:
+    """The taps that *send* something — a group post, a gallery, a fresh
+    preview album. Each owns its own session so its mutation commits
+    before the send is attempted (see _handle_confirm_tap and
+    post_current_image's docstring), which is why they can't share
+    preview_callback_handler's session with the branches that only edit
+    the message they were tapped from.
+
+    Returns True if this tap was one of them and has been handled."""
+    data = str(query.data)
+    if data == PREVIEW_CONFIRM_CALLBACK_DATA:
+        lang = await _handle_confirm_tap(context, session_factory, user)
+        if lang is not None:
+            await query.edit_message_text(text=i18n.t("dm_start.posted", lang))
+        return True
+    if data == PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA:
+        await _handle_change_image_pick_screenshot_tap(context, session_factory, query, user)
+        return True
+    if data.startswith(PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX):
+        await _handle_pixel_algorithm_pick_tap(context, session_factory, query, user)
+        return True
+    return False
 
 
 async def _handle_confirm_tap(
@@ -279,3 +313,85 @@ async def _preview_add_synonym(query, game: Game, lang: str) -> None:
     logger.debug("Game {}: add-synonym requested from preview", game.id)
     game.setup_step = SetupStep.AWAITING_SYNONYM
     await query.edit_message_text(text=i18n.t("dm_start.ask_extra_synonym", lang))
+
+
+def _algorithm_options(lang: str) -> str:
+    """The submenu's body text: every algorithm with a one-line
+    description, the discouraged one saying so in words rather than only
+    as a button glyph. Which one is current is shown on the buttons
+    instead, so this text is the same whatever is selected."""
+    lines = []
+    for algorithm in PixelAlgorithm:
+        description = i18n.t(f"dm_start.algo_desc_{algorithm.value}", lang)
+        if algorithm in DISCOURAGED_ALGORITHMS:
+            description += i18n.t("dm_start.pixel_algorithm_worst_note", lang)
+        lines.append(
+            i18n.t(
+                "dm_start.pixel_algorithm_option",
+                lang,
+                name=algorithm_name(algorithm, lang),
+                description=description,
+            )
+        )
+    return "\n".join(lines)
+
+
+async def _preview_pixel_algorithm(query, game: Game, lang: str) -> None:
+    logger.debug("Game {}: pixelation submenu opened from preview", game.id)
+    await query.edit_message_text(
+        text=i18n.t(
+            "dm_start.pixel_algorithm_prompt",
+            lang,
+            options=_algorithm_options(lang),
+        ),
+        reply_markup=pixel_algorithm_keyboard(lang, game.pixel_algorithm),
+        parse_mode="HTML",
+    )
+
+
+async def _preview_pixel_algorithm_back(query, game: Game, lang: str) -> None:
+    """Leave the submenu without changing anything — back to the same
+    prompt and buttons the album's follow-up message started with."""
+    logger.debug("Game {}: pixelation submenu dismissed", game.id)
+    await query.edit_message_text(
+        text=i18n.t("dm_start.preview_confirm_prompt", lang),
+        reply_markup=preview_keyboard(lang, game.pixel_algorithm),
+    )
+
+
+async def _handle_pixel_algorithm_pick_tap(
+    context: ContextTypes.DEFAULT_TYPE, session_factory, query, user
+) -> None:
+    """Store the pick and re-show the whole preview, so the starter sees
+    every stage under the new algorithm rather than taking the change on
+    trust.
+
+    Split out of preview_callback_handler's shared session for the same
+    reason _handle_confirm_tap is: this branch posts a fresh album, and
+    both the stored pick and setup_step have to commit before that send
+    is attempted (see _post_preview_album's docstring). The submenu
+    message loses its keyboard first — the fresh preview brings its own,
+    and two live keyboards for one game would be ambiguous."""
+    value = str(query.data).removeprefix(PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX)
+    try:
+        algorithm = PixelAlgorithm(value)
+    except ValueError:
+        # Callback data is client-supplied; this branch matches on prefix
+        # only (see keyboards.py's trust-boundary note).
+        logger.warning("Ignoring unknown pixelation algorithm {!r} from user {}", value, user.id)
+        return
+
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        if setup_game is None:
+            return
+        setup_game.pixel_algorithm = algorithm
+        logger.info("Game {}: pixelation algorithm set to {}", setup_game.id, algorithm.value)
+        album = _stage_preview(session, setup_game, lang)
+    # Block closed and committed above — see _post_preview_album's
+    # docstring for why the sends have to happen after.
+    await query.edit_message_text(
+        text=i18n.t("dm_start.pixel_algorithm_updated", lang, name=algorithm_name(algorithm, lang))
+    )
+    await _post_preview_album(context, album, lang)

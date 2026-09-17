@@ -19,13 +19,18 @@ from nani_pix_bot.commands.helpers.keyboards import stop_confirm_keyboard
 from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import PixelStage
+from nani_pix_bot.models.enums import DEFAULT_ALGORITHM, PixelStage
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.pixelate import pixelate
 from nani_pix_bot.services.settings import stage_config
 
-_EXAMPLE_IMAGES = [Path("tmp/example1.jpg"), Path("tmp/example2.png")]
+# Anchored to this module rather than the working directory, the same
+# way services/i18n.py resolves locales/ — these ship inside the
+# installed package, so a relative path would only work when the bot is
+# run from the repo root.
+_ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+_EXAMPLE_IMAGES = [_ASSETS_DIR / "example1.jpg", _ASSETS_DIR / "example2.png"]
 
 
 async def _is_admin(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
@@ -184,7 +189,7 @@ async def _send_preview(
             if not image_path.exists():
                 logger.warning("stageconfig preview: missing example image {}", image_path)
                 continue
-            pixelated = pixelate(image_path.read_bytes(), width)
+            pixelated = pixelate(image_path.read_bytes(), width, DEFAULT_ALGORITHM)
             caption = (
                 i18n.t(
                     "stageconfig.preview_caption", lang, stage=stage.name, width=width, limit=limit

@@ -212,22 +212,6 @@ src/nani_pix_bot/
                    # concludes) — built on helpers/admin_toggle.py, same
                    # shape as gamesenabled.py
     onboarding.py # /start, /help
-    testpixels.py # /testpixels — TEMPORARY diagnostic, DELETE ME (both
-                   # modules say so in their own docstrings). Posts the
-                   # tmp/example*.* images under one or every candidate
-                   # obfuscation algorithm so they can be compared in
-                   # the chat they'll be played in. Deliberately
-                   # ungated (owner's decision — anyone who can message
-                   # the bot may run it), deliberately untranslated and
-                   # untested: it is a short-lived probe, not a feature,
-                   # and paying i18n/test cost for it would be paying
-                   # for something built to be deleted
-    testpixels_algos.py  # the candidate algorithms /testpixels renders,
-                   # kept out of services/ on purpose — services/ is the
-                   # production layer this repo holds to TDD, and this
-                   # is throwaway exploration importing the live
-                   # pixelate() unchanged as its baseline. Goes when
-                   # testpixels.py does
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
                    # (membership.py), the one inline keyboard genuinely
@@ -338,10 +322,16 @@ src/nani_pix_bot/
     matching.py   # normalize + rapidfuzz-match a guess against a game's
                    # cached title/synonyms — pure function, fully
                    # deterministic, no network calls
-    pixelate.py   # Pillow downscale/upscale pipeline — given raw bytes
-                   # and a target width, no DB or PixelStage dependency;
-                   # callers resolve the width via settings/stage_config.py
-                   # first
+    pixelate/     # Pillow downscale/upscale pipeline — given raw bytes,
+                   # a target width and a PixelAlgorithm, no DB or
+                   # PixelStage dependency; callers resolve the width via
+                   # settings/stage_config.py and the algorithm off the
+                   # game row first:
+                   #   render.py      the shared Pillow primitives (the
+                   #                  plain mosaic, and the rank mosaic
+                   #                  median/mode need)
+                   #   algorithms.py  PixelAlgorithm -> implementation
+                   #                  registry, and pixelate() itself
     game/         # the state machine — the only package that mutates a
                    # Game row:
                    #   state.py     create/advance/win/unsolved/timeout
@@ -479,7 +469,7 @@ erDiagram
 | Table | Status | Purpose |
 |---|---|---|
 | `players` | v1 | Telegram user id, opportunistically-captured `username`, `wins` counter (feeds `/leaderboard`). |
-| `games` | v1 | One row per round. `status` is `SETUP` (starter is picking/confirming the anime in DM) → `ACTIVE` (posted to the group, guessing open) → `WON`/`UNSOLVED` (terminal). `source` (`"anilist"`/`"shikimori"`/`"jikan"`/`"tmdb"`/`"manual"`) records which identification method was used; `anilist_id`/`shikimori_id`/`jikan_id`/`tmdb_id` are one nullable column per provider — at most one is ever set from identification, but a screenshot cross-search (see below) can also populate one of these even when that provider wasn't the identification source. `setup_step` (`PICKING_METHOD`/`PICKING_SCREENSHOT`/`AWAITING_PHOTO_CHANGE`/`AWAITING_SYNONYM`/`CONFIRMING`) tracks exactly where in the multi-step DM setup flow the starter is — only meaningful while `status` is `SETUP`, and (like everything else in that flow) derived from the DB rather than in-memory state, so a restart mid-edit resolves correctly. `setup_deadline` (`created_at + 1h`) is when the setup-abandon timer fires if the row is still `SETUP` — see `MECHANICS.md`'s "Starting a game". `current_stage` tracks which pixelation level is currently shown (`STAGE_1`→`STAGE_2`→`STAGE_3`→`STAGE_4`→`STAGE_5`); `wrong_guess_count` resets to 0 each time the stage advances, while `total_guess_count` never resets (gates `/correct` on at least one real attempt). `inactivity_nudge_at`/`inactivity_advance_at` are the absolute deadlines for the 3h-nudge/6h-auto-advance inactivity clock, reset on every `/guess` — see `MECHANICS.md`'s "Inactivity" section. `original_image` holds the current game's screenshot as raw bytes directly, rather than a Telegram file_id — deferred-loaded (SQLAlchemy `deferred()`) so routine queries (status checks, the `/guess` hot path) don't pull a multi-hundred-KB blob every time; cleared once the reveal message (win or unsolved) is confirmed sent — see `MECHANICS.md`'s "Cleanup" note; nothing after a game ends needs to re-fetch the screenshot. `screenshot_source` and `screenshot_picker_provider` (both nullable, both `"shikimori"`/`"jikan"`/`"tmdb"`) are two separate meanings that used to share one column, which is what let a genuine upload delete an identification provider id and let text typed at a same-provider gallery be read as a search query: `screenshot_source` is **image provenance** — which provider's `*_id` column is currently backing `original_image`, `null` for a genuine upload or no image yet, written only where the bytes themselves are (`commands/dm_start/screenshot_gallery.py`'s pick) — while `screenshot_picker_provider` is **picker state** — which provider the screenshot picker is currently *resolving* an anime for, i.e. which provider a typed DM message would be searched against, written by whichever screen the starter lands on, since only that screen knows whether anything is left to resolve: the screen a source-button *tap* lands on (the tap handler itself deliberately writes nothing — it does not yet know whether it will end on a gallery or a failure), any failure screen, and any gallery page that carries "Wrong anime? Search again" (every page past the first, and every cross-provider one) all set it, while a same-provider gallery and a finished pick clear it. A screen that draws that button without setting it is a bug — the button itself re-arms the column when *tapped*, but a typed correction has only the column to route on. Re-entering the picker from a later step (the "Search again" prompt reached from a stale gallery message after the preview went up) has to re-assert `setup_step` alongside it, or `search_text_handler` never reaches the branch that reads the column at all. `search_text_handler` routes on the picker column; the preview's "Change image" reads the provenance one. Only one row may be `SETUP`/`ACTIVE` at a time, enforced in `services/game/state.py`, not a DB constraint. |
+| `games` | v1 | One row per round. `status` is `SETUP` (starter is picking/confirming the anime in DM) → `ACTIVE` (posted to the group, guessing open) → `WON`/`UNSOLVED` (terminal). `source` (`"anilist"`/`"shikimori"`/`"jikan"`/`"tmdb"`/`"manual"`) records which identification method was used; `anilist_id`/`shikimori_id`/`jikan_id`/`tmdb_id` are one nullable column per provider — at most one is ever set from identification, but a screenshot cross-search (see below) can also populate one of these even when that provider wasn't the identification source. `setup_step` (`PICKING_METHOD`/`PICKING_SCREENSHOT`/`AWAITING_PHOTO_CHANGE`/`AWAITING_SYNONYM`/`CONFIRMING`) tracks exactly where in the multi-step DM setup flow the starter is — only meaningful while `status` is `SETUP`, and (like everything else in that flow) derived from the DB rather than in-memory state, so a restart mid-edit resolves correctly. `pixel_algorithm` (`NEAREST`/`BOX`/`MEDIAN`/`MODE`/`LANCZOS`, defaulting to `MEDIAN`) is how each pixelation block's colour is chosen — picked by the starter from the confirmation preview, and stored per game rather than read from a shared setting because stages 2-5 are rendered much later and from elsewhere, so a mid-round change to a shared setting would make a round's later stages look unlike the ones already posted. `setup_deadline` (`created_at + 1h`) is when the setup-abandon timer fires if the row is still `SETUP` — see `MECHANICS.md`'s "Starting a game". `current_stage` tracks which pixelation level is currently shown (`STAGE_1`→`STAGE_2`→`STAGE_3`→`STAGE_4`→`STAGE_5`); `wrong_guess_count` resets to 0 each time the stage advances, while `total_guess_count` never resets (gates `/correct` on at least one real attempt). `inactivity_nudge_at`/`inactivity_advance_at` are the absolute deadlines for the 3h-nudge/6h-auto-advance inactivity clock, reset on every `/guess` — see `MECHANICS.md`'s "Inactivity" section. `original_image` holds the current game's screenshot as raw bytes directly, rather than a Telegram file_id — deferred-loaded (SQLAlchemy `deferred()`) so routine queries (status checks, the `/guess` hot path) don't pull a multi-hundred-KB blob every time; cleared once the reveal message (win or unsolved) is confirmed sent — see `MECHANICS.md`'s "Cleanup" note; nothing after a game ends needs to re-fetch the screenshot. `screenshot_source` and `screenshot_picker_provider` (both nullable, both `"shikimori"`/`"jikan"`/`"tmdb"`) are two separate meanings that used to share one column, which is what let a genuine upload delete an identification provider id and let text typed at a same-provider gallery be read as a search query: `screenshot_source` is **image provenance** — which provider's `*_id` column is currently backing `original_image`, `null` for a genuine upload or no image yet, written only where the bytes themselves are (`commands/dm_start/screenshot_gallery.py`'s pick) — while `screenshot_picker_provider` is **picker state** — which provider the screenshot picker is currently *resolving* an anime for, i.e. which provider a typed DM message would be searched against, written by whichever screen the starter lands on, since only that screen knows whether anything is left to resolve: the screen a source-button *tap* lands on (the tap handler itself deliberately writes nothing — it does not yet know whether it will end on a gallery or a failure), any failure screen, and any gallery page that carries "Wrong anime? Search again" (every page past the first, and every cross-provider one) all set it, while a same-provider gallery and a finished pick clear it. A screen that draws that button without setting it is a bug — the button itself re-arms the column when *tapped*, but a typed correction has only the column to route on. Re-entering the picker from a later step (the "Search again" prompt reached from a stale gallery message after the preview went up) has to re-assert `setup_step` alongside it, or `search_text_handler` never reaches the branch that reads the column at all. `search_text_handler` routes on the picker column; the preview's "Change image" reads the provenance one. Only one row may be `SETUP`/`ACTIVE` at a time, enforced in `services/game/state.py`, not a DB constraint. |
 | `turn_state` | v1 | Single row (`id=1`). `next_starter_id` is who's designated to start the next game; `null` means anyone can. Set to the winner on a `WON` game, changed by `/skip`, otherwise left alone (an `UNSOLVED` game doesn't force a turn on anyone). `reminder_at`/`expiry_at` are the win-turn 15min-reminder/12h-expiry absolute deadlines — set alongside `next_starter_id` whenever it becomes a real user, nulled when it's opened back up (see `MECHANICS.md`'s "Turn handoff"). `turn_opened_at`/`autostart_deadline_at` track the 24h idle-autostart backstop: `turn_opened_at` is when the turn most recently became open to anyone with no game running, `autostart_deadline_at` is `turn_opened_at + 24h`, the absolute deadline `jobs/timers/autostart.py`'s `schedule_idle_autostart()` re-arms from on every restart; both are `null` whenever a specific player is designated or a game is running — see `MECHANICS.md`'s "Bot-initiated games" section. |
 | `bot_settings` | v2 | Single row (`id=1`). `language` (`"EN"`/`"RU"`) is the bot's current reply language, changed only via `/language` by a group admin/owner — see CLAUDE.md's "Language / i18n". `games_enabled` gates whether a new game may be *started*, changed via `/setgamesenabled` — see `MECHANICS.md`'s "Pixelation stages" section. `pinned_message_id` is the Telegram `message_id` of whatever "current image" is currently pinned in the game topic — a singleton pointer rather than a per-`games` column since the pin is meant to persist across games (the next game's first post naturally supersedes it); see `MECHANICS.md`'s "Pixelation stages" section. `autostart_enabled` (default `false`, opt-in) gates whether the bot may start a game itself — idle auto-start or "overthrow" — changed via `/setautostart`, checked in addition to (not instead of) `games_enabled`; see `MECHANICS.md`'s "Bot-initiated games" section. |
 | `stage_config` | v5 | One row per `PixelStage` (5 total, `stage` is the primary key). `target_width`/`wrong_guess_limit` are the admin-configurable pixelation width and wrong-guess allowance for that stage, seeded with defaults by migration and changed live via `/setstageconfig`/`/setstage` — see `services/settings/stage_config.py` and `MECHANICS.md`'s "Pixelation stages" section. |
@@ -500,7 +490,9 @@ summary.
   screenshot exist — one album with the screenshot pixelated at all 5
   configured stages, captioned with the staged title/synonyms, followed
   by a separate message (`sendMediaGroup` can't carry a keyboard) with
-  buttons to change the image, re-search, add a synonym, or confirm and
+  buttons to change the image, re-search, add a synonym, switch the
+  pixelation algorithm (a submenu; picking one re-renders the album),
+  or confirm and
   post to the group. Deliberately stateless across restarts: which game a
   DM is setting up comes from a DB lookup (`get_setup_game_for_starter`),
   which method was picked is stored on that row (`Game.source`) and
@@ -544,8 +536,9 @@ summary.
 
 - **Unit tests** (`tests/`, mirrors `src/` layout): `services/matching.py`
   gets fuzzy-match edge-case coverage (exact title, known synonym, typo
-  within threshold, unrelated text); `services/pixelate.py` gets
-  output-dimension/block-size assertions per stage; `services/game/state.py`
+  within threshold, unrelated text); `services/pixelate/` gets
+  output-dimension/block-size assertions per stage, run against every
+  algorithm in the registry; `services/game/state.py`
   gets full state-machine coverage (win, stage-exhaustion → unsolved, timeout →
   unsolved, author override, skip/handoff, and the `original_image`
   cleanup after both terminal states) against `sqlite:///:memory:`.

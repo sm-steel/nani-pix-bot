@@ -179,7 +179,9 @@ def _build_first_stage_post(
     first_stage_settings = stage_config.get_stage_config(session, first_stage)
     if game.original_image is None:
         raise RuntimeError("game.original_image is None in _build_first_stage_post")
-    pixelated = pixelate_service.pixelate(game.original_image, first_stage_settings.target_width)
+    pixelated = pixelate_service.pixelate(
+        game.original_image, first_stage_settings.target_width, game.pixel_algorithm
+    )
     caption_kwargs = {
         "stage": 1,
         "total": len(game_service.STAGE_ORDER),

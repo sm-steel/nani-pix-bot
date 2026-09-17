@@ -182,7 +182,8 @@ async def test_maybe_overthrow_claims_the_game_on_a_hit(
     # monkeypatch tests/jobs/test_timers.py already uses for the same
     # reason.
     monkeypatch.setattr(
-        "nani_pix_bot.services.pixelate.pixelate", lambda image_bytes, target_width: b"pixelated"
+        "nani_pix_bot.services.pixelate.pixelate",
+        lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
     async def fake_gather_pick(search_client, tmdb_client):
@@ -221,7 +222,8 @@ async def test_run_bot_autostart_cancels_the_idle_autostart_timer_on_success(
         session.commit()
     context = _make_context(session_factory)
     monkeypatch.setattr(
-        "nani_pix_bot.services.pixelate.pixelate", lambda image_bytes, target_width: b"pixelated"
+        "nani_pix_bot.services.pixelate.pixelate",
+        lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
     async def fake_gather_pick(search_client, tmdb_client):

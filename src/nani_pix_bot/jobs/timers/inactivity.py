@@ -160,7 +160,9 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
                 "Game {} auto-advanced to stage {} after inactivity", game_id, game.current_stage
             )
             target_width = stage_config.get_stage_config(session, game.current_stage).target_width
-            pixelated = pixelate_service.pixelate(game.original_image, target_width)
+            pixelated = pixelate_service.pixelate(
+                game.original_image, target_width, game.pixel_algorithm
+            )
             progress = game_service.stage_progress(session, game)
             advanced_caption = i18n.t(
                 "guess.inactivity_advanced_caption",

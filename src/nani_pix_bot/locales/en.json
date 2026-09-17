@@ -148,5 +148,25 @@
 
   "commands.version": "Show bot version",
   "version.reply": "🤖 <b>nani-pix-bot</b> v{version}\n\n{notes}",
-  "version.no_notes": "🤖 <b>nani-pix-bot</b> v{version}"
+  "version.no_notes": "🤖 <b>nani-pix-bot</b> v{version}",
+
+  "keyboards.preview_pixel_algorithm": "🎨 Pixelation: {name}",
+  "keyboards.pixel_algorithm_back": "⬅️ Back",
+
+  "dm_start.pixel_algorithm_prompt": "How should the screenshot be pixelated?\n\n{options}",
+  "dm_start.pixel_algorithm_option": "<b>{name}</b> — {description}",
+  "dm_start.pixel_algorithm_current_marker": "✅",
+  "dm_start.pixel_algorithm_worst_marker": "⚠️",
+  "dm_start.pixel_algorithm_worst_note": " (worst — not recommended)",
+  "dm_start.pixel_algorithm_updated": "Pixelation set to {name}. Here's the new preview:",
+  "dm_start.algo_name_nearest": "Nearest",
+  "dm_start.algo_name_box": "Box",
+  "dm_start.algo_name_median": "Median",
+  "dm_start.algo_name_mode": "Mode",
+  "dm_start.algo_name_lanczos": "Lanczos",
+  "dm_start.algo_desc_nearest": "picks one pixel per block; sharp, but speckles",
+  "dm_start.algo_desc_box": "averages each block; smooth and even",
+  "dm_start.algo_desc_median": "keeps each block's dominant tone; the default",
+  "dm_start.algo_desc_mode": "most frequent colour per block; speckles badly",
+  "dm_start.algo_desc_lanczos": "sharpest blocks; can ring on hard edges"
 }
