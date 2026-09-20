@@ -64,7 +64,7 @@ async def test_gather_pick_succeeds_on_shikimori_first_try(monkeypatch: pytest.M
 
     async def fake_screenshots(client, shikimori_id):
         assert shikimori_id == 1
-        return ["https://shikimori.io/x/a.jpg"]
+        return ["https://shikimori.io/x/a.jpg", "https://shikimori.io/x/b.jpg"]
 
     monkeypatch.setattr("nani_pix_bot.services.search.shikimori.random_anime", fake_random_anime)
     monkeypatch.setattr("nani_pix_bot.services.search.shikimori.screenshots", fake_screenshots)
@@ -77,7 +77,8 @@ async def test_gather_pick_succeeds_on_shikimori_first_try(monkeypatch: pytest.M
     assert pick.anime.source == Provider.SHIKIMORI
     assert pick.screenshot.provider == Provider.SHIKIMORI
     assert pick.screenshot.provider_id == 1
-    assert pick.screenshot.image_bytes == b"bytes"
+    assert pick.screenshot.image_bytes_a == b"bytes"
+    assert pick.screenshot.image_bytes_b == b"bytes"
 
 
 async def test_gather_pick_falls_back_to_jikan_when_shikimori_fails(
@@ -91,7 +92,7 @@ async def test_gather_pick_falls_back_to_jikan_when_shikimori_fails(
 
     async def fake_screenshots(client, jikan_id):
         assert jikan_id == 2
-        return ["https://cdn.myanimelist.net/x/a.jpg"]
+        return ["https://cdn.myanimelist.net/x/a.jpg", "https://cdn.myanimelist.net/x/b.jpg"]
 
     monkeypatch.setattr("nani_pix_bot.services.search.shikimori.random_anime", failing_random_anime)
     monkeypatch.setattr("nani_pix_bot.services.search.jikan.random_anime", fake_jikan_random)
@@ -118,7 +119,11 @@ async def test_gather_pick_retries_a_different_anime_when_no_screenshots_exist(
         return result
 
     async def fake_screenshots(client, shikimori_id):
-        return [] if shikimori_id == 1 else ["https://shikimori.io/x/b.jpg"]
+        return (
+            []
+            if shikimori_id == 1
+            else ["https://shikimori.io/x/b.jpg", "https://shikimori.io/x/c.jpg"]
+        )
 
     monkeypatch.setattr("nani_pix_bot.services.search.shikimori.random_anime", fake_random_anime)
     monkeypatch.setattr("nani_pix_bot.services.search.shikimori.screenshots", fake_screenshots)
@@ -196,7 +201,7 @@ async def test_gather_pick_rejects_an_explicit_rated_jikan_pick_and_retries(
 
     async def fake_screenshots(client, jikan_id):
         assert jikan_id == 2
-        return ["https://cdn.myanimelist.net/x/a.jpg"]
+        return ["https://cdn.myanimelist.net/x/a.jpg", "https://cdn.myanimelist.net/x/b.jpg"]
 
     monkeypatch.setattr(
         "nani_pix_bot.services.search.shikimori.random_anime", failing_shikimori_random
@@ -212,3 +217,169 @@ async def test_gather_pick_rejects_an_explicit_rated_jikan_pick_and_retries(
     assert pick is not None
     assert pick.anime.source == Provider.JIKAN
     assert pick.screenshot.provider_id == 2
+
+
+async def test_gather_pick_falls_through_provider_order_when_first_provider_lacks_a_pair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same-provider-first fallback (_screenshot_provider_order): Shikimori
+    identified the anime but only has 1 screenshot for it — not enough
+    for a hard-mode pair — so the loop falls through to Jikan, which has
+    2. This is the same anime the whole way through (no retry), just a
+    different screenshot provider — distinct from the "retry a different
+    anime" tests above."""
+
+    async def fake_random_anime(client):
+        return _SHIKI_RESULT
+
+    async def fake_shikimori_screenshots(client, shikimori_id):
+        assert shikimori_id == 1
+        return ["https://shikimori.io/x/only-one.jpg"]
+
+    async def fake_jikan_search(client, title):
+        return [_JIKAN_RESULT]
+
+    async def fake_jikan_screenshots(client, jikan_id):
+        assert jikan_id == 2
+        return ["https://cdn.myanimelist.net/x/a.jpg", "https://cdn.myanimelist.net/x/b.jpg"]
+
+    monkeypatch.setattr("nani_pix_bot.services.search.shikimori.random_anime", fake_random_anime)
+    monkeypatch.setattr(
+        "nani_pix_bot.services.search.shikimori.screenshots", fake_shikimori_screenshots
+    )
+    monkeypatch.setattr("nani_pix_bot.services.search.jikan.search", fake_jikan_search)
+    monkeypatch.setattr("nani_pix_bot.services.search.jikan.screenshots", fake_jikan_screenshots)
+
+    _patch_stub_get(monkeypatch)
+
+    pick = await autostart.gather_pick(_StubAsyncClient(), _StubAsyncClient())
+
+    assert pick is not None
+    assert pick.anime.source == Provider.SHIKIMORI
+    assert pick.screenshot.provider == Provider.JIKAN
+    assert pick.screenshot.provider_id == 2
+
+
+async def test_fetch_screenshot_url_pair_returns_two_distinct_urls_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_screenshots(client, shikimori_id):
+        assert shikimori_id == 1
+        return [
+            "https://shikimori.io/x/a.jpg",
+            "https://shikimori.io/x/b.jpg",
+            "https://shikimori.io/x/c.jpg",
+        ]
+
+    monkeypatch.setattr("nani_pix_bot.services.search.shikimori.screenshots", fake_screenshots)
+
+    pair = await autostart._fetch_screenshot_url_pair(_StubAsyncClient(), Provider.SHIKIMORI, 1)
+
+    assert pair is not None
+    url_a, url_b = pair
+    assert url_a != url_b
+    assert {url_a, url_b} <= {
+        "https://shikimori.io/x/a.jpg",
+        "https://shikimori.io/x/b.jpg",
+        "https://shikimori.io/x/c.jpg",
+    }
+
+
+@pytest.mark.parametrize("urls", [[], ["https://shikimori.io/x/a.jpg"]])
+async def test_fetch_screenshot_url_pair_returns_none_with_fewer_than_two_urls(
+    monkeypatch: pytest.MonkeyPatch, urls: list[str]
+) -> None:
+    async def fake_screenshots(client, shikimori_id):
+        return urls
+
+    monkeypatch.setattr("nani_pix_bot.services.search.shikimori.screenshots", fake_screenshots)
+
+    pair = await autostart._fetch_screenshot_url_pair(_StubAsyncClient(), Provider.SHIKIMORI, 1)
+
+    assert pair is None
+
+
+async def test_fetch_screenshot_url_pair_returns_none_and_logs_warning_on_fetch_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def failing_screenshots(client, shikimori_id):
+        raise RuntimeError("Shikimori screenshot endpoint is down")
+
+    logged: list[tuple] = []
+    monkeypatch.setattr("nani_pix_bot.services.search.shikimori.screenshots", failing_screenshots)
+    monkeypatch.setattr(autostart.logger, "warning", lambda *args: logged.append(args))
+
+    pair = await autostart._fetch_screenshot_url_pair(_StubAsyncClient(), Provider.SHIKIMORI, 1)
+
+    assert pair is None
+    assert logged
+
+
+async def test_try_provider_returns_pick_with_distinct_images_when_both_downloads_succeed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_screenshots(client, shikimori_id):
+        assert shikimori_id == 1
+        return ["https://shikimori.io/x/a.jpg", "https://shikimori.io/x/b.jpg"]
+
+    monkeypatch.setattr("nani_pix_bot.services.search.shikimori.screenshots", fake_screenshots)
+
+    async def fake_get(url, **kwargs):
+        content = b"image-a" if url.endswith("a.jpg") else b"image-b"
+        return httpx.Response(200, content=content, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(_StubAsyncClient, "get", staticmethod(fake_get), raising=False)
+
+    anime = autostart.AnimePick(result=_SHIKI_RESULT, source=Provider.SHIKIMORI)
+    pick = await autostart._try_provider(
+        _StubAsyncClient(), _StubAsyncClient(), anime, Provider.SHIKIMORI, "Frieren"
+    )
+
+    assert pick is not None
+    assert pick.provider == Provider.SHIKIMORI
+    assert pick.provider_id == 1
+    assert pick.image_bytes_a != pick.image_bytes_b
+    assert {pick.image_bytes_a, pick.image_bytes_b} == {b"image-a", b"image-b"}
+
+
+async def test_try_provider_returns_none_when_pair_fetch_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_screenshots(client, shikimori_id):
+        return ["https://shikimori.io/x/only-one.jpg"]
+
+    monkeypatch.setattr("nani_pix_bot.services.search.shikimori.screenshots", fake_screenshots)
+
+    anime = autostart.AnimePick(result=_SHIKI_RESULT, source=Provider.SHIKIMORI)
+    pick = await autostart._try_provider(
+        _StubAsyncClient(), _StubAsyncClient(), anime, Provider.SHIKIMORI, "Frieren"
+    )
+
+    assert pick is None
+
+
+async def test_try_provider_discards_first_download_when_second_download_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_screenshots(client, shikimori_id):
+        return ["https://shikimori.io/x/a.jpg", "https://shikimori.io/x/b.jpg"]
+
+    monkeypatch.setattr("nani_pix_bot.services.search.shikimori.screenshots", fake_screenshots)
+
+    calls = {"n": 0}
+
+    async def flaky_get(url, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise httpx.HTTPError("second download failed")
+        return httpx.Response(200, content=b"image-a", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(_StubAsyncClient, "get", staticmethod(flaky_get), raising=False)
+
+    anime = autostart.AnimePick(result=_SHIKI_RESULT, source=Provider.SHIKIMORI)
+    pick = await autostart._try_provider(
+        _StubAsyncClient(), _StubAsyncClient(), anime, Provider.SHIKIMORI, "Frieren"
+    )
+
+    assert pick is None
+    assert calls["n"] == 2
