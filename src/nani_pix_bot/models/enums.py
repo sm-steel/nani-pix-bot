@@ -1,6 +1,8 @@
 import enum
-from types import ModuleType
-from typing import assert_never
+from typing import TYPE_CHECKING, assert_never
+
+if TYPE_CHECKING:
+    from nani_pix_bot.services.search.base import ScreenshotModule, SearchModule
 
 
 class Provider(enum.StrEnum):
@@ -118,14 +120,17 @@ class Provider(enum.StrEnum):
         raise ValueError(f"Provider.{self.name} has no screenshot id column")
 
     @property
-    def screenshot_module(self) -> ModuleType:
-        """The `services.search` module that can fetch this provider's
-        screenshots — a **module** reference, not a bound function:
-        commands/dm_start's tests patch
+    def screenshot_module(self) -> "ScreenshotModule":
+        """The `services.search.base.ScreenshotModule` adapter that can
+        fetch this provider's screenshots — e.g. `shikimori.py`'s
+        `service` singleton, not the `shikimori` module itself. Every
+        adapter method delegates to that same module's free functions by
+        an unqualified name lookup resolved at call time, so
+        commands/dm_start's tests patching
         `monkeypatch.setattr(shikimori, "screenshots", ...)` directly on
-        the module object, which only keeps working if every caller
-        looks the attribute up on the module at call time rather than
-        capturing the function once.
+        the module still take effect here — see `services/search/base.py`'s
+        module docstring for the full reasoning (issue #169), including
+        why this moved off bare `types.ModuleType`.
 
         The import is lazy — inside this property's body, re-run on
         every access — deliberately not at module level and not behind
@@ -145,19 +150,22 @@ class Provider(enum.StrEnum):
         from nani_pix_bot.services.search import jikan, shikimori, tmdb
 
         if self is Provider.SHIKIMORI:
-            return shikimori
+            return shikimori.service
         if self is Provider.JIKAN:
-            return jikan
+            return jikan.service
         if self is Provider.TMDB:
-            return tmdb
+            return tmdb.service
         raise ValueError(f"Provider.{self.name} has no screenshot module")
 
     @property
-    def search_module(self) -> ModuleType:
-        """The `services.search` module that can search/identify with
-        this provider — all four members, including AniList (contrast
-        `screenshot_module` above, which only covers the three that can
-        also supply screenshots).
+    def search_module(self) -> "SearchModule":
+        """The `services.search.base.SearchModule` adapter that can
+        search/identify with this provider — all four members, including
+        AniList (contrast `screenshot_module` above, which only covers
+        the three that can also supply screenshots). See
+        `screenshot_module`'s docstring above for what these adapters
+        actually are and why this moved off bare `types.ModuleType`
+        (issue #169).
 
         Deliberately not unified with `screenshot_module`: widening the
         3-provider set to 4 would silently turn a stray AniList
@@ -171,13 +179,13 @@ class Provider(enum.StrEnum):
         from nani_pix_bot.services.search import anilist, jikan, shikimori, tmdb
 
         if self is Provider.ANILIST:
-            return anilist
+            return anilist.service
         if self is Provider.SHIKIMORI:
-            return shikimori
+            return shikimori.service
         if self is Provider.JIKAN:
-            return jikan
+            return jikan.service
         if self is Provider.TMDB:
-            return tmdb
+            return tmdb.service
         assert_never(self)
 
 

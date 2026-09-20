@@ -19,6 +19,7 @@ already expects from every other provider's result dataclass.
 """
 
 import asyncio
+import sys
 from dataclasses import dataclass
 
 import httpx
@@ -26,6 +27,7 @@ from loguru import logger
 
 from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, parsing, rest
+from nani_pix_bot.services.search.base import ScreenshotModule
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/original"
@@ -186,6 +188,11 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
         "TMDB id {} yielded {} still(s) from {} episode(s)", tmdb_id, len(urls), len(targets)
     )
     return urls
+
+
+# Provider.search_module/screenshot_module's value for Provider.TMDB —
+# see services/search/base.py's module docstring.
+service = ScreenshotModule(sys.modules[__name__])
 
 
 def _episode_targets(show: dict) -> list[tuple[int, int]]:

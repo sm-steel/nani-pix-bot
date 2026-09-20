@@ -20,6 +20,7 @@ complexity grew past qlty's threshold; that module imports the
 `_show_gallery_page` helpers below rather than duplicating them."""
 
 from dataclasses import dataclass
+from typing import cast
 
 from loguru import logger
 from telegram import InputMediaPhoto, Update
@@ -146,13 +147,26 @@ async def _fetch_screenshots_or_fallback(
 async def _search_provider(
     provider: Provider, client, query: str
 ) -> list[ShikimoriResult] | list[JikanResult] | list[TMDBResult]:
-    return await provider.screenshot_module.search(client, query)
+    # `screenshot_module` itself already raises ValueError for
+    # Provider.ANILIST (see its docstring in models/enums.py) — every
+    # caller of this function only ever reaches it for a provider
+    # already known to be screenshot-capable, so AniList can never
+    # actually appear in the result. The cast states what is already
+    # true rather than papering over a doubt (see _shared.py's
+    # _client_for_source for the same pattern): `screenshot_module`'s
+    # declared return type has to cover all three screenshot-capable
+    # providers at once, which is wider than what any one call site
+    # here can ever get back.
+    results = await provider.screenshot_module.search(client, query)
+    return cast("list[ShikimoriResult] | list[JikanResult] | list[TMDBResult]", results)
 
 
 async def _get_provider_by_id(
     provider: Provider, client, external_id: int
 ) -> ShikimoriResult | JikanResult | TMDBResult | None:
-    return await provider.screenshot_module.get_by_id(client, external_id)
+    # See _search_provider's comment above for why this cast is safe.
+    result = await provider.screenshot_module.get_by_id(client, external_id)
+    return cast("ShikimoriResult | JikanResult | TMDBResult | None", result)
 
 
 @dataclass(frozen=True)

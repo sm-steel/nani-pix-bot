@@ -8,6 +8,7 @@ list endpoint — so both search() and get_by_id() parse the same shape
 here, no forced re-fetch-by-id needed for the full field set.
 """
 
+import sys
 from dataclasses import dataclass
 
 import httpx
@@ -15,6 +16,7 @@ from loguru import logger
 
 from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, parsing, rest
+from nani_pix_bot.services.search.base import ScreenshotModule
 
 JIKAN_BASE_URL = "https://api.jikan.moe/v4/anime"
 JIKAN_RANDOM_URL = "https://api.jikan.moe/v4/random/anime"
@@ -118,6 +120,13 @@ async def screenshots(client: httpx.AsyncClient, jikan_id: int) -> list[str]:
     urls = parsing.parse_entries(_API.name, pictures, _picture_url)[:SCREENSHOT_FETCH_LIMIT]
     logger.debug("Jikan id {} has {} picture(s) available", jikan_id, len(pictures))
     return urls
+
+
+# Provider.search_module/screenshot_module's value for Provider.JIKAN —
+# see services/search/base.py's module docstring. random_anime() above is
+# a direct-import-only helper (services/game/autostart.py), not part of
+# this.
+service = ScreenshotModule(sys.modules[__name__])
 
 
 def _picture_url(entry: dict) -> str | None:

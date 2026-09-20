@@ -111,13 +111,15 @@ def test_provider_id_attr_name_raises_for_anilist() -> None:
 
 
 def test_provider_screenshot_module_resolves_to_the_real_search_module() -> None:
-    # `is`, not `==`: dm_start's tests patch attributes directly on the
-    # module object (monkeypatch.setattr(shikimori, "screenshots", ...)),
-    # so this property has to keep returning that exact object, not an
-    # equal-but-different one.
-    assert Provider.SHIKIMORI.screenshot_module is shikimori
-    assert Provider.JIKAN.screenshot_module is jikan
-    assert Provider.TMDB.screenshot_module is tmdb
+    # `is`, not `==`: each provider module's `service` adapter delegates
+    # to that module's free functions by name, looked up at call time —
+    # dm_start's tests patch those functions directly
+    # (monkeypatch.setattr(shikimori, "screenshots", ...)), so this
+    # property has to keep returning the same adapter singleton every
+    # time, not an equal-but-different one (see services/search/base.py).
+    assert Provider.SHIKIMORI.screenshot_module is shikimori.service
+    assert Provider.JIKAN.screenshot_module is jikan.service
+    assert Provider.TMDB.screenshot_module is tmdb.service
 
 
 def test_provider_screenshot_module_raises_for_anilist() -> None:
@@ -131,7 +133,7 @@ def test_provider_search_module_covers_all_four_providers_including_anilist() ->
     # all four providers (AniList can be searched/identified even though it
     # has no screenshot endpoint), so unlike id_attr_name/screenshot_module
     # this must NOT raise for ANILIST.
-    assert Provider.ANILIST.search_module is anilist
-    assert Provider.SHIKIMORI.search_module is shikimori
-    assert Provider.JIKAN.search_module is jikan
-    assert Provider.TMDB.search_module is tmdb
+    assert Provider.ANILIST.search_module is anilist.service
+    assert Provider.SHIKIMORI.search_module is shikimori.service
+    assert Provider.JIKAN.search_module is jikan.service
+    assert Provider.TMDB.search_module is tmdb.service

@@ -34,6 +34,7 @@ for every other provider's list fields — this note just records that
 the shape was actually checked, not assumed.
 """
 
+import sys
 from dataclasses import dataclass
 
 import httpx
@@ -41,6 +42,7 @@ from loguru import logger
 
 from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, graphql, parsing
+from nani_pix_bot.services.search.base import ScreenshotModule
 
 SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 SEARCH_RESULT_LIMIT = 5
@@ -261,6 +263,13 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
     urls = parsing.parse_entries(_API_NAME, entries, _parse_screenshot_url)[:SCREENSHOT_FETCH_LIMIT]
     logger.debug("Shikimori id {} has {} screenshot(s) available", shikimori_id, len(entries))
     return urls
+
+
+# Provider.search_module/screenshot_module's value for Provider.SHIKIMORI
+# — see services/search/base.py's module docstring. random_anime() above
+# is a direct-import-only helper (services/game/autostart.py), not part
+# of this.
+service = ScreenshotModule(sys.modules[__name__])
 
 
 def _single_anime(data: dict) -> dict | None:
