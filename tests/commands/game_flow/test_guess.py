@@ -614,13 +614,15 @@ async def test_guess_command_hard_mode_won_posts_a_two_photo_album(session_facto
     assert len(media) == 2
     assert media[0].media.input_file_content == b"image-a-bytes"
     assert media[1].media.input_file_content == b"image-b-bytes"
-    expected_caption = guess_command_module.i18n.t(
-        "guess.hard_mode_won_caption",
-        "en",
-        winner="Guesser Name",
-        title="Frieren: Beyond Journey's End",
-    )
-    assert media[0].caption == expected_caption
+    # guess.hard_mode_won_caption has a variation pool (see
+    # locales/variations/en.json) — a substring check on the dynamic
+    # values, not exact equality against a second independent i18n.t()
+    # call, since that second call can legitimately pick a different
+    # (equally valid) phrasing from the pool than the one guess_command
+    # itself rendered. Same pool-aware style as
+    # test_guess_command_won_caption_names_the_winner above.
+    assert "Guesser Name" in media[0].caption
+    assert "Frieren: Beyond Journey's End" in media[0].caption
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
@@ -661,10 +663,12 @@ async def test_guess_command_hard_mode_turn_advanced_posts_album_at_turn_two_wid
     media = kwargs["media"]
     assert media[0].media.input_file_content == b"pixelated-image-a-bytes"
     assert media[1].media.input_file_content == b"pixelated-image-b-bytes"
-    expected_caption = guess_command_module.i18n.t(
-        "guess.hard_mode_turn_advanced_caption", "en", stage=2, total=2, remaining=1, limit=1
-    )
-    assert media[0].caption == expected_caption
+    # guess.hard_mode_turn_advanced_caption also has a variation pool —
+    # same pool-aware substring reasoning as the won-caption test above,
+    # checking the interpolated stage/total and remaining/limit numbers
+    # rather than exact-matching a second, independently-random t() call.
+    assert "2/2" in media[0].caption
+    assert "1/1" in media[0].caption
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
