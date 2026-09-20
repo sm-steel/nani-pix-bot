@@ -782,6 +782,9 @@ async def test_random_anime_sends_a_random_order_query() -> None:
             "russian": None,
             "english": "Some Anime",
             "synonyms": [],
+            "statusesStats": [
+                {"status": "completed", "count": 600},
+            ],
         }
         return httpx.Response(200, json=_animes_payload([entry]))
 
@@ -797,6 +800,11 @@ async def test_random_anime_sends_a_random_order_query() -> None:
     # Shikimori's real schema the way a live API call would.
     assert "$minScore: Int" in captured["json"]["query"]
     assert isinstance(captured["json"]["variables"]["minScore"], int)
+    # Regression guard, same reasoning as the $minScore guard above: a
+    # query that stopped requesting statusesStats would still pass every
+    # other assertion here, since the mocked response includes it
+    # regardless of what was actually requested.
+    assert "statusesStats" in captured["json"]["query"]
     assert result == shikimori.ShikimoriResult(
         shikimori_id=1,
         title_romaji="Some Anime",
@@ -821,8 +829,22 @@ async def test_random_anime_is_not_cached_across_calls() -> None:
     anime loop."""
     calls = {"n": 0}
     entries = [
-        {"id": "1", "name": "First", "russian": None},
-        {"id": "2", "name": "Second", "russian": None},
+        {
+            "id": "1",
+            "name": "First",
+            "russian": None,
+            "english": None,
+            "synonyms": [],
+            "statusesStats": [{"status": "completed", "count": 600}],
+        },
+        {
+            "id": "2",
+            "name": "Second",
+            "russian": None,
+            "english": None,
+            "synonyms": [],
+            "statusesStats": [{"status": "completed", "count": 600}],
+        },
     ]
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -838,3 +860,199 @@ async def test_random_anime_is_not_cached_across_calls() -> None:
     assert first is not None
     assert second is not None
     assert first.shikimori_id != second.shikimori_id
+
+
+async def test_random_anime_rejects_when_watched_below_floor() -> None:
+    """random_anime() applies a floor on RANDOM_PICK_MIN_WATCHED: even if
+    the title/score parses correctly, the pick is rejected if the sum of
+    completed + rewatching is below the floor."""
+    entry = {
+        "id": "1",
+        "name": "Obscure Anime",
+        "russian": None,
+        "english": None,
+        "synonyms": [],
+        "statusesStats": [
+            {"status": "completed", "count": 100},
+            {"status": "rewatching", "count": 200},
+        ],
+    }
+
+    async with httpx.AsyncClient(transport=_responding(_animes_payload([entry]))) as client:
+        result = await shikimori.random_anime(client)
+
+    # 100 + 200 = 300, which is below RANDOM_PICK_MIN_WATCHED (500)
+    assert result is None
+
+
+async def test_random_anime_accepts_when_watched_meets_floor() -> None:
+    """random_anime() accepts the pick when completed + rewatching sum
+    meets or exceeds RANDOM_PICK_MIN_WATCHED."""
+    entry = {
+        "id": "52991",
+        "name": "Popular Anime",
+        "russian": None,
+        "english": "Popular Anime",
+        "synonyms": [],
+        "statusesStats": [
+            {"status": "completed", "count": 300},
+            {"status": "rewatching", "count": 300},
+        ],
+    }
+
+    async with httpx.AsyncClient(transport=_responding(_animes_payload([entry]))) as client:
+        result = await shikimori.random_anime(client)
+
+    # 300 + 300 = 600, which meets RANDOM_PICK_MIN_WATCHED (500)
+    assert result == shikimori.ShikimoriResult(
+        shikimori_id=52991,
+        title_romaji="Popular Anime",
+        title_english="Popular Anime",
+        title_russian=None,
+        synonyms=[],
+    )
+
+
+async def test_random_anime_watched_ignores_other_statuses() -> None:
+    """The watched-count sum ignores planned/watching/on_hold/dropped,
+    even if they individually or collectively would pass the floor — only
+    completed + rewatching count."""
+    entry = {
+        "id": "1",
+        "name": "Deceptive Anime",
+        "russian": None,
+        "english": None,
+        "synonyms": [],
+        "statusesStats": [
+            {"status": "planned", "count": 200},
+            {"status": "watching", "count": 200},
+            {"status": "on_hold", "count": 100},
+            {"status": "dropped", "count": 100},
+        ],
+    }
+
+    async with httpx.AsyncClient(transport=_responding(_animes_payload([entry]))) as client:
+        result = await shikimori.random_anime(client)
+
+    # Sum of completed + rewatching = 0 (neither status present), rejected
+    assert result is None
+
+
+async def test_random_anime_sums_only_relevant_statuses() -> None:
+    """Verify that only completed and rewatching are summed, while other
+    statuses are present."""
+    entry = {
+        "id": "1",
+        "name": "Mixed Anime",
+        "russian": None,
+        "english": None,
+        "synonyms": [],
+        "statusesStats": [
+            {"status": "completed", "count": 400},
+            {"status": "rewatching", "count": 200},
+            {"status": "planned", "count": 200},
+            {"status": "watching", "count": 300},
+            {"status": "on_hold", "count": 100},
+            {"status": "dropped", "count": 50},
+        ],
+    }
+
+    async with httpx.AsyncClient(transport=_responding(_animes_payload([entry]))) as client:
+        result = await shikimori.random_anime(client)
+
+    # Sum of completed + rewatching = 400 + 200 = 600, meets floor
+    assert result == shikimori.ShikimoriResult(
+        shikimori_id=1,
+        title_romaji="Mixed Anime",
+        title_english=None,
+        title_russian=None,
+        synonyms=[],
+    )
+
+
+async def test_random_anime_skips_malformed_status_entry_with_warning(
+    records: list[tuple[str, str]],
+) -> None:
+    """A malformed entry in statusesStats (e.g. non-int count) is dropped
+    with a WARNING via parse_entries, and the well-formed entries alone
+    still clear the floor — proving the malformed entry was skipped
+    rather than the whole computation aborting for some other reason."""
+    entry = {
+        "id": "1",
+        "name": "Partially Broken Anime",
+        "russian": None,
+        "english": None,
+        "synonyms": [],
+        "statusesStats": [
+            {"status": "completed", "count": 600},
+            {"status": "rewatching", "count": "not an int"},  # Malformed
+            {"status": "planned", "count": 50},
+        ],
+    }
+
+    async with httpx.AsyncClient(transport=_responding(_animes_payload([entry]))) as client:
+        result = await shikimori.random_anime(client)
+
+    # Sum of well-formed completed + rewatching = 600 + 0 = 600, which
+    # clears RANDOM_PICK_MIN_WATCHED on its own — this is what actually
+    # proves the malformed entry was skipped-and-summed rather than
+    # something else zeroing the sum (a fixture that stayed below the
+    # floor either way couldn't tell those two cases apart).
+    assert result is not None
+    assert result.shikimori_id == 1
+
+    # Exactly one WARNING was logged, naming both the parser and the
+    # offending field — same specificity as
+    # test_get_by_id_warns_naming_the_parser_when_a_field_is_malformed.
+    warnings = [msg for level, msg in records if level == "WARNING"]
+    assert len(warnings) == 1
+    assert "Shikimori" in warnings[0]
+    assert "parse_one_status_entry" in warnings[0]
+    assert "count" in warnings[0]
+
+
+async def test_random_anime_treats_missing_stats_as_zero_watched() -> None:
+    """A response with statusesStats entirely missing treats the watched
+    count as 0 and rejects the pick."""
+    entry = {
+        "id": "1",
+        "name": "No Stats Anime",
+        "russian": None,
+        "english": None,
+        "synonyms": [],
+        # statusesStats completely missing
+    }
+
+    async with httpx.AsyncClient(transport=_responding(_animes_payload([entry]))) as client:
+        result = await shikimori.random_anime(client)
+
+    # 0 watched (missing field), rejected
+    assert result is None
+
+
+async def test_random_anime_treats_null_stats_as_zero_watched() -> None:
+    """A response with statusesStats null treats the watched count as 0
+    and rejects the pick."""
+    entry = {
+        "id": "1",
+        "name": "Null Stats Anime",
+        "russian": None,
+        "english": None,
+        "synonyms": [],
+        "statusesStats": None,
+    }
+
+    async with httpx.AsyncClient(transport=_responding(_animes_payload([entry]))) as client:
+        result = await shikimori.random_anime(client)
+
+    # 0 watched (null field), rejected
+    assert result is None
+
+
+async def test_search_and_get_by_id_queries_dont_include_stats() -> None:
+    """search() and get_by_id() do not request statusesStats and should
+    not apply the watched-count floor."""
+    # Both search and get_by_id use queries without statusesStats
+    # Verify that the query constants don't include statusesStats
+    assert "statusesStats" not in shikimori._SEARCH_QUERY
+    assert "statusesStats" not in shikimori._DETAIL_QUERY
