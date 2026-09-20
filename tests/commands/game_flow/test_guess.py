@@ -45,6 +45,9 @@ def _make_context(session_factory, *, args: list[str] | None = None) -> MagicMoc
         return_value=bytearray(b"original-bytes")
     )
     context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+    context.bot.send_media_group = AsyncMock(
+        return_value=[MagicMock(message_id=998), MagicMock(message_id=999)]
+    )
     context.bot.pin_chat_message = AsyncMock()
     context.bot.unpin_chat_message = AsyncMock()
     # Default: close the scheduled coroutine so tests that don't care about
@@ -77,6 +80,34 @@ def _active_game(session_factory, **overrides) -> int:
             "original_image": b"file123",
             "status": GameStatus.ACTIVE,
             "current_stage": PixelStage.STAGE_1,
+            "wrong_guess_count": 0,
+            "anilist_id": 99,
+            "title_romaji": "Sousou no Frieren",
+            "title_english": "Frieren: Beyond Journey's End",
+            "synonyms": ["Frieren"],
+        }
+        defaults.update(overrides)
+        game = Game(**defaults)
+        session.add(game)
+        session.commit()
+        return game.id
+
+
+def _active_hard_mode_game(session_factory, **overrides) -> int:
+    """The hard-mode analogue of _active_game — current_stage stays None
+    (hard-mode games never set it; they use hard_mode_turn instead) and
+    hard_mode_image_a/_b carry the fixed screenshot pair, in place of
+    original_image."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.commit()
+        defaults = {
+            "starter_id": 1,
+            "status": GameStatus.ACTIVE,
+            "hard_mode": True,
+            "hard_mode_turn": 1,
+            "hard_mode_image_a": b"image-a-bytes",
+            "hard_mode_image_b": b"image-b-bytes",
             "wrong_guess_count": 0,
             "anilist_id": 99,
             "title_romaji": "Sousou no Frieren",
@@ -565,3 +596,158 @@ async def test_guess_command_stage_advance_caption_shows_the_new_stage_budget(
     assert "3/5" in kwargs["caption"]
     assert "2/2" in kwargs["caption"]
     assert "#" not in kwargs["caption"]
+
+
+async def test_guess_command_hard_mode_won_posts_a_two_photo_album(session_factory) -> None:
+    game_id = _active_hard_mode_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_media_group.assert_awaited_once()
+    context.bot.send_photo.assert_not_awaited()
+    _, kwargs = context.bot.send_media_group.await_args
+    media = kwargs["media"]
+    assert len(media) == 2
+    assert media[0].media.input_file_content == b"image-a-bytes"
+    assert media[1].media.input_file_content == b"image-b-bytes"
+    expected_caption = guess_command_module.i18n.t(
+        "guess.hard_mode_won_caption", "en", winner="Guesser Name", title="Sousou no Frieren"
+    )
+    assert media[0].caption == expected_caption
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.WON
+        winner = session.get(Player, 2)
+        assert winner is not None
+        assert winner.wins == 2
+        # Confirmed sent -> hard-mode image bytes cleared, same cleanup
+        # gate as the normal-mode original_image path.
+        assert fetched.hard_mode_image_a is None
+        assert fetched.hard_mode_image_b is None
+
+
+async def test_guess_command_hard_mode_turn_advanced_posts_album_at_turn_two_width(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pixelate_calls: list[tuple] = []
+
+    def fake_pixelate(image_bytes, width, algorithm):
+        pixelate_calls.append((image_bytes, width, algorithm))
+        return b"pixelated-" + image_bytes
+
+    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", fake_pixelate)
+    game_id = _active_hard_mode_game(session_factory)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_media_group.assert_awaited_once()
+    context.bot.send_photo.assert_not_awaited()
+    turn_two_width = guess_command_module.game_service.HARD_MODE_TURN_WIDTHS[2]
+    assert all(width == turn_two_width for _, width, _ in pixelate_calls)
+    _, kwargs = context.bot.send_media_group.await_args
+    media = kwargs["media"]
+    assert media[0].media.input_file_content == b"pixelated-image-a-bytes"
+    assert media[1].media.input_file_content == b"pixelated-image-b-bytes"
+    expected_caption = guess_command_module.i18n.t(
+        "guess.hard_mode_turn_advanced_caption", "en", stage=2, total=2, remaining=1, limit=1
+    )
+    assert media[0].caption == expected_caption
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.ACTIVE
+        assert fetched.hard_mode_turn == 2
+        assert fetched.wrong_guess_count == 0
+
+
+async def test_guess_command_hard_mode_unsolved_reveals_two_photo_album(
+    session_factory,
+) -> None:
+    game_id = _active_hard_mode_game(session_factory, hard_mode_turn=2)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_media_group.assert_awaited_once()
+    context.bot.send_photo.assert_not_awaited()
+    _, kwargs = context.bot.send_media_group.await_args
+    media = kwargs["media"]
+    assert media[0].media.input_file_content == b"image-a-bytes"
+    assert media[1].media.input_file_content == b"image-b-bytes"
+    expected_caption = guess_command_module.i18n.t(
+        "guess.hard_mode_unsolved_caption", "en", title="Sousou no Frieren"
+    )
+    assert media[0].caption == expected_caption
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.UNSOLVED
+        assert fetched.hard_mode_image_a is None
+        assert fetched.hard_mode_image_b is None
+
+
+async def test_guess_command_hard_mode_wrong_feedback_uses_turn_progress(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercises the WRONG branch's hard-mode caption directly — per
+    Task 3's note, HARD_MODE_WRONG_GUESS_LIMIT == 1 means a real /guess
+    can never actually produce this outcome (see the regression test
+    below), but the branch must still exist and be correct."""
+
+    def fake_record_guess(session, game, *, guesser_id, guess_text):
+        return guess_command_module.game_service.GuessOutcome.WRONG
+
+    monkeypatch.setattr(guess_command_module.game_service, "record_guess", fake_record_guess)
+    _active_hard_mode_game(session_factory)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_media_group.assert_not_awaited()
+    context.bot.send_photo.assert_not_awaited()
+    update.message.reply_text.assert_awaited_once()
+    expected_text = guess_command_module.i18n.t(
+        "guess.hard_mode_wrong_feedback", "en", remaining=1, limit=1, stage=1, total=2
+    )
+    assert update.message.reply_text.await_args.args[0] == expected_text
+
+
+async def test_guess_command_hard_mode_wrong_guess_never_actually_fires(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression test for Task 3's documented consequence of
+    HARD_MODE_WRONG_GUESS_LIMIT == 1: a real wrong /guess against a
+    hard-mode game always immediately advances the turn (or ends the
+    game unsolved on the last turn) — WRONG is never the outcome a real
+    player sees, even though the branch exists (see the test above)."""
+    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
+    _active_hard_mode_game(session_factory)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    # A WRONG outcome would have replied with plain text and posted no
+    # image; TURN_ADVANCED posts the 2-photo album instead.
+    context.bot.send_media_group.assert_awaited_once()
+    update.message.reply_text.assert_not_awaited()
