@@ -615,7 +615,10 @@ async def test_guess_command_hard_mode_won_posts_a_two_photo_album(session_facto
     assert media[0].media.input_file_content == b"image-a-bytes"
     assert media[1].media.input_file_content == b"image-b-bytes"
     expected_caption = guess_command_module.i18n.t(
-        "guess.hard_mode_won_caption", "en", winner="Guesser Name", title="Sousou no Frieren"
+        "guess.hard_mode_won_caption",
+        "en",
+        winner="Guesser Name",
+        title="Frieren: Beyond Journey's End",
     )
     assert media[0].caption == expected_caption
 
@@ -689,7 +692,7 @@ async def test_guess_command_hard_mode_unsolved_reveals_two_photo_album(
     assert media[0].media.input_file_content == b"image-a-bytes"
     assert media[1].media.input_file_content == b"image-b-bytes"
     expected_caption = guess_command_module.i18n.t(
-        "guess.hard_mode_unsolved_caption", "en", title="Sousou no Frieren"
+        "guess.hard_mode_unsolved_caption", "en", title="Frieren: Beyond Journey's End"
     )
     assert media[0].caption == expected_caption
 
