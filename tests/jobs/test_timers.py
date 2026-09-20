@@ -33,6 +33,24 @@ def _active_game(session_factory, **overrides) -> int:
         return game.id
 
 
+def _hard_mode_active_game(session_factory, **overrides) -> int:
+    """An ACTIVE hard-mode game — current_stage/original_image are
+    always None for these (Task 4: every autostart game is hard mode
+    and never populates original_image), which is exactly the
+    combination the old guards in inactivity.py/game_timeout.py used to
+    silently no-op on forever."""
+    defaults = {
+        "current_stage": None,
+        "original_image": None,
+        "hard_mode": True,
+        "hard_mode_turn": 1,
+        "hard_mode_image_a": b"hm-image-a",
+        "hard_mode_image_b": b"hm-image-b",
+    }
+    defaults.update(overrides)
+    return _active_game(session_factory, **defaults)
+
+
 def test_schedule_timeout_calls_run_once_with_the_games_job_name(session_factory) -> None:
     game_id = _active_game(session_factory)
     job_queue = MagicMock()
@@ -66,6 +84,9 @@ def _make_job_context(session_factory, *, game_id: int) -> MagicMock:
         "game_topic_id": 7,
     }
     context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+    context.bot.send_media_group = AsyncMock(
+        return_value=[MagicMock(message_id=998), MagicMock(message_id=999)]
+    )
     context.bot.pin_chat_message = AsyncMock()
     context.bot.unpin_chat_message = AsyncMock()
     context.job_queue = MagicMock()
@@ -137,6 +158,80 @@ async def test_timeout_job_callback_keeps_the_game_unsolved_when_the_reveal_time
         assert fetched is not None
         assert fetched.status == GameStatus.UNSOLVED
         assert fetched.original_image == b"file123"
+
+
+async def test_timeout_job_callback_acts_on_hard_mode_game_with_no_original_image(
+    session_factory,
+) -> None:
+    """Regression test for the second load-bearing bug this task fixes:
+    a hard-mode game's original_image is always None (it uses
+    hard_mode_image_a/_b instead), and the old guard
+    (`game.original_image is None`) silently no-opped every hard-mode
+    game forever — never timing it out. This must actually act, not
+    no-op."""
+    game_id = _hard_mode_active_game(session_factory)
+    context = _make_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_media_group.assert_awaited_once()
+    context.bot.send_photo.assert_not_awaited()
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.UNSOLVED
+
+
+async def test_timeout_job_callback_ends_hard_mode_game_unsolved_via_two_photo_reveal(
+    session_factory,
+) -> None:
+    game_id = _hard_mode_active_game(session_factory)
+    context = _make_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    _, kwargs = context.bot.send_media_group.call_args
+    media = kwargs["media"]
+    assert len(media) == 2
+    assert media[0].media.input_file_content == b"hm-image-a"
+    assert media[1].media.input_file_content == b"hm-image-b"
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.hard_mode_image_a is None
+        assert fetched.hard_mode_image_b is None
+
+
+async def test_timeout_job_callback_rolls_overthrow_for_hard_mode_game(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _hard_mode_active_game(session_factory)
+    context = _make_job_context(session_factory, game_id=game_id)
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.autostart.maybe_overthrow", fake_maybe_overthrow)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert len(calls) == 1
+    assert calls[0].get("winner_id") is None
+
+
+async def test_timeout_job_callback_is_a_noop_for_normal_game_with_no_original_image(
+    session_factory,
+) -> None:
+    """The normal-mode (non-hard-mode) no-op behavior for a missing
+    original_image must be unaffected by the hard-mode guard change."""
+    game_id = _active_game(session_factory, original_image=None)
+    context = _make_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_photo.assert_not_awaited()
+    context.bot.send_media_group.assert_not_awaited()
 
 
 async def test_rearm_pending_timeouts_schedules_every_active_game(session_factory) -> None:
@@ -799,6 +894,125 @@ async def test_inactivity_advance_job_callback_raises_runtime_error_if_no_image(
         )
 
     context.bot.send_photo.assert_not_awaited()
+
+
+async def test_inactivity_advance_job_callback_acts_on_hard_mode_game_with_no_current_stage(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression test for the load-bearing bug this task fixes: a
+    hard-mode game's current_stage is always None (Task 4: it uses
+    hard_mode_image_a/_b + hard_mode_turn instead), and the old guard
+    (`game.current_stage is None`) silently no-opped every hard-mode
+    game forever — never auto-advancing it. This must actually act, not
+    no-op."""
+    monkeypatch.setattr("nani_pix_bot.services.pixelate.pixelate", lambda *_: b"pixelated")
+    game_id = _hard_mode_active_game(session_factory)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_media_group.assert_awaited_once()
+    context.bot.send_photo.assert_not_awaited()
+
+
+async def test_inactivity_advance_job_callback_advances_hard_mode_turn_and_reschedules(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pixelate_mock = MagicMock(return_value=b"pixelated")
+    monkeypatch.setattr("nani_pix_bot.services.pixelate.pixelate", pixelate_mock)
+    game_id = _hard_mode_active_game(session_factory)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_media_group.assert_awaited_once()
+    _, kwargs = context.bot.send_media_group.call_args
+    media = kwargs["media"]
+    assert len(media) == 2
+    assert media[0].media.input_file_content == b"pixelated"
+    assert media[1].media.input_file_content == b"pixelated"
+    # Pixelated at turn 2's width (HARD_MODE_TURN_WIDTHS[2]), not turn 1's.
+    assert [call.args[1] for call in pixelate_mock.call_args_list] == [160, 160]
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.ACTIVE
+        assert fetched.hard_mode_turn == 2
+        assert fetched.wrong_guess_count == 0
+        assert fetched.inactivity_advance_at is not None
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert timeout_module.inactivity_advance_job_name(game_id) in names
+
+
+async def test_inactivity_advance_job_callback_ends_hard_mode_unsolved_from_turn_two(
+    session_factory,
+) -> None:
+    game_id = _hard_mode_active_game(session_factory, hard_mode_turn=2)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_media_group.assert_awaited_once()
+    _, kwargs = context.bot.send_media_group.call_args
+    media = kwargs["media"]
+    assert media[0].media.input_file_content == b"hm-image-a"
+    assert media[1].media.input_file_content == b"hm-image-b"
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.UNSOLVED
+        assert fetched.hard_mode_image_a is None
+        assert fetched.hard_mode_image_b is None
+
+
+async def test_inactivity_advance_job_callback_rolls_overthrow_on_hard_mode_unsolved(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _hard_mode_active_game(session_factory, hard_mode_turn=2)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+    calls = []
+
+    async def fake_maybe_overthrow(context, session_factory, **kwargs):
+        calls.append(kwargs)
+
+    # Patched on autostart.py, not inactivity.py — see the identical
+    # non-hard-mode test above for why.
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.autostart.maybe_overthrow", fake_maybe_overthrow)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert len(calls) == 1
+    assert calls[0].get("winner_id") is None
+
+
+async def test_inactivity_advance_job_callback_keeps_hard_mode_turn_advance_when_post_times_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("nani_pix_bot.services.pixelate.pixelate", lambda *_: b"pixelated")
+    game_id = _hard_mode_active_game(session_factory)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+    context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.ACTIVE
+        assert fetched.hard_mode_turn == 2
+
+
+async def test_inactivity_advance_job_callback_is_a_noop_for_hard_mode_game_if_not_active(
+    session_factory,
+) -> None:
+    game_id = _hard_mode_active_game(session_factory, status=GameStatus.WON, winner_id=1)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    context.bot.send_photo.assert_not_awaited()
+    context.bot.send_media_group.assert_not_awaited()
 
 
 def _make_post_image_context(session_factory) -> MagicMock:
