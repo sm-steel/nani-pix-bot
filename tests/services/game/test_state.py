@@ -10,7 +10,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services.game import turns
+from nani_pix_bot.services.game import state, turns
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
@@ -952,6 +952,137 @@ def test_advance_stage_raises_runtime_error_when_current_stage_is_none(
 
     with pytest.raises(RuntimeError, match="no current_stage"):
         game_service.advance_stage(game)
+
+
+def test_record_guess_dispatches_to_hard_mode_without_raising_for_missing_stage(
+    session: Session,
+) -> None:
+    # The regression this dispatch guard exists to prevent: a hard-mode
+    # game's current_stage stays None forever (activate_game sets
+    # hard_mode_turn instead — see below), so without the guard at the
+    # top of record_guess, a hard-mode /guess would hit the
+    # `current_stage is None` check further down and raise ValueError,
+    # the same one test_record_guess_rejects_a_game_with_no_current_stage
+    # above asserts for a genuinely-broken normal game.
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = Game(
+        starter_id=1,
+        status=GameStatus.ACTIVE,
+        hard_mode=True,
+        hard_mode_turn=1,
+        current_stage=None,
+        title_english="Frieren: Beyond Journey's End",
+    )
+    session.add(game)
+    session.commit()
+
+    outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="attack on titan")
+    session.commit()
+
+    assert outcome is game_service.GuessOutcome.TURN_ADVANCED
+    assert game.hard_mode_turn == 2
+
+
+def test_force_win_awards_double_for_a_hard_mode_game(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+    game = Game(
+        starter_id=1,
+        status=GameStatus.ACTIVE,
+        hard_mode=True,
+        hard_mode_turn=1,
+        title_english="Frieren: Beyond Journey's End",
+    )
+    session.add(game)
+    session.commit()
+
+    game_service.force_win(session, game, winner_id=2)
+    session.commit()
+
+    assert game.status == GameStatus.WON
+    winner = session.get(Player, 2)
+    assert winner is not None
+    assert winner.wins == 2
+
+
+def test_force_win_awards_single_for_a_normal_game(session: Session) -> None:
+    game = _active_game(session)
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+
+    game_service.force_win(session, game, winner_id=2)
+    session.commit()
+
+    winner = session.get(Player, 2)
+    assert winner is not None
+    assert winner.wins == 1
+
+
+def test_win_default_award_is_one(session: Session) -> None:
+    # Direct unit test on _win()'s own default, guarding force_win's
+    # normal-mode branch above against a future accidental change to
+    # the default itself.
+    game = _active_game(session)
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+
+    state._win(session, game, winner_id=2)
+    session.commit()
+
+    winner = session.get(Player, 2)
+    assert winner is not None
+    assert winner.wins == 1
+
+
+def test_win_explicit_award_is_honored(session: Session) -> None:
+    game = _active_game(session)
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+
+    state._win(session, game, winner_id=2, award=5)
+    session.commit()
+
+    winner = session.get(Player, 2)
+    assert winner is not None
+    assert winner.wins == 5
+
+
+def test_activate_game_sets_hard_mode_turn_and_leaves_current_stage_unset(
+    session: Session,
+) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.add(TurnState(id=1, next_starter_id=1))
+    session.commit()
+    game = Game(starter_id=1, status=GameStatus.SETUP, hard_mode=True)
+    session.add(game)
+    session.commit()
+
+    game_service.activate_game(session, game)
+    session.commit()
+
+    assert game.status == GameStatus.ACTIVE
+    assert game.hard_mode_turn == 1
+    assert game.current_stage is None
+
+
+def test_activate_game_sets_current_stage_and_leaves_hard_mode_turn_unset_for_a_normal_game(
+    session: Session,
+) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.add(TurnState(id=1, next_starter_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    session.commit()
+    game_service.stage_result(game, _FRIEREN, source=Provider.ANILIST)
+
+    game_service.activate_game(session, game)
+    session.commit()
+
+    assert game.status == GameStatus.ACTIVE
+    assert game.current_stage == PixelStage.STAGE_1
+    assert game.hard_mode_turn is None
 
 
 def test_record_guess_wrong_guess_limit_hit_delegates_to_advance_stage(session: Session) -> None:
