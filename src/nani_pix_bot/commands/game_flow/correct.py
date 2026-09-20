@@ -44,21 +44,8 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         target = await _resolve_target_player(session, message, context, target_username, lang)
         if target is None:
             return
-        # _validate_active_game_for_starter already checked this — restores
-        # the type narrowing lost by returning `game` across a function
-        # boundary.
-        if game.original_image is None:
-            raise RuntimeError(
-                "game.original_image is None despite _validate_active_game_for_starter's check"
-            )
         game_id = game.id
-        original_bytes = game.original_image
-        caption = i18n.t(
-            "correct.caption",
-            lang,
-            winner=target_username,
-            title=game_service.display_title(game, lang),
-        )
+        original_bytes, photos, caption = _prepare_correct_reveal(game, target_username, lang)
 
         game_service.force_win(session, game, winner_id=target.telegram_user_id)
         logger.info(
@@ -75,9 +62,14 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Block closed and committed above — the win is durable now regardless
     # of whether the reveal below actually reaches the group (see
     # post_current_image's docstring).
-    sent = await timeout_module.post_current_image(
-        context, session_factory, photo=original_bytes, caption=caption
-    )
+    if photos is not None:
+        sent = await timeout_module.post_current_images(
+            context, session_factory, photos=photos, caption=caption
+        )
+    else:
+        sent = await timeout_module.post_current_image(
+            context, session_factory, photo=original_bytes, caption=caption
+        )
     timeout_module.clear_image_if_sent(session_factory, game_id, sent)
     # Fire-and-forget — see guess.py's identical comment: maybe_overthrow()
     # can run several real HTTP round-trips, and awaiting it inline would
@@ -90,6 +82,33 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         ),
         update=update,
     )
+
+
+def _prepare_correct_reveal(
+    game: Game, target_username: str, lang: str
+) -> tuple[bytes | None, tuple[bytes, bytes] | None, str]:
+    """Builds the reveal payload (exactly one of the first two return
+    values is populated) and caption for the win /correct just forced —
+    a hard-mode game reveals its stored screenshot pair via
+    post_current_images (a 2-photo album), a normal-mode game reveals
+    original_image via post_current_image — same one-of-two-fields
+    dispatch shape as guess.py's _Announcement/_send_announcement.
+    _validate_active_game_for_starter already checked original_image is
+    set for a normal-mode game, so the RuntimeError here restores the
+    type narrowing lost by returning `game` across that function
+    boundary — it should never actually fire."""
+    title = game_service.display_title(game, lang)
+    if game.hard_mode:
+        photos = game_service.hard_mode_reveal_images(game)
+        caption = i18n.t("correct.hard_mode_caption", lang, winner=target_username, title=title)
+        return None, photos, caption
+    original_bytes = game.original_image
+    if original_bytes is None:
+        raise RuntimeError(
+            "game.original_image is None despite _validate_active_game_for_starter's check"
+        )
+    caption = i18n.t("correct.caption", lang, winner=target_username, title=title)
+    return original_bytes, None, caption
 
 
 async def _validate_active_game_for_starter(session, message, user, lang: str) -> Game | None:
@@ -110,7 +129,7 @@ async def _validate_active_game_for_starter(session, message, user, lang: str) -
         logger.warning("{} tried /correct on game {} before any guess", user.id, game.id)
         await message.reply_text(i18n.t("correct.no_guesses_yet", lang))
         return None
-    if game.original_image is None:
+    if not game.hard_mode and game.original_image is None:
         return None  # shouldn't happen for an ACTIVE game — defensive guard
     return game
 

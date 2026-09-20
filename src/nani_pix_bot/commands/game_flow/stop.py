@@ -28,10 +28,18 @@ from nani_pix_bot.services import i18n, settings
 @dataclass(frozen=True)
 class _StoppedGame:
     """What _announce_stop needs, captured while the row was still live
-    — it's already deleted by the time this runs."""
+    — it's already deleted by the time this runs.
+
+    At most one of `original_bytes`/`hard_mode_photos` is populated for
+    a reveal: a normal-mode game carries `original_bytes` (posted via
+    post_current_image), a hard-mode game carries `hard_mode_photos`
+    (posted via post_current_images as a 2-photo album) — same
+    exactly-one-of-two-fields dispatch shape as guess.py's
+    _Announcement."""
 
     title: str
-    original_bytes: bytes | None
+    original_bytes: bytes | None = None
+    hard_mode_photos: tuple[bytes, bytes] | None = None
 
 
 async def _may_stop(
@@ -99,6 +107,20 @@ async def _handle_cancel(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     await query.edit_message_text(i18n.t("stop.canceled", lang))
 
 
+def _hard_mode_reveal_bytes(game) -> tuple[bytes, bytes] | None:
+    """What a hard-mode game's stop-and-reveal should post — None when
+    either stored screenshot is already gone, mirroring normal-mode's
+    `game.original_image is not None` check with
+    has_hard_mode_reveal_images since the hard-mode pair is two nullable
+    columns rather than one. Extracted out of _handle_confirm purely to
+    keep its own cyclomatic complexity under qlty's threshold, same
+    reasoning as guess.py's _require_original_image (see CLAUDE.md's
+    Tooling section)."""
+    if not game_service.has_hard_mode_reveal_images(game):
+        return None
+    return game_service.hard_mode_reveal_images(game)
+
+
 async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, reveal: bool) -> None:
     """Both stop buttons land here — the permission re-check, timer
     cancellation, row deletion and turn-opening are identical; only the
@@ -122,11 +144,17 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
         game_id = game.id
         was_active = game.status == GameStatus.ACTIVE
         title = game_service.display_title(game, lang)
-        # Forces the deferred original_image column now, while the row is
-        # still live — _announce_stop runs after this session (and the row
-        # itself) is gone.
-        can_reveal_now = reveal and game.original_image is not None
-        original_bytes = game.original_image if can_reveal_now else None
+        # Forces the deferred original_image/hard_mode_image_a/_b columns
+        # now, while the row is still live — _announce_stop runs after
+        # this session (and the row itself) is gone.
+        if game.hard_mode:
+            hard_mode_photos = _hard_mode_reveal_bytes(game) if reveal else None
+            can_reveal_now = reveal and hard_mode_photos is not None
+            original_bytes = None
+        else:
+            can_reveal_now = reveal and game.original_image is not None
+            original_bytes = game.original_image if can_reveal_now else None
+            hard_mode_photos = None
         if reveal and not can_reveal_now:
             logger.warning("Game {}: reveal requested but no image is stored", game_id)
         if was_active:
@@ -140,7 +168,9 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
     # are durable now regardless of whether the announcement below
     # actually reaches the group (see post_current_image's docstring).
     timeout_module.schedule_idle_autostart(context.job_queue, turn_state)
-    stopped_game = _StoppedGame(title=title, original_bytes=original_bytes)
+    stopped_game = _StoppedGame(
+        title=title, original_bytes=original_bytes, hard_mode_photos=hard_mode_photos
+    )
     revealed = await _announce_stop(context, session_factory, stopped_game, lang, reveal)
     logger.info(
         "Game {} stopped by {} (was {}, answer {})",
@@ -171,9 +201,20 @@ async def _announce_stop(
     the same `post_current_image` the win/unsolved/timeout reveals use, so
     it becomes the topic's pinned image too. That caption already says the
     turn is open, so the reveal path posts one message rather than a photo
-    plus a duplicate notice. Falls back to the plain notice if the button
-    was a stale tap on a game that no longer had its image (see the
-    caller's own warning log for that case)."""
+    plus a duplicate notice. A hard-mode game instead posts its stored
+    screenshot pair as a 2-photo album via `post_current_images`, same
+    caption-already-says-the-turn-is-open reasoning. Falls back to the
+    plain notice if the button was a stale tap on a game that no longer
+    had its image(s) (see the caller's own warning log for that case)."""
+    if reveal and stopped_game.hard_mode_photos is not None:
+        sent = await timeout_module.post_current_images(
+            context,
+            session_factory,
+            photos=stopped_game.hard_mode_photos,
+            caption=i18n.t("stop.hard_mode_stopped_reveal_caption", lang, title=stopped_game.title),
+        )
+        return sent is not None
+
     if reveal and stopped_game.original_bytes is not None:
         sent = await timeout_module.post_current_image(
             context,
