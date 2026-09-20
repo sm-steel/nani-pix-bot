@@ -202,6 +202,17 @@ async def random_anime(client: httpx.AsyncClient) -> ShikimoriResult | None:
     completed + rewatching status counts) to avoid anime almost nobody
     has actually watched.
 
+    Returning None here (score/watched-floor rejection, or Shikimori
+    itself returning nothing) does NOT retry within Shikimori — this
+    function makes exactly one request per call, full stop. The sole
+    caller, `services/game/autostart.py::_pick_random_anime`, is what
+    falls through to Jikan's unfiltered `/random/anime` within the
+    *same* autostart attempt when this returns None. Jikan's fallback
+    currently applies no popularity floor of its own, so a Shikimori
+    pick rejected for being under-watched can still surface an obscure
+    title via that fallback — tracked as a follow-up, not fixed here:
+    https://github.com/sm-steel/nani-pix-bot/issues/165.
+
     Deliberately NOT `@cache.cached()` — see test_random_anime_is_not_cached_across_calls."""
     variables = {"minScore": RANDOM_PICK_MIN_SCORE}
     data = await graphql.request(_API, client, query=_RANDOM_QUERY, variables=variables)
@@ -321,12 +332,21 @@ def _watched_count(raw: dict) -> int:
     """Sum of `completed` + `rewatching` counts from `raw["statusesStats"]`
     — the two statuses that mean "has actually watched this," as
     opposed to `planned`/`watching`/`on_hold`/`dropped`. Malformed
-    entries are dropped with a WARNING via `parsing.parse_entries`,
-    same defensive handling `screenshots()` already gives its own list
-    field; a missing/non-list `statusesStats` (should not happen per
-    the schema, but this API's shape has surprised this codebase
-    before — see module docstring) is treated as 0 watched, which
-    naturally fails the floor rather than raising."""
+    individual entries are dropped with a WARNING via
+    `parsing.parse_entries`, the same per-entry handling `screenshots()`
+    gives its own list field.
+
+    A missing or non-list `statusesStats` itself (should not happen per
+    the schema, but this API's shape has surprised this codebase before
+    — see module docstring) is handled differently from `screenshots()`,
+    though, not "the same": `screenshots()` routes a non-list value into
+    `parsing.parse_entries`, which raises `RuntimeError` ("service is
+    down"). This function instead logs a WARNING and returns 0 ("treat
+    as 0 watched"), which naturally fails the floor rather than raising
+    — a conscious departure, since a random pick quietly falling
+    through to Jikan (see `random_anime()`'s docstring) is a better
+    failure mode here than aborting the whole autostart attempt on a
+    schema surprise in a field this function alone depends on."""
 
     def parse_one_status_entry(entry: dict) -> int | None:
         """Extract count from one statusesStats entry if it's completed or
@@ -338,6 +358,13 @@ def _watched_count(raw: dict) -> int:
 
     entries = raw.get("statusesStats")
     if not isinstance(entries, list):
+        logger.warning(
+            "Shikimori id {} sent a {} for statusesStats, expected an array"
+            " — treating watched count as 0: {!r}",
+            raw.get("id"),
+            type(entries).__name__,
+            entries,
+        )
         return 0
     counts = parsing.parse_entries(_API_NAME, entries, parse_one_status_entry)
     return sum(counts)
