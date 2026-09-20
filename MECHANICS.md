@@ -655,8 +655,9 @@ and both no-ops while a game is already `SETUP`/`ACTIVE`.
   "Ending unsolved" above) — a 24-hour absolute deadline is armed
   (`turn_state.turn_opened_at`/`autostart_deadline_at`). If nobody has
   started a game by the time it fires, and autostart is enabled, the bot
-  picks a random anime and screenshot for itself (see below) and starts
-  a game exactly as if it had DMed itself a screenshot. A failed pick
+  picks a random anime and screenshot pair for itself (see below) and
+  starts a **HARD MODE** game (see "HARD MODE" below) exactly as if it
+  had DMed itself the screenshots. A failed pick
   (every provider down, or no screenshot found for the anime it randomly
   landed on) doesn't go silent — it retries again in 1 hour rather than
   waiting for the next natural turn-open event. Any human starting a game
@@ -676,22 +677,28 @@ and both no-ops while a game is already `SETUP`/`ACTIVE`.
   (turn already open to anyone), the bot simply claims that already-open
   turn instead of leaving it for a human.
 
-**Picking a random anime + screenshot** (`services/game/autostart.py`,
+**Picking a random anime + screenshot pair** (`services/game/autostart.py`,
 framework-agnostic, no DB writes until a full pick is in hand): a random
 Shikimori anime (`order: random`, `censored: true` — excludes hentai/
 yaoi/yuri, the same scope Jikan's own filter deliberately matches — see
 its docstring), falling back to Jikan's `/random/anime` on any failure or
-empty result, then a screenshot for it via the same same-provider-first,
-cross-search-fallback order human-started games use (see "Picking a
-screenshot" above). Up to 3 different-anime attempts per firing
-(`AUTOSTART_ATTEMPT_LIMIT`) before giving up silently for that firing —
-caps how many API calls one attempt can cost if a provider is down or an
-anime keeps coming up with no screenshots anywhere.
+empty result, then a screenshot **pair** for it — two distinct screenshots
+from the same provider, since HARD MODE (see below) always needs a
+genuine pair and never the same screenshot twice — via the same
+same-provider-first, cross-search-fallback provider order human-started
+games use (see "Picking a screenshot" above). Up to 3 different-anime
+attempts per firing (`AUTOSTART_ATTEMPT_LIMIT`) before giving up silently
+for that firing — caps how many API calls one attempt can cost if a
+provider is down or an anime keeps coming up with no screenshots
+anywhere.
 
-**A bot-started game plays out identically to a human-started one** in
-every other respect — same pixelation stages, same guess matching, same
-timers — with one deliberate exception: **`/correct` has no recourse on
-it.** `/correct`'s starter-only check (`user.id == game.starter_id`)
+**A bot-started game plays out under a different ruleset than a
+human-started one — HARD MODE (see below) — for the pixelation/turn
+structure itself**, but everything else — guess matching, the 2-day
+timeout, the inactivity clock, turn handoff on a win — applies exactly as
+it does to a normal game. The one deliberate permission gap is the same
+either way: **`/correct` has no recourse on a bot-started game.**
+`/correct`'s starter-only check (`user.id == game.starter_id`)
 means only the game's starter may force a win, and for a bot-started
 game the starter *is* the bot — no human can ever satisfy that check.
 This is an accepted, deliberate limitation, not a bug: extending
@@ -708,6 +715,51 @@ other starter, and `/stop`'s existing starter-or-admin check
 (`commands/game_flow/stop.py::_may_stop`) already covers a bot-started
 game correctly — no human is ever "the starter" of one, so only a group
 admin/owner can stop it (the bot itself never calls `/stop`).
+
+## HARD MODE
+
+**Status: Implemented.**
+
+Every bot-autostarted game — both "Bot-initiated games" paths above,
+idle auto-start and overthrow, with no exceptions — unconditionally uses
+**HARD MODE**, a different, harder ruleset than the normal 5-stage
+pixelation reveal described in "Pixelation stages" above. A
+player-started game (`/newgame`, or a DM'd screenshot) never uses HARD
+MODE — it's exclusively how the bot's own games play.
+
+HARD MODE replaces stages with **turns**:
+
+- **2 turns total** (`HARD_MODE_TURN_COUNT`), not 5 pixelation stages.
+- Each turn shows **2 different screenshots of the same anime, from the
+  same provider**, posted together as a single Telegram photo album
+  (`post_current_images`) rather than one image at a time — see "Picking
+  a random anime + screenshot pair" above for how that pair is sourced.
+  Both screenshots in the pair are pixelated to that turn's width and
+  live for the whole game on `Game.hard_mode_image_a`/`hard_mode_image_b`
+  (`original_image` is left unpopulated for these games).
+- Each turn is pixelated at its own **fixed target width**
+  (`HARD_MODE_TURN_WIDTHS` in `services/game/hard_mode.py`): turn 1 is
+  64px — the same width as a normal game's `STAGE_1`, not harder — and
+  turn 2 is 160px, comfortably clearer. HARD MODE's difficulty doesn't
+  come from a harsher pixelation width than a normal game starts at; it
+  comes from the guess budget and turn cap below.
+- **1 wrong guess allowed per turn** (`HARD_MODE_WRONG_GUESS_LIMIT`)
+  before it advances (turn 1 → turn 2) or, on turn 2, ends the game
+  unsolved — the same shape as stage exhaustion in "Ending unsolved"
+  above, just against `Game.hard_mode_turn` instead of `current_stage`.
+  This is a **fixed constant, not admin-configurable** — `/stageconfig`,
+  `/setstageconfig`, and `/setstage` only ever read/write the
+  `stage_config` table, which a HARD MODE game never consults.
+- A correct guess awards **+2 wins** (`HARD_MODE_WIN_AWARD`) instead of
+  the normal +1.
+
+Everything else about a HARD MODE game is unchanged from a normal one:
+guess matching, the 2-day timeout, the inactivity nudge/auto-advance
+clock, `/stop`, and turn handoff on a win all apply exactly as described
+above. The one exception is **`/correct`, which is not currently usable
+on a HARD MODE game** — see "Bot-initiated games" above for why (its
+starter-only check can never be satisfied by a human, since the starter
+of a bot-autostarted game is the bot itself).
 
 ## Leaderboard
 

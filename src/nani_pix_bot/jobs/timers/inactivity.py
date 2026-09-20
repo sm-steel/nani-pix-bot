@@ -1,14 +1,20 @@
 """The 3h-nudge/6h-auto-advance inactivity timers — see MECHANICS.md's
 "Inactivity" section."""
 
+from dataclasses import dataclass
 from typing import cast
 
 from loguru import logger
+from sqlalchemy.orm import Session
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import seconds_until
-from nani_pix_bot.jobs.timers.current_image import clear_image_if_sent, post_current_image
+from nani_pix_bot.jobs.timers.current_image import (
+    clear_image_if_sent,
+    post_current_image,
+    post_current_images,
+)
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
@@ -105,12 +111,84 @@ async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> N
         game_service.clear_inactivity_nudge(game)
 
 
+@dataclass(frozen=True)
+class _HardModeAnnouncement:
+    """What a hard-mode turn-advance/UNSOLVED outcome needs to post via
+    post_current_images once its session has committed — the hard-mode
+    analogue of guess.py's _Announcement, carrying a screenshot pair
+    instead of a single photo."""
+
+    photos: tuple[bytes, bytes]
+    caption: str
+
+
+def _hard_mode_turn_advance(
+    context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
+) -> _HardModeAnnouncement:
+    """Turn 1 -> 2 advance — the hard-mode analogue of state.py's
+    advance_stage for the normal path: resets wrong_guess_count,
+    re-pixelates both stored screenshots at the new turn's width, and
+    reschedules the inactivity timers exactly like the normal
+    stage-advance path does below."""
+    game.hard_mode_turn = game_service.HARD_MODE_TURN_COUNT
+    game.wrong_guess_count = 0
+    image_a, image_b = game_service.hard_mode_reveal_images(game)
+    width = game_service.hard_mode_turn_width(game)
+    pixelated_a = pixelate_service.pixelate(image_a, width, game.pixel_algorithm)
+    pixelated_b = pixelate_service.pixelate(image_b, width, game.pixel_algorithm)
+    progress = game_service.hard_mode_turn_progress(game)
+    caption = i18n.t(
+        "guess.hard_mode_inactivity_advanced_caption",
+        lang,
+        stage=progress.number,
+        total=progress.total,
+    )
+    game_service.reset_inactivity_clock(game)
+    schedule_inactivity_timers(context.job_queue, game)
+    return _HardModeAnnouncement(photos=(pixelated_a, pixelated_b), caption=caption)
+
+
+def _hard_mode_unsolved_reveal(game: Game, lang: str) -> _HardModeAnnouncement:
+    """Turn-2-exhausted ending — the hard-mode analogue of the normal
+    UNSOLVED-by-inactivity path below: reveals both stored screenshots
+    unpixelated via post_current_images, same as the normal path's
+    single unpixelated original_image reveal."""
+    photos = game_service.hard_mode_reveal_images(game)
+    game_service.force_unsolved(game)
+    caption = i18n.t(
+        "guess.hard_mode_unsolved_caption", lang, title=game_service.display_title(game, lang)
+    )
+    return _HardModeAnnouncement(photos=photos, caption=caption)
+
+
+def _hard_mode_inactivity_outcome(
+    session: Session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
+) -> tuple[game_service.GuessOutcome, _HardModeAnnouncement]:
+    """Dispatches a hard-mode game's inactivity-advance between the
+    turn 1->2 advance and the turn-2-exhausted UNSOLVED ending — the
+    hard-mode analogue of the direct game_service.advance_stage(game)
+    call the normal-mode path below makes."""
+    progress = game_service.hard_mode_turn_progress(game)
+    if progress.number < game_service.HARD_MODE_TURN_COUNT:
+        return (
+            game_service.GuessOutcome.TURN_ADVANCED,
+            _hard_mode_turn_advance(context, game, lang),
+        )
+
+    announcement = _hard_mode_unsolved_reveal(game, lang)
+    game_service.mark_turn_open_if_unassigned(session)
+    logger.info("Game {} auto-ended unsolved after repeated inactivity (hard mode)", game.id)
+    return game_service.GuessOutcome.UNSOLVED, announcement
+
+
 async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires INACTIVITY_ADVANCE_DELAY after the last guess (or
     activation) on an ACTIVE game, with no guess in between to reset the
     clock. Advances the stage exactly like a guess-driven exhaustion
     would (via the shared advance_stage()), or ends the game unsolved
-    if it was already on the last stage.
+    if it was already on the last stage. A hard-mode game (always
+    current_stage is None) is advanced/ended the same way via its own
+    turn-based analogue instead — see _hard_mode_inactivity_outcome.
 
     Imports maybe_overthrow lazily (function-local, not at module level):
     autostart.py already imports schedule_inactivity_timers from this
@@ -128,53 +206,93 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
     game_id = cast(int, job.data)
 
     session_factory = context.bot_data["session_factory"]
+    hard_mode_announcement: _HardModeAnnouncement | None = None
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         game = session.get(Game, game_id)
-        if game is None or game.status != GameStatus.ACTIVE or game.current_stage is None:
+        if (
+            game is None
+            or game.status != GameStatus.ACTIVE
+            or (not game.hard_mode and game.current_stage is None)
+        ):
             logger.debug(
                 "Inactivity advance fired for game {} but it's not ACTIVE — no-op", game_id
             )
             return
-        if game.original_image is None:
-            # Genuine internal invariant, not a type-narrowing artifact: an
-            # ACTIVE game always has its bytes (see state.py's
-            # has_answer_to_reveal docstring), and unlike guess.py's /
-            # correct's handlers, nothing earlier in this background job
-            # callback loaded or checked original_image — there is no
-            # synchronous caller here to otherwise notice a silent failure.
-            msg = f"Game {game_id}: inactivity-advance fired but original_image is missing"
-            logger.error(msg)
-            raise RuntimeError(msg)
 
-        outcome = game_service.advance_stage(game)
-        if outcome is game_service.GuessOutcome.UNSOLVED:
-            game_service.mark_turn_open_if_unassigned(session)
-            logger.info("Game {} auto-ended unsolved after repeated inactivity", game_id)
-            original_bytes = game.original_image
-            unsolved_caption = i18n.t(
-                "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
+        if game.hard_mode:
+            outcome, hard_mode_announcement = _hard_mode_inactivity_outcome(
+                session, context, game, lang
             )
         else:
-            logger.info(
-                "Game {} auto-advanced to stage {} after inactivity", game_id, game.current_stage
-            )
-            target_width = stage_config.get_stage_config(session, game.current_stage).target_width
-            pixelated = pixelate_service.pixelate(
-                game.original_image, target_width, game.pixel_algorithm
-            )
-            progress = game_service.stage_progress(session, game)
-            advanced_caption = i18n.t(
-                "guess.inactivity_advanced_caption",
-                lang,
-                stage=progress.number,
-                total=progress.total,
-            )
-            game_service.reset_inactivity_clock(game)
-            schedule_inactivity_timers(context.job_queue, game)
-    # Block closed and committed above — the stage advance (or UNSOLVED
-    # ending) is durable now regardless of whether the announcement below
-    # actually reaches the group (see post_current_image's docstring).
+            if game.current_stage is None:
+                # Restores the type narrowing the guard above lost for ty
+                # once it became a compound `not game.hard_mode and ...`
+                # condition split across the game.hard_mode branch below —
+                # unreachable in practice, since that guard already
+                # returned for exactly this (non-hard-mode, no
+                # current_stage) combination. Same "genuine internal
+                # invariant, not a type-narrowing artifact" reasoning as
+                # the original_image check right below.
+                msg = f"Game {game_id}: inactivity-advance fired with no current_stage"
+                logger.error(msg)
+                raise RuntimeError(msg)
+            if game.original_image is None:
+                # Genuine internal invariant, not a type-narrowing artifact: an
+                # ACTIVE game always has its bytes (see state.py's
+                # has_answer_to_reveal docstring), and unlike guess.py's /
+                # correct's handlers, nothing earlier in this background job
+                # callback loaded or checked original_image — there is no
+                # synchronous caller here to otherwise notice a silent failure.
+                msg = f"Game {game_id}: inactivity-advance fired but original_image is missing"
+                logger.error(msg)
+                raise RuntimeError(msg)
+
+            outcome = game_service.advance_stage(game)
+            if outcome is game_service.GuessOutcome.UNSOLVED:
+                game_service.mark_turn_open_if_unassigned(session)
+                logger.info("Game {} auto-ended unsolved after repeated inactivity", game_id)
+                original_bytes = game.original_image
+                unsolved_caption = i18n.t(
+                    "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
+                )
+            else:
+                logger.info(
+                    "Game {} auto-advanced to stage {} after inactivity",
+                    game_id,
+                    game.current_stage,
+                )
+                target_width = stage_config.get_stage_config(
+                    session, game.current_stage
+                ).target_width
+                pixelated = pixelate_service.pixelate(
+                    game.original_image, target_width, game.pixel_algorithm
+                )
+                progress = game_service.stage_progress(session, game)
+                advanced_caption = i18n.t(
+                    "guess.inactivity_advanced_caption",
+                    lang,
+                    stage=progress.number,
+                    total=progress.total,
+                )
+                game_service.reset_inactivity_clock(game)
+                schedule_inactivity_timers(context.job_queue, game)
+    # Block closed and committed above — the stage/turn advance (or
+    # UNSOLVED ending) is durable now regardless of whether the
+    # announcement below actually reaches the group (see
+    # post_current_image's docstring).
+    if hard_mode_announcement is not None:
+        sent = await post_current_images(
+            context,
+            session_factory,
+            photos=hard_mode_announcement.photos,
+            caption=hard_mode_announcement.caption,
+        )
+        if outcome is game_service.GuessOutcome.UNSOLVED:
+            clear_image_if_sent(session_factory, game_id, sent)
+            await maybe_overthrow(context, session_factory)
+        return
+
     if outcome is game_service.GuessOutcome.UNSOLVED:
         sent = await post_current_image(
             context, session_factory, photo=original_bytes, caption=unsolved_caption

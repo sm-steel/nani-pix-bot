@@ -57,6 +57,7 @@ class GuessOutcome(enum.Enum):
     WON = "won"
     WRONG = "wrong"
     STAGE_ADVANCED = "stage_advanced"
+    TURN_ADVANCED = "turn_advanced"
     UNSOLVED = "unsolved"
 
 
@@ -284,7 +285,10 @@ def activate_game(session: Session, game: Game) -> None:
     stage_result): move to the first stage and open the turn (the
     designated starter's turn is now consumed)."""
     game.status = GameStatus.ACTIVE
-    game.current_stage = STAGE_ORDER[0]
+    if game.hard_mode:
+        game.hard_mode_turn = 1
+    else:
+        game.current_stage = STAGE_ORDER[0]
     game.wrong_guess_count = 0
     game.scheduled_end_at = datetime.now(UTC) + TIMEOUT_DURATION
     reset_inactivity_clock(game)
@@ -297,6 +301,22 @@ def activate_game(session: Session, game: Game) -> None:
 def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: str) -> GuessOutcome:
     """Apply one /guess attempt to an ACTIVE game — see MECHANICS.md's
     "Guess matching" and "Pixelation stages" sections."""
+    if game.hard_mode:
+        # Local import, not module-level: hard_mode.py imports this
+        # module at module level (it's the primary direction of the
+        # dependency — see its own docstring), so a module-level import
+        # back here would be a genuine circular import. Same idiom, same
+        # reasoning, as models/enums.py's Provider.screenshot_module/
+        # search_module properties.
+        from nani_pix_bot.services.game import hard_mode
+
+        outcome = hard_mode.record_hard_mode_guess(
+            session, game, guesser_id=guesser_id, guess_text=guess_text
+        )
+        if outcome is GuessOutcome.UNSOLVED:
+            turns.mark_turn_open_if_unassigned(session)
+        return outcome
+
     if game.current_stage is None:
         msg = f"record_guess called on game {game.id} with no current_stage (not ACTIVE?)"
         logger.warning(msg)
@@ -426,15 +446,21 @@ def stage_progress(session: Session, game: Game) -> StageProgress:
 def force_win(session: Session, game: Game, *, winner_id: int) -> None:
     """The author-override path (/correct) — identical end state to an
     automatic match in record_guess, just triggered without one."""
-    _win(session, game, winner_id=winner_id)
+    if game.hard_mode:
+        # Local import — see record_guess's identical guard above for why.
+        from nani_pix_bot.services.game import hard_mode
+
+        _win(session, game, winner_id=winner_id, award=hard_mode.HARD_MODE_WIN_AWARD)
+    else:
+        _win(session, game, winner_id=winner_id)
 
 
-def _win(session: Session, game: Game, *, winner_id: int) -> None:
+def _win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> None:
     game.status = GameStatus.WON
     game.winner_id = winner_id
 
     winner = players.get_or_create_player(session, winner_id)
-    winner.wins += 1
+    winner.wins += award
 
     turns.set_next_starter(session, winner_id)
     logger.info("Game {} won by player {}", game.id, winner_id)

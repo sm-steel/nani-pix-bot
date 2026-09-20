@@ -281,6 +281,23 @@ def test_new_game_defaults_to_the_default_pixel_algorithm(session: Session) -> N
     assert fetched.pixel_algorithm is PixelAlgorithm.MEDIAN
 
 
+def test_new_game_defaults_to_normal_mode_with_no_hard_mode_images(session: Session) -> None:
+    """A normal (non-bot-autostarted) game must never populate the
+    hard-mode columns — see models/game.py's docstring above them."""
+    starter = _make_starter(session)
+    game = Game(starter_id=starter.telegram_user_id, original_image=b"file123")
+    session.add(game)
+    session.commit()
+
+    fetched = session.get(Game, game.id)
+
+    assert fetched is not None
+    assert fetched.hard_mode is False
+    assert fetched.hard_mode_turn is None
+    assert fetched.hard_mode_image_a is None
+    assert fetched.hard_mode_image_b is None
+
+
 def test_game_remembers_a_chosen_pixel_algorithm(session: Session) -> None:
     """Every stage after the first is rendered later, from a fresh
     session — so the starter's pick has to survive on the row rather than

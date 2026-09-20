@@ -41,6 +41,9 @@ def _make_context(session_factory, *, admin_ids: set[int] | None = None) -> Magi
     context.job_queue.get_jobs_by_name.return_value = []
     context.bot.send_message = AsyncMock()
     context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+    context.bot.send_media_group = AsyncMock(
+        return_value=[MagicMock(message_id=998), MagicMock(message_id=999)]
+    )
     context.bot.pin_chat_message = AsyncMock()
     context.bot.unpin_chat_message = AsyncMock()
 
@@ -61,6 +64,30 @@ def _active_game(session_factory, *, starter_id: int = 1, **overrides) -> int:
             "original_image": b"file123",
             "status": GameStatus.ACTIVE,
             "current_stage": PixelStage.STAGE_1,
+            "title_english": "Frieren: Beyond Journey's End",
+        }
+        defaults.update(overrides)
+        game = Game(**defaults)
+        session.add(game)
+        session.commit()
+        return game.id
+
+
+def _active_hard_mode_game(session_factory, *, starter_id: int = 1, **overrides) -> int:
+    """The hard-mode analogue of _active_game — current_stage/
+    original_image stay unset (a hard-mode game never sets them; it
+    carries its fixed screenshot pair via hard_mode_image_a/_b instead)
+    — same shape as test_guess.py's own _active_hard_mode_game fixture."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=starter_id))
+        session.commit()
+        defaults = {
+            "starter_id": starter_id,
+            "status": GameStatus.ACTIVE,
+            "hard_mode": True,
+            "hard_mode_turn": 1,
+            "hard_mode_image_a": b"image-a-bytes",
+            "hard_mode_image_b": b"image-b-bytes",
             "title_english": "Frieren: Beyond Journey's End",
         }
         defaults.update(overrides)
@@ -392,3 +419,65 @@ async def test_stop_callback_handler_reveal_rejects_a_non_starter_non_admin_tap(
         assert session.get(Game, game_id) is not None
     context.bot.send_photo.assert_not_awaited()
     context.bot.send_message.assert_not_awaited()
+
+
+async def test_stop_callback_handler_reveal_posts_hard_mode_two_photo_album(
+    session_factory,
+) -> None:
+    """A hard-mode /stop-and-reveal posts the stored screenshot pair as a
+    2-photo album (post_current_images), not the normal-mode single
+    original_image reveal — can_reveal_now must be computed from
+    has_hard_mode_reveal_images rather than the always-None
+    game.original_image (a hard-mode game never sets it — see
+    models/game.py)."""
+    game_id = _active_hard_mode_game(session_factory, starter_id=1)
+    update = _make_callback_update(data=STOP_REVEAL_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
+        turn_state = session.get(TurnState, 1)
+        assert turn_state is None or turn_state.next_starter_id is None
+
+    context.bot.send_media_group.assert_awaited_once()
+    context.bot.send_photo.assert_not_awaited()
+    _, kwargs = context.bot.send_media_group.await_args
+    media = kwargs["media"]
+    assert len(media) == 2
+    assert media[0].media.input_file_content == b"image-a-bytes"
+    assert media[1].media.input_file_content == b"image-b-bytes"
+    expected_caption = stop_command_module.i18n.t(
+        "stop.hard_mode_stopped_reveal_caption", "en", title="Frieren: Beyond Journey's End"
+    )
+    assert media[0].caption == expected_caption
+    # The reveal caption already says the turn is open — no second notice.
+    context.bot.send_message.assert_not_awaited()
+    update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_stop_callback_handler_reveal_falls_back_when_hard_mode_image_missing(
+    session_factory,
+) -> None:
+    """has_hard_mode_reveal_images requires BOTH stored screenshots — a
+    stale tap that finds only one still present (the other already
+    cleared) must fall back to the plain group notice, same as the
+    normal-mode "no image stored" fallback."""
+    game_id = _active_hard_mode_game(session_factory, starter_id=1, hard_mode_image_b=None)
+    update = _make_callback_update(data=STOP_REVEAL_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
+    context.bot.send_media_group.assert_not_awaited()
+    context.bot.send_photo.assert_not_awaited()
+    context.bot.send_message.assert_awaited_once()
+    text = update.callback_query.edit_message_text.await_args.args[0]
+    assert "revealed" not in text.lower()

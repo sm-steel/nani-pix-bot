@@ -11,6 +11,19 @@ involved); seconds_until()/timeout_job_name()/setup_abandon_job_name()
 live in jobs/timers.py instead (scheduling/naming helpers with no
 Game-state-machine logic in them, used only there)."""
 
+from nani_pix_bot.services.game.hard_mode import (
+    HARD_MODE_TURN_COUNT,
+    HARD_MODE_TURN_WIDTHS,
+    HARD_MODE_WIN_AWARD,
+    HARD_MODE_WRONG_GUESS_LIMIT,
+    HardModeTurnProgress,
+    clear_hard_mode_images,
+    hard_mode_reveal_images,
+    hard_mode_turn_progress,
+    hard_mode_turn_width,
+    has_hard_mode_reveal_images,
+    record_hard_mode_guess,
+)
 from nani_pix_bot.services.game.state import (
     INACTIVITY_ADVANCE_DELAY,
     INACTIVITY_NUDGE_DELAY,
@@ -60,6 +73,10 @@ from nani_pix_bot.services.game.turns import (
 
 __all__ = [
     "AUTOSTART_RETRY_DELAY",
+    "HARD_MODE_TURN_COUNT",
+    "HARD_MODE_TURN_WIDTHS",
+    "HARD_MODE_WIN_AWARD",
+    "HARD_MODE_WRONG_GUESS_LIMIT",
     "IDLE_AUTOSTART_DELAY",
     "INACTIVITY_ADVANCE_DELAY",
     "INACTIVITY_NUDGE_DELAY",
@@ -71,6 +88,7 @@ __all__ = [
     "TURN_REMINDER_DELAY",
     "TURN_STATE_ID",
     "GuessOutcome",
+    "HardModeTurnProgress",
     "StageProgress",
     "TitleVariants",
     "activate_game",
@@ -79,6 +97,7 @@ __all__ = [
     "advance_stage",
     "can_start",
     "clear_autostart",
+    "clear_hard_mode_images",
     "clear_inactivity_nudge",
     "clear_original_screenshot",
     "clear_turn_timers",
@@ -88,11 +107,16 @@ __all__ = [
     "force_win",
     "get_setup_game_for_starter",
     "get_turn_state",
+    "hard_mode_reveal_images",
+    "hard_mode_turn_progress",
+    "hard_mode_turn_width",
     "has_answer_to_reveal",
+    "has_hard_mode_reveal_images",
     "mark_turn_open_if_unassigned",
     "match_candidates",
     "prioritized_title",
     "record_guess",
+    "record_hard_mode_guess",
     "reset_inactivity_clock",
     "screenshot_capable_providers",
     "set_next_starter",

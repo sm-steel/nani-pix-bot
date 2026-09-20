@@ -54,7 +54,8 @@ class AnimePick:
 class ScreenshotPick:
     provider: Provider
     provider_id: int
-    image_bytes: bytes
+    image_bytes_a: bytes
+    image_bytes_b: bytes
 
 
 @dataclass(frozen=True)
@@ -195,21 +196,31 @@ async def _resolve_provider_id(
     return client, await _cross_search_id(client, provider, title)
 
 
-async def _fetch_screenshot_url(
+async def _fetch_screenshot_url_pair(
     client: httpx.AsyncClient, provider: Provider, provider_id: int
-) -> str | None:
-    """One randomly-chosen screenshot URL for `provider_id` under
-    `provider`, or None if the fetch failed or came back empty. Split
-    out of _pick_screenshot to keep its own complexity low (qlty
-    smells)."""
+) -> tuple[str, str] | None:
+    """Two DISTINCT screenshot URLs for `provider_id` under `provider`,
+    or None if the fetch failed, came back empty, or has fewer than 2
+    URLs to choose from — HARD MODE always needs a genuine pair, never
+    the same screenshot twice. Every autostart pick is unconditionally
+    a pair-pick now, replacing the old single-URL _fetch_screenshot_url.
+
+    Uses secrets.SystemRandom().sample() over INDICES, not the URL
+    values themselves — sampling by value could let two textually
+    identical URL strings pass as "distinct" by accident. Everywhere
+    else in this module still uses plain secrets.choice() for a
+    single pick; this is the one place two-at-once sampling is
+    actually needed. Split out of _pick_screenshot to keep its own
+    complexity low (qlty smells)."""
     try:
         urls = await provider.screenshot_module.screenshots(client, provider_id)
     except _AUTOSTART_SERVICE_ERRORS as exc:
         logger.warning("{} screenshot fetch failed: {}", provider.display_name, exc)
         return None
-    if not urls:
+    if len(urls) < 2:
         return None
-    return secrets.choice(urls)
+    i, j = secrets.SystemRandom().sample(range(len(urls)), 2)
+    return urls[i], urls[j]
 
 
 async def _try_provider(
@@ -220,27 +231,35 @@ async def _try_provider(
     title: str,
 ) -> ScreenshotPick | None:
     """One screenshot-provider attempt within _pick_screenshot's loop:
-    resolve an id under `provider`, find a screenshot URL for it, and
-    download it. None at any step means this provider didn't pan out —
-    the caller moves on to the next one in the fallback order. Split
-    out of _pick_screenshot to keep its own complexity low (qlty
-    smells)."""
+    resolve an id under `provider`, find a pair of screenshot URLs for
+    it, and download both. None at any step means this provider didn't
+    pan out — the caller moves on to the next one in the fallback
+    order. A failed second download discards the first download's
+    bytes entirely rather than returning a partial pick. Split out of
+    _pick_screenshot to keep its own complexity low (qlty smells)."""
     client, provider_id = await _resolve_provider_id(
         search_client, tmdb_client, anime, provider, title
     )
     if provider_id is None:
         return None
 
-    url = await _fetch_screenshot_url(client, provider, provider_id)
-    if url is None:
+    url_pair = await _fetch_screenshot_url_pair(client, provider, provider_id)
+    if url_pair is None:
         return None
+    url_a, url_b = url_pair
 
     try:
-        image_bytes = await _download_screenshot(client, url)
+        image_bytes_a = await _download_screenshot(client, url_a)
+        image_bytes_b = await _download_screenshot(client, url_b)
     except _AUTOSTART_SERVICE_ERRORS as exc:
-        logger.warning("Downloading screenshot from {!r} failed: {}", url, exc)
+        logger.warning("Downloading screenshot pair ({!r}, {!r}) failed: {}", url_a, url_b, exc)
         return None
-    return ScreenshotPick(provider=provider, provider_id=provider_id, image_bytes=image_bytes)
+    return ScreenshotPick(
+        provider=provider,
+        provider_id=provider_id,
+        image_bytes_a=image_bytes_a,
+        image_bytes_b=image_bytes_b,
+    )
 
 
 async def _pick_screenshot(
