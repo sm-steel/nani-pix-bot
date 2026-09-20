@@ -56,6 +56,13 @@ SCREENSHOT_FETCH_LIMIT = 20
 # search()/get_by_id(), which answer a starter's own explicit query and
 # should never silently hide a low-scored title they typed themselves.
 RANDOM_PICK_MIN_SCORE = 7
+# A floor on the sum of Shikimori users who have this anime as
+# completed or currently rewatching it (statusesStats), applied only
+# to the random pick alongside RANDOM_PICK_MIN_SCORE — biases away
+# from anime almost nobody has actually watched, even if its score
+# happens to be high from a handful of raters. Tune here if it feels
+# wrong in practice.
+RANDOM_PICK_MIN_WATCHED = 500
 
 # Shikimori asks API consumers to identify themselves with a descriptive
 # User-Agent rather than a Referer (unlike AniList) — see the project's
@@ -110,6 +117,10 @@ query ($minScore: Int) {
     russian
     english
     synonyms
+    statusesStats {
+      status
+      count
+    }
   }
 }
 """
@@ -187,6 +198,10 @@ async def random_anime(client: httpx.AsyncClient) -> ShikimoriResult | None:
     synonyms) directly, unlike search()'s light query, since there's no
     picker to show — this is the only pick that will ever be shown.
 
+    Also filtered to `watched >= RANDOM_PICK_MIN_WATCHED` (sum of
+    completed + rewatching status counts) to avoid anime almost nobody
+    has actually watched.
+
     Deliberately NOT `@cache.cached()` — see test_random_anime_is_not_cached_across_calls."""
     variables = {"minScore": RANDOM_PICK_MIN_SCORE}
     data = await graphql.request(_API, client, query=_RANDOM_QUERY, variables=variables)
@@ -194,7 +209,19 @@ async def random_anime(client: httpx.AsyncClient) -> ShikimoriResult | None:
     if entry is None:
         logger.debug("Shikimori random pick returned nothing")
         return None
-    return parsing.parse_entry(_API_NAME, entry, _parse_detail_result)
+    parsed = parsing.parse_entry(_API_NAME, entry, _parse_detail_result)
+    if parsed is None:
+        return None
+    watched = _watched_count(entry)
+    if watched < RANDOM_PICK_MIN_WATCHED:
+        logger.debug(
+            "Shikimori id {} has only {} watched (below floor {}), rejecting",
+            parsed.shikimori_id,
+            watched,
+            RANDOM_PICK_MIN_WATCHED,
+        )
+        return None
+    return parsed
 
 
 @cache.cached()
@@ -288,6 +315,32 @@ def _parse_screenshot_url(raw: dict) -> str | None:
     absolute, so there's no more `SHIKIMORI_HOST` prefixing to do."""
     url = parsing.optional_str(raw, "originalUrl")
     return url or None
+
+
+def _watched_count(raw: dict) -> int:
+    """Sum of `completed` + `rewatching` counts from `raw["statusesStats"]`
+    — the two statuses that mean "has actually watched this," as
+    opposed to `planned`/`watching`/`on_hold`/`dropped`. Malformed
+    entries are dropped with a WARNING via `parsing.parse_entries`,
+    same defensive handling `screenshots()` already gives its own list
+    field; a missing/non-list `statusesStats` (should not happen per
+    the schema, but this API's shape has surprised this codebase
+    before — see module docstring) is treated as 0 watched, which
+    naturally fails the floor rather than raising."""
+
+    def parse_one_status_entry(entry: dict) -> int | None:
+        """Extract count from one statusesStats entry if it's completed or
+        rewatching; return None (skip) for other statuses or malformed entries."""
+        status = parsing.optional_str(entry, "status")
+        if status not in ("completed", "rewatching"):
+            return None
+        return parsing.require_int(entry, "count")
+
+    entries = raw.get("statusesStats")
+    if not isinstance(entries, list):
+        return 0
+    counts = parsing.parse_entries(_API_NAME, entries, parse_one_status_entry)
+    return sum(counts)
 
 
 def _parse_search_result(raw: dict) -> ShikimoriResult | None:
