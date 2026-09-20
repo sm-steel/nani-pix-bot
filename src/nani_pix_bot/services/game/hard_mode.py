@@ -39,8 +39,11 @@ HARD_MODE_WRONG_GUESS_LIMIT = 1
 # Player.wins credited on a hard-mode win, vs. the normal +1 a PixelStage
 # win awards via state.py's _win() default.
 HARD_MODE_WIN_AWARD = 2
-# target_width per turn, tuned to make turn 1 much harder than a normal
-# game's STAGE_1 and turn 2 comfortably revealing.
+# target_width per turn. Turn 1 (64px) is pixelated identically to a
+# normal game's STAGE_1 — not harder — and turn 2 (160px) is comfortably
+# revealing. HARD MODE's difficulty comes from HARD_MODE_WRONG_GUESS_LIMIT
+# and HARD_MODE_TURN_COUNT (one guess per turn, only two turns total), not
+# from a harsher pixelation width than a normal game starts at.
 HARD_MODE_TURN_WIDTHS: dict[int, int] = {1: 64, 2: 160}
 
 

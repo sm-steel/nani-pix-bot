@@ -1203,6 +1203,24 @@ async def test_post_current_images_returns_none_and_leaves_pin_state_untouched_o
         assert settings.get_pinned_message_id(session) == 111
 
 
+async def test_post_current_images_returns_none_and_does_not_raise_on_empty_send_result(
+    session_factory,
+) -> None:
+    context = _make_post_images_context(session_factory)
+    context.bot.send_media_group = AsyncMock(return_value=[])
+
+    result = await timeout_module.post_current_images(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photos=(b"photo-a", b"photo-b"),
+        caption="a caption",
+    )  # should not raise (no result[0] indexing crash)
+
+    assert result is None
+    context.bot.pin_chat_message.assert_not_awaited()
+    context.bot.unpin_chat_message.assert_not_awaited()
+
+
 @pytest.mark.parametrize("sent_shape", ["single", "tuple"])
 def test_clear_image_if_sent_clears_hard_mode_images_and_leaves_original_untouched(
     session_factory, sent_shape

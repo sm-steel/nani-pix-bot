@@ -118,6 +118,10 @@ async def post_current_images(
         logger.warning("Failed to post the current images to chat {}: {}", chat_id, exc)
         return None
 
+    if not result:
+        logger.warning("send_media_group returned an empty result for chat {}", chat_id)
+        return None
+
     first_message_id = result[0].message_id
     with session_scope(session_factory) as session:
         previous_pinned_id = settings.get_pinned_message_id(session)
