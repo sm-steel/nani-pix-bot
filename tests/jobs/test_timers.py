@@ -902,6 +902,154 @@ async def test_post_current_image_returns_none_and_does_not_raise_when_send_phot
     context.bot.unpin_chat_message.assert_not_awaited()
 
 
+def _make_post_images_context(session_factory) -> MagicMock:
+    context = MagicMock()
+    context.bot_data = {
+        "session_factory": session_factory,
+        "group_chat_id": 555,
+        "game_topic_id": 7,
+    }
+    context.bot.send_media_group = AsyncMock(
+        return_value=[MagicMock(message_id=998), MagicMock(message_id=999)]
+    )
+    context.bot.pin_chat_message = AsyncMock()
+    context.bot.unpin_chat_message = AsyncMock()
+    return context
+
+
+async def test_post_current_images_sends_a_media_group_with_caption_on_first_photo_only(
+    session_factory,
+) -> None:
+    context = _make_post_images_context(session_factory)
+
+    await timeout_module.post_current_images(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photos=(b"photo-a", b"photo-b"),
+        caption="a caption",
+    )
+
+    context.bot.send_media_group.assert_awaited_once()
+    _, kwargs = context.bot.send_media_group.call_args
+    assert kwargs["chat_id"] == 555
+    assert kwargs["message_thread_id"] == 7
+    media = kwargs["media"]
+    assert len(media) == 2
+    assert media[0].media.input_file_content == b"photo-a"
+    assert media[0].caption == "a caption"
+    assert media[1].media.input_file_content == b"photo-b"
+    assert media[1].caption is None
+
+
+async def test_post_current_images_pins_the_first_message_and_unpins_the_old_one(
+    session_factory,
+) -> None:
+    context = _make_post_images_context(session_factory)
+    with session_factory() as session:
+        settings.set_pinned_message_id(session, 111)
+        session.commit()
+
+    result = await timeout_module.post_current_images(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photos=(b"photo-a", b"photo-b"),
+        caption="a caption",
+    )
+
+    assert result is not None
+    assert tuple(m.message_id for m in result) == (998, 999)
+    context.bot.unpin_chat_message.assert_awaited_once_with(chat_id=555, message_id=111)
+    context.bot.pin_chat_message.assert_awaited_once_with(
+        chat_id=555, message_id=998, disable_notification=True
+    )
+    with session_factory() as session:
+        assert settings.get_pinned_message_id(session) == 998
+
+
+async def test_post_current_images_returns_none_and_leaves_pin_state_untouched_on_send_failure(
+    session_factory,
+) -> None:
+    context = _make_post_images_context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
+    with session_factory() as session:
+        settings.set_pinned_message_id(session, 111)
+        session.commit()
+
+    result = await timeout_module.post_current_images(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photos=(b"photo-a", b"photo-b"),
+        caption="a caption",
+    )  # should not raise
+
+    assert result is None
+    context.bot.pin_chat_message.assert_not_awaited()
+    context.bot.unpin_chat_message.assert_not_awaited()
+    with session_factory() as session:
+        assert settings.get_pinned_message_id(session) == 111
+
+
+@pytest.mark.parametrize("sent_shape", ["single", "tuple"])
+def test_clear_image_if_sent_clears_hard_mode_images_and_leaves_original_untouched(
+    session_factory, sent_shape
+) -> None:
+    game_id = _active_game(
+        session_factory,
+        hard_mode=True,
+        hard_mode_turn=1,
+        hard_mode_image_a=b"image-a",
+        hard_mode_image_b=b"image-b",
+        original_image=b"should-not-be-touched",
+    )
+    sent = MagicMock(message_id=1) if sent_shape == "single" else (MagicMock(message_id=1),)
+
+    timeout_module.clear_image_if_sent(session_factory, game_id, sent)
+
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        assert game.hard_mode_image_a is None
+        assert game.hard_mode_image_b is None
+        assert game.original_image == b"should-not-be-touched"
+
+
+def test_clear_image_if_sent_normal_game_clears_original_image(session_factory) -> None:
+    game_id = _active_game(session_factory, original_image=b"should-be-cleared")
+    sent = MagicMock(message_id=1)
+
+    timeout_module.clear_image_if_sent(session_factory, game_id, sent)
+
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        assert game.original_image is None
+        assert game.hard_mode_image_a is None
+        assert game.hard_mode_image_b is None
+
+
+@pytest.mark.parametrize("hard_mode", [True, False])
+def test_clear_image_if_sent_is_a_noop_when_sent_is_none(session_factory, hard_mode) -> None:
+    game_id = _active_game(
+        session_factory,
+        hard_mode=hard_mode,
+        hard_mode_turn=1 if hard_mode else None,
+        hard_mode_image_a=b"image-a" if hard_mode else None,
+        hard_mode_image_b=b"image-b" if hard_mode else None,
+        original_image=None if hard_mode else b"should-stay",
+    )
+
+    timeout_module.clear_image_if_sent(session_factory, game_id, None)
+
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        if hard_mode:
+            assert game.hard_mode_image_a == b"image-a"
+            assert game.hard_mode_image_b == b"image-b"
+        else:
+            assert game.original_image == b"should-stay"
+
+
 async def test_rearm_pending_timeouts_also_reschedules_inactivity_timers(session_factory) -> None:
     game_id = _active_game(
         session_factory,

@@ -38,7 +38,11 @@ from nani_pix_bot.jobs.timers.autostart import (
     run_bot_autostart,
     schedule_idle_autostart,
 )
-from nani_pix_bot.jobs.timers.current_image import clear_image_if_sent, post_current_image
+from nani_pix_bot.jobs.timers.current_image import (
+    clear_image_if_sent,
+    post_current_image,
+    post_current_images,
+)
 from nani_pix_bot.jobs.timers.game_timeout import (
     cancel_timeout,
     schedule_timeout,
@@ -87,6 +91,7 @@ __all__ = [
     "inactivity_nudge_job_name",
     "maybe_overthrow",
     "post_current_image",
+    "post_current_images",
     "rearm_pending_timeouts",
     "run_bot_autostart",
     "schedule_idle_autostart",
