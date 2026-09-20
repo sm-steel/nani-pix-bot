@@ -800,6 +800,11 @@ async def test_random_anime_sends_a_random_order_query() -> None:
     # Shikimori's real schema the way a live API call would.
     assert "$minScore: Int" in captured["json"]["query"]
     assert isinstance(captured["json"]["variables"]["minScore"], int)
+    # Regression guard, same reasoning as the $minScore guard above: a
+    # query that stopped requesting statusesStats would still pass every
+    # other assertion here, since the mocked response includes it
+    # regardless of what was actually requested.
+    assert "statusesStats" in captured["json"]["query"]
     assert result == shikimori.ShikimoriResult(
         shikimori_id=1,
         title_romaji="Some Anime",
@@ -969,7 +974,9 @@ async def test_random_anime_skips_malformed_status_entry_with_warning(
     records: list[tuple[str, str]],
 ) -> None:
     """A malformed entry in statusesStats (e.g. non-int count) is dropped
-    with a WARNING via parse_entries, and the rest are still summed."""
+    with a WARNING via parse_entries, and the well-formed entries alone
+    still clear the floor — proving the malformed entry was skipped
+    rather than the whole computation aborting for some other reason."""
     entry = {
         "id": "1",
         "name": "Partially Broken Anime",
@@ -977,7 +984,7 @@ async def test_random_anime_skips_malformed_status_entry_with_warning(
         "english": None,
         "synonyms": [],
         "statusesStats": [
-            {"status": "completed", "count": 300},
+            {"status": "completed", "count": 600},
             {"status": "rewatching", "count": "not an int"},  # Malformed
             {"status": "planned", "count": 50},
         ],
@@ -986,13 +993,22 @@ async def test_random_anime_skips_malformed_status_entry_with_warning(
     async with httpx.AsyncClient(transport=_responding(_animes_payload([entry]))) as client:
         result = await shikimori.random_anime(client)
 
-    # Sum of completed + rewatching = 300 + 0 = 300 (broken entry skipped)
-    assert result is None
+    # Sum of well-formed completed + rewatching = 600 + 0 = 600, which
+    # clears RANDOM_PICK_MIN_WATCHED on its own — this is what actually
+    # proves the malformed entry was skipped-and-summed rather than
+    # something else zeroing the sum (a fixture that stayed below the
+    # floor either way couldn't tell those two cases apart).
+    assert result is not None
+    assert result.shikimori_id == 1
 
-    # A WARNING was logged for the malformed entry
+    # Exactly one WARNING was logged, naming both the parser and the
+    # offending field — same specificity as
+    # test_get_by_id_warns_naming_the_parser_when_a_field_is_malformed.
     warnings = [msg for level, msg in records if level == "WARNING"]
-    assert len(warnings) > 0
+    assert len(warnings) == 1
     assert "Shikimori" in warnings[0]
+    assert "parse_one_status_entry" in warnings[0]
+    assert "count" in warnings[0]
 
 
 async def test_random_anime_treats_missing_stats_as_zero_watched() -> None:
