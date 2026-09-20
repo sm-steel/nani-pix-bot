@@ -319,6 +319,21 @@ src/nani_pix_bot/
                    #                 unrelated to this project's
                    #                 DB-derived-flow-state principle
                    #                 (issue #11 — see CLAUDE.md)
+                   #   base.py       abstract base classes (SearchModule,
+                   #                 ScreenshotModule) giving
+                   #                 Provider.search_module/
+                   #                 screenshot_module (models/enums.py)
+                   #                 real static checking instead of bare
+                   #                 types.ModuleType (issue #169). Each
+                   #                 provider module above defines a thin
+                   #                 `service` adapter instance
+                   #                 subclassing one of these, delegating
+                   #                 to that module's own free functions
+                   #                 rather than holding logic itself —
+                   #                 keeps cache.py's client-must-be-
+                   #                 first-arg contract and every
+                   #                 existing monkeypatch.setattr(shikimori,
+                   #                 ...)-style test intact
     matching.py   # normalize + rapidfuzz-match a guess against a game's
                    # cached title/synonyms — pure function, fully
                    # deterministic, no network calls
@@ -407,6 +422,15 @@ Dockerfile, docker-compose.yml   # bot + mariadb, see "Infrastructure" above
 import back here would be a real two-hop cycle
 (`models.enums` <-> `services.search.*`). Don't "simplify" this into a
 top-level import; it was tried and the cycle is real.
+
+The two properties' *declared return types* are a separate, `TYPE_CHECKING`-only
+concern from the runtime import above: they're `services/search/base.py`'s
+`SearchModule`/`ScreenshotModule` abstract base classes, not bare
+`types.ModuleType` (issue #169) — a `TYPE_CHECKING`-gated import never
+executes, so it doesn't create the runtime cycle the paragraph above is
+about. The two properties now return each module's `service` adapter
+instance rather than the module itself — see `base.py`'s own docstring for
+why (cache.py's client-must-be-first-arg contract).
 
 ### Before adding something new
 

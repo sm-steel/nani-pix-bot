@@ -34,6 +34,7 @@ for every other provider's list fields — this note just records that
 the shape was actually checked, not assumed.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import httpx
@@ -41,6 +42,7 @@ from loguru import logger
 
 from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, graphql, parsing
+from nani_pix_bot.services.search.base import ScreenshotModule
 
 SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 SEARCH_RESULT_LIMIT = 5
@@ -261,6 +263,27 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
     urls = parsing.parse_entries(_API_NAME, entries, _parse_screenshot_url)[:SCREENSHOT_FETCH_LIMIT]
     logger.debug("Shikimori id {} has {} screenshot(s) available", shikimori_id, len(entries))
     return urls
+
+
+class _ShikimoriAdapter(ScreenshotModule):
+    """`Provider.search_module`/`screenshot_module`'s adapter for
+    `Provider.SHIKIMORI` — see `services/search/base.py`'s module
+    docstring. `random_anime()` above is a direct-import-only helper
+    (`services/game/autostart.py`), not part of this."""
+
+    async def search(self, client: httpx.AsyncClient, query: str, /) -> Sequence[ShikimoriResult]:
+        return await search(client, query)
+
+    async def get_by_id(
+        self, client: httpx.AsyncClient, provider_id: int, /
+    ) -> ShikimoriResult | None:
+        return await get_by_id(client, provider_id)
+
+    async def screenshots(self, client: httpx.AsyncClient, provider_id: int, /) -> list[str]:
+        return await screenshots(client, provider_id)
+
+
+service = _ShikimoriAdapter()
 
 
 def _single_anime(data: dict) -> dict | None:

@@ -4,6 +4,7 @@ module is never consulted per guess, only to populate a Game's cached
 title/synonyms.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import httpx
@@ -11,6 +12,7 @@ from loguru import logger
 
 from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, graphql, parsing
+from nani_pix_bot.services.search.base import SearchModule
 
 ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
 SEARCH_RESULT_LIMIT = 5
@@ -105,6 +107,22 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
     # either way and "this pick is gone" is what the starter needs to
     # hear (#83).
     return parsing.parse_entry(_API_NAME, media, _parse_result)
+
+
+class _AniListAdapter(SearchModule):
+    """`Provider.search_module`'s adapter for `Provider.ANILIST` — see
+    `services/search/base.py`'s module docstring."""
+
+    async def search(self, client: httpx.AsyncClient, query: str, /) -> Sequence[AniListResult]:
+        return await search(client, query)
+
+    async def get_by_id(
+        self, client: httpx.AsyncClient, provider_id: int, /
+    ) -> AniListResult | None:
+        return await get_by_id(client, provider_id)
+
+
+service = _AniListAdapter()
 
 
 def _parse_result(raw: dict) -> AniListResult | None:
