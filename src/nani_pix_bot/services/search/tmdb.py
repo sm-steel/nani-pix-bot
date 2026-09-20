@@ -19,7 +19,7 @@ already expects from every other provider's result dataclass.
 """
 
 import asyncio
-from collections.abc import Sequence
+import sys
 from dataclasses import dataclass
 
 import httpx
@@ -190,21 +190,9 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
     return urls
 
 
-class _TMDBAdapter(ScreenshotModule):
-    """`Provider.search_module`/`screenshot_module`'s adapter for
-    `Provider.TMDB` — see `services/search/base.py`'s module docstring."""
-
-    async def search(self, client: httpx.AsyncClient, query: str, /) -> Sequence[TMDBResult]:
-        return await search(client, query)
-
-    async def get_by_id(self, client: httpx.AsyncClient, provider_id: int, /) -> TMDBResult | None:
-        return await get_by_id(client, provider_id)
-
-    async def screenshots(self, client: httpx.AsyncClient, provider_id: int, /) -> list[str]:
-        return await screenshots(client, provider_id)
-
-
-service = _TMDBAdapter()
+# Provider.search_module/screenshot_module's value for Provider.TMDB —
+# see services/search/base.py's module docstring.
+service = ScreenshotModule(sys.modules[__name__])
 
 
 def _episode_targets(show: dict) -> list[tuple[int, int]]:

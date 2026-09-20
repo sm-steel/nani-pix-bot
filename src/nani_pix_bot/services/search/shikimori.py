@@ -34,7 +34,7 @@ for every other provider's list fields — this note just records that
 the shape was actually checked, not assumed.
 """
 
-from collections.abc import Sequence
+import sys
 from dataclasses import dataclass
 
 import httpx
@@ -265,25 +265,11 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
     return urls
 
 
-class _ShikimoriAdapter(ScreenshotModule):
-    """`Provider.search_module`/`screenshot_module`'s adapter for
-    `Provider.SHIKIMORI` — see `services/search/base.py`'s module
-    docstring. `random_anime()` above is a direct-import-only helper
-    (`services/game/autostart.py`), not part of this."""
-
-    async def search(self, client: httpx.AsyncClient, query: str, /) -> Sequence[ShikimoriResult]:
-        return await search(client, query)
-
-    async def get_by_id(
-        self, client: httpx.AsyncClient, provider_id: int, /
-    ) -> ShikimoriResult | None:
-        return await get_by_id(client, provider_id)
-
-    async def screenshots(self, client: httpx.AsyncClient, provider_id: int, /) -> list[str]:
-        return await screenshots(client, provider_id)
-
-
-service = _ShikimoriAdapter()
+# Provider.search_module/screenshot_module's value for Provider.SHIKIMORI
+# — see services/search/base.py's module docstring. random_anime() above
+# is a direct-import-only helper (services/game/autostart.py), not part
+# of this.
+service = ScreenshotModule(sys.modules[__name__])
 
 
 def _single_anime(data: dict) -> dict | None:

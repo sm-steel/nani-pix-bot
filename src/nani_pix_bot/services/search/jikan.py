@@ -8,7 +8,7 @@ list endpoint — so both search() and get_by_id() parse the same shape
 here, no forced re-fetch-by-id needed for the full field set.
 """
 
-from collections.abc import Sequence
+import sys
 from dataclasses import dataclass
 
 import httpx
@@ -122,23 +122,11 @@ async def screenshots(client: httpx.AsyncClient, jikan_id: int) -> list[str]:
     return urls
 
 
-class _JikanAdapter(ScreenshotModule):
-    """`Provider.search_module`/`screenshot_module`'s adapter for
-    `Provider.JIKAN` — see `services/search/base.py`'s module docstring.
-    `random_anime()` above is a direct-import-only helper
-    (`services/game/autostart.py`), not part of this."""
-
-    async def search(self, client: httpx.AsyncClient, query: str, /) -> Sequence[JikanResult]:
-        return await search(client, query)
-
-    async def get_by_id(self, client: httpx.AsyncClient, provider_id: int, /) -> JikanResult | None:
-        return await get_by_id(client, provider_id)
-
-    async def screenshots(self, client: httpx.AsyncClient, provider_id: int, /) -> list[str]:
-        return await screenshots(client, provider_id)
-
-
-service = _JikanAdapter()
+# Provider.search_module/screenshot_module's value for Provider.JIKAN —
+# see services/search/base.py's module docstring. random_anime() above is
+# a direct-import-only helper (services/game/autostart.py), not part of
+# this.
+service = ScreenshotModule(sys.modules[__name__])
 
 
 def _picture_url(entry: dict) -> str | None:

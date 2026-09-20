@@ -319,21 +319,29 @@ src/nani_pix_bot/
                    #                 unrelated to this project's
                    #                 DB-derived-flow-state principle
                    #                 (issue #11 — see CLAUDE.md)
-                   #   base.py       abstract base classes (SearchModule,
-                   #                 ScreenshotModule) giving
-                   #                 Provider.search_module/
+                   #   base.py       SearchModule/ScreenshotModule classes
+                   #                 giving Provider.search_module/
                    #                 screenshot_module (models/enums.py)
                    #                 real static checking instead of bare
                    #                 types.ModuleType (issue #169). Each
-                   #                 provider module above defines a thin
-                   #                 `service` adapter instance
-                   #                 subclassing one of these, delegating
-                   #                 to that module's own free functions
-                   #                 rather than holding logic itself —
-                   #                 keeps cache.py's client-must-be-
-                   #                 first-arg contract and every
-                   #                 existing monkeypatch.setattr(shikimori,
-                   #                 ...)-style test intact
+                   #                 provider module above ends with
+                   #                 `service = ScreenshotModule(sys.
+                   #                 modules[__name__])` (or SearchModule
+                   #                 for anilist.py) — one shared,
+                   #                 generic delegator per provider,
+                   #                 forwarding to that module's own free
+                   #                 functions via attribute lookup on
+                   #                 the live module object rather than
+                   #                 holding logic itself, which keeps
+                   #                 cache.py's client-must-be-first-arg
+                   #                 contract and every existing
+                   #                 monkeypatch.setattr(shikimori,
+                   #                 ...)-style test intact. `__init__`
+                   #                 also verifies at import time that
+                   #                 the module actually has a callable
+                   #                 search/get_by_id/screenshots — the
+                   #                 one check `ty` itself can't make
+                   #                 since self._module: ModuleType
     matching.py   # normalize + rapidfuzz-match a guess against a game's
                    # cached title/synonyms — pure function, fully
                    # deterministic, no network calls

@@ -4,7 +4,7 @@ module is never consulted per guess, only to populate a Game's cached
 title/synonyms.
 """
 
-from collections.abc import Sequence
+import sys
 from dataclasses import dataclass
 
 import httpx
@@ -109,20 +109,9 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
     return parsing.parse_entry(_API_NAME, media, _parse_result)
 
 
-class _AniListAdapter(SearchModule):
-    """`Provider.search_module`'s adapter for `Provider.ANILIST` — see
-    `services/search/base.py`'s module docstring."""
-
-    async def search(self, client: httpx.AsyncClient, query: str, /) -> Sequence[AniListResult]:
-        return await search(client, query)
-
-    async def get_by_id(
-        self, client: httpx.AsyncClient, provider_id: int, /
-    ) -> AniListResult | None:
-        return await get_by_id(client, provider_id)
-
-
-service = _AniListAdapter()
+# Provider.search_module's value for Provider.ANILIST — see
+# services/search/base.py's module docstring.
+service = SearchModule(sys.modules[__name__])
 
 
 def _parse_result(raw: dict) -> AniListResult | None:
