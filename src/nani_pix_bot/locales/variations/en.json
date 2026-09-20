@@ -12,6 +12,12 @@
     "📸 Yare yare... one more layer of pixels gone. Stage {stage}/{total} ({remaining}/{limit} guesses left).",
     "👀 The fog is lifting! Stage {stage}/{total} — {remaining}/{limit} guesses left."
   ],
+  "guess.hard_mode_turn_advanced_caption": [
+    "📸 Getting clearer! Turn {stage}/{total} — {remaining}/{limit} guesses left before the reveal.",
+    "🔍 Both screenshots just sharpened up. Turn {stage}/{total}, {remaining}/{limit} guesses remaining.",
+    "👀 The pixels are thinning out. Turn {stage}/{total} — {remaining}/{limit} guesses left.",
+    "📸 Yare yare... turn {stage}/{total} now, and both screenshots got a bit clearer ({remaining}/{limit} guesses left)."
+  ],
   "guess.inactivity_advanced_caption": [
     "😴 Everyone dozed off? Stage {stage}/{total} — here's a clearer look to wake you up.",
     "📸 Silence... too much silence. Stage {stage}/{total}, a bit clearer now.",
@@ -36,6 +42,12 @@
     "😤 {winner} really said \"I'll take this potato chip... and win it!\" It was {title}. Your turn!",
     "🎊 Correct! {winner} spotted {title} like a true main character. Your turn to start next!",
     "🎉 {winner} wins! It was {title} — over 9000 IQ plays only. Your turn!"
+  ],
+  "guess.hard_mode_won_caption": [
+    "🏆 {winner} beat HARD MODE! It was {title} — +2 to the score. Your turn to start the next one!",
+    "🎉 GG {winner}! HARD MODE didn't stand a chance — it was {title}, +2 to the score. Go start the next round!",
+    "😤 {winner} tamed the hardest mode there is — it was {title}, +2 to the score. Your turn!",
+    "🎊 Correct! {winner} cracked HARD MODE's {title} — +2 to the score for that one. Your turn to start next!"
   ],
   "correct.caption": [
     "🎉 Confirmed correct! @{winner} got {title}. Your turn to start the next game!",
