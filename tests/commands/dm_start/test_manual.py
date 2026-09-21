@@ -137,7 +137,7 @@ async def test_manual_entry_without_an_image_offers_every_screenshot_source(
     callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
     assert callbacks == [
         "screenshot_source:shikimori",
-        "screenshot_source:jikan",
+        "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
     ]

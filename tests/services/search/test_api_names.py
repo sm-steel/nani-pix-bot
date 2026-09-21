@@ -5,20 +5,20 @@ own inline literal (issue #97).
 stay plain `str` on purpose — they are interpolated straight into log
 lines and messages, and typing them as `Provider` would mean an explicit
 `.display_name` at every one of those sites, where a single miss
-silently downgrades "Jikan" to "jikan" with no error. Fixing the string
-at its *construction* site instead is what these tests pin: "Jikan" the
-literal exists once, in `Provider.JIKAN.display_name`."""
+silently downgrades "Tenrai" to "tenrai" with no error. Fixing the
+string at its *construction* site instead is what these tests pin:
+"Tenrai" the literal exists once, in `Provider.TENRAI.display_name`."""
 
 import pytest
 
 from nani_pix_bot.models.enums import Provider
-from nani_pix_bot.services.search import anilist, jikan, shikimori, tmdb
+from nani_pix_bot.services.search import anilist, shikimori, tenrai, tmdb
 
 
 @pytest.mark.parametrize(
     ("api_name", "provider"),
     [
-        (jikan._API.name, Provider.JIKAN),
+        (tenrai._API.name, Provider.TENRAI),
         (shikimori._API.name, Provider.SHIKIMORI),
         (tmdb._API.name, Provider.TMDB),
         # AniList talks GraphQL rather than going through rest.RestApi,

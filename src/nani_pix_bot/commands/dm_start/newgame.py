@@ -1,5 +1,5 @@
 """`/newgame` — the screenshot-less entry point into the setup flow:
-skips straight to identification (AniList/Shikimori/Jikan/TMDB/manual),
+skips straight to identification (AniList/Shikimori/Tenrai/TMDB/manual),
 picking a screenshot later instead of uploading one first. See
 MECHANICS.md's "Starting a game" section.
 

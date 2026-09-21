@@ -16,9 +16,9 @@ from nani_pix_bot.services.game.state import (
     TitleVariants,
     prioritized_title,
 )
-from nani_pix_bot.services.search import jikan, shikimori
-from nani_pix_bot.services.search.jikan import JikanResult
+from nani_pix_bot.services.search import shikimori, tenrai
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 
 # ~12%, within the 10-15% range this feature was designed to — see the
 # design doc for issue #159. Tune here if it feels wrong in practice.
@@ -46,7 +46,7 @@ def roll_overthrow() -> bool:
 
 @dataclass(frozen=True)
 class AnimePick:
-    result: ShikimoriResult | JikanResult
+    result: ShikimoriResult | TenraiResult
     source: Provider
 
 
@@ -64,18 +64,40 @@ class GatheredPick:
     screenshot: ScreenshotPick
 
 
+@dataclass(frozen=True)
+class SearchClients:
+    """The three clients screenshot-provider resolution can need,
+    bundled so `_resolve_provider_id`/`_try_provider` don't carry three
+    separate `httpx.AsyncClient` parameters on top of `anime`/`provider`/
+    `title` — qlty's "many parameters" threshold flagged exactly that
+    growth once Tenrai added its own client alongside `search_client`/
+    `tmdb_client`. `gather_pick`'s own public signature stays three
+    individual parameters, matching its caller
+    (`jobs/timers/autostart.py`, which reads them individually off
+    `context.bot_data`) — this bundle is constructed once, inside
+    `gather_pick`, purely for the screenshot-resolution call chain
+    below it."""
+
+    search: httpx.AsyncClient
+    tmdb: httpx.AsyncClient
+    tenrai: httpx.AsyncClient
+
+
 async def gather_pick(
-    search_client: httpx.AsyncClient, tmdb_client: httpx.AsyncClient
+    search_client: httpx.AsyncClient,
+    tmdb_client: httpx.AsyncClient,
+    tenrai_client: httpx.AsyncClient,
 ) -> GatheredPick | None:
     """Up to AUTOSTART_ATTEMPT_LIMIT different-anime attempts: a random
-    anime (Shikimori, falling back to Jikan on any failure or empty
+    anime (Shikimori, falling back to Tenrai on any failure or empty
     result) plus a random screenshot for it (same-provider-first, then
     the existing fallback order). Never writes to a DB — a caller only
     gets a GatheredPick once a full, valid (anime + downloaded
     screenshot bytes) pick is in hand, which is what keeps a failed
     attempt from ever leaving a partial/broken Game row."""
+    clients = SearchClients(search=search_client, tmdb=tmdb_client, tenrai=tenrai_client)
     for attempt in range(1, AUTOSTART_ATTEMPT_LIMIT + 1):
-        anime = await _pick_random_anime(search_client)
+        anime = await _pick_random_anime(search_client, tenrai_client)
         if anime is None:
             logger.warning(
                 "Bot autostart pick attempt {}/{}: no random anime available",
@@ -83,7 +105,7 @@ async def gather_pick(
                 AUTOSTART_ATTEMPT_LIMIT,
             )
             continue
-        screenshot = await _pick_screenshot(search_client, tmdb_client, anime)
+        screenshot = await _pick_screenshot(clients, anime)
         if screenshot is None:
             logger.warning(
                 "Bot autostart pick attempt {}/{}: no screenshot found for {!r}",
@@ -99,11 +121,11 @@ async def gather_pick(
     return None
 
 
-def _is_explicit(result: JikanResult) -> bool:
-    """Jikan's own convention for adult content — see the rating field's
+def _is_explicit(result: TenraiResult) -> bool:
+    """Tenrai's own convention for adult content — see the rating field's
     documented values on MAL; "Rx" is the sole adult-content prefix.
     Shikimori's random_anime() already filters this server-side
-    (censored: true in its GraphQL query) — Jikan's REST /random/anime
+    (censored: true in its GraphQL query) — Tenrai's REST /random/anime
     endpoint has no equivalent query parameter, so this is the only
     place that can catch it before a pick reaches the group topic.
 
@@ -113,30 +135,32 @@ def _is_explicit(result: JikanResult) -> bool:
     return result.rating is not None and result.rating.startswith("Rx")
 
 
-async def _pick_random_anime(search_client: httpx.AsyncClient) -> AnimePick | None:
+async def _pick_random_anime(
+    search_client: httpx.AsyncClient, tenrai_client: httpx.AsyncClient
+) -> AnimePick | None:
     try:
         shikimori_result = await shikimori.random_anime(search_client)
     except _AUTOSTART_SERVICE_ERRORS as exc:
-        logger.warning("Shikimori random-anime pick failed, falling back to Jikan: {}", exc)
+        logger.warning("Shikimori random-anime pick failed, falling back to Tenrai: {}", exc)
         shikimori_result = None
     if shikimori_result is not None:
         return AnimePick(result=shikimori_result, source=Provider.SHIKIMORI)
 
     try:
-        jikan_result = await jikan.random_anime(search_client)
+        tenrai_result = await tenrai.random_anime(tenrai_client)
     except _AUTOSTART_SERVICE_ERRORS as exc:
-        logger.warning("Jikan random-anime pick failed: {}", exc)
+        logger.warning("Tenrai random-anime pick failed: {}", exc)
         return None
-    if jikan_result is None:
+    if tenrai_result is None:
         return None
-    if _is_explicit(jikan_result):
+    if _is_explicit(tenrai_result):
         logger.warning(
-            "Jikan random-anime pick {} is explicit-rated ({!r}), rejecting",
-            jikan_result.jikan_id,
-            jikan_result.rating,
+            "Tenrai random-anime pick {} is explicit-rated ({!r}), rejecting",
+            tenrai_result.tenrai_id,
+            tenrai_result.rating,
         )
         return None
-    return AnimePick(result=jikan_result, source=Provider.JIKAN)
+    return AnimePick(result=tenrai_result, source=Provider.TENRAI)
 
 
 def _screenshot_provider_order(identified_by: Provider) -> list[Provider]:
@@ -147,7 +171,7 @@ def _screenshot_provider_order(identified_by: Provider) -> list[Provider]:
     return ordered
 
 
-def _title_variants(result: ShikimoriResult | JikanResult) -> TitleVariants:
+def _title_variants(result: ShikimoriResult | TenraiResult) -> TitleVariants:
     if isinstance(result, ShikimoriResult):
         return TitleVariants(
             english=result.title_english, romaji=result.title_romaji, russian=result.title_russian
@@ -179,18 +203,19 @@ async def _download_screenshot(client: httpx.AsyncClient, url: str) -> bytes:
 
 
 async def _resolve_provider_id(
-    search_client: httpx.AsyncClient,
-    tmdb_client: httpx.AsyncClient,
-    anime: AnimePick,
-    provider: Provider,
-    title: str,
+    clients: SearchClients, anime: AnimePick, provider: Provider, title: str
 ) -> tuple[httpx.AsyncClient, int | None]:
     """Which client to use for `provider`, plus the picked anime's id
     under it — same-provider-as-identification needs no lookup at all;
     any other provider goes through cross-search (see _cross_search_id).
     Split out of _pick_screenshot to keep its own complexity low (qlty
     smells)."""
-    client = tmdb_client if provider is Provider.TMDB else search_client
+    if provider is Provider.TMDB:
+        client = clients.tmdb
+    elif provider is Provider.TENRAI:
+        client = clients.tenrai
+    else:
+        client = clients.search
     if provider == anime.source:
         return client, getattr(anime.result, provider.id_attr_name)
     return client, await _cross_search_id(client, provider, title)
@@ -224,11 +249,7 @@ async def _fetch_screenshot_url_pair(
 
 
 async def _try_provider(
-    search_client: httpx.AsyncClient,
-    tmdb_client: httpx.AsyncClient,
-    anime: AnimePick,
-    provider: Provider,
-    title: str,
+    clients: SearchClients, anime: AnimePick, provider: Provider, title: str
 ) -> ScreenshotPick | None:
     """One screenshot-provider attempt within _pick_screenshot's loop:
     resolve an id under `provider`, find a pair of screenshot URLs for
@@ -237,9 +258,7 @@ async def _try_provider(
     order. A failed second download discards the first download's
     bytes entirely rather than returning a partial pick. Split out of
     _pick_screenshot to keep its own complexity low (qlty smells)."""
-    client, provider_id = await _resolve_provider_id(
-        search_client, tmdb_client, anime, provider, title
-    )
+    client, provider_id = await _resolve_provider_id(clients, anime, provider, title)
     if provider_id is None:
         return None
 
@@ -262,12 +281,10 @@ async def _try_provider(
     )
 
 
-async def _pick_screenshot(
-    search_client: httpx.AsyncClient, tmdb_client: httpx.AsyncClient, anime: AnimePick
-) -> ScreenshotPick | None:
+async def _pick_screenshot(clients: SearchClients, anime: AnimePick) -> ScreenshotPick | None:
     title = prioritized_title(_title_variants(anime.result), lang="en")
     for provider in _screenshot_provider_order(anime.source):
-        pick = await _try_provider(search_client, tmdb_client, anime, provider, title)
+        pick = await _try_provider(clients, anime, provider, title)
         if pick is not None:
             return pick
     return None

@@ -1,4 +1,4 @@
-"""Shared JSON-over-HTTP plumbing for the two REST providers — jikan.py
+"""Shared JSON-over-HTTP plumbing for the two REST providers — tenrai.py
 and tmdb.py. (anilist.py and shikimori.py are both GraphQL: one POST to
 one endpoint, no by-id URL and no 404 semantics, so they share nothing
 here and shouldn't be forced to — see graphql.py for their shared
@@ -16,7 +16,7 @@ hook and CI (issue #68).
 What deliberately stays per-provider is the *parsing*: each module
 keeps its own `_parse_*` and its own concretely-typed public
 `get_by_id`. `fetch_by_id` is generic over the parsed type, so
-`JikanResult | None` stays `JikanResult | None` to `ty` rather than
+`TenraiResult | None` stays `TenraiResult | None` to `ty` rather than
 collapsing into a union of the two that callers would have to narrow
 back down by hand — the same constraint that keeps
 `screenshot_gallery.py::_screenshot_search_step` dispatching on an

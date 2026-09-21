@@ -316,7 +316,7 @@ async def test_preview_change_image_pick_screenshot_reoffers_the_source_menu_whe
     callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
     assert callbacks == [
         "screenshot_source:shikimori",
-        "screenshot_source:jikan",
+        "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
     ]

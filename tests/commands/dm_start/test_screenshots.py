@@ -13,7 +13,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
-from nani_pix_bot.services.search import jikan, shikimori
+from nani_pix_bot.services.search import shikimori, tenrai
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
 _FRIEREN_SHIKIMORI = ShikimoriResult(
@@ -31,6 +31,7 @@ def _make_context(session_factory, **extra_bot_data) -> MagicMock:
         "session_factory": session_factory,
         "search_client": MagicMock(),
         "tmdb_client": MagicMock(),
+        "tenrai_client": MagicMock(),
         **extra_bot_data,
     }
     context.bot.send_message = AsyncMock()
@@ -103,7 +104,7 @@ async def test_stage_screenshot_picker_offers_all_three_providers_even_with_no_i
 ) -> None:
     """Cross-provider resolution (ticket 8) means every screenshot-
     capable provider is offered regardless of the identification
-    source — an AniList-identified game still gets Shikimori/Jikan/TMDB
+    source — an AniList-identified game still gets Shikimori/Tenrai/TMDB
     buttons, auto-searched by title when tapped (see
     _resolve_screenshot_source)."""
     with session_factory() as session:
@@ -116,7 +117,7 @@ async def test_stage_screenshot_picker_offers_all_three_providers_even_with_no_i
         prompt = screenshots.stage_screenshot_picker(game)
 
         assert game.setup_step == SetupStep.PICKING_SCREENSHOT
-    assert set(prompt.providers) == {Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB}
+    assert set(prompt.providers) == {Provider.SHIKIMORI, Provider.TENRAI, Provider.TMDB}
 
 
 async def test_screenshot_source_callback_handler_shows_the_gallery(
@@ -268,7 +269,7 @@ async def test_screenshot_source_callback_handler_cross_provider_searches_a_russ
     one, so a Shikimori identification with no English/romaji match
     leaves that as the only query there is."""
     search = AsyncMock(return_value=[])
-    monkeypatch.setattr(jikan, "search", search)
+    monkeypatch.setattr(tenrai, "search", search)
     _staged_game(
         session_factory,
         source="shikimori",
@@ -277,7 +278,7 @@ async def test_screenshot_source_callback_handler_cross_provider_searches_a_russ
         title_russian="Провожающая в последний путь Фрирен",
     )
 
-    update = _make_callback_update(data="screenshot_source:jikan")
+    update = _make_callback_update(data="screenshot_source:tenrai")
     context = _make_context(session_factory)
 
     await screenshots.screenshot_source_callback_handler(
@@ -346,7 +347,7 @@ async def test_screenshot_source_callback_handler_falls_back_when_the_fetch_fail
     args, kwargs = update.callback_query.edit_message_text.await_args
     assert "Shikimori" in args[0]
     callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
-    assert "screenshot_source:jikan" in callbacks
+    assert "screenshot_source:tenrai" in callbacks
     assert "screenshot:upload" in callbacks
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
     assert any(label.startswith("⚠️") and "Shikimori" in label for label in labels)
@@ -410,7 +411,7 @@ async def test_screenshot_source_callback_handler_falls_back_when_telegram_rejec
     update.callback_query.edit_message_text.assert_awaited_once()
     _, kwargs = update.callback_query.edit_message_text.await_args
     callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
-    assert "screenshot_source:jikan" in callbacks
+    assert "screenshot_source:tenrai" in callbacks
     assert "screenshot:upload" in callbacks
 
 
@@ -438,7 +439,7 @@ async def test_screenshot_source_callback_handler_falls_back_on_a_malformed_prov
     update.callback_query.edit_message_text.assert_awaited_once()
     _, kwargs = update.callback_query.edit_message_text.await_args
     callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
-    assert "screenshot_source:jikan" in callbacks
+    assert "screenshot_source:tenrai" in callbacks
 
 
 def test_clear_screenshot_selection_keeps_an_id_no_image_ever_used(session_factory) -> None:

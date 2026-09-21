@@ -39,7 +39,7 @@ class Game(Base):
     # the identification source (see screenshot_source below, and
     # MECHANICS.md's "Starting a game" section).
     shikimori_id: Mapped[int | None] = mapped_column(default=None)
-    jikan_id: Mapped[int | None] = mapped_column(default=None)
+    tenrai_id: Mapped[int | None] = mapped_column(default=None)
     tmdb_id: Mapped[int | None] = mapped_column(default=None)
     title_romaji: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
     title_english: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)

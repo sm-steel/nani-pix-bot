@@ -81,10 +81,9 @@ def build_application(config: Config) -> Application:
 
     engine = db.get_engine(config.database_url)
     application.bot_data["session_factory"] = db.make_session_factory(engine)
-    # Shared by anilist.py/shikimori.py/jikan.py — a plain HTTP client,
-    # nothing service-specific about it (each module sends its own
-    # headers per request). All three are reachable directly, no proxy
-    # needed.
+    # Shared by anilist.py/shikimori.py — a plain HTTP client, nothing
+    # service-specific about it (each module sends its own headers per
+    # request). Both are reachable directly, no proxy needed.
     application.bot_data["search_client"] = httpx.AsyncClient(timeout=30)
     if not config.tmdb_read_access_token:
         # Optional by design (config.py) — but without this, a fresh
@@ -110,6 +109,12 @@ def build_application(config: Config) -> Application:
             if config.tmdb_read_access_token
             else {}
         ),
+    )
+    # tenrai.py gets its own client too, same as tmdb.py's above — may
+    # need the same optional proxy, but no auth header: Tenrai's public
+    # tier needs none (see services/search/tenrai.py's module docstring).
+    application.bot_data["tenrai_client"] = httpx.AsyncClient(
+        timeout=30, proxy=config.telegram_proxy_url
     )
     application.bot_data["group_chat_id"] = config.group_chat_id
     application.bot_data["game_topic_id"] = config.game_topic_id
@@ -233,12 +238,12 @@ async def _post_init(application: Application) -> None:
 
 
 async def _post_shutdown(application: Application) -> None:
-    """The two `httpx.AsyncClient`s built in build_application() are
+    """The three `httpx.AsyncClient`s built in build_application() are
     ours, not PTB's, so nothing else closes them. In production they're
     process-lifetime objects and this is just tidiness on the way out;
     in tests, where an Application is built per case, it's what stops
-    two clients leaking every time."""
-    for key in ("search_client", "tmdb_client"):
+    three clients leaking every time."""
+    for key in ("search_client", "tmdb_client", "tenrai_client"):
         client = application.bot_data.get(key)
         if client is not None:
             await client.aclose()

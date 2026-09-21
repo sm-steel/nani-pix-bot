@@ -1,7 +1,7 @@
 """TMDB search — anime are modeled as regular TV shows in TMDB's own
 schema, so this hits `/search/tv`/`/tv/{id}` rather than a
 movie/anime-specific endpoint. Called once per game, at setup time
-only, same as this package's anilist.py/shikimori.py/jikan.py.
+only, same as this package's anilist.py/shikimori.py/tenrai.py.
 
 Unlike every other provider in this package, TMDB requires an API key
 (a v4 "Read Access Token", Bearer-auth) and may be blocked/unreachable
@@ -93,7 +93,7 @@ async def get_by_id(client: httpx.AsyncClient, tmdb_id: int) -> TMDBResult | Non
 async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
     """Real per-episode stills (not promotional art) for a
     TMDB-identified show, for the screenshot-picker gallery. TMDB has no
-    bulk "all stills for this show" endpoint like Shikimori/Jikan; the
+    bulk "all stills for this show" endpoint like Shikimori/Tenrai; the
     per-episode detail endpoint (`/tv/{id}/season/{s}/episode/{e}`)
     already includes `still_path`, so this fetches the season list
     once, then one extra call per episode (up to SCREENSHOT_FETCH_LIMIT

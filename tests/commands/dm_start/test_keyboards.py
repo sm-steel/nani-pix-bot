@@ -2,7 +2,6 @@ import pytest
 
 from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
-    JIKAN_METHOD_CALLBACK_DATA,
     MANUAL_METHOD_CALLBACK_DATA,
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
@@ -14,10 +13,10 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
     SEARCH_RETRY_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
+    TENRAI_METHOD_CALLBACK_DATA,
     TMDB_METHOD_CALLBACK_DATA,
     GalleryPage,
     anilist_results_keyboard,
-    jikan_results_keyboard,
     method_selection_keyboard,
     parse_method_callback_data,
     parse_pick_callback_data,
@@ -31,12 +30,13 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     screenshot_gallery_keyboard,
     screenshot_source_keyboard,
     shikimori_results_keyboard,
+    tenrai_results_keyboard,
     tmdb_results_keyboard,
 )
 from nani_pix_bot.models.enums import DEFAULT_ALGORITHM, PixelAlgorithm, Provider
 from nani_pix_bot.services.search.anilist import AniListResult
-from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 _FRIEREN = AniListResult(
@@ -78,8 +78,8 @@ _NO_RUSSIAN_TITLE = ShikimoriResult(
     synonyms=[],
 )
 
-_FRIEREN_JIKAN = JikanResult(
-    jikan_id=52991,
+_FRIEREN_TENRAI = TenraiResult(
+    tenrai_id=52991,
     title_romaji="Sousou no Frieren",
     title_english="Frieren: Beyond Journey's End",
     title_native="葬送のフリーレン",
@@ -96,8 +96,8 @@ _TMDB_NO_ENGLISH_TITLE = TMDBResult(
     tmdb_id=1, title_romaji=None, title_english=None, title_native="Some Anime", synonyms=[]
 )
 
-_JIKAN_NO_ENGLISH_TITLE = JikanResult(
-    jikan_id=1, title_romaji="Some Anime", title_english=None, title_native=None, synonyms=[]
+_TENRAI_NO_ENGLISH_TITLE = TenraiResult(
+    tenrai_id=1, title_romaji="Some Anime", title_english=None, title_native=None, synonyms=[]
 )
 
 
@@ -153,7 +153,7 @@ def test_every_provider_has_a_pick_prefix_in_the_expected_wire_format() -> None:
     connects them: a prefix format changed here (or a fifth member added
     to only one side) leaves both files internally consistent and the
     buttons silently unroutable — which is the exact bug that shipped
-    when jikan/tmdb were added.
+    when tenrai/tmdb were added.
 
     test_app.py can't catch that on its own any more, because since #97
     both sides of its assertion derive from Provider. So the pairing is
@@ -219,31 +219,31 @@ def test_shikimori_pick_callback_data_round_trips_the_shikimori_id() -> None:
     assert parse_pick_callback_data(data) == ("shikimori", 52991)
 
 
-def test_jikan_keyboard_has_one_button_per_result_plus_a_retry_button() -> None:
-    markup = jikan_results_keyboard([_FRIEREN_JIKAN, _JIKAN_NO_ENGLISH_TITLE], lang="en")
+def test_tenrai_keyboard_has_one_button_per_result_plus_a_retry_button() -> None:
+    markup = tenrai_results_keyboard([_FRIEREN_TENRAI, _TENRAI_NO_ENGLISH_TITLE], lang="en")
 
     assert len(markup.inline_keyboard) == 3
     assert markup.inline_keyboard[-1][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
 
 
-def test_jikan_keyboard_button_label_prefers_english_title() -> None:
-    markup = jikan_results_keyboard([_FRIEREN_JIKAN], lang="en")
+def test_tenrai_keyboard_button_label_prefers_english_title() -> None:
+    markup = tenrai_results_keyboard([_FRIEREN_TENRAI], lang="en")
 
     assert markup.inline_keyboard[0][0].text == "Frieren: Beyond Journey's End"
 
 
-def test_jikan_keyboard_button_label_falls_back_to_romaji() -> None:
-    markup = jikan_results_keyboard([_JIKAN_NO_ENGLISH_TITLE], lang="en")
+def test_tenrai_keyboard_button_label_falls_back_to_romaji() -> None:
+    markup = tenrai_results_keyboard([_TENRAI_NO_ENGLISH_TITLE], lang="en")
 
     assert markup.inline_keyboard[0][0].text == "Some Anime"
 
 
-def test_jikan_pick_callback_data_round_trips_the_jikan_id() -> None:
-    markup = jikan_results_keyboard([_FRIEREN_JIKAN], lang="en")
+def test_tenrai_pick_callback_data_round_trips_the_tenrai_id() -> None:
+    markup = tenrai_results_keyboard([_FRIEREN_TENRAI], lang="en")
     data = markup.inline_keyboard[0][0].callback_data
 
     assert isinstance(data, str)
-    assert parse_pick_callback_data(data) == ("jikan", 52991)
+    assert parse_pick_callback_data(data) == ("tenrai", 52991)
 
 
 def test_tmdb_keyboard_has_one_button_per_result_plus_a_retry_button() -> None:
@@ -289,7 +289,7 @@ def test_shikimori_keyboard_accepts_a_custom_pick_prefix() -> None:
     ("build", "results", "provider"),
     [
         pytest.param(shikimori_results_keyboard, [_FRIEREN_SHIKIMORI], "shikimori", id="shikimori"),
-        pytest.param(jikan_results_keyboard, [_FRIEREN_JIKAN], "jikan", id="jikan"),
+        pytest.param(tenrai_results_keyboard, [_FRIEREN_TENRAI], "tenrai", id="tenrai"),
         pytest.param(tmdb_results_keyboard, [_FRIEREN_TMDB], "tmdb", id="tmdb"),
     ],
 )
@@ -312,12 +312,12 @@ def test_identification_keyboard_still_retries_into_the_identification_flow() ->
     assert markup.inline_keyboard[-1][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
 
 
-def test_jikan_keyboard_accepts_a_custom_pick_prefix() -> None:
-    markup = jikan_results_keyboard(
-        [_FRIEREN_JIKAN], lang="en", pick_prefix="screenshot_search_pick:jikan:"
+def test_tenrai_keyboard_accepts_a_custom_pick_prefix() -> None:
+    markup = tenrai_results_keyboard(
+        [_FRIEREN_TENRAI], lang="en", pick_prefix="screenshot_search_pick:tenrai:"
     )
 
-    assert markup.inline_keyboard[0][0].callback_data == "screenshot_search_pick:jikan:52991"
+    assert markup.inline_keyboard[0][0].callback_data == "screenshot_search_pick:tenrai:52991"
 
 
 def test_tmdb_keyboard_accepts_a_custom_pick_prefix() -> None:
@@ -344,7 +344,7 @@ def test_parse_screenshot_search_pick_callback_data_returns_none_for_other_data(
     [
         pytest.param(parse_pick_callback_data, "anilist_pick:abc", id="pick-not-a-number"),
         pytest.param(parse_pick_callback_data, "shikimori_pick:", id="pick-empty-id"),
-        pytest.param(parse_pick_callback_data, "jikan_pick:-1", id="pick-negative-id"),
+        pytest.param(parse_pick_callback_data, "tenrai_pick:-1", id="pick-negative-id"),
         pytest.param(parse_pick_callback_data, "tmdb_pick:1 OR 1", id="pick-injected-id"),
         # str.isdigit() is True for these but int() refuses them, so the
         # obvious guard would still have raised — see _validated_index.
@@ -443,8 +443,8 @@ def test_parsers_reject_malformed_callback_payloads(parse, data: str) -> None:
         ),
         pytest.param(
             parse_screenshot_more_callback_data,
-            "screenshot_more:jikan:10",
-            ("jikan", 10),
+            "screenshot_more:tenrai:10",
+            ("tenrai", 10),
             id="more",
         ),
         pytest.param(
@@ -478,8 +478,8 @@ def test_parsers_still_accept_well_formed_callback_payloads(parse, data: str, ex
             id="screenshot-pick",
         ),
         pytest.param(
-            parse_screenshot_more_callback_data("screenshot_more:jikan:10"),
-            Provider.JIKAN,
+            parse_screenshot_more_callback_data("screenshot_more:tenrai:10"),
+            Provider.TENRAI,
             id="more",
         ),
         pytest.param(
@@ -530,7 +530,7 @@ def test_method_selection_keyboard_defaults_to_anilist_first() -> None:
     assert callbacks == [
         ANILIST_METHOD_CALLBACK_DATA,
         SHIKIMORI_METHOD_CALLBACK_DATA,
-        JIKAN_METHOD_CALLBACK_DATA,
+        TENRAI_METHOD_CALLBACK_DATA,
         TMDB_METHOD_CALLBACK_DATA,
         MANUAL_METHOD_CALLBACK_DATA,
     ]
@@ -543,7 +543,7 @@ def test_method_selection_keyboard_prefers_shikimori_first_when_asked() -> None:
     assert callbacks == [
         SHIKIMORI_METHOD_CALLBACK_DATA,
         ANILIST_METHOD_CALLBACK_DATA,
-        JIKAN_METHOD_CALLBACK_DATA,
+        TENRAI_METHOD_CALLBACK_DATA,
         TMDB_METHOD_CALLBACK_DATA,
         MANUAL_METHOD_CALLBACK_DATA,
     ]
@@ -559,11 +559,11 @@ def test_method_selection_keyboard_brand_name_labels_are_untranslated() -> None:
     labels_ru = [button.text for row in markup_ru.inline_keyboard for button in row]
     assert labels_en[0] == "AniList"
     assert labels_en[1] == "Shikimori"
-    assert labels_en[2] == "Jikan"
+    assert labels_en[2] == "Tenrai"
     assert labels_en[3] == "TMDB"
     assert labels_ru[0] == "AniList"
     assert labels_ru[1] == "Shikimori"
-    assert labels_ru[2] == "Jikan"
+    assert labels_ru[2] == "Tenrai"
     assert labels_ru[3] == "TMDB"
 
 
@@ -577,7 +577,7 @@ def test_method_selection_keyboard_manual_entry_label_is_translated() -> None:
 def test_parse_method_callback_data_round_trips() -> None:
     assert parse_method_callback_data(ANILIST_METHOD_CALLBACK_DATA) == "anilist"
     assert parse_method_callback_data(SHIKIMORI_METHOD_CALLBACK_DATA) == "shikimori"
-    assert parse_method_callback_data(JIKAN_METHOD_CALLBACK_DATA) == "jikan"
+    assert parse_method_callback_data(TENRAI_METHOD_CALLBACK_DATA) == "tenrai"
     assert parse_method_callback_data(TMDB_METHOD_CALLBACK_DATA) == "tmdb"
     assert parse_method_callback_data(MANUAL_METHOD_CALLBACK_DATA) == "manual"
     assert parse_method_callback_data(SEARCH_RETRY_CALLBACK_DATA) is None
@@ -678,26 +678,26 @@ def test_screenshot_source_keyboard_marks_the_provider_that_just_failed() -> Non
     it may be the only source with screenshots for this title — but it's
     flagged so it isn't retried by accident."""
     markup = screenshot_source_keyboard(
-        [Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB], "en", failed_provider=Provider.JIKAN
+        [Provider.SHIKIMORI, Provider.TENRAI, Provider.TMDB], "en", failed_provider=Provider.TENRAI
     )
 
     labels = dict(_source_rows(markup))
-    jikan_label = next(text for text in labels if "Jikan" in text)
-    assert jikan_label.startswith("⚠️")
-    assert labels[jikan_label] == "screenshot_source:jikan"
+    tenrai_label = next(text for text in labels if "Tenrai" in text)
+    assert tenrai_label.startswith("⚠️")
+    assert labels[tenrai_label] == "screenshot_source:tenrai"
     # Only that one is marked.
-    assert not any(text.startswith("⚠️") for text in labels if "Jikan" not in text)
+    assert not any(text.startswith("⚠️") for text in labels if "Tenrai" not in text)
 
 
 def test_screenshot_source_keyboard_marks_nothing_by_default() -> None:
-    markup = screenshot_source_keyboard([Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB], "en")
+    markup = screenshot_source_keyboard([Provider.SHIKIMORI, Provider.TENRAI, Provider.TMDB], "en")
 
     assert not any(text.startswith("⚠️") for text, _ in _source_rows(markup))
 
 
 def test_screenshot_source_keyboard_always_offers_upload_instead() -> None:
     """The upload escape has to survive on the failure screen too."""
-    markup = screenshot_source_keyboard([Provider.JIKAN], "en", failed_provider=Provider.JIKAN)
+    markup = screenshot_source_keyboard([Provider.TENRAI], "en", failed_provider=Provider.TENRAI)
 
     callbacks = [data for _, data in _source_rows(markup)]
     assert SCREENSHOT_UPLOAD_CALLBACK_DATA in callbacks

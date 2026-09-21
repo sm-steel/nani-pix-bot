@@ -16,8 +16,8 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import matching, players
 from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.search.anilist import AniListResult
-from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 from nani_pix_bot.services.settings import stage_config
 
@@ -133,7 +133,7 @@ def match_candidates(game: Game) -> list[str]:
 # can reuse the same ordering rule without services/ importing commands/.
 SCREENSHOT_CAPABLE_PROVIDERS: tuple[Provider, ...] = (
     Provider.SHIKIMORI,
-    Provider.JIKAN,
+    Provider.TENRAI,
     Provider.TMDB,
 )
 
@@ -221,14 +221,14 @@ def create_setup_game(
 
 def stage_result(
     game: Game,
-    result: AniListResult | ShikimoriResult | JikanResult | TMDBResult,
+    result: AniListResult | ShikimoriResult | TenraiResult | TMDBResult,
     *,
     source: Provider,
 ) -> None:
     """Assign a picked search result's title/synonyms onto a still-SETUP
     game — doesn't post anything or change status. This is the shared
     landing spot for every identification method (AniList, Shikimori,
-    Jikan, TMDB, and eventually manual entry); the confirmation-screen
+    Tenrai, TMDB, and eventually manual entry); the confirmation-screen
     ticket (#19) is what will show a preview between this and
     activate_game().
 
@@ -246,8 +246,8 @@ def stage_result(
     elif isinstance(result, ShikimoriResult):
         game.shikimori_id = result.shikimori_id
         game.title_russian = result.title_russian
-    elif isinstance(result, JikanResult):
-        game.jikan_id = result.jikan_id
+    elif isinstance(result, TenraiResult):
+        game.tenrai_id = result.tenrai_id
         game.title_native = result.title_native
     elif isinstance(result, TMDBResult):
         game.tmdb_id = result.tmdb_id
@@ -255,7 +255,7 @@ def stage_result(
 
 
 def set_screenshot_provider_id(
-    game: Game, result: ShikimoriResult | JikanResult | TMDBResult
+    game: Game, result: ShikimoriResult | TenraiResult | TMDBResult
 ) -> None:
     """Cross-provider screenshot resolution's equivalent of stage_result()
     (see commands/dm_start/screenshots.py's and screenshot_gallery.py's
@@ -266,8 +266,8 @@ def set_screenshot_provider_id(
     overwrite that identification."""
     if isinstance(result, ShikimoriResult):
         game.shikimori_id = result.shikimori_id
-    elif isinstance(result, JikanResult):
-        game.jikan_id = result.jikan_id
+    elif isinstance(result, TenraiResult):
+        game.tenrai_id = result.tenrai_id
     elif isinstance(result, TMDBResult):
         game.tmdb_id = result.tmdb_id
 

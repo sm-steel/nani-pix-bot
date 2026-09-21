@@ -39,7 +39,7 @@ def test_new_game_defaults_to_setup_with_no_wrong_guesses(session: Session) -> N
     assert fetched.inactivity_nudge_at is None
     assert fetched.inactivity_advance_at is None
     assert fetched.shikimori_id is None
-    assert fetched.jikan_id is None
+    assert fetched.tenrai_id is None
     assert fetched.tmdb_id is None
     assert fetched.screenshot_source is None
     assert fetched.screenshot_picker_provider is None
@@ -64,7 +64,7 @@ def test_game_stores_provider_ids_independently(session: Session) -> None:
     game = Game(
         starter_id=starter.telegram_user_id,
         shikimori_id=52991,
-        jikan_id=123,
+        tenrai_id=123,
         tmdb_id=456,
         screenshot_source="tmdb",
     )
@@ -76,7 +76,7 @@ def test_game_stores_provider_ids_independently(session: Session) -> None:
 
     assert fetched is not None
     assert fetched.shikimori_id == 52991
-    assert fetched.jikan_id == 123
+    assert fetched.tenrai_id == 123
     assert fetched.tmdb_id == 456
     assert fetched.screenshot_source == "tmdb"
 
@@ -125,7 +125,7 @@ def test_provider_columns_store_the_value_not_the_member_name(session: Session) 
     game = Game(
         starter_id=starter.telegram_user_id,
         source=Provider.SHIKIMORI,
-        screenshot_source=Provider.JIKAN,
+        screenshot_source=Provider.TENRAI,
         screenshot_picker_provider=Provider.TMDB,
     )
     session.add(game)
@@ -138,13 +138,13 @@ def test_provider_columns_store_the_value_not_the_member_name(session: Session) 
         ),
         {"id": game.id},
     ).one()
-    assert stored == ("shikimori", "jikan", "tmdb")
+    assert stored == ("shikimori", "tenrai", "tmdb")
 
     fetched = session.get(Game, game.id)
 
     assert fetched is not None
     assert fetched.source == Provider.SHIKIMORI
-    assert fetched.screenshot_source == Provider.JIKAN
+    assert fetched.screenshot_source == Provider.TENRAI
     assert fetched.screenshot_picker_provider == Provider.TMDB
 
 

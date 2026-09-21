@@ -15,7 +15,7 @@ Split across submodules by flow stage:
   newgame.py          newgame_command — the screenshot-less /newgame
                        entry point (picks a screenshot later instead
                        of uploading one first)
-  search.py           method selection + AniList/Shikimori/Jikan/TMDB
+  search.py           method selection + AniList/Shikimori/Tenrai/TMDB
                        search-and-pick
   manual.py           manual title/synonym entry
   screenshots.py      screenshot-source selection for the /newgame

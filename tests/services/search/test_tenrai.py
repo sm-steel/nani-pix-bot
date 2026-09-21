@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from nani_pix_bot.services.search import cache, jikan
+from nani_pix_bot.services.search import cache, tenrai
 
 
 @pytest.fixture(autouse=True)
@@ -24,11 +24,11 @@ async def test_search_parses_a_result() -> None:
         return httpx.Response(200, json={"data": [entry]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        results = await jikan.search(client, "frieren")
+        results = await tenrai.search(client, "frieren")
 
     assert results == [
-        jikan.JikanResult(
-            jikan_id=52991,
+        tenrai.TenraiResult(
+            tenrai_id=52991,
             title_romaji="Sousou no Frieren",
             title_english="Frieren: Beyond Journey's End",
             title_native="葬送のフリーレン",
@@ -44,11 +44,11 @@ async def test_search_handles_missing_english_title_and_synonyms() -> None:
         return httpx.Response(200, json={"data": [entry]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        results = await jikan.search(client, "some anime")
+        results = await tenrai.search(client, "some anime")
 
     assert results == [
-        jikan.JikanResult(
-            jikan_id=1,
+        tenrai.TenraiResult(
+            tenrai_id=1,
             title_romaji="Some Anime",
             title_english=None,
             title_native=None,
@@ -65,13 +65,13 @@ async def test_search_sends_a_descriptive_user_agent() -> None:
         return httpx.Response(200, json={"data": []})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        await jikan.search(client, "frieren")
+        await tenrai.search(client, "frieren")
 
-    assert captured["user_agent"] == jikan._REQUEST_HEADERS["User-Agent"]
+    assert captured["user_agent"] == tenrai._REQUEST_HEADERS["User-Agent"]
 
 
 async def test_search_requests_only_sfw_results() -> None:
-    """Results go into a shared group topic, so the one parameter Jikan
+    """Results go into a shared group topic, so the one parameter Tenrai
     offers for this is cheap insurance (TMDB's `include_adult` already
     defaults false)."""
     captured: dict[str, str | None] = {}
@@ -81,7 +81,7 @@ async def test_search_requests_only_sfw_results() -> None:
         return httpx.Response(200, json={"data": []})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        await jikan.search(client, "frieren")
+        await tenrai.search(client, "frieren")
 
     assert captured["sfw"] == "true"
 
@@ -96,7 +96,7 @@ async def test_search_retries_after_rate_limit_then_succeeds() -> None:
         return httpx.Response(200, json={"data": []})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        results = await jikan.search(client, "frieren")
+        results = await tenrai.search(client, "frieren")
 
     assert results == []
     assert calls["n"] == 2
@@ -108,7 +108,7 @@ async def test_search_raises_after_exhausting_rate_limit_retries() -> None:
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(RuntimeError, match="rate limit"):
-            await jikan.search(client, "frieren")
+            await tenrai.search(client, "frieren")
 
 
 async def test_get_by_id_parses_the_result() -> None:
@@ -124,10 +124,10 @@ async def test_get_by_id_parses_the_result() -> None:
         return httpx.Response(200, json={"data": entry})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        result = await jikan.get_by_id(client, 52991)
+        result = await tenrai.get_by_id(client, 52991)
 
-    assert result == jikan.JikanResult(
-        jikan_id=52991,
+    assert result == tenrai.TenraiResult(
+        tenrai_id=52991,
         title_romaji="Sousou no Frieren",
         title_english="Frieren: Beyond Journey's End",
         title_native="葬送のフリーレン",
@@ -135,12 +135,12 @@ async def test_get_by_id_parses_the_result() -> None:
     )
 
 
-async def test_get_by_id_returns_none_when_jikan_has_no_such_anime() -> None:
+async def test_get_by_id_returns_none_when_tenrai_has_no_such_anime() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, json={"status": 404, "message": "Resource not found"})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        result = await jikan.get_by_id(client, 999999)
+        result = await tenrai.get_by_id(client, 999999)
 
     assert result is None
 
@@ -153,8 +153,8 @@ async def test_search_is_cached_for_repeated_identical_queries() -> None:
         return httpx.Response(200, json={"data": []})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        await jikan.search(client, "frieren")
-        await jikan.search(client, "frieren")
+        await tenrai.search(client, "frieren")
+        await tenrai.search(client, "frieren")
 
     assert calls["n"] == 1
 
@@ -168,8 +168,8 @@ async def test_get_by_id_is_cached_for_repeated_identical_ids() -> None:
         return httpx.Response(200, json={"data": entry})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        await jikan.get_by_id(client, 52991)
-        await jikan.get_by_id(client, 52991)
+        await tenrai.get_by_id(client, 52991)
+        await tenrai.get_by_id(client, 52991)
 
     assert calls["n"] == 1
 
@@ -184,7 +184,7 @@ async def test_screenshots_parses_the_jpg_large_image_urls() -> None:
         return httpx.Response(200, json={"data": entries})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        urls = await jikan.screenshots(client, 52991)
+        urls = await tenrai.screenshots(client, 52991)
 
     assert urls == ["a-large.jpg", "b-large.jpg"]
 
@@ -196,7 +196,7 @@ async def test_screenshots_falls_back_to_image_url_when_no_large_variant() -> No
         return httpx.Response(200, json={"data": entries})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        urls = await jikan.screenshots(client, 52991)
+        urls = await tenrai.screenshots(client, 52991)
 
     assert urls == ["a.jpg"]
 
@@ -206,13 +206,13 @@ async def test_screenshots_returns_empty_list_when_none_exist() -> None:
         return httpx.Response(200, json={"data": []})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        urls = await jikan.screenshots(client, 1)
+        urls = await tenrai.screenshots(client, 1)
 
     assert urls == []
 
 
 async def test_search_raises_a_runtime_error_on_a_non_json_body() -> None:
-    """Jikan in front of a proxy can answer 200 with an HTML error page;
+    """Tenrai in front of a proxy can answer 200 with an HTML error page;
     that has to become a RuntimeError the handlers already catch, not a
     ValueError that strands the starter (issue #75)."""
 
@@ -221,7 +221,7 @@ async def test_search_raises_a_runtime_error_on_a_non_json_body() -> None:
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(RuntimeError, match="non-JSON"):
-            await jikan.search(client, "frieren")
+            await tenrai.search(client, "frieren")
 
 
 async def test_search_raises_a_runtime_error_on_a_literal_null_body() -> None:
@@ -233,7 +233,7 @@ async def test_search_raises_a_runtime_error_on_a_literal_null_body() -> None:
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(RuntimeError, match="answered 200"):
-            await jikan.search(client, "frieren")
+            await tenrai.search(client, "frieren")
 
 
 async def test_search_returns_nothing_when_the_data_container_is_null() -> None:
@@ -241,7 +241,7 @@ async def test_search_returns_nothing_when_the_data_container_is_null() -> None:
         return httpx.Response(200, json={"data": None})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        assert await jikan.search(client, "frieren") == []
+        assert await tenrai.search(client, "frieren") == []
 
 
 async def test_screenshots_returns_nothing_when_the_data_container_is_missing() -> None:
@@ -249,18 +249,18 @@ async def test_screenshots_returns_nothing_when_the_data_container_is_missing() 
         return httpx.Response(200, json={})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        assert await jikan.screenshots(client, 52991) == []
+        assert await tenrai.screenshots(client, 52991) == []
 
 
 async def test_get_by_id_returns_none_when_the_detail_body_has_no_entry() -> None:
-    """Jikan wraps its single detail entry in "data"; a body without one
+    """Tenrai wraps its single detail entry in "data"; a body without one
     is reported as "gone" rather than raising past every handler."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": None})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        assert await jikan.get_by_id(client, 52991) is None
+        assert await tenrai.get_by_id(client, 52991) is None
 
 
 async def test_screenshots_is_cached_for_repeated_calls() -> None:
@@ -271,8 +271,8 @@ async def test_screenshots_is_cached_for_repeated_calls() -> None:
         return httpx.Response(200, json={"data": []})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        await jikan.screenshots(client, 52991)
-        await jikan.screenshots(client, 52991)
+        await tenrai.screenshots(client, 52991)
+        await tenrai.screenshots(client, 52991)
 
     assert calls["n"] == 1
 
@@ -287,9 +287,9 @@ async def test_search_skips_an_entry_with_no_mal_id() -> None:
         return httpx.Response(200, json={"data": entries})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        results = await jikan.search(client, "frieren")
+        results = await tenrai.search(client, "frieren")
 
-    assert [result.jikan_id for result in results] == [52991]
+    assert [result.tenrai_id for result in results] == [52991]
 
 
 async def test_search_skips_scalar_entries() -> None:
@@ -297,7 +297,7 @@ async def test_search_skips_scalar_entries() -> None:
         return httpx.Response(200, json={"data": [1, 2]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        results = await jikan.search(client, "frieren")
+        results = await tenrai.search(client, "frieren")
 
     assert results == []
 
@@ -311,7 +311,7 @@ async def test_search_raises_when_the_data_container_is_not_an_array() -> None:
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(RuntimeError, match="expected an array"):
-            await jikan.search(client, "frieren")
+            await tenrai.search(client, "frieren")
 
 
 async def test_get_by_id_returns_none_when_the_entry_has_no_mal_id() -> None:
@@ -319,7 +319,7 @@ async def test_get_by_id_returns_none_when_the_entry_has_no_mal_id() -> None:
         return httpx.Response(200, json={"data": {"title": "Sousou no Frieren"}})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        result = await jikan.get_by_id(client, 52991)
+        result = await tenrai.get_by_id(client, 52991)
 
     assert result is None
 
@@ -331,24 +331,24 @@ async def test_screenshots_skips_scalar_entries() -> None:
         return httpx.Response(200, json={"data": [1, {"jpg": {"image_url": "a.jpg"}}]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        urls = await jikan.screenshots(client, 52991)
+        urls = await tenrai.screenshots(client, 52991)
 
     assert urls == ["a.jpg"]
 
 
 async def test_search_skips_an_entry_whose_id_is_null() -> None:
     """`raw["mal_id"]` succeeds for a JSON null, so the missing-key guard
-    alone would stage a result with jikan_id=None and build a
-    `jikan_pick:None` button that cannot work (issue #83)."""
+    alone would stage a result with tenrai_id=None and build a
+    `tenrai_pick:None` button that cannot work (issue #83)."""
     entries = [{"mal_id": None, "title": "Null id"}, {"mal_id": 52991, "title": "Frieren"}]
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": entries})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        results = await jikan.search(client, "frieren")
+        results = await tenrai.search(client, "frieren")
 
-    assert [result.jikan_id for result in results] == [52991]
+    assert [result.tenrai_id for result in results] == [52991]
 
 
 async def test_get_by_id_returns_none_when_the_id_is_null() -> None:
@@ -356,7 +356,7 @@ async def test_get_by_id_returns_none_when_the_id_is_null() -> None:
         return httpx.Response(200, json={"data": {"mal_id": None, "title": "Frieren"}})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        result = await jikan.get_by_id(client, 52991)
+        result = await tenrai.get_by_id(client, 52991)
 
     assert result is None
 
@@ -391,9 +391,9 @@ async def test_search_skips_an_entry_with_a_malformed_field(field: dict) -> None
         return httpx.Response(200, json={"data": [bad, _GOOD_ENTRY]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        results = await jikan.search(client, "frieren")
+        results = await tenrai.search(client, "frieren")
 
-    assert [result.jikan_id for result in results] == [52991]
+    assert [result.tenrai_id for result in results] == [52991]
 
 
 async def test_search_never_expands_a_string_synonyms_into_characters() -> None:
@@ -403,7 +403,7 @@ async def test_search_never_expands_a_string_synonyms_into_characters() -> None:
         return httpx.Response(200, json={"data": [entry]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        results = await jikan.search(client, "frieren")
+        results = await tenrai.search(client, "frieren")
 
     assert results == []
 
@@ -423,15 +423,16 @@ async def test_get_by_id_returns_none_for_a_malformed_field(field: dict) -> None
         return httpx.Response(200, json={"data": entry})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        assert await jikan.get_by_id(client, 52991) is None
+        assert await tenrai.get_by_id(client, 52991) is None
 
 
-# issue #89: a well-typed entry whose titles are all null/absent/empty and
-# whose synonyms are also empty stages an unwinnable game (an empty
-# match_candidates() list) that looks exactly like a working one. Explicit
-# per-case entries rather than merging over _GOOD_ENTRY: the "absent
-# entirely" case needs the keys gone, not present-and-null, which a dict
-# merge over an entry that already has those keys set can't express.
+# issue #89 (originally jikan.py, also shikimori.py): a well-typed entry whose titles are
+# all null/absent/empty and whose synonyms are also empty stages an
+# unwinnable game (an empty match_candidates() list) that looks exactly
+# like a working one. Explicit per-case entries rather than merging over
+# _GOOD_ENTRY: the "absent entirely" case needs the keys gone, not
+# present-and-null, which a dict merge over an entry that already has
+# those keys set can't express.
 _NO_TITLE_NO_SYNONYMS_ENTRIES = [
     pytest.param(
         {
@@ -473,9 +474,9 @@ async def test_search_skips_an_entry_with_no_title_and_no_synonyms(bad: dict) ->
         return httpx.Response(200, json={"data": [bad, _GOOD_ENTRY]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        results = await jikan.search(client, "frieren")
+        results = await tenrai.search(client, "frieren")
 
-    assert [result.jikan_id for result in results] == [52991]
+    assert [result.tenrai_id for result in results] == [52991]
 
 
 @pytest.mark.parametrize("entry", _NO_TITLE_NO_SYNONYMS_ENTRIES)
@@ -486,7 +487,7 @@ async def test_get_by_id_returns_none_when_the_entry_has_no_title_and_no_synonym
         return httpx.Response(200, json={"data": entry})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        assert await jikan.get_by_id(client, 52991) is None
+        assert await tenrai.get_by_id(client, 52991) is None
 
 
 async def test_search_keeps_an_entry_with_no_title_but_nonempty_synonyms() -> None:
@@ -504,11 +505,11 @@ async def test_search_keeps_an_entry_with_no_title_but_nonempty_synonyms() -> No
         return httpx.Response(200, json={"data": [entry]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        results = await jikan.search(client, "frieren")
+        results = await tenrai.search(client, "frieren")
 
     assert results == [
-        jikan.JikanResult(
-            jikan_id=1,
+        tenrai.TenraiResult(
+            tenrai_id=1,
             title_romaji=None,
             title_english=None,
             title_native=None,
@@ -530,10 +531,10 @@ async def test_get_by_id_keeps_an_entry_with_no_title_but_nonempty_synonyms() ->
         return httpx.Response(200, json={"data": entry})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        result = await jikan.get_by_id(client, 1)
+        result = await tenrai.get_by_id(client, 1)
 
-    assert result == jikan.JikanResult(
-        jikan_id=1,
+    assert result == tenrai.TenraiResult(
+        tenrai_id=1,
         title_romaji=None,
         title_english=None,
         title_native=None,
@@ -550,9 +551,9 @@ async def test_search_keeps_a_legitimately_sparse_entry_with_one_title_variant()
         return httpx.Response(200, json={"data": [entry]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        results = await jikan.search(client, "frieren")
+        results = await tenrai.search(client, "frieren")
 
-    assert [result.jikan_id for result in results] == [1]
+    assert [result.tenrai_id for result in results] == [1]
 
 
 async def test_get_by_id_warns_naming_the_parser_when_a_field_is_malformed(
@@ -564,11 +565,11 @@ async def test_get_by_id_warns_naming_the_parser_when_a_field_is_malformed(
         return httpx.Response(200, json={"data": entry})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        await jikan.get_by_id(client, 52991)
+        await tenrai.get_by_id(client, 52991)
 
     warnings = [message for level, message in records if level == "WARNING"]
     assert len(warnings) == 1
-    assert "Jikan" in warnings[0]
+    assert "Tenrai" in warnings[0]
     assert "title_synonyms" in warnings[0]
 
 
@@ -591,7 +592,7 @@ async def test_screenshots_skips_a_picture_whose_url_is_not_a_string(jpg: dict) 
         return httpx.Response(200, json={"data": entries})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        urls = await jikan.screenshots(client, 52991)
+        urls = await tenrai.screenshots(client, 52991)
 
     assert urls == ["a-large.jpg"]
 
@@ -616,14 +617,14 @@ async def test_screenshots_treats_both_url_fields_alike(
     Both alike rather than "fall back past the bad one" because that is
     exactly what `_parse_result` already does for a malformed
     `title_japanese` when `title` is fine: the entry is skipped, not
-    salvaged field by field (issue #86's review)."""
+    salvaged field by field (issue #86 review)."""
     entries = [{"jpg": jpg, "webp": {}}, {"jpg": {"large_image_url": "b-large.jpg"}, "webp": {}}]
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": entries})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        urls = await jikan.screenshots(client, 52991)
+        urls = await tenrai.screenshots(client, 52991)
 
     assert urls == ["b-large.jpg"]
     warnings = [message for level, message in records if level == "WARNING"]
@@ -631,34 +632,53 @@ async def test_screenshots_treats_both_url_fields_alike(
     assert "_picture_url" in warnings[0]
 
 
-JIKAN_RANDOM_URL = "https://api.jikan.moe/v4/random/anime"
+TENRAI_RANDOM_URL = "https://api.tenrai.org/v1/random/anime"
+
+_MEMBERS_ENTRY = {
+    "mal_id": 52991,
+    "title": "Sousou no Frieren",
+    "title_english": "Frieren: Beyond Journey's End",
+    "title_japanese": "葬送のフリーレン",
+    "title_synonyms": ["Frieren at the Funeral"],
+    "members": 10000,
+}
 
 
 async def test_random_anime_hits_the_random_endpoint_and_parses_the_result() -> None:
-    entry = {
-        "mal_id": 52991,
-        "title": "Sousou no Frieren",
-        "title_english": "Frieren: Beyond Journey's End",
-        "title_japanese": "葬送のフリーレン",
-        "title_synonyms": ["Frieren at the Funeral"],
-    }
     captured: dict[str, str] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["url"] = str(request.url).split("?")[0]
-        return httpx.Response(200, json={"data": entry})
+        return httpx.Response(200, json={"data": _MEMBERS_ENTRY})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        result = await jikan.random_anime(client)
+        result = await tenrai.random_anime(client)
 
-    assert captured["url"] == JIKAN_RANDOM_URL
-    assert result == jikan.JikanResult(
-        jikan_id=52991,
+    assert captured["url"] == TENRAI_RANDOM_URL
+    assert result == tenrai.TenraiResult(
+        tenrai_id=52991,
         title_romaji="Sousou no Frieren",
         title_english="Frieren: Beyond Journey's End",
         title_native="葬送のフリーレン",
         synonyms=["Frieren at the Funeral"],
+        members=10000,
     )
+
+
+async def test_random_anime_requests_only_sfw_results() -> None:
+    """Unlike Jikan's random endpoint, which had no such param, Tenrai's
+    does (confirmed against its OpenAPI spec) — same insurance search()
+    already applies."""
+    captured: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["sfw"] = request.url.params.get("sfw")
+        return httpx.Response(200, json={"data": _MEMBERS_ENTRY})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await tenrai.random_anime(client)
+
+    assert captured["sfw"] == "true"
 
 
 async def test_random_anime_returns_none_when_the_data_container_is_null() -> None:
@@ -666,35 +686,33 @@ async def test_random_anime_returns_none_when_the_data_container_is_null() -> No
         return httpx.Response(200, json={"data": None})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        assert await jikan.random_anime(client) is None
+        assert await tenrai.random_anime(client) is None
 
 
 async def test_random_anime_parses_the_rating_field() -> None:
-    """Jikan's own content-rating field, needed so
-    services/game/autostart.py can reject an explicit-rated random pick
-    (issue #159) — Shikimori's random_anime() already filters this
-    server-side, but Jikan's REST /random/anime endpoint has no
-    equivalent query parameter."""
-    entry = {"mal_id": 1, "title": "Some Hentai", "rating": "Rx - Hentai"}
+    """Tenrai's own content-rating field, needed so
+    services/game/autostart.py can reject an explicit-rated random pick,
+    the same way it already does for Jikan (issue #159) — Shikimori's
+    random_anime() already filters this server-side, but Tenrai's REST
+    /random/anime endpoint has no equivalent query parameter."""
+    entry = {**_MEMBERS_ENTRY, "mal_id": 1, "rating": "Rx - Hentai"}
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": entry})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        result = await jikan.random_anime(client)
+        result = await tenrai.random_anime(client)
 
     assert result is not None
     assert result.rating == "Rx - Hentai"
 
 
 async def test_random_anime_defaults_rating_to_none_when_absent() -> None:
-    entry = {"mal_id": 1, "title": "Some Anime"}
-
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"data": entry})
+        return httpx.Response(200, json={"data": _MEMBERS_ENTRY})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        result = await jikan.random_anime(client)
+        result = await tenrai.random_anime(client)
 
     assert result is not None
     assert result.rating is None
@@ -703,18 +721,16 @@ async def test_random_anime_defaults_rating_to_none_when_absent() -> None:
 async def test_random_anime_skips_rather_than_raises_on_a_non_string_rating() -> None:
     """A non-string `rating` must be caught by `parsing.optional_str`'s
     type guard and skip the whole entry (like any other malformed field
-    — see parsing.py's module docstring), not raise out of random_anime()
-    into a JobQueue callback. Before this fix, `rating=raw.get("rating")`
-    bypassed the guard entirely, so a non-string value survived parsing
-    and only blew up later at `_is_explicit`'s `.startswith` call — see
-    issue #159's final review."""
-    entry = {"mal_id": 1, "title": "Some Anime", "rating": 3}
+    — see parsing.py's module docstring), not raise out of
+    random_anime() into a JobQueue callback (issue #159 final
+    review)."""
+    entry = {**_MEMBERS_ENTRY, "mal_id": 1, "rating": 3}
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": entry})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        result = await jikan.random_anime(client)
+        result = await tenrai.random_anime(client)
 
     assert result is None
 
@@ -725,8 +741,8 @@ async def test_random_anime_is_not_cached_across_calls() -> None:
     and services/game/autostart.py's retry-a-different-anime loop."""
     calls = {"n": 0}
     entries = [
-        {"mal_id": 1, "title": "First"},
-        {"mal_id": 2, "title": "Second"},
+        {**_MEMBERS_ENTRY, "mal_id": 1, "title": "First"},
+        {**_MEMBERS_ENTRY, "mal_id": 2, "title": "Second"},
     ]
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -735,10 +751,119 @@ async def test_random_anime_is_not_cached_across_calls() -> None:
         return httpx.Response(200, json={"data": entry})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        first = await jikan.random_anime(client)
-        second = await jikan.random_anime(client)
+        first = await tenrai.random_anime(client)
+        second = await tenrai.random_anime(client)
 
     assert calls["n"] == 2
     assert first is not None
     assert second is not None
-    assert first.jikan_id != second.jikan_id
+    assert first.tenrai_id != second.tenrai_id
+
+
+async def test_random_anime_rejects_a_pick_below_the_members_floor() -> None:
+    entry = {**_MEMBERS_ENTRY, "mal_id": 1, "members": tenrai.RANDOM_PICK_MIN_MEMBERS - 1}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await tenrai.random_anime(client)
+
+    assert result is None
+
+
+async def test_random_anime_accepts_a_pick_at_the_members_floor() -> None:
+    entry = {**_MEMBERS_ENTRY, "mal_id": 1, "members": tenrai.RANDOM_PICK_MIN_MEMBERS}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await tenrai.random_anime(client)
+
+    assert result is not None
+    assert result.tenrai_id == 1
+    assert result.members == tenrai.RANDOM_PICK_MIN_MEMBERS
+
+
+async def test_random_anime_rejects_a_pick_whose_members_field_is_missing() -> None:
+    """A missing `members` field parses as None (see
+    test_search_is_unaffected_by_a_missing_members_field below, where
+    search() keeps such an entry) but must still fail random_anime()'s
+    floor — None can never be >= RANDOM_PICK_MIN_MEMBERS."""
+    entry = {
+        "mal_id": 1,
+        "title": "No Members Field",
+        "title_english": None,
+        "title_japanese": None,
+        "title_synonyms": [],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await tenrai.random_anime(client)
+
+    assert result is None
+
+
+async def test_random_anime_skips_a_malformed_members_value_with_a_warning(
+    records: list[tuple[str, str]],
+) -> None:
+    """A non-int `members` must be caught by `parsing.require_int`'s type
+    guard and skip the whole entry, the same as every other malformed
+    field, logging exactly one WARNING naming the parser and the
+    offending field."""
+    entry = {**_MEMBERS_ENTRY, "mal_id": 1, "members": "not an int"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await tenrai.random_anime(client)
+
+    assert result is None
+    warnings = [message for level, message in records if level == "WARNING"]
+    assert len(warnings) == 1
+    assert "Tenrai" in warnings[0]
+    assert "members" in warnings[0]
+
+
+async def test_search_is_unaffected_by_a_members_value_below_the_random_pick_floor() -> None:
+    """search() never applies RANDOM_PICK_MIN_MEMBERS — that floor is
+    random_anime()-only, same as shikimori.py's RANDOM_PICK_MIN_WATCHED
+    is never applied to shikimori.search()/get_by_id()."""
+    entry = {**_GOOD_ENTRY, "members": 1}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [entry]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await tenrai.search(client, "frieren")
+
+    assert len(results) == 1
+    assert results[0].members == 1
+
+
+async def test_get_by_id_is_unaffected_by_a_members_value_below_the_random_pick_floor() -> None:
+    entry = {**_GOOD_ENTRY, "members": 1}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await tenrai.get_by_id(client, 52991)
+
+    assert result is not None
+    assert result.members == 1
+
+
+async def test_search_parses_a_missing_members_field_as_none() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [_GOOD_ENTRY]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        results = await tenrai.search(client, "frieren")
+
+    assert results[0].members is None

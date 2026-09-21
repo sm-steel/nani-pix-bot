@@ -81,9 +81,9 @@ def test_build_application_registers_every_command() -> None:
 
 
 def test_pick_callback_handler_pattern_matches_every_providers_prefix() -> None:
-    # Regression: jikan/tmdb were added to the search/pick flow (and
+    # Regression: tenrai/tmdb were added to the search/pick flow (and
     # their own *_pick: keyboard prefixes) without this pattern being
-    # updated, so tapping a Jikan/TMDB result button silently did
+    # updated, so tapping a Tenrai/TMDB result button silently did
     # nothing — the callback query never reached the handler at all.
     #
     # Driven off Provider rather than a hand-written list of four, for
@@ -110,7 +110,7 @@ def test_screenshot_callback_handlers_match_only_their_own_prefix() -> None:
     # above: five screenshot-flow callback prefixes are each registered
     # as their own CallbackQueryHandler with its own regex — a typo'd
     # or overlapping pattern would either silently swallow taps meant
-    # for a different handler, or (as happened with jikan/tmdb above)
+    # for a different handler, or (as happened with tenrai/tmdb above)
     # never reach any handler at all, and nothing else would catch it.
     application = app.build_application(_config())
     handlers_by_callback = {
@@ -244,17 +244,19 @@ def test_build_application_registers_player_tracking_before_the_commands() -> No
     assert min(command_groups) > app._PLAYER_TRACKING_GROUP
 
 
-async def test_post_shutdown_closes_both_search_clients() -> None:
+async def test_post_shutdown_closes_all_three_search_clients() -> None:
     """They're process-lifetime objects in production, but every test
-    that builds an Application leaks two of them otherwise."""
+    that builds an Application leaks three of them otherwise."""
     application = app.build_application(_config())
     search_client = application.bot_data["search_client"]
     tmdb_client = application.bot_data["tmdb_client"]
+    tenrai_client = application.bot_data["tenrai_client"]
 
     await app._post_shutdown(application)
 
     assert search_client.is_closed
     assert tmdb_client.is_closed
+    assert tenrai_client.is_closed
 
 
 def test_build_application_warns_once_when_the_tmdb_token_is_missing(

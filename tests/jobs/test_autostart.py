@@ -93,6 +93,7 @@ def _make_context(session_factory, *, bot_id: int = 999) -> MagicMock:
         "game_topic_id": 7,
         "search_client": MagicMock(),
         "tmdb_client": MagicMock(),
+        "tenrai_client": MagicMock(),
         "bot_username": "nani_pix_bot",
     }
     context.bot.id = bot_id
@@ -156,7 +157,7 @@ async def test_idle_autostart_job_callback_reschedules_on_a_failed_pick(
         session.commit()
     context = _make_context(session_factory)
 
-    async def failing_gather_pick(search_client, tmdb_client):
+    async def failing_gather_pick(search_client, tmdb_client, tenrai_client):
         return None
 
     monkeypatch.setattr(autostart_service, "gather_pick", failing_gather_pick)
@@ -210,7 +211,7 @@ async def test_maybe_overthrow_claims_the_game_on_a_hit(
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -253,7 +254,7 @@ async def test_run_bot_autostart_cancels_the_idle_autostart_timer_on_success(
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -287,7 +288,7 @@ async def test_run_bot_autostart_aborts_when_a_game_appeared_in_the_meantime(
         session.commit()
     context = _make_context(session_factory)
 
-    async def fake_gather_pick(search_client, tmdb_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -315,7 +316,7 @@ async def test_run_bot_autostart_aborts_when_the_turn_was_claimed_in_the_meantim
         session.commit()
     context = _make_context(session_factory)
 
-    async def fake_gather_pick(search_client, tmdb_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -358,7 +359,7 @@ async def test_run_bot_autostart_creates_a_hard_mode_game_and_posts_both_images(
 
     monkeypatch.setattr("nani_pix_bot.services.pixelate.pixelate", fake_pixelate)
 
-    async def fake_gather_pick(search_client, tmdb_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -413,7 +414,7 @@ async def test_run_bot_autostart_uses_the_overthrow_open_caption_when_no_winner_
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
