@@ -1,0 +1,47 @@
+name: Sync develop
+
+# Every develop -> master release PR merges via a new commit on master
+# (GitHub's merge button always creates one, whichever strategy is
+# picked) that develop never gets back -- left alone, that orphan commit
+# accumulates release after release and the branches slowly diverge.
+# This closes the loop: after each push to master, open a master ->
+# develop PR bringing that commit back. It's expected to merge cleanly
+# with no conflicts -- master's content is always a subset of develop's
+# at release time -- but merging is left to a human (see CLAUDE.md: both
+# branches require a PR, no direct/automated pushes), partly because a
+# PR opened with the default GITHUB_TOKEN doesn't trigger checks.yml/
+# tests.yml (GitHub blocks Actions-created events from recursively
+# triggering more Actions), so there's no auto-merge path that would
+# actually wait on CI without a PAT.
+#
+# Requires "Allow GitHub Actions to create pull requests" enabled under
+# Settings -> Actions -> General -- off by default on a repo, and
+# gh pr create fails with a permissions error without it.
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open master -> develop sync PR if one isn't already open
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          existing=$(gh pr list --base develop --head master --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "Sync PR #$existing is already open, nothing to do."
+            exit 0
+          fi
+
+          gh pr create \
+            --base develop \
+            --head master \
+            --title "chore: sync master into develop" \
+            --body "Automated: brings the release merge commit(s) this push added to \`master\` back into \`develop\`, so the two branches don't diverge. Expected to merge with no conflicts."
