@@ -107,8 +107,6 @@ Build from source:
 
 ```sh
 docker compose build
-docker compose up -d mariadb
-docker compose run --rm --no-deps bot uv run --no-dev alembic upgrade head
 docker compose up -d
 docker compose logs -f bot
 ```
@@ -119,11 +117,12 @@ Or use a pre-built image instead of building locally: in
 [Releases](https://github.com/sm-steel/nani-pix-bot/releases) page for
 available tags), then run the same commands minus `docker compose build`.
 
-Either way: **migrate before `bot` starts, not after** — its startup
-queries the database immediately, and a crash-looping container can't be
-fixed by exec-ing into it. Once it's up, `docker compose logs -f bot`
-should show it polling Telegram; DM it or try `/version` in your topic to
-confirm it's responding.
+`bot`'s own container runs any pending Alembic migration itself before
+starting — `depends_on: mariadb: condition: service_healthy` already
+guarantees MariaDB is ready first, so there's no separate migration step
+to run. Once it's up, `docker compose logs -f bot` should show it polling
+Telegram; DM it or try `/version` in your topic to confirm it's
+responding.
 
 The `mariadb` service owns its data in a named volume (`mariadb_data`); the
 bot connects to it over the compose network as `mariadb:3306`, not
@@ -136,8 +135,8 @@ on every release (semantic-release, driven by Conventional Commits — see
 `CLAUDE.md`). How you roll updates out to your own instance is up to
 you — `docker compose pull && docker compose up -d`, a small script, a
 tool like [Watchtower](https://containrrr.dev/watchtower/), or your own
-CI/CD are all reasonable choices. Remember to run any pending Alembic
-migration before restarting `bot`, same as initial setup above.
+CI/CD are all reasonable choices. `bot` migrates itself on every start
+(see above), so there's no separate migration step to remember.
 
 ### Health checks and auto-restart
 

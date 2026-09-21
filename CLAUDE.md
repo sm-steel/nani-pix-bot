@@ -183,11 +183,12 @@ arbitrary code on one, including reading secrets):
   history and, when a release actually cuts, tags it and builds/pushes a
   versioned image to `ghcr.io/sm-steel/nani-pix-bot`. This repo has no
   deploy step of its own — rolling a released image out to your own
-  instance is up to you (see README.md's Self-hosting section). Whatever
-  you use, migrate the database (`alembic upgrade head`) before starting
-  `bot`: its startup queries the `games` table (to re-arm pending
-  timeouts) and will crash-loop against a schema a pending migration
-  hasn't created yet.
+  instance is up to you (see README.md's Self-hosting section). `bot`'s
+  own Dockerfile `CMD` runs `alembic upgrade head` before starting the
+  bot process, so migrating is automatic and no longer a manual step
+  whoever deploys it needs to remember — its startup queries the `games`
+  table (to re-arm pending timeouts) immediately, which is exactly why a
+  pending migration has to land first.
 
 If a local pre-commit pass ever disagrees with `checks.yml`'s result on the
 same commit, that's a bug in the CI setup worth fixing directly, not
