@@ -26,13 +26,13 @@ from nani_pix_bot.commands.dm_start._shared import (
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     SCREENSHOT_SEARCH_PICK_PREFIX,
-    jikan_results_keyboard,
     parse_screenshot_more_callback_data,
     parse_screenshot_pick_callback_data,
     parse_screenshot_search_again_callback_data,
     parse_screenshot_search_pick_callback_data,
     screenshot_source_keyboard,
     shikimori_results_keyboard,
+    tenrai_results_keyboard,
     tmdb_results_keyboard,
 )
 from nani_pix_bot.commands.dm_start.screenshots import (
@@ -54,9 +54,9 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.search import jikan, shikimori, tmdb
-from nani_pix_bot.services.search.jikan import JikanResult
+from nani_pix_bot.services.search import shikimori, tenrai, tmdb
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 
@@ -253,12 +253,12 @@ async def _screenshot_search_step(
                 shikimori.search,
                 lambda rs: shikimori_results_keyboard(rs, lang, pick_prefix=pick_prefix),
             )
-        elif provider == Provider.JIKAN:
+        elif provider == Provider.TENRAI:
             results, keyboard = await _search_and_build_keyboard(
                 client,
                 message.text,
-                jikan.search,
-                lambda rs: jikan_results_keyboard(rs, lang, pick_prefix=pick_prefix),
+                tenrai.search,
+                lambda rs: tenrai_results_keyboard(rs, lang, pick_prefix=pick_prefix),
             )
         else:
             results, keyboard = await _search_and_build_keyboard(
@@ -423,7 +423,7 @@ async def _show_search_pick_gallery(
 
 async def _resolve_screenshot_search_pick(
     query, context: ContextTypes.DEFAULT_TYPE, lang: str, menu: SourceMenu
-) -> tuple[Provider, int, ShikimoriResult | JikanResult | TMDBResult] | None:
+) -> tuple[Provider, int, ShikimoriResult | TenraiResult | TMDBResult] | None:
     """Parses the pick and re-fetches the full result via get_by_id
     (restart-resilient, same reasoning as search.py's own
     `_resolve_picked_result`). Replies and returns None for every
@@ -727,7 +727,7 @@ async def _handle_screenshot_pick(
         await tap.answer(i18n.t("dm_start.screenshot_gone", tap.lang))
         return None
 
-    # These are external URLs (Shikimori/Jikan/TMDB), not Telegram
+    # These are external URLs (Shikimori/Tenrai/TMDB), not Telegram
     # file_ids — the gallery album itself lets Telegram fetch them
     # server-side, but storing one as original_image needs the actual
     # bytes downloaded ourselves. Routed through _client_for_source

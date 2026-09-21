@@ -240,7 +240,8 @@ async def run_bot_autostart(
     would silently steal a turn nobody agreed to give up."""
     search_client = context.bot_data["search_client"]
     tmdb_client = context.bot_data["tmdb_client"]
-    pick = await autostart_service.gather_pick(search_client, tmdb_client)
+    tenrai_client = context.bot_data["tenrai_client"]
+    pick = await autostart_service.gather_pick(search_client, tmdb_client, tenrai_client)
     if pick is None:
         logger.warning(
             "Bot autostart ({}) found no usable pick after {} attempt(s) — skipping this firing",

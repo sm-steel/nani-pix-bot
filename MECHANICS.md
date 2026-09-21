@@ -10,7 +10,7 @@ just what's currently built.
 
 | Feature | Status |
 |---|---|
-| Game setup (DM photo, or `/newgame` + screenshot picker) + AniList/Shikimori/Jikan/TMDB/manual entry | Implemented |
+| Game setup (DM photo, or `/newgame` + screenshot picker) + AniList/Shikimori/Tenrai/TMDB/manual entry | Implemented |
 | Group-membership gate on DM setup | Implemented |
 | Pixelation stages (5 stages, scaling wrong-guess allowance, → reveal) | Implemented |
 | Guess matching (`/guess`, local fuzzy match) | Implemented |
@@ -37,7 +37,7 @@ stateDiagram-v2
 
     state SETUP {
         [*] --> PickingMethod
-        PickingMethod --> Confirming: AniList/Shikimori/Jikan/TMDB result picked,\nor manual title + synonym staged\n— screenshot already in hand (DM-photo entry)
+        PickingMethod --> Confirming: AniList/Shikimori/Tenrai/TMDB result picked,\nor manual title + synonym staged\n— screenshot already in hand (DM-photo entry)
         PickingMethod --> PickingScreenshot: same, but no screenshot yet\n(/newgame entry)
         PickingScreenshot --> Confirming: screenshot picked\n(same- or cross-provider, see\n"Picking a screenshot")\nor own photo sent
         PickingScreenshot --> PickingScreenshot: provider down / nothing found\n— back to the source menu\n(see "When a provider fails")
@@ -116,14 +116,14 @@ The timer is canceled the moment they confirm.
 
 The bot asks the starter to pick an identification method: **AniList**,
 **Shikimori** (the Russian-community anime database, with better Russian
-titles/synonyms), **Jikan** (a third-party MyAnimeList API), **TMDB**
+titles/synonyms), **Tenrai** (a third-party MyAnimeList API), **TMDB**
 (The Movie Database — English-only, no romaji/native/Russian titles), or
 **manual entry**. If the bot's language is currently Russian, Shikimori is
 listed first with a one-line note explaining why. The choice is stored on
 the game's still-`SETUP` row (`Game.source`), not in memory, so it
 survives a restart before the player finishes typing.
 
-**AniList/Shikimori/Jikan/TMDB**: the bot asks for a search query (the
+**AniList/Shikimori/Tenrai/TMDB**: the bot asks for a search query (the
 anime's name, in whatever form the player remembers it) and searches
 whichever service was picked, showing up to 5 results as an inline
 keyboard (title + year for AniList, each service's own best title
@@ -132,7 +132,7 @@ different text. The player taps the correct result, and the bot
 re-fetches the full record from that service (whichever title fields it
 has, plus its synonyms list where available) and records that service's
 own id (one column per provider — `Game.anilist_id`/`shikimori_id`/
-`jikan_id`/`tmdb_id` — so a later screenshot cross-search can reuse an id
+`tenrai_id`/`tmdb_id` — so a later screenshot cross-search can reuse an id
 already on file instead of re-searching, see below).
 **Manual entry**: for anime none of the above knows about. The bot asks
 for the title, then for at least one alternate title/synonym (comma- or
@@ -151,7 +151,7 @@ Once identification is staged, if `Game.original_image` is still empty
 screenshot instead of asking for an upload outright:
 
 1. **Source selection** — every screenshot-capable provider (Shikimori,
-   Jikan, TMDB — AniList has no such capability) is offered, with
+   Tenrai, TMDB — AniList has no such capability) is offered, with
    whichever one did the identification listed first (no extra search
    needed for that one). An **"Upload my own instead"** button is always
    present too, falling back to the traditional upload step.
@@ -324,7 +324,7 @@ own game at all — they already know the answer.
 
 Because everything the matcher needs is cached at setup time, the same
 guess always produces the same verdict for the life of a game — matching
-never depends on AniList/Shikimori/Jikan/TMDB being reachable, rate
+never depends on AniList/Shikimori/Tenrai/TMDB being reachable, rate
 limits, or anything else external, at guess time.
 
 ## Pixelation stages
@@ -680,9 +680,16 @@ and both no-ops while a game is already `SETUP`/`ACTIVE`.
 **Picking a random anime + screenshot pair** (`services/game/autostart.py`,
 framework-agnostic, no DB writes until a full pick is in hand): a random
 Shikimori anime (`order: random`, `censored: true` — excludes hentai/
-yaoi/yuri, the same scope Jikan's own filter deliberately matches — see
-its docstring), falling back to Jikan's `/random/anime` on any failure or
-empty result, then a screenshot **pair** for it — two distinct screenshots
+yaoi/yuri), falling back to Tenrai's `/random/anime` on any failure or
+empty result — Tenrai's request already asks for `sfw=true`, and
+`services/game/autostart.py` also rejects an explicit-rated (`Rx`) pick
+as a backstop, the same rejection Jikan's fallback already had. What's
+new to Tenrai's fallback since the migration off Jikan is its own
+popularity floor (`tenrai.py`'s `RANDOM_PICK_MIN_MEMBERS`, mirroring
+`shikimori.py`'s own `RANDOM_PICK_MIN_WATCHED` floor on the pick above)
+— closing issue #165: Jikan's old fallback had no such floor, so it
+could surface an anime almost nobody had actually watched — then a
+screenshot **pair** for it — two distinct screenshots
 from the same provider, since HARD MODE (see below) always needs a
 genuine pair and never the same screenshot twice — via the same
 same-provider-first, cross-search-fallback provider order human-started

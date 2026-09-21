@@ -24,10 +24,10 @@ from nani_pix_bot.commands.dm_start._shared import (
 from nani_pix_bot.commands.dm_start.keyboards import (
     SEARCH_RETRY_CALLBACK_DATA,
     anilist_results_keyboard,
-    jikan_results_keyboard,
     parse_method_callback_data,
     parse_pick_callback_data,
     shikimori_results_keyboard,
+    tenrai_results_keyboard,
     tmdb_results_keyboard,
 )
 from nani_pix_bot.commands.dm_start.manual import _manual_synonyms_step, _manual_title_step
@@ -43,10 +43,10 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.search import anilist, jikan, shikimori, tmdb
+from nani_pix_bot.services.search import anilist, shikimori, tenrai, tmdb
 from nani_pix_bot.services.search.anilist import AniListResult
-from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 
@@ -185,9 +185,9 @@ async def _search_step(
                 shikimori.search,
                 lambda rs: shikimori_results_keyboard(rs, lang),
             )
-        elif source == Provider.JIKAN:
+        elif source == Provider.TENRAI:
             results, keyboard = await _search_and_build_keyboard(
-                client, message.text, jikan.search, lambda rs: jikan_results_keyboard(rs, lang)
+                client, message.text, tenrai.search, lambda rs: tenrai_results_keyboard(rs, lang)
             )
         elif source == Provider.TMDB:
             results, keyboard = await _search_and_build_keyboard(
@@ -282,13 +282,13 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def _get_identification_result(
     provider: Provider, client: httpx.AsyncClient, external_id: int
-) -> AniListResult | ShikimoriResult | JikanResult | TMDBResult | None:
+) -> AniListResult | ShikimoriResult | TenraiResult | TMDBResult | None:
     return await provider.search_module.get_by_id(client, external_id)
 
 
 async def _resolve_picked_result(
     query, context: ContextTypes.DEFAULT_TYPE, lang: str
-) -> tuple[Provider, int, AniListResult | ShikimoriResult | JikanResult | TMDBResult] | None:
+) -> tuple[Provider, int, AniListResult | ShikimoriResult | TenraiResult | TMDBResult] | None:
     """Handles the "none of these" retry tap and resolves a valid pick to
     its (source, external_id, result) triple. Replies and returns None
     for every already-handled outcome: retry tapped, unparseable

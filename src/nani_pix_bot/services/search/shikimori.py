@@ -53,7 +53,7 @@ SEARCH_RESULT_LIMIT = 5
 SCREENSHOT_FETCH_LIMIT = 20
 # A floor on Shikimori's own score field, applied only to the random
 # pick (services/game/autostart.py) — biases toward anime popular/rated
-# enough to plausibly have screenshots on Shikimori/Jikan/TMDB, and
+# enough to plausibly have screenshots on Shikimori/Tenrai/TMDB, and
 # toward titles players are more likely to recognize. Not applied to
 # search()/get_by_id(), which answer a starter's own explicit query and
 # should never silently hide a low-scored title they typed themselves.
@@ -208,11 +208,13 @@ async def random_anime(client: httpx.AsyncClient) -> ShikimoriResult | None:
     itself returning nothing) does NOT retry within Shikimori — this
     function makes exactly one request per call, full stop. The sole
     caller, `services/game/autostart.py::_pick_random_anime`, is what
-    falls through to Jikan's unfiltered `/random/anime` within the
-    *same* autostart attempt when this returns None. Jikan's fallback
-    currently applies no popularity floor of its own, so a Shikimori
-    pick rejected for being under-watched can still surface an obscure
-    title via that fallback — tracked as a follow-up, not fixed here:
+    falls through to Tenrai's `/random/anime` within the *same*
+    autostart attempt when this returns None. Tenrai's fallback applies
+    its own popularity floor (`tenrai.RANDOM_PICK_MIN_MEMBERS`, a
+    members-count floor rather than this function's watched-count one —
+    see tenrai.py's module for why the two aren't a like-for-like
+    number), which closes the specific gap issue #165 originally tracked
+    against Jikan's old, unfiltered fallback:
     https://github.com/sm-steel/nani-pix-bot/issues/165.
 
     Deliberately NOT `@cache.cached()` — see test_random_anime_is_not_cached_across_calls."""
@@ -329,7 +331,7 @@ def _parse_shikimori_id(raw: dict) -> int:
 def _parse_screenshot_url(raw: dict) -> str | None:
     """None for a screenshot with no usable URL — a decision, not a
     malformation, so `parse_entries` drops it without a warning (the
-    same way jikan.py's `_picture_url` does). A URL that *is* there but
+    same way tenrai.py's `_picture_url` does). A URL that *is* there but
     isn't a string still warns (issue #86). Unlike REST's `original`
     field, GraphQL's `originalUrl` is confirmed live to already be
     absolute, so there's no more `SHIKIMORI_HOST` prefixing to do."""
@@ -353,7 +355,7 @@ def _watched_count(raw: dict) -> int:
     down"). This function instead logs a WARNING and returns 0 ("treat
     as 0 watched"), which naturally fails the floor rather than raising
     — a conscious departure, since a random pick quietly falling
-    through to Jikan (see `random_anime()`'s docstring) is a better
+    through to Tenrai (see `random_anime()`'s docstring) is a better
     failure mode here than aborting the whole autostart attempt on a
     schema surprise in a field this function alone depends on."""
 

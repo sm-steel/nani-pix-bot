@@ -9,14 +9,14 @@ import pytest
 
 from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.services.search import anilist, jikan, shikimori, tmdb
+from nani_pix_bot.services.search import anilist, shikimori, tenrai, tmdb
 
 
 def test_provider_values_are_the_lowercase_routing_keys() -> None:
     # These exact strings are what callback data, `Game.source` and the
     # two screenshot columns have always carried — the enum replaces the
     # literals without changing a single stored or transmitted byte.
-    assert {provider.value for provider in Provider} == {"anilist", "shikimori", "jikan", "tmdb"}
+    assert {provider.value for provider in Provider} == {"anilist", "shikimori", "tenrai", "tmdb"}
 
 
 def test_provider_is_a_str_so_a_bare_string_still_compares_equal() -> None:
@@ -29,7 +29,7 @@ def test_provider_is_a_str_so_a_bare_string_still_compares_equal() -> None:
     # The membership form too: `game_service.screenshot_capable_providers` and
     # `_validated_provider` both test a bare string against a container
     # of members rather than against one member.
-    assert read_back_from_a_string_column in (Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB)
+    assert read_back_from_a_string_column in (Provider.SHIKIMORI, Provider.TENRAI, Provider.TMDB)
     assert Provider(read_back_from_a_string_column) is Provider.SHIKIMORI
     assert isinstance(Provider.TMDB, str)
 
@@ -38,10 +38,10 @@ def test_provider_formats_as_its_value_not_its_member_name() -> None:
     # The reason this is `enum.StrEnum` rather than a hand-rolled
     # `(str, Enum)` mix: loguru builds nearly every log line in this
     # codebase by interpolation, and a mix whose `__str__` renders
-    # "Provider.JIKAN" would corrupt those silently, with no error.
-    assert str(Provider.JIKAN) == "jikan"
-    assert f"{Provider.JIKAN}" == "jikan"
-    assert f"{Provider.JIKAN!s}" == "jikan"
+    # "Provider.TENRAI" would corrupt those silently, with no error.
+    assert str(Provider.TENRAI) == "tenrai"
+    assert f"{Provider.TENRAI}" == "tenrai"
+    assert f"{Provider.TENRAI!s}" == "tenrai"
 
 
 def test_provider_display_names_are_the_brand_spellings() -> None:
@@ -50,7 +50,7 @@ def test_provider_display_names_are_the_brand_spellings() -> None:
     # and in each provider module's own inline literals.
     assert Provider.ANILIST.display_name == "AniList"
     assert Provider.SHIKIMORI.display_name == "Shikimori"
-    assert Provider.JIKAN.display_name == "Jikan"
+    assert Provider.TENRAI.display_name == "Tenrai"
     assert Provider.TMDB.display_name == "TMDB"
 
 
@@ -67,7 +67,7 @@ def test_provider_pick_prefixes_are_the_wire_format_every_member_uses() -> None:
     # keyboards.py's callback data and app.py's routing pattern.
     assert Provider.ANILIST.pick_prefix == "anilist_pick:"
     assert Provider.SHIKIMORI.pick_prefix == "shikimori_pick:"
-    assert Provider.JIKAN.pick_prefix == "jikan_pick:"
+    assert Provider.TENRAI.pick_prefix == "tenrai_pick:"
     assert Provider.TMDB.pick_prefix == "tmdb_pick:"
 
 
@@ -79,14 +79,14 @@ def test_provider_method_callback_data_is_the_method_picker_wire_format() -> Non
     # independent f"method:{...}" restatement.
     assert Provider.ANILIST.method_callback_data == "method:anilist"
     assert Provider.SHIKIMORI.method_callback_data == "method:shikimori"
-    assert Provider.JIKAN.method_callback_data == "method:jikan"
+    assert Provider.TENRAI.method_callback_data == "method:tenrai"
     assert Provider.TMDB.method_callback_data == "method:tmdb"
 
 
 def test_provider_id_attr_names_are_the_game_column_names() -> None:
     # Replaces the old `_ID_ATTRS` dict (issue #114).
     assert Provider.SHIKIMORI.id_attr_name == "shikimori_id"
-    assert Provider.JIKAN.id_attr_name == "jikan_id"
+    assert Provider.TENRAI.id_attr_name == "tenrai_id"
     assert Provider.TMDB.id_attr_name == "tmdb_id"
 
 
@@ -98,7 +98,7 @@ def test_provider_id_attr_names_are_real_attributes_on_game() -> None:
     # exists on a real `Game` instance for every screenshot-capable
     # provider, independent of any specific caller exercising it.
     game = Game()
-    for provider in (Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB):
+    for provider in (Provider.SHIKIMORI, Provider.TENRAI, Provider.TMDB):
         assert hasattr(game, provider.id_attr_name)
 
 
@@ -118,7 +118,7 @@ def test_provider_screenshot_module_resolves_to_the_real_search_module() -> None
     # property has to keep returning the same adapter singleton every
     # time, not an equal-but-different one (see services/search/base.py).
     assert Provider.SHIKIMORI.screenshot_module is shikimori.service
-    assert Provider.JIKAN.screenshot_module is jikan.service
+    assert Provider.TENRAI.screenshot_module is tenrai.service
     assert Provider.TMDB.screenshot_module is tmdb.service
 
 
@@ -135,5 +135,5 @@ def test_provider_search_module_covers_all_four_providers_including_anilist() ->
     # this must NOT raise for ANILIST.
     assert Provider.ANILIST.search_module is anilist.service
     assert Provider.SHIKIMORI.search_module is shikimori.service
-    assert Provider.JIKAN.search_module is jikan.service
+    assert Provider.TENRAI.search_module is tenrai.service
     assert Provider.TMDB.search_module is tmdb.service

@@ -25,8 +25,8 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.search.anilist import AniListResult
-from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 _FRIEREN = AniListResult(
@@ -46,8 +46,8 @@ _FRIEREN_SHIKIMORI = ShikimoriResult(
     synonyms=["Frieren at the Funeral"],
 )
 
-_FRIEREN_JIKAN = JikanResult(
-    jikan_id=52991,
+_FRIEREN_TENRAI = TenraiResult(
+    tenrai_id=52991,
     title_romaji="Sousou no Frieren",
     title_english="Frieren: Beyond Journey's End",
     title_native="葬送のフリーレン",
@@ -303,21 +303,21 @@ async def test_search_text_handler_uses_shikimori_when_that_is_the_chosen_source
     assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "shikimori_pick:52991"
 
 
-async def test_search_text_handler_uses_jikan_when_that_is_the_chosen_source(
+async def test_search_text_handler_uses_tenrai_when_that_is_the_chosen_source(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _create_setup_game(session_factory, starter_id=1, source=Provider.JIKAN)
-    search_mock = AsyncMock(return_value=[_FRIEREN_JIKAN])
-    monkeypatch.setattr(search.jikan, "search", search_mock)
+    _create_setup_game(session_factory, starter_id=1, source=Provider.TENRAI)
+    search_mock = AsyncMock(return_value=[_FRIEREN_TENRAI])
+    monkeypatch.setattr(search.tenrai, "search", search_mock)
     update = _make_text_update(user_id=1)
-    context = _make_context(session_factory, search_client=MagicMock())
+    context = _make_context(session_factory, search_client=MagicMock(), tenrai_client=MagicMock())
 
     await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    search_mock.assert_awaited_once_with(context.bot_data["search_client"], "frieren")
+    search_mock.assert_awaited_once_with(context.bot_data["tenrai_client"], "frieren")
     status_message = update.message.reply_text.return_value
     _, kwargs = status_message.edit_text.await_args
-    assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "jikan_pick:52991"
+    assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "tenrai_pick:52991"
 
 
 async def test_search_text_handler_uses_tmdb_when_that_is_the_chosen_source(
@@ -391,7 +391,7 @@ async def test_search_text_handler_routes_to_screenshot_search_while_resolving_a
     assert step_mock.await_args is not None
     menu = step_mock.await_args.args[3]
     assert menu.provider == "tmdb"
-    assert menu.providers == ["shikimori", "jikan", "tmdb"]
+    assert menu.providers == ["shikimori", "tenrai", "tmdb"]
 
 
 async def test_search_text_handler_routes_to_screenshot_search_even_with_an_old_image_staged(
@@ -430,7 +430,7 @@ async def test_search_text_handler_routes_to_screenshot_search_even_with_an_old_
     assert step_mock.await_args is not None
     menu = step_mock.await_args.args[3]
     assert menu.provider == "tmdb"
-    assert menu.providers == ["shikimori", "jikan", "tmdb"]
+    assert menu.providers == ["shikimori", "tenrai", "tmdb"]
 
 
 async def test_search_text_handler_ignores_text_while_still_on_the_source_keyboard(
@@ -623,29 +623,29 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(
         assert fetched.title_russian == "Провожающая в последний путь Фрирен"
 
 
-async def test_pick_callback_handler_shows_a_preview_on_a_valid_jikan_pick(
+async def test_pick_callback_handler_shows_a_preview_on_a_valid_tenrai_pick(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
-    get_by_id_mock = AsyncMock(return_value=_FRIEREN_JIKAN)
-    monkeypatch.setattr(search.jikan, "get_by_id", get_by_id_mock)
-    _create_setup_game(session_factory, starter_id=1, source=Provider.JIKAN)
+    get_by_id_mock = AsyncMock(return_value=_FRIEREN_TENRAI)
+    monkeypatch.setattr(search.tenrai, "get_by_id", get_by_id_mock)
+    _create_setup_game(session_factory, starter_id=1, source=Provider.TENRAI)
 
-    update = _make_callback_update(data="jikan_pick:52991", user_id=1)
-    context = _make_callback_context(session_factory)
+    update = _make_callback_update(data="tenrai_pick:52991", user_id=1)
+    context = _make_callback_context(session_factory, tenrai_client=MagicMock())
 
     await search.pick_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    get_by_id_mock.assert_awaited_once_with(context.bot_data["search_client"], 52991)
+    get_by_id_mock.assert_awaited_once_with(context.bot_data["tenrai_client"], 52991)
     context.bot.send_media_group.assert_awaited_once()
 
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.status == GameStatus.SETUP
         assert fetched.setup_step == SetupStep.CONFIRMING
-        assert fetched.source == "jikan"
+        assert fetched.source == "tenrai"
 
 
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_tmdb_pick(

@@ -7,7 +7,7 @@
 
 Telegram bot for an anime-screenshot guessing game, played in one topic of a
 group chat. Someone DMs the bot a screenshot — or sends `/newgame` and picks
-a real screenshot from Shikimori/Jikan/TMDB instead — and identifies the
+a real screenshot from Shikimori/Tenrai/TMDB instead — and identifies the
 anime (see `MECHANICS.md` for exactly how); the bot posts it heavily
 pixelated into the group's game topic, and it gets progressively clearer
 as wrong `/guess` attempts accumulate — each of the five stages has its
@@ -23,7 +23,7 @@ design. Want to run your own instance? See **Self-hosting** below.
 - [python-telegram-bot](https://docs.python-telegram-bot.org/) (async, long-polling)
 - SQLAlchemy + Alembic against MariaDB
 - Pillow (pixelation), rapidfuzz (guess matching), httpx (AniList/Shikimori
-  GraphQL, Jikan/TMDB REST)
+  GraphQL, Tenrai/TMDB REST)
 - Linting/formatting: `ruff`. Type checking: `ty`. Complexity/duplication/secrets: `qlty`.
 
 ## Dev setup

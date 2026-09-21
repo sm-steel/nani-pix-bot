@@ -68,12 +68,14 @@ _IMAGE_DOWNLOAD_ERRORS = (httpx.HTTPError,)
 # "add a synonym" step.
 _SYNONYM_SPLIT_RE = re.compile(r"[,\n]")
 
-# TMDB is the only provider needing its own client (may need a proxy +
-# always needs Bearer-token auth — see app.py's build_application());
-# every other provider shares "search_client".
+# TMDB and Tenrai are the two providers needing their own client — TMDB
+# may need a proxy and always needs Bearer-token auth, Tenrai may need a
+# proxy but needs no auth header (see app.py's build_application()) —
+# every other provider (AniList/Shikimori) shares "search_client".
 # Used by search.py's search/pick flow and both screenshots.py's/
 # screenshot_gallery.py's gallery flow.
 _TMDB_CLIENT_BOT_DATA_KEY = "tmdb_client"
+_TENRAI_CLIENT_BOT_DATA_KEY = "tenrai_client"
 
 _ResultT = TypeVar("_ResultT")
 
@@ -119,10 +121,15 @@ def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: Provider) -> 
     made this Unknown — and since every search, screenshot fetch and
     image download in the package funnels through here, that one Unknown
     was enough to stop `ty` checking a single call made on a client
-    anywhere downstream. app.py puts a real AsyncClient under both keys
-    (see build_application), so the cast states what is already true
-    rather than papering over a doubt."""
-    key = _TMDB_CLIENT_BOT_DATA_KEY if source == Provider.TMDB else "search_client"
+    anywhere downstream. app.py puts a real AsyncClient under all three
+    keys (see build_application), so the cast states what is already
+    true rather than papering over a doubt."""
+    if source == Provider.TMDB:
+        key = _TMDB_CLIENT_BOT_DATA_KEY
+    elif source == Provider.TENRAI:
+        key = _TENRAI_CLIENT_BOT_DATA_KEY
+    else:
+        key = "search_client"
     return cast(httpx.AsyncClient, context.bot_data[key])
 
 

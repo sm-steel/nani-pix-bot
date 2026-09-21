@@ -31,8 +31,8 @@ from nani_pix_bot.models.enums import DISCOURAGED_ALGORITHMS, PixelAlgorithm, Pr
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.search.anilist import AniListResult
-from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 SEARCH_RETRY_CALLBACK_DATA = "search_retry"
@@ -44,7 +44,7 @@ SEARCH_RETRY_CALLBACK_DATA = "search_retry"
 # truth (issue #114).
 ANILIST_METHOD_CALLBACK_DATA = Provider.ANILIST.method_callback_data
 SHIKIMORI_METHOD_CALLBACK_DATA = Provider.SHIKIMORI.method_callback_data
-JIKAN_METHOD_CALLBACK_DATA = Provider.JIKAN.method_callback_data
+TENRAI_METHOD_CALLBACK_DATA = Provider.TENRAI.method_callback_data
 TMDB_METHOD_CALLBACK_DATA = Provider.TMDB.method_callback_data
 # "manual" is deliberately not a Provider member (see its docstring) —
 # stays a standalone literal.
@@ -148,12 +148,12 @@ def shikimori_results_keyboard(
     return _results_keyboard(results, lang, accessors, pick_prefix)
 
 
-def jikan_results_keyboard(
-    results: list[JikanResult], lang: str, *, pick_prefix: str = Provider.JIKAN.pick_prefix
+def tenrai_results_keyboard(
+    results: list[TenraiResult], lang: str, *, pick_prefix: str = Provider.TENRAI.pick_prefix
 ) -> InlineKeyboardMarkup:
     """See `shikimori_results_keyboard` for why `pick_prefix` is
     overridable."""
-    accessors = _ResultAccessors(label_fn=_jikan_label, id_fn=lambda result: result.jikan_id)
+    accessors = _ResultAccessors(label_fn=_tenrai_label, id_fn=lambda result: result.tenrai_id)
     return _results_keyboard(results, lang, accessors, pick_prefix)
 
 
@@ -195,9 +195,9 @@ def _shikimori_label(result: ShikimoriResult, lang: str) -> str:
     return game_service.prioritized_title(variants, lang=lang)
 
 
-def _jikan_label(result: JikanResult, lang: str) -> str:
+def _tenrai_label(result: TenraiResult, lang: str) -> str:
     """Picks the result's display title via the same priority rule as
-    `_anilist_label()` above. Jikan doesn't expose a Russian-specific
+    `_anilist_label()` above. Tenrai doesn't expose a Russian-specific
     field either, so every branch resolves the same way (English, then
     romaji, then native) regardless of `lang`."""
     variants = game_service.TitleVariants(
@@ -259,12 +259,12 @@ def parse_pick_callback_data(data: str) -> tuple[Provider, int] | None:
 
 
 def method_selection_keyboard(*, prefer_shikimori: bool, lang: str) -> InlineKeyboardMarkup:
-    """AniList vs. Shikimori vs. Jikan vs. TMDB vs. manual-entry choice,
+    """AniList vs. Shikimori vs. Tenrai vs. TMDB vs. manual-entry choice,
     shown right after the starter's photo (or, from /newgame, before
     any photo exists). Shikimori is offered first for RU-language bots
-    (see MECHANICS.md's "Starting a game"); Jikan/TMDB have no
+    (see MECHANICS.md's "Starting a game"); Tenrai/TMDB have no
     RU-specific reason to move around, so they're always third/fourth,
-    before manual entry. "AniList"/"Shikimori"/"Jikan"/"TMDB" are brand
+    before manual entry. "AniList"/"Shikimori"/"Tenrai"/"TMDB" are brand
     names and stay untranslated regardless of `lang`."""
     anilist_button = InlineKeyboardButton(
         Provider.ANILIST.display_name, callback_data=ANILIST_METHOD_CALLBACK_DATA
@@ -272,8 +272,8 @@ def method_selection_keyboard(*, prefer_shikimori: bool, lang: str) -> InlineKey
     shikimori_button = InlineKeyboardButton(
         Provider.SHIKIMORI.display_name, callback_data=SHIKIMORI_METHOD_CALLBACK_DATA
     )
-    jikan_button = InlineKeyboardButton(
-        Provider.JIKAN.display_name, callback_data=JIKAN_METHOD_CALLBACK_DATA
+    tenrai_button = InlineKeyboardButton(
+        Provider.TENRAI.display_name, callback_data=TENRAI_METHOD_CALLBACK_DATA
     )
     tmdb_button = InlineKeyboardButton(
         Provider.TMDB.display_name, callback_data=TMDB_METHOD_CALLBACK_DATA
@@ -286,7 +286,7 @@ def method_selection_keyboard(*, prefer_shikimori: bool, lang: str) -> InlineKey
         if prefer_shikimori
         else [anilist_button, shikimori_button]
     )
-    ordered.append(jikan_button)
+    ordered.append(tenrai_button)
     ordered.append(tmdb_button)
     ordered.append(manual_button)
     return InlineKeyboardMarkup([[button] for button in ordered])
@@ -295,7 +295,7 @@ def method_selection_keyboard(*, prefer_shikimori: bool, lang: str) -> InlineKey
 _METHOD_CALLBACK_DATA_TO_SOURCE: dict[str, Provider | Literal["manual"]] = {
     ANILIST_METHOD_CALLBACK_DATA: Provider.ANILIST,
     SHIKIMORI_METHOD_CALLBACK_DATA: Provider.SHIKIMORI,
-    JIKAN_METHOD_CALLBACK_DATA: Provider.JIKAN,
+    TENRAI_METHOD_CALLBACK_DATA: Provider.TENRAI,
     TMDB_METHOD_CALLBACK_DATA: Provider.TMDB,
     MANUAL_METHOD_CALLBACK_DATA: "manual",
 }

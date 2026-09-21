@@ -26,7 +26,7 @@ class Provider(enum.StrEnum):
 
     `enum.StrEnum` (stdlib since 3.11) rather than a hand-rolled
     `class Provider(str, enum.Enum)`: the latter's `__str__`/`__format__`
-    can render `"Provider.JIKAN"` instead of `"jikan"` depending on the
+    can render `"Provider.TENRAI"` instead of `"tenrai"` depending on the
     Python version, and nearly every log line in this codebase is built
     by loguru interpolation — that failure mode would corrupt log output
     with no error anywhere.
@@ -40,7 +40,7 @@ class Provider(enum.StrEnum):
 
     ANILIST = "anilist"
     SHIKIMORI = "shikimori"
-    JIKAN = "jikan"
+    TENRAI = "tenrai"
     TMDB = "tmdb"
 
     @property
@@ -60,8 +60,8 @@ class Provider(enum.StrEnum):
             return "AniList"
         if self is Provider.SHIKIMORI:
             return "Shikimori"
-        if self is Provider.JIKAN:
-            return "Jikan"
+        if self is Provider.TENRAI:
+            return "Tenrai"
         if self is Provider.TMDB:
             return "TMDB"
         assert_never(self)
@@ -99,7 +99,7 @@ class Provider(enum.StrEnum):
     @property
     def id_attr_name(self) -> str:
         """The `Game` column name that stores this provider's screenshot
-        id — see `models/game.py`'s `shikimori_id`/`jikan_id`/`tmdb_id`
+        id — see `models/game.py`'s `shikimori_id`/`tenrai_id`/`tmdb_id`
         columns.
 
         AniList identifies an anime but has no screenshot endpoint (see
@@ -113,8 +113,8 @@ class Provider(enum.StrEnum):
         Replaces the old `_ID_ATTRS` dict (issue #114)."""
         if self is Provider.SHIKIMORI:
             return "shikimori_id"
-        if self is Provider.JIKAN:
-            return "jikan_id"
+        if self is Provider.TENRAI:
+            return "tenrai_id"
         if self is Provider.TMDB:
             return "tmdb_id"
         raise ValueError(f"Provider.{self.name} has no screenshot id column")
@@ -136,7 +136,7 @@ class Provider(enum.StrEnum):
         every access — deliberately not at module level and not behind
         `TYPE_CHECKING` (the module object is needed at runtime, not
         just for type-checking). `services/search/shikimori.py` (and
-        `jikan.py`/`tmdb.py`) already import `Provider` from this module
+        `tenrai.py`/`tmdb.py`) already import `Provider` from this module
         at their own top level, so a module-level import back here would
         be a real two-hop cycle (`models.enums` <-> `services.search.*`)
         — a lazy per-call import avoids it, since by the time this runs
@@ -147,12 +147,12 @@ class Provider(enum.StrEnum):
         `id_attr_name` above.
 
         Replaces the old `_SCREENSHOT_MODULES` dict (issue #114)."""
-        from nani_pix_bot.services.search import jikan, shikimori, tmdb
+        from nani_pix_bot.services.search import shikimori, tenrai, tmdb
 
         if self is Provider.SHIKIMORI:
             return shikimori.service
-        if self is Provider.JIKAN:
-            return jikan.service
+        if self is Provider.TENRAI:
+            return tenrai.service
         if self is Provider.TMDB:
             return tmdb.service
         raise ValueError(f"Provider.{self.name} has no screenshot module")
@@ -176,14 +176,14 @@ class Provider(enum.StrEnum):
         rather than at module level.
 
         Replaces the old `_SEARCH_MODULES` dict (issue #114)."""
-        from nani_pix_bot.services.search import anilist, jikan, shikimori, tmdb
+        from nani_pix_bot.services.search import anilist, shikimori, tenrai, tmdb
 
         if self is Provider.ANILIST:
             return anilist.service
         if self is Provider.SHIKIMORI:
             return shikimori.service
-        if self is Provider.JIKAN:
-            return jikan.service
+        if self is Provider.TENRAI:
+            return tenrai.service
         if self is Provider.TMDB:
             return tmdb.service
         assert_never(self)

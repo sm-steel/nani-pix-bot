@@ -54,11 +54,11 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from nani_pix_bot.services.search.anilist import AniListResult
-    from nani_pix_bot.services.search.jikan import JikanResult
     from nani_pix_bot.services.search.shikimori import ShikimoriResult
+    from nani_pix_bot.services.search.tenrai import TenraiResult
     from nani_pix_bot.services.search.tmdb import TMDBResult
 
-    _SearchResult = AniListResult | ShikimoriResult | JikanResult | TMDBResult
+    _SearchResult = AniListResult | ShikimoriResult | TenraiResult | TMDBResult
 
 
 def _require_callable(module: ModuleType, name: str) -> None:
@@ -102,7 +102,7 @@ class SearchModule:
 
 
 class ScreenshotModule(SearchModule):
-    """Adds `screenshots()` — constructed only for shikimori/jikan/tmdb,
+    """Adds `screenshots()` — constructed only for shikimori/tenrai/tmdb,
     matching `Provider.screenshot_module`'s narrower coverage (AniList has
     no screenshot endpoint)."""
 

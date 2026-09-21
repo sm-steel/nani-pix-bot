@@ -12,8 +12,8 @@ from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.game import state, turns
 from nani_pix_bot.services.search.anilist import AniListResult
-from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 _FRIEREN = AniListResult(
@@ -33,8 +33,8 @@ _FRIEREN_SHIKIMORI = ShikimoriResult(
     synonyms=["Frieren at the Funeral"],
 )
 
-_FRIEREN_JIKAN = JikanResult(
-    jikan_id=52991,
+_FRIEREN_TENRAI = TenraiResult(
+    tenrai_id=52991,
     title_romaji="Sousou no Frieren",
     title_english="Frieren: Beyond Journey's End",
     title_native="葬送のフリーレン",
@@ -309,24 +309,24 @@ def test_stage_result_assigns_shikimori_fields_including_russian_title(session: 
     assert fetched.source == "shikimori"
 
 
-def test_stage_result_assigns_jikan_fields_including_native_title(session: Session) -> None:
+def test_stage_result_assigns_tenrai_fields_including_native_title(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
     game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
     session.commit()
 
-    game_service.stage_result(game, _FRIEREN_JIKAN, source=Provider.JIKAN)
+    game_service.stage_result(game, _FRIEREN_TENRAI, source=Provider.TENRAI)
     session.commit()
 
     fetched = session.get(Game, game.id)
     assert fetched is not None
     assert fetched.status == GameStatus.SETUP
     assert fetched.anilist_id is None
-    assert fetched.jikan_id == 52991
+    assert fetched.tenrai_id == 52991
     assert fetched.title_romaji == "Sousou no Frieren"
     assert fetched.title_native == "葬送のフリーレン"
     assert fetched.synonyms == ["Frieren at the Funeral"]
-    assert fetched.source == "jikan"
+    assert fetched.source == "tenrai"
 
 
 def test_stage_result_assigns_tmdb_fields_including_native_title(session: Session) -> None:
@@ -382,8 +382,8 @@ def test_set_screenshot_provider_id_handles_each_provider_type(session: Session)
     game_service.set_screenshot_provider_id(game, _FRIEREN_SHIKIMORI)
     assert game.shikimori_id == 52991
 
-    game_service.set_screenshot_provider_id(game, _FRIEREN_JIKAN)
-    assert game.jikan_id == 52991
+    game_service.set_screenshot_provider_id(game, _FRIEREN_TENRAI)
+    assert game.tenrai_id == 52991
 
     game_service.set_screenshot_provider_id(game, _FRIEREN_TMDB)
     assert game.tmdb_id == 209867
