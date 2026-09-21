@@ -27,6 +27,7 @@ from nani_pix_bot.commands import (
     gamesenabled,
     language,
     leaderboard,
+    mal_link,
     onboarding,
     setautostart,
     stageconfig,
@@ -207,6 +208,8 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("stop", game_flow.stop_command))
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
     application.add_handler(CommandHandler("language", language.language_command))
+    application.add_handler(CommandHandler("linkmal", mal_link.linkmal_command))
+    application.add_handler(CommandHandler("unlinkmal", mal_link.unlinkmal_command))
     application.add_handler(CommandHandler("start", onboarding.start_command))
     application.add_handler(CommandHandler("help", onboarding.help_command))
     application.add_handler(CommandHandler("stageconfig", stageconfig.stageconfig_command))

@@ -3,6 +3,10 @@
   "language.not_admin": "Изменить язык бота может только администратор группы.",
   "language.set": "Установлен русский язык.",
 
+  "mal_link.not_configured": "Привязка аккаунта MyAnimeList не настроена для этого бота.",
+  "mal_link.authorize_prompt": "Перейдите по ссылке, войдите в MyAnimeList и разрешите доступ:\n{url}\n\nЗатем пришлите мне код, который там покажут.",
+  "mal_link.unlinked": "Ваш аккаунт MyAnimeList отвязан.",
+
   "correct.usage": "Использование: /correct @имя_пользователя",
   "correct.no_game": "Сейчас нет активной игры.",
   "correct.not_starter": "Использовать /correct может только тот, кто начал этот раунд.",
