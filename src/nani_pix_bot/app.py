@@ -116,6 +116,20 @@ def build_application(config: Config) -> Application:
     application.bot_data["tenrai_client"] = httpx.AsyncClient(
         timeout=30, proxy=config.telegram_proxy_url
     )
+    # MAL's official API (myanimelist.net/api.myanimelist.net) — unlike
+    # tmdb_client, this can't preset a static Authorization default
+    # header, since every player has their own Bearer token; callers
+    # (services/search/mal_user.py) pass it per request instead.
+    application.bot_data["mal_client"] = httpx.AsyncClient(
+        timeout=30, proxy=config.telegram_proxy_url
+    )
+    # Pulled out of `config` individually, matching how group_chat_id/
+    # game_topic_id are already exposed to handlers above — this
+    # codebase never stores the whole Config object in bot_data.
+    application.bot_data["mal_client_id"] = config.mal_client_id
+    application.bot_data["mal_client_secret"] = config.mal_client_secret
+    application.bot_data["mal_redirect_uri"] = config.mal_redirect_uri
+    application.bot_data["mal_token_encryption_key"] = config.mal_token_encryption_key
     application.bot_data["group_chat_id"] = config.group_chat_id
     application.bot_data["game_topic_id"] = config.game_topic_id
 
@@ -238,12 +252,12 @@ async def _post_init(application: Application) -> None:
 
 
 async def _post_shutdown(application: Application) -> None:
-    """The three `httpx.AsyncClient`s built in build_application() are
+    """The four `httpx.AsyncClient`s built in build_application() are
     ours, not PTB's, so nothing else closes them. In production they're
     process-lifetime objects and this is just tidiness on the way out;
     in tests, where an Application is built per case, it's what stops
-    three clients leaking every time."""
-    for key in ("search_client", "tmdb_client", "tenrai_client"):
+    four clients leaking every time."""
+    for key in ("search_client", "tmdb_client", "tenrai_client", "mal_client"):
         client = application.bot_data.get(key)
         if client is not None:
             await client.aclose()

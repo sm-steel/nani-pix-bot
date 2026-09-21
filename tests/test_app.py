@@ -53,6 +53,11 @@ def test_build_application_populates_bot_data() -> None:
     assert application.bot_data["game_topic_id"] == 7
     assert application.bot_data["session_factory"] is not None
     assert application.bot_data["search_client"] is not None
+    assert application.bot_data["mal_client"] is not None
+    assert application.bot_data["mal_client_id"] is None
+    assert application.bot_data["mal_client_secret"] is None
+    assert application.bot_data["mal_redirect_uri"] is None
+    assert application.bot_data["mal_token_encryption_key"] is None
 
 
 def test_build_application_registers_every_command() -> None:
@@ -248,19 +253,21 @@ def test_build_application_registers_player_tracking_before_the_commands() -> No
     assert min(command_groups) > app._PLAYER_TRACKING_GROUP
 
 
-async def test_post_shutdown_closes_all_three_search_clients() -> None:
+async def test_post_shutdown_closes_all_four_search_clients() -> None:
     """They're process-lifetime objects in production, but every test
-    that builds an Application leaks three of them otherwise."""
+    that builds an Application leaks four of them otherwise."""
     application = app.build_application(_config())
     search_client = application.bot_data["search_client"]
     tmdb_client = application.bot_data["tmdb_client"]
     tenrai_client = application.bot_data["tenrai_client"]
+    mal_client = application.bot_data["mal_client"]
 
     await app._post_shutdown(application)
 
     assert search_client.is_closed
     assert tmdb_client.is_closed
     assert tenrai_client.is_closed
+    assert mal_client.is_closed
 
 
 def test_build_application_warns_once_when_the_tmdb_token_is_missing(
