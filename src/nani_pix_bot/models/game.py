@@ -39,7 +39,7 @@ class Game(Base):
     # the identification source (see screenshot_source below, and
     # MECHANICS.md's "Starting a game" section).
     shikimori_id: Mapped[int | None] = mapped_column(default=None)
-    jikan_id: Mapped[int | None] = mapped_column(default=None)
+    tenrai_id: Mapped[int | None] = mapped_column(default=None)
     tmdb_id: Mapped[int | None] = mapped_column(default=None)
     title_romaji: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
     title_english: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
@@ -140,6 +140,23 @@ class Game(Base):
     # while status is ACTIVE.
     inactivity_nudge_at: Mapped[datetime | None] = mapped_column(default=None)
     inactivity_advance_at: Mapped[datetime | None] = mapped_column(default=None)
+    # HARD MODE: populated only for bot-autostarted games (see
+    # services/game/autostart.py — added in a later task); always
+    # False/None for a normal (starter-initiated) game. A hard-mode game
+    # has two turns played against the same screenshot pair, so
+    # hard_mode_image_a/_b hold that one pair for the whole game rather
+    # than one column set per turn — only the pixelation width differs
+    # between turns. original_image itself is left unpopulated for these
+    # games. hard_mode_turn is 1 or 2, deliberately a plain int rather
+    # than a new enum — no admin config, no third value.
+    hard_mode: Mapped[bool] = mapped_column(default=False)
+    hard_mode_turn: Mapped[int | None] = mapped_column(default=None)
+    hard_mode_image_a: Mapped[bytes | None] = mapped_column(
+        LargeBinary(length=IMAGE_COLUMN_LENGTH), deferred=True, default=None
+    )
+    hard_mode_image_b: Mapped[bytes | None] = mapped_column(
+        LargeBinary(length=IMAGE_COLUMN_LENGTH), deferred=True, default=None
+    )
 
     starter: Mapped[Player] = relationship(foreign_keys=[starter_id])
     winner: Mapped[Player | None] = relationship(foreign_keys=[winner_id])

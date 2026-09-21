@@ -4,8 +4,11 @@ JobQueue jobs from the database on startup (JobQueue jobs don't survive
 a process restart — see MECHANICS.md's "Timeout" section)."""
 
 import re
+from collections.abc import Mapping
+from typing import Any
 
 import httpx
+from cryptography.fernet import Fernet
 from loguru import logger
 from telegram import Update
 from telegram.error import Conflict, NetworkError
@@ -27,6 +30,7 @@ from nani_pix_bot.commands import (
     gamesenabled,
     language,
     leaderboard,
+    mal_link,
     onboarding,
     setautostart,
     stageconfig,
@@ -38,6 +42,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 )
 from nani_pix_bot.commands.helpers import player_tracking
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
+from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
 from nani_pix_bot.config import Config, load_config
 from nani_pix_bot.jobs.timers import rearm_pending_timeouts
@@ -70,6 +75,53 @@ _PLAYER_TRACKING_GROUP = -1
 _PICK_PREFIX_PATTERN = "|".join(re.escape(provider.pick_prefix) for provider in Provider)
 
 
+def _usable_mal_encryption_key(key: str | None) -> str | None:
+    """`key` if this bot can actually encrypt with it, None if it isn't a
+    well-formed Fernet key at all.
+
+    Constructing the `Fernet` once here is the only place that happens
+    before a player's tokens are written: services/security/token_crypto.py
+    builds one lazily inside encrypt()/decrypt(), so a malformed key used
+    to surface for the first time on a real link attempt — after the
+    player had already spent their single-use MAL authorization code.
+    Rejecting it here instead hides the "My MAL List" button and makes
+    /linkmal say it isn't configured (see
+    commands/helpers/mal_config.py), which is the honest answer: a bot
+    that cannot store tokens cannot link accounts. Never log the key
+    itself — this repo is public, and so is the deploy logs' audience."""
+    if key is None:
+        return None
+    try:
+        Fernet(key.encode())
+    except ValueError:
+        logger.error(
+            "MAL_TOKEN_ENCRYPTION_KEY is not a valid Fernet key (44 url-safe-base64 "
+            "characters, e.g. from Fernet.generate_key()) — MAL account linking is "
+            "disabled until it is fixed (see .env.example)"
+        )
+        return None
+    return key
+
+
+def _warn_about_partial_mal_config(bot_data: Mapping[str, Any]) -> None:
+    """The four MAL settings are optional *together* — a fresh clone with
+    none of them simply never offers the "My MAL List" method. Some but
+    not all is the dangerous shape, and nothing downstream can recover
+    from it, so it gets said out loud at boot rather than showing up as a
+    method that can't finish (same precedent as the TMDB warning in
+    build_application). Each `bot_data` key is its env var lowercased, so
+    the names below need no second hardcoded list."""
+    missing = [key.upper() for key in MAL_BOT_DATA_KEYS if not bot_data.get(key)]
+    if not missing or len(missing) == len(MAL_BOT_DATA_KEYS):
+        return
+    logger.warning(
+        "MAL account linking is only partly configured — {} missing or unusable, so "
+        'the "My MAL List" identification method stays hidden and /linkmal will say '
+        "it isn't configured (see .env.example)",
+        ", ".join(missing),
+    )
+
+
 def build_application(config: Config) -> Application:
     builder = ApplicationBuilder().token(config.bot_token)
     builder = builder.get_updates_connection_pool_size(GET_UPDATES_CONNECTION_POOL_SIZE)
@@ -81,10 +133,9 @@ def build_application(config: Config) -> Application:
 
     engine = db.get_engine(config.database_url)
     application.bot_data["session_factory"] = db.make_session_factory(engine)
-    # Shared by anilist.py/shikimori.py/jikan.py — a plain HTTP client,
-    # nothing service-specific about it (each module sends its own
-    # headers per request). All three are reachable directly, no proxy
-    # needed.
+    # Shared by anilist.py/shikimori.py — a plain HTTP client, nothing
+    # service-specific about it (each module sends its own headers per
+    # request). Both are reachable directly, no proxy needed.
     application.bot_data["search_client"] = httpx.AsyncClient(timeout=30)
     if not config.tmdb_read_access_token:
         # Optional by design (config.py) — but without this, a fresh
@@ -111,6 +162,29 @@ def build_application(config: Config) -> Application:
             else {}
         ),
     )
+    # tenrai.py gets its own client too, same as tmdb.py's above — may
+    # need the same optional proxy, but no auth header: Tenrai's public
+    # tier needs none (see services/search/tenrai.py's module docstring).
+    application.bot_data["tenrai_client"] = httpx.AsyncClient(
+        timeout=30, proxy=config.telegram_proxy_url
+    )
+    # MAL's official API (myanimelist.net/api.myanimelist.net) — unlike
+    # tmdb_client, this can't preset a static Authorization default
+    # header, since every player has their own Bearer token; callers
+    # (services/search/mal_user.py) pass it per request instead.
+    application.bot_data["mal_client"] = httpx.AsyncClient(
+        timeout=30, proxy=config.telegram_proxy_url
+    )
+    # Pulled out of `config` individually, matching how group_chat_id/
+    # game_topic_id are already exposed to handlers above — this
+    # codebase never stores the whole Config object in bot_data.
+    application.bot_data["mal_client_id"] = config.mal_client_id
+    application.bot_data["mal_client_secret"] = config.mal_client_secret
+    application.bot_data["mal_redirect_uri"] = config.mal_redirect_uri
+    application.bot_data["mal_token_encryption_key"] = _usable_mal_encryption_key(
+        config.mal_token_encryption_key
+    )
+    _warn_about_partial_mal_config(application.bot_data)
     application.bot_data["group_chat_id"] = config.group_chat_id
     application.bot_data["game_topic_id"] = config.game_topic_id
 
@@ -172,6 +246,12 @@ def build_application(config: Config) -> Application:
         )
     )
     application.add_handler(
+        CallbackQueryHandler(dm_start.mal_list_page_callback_handler, pattern=r"^mal_list_page:")
+    )
+    application.add_handler(
+        CallbackQueryHandler(dm_start.mal_list_pick_callback_handler, pattern=r"^mal_list_pick:")
+    )
+    application.add_handler(
         CallbackQueryHandler(dm_start.preview_callback_handler, pattern=r"^preview:")
     )
     application.add_handler(
@@ -188,6 +268,8 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("stop", game_flow.stop_command))
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
     application.add_handler(CommandHandler("language", language.language_command))
+    application.add_handler(CommandHandler("linkmal", mal_link.linkmal_command))
+    application.add_handler(CommandHandler("unlinkmal", mal_link.unlinkmal_command))
     application.add_handler(CommandHandler("start", onboarding.start_command))
     application.add_handler(CommandHandler("help", onboarding.help_command))
     application.add_handler(CommandHandler("stageconfig", stageconfig.stageconfig_command))
@@ -233,12 +315,12 @@ async def _post_init(application: Application) -> None:
 
 
 async def _post_shutdown(application: Application) -> None:
-    """The two `httpx.AsyncClient`s built in build_application() are
+    """The four `httpx.AsyncClient`s built in build_application() are
     ours, not PTB's, so nothing else closes them. In production they're
     process-lifetime objects and this is just tidiness on the way out;
     in tests, where an Application is built per case, it's what stops
-    two clients leaking every time."""
-    for key in ("search_client", "tmdb_client"):
+    four clients leaking every time."""
+    for key in ("search_client", "tmdb_client", "tenrai_client", "mal_client"):
         client = application.bot_data.get(key)
         if client is not None:
             await client.aclose()

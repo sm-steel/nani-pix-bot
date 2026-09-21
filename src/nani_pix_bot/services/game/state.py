@@ -16,8 +16,8 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import matching, players
 from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.search.anilist import AniListResult
-from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 from nani_pix_bot.services.settings import stage_config
 
@@ -57,6 +57,7 @@ class GuessOutcome(enum.Enum):
     WON = "won"
     WRONG = "wrong"
     STAGE_ADVANCED = "stage_advanced"
+    TURN_ADVANCED = "turn_advanced"
     UNSOLVED = "unsolved"
 
 
@@ -132,7 +133,7 @@ def match_candidates(game: Game) -> list[str]:
 # can reuse the same ordering rule without services/ importing commands/.
 SCREENSHOT_CAPABLE_PROVIDERS: tuple[Provider, ...] = (
     Provider.SHIKIMORI,
-    Provider.JIKAN,
+    Provider.TENRAI,
     Provider.TMDB,
 )
 
@@ -220,14 +221,14 @@ def create_setup_game(
 
 def stage_result(
     game: Game,
-    result: AniListResult | ShikimoriResult | JikanResult | TMDBResult,
+    result: AniListResult | ShikimoriResult | TenraiResult | TMDBResult,
     *,
     source: Provider,
 ) -> None:
     """Assign a picked search result's title/synonyms onto a still-SETUP
     game — doesn't post anything or change status. This is the shared
     landing spot for every identification method (AniList, Shikimori,
-    Jikan, TMDB, and eventually manual entry); the confirmation-screen
+    Tenrai, TMDB, and eventually manual entry); the confirmation-screen
     ticket (#19) is what will show a preview between this and
     activate_game().
 
@@ -245,8 +246,8 @@ def stage_result(
     elif isinstance(result, ShikimoriResult):
         game.shikimori_id = result.shikimori_id
         game.title_russian = result.title_russian
-    elif isinstance(result, JikanResult):
-        game.jikan_id = result.jikan_id
+    elif isinstance(result, TenraiResult):
+        game.tenrai_id = result.tenrai_id
         game.title_native = result.title_native
     elif isinstance(result, TMDBResult):
         game.tmdb_id = result.tmdb_id
@@ -254,7 +255,7 @@ def stage_result(
 
 
 def set_screenshot_provider_id(
-    game: Game, result: ShikimoriResult | JikanResult | TMDBResult
+    game: Game, result: ShikimoriResult | TenraiResult | TMDBResult
 ) -> None:
     """Cross-provider screenshot resolution's equivalent of stage_result()
     (see commands/dm_start/screenshots.py's and screenshot_gallery.py's
@@ -265,8 +266,8 @@ def set_screenshot_provider_id(
     overwrite that identification."""
     if isinstance(result, ShikimoriResult):
         game.shikimori_id = result.shikimori_id
-    elif isinstance(result, JikanResult):
-        game.jikan_id = result.jikan_id
+    elif isinstance(result, TenraiResult):
+        game.tenrai_id = result.tenrai_id
     elif isinstance(result, TMDBResult):
         game.tmdb_id = result.tmdb_id
 
@@ -284,7 +285,10 @@ def activate_game(session: Session, game: Game) -> None:
     stage_result): move to the first stage and open the turn (the
     designated starter's turn is now consumed)."""
     game.status = GameStatus.ACTIVE
-    game.current_stage = STAGE_ORDER[0]
+    if game.hard_mode:
+        game.hard_mode_turn = 1
+    else:
+        game.current_stage = STAGE_ORDER[0]
     game.wrong_guess_count = 0
     game.scheduled_end_at = datetime.now(UTC) + TIMEOUT_DURATION
     reset_inactivity_clock(game)
@@ -297,6 +301,22 @@ def activate_game(session: Session, game: Game) -> None:
 def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: str) -> GuessOutcome:
     """Apply one /guess attempt to an ACTIVE game — see MECHANICS.md's
     "Guess matching" and "Pixelation stages" sections."""
+    if game.hard_mode:
+        # Local import, not module-level: hard_mode.py imports this
+        # module at module level (it's the primary direction of the
+        # dependency — see its own docstring), so a module-level import
+        # back here would be a genuine circular import. Same idiom, same
+        # reasoning, as models/enums.py's Provider.screenshot_module/
+        # search_module properties.
+        from nani_pix_bot.services.game import hard_mode
+
+        outcome = hard_mode.record_hard_mode_guess(
+            session, game, guesser_id=guesser_id, guess_text=guess_text
+        )
+        if outcome is GuessOutcome.UNSOLVED:
+            turns.mark_turn_open_if_unassigned(session)
+        return outcome
+
     if game.current_stage is None:
         msg = f"record_guess called on game {game.id} with no current_stage (not ACTIVE?)"
         logger.warning(msg)
@@ -426,15 +446,21 @@ def stage_progress(session: Session, game: Game) -> StageProgress:
 def force_win(session: Session, game: Game, *, winner_id: int) -> None:
     """The author-override path (/correct) — identical end state to an
     automatic match in record_guess, just triggered without one."""
-    _win(session, game, winner_id=winner_id)
+    if game.hard_mode:
+        # Local import — see record_guess's identical guard above for why.
+        from nani_pix_bot.services.game import hard_mode
+
+        _win(session, game, winner_id=winner_id, award=hard_mode.HARD_MODE_WIN_AWARD)
+    else:
+        _win(session, game, winner_id=winner_id)
 
 
-def _win(session: Session, game: Game, *, winner_id: int) -> None:
+def _win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> None:
     game.status = GameStatus.WON
     game.winner_id = winner_id
 
     winner = players.get_or_create_player(session, winner_id)
-    winner.wins += 1
+    winner.wins += award
 
     turns.set_next_starter(session, winner_id)
     logger.info("Game {} won by player {}", game.id, winner_id)

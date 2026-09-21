@@ -1,5 +1,5 @@
 """Shared rate-limit-retry logic for this package's four search
-services — the two REST ones (jikan.py, tmdb.py) reach it through
+services — the two REST ones (tenrai.py, tmdb.py) reach it through
 rest.py's `get_json`, the two GraphQL ones (anilist.py, shikimori.py)
 call it directly from graphql.py's `request`. They started out with a
 near-identical 429/Retry-After retry loop each; this factors it out to

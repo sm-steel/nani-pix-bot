@@ -1,7 +1,7 @@
 """TMDB search — anime are modeled as regular TV shows in TMDB's own
 schema, so this hits `/search/tv`/`/tv/{id}` rather than a
 movie/anime-specific endpoint. Called once per game, at setup time
-only, same as this package's anilist.py/shikimori.py/jikan.py.
+only, same as this package's anilist.py/shikimori.py/tenrai.py.
 
 Unlike every other provider in this package, TMDB requires an API key
 (a v4 "Read Access Token", Bearer-auth) and may be blocked/unreachable
@@ -19,6 +19,7 @@ already expects from every other provider's result dataclass.
 """
 
 import asyncio
+import sys
 from dataclasses import dataclass
 
 import httpx
@@ -26,6 +27,7 @@ from loguru import logger
 
 from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, parsing, rest
+from nani_pix_bot.services.search.base import ScreenshotModule
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/original"
@@ -91,7 +93,7 @@ async def get_by_id(client: httpx.AsyncClient, tmdb_id: int) -> TMDBResult | Non
 async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
     """Real per-episode stills (not promotional art) for a
     TMDB-identified show, for the screenshot-picker gallery. TMDB has no
-    bulk "all stills for this show" endpoint like Shikimori/Jikan; the
+    bulk "all stills for this show" endpoint like Shikimori/Tenrai; the
     per-episode detail endpoint (`/tv/{id}/season/{s}/episode/{e}`)
     already includes `still_path`, so this fetches the season list
     once, then one extra call per episode (up to SCREENSHOT_FETCH_LIMIT
@@ -186,6 +188,11 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
         "TMDB id {} yielded {} still(s) from {} episode(s)", tmdb_id, len(urls), len(targets)
     )
     return urls
+
+
+# Provider.search_module/screenshot_module's value for Provider.TMDB —
+# see services/search/base.py's module docstring.
+service = ScreenshotModule(sys.modules[__name__])
 
 
 def _episode_targets(show: dict) -> list[tuple[int, int]]:

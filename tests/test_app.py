@@ -8,6 +8,7 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
+from cryptography.fernet import Fernet
 from telegram.error import Conflict, NetworkError
 from telegram.ext import CallbackQueryHandler, ContextTypes, TypeHandler
 
@@ -36,6 +37,10 @@ def _config(**overrides) -> Config:
         "log_level": "INFO",
         "telegram_proxy_url": None,
         "tmdb_read_access_token": None,
+        "mal_client_id": None,
+        "mal_client_secret": None,
+        "mal_redirect_uri": None,
+        "mal_token_encryption_key": None,
         "database_url": "sqlite:///:memory:",
     }
     defaults.update(overrides)
@@ -49,6 +54,11 @@ def test_build_application_populates_bot_data() -> None:
     assert application.bot_data["game_topic_id"] == 7
     assert application.bot_data["session_factory"] is not None
     assert application.bot_data["search_client"] is not None
+    assert application.bot_data["mal_client"] is not None
+    assert application.bot_data["mal_client_id"] is None
+    assert application.bot_data["mal_client_secret"] is None
+    assert application.bot_data["mal_redirect_uri"] is None
+    assert application.bot_data["mal_token_encryption_key"] is None
 
 
 def test_build_application_registers_every_command() -> None:
@@ -77,13 +87,15 @@ def test_build_application_registers_every_command() -> None:
         "setgamesenabled",
         "setautostart",
         "version",
+        "linkmal",
+        "unlinkmal",
     }
 
 
 def test_pick_callback_handler_pattern_matches_every_providers_prefix() -> None:
-    # Regression: jikan/tmdb were added to the search/pick flow (and
+    # Regression: tenrai/tmdb were added to the search/pick flow (and
     # their own *_pick: keyboard prefixes) without this pattern being
-    # updated, so tapping a Jikan/TMDB result button silently did
+    # updated, so tapping a Tenrai/TMDB result button silently did
     # nothing — the callback query never reached the handler at all.
     #
     # Driven off Provider rather than a hand-written list of four, for
@@ -110,7 +122,7 @@ def test_screenshot_callback_handlers_match_only_their_own_prefix() -> None:
     # above: five screenshot-flow callback prefixes are each registered
     # as their own CallbackQueryHandler with its own regex — a typo'd
     # or overlapping pattern would either silently swallow taps meant
-    # for a different handler, or (as happened with jikan/tmdb above)
+    # for a different handler, or (as happened with tenrai/tmdb above)
     # never reach any handler at all, and nothing else would catch it.
     application = app.build_application(_config())
     handlers_by_callback = {
@@ -244,17 +256,21 @@ def test_build_application_registers_player_tracking_before_the_commands() -> No
     assert min(command_groups) > app._PLAYER_TRACKING_GROUP
 
 
-async def test_post_shutdown_closes_both_search_clients() -> None:
+async def test_post_shutdown_closes_all_four_search_clients() -> None:
     """They're process-lifetime objects in production, but every test
-    that builds an Application leaks two of them otherwise."""
+    that builds an Application leaks four of them otherwise."""
     application = app.build_application(_config())
     search_client = application.bot_data["search_client"]
     tmdb_client = application.bot_data["tmdb_client"]
+    tenrai_client = application.bot_data["tenrai_client"]
+    mal_client = application.bot_data["mal_client"]
 
     await app._post_shutdown(application)
 
     assert search_client.is_closed
     assert tmdb_client.is_closed
+    assert tenrai_client.is_closed
+    assert mal_client.is_closed
 
 
 def test_build_application_warns_once_when_the_tmdb_token_is_missing(
@@ -269,6 +285,71 @@ def test_build_application_warns_once_when_the_tmdb_token_is_missing(
 
     assert len(warnings) == 1
     assert "TMDB_READ_ACCESS_TOKEN" in warnings[0][0]
+
+
+def _full_mal_config(**overrides) -> Config:
+    """A config with all four MAL settings (and the TMDB token, so its
+    own unrelated warning doesn't show up in these assertions)."""
+    defaults = {
+        "tmdb_read_access_token": "tmdb-token-placeholder",
+        "mal_client_id": "cid",
+        "mal_client_secret": "csecret",
+        "mal_redirect_uri": "https://example.com/cb",
+        "mal_token_encryption_key": Fernet.generate_key().decode(),
+    }
+    defaults.update(overrides)
+    return _config(**defaults)
+
+
+def test_build_application_warns_about_a_partial_mal_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The four MAL settings are optional together, never individually —
+    with only some set, a player could reach a linking flow that cannot
+    finish (and spend their one-time MAL authorization code doing it)."""
+    warnings = []
+    monkeypatch.setattr(app.logger, "warning", lambda *args: warnings.append(args))
+
+    app.build_application(_full_mal_config(mal_token_encryption_key=None))
+
+    assert len(warnings) == 1
+    assert "MAL_TOKEN_ENCRYPTION_KEY" in warnings[0][1]
+
+
+def test_build_application_says_nothing_about_mal_when_all_four_are_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logged = []
+    for level in ("debug", "info", "warning", "error"):
+        monkeypatch.setattr(app.logger, level, lambda *args: logged.append(args))
+
+    app.build_application(_full_mal_config())
+
+    assert not logged
+
+
+def test_build_application_rejects_a_malformed_mal_encryption_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """token_crypto builds its Fernet lazily inside encrypt()/decrypt(),
+    so a bad key used to surface only on a player's first real write —
+    after their authorization code was already spent. Checked once at
+    boot instead, and linking is disabled rather than left to explode."""
+    errors = []
+    monkeypatch.setattr(app.logger, "error", lambda *args: errors.append(args))
+    monkeypatch.setattr(app.logger, "warning", lambda *args: None)
+
+    # Deliberately not a real Fernet key. Bound to a local first so ruff's
+    # S106 (hardcoded password in a keyword argument) doesn't fire on a
+    # literal passed straight into `mal_token_encryption_key=`.
+    malformed = "not-a-key"
+    application = app.build_application(_full_mal_config(mal_token_encryption_key=malformed))
+
+    assert len(errors) == 1
+    assert "MAL_TOKEN_ENCRYPTION_KEY" in errors[0][0]
+    # Rejected, not stored — so mal_configured() is False and the "My MAL
+    # List" button stays hidden instead of dead-ending a player.
+    assert application.bot_data["mal_token_encryption_key"] is None
 
 
 def test_build_application_says_nothing_about_a_tmdb_token_that_is_set(

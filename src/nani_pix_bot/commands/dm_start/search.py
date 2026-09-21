@@ -24,11 +24,15 @@ from nani_pix_bot.commands.dm_start._shared import (
 from nani_pix_bot.commands.dm_start.keyboards import (
     SEARCH_RETRY_CALLBACK_DATA,
     anilist_results_keyboard,
-    jikan_results_keyboard,
     parse_method_callback_data,
     parse_pick_callback_data,
     shikimori_results_keyboard,
+    tenrai_results_keyboard,
     tmdb_results_keyboard,
+)
+from nani_pix_bot.commands.dm_start.mal_browse import (
+    _handle_mal_code_paste,
+    handle_mal_method_tap,
 )
 from nani_pix_bot.commands.dm_start.manual import _manual_synonyms_step, _manual_title_step
 from nani_pix_bot.commands.dm_start.preview import _add_synonym_step
@@ -42,11 +46,11 @@ from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.search import anilist, jikan, shikimori, tmdb
+from nani_pix_bot.services import i18n, mal_link, settings
+from nani_pix_bot.services.search import anilist, shikimori, tenrai, tmdb
 from nani_pix_bot.services.search.anilist import AniListResult
-from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 
@@ -75,8 +79,21 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
     user = query.from_user
     if source is None or user is None:
         return
-
     session_factory = context.bot_data["session_factory"]
+    if source == "mal_list":
+        # The "My MAL List" button's own flow is keyed off the player's
+        # linked account rather than a Game.source value the way the
+        # other five methods are — it diverts here rather than falling
+        # into the generic "store the source, ask for a search query"
+        # path below, which would otherwise write "mal_list" into a
+        # column whose type doesn't include it. See
+        # commands/dm_start/mal_browse.py.
+        with session_scope(session_factory) as session:
+            lang = settings.get_language(session)
+        logger.debug("Starter {}: MAL list method tapped", user.id)
+        await handle_mal_method_tap(query, context, lang, user)
+        return
+
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
@@ -106,6 +123,19 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
+        has_pending_mal_link = mal_link.get_pending_link(session, user.id) is not None
+
+    if has_pending_mal_link:
+        # A live /linkmal (or 6th-button) attempt outranks everything
+        # below: the very next plain-text DM after one is the pasted
+        # authorization code, not a search query — see
+        # mal_browse._handle_mal_code_paste. The attempt clears itself
+        # either way (on success, or 10min in via the expiry timer), so
+        # this can't shadow normal text handling indefinitely.
+        await _handle_mal_code_paste(message, context, lang, user)
+        return
+
+    with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
             return
@@ -185,9 +215,9 @@ async def _search_step(
                 shikimori.search,
                 lambda rs: shikimori_results_keyboard(rs, lang),
             )
-        elif source == Provider.JIKAN:
+        elif source == Provider.TENRAI:
             results, keyboard = await _search_and_build_keyboard(
-                client, message.text, jikan.search, lambda rs: jikan_results_keyboard(rs, lang)
+                client, message.text, tenrai.search, lambda rs: tenrai_results_keyboard(rs, lang)
             )
         elif source == Provider.TMDB:
             results, keyboard = await _search_and_build_keyboard(
@@ -199,7 +229,7 @@ async def _search_step(
             )
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} search failed for query {!r}", source, message.text)
-        await _reply_service_down(status_message.edit_text, lang, source)
+        await _reply_service_down(status_message.edit_text, lang, source, context)
         return
 
     logger.debug("{} search for {!r} returned {} results", source, message.text, len(results))
@@ -282,13 +312,13 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def _get_identification_result(
     provider: Provider, client: httpx.AsyncClient, external_id: int
-) -> AniListResult | ShikimoriResult | JikanResult | TMDBResult | None:
+) -> AniListResult | ShikimoriResult | TenraiResult | TMDBResult | None:
     return await provider.search_module.get_by_id(client, external_id)
 
 
 async def _resolve_picked_result(
     query, context: ContextTypes.DEFAULT_TYPE, lang: str
-) -> tuple[Provider, int, AniListResult | ShikimoriResult | JikanResult | TMDBResult] | None:
+) -> tuple[Provider, int, AniListResult | ShikimoriResult | TenraiResult | TMDBResult] | None:
     """Handles the "none of these" retry tap and resolves a valid pick to
     its (source, external_id, result) triple. Replies and returns None
     for every already-handled outcome: retry tapped, unparseable
@@ -308,7 +338,7 @@ async def _resolve_picked_result(
         result = await _get_identification_result(source, client, external_id)
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} get_by_id failed for id {}", source, external_id)
-        await _reply_service_down(query.edit_message_text, lang, source)
+        await _reply_service_down(query.edit_message_text, lang, source, context)
         return None
 
     if result is None:

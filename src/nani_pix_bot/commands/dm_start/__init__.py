@@ -15,8 +15,11 @@ Split across submodules by flow stage:
   newgame.py          newgame_command — the screenshot-less /newgame
                        entry point (picks a screenshot later instead
                        of uploading one first)
-  search.py           method selection + AniList/Shikimori/Jikan/TMDB
+  search.py           method selection + AniList/Shikimori/Tenrai/TMDB
                        search-and-pick
+  mal_browse.py       the "My MAL List" method — account linking's
+                       pasted-back code, the 6th method button, and
+                       browsing/picking from a player's own MAL list
   manual.py           manual title/synonym entry
   screenshots.py      screenshot-source selection for the /newgame
                        path — the source-selection keyboard and same-/
@@ -47,6 +50,10 @@ This __init__ re-exports only the PTB handler entrypoints app.py
 registers — not a blanket re-export of every submodule's internals."""
 
 from nani_pix_bot.commands.dm_start.intake import photo_handler
+from nani_pix_bot.commands.dm_start.mal_browse import (
+    mal_list_page_callback_handler,
+    mal_list_pick_callback_handler,
+)
 from nani_pix_bot.commands.dm_start.newgame import newgame_command
 from nani_pix_bot.commands.dm_start.preview import preview_callback_handler
 from nani_pix_bot.commands.dm_start.screenshot_gallery import (
@@ -65,6 +72,8 @@ from nani_pix_bot.commands.dm_start.search import (
 )
 
 __all__ = [
+    "mal_list_page_callback_handler",
+    "mal_list_pick_callback_handler",
     "method_pick_callback_handler",
     "newgame_command",
     "photo_handler",

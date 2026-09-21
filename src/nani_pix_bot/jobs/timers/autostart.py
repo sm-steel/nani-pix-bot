@@ -14,7 +14,7 @@ from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import seconds_until
-from nani_pix_bot.jobs.timers.current_image import post_current_image
+from nani_pix_bot.jobs.timers.current_image import post_current_images
 from nani_pix_bot.jobs.timers.game_timeout import schedule_timeout
 from nani_pix_bot.jobs.timers.inactivity import schedule_inactivity_timers
 from nani_pix_bot.jobs.timers.turn_timers import cancel_turn_timers
@@ -24,7 +24,6 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.game import autostart as autostart_service
-from nani_pix_bot.services.settings import stage_config
 
 IDLE_AUTOSTART_JOB_NAME = "idle-autostart"
 
@@ -35,19 +34,22 @@ class AutostartTrigger(enum.Enum):
 
 
 @dataclass(frozen=True)
-class _FirstStagePost:
+class _FirstTurnPost:
     """What the group announcement needs, captured while the staging
-    game's session was still open — post_current_image runs after that
+    game's session was still open — post_current_images runs after that
     session (and its commit) has already closed, same pattern as
-    commands/dm_start/preview.py's _FirstStagePost."""
+    commands/dm_start/preview.py's _FirstStagePost. Every autostart game
+    is hard mode now, so this carries the screenshot pair's two
+    pixelated photos rather than one."""
 
-    photo: bytes
+    photo_a: bytes
+    photo_b: bytes
     caption: str
 
 
 @dataclass(frozen=True)
 class _AutostartClaim:
-    """Everything run_bot_autostart and _build_first_stage_post need
+    """Everything run_bot_autostart and _build_first_turn_post need
     beyond a live pick, bundled into one parameter so neither function's
     own signature grows past qlty's too-many-parameters threshold.
 
@@ -168,41 +170,48 @@ async def maybe_overthrow(
             schedule_idle_autostart(context.job_queue, turn_state)
 
 
-def _build_first_stage_post(
+def _build_first_turn_post(
     session: Session,
     context: ContextTypes.DEFAULT_TYPE,
     game: Game,
     lang: str,
     claim: _AutostartClaim,
-) -> _FirstStagePost:
-    first_stage = game_service.STAGE_ORDER[0]
-    first_stage_settings = stage_config.get_stage_config(session, first_stage)
-    if game.original_image is None:
-        raise RuntimeError("game.original_image is None in _build_first_stage_post")
-    pixelated = pixelate_service.pixelate(
-        game.original_image, first_stage_settings.target_width, game.pixel_algorithm
-    )
+) -> _FirstTurnPost:
+    """Every autostart game is hard mode now — activate_game() must run
+    first (it's what sets game.hard_mode_turn = 1), since
+    hard_mode_turn_width()/hard_mode_turn_progress() below both read
+    that field. Contrast the old stage-based version of this function,
+    where the equivalent pixelation-width lookup (stage_config, keyed by
+    STAGE_ORDER[0]) didn't depend on activate_game() having run yet."""
+    game_service.activate_game(session, game)
+    if game.hard_mode_image_a is None or game.hard_mode_image_b is None:
+        raise RuntimeError("game.hard_mode_image_a/_b is None in _build_first_turn_post")
+    width = game_service.hard_mode_turn_width(game)
+    pixelated_a = pixelate_service.pixelate(game.hard_mode_image_a, width, game.pixel_algorithm)
+    pixelated_b = pixelate_service.pixelate(game.hard_mode_image_b, width, game.pixel_algorithm)
+    progress = game_service.hard_mode_turn_progress(game)
     caption_kwargs = {
-        "stage": 1,
-        "total": len(game_service.STAGE_ORDER),
-        "remaining": first_stage_settings.wrong_guess_limit,
-        "limit": first_stage_settings.wrong_guess_limit,
+        "turn": progress.number,
+        "total": progress.total,
+        "remaining": progress.remaining,
+        "limit": progress.limit,
     }
     if claim.trigger is AutostartTrigger.IDLE:
-        caption = i18n.t("dm_start.game_started_caption_idle", lang, **caption_kwargs)
+        caption = i18n.t("dm_start.hard_mode_game_started_caption_idle", lang, **caption_kwargs)
     elif claim.dethroned_winner_name is not None:
         caption = i18n.t(
-            "dm_start.game_started_caption_overthrow_winner",
+            "dm_start.hard_mode_game_started_caption_overthrow_winner",
             lang,
             winner=claim.dethroned_winner_name,
             **caption_kwargs,
         )
     else:
-        caption = i18n.t("dm_start.game_started_caption_overthrow_open", lang, **caption_kwargs)
-    game_service.activate_game(session, game)
+        caption = i18n.t(
+            "dm_start.hard_mode_game_started_caption_overthrow_open", lang, **caption_kwargs
+        )
     schedule_timeout(context.job_queue, game)
     schedule_inactivity_timers(context.job_queue, game)
-    return _FirstStagePost(photo=pixelated, caption=caption)
+    return _FirstTurnPost(photo_a=pixelated_a, photo_b=pixelated_b, caption=caption)
 
 
 async def run_bot_autostart(
@@ -231,7 +240,8 @@ async def run_bot_autostart(
     would silently steal a turn nobody agreed to give up."""
     search_client = context.bot_data["search_client"]
     tmdb_client = context.bot_data["tmdb_client"]
-    pick = await autostart_service.gather_pick(search_client, tmdb_client)
+    tenrai_client = context.bot_data["tenrai_client"]
+    pick = await autostart_service.gather_pick(search_client, tmdb_client, tenrai_client)
     if pick is None:
         logger.warning(
             "Bot autostart ({}) found no usable pick after {} attempt(s) — skipping this firing",
@@ -263,11 +273,16 @@ async def run_bot_autostart(
         players.get_or_create_player(session, bot_id, username=context.bot_data.get("bot_username"))
         game = game_service.create_setup_game(session, starter_id=bot_id)
         game_service.stage_result(game, pick.anime.result, source=pick.anime.source)
-        game.original_image = pick.screenshot.image_bytes
+        # Every autostart pick is hard mode now — no `if` needed.
+        # original_image stays None; the screenshot pair lives in
+        # hard_mode_image_a/_b instead.
+        game.hard_mode = True
+        game.hard_mode_image_a = pick.screenshot.image_bytes_a
+        game.hard_mode_image_b = pick.screenshot.image_bytes_b
         game.screenshot_source = pick.screenshot.provider
         setattr(game, pick.screenshot.provider.id_attr_name, pick.screenshot.provider_id)
         game_service.clear_turn_timers(session)
-        first_stage_post = _build_first_stage_post(session, context, game, lang, claim)
+        first_turn_post = _build_first_turn_post(session, context, game, lang, claim)
         game_service.clear_autostart(session)
         game_id = game.id
 
@@ -280,7 +295,10 @@ async def run_bot_autostart(
         pick.anime.source,
         pick.screenshot.provider,
     )
-    await post_current_image(
-        context, session_factory, photo=first_stage_post.photo, caption=first_stage_post.caption
+    await post_current_images(
+        context,
+        session_factory,
+        photos=(first_turn_post.photo_a, first_turn_post.photo_b),
+        caption=first_turn_post.caption,
     )
     return True

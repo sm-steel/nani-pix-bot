@@ -1,6 +1,8 @@
 import enum
-from types import ModuleType
-from typing import assert_never
+from typing import TYPE_CHECKING, assert_never
+
+if TYPE_CHECKING:
+    from nani_pix_bot.services.search.base import ScreenshotModule, SearchModule
 
 
 class Provider(enum.StrEnum):
@@ -24,7 +26,7 @@ class Provider(enum.StrEnum):
 
     `enum.StrEnum` (stdlib since 3.11) rather than a hand-rolled
     `class Provider(str, enum.Enum)`: the latter's `__str__`/`__format__`
-    can render `"Provider.JIKAN"` instead of `"jikan"` depending on the
+    can render `"Provider.TENRAI"` instead of `"tenrai"` depending on the
     Python version, and nearly every log line in this codebase is built
     by loguru interpolation — that failure mode would corrupt log output
     with no error anywhere.
@@ -38,7 +40,7 @@ class Provider(enum.StrEnum):
 
     ANILIST = "anilist"
     SHIKIMORI = "shikimori"
-    JIKAN = "jikan"
+    TENRAI = "tenrai"
     TMDB = "tmdb"
 
     @property
@@ -58,8 +60,8 @@ class Provider(enum.StrEnum):
             return "AniList"
         if self is Provider.SHIKIMORI:
             return "Shikimori"
-        if self is Provider.JIKAN:
-            return "Jikan"
+        if self is Provider.TENRAI:
+            return "Tenrai"
         if self is Provider.TMDB:
             return "TMDB"
         assert_never(self)
@@ -97,7 +99,7 @@ class Provider(enum.StrEnum):
     @property
     def id_attr_name(self) -> str:
         """The `Game` column name that stores this provider's screenshot
-        id — see `models/game.py`'s `shikimori_id`/`jikan_id`/`tmdb_id`
+        id — see `models/game.py`'s `shikimori_id`/`tenrai_id`/`tmdb_id`
         columns.
 
         AniList identifies an anime but has no screenshot endpoint (see
@@ -111,27 +113,30 @@ class Provider(enum.StrEnum):
         Replaces the old `_ID_ATTRS` dict (issue #114)."""
         if self is Provider.SHIKIMORI:
             return "shikimori_id"
-        if self is Provider.JIKAN:
-            return "jikan_id"
+        if self is Provider.TENRAI:
+            return "tenrai_id"
         if self is Provider.TMDB:
             return "tmdb_id"
         raise ValueError(f"Provider.{self.name} has no screenshot id column")
 
     @property
-    def screenshot_module(self) -> ModuleType:
-        """The `services.search` module that can fetch this provider's
-        screenshots — a **module** reference, not a bound function:
-        commands/dm_start's tests patch
+    def screenshot_module(self) -> "ScreenshotModule":
+        """The `services.search.base.ScreenshotModule` adapter that can
+        fetch this provider's screenshots — e.g. `shikimori.py`'s
+        `service` singleton, not the `shikimori` module itself. Every
+        adapter method delegates to that same module's free functions by
+        an unqualified name lookup resolved at call time, so
+        commands/dm_start's tests patching
         `monkeypatch.setattr(shikimori, "screenshots", ...)` directly on
-        the module object, which only keeps working if every caller
-        looks the attribute up on the module at call time rather than
-        capturing the function once.
+        the module still take effect here — see `services/search/base.py`'s
+        module docstring for the full reasoning (issue #169), including
+        why this moved off bare `types.ModuleType`.
 
         The import is lazy — inside this property's body, re-run on
         every access — deliberately not at module level and not behind
         `TYPE_CHECKING` (the module object is needed at runtime, not
         just for type-checking). `services/search/shikimori.py` (and
-        `jikan.py`/`tmdb.py`) already import `Provider` from this module
+        `tenrai.py`/`tmdb.py`) already import `Provider` from this module
         at their own top level, so a module-level import back here would
         be a real two-hop cycle (`models.enums` <-> `services.search.*`)
         — a lazy per-call import avoids it, since by the time this runs
@@ -142,22 +147,25 @@ class Provider(enum.StrEnum):
         `id_attr_name` above.
 
         Replaces the old `_SCREENSHOT_MODULES` dict (issue #114)."""
-        from nani_pix_bot.services.search import jikan, shikimori, tmdb
+        from nani_pix_bot.services.search import shikimori, tenrai, tmdb
 
         if self is Provider.SHIKIMORI:
-            return shikimori
-        if self is Provider.JIKAN:
-            return jikan
+            return shikimori.service
+        if self is Provider.TENRAI:
+            return tenrai.service
         if self is Provider.TMDB:
-            return tmdb
+            return tmdb.service
         raise ValueError(f"Provider.{self.name} has no screenshot module")
 
     @property
-    def search_module(self) -> ModuleType:
-        """The `services.search` module that can search/identify with
-        this provider — all four members, including AniList (contrast
-        `screenshot_module` above, which only covers the three that can
-        also supply screenshots).
+    def search_module(self) -> "SearchModule":
+        """The `services.search.base.SearchModule` adapter that can
+        search/identify with this provider — all four members, including
+        AniList (contrast `screenshot_module` above, which only covers
+        the three that can also supply screenshots). See
+        `screenshot_module`'s docstring above for what these adapters
+        actually are and why this moved off bare `types.ModuleType`
+        (issue #169).
 
         Deliberately not unified with `screenshot_module`: widening the
         3-provider set to 4 would silently turn a stray AniList
@@ -168,16 +176,16 @@ class Provider(enum.StrEnum):
         rather than at module level.
 
         Replaces the old `_SEARCH_MODULES` dict (issue #114)."""
-        from nani_pix_bot.services.search import anilist, jikan, shikimori, tmdb
+        from nani_pix_bot.services.search import anilist, shikimori, tenrai, tmdb
 
         if self is Provider.ANILIST:
-            return anilist
+            return anilist.service
         if self is Provider.SHIKIMORI:
-            return shikimori
-        if self is Provider.JIKAN:
-            return jikan
+            return shikimori.service
+        if self is Provider.TENRAI:
+            return tenrai.service
         if self is Provider.TMDB:
-            return tmdb
+            return tmdb.service
         assert_never(self)
 
 

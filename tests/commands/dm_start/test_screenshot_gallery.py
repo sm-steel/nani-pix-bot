@@ -18,9 +18,9 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
-from nani_pix_bot.services.search import jikan, shikimori, tmdb
-from nani_pix_bot.services.search.jikan import JikanResult
+from nani_pix_bot.services.search import shikimori, tenrai, tmdb
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 _FRIEREN_TMDB = TMDBResult(
@@ -39,8 +39,8 @@ _FRIEREN_SHIKIMORI = ShikimoriResult(
     synonyms=["Frieren at the Funeral"],
 )
 
-_FRIEREN_JIKAN = JikanResult(
-    jikan_id=52991,
+_FRIEREN_TENRAI = TenraiResult(
+    tenrai_id=52991,
     title_romaji="Sousou no Frieren",
     title_english="Frieren: Beyond Journey's End",
     title_native="葬送のフリーレン",
@@ -54,6 +54,7 @@ def _make_context(session_factory, **extra_bot_data) -> MagicMock:
         "session_factory": session_factory,
         "search_client": MagicMock(),
         "tmdb_client": MagicMock(),
+        "tenrai_client": MagicMock(),
         **extra_bot_data,
     }
     context.bot.send_message = AsyncMock()
@@ -203,19 +204,19 @@ def _source_callbacks(markup) -> list[str]:
 
 def _tmdb_menu() -> SourceMenu:
     return SourceMenu(
-        providers=[Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB], provider=Provider.TMDB
+        providers=[Provider.SHIKIMORI, Provider.TENRAI, Provider.TMDB], provider=Provider.TMDB
     )
 
 
 def _shikimori_menu() -> SourceMenu:
     return SourceMenu(
-        providers=[Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB], provider=Provider.SHIKIMORI
+        providers=[Provider.SHIKIMORI, Provider.TENRAI, Provider.TMDB], provider=Provider.SHIKIMORI
     )
 
 
-def _jikan_menu() -> SourceMenu:
+def _tenrai_menu() -> SourceMenu:
     return SourceMenu(
-        providers=[Provider.SHIKIMORI, Provider.JIKAN, Provider.TMDB], provider=Provider.JIKAN
+        providers=[Provider.SHIKIMORI, Provider.TENRAI, Provider.TMDB], provider=Provider.TENRAI
     )
 
 
@@ -247,7 +248,7 @@ async def test_screenshot_gallery_callback_handler_pick_falls_back_when_the_fetc
     assert "screenshots" in args[0].lower()
     assert _source_callbacks(kwargs["reply_markup"]) == [
         "screenshot_source:shikimori",
-        "screenshot_source:jikan",
+        "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
     ]
@@ -385,7 +386,7 @@ async def test_screenshot_gallery_paging_falls_back_when_telegram_rejects_the_al
     _, kwargs = update.callback_query.edit_message_text.await_args
     assert _source_callbacks(kwargs["reply_markup"]) == [
         "screenshot_source:shikimori",
-        "screenshot_source:jikan",
+        "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
     ]
@@ -801,10 +802,10 @@ async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix
     assert "screenshot_search_again:shikimori" in callbacks
 
 
-async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix_jikan(
+async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix_tenrai(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(jikan, "search", AsyncMock(return_value=[_FRIEREN_JIKAN]))
+    monkeypatch.setattr(tenrai, "search", AsyncMock(return_value=[_FRIEREN_TENRAI]))
     context = _make_context(session_factory)
     status_message = MagicMock()
     status_message.edit_text = AsyncMock()
@@ -812,14 +813,14 @@ async def test_screenshot_search_step_shows_results_with_the_cross_search_prefix
     message.text = "Frieren"
     message.reply_text = AsyncMock(return_value=status_message)
 
-    await screenshot_gallery._screenshot_search_step(message, context, "en", _jikan_menu())
+    await screenshot_gallery._screenshot_search_step(message, context, "en", _tenrai_menu())
 
     status_message.edit_text.assert_awaited_once()
     assert status_message.edit_text.await_args is not None
     _, kwargs = status_message.edit_text.await_args
     callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
-    assert "screenshot_search_pick:jikan:52991" in callbacks
-    assert "screenshot_search_again:jikan" in callbacks
+    assert "screenshot_search_pick:tenrai:52991" in callbacks
+    assert "screenshot_search_again:tenrai" in callbacks
 
 
 async def test_screenshot_search_pick_callback_handler_resolves_and_shows_gallery(
@@ -937,7 +938,7 @@ async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_i
     assert "TMDB" in args[0]
     assert _source_callbacks(kwargs["reply_markup"]) == [
         "screenshot_source:shikimori",
-        "screenshot_source:jikan",
+        "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
     ]
@@ -963,7 +964,7 @@ async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_i
     assert "Shikimori" in args[0]
     assert _source_callbacks(kwargs["reply_markup"]) == [
         "screenshot_source:shikimori",
-        "screenshot_source:jikan",
+        "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
     ]
@@ -971,10 +972,10 @@ async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_i
     assert any(label.startswith("⚠️") and "Shikimori" in label for label in labels)
 
 
-async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_is_down_jikan(
+async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_is_down_tenrai(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(jikan, "search", AsyncMock(side_effect=RuntimeError("504")))
+    monkeypatch.setattr(tenrai, "search", AsyncMock(side_effect=RuntimeError("504")))
     context = _make_context(session_factory)
     status_message = MagicMock()
     status_message.edit_text = AsyncMock()
@@ -982,19 +983,19 @@ async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_i
     message.text = "Shokugeki no Soma"
     message.reply_text = AsyncMock(return_value=status_message)
 
-    await screenshot_gallery._screenshot_search_step(message, context, "en", _jikan_menu())
+    await screenshot_gallery._screenshot_search_step(message, context, "en", _tenrai_menu())
 
     assert status_message.edit_text.await_args is not None
     args, kwargs = status_message.edit_text.await_args
-    assert "Jikan" in args[0]
+    assert "Tenrai" in args[0]
     assert _source_callbacks(kwargs["reply_markup"]) == [
         "screenshot_source:shikimori",
-        "screenshot_source:jikan",
+        "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
     ]
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
-    assert any(label.startswith("⚠️") and "Jikan" in label for label in labels)
+    assert any(label.startswith("⚠️") and "Tenrai" in label for label in labels)
 
 
 async def test_screenshot_search_step_offers_the_source_menu_when_nothing_matches(
@@ -1035,10 +1036,10 @@ async def test_screenshot_search_step_offers_the_source_menu_when_nothing_matche
     assert kwargs["reply_markup"] is not None
 
 
-async def test_screenshot_search_step_offers_the_source_menu_when_nothing_matches_jikan(
+async def test_screenshot_search_step_offers_the_source_menu_when_nothing_matches_tenrai(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(jikan, "search", AsyncMock(return_value=[]))
+    monkeypatch.setattr(tenrai, "search", AsyncMock(return_value=[]))
     context = _make_context(session_factory)
     status_message = MagicMock()
     status_message.edit_text = AsyncMock()
@@ -1046,7 +1047,7 @@ async def test_screenshot_search_step_offers_the_source_menu_when_nothing_matche
     message.text = "zzzz"
     message.reply_text = AsyncMock(return_value=status_message)
 
-    await screenshot_gallery._screenshot_search_step(message, context, "en", _jikan_menu())
+    await screenshot_gallery._screenshot_search_step(message, context, "en", _tenrai_menu())
 
     assert status_message.edit_text.await_args is not None
     _, kwargs = status_message.edit_text.await_args
@@ -1243,7 +1244,7 @@ async def test_screenshot_gallery_paging_past_the_end_still_offers_the_source_me
     _, kwargs = update.callback_query.edit_message_text.await_args
     assert _source_callbacks(kwargs["reply_markup"]) == [
         "screenshot_source:shikimori",
-        "screenshot_source:jikan",
+        "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
     ]

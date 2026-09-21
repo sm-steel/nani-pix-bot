@@ -3,6 +3,14 @@
   "language.not_admin": "Only a group admin can change the bot's language.",
   "language.set": "Language set to English.",
 
+  "mal_link.not_configured": "MyAnimeList account linking is not configured on this bot.",
+  "mal_link.authorize_prompt": "Open this link, log into MyAnimeList, and approve access:\n{url}\n\nThen paste the code it shows you back here.",
+  "mal_link.unlinked": "Your MyAnimeList account has been unlinked.",
+  "mal_link.authorize_prompt_for_list": "First, link your MyAnimeList account: open this link, log in, and approve access:\n{url}\n\nThen paste the code it shows you back here — you'll go straight to your list.",
+  "mal_link.code_rejected": "That code didn't work — it may be wrong or expired. Try pasting it again, or run /linkmal to get a fresh link.",
+  "mal_link.linked": "Your MyAnimeList account is now linked!",
+  "mal_link.not_linked_anymore": "Your MyAnimeList account isn't linked anymore. Run /linkmal to link it again.",
+
   "correct.usage": "Usage: /correct @username",
   "correct.no_game": "No game is currently running.",
   "correct.not_starter": "Only the person who started this round can use /correct.",
@@ -11,6 +19,7 @@
   "correct.unknown_username_no_handle": "I don't know anyone called @{username} yet — they need to send me a direct message first.",
   "correct.cannot_target_bot": "I can't award a win to myself — /correct is for crediting a player.",
   "correct.caption": "🎉 Correct! @{winner} got it — it was {title}. Your turn to start the next game!",
+  "correct.hard_mode_caption": "🎉 Correct! @{winner} cracked HARD MODE — it was {title}. That's +2 to the score. Your turn to start the next game!",
 
   "dm_start.not_a_member": "You need to be a member of the group to start a game.",
   "dm_start.not_your_turn": "It's not your turn to start a new game right now.",
@@ -49,6 +58,9 @@
   "dm_start.game_started_caption_overthrow_winner": "😈 Nice win, {winner}! But I'm stealing your turn — new round incoming.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
   "dm_start.game_started_caption_overthrow_open": "😏 Since nobody else was going to... I'll start this one myself.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
   "dm_start.game_started_caption_idle": "⏰ Nobody started a new round in a while, so here's one from me.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}",
+  "dm_start.hard_mode_game_started_caption_overthrow_winner": "😈 Nice win, {winner}! But I'm stealing your turn for a HARD MODE round — two screenshots, no mercy.\n📸 Turn {turn}/{total} — guesses: {remaining}/{limit}",
+  "dm_start.hard_mode_game_started_caption_overthrow_open": "😏 Since nobody else was going to... I'll start this one myself — HARD MODE, two screenshots, no mercy.\n📸 Turn {turn}/{total} — guesses: {remaining}/{limit}",
+  "dm_start.hard_mode_game_started_caption_idle": "⏰ Nobody started a new round in a while, so here's a HARD MODE one from me — two screenshots, two turns, no mercy.\n📸 Turn {turn}/{total} — guesses: {remaining}/{limit}",
   "dm_start.setup_started_group_notice": "🎬 {starter} is preparing a new game — hang tight!",
   "dm_start.setup_already_open": "You're already setting up a game — send /stop if you'd rather abandon it and start over.",
   "dm_start.setup_gone": "That round isn't being set up anymore — if it's your turn, DM me a screenshot or send /newgame to start a fresh one.",
@@ -59,11 +71,16 @@
   "guess.no_game": "No game is currently running. DM me a screenshot to start one, or send /newgame to pick one instead!",
   "guess.starter_cannot_guess": "You started this round — you already know the answer, so you can't guess on it!",
   "guess.won_caption": "🎉 {winner} got it! It was {title}. Your turn to start the next game!",
+  "guess.hard_mode_won_caption": "🎉 {winner} cracked HARD MODE! It was {title} — that's +2 to the score for surviving this one. Your turn to start the next game!",
   "guess.unsolved_caption": "Nobody guessed it. It was {title}.",
+  "guess.hard_mode_unsolved_caption": "Nobody survived HARD MODE this time. It was {title}.",
   "guess.wrong_feedback": "❌ Not quite! Guesses until the next clue: {remaining}/{limit} (stage {stage}/{total}).",
+  "guess.hard_mode_wrong_feedback": "❌ Not quite! HARD MODE shows no mercy — turn {stage}/{total} is about to end ({remaining}/{limit} guesses left).",
   "guess.stage_advanced_caption": "📸 Stage {stage}/{total} (guesses left: {remaining}/{limit}) — then it clears further.",
+  "guess.hard_mode_turn_advanced_caption": "📸 Turn {stage}/{total} — both screenshots just got clearer ({remaining}/{limit} guesses left).",
   "guess.inactivity_nudge": "👀 Still nobody's guessed! Take a look at the pinned image — /guess <anime title> to try, or it'll clear up further on its own before too long.",
   "guess.inactivity_advanced_caption": "📸 Stage {stage}/{total} — nobody's guessed in a while, so here's a clearer look.",
+  "guess.hard_mode_inactivity_advanced_caption": "📸 Turn {stage}/{total} — nobody's guessed in a while, so here's a clearer look at both screenshots.",
 
   "leaderboard.empty": "No one has won a round yet — could be you!",
   "leaderboard.header": "🏆 Leaderboard",
@@ -77,14 +94,15 @@
   "skip.passed": "Turn passed to @{username}.",
 
   "timeout.caption": "⏰ Nobody guessed it in time. It was {title}.",
+  "timeout.hard_mode_caption": "⏰ HARD MODE beat everyone to the clock. It was {title}.",
 
   "turn.reminder_dm": "⏰ Reminder: it's your turn to start a new game! DM me a screenshot whenever you're ready, or send /newgame to pick one instead.",
   "turn.reminder_group_fallback": "⏰ @{username}, it's your turn to start a new game — DM me a screenshot, or send me /newgame to pick one instead! (I couldn't reach you privately — message me first so reminders can find you next time.)",
   "turn.reminder_group_fallback_unknown": "⏰ It's someone's turn to start a new game, but I can't reach them privately — /skip to open it up to anyone!",
   "turn.expired": "⌛ Nobody started a new game in time — it's open to anyone now! DM me a screenshot to begin, or send /newgame to pick one instead.",
 
-  "onboarding.start": "👋 Welcome! I run an anime-screenshot guessing game in the group.\n\nWhen it's your turn, DM me a screenshot here and I'll walk you through picking the anime — or send /newgame if you'd rather skip the upload and pick a screenshot from Shikimori/Jikan/TMDB instead. Either way, I'll post a heavily pixelated version to the group for everyone to guess.\n\nUse /help anytime for the full rundown.",
-  "onboarding.help": "How to play:\n1. When it's your turn, DM me a screenshot here — or send /newgame to search without one.\n2. I'll ask you to search for the anime and pick the right result (or, from /newgame, pick a screenshot for it too).\n3. I'll post a pixelated version to the group's game topic.\n4. Everyone guesses with /guess <title> in that topic — it starts unforgiving (one wrong guess reveals more!) and gets more forgiving each stage.\n5. Whoever guesses right wins, and it's their turn next!\n\nIn the group topic:\n/guess <title> — make a guess\n/correct @username — (starter only) force a correct guess if the bot missed it\n/skip [@username] — pass your turn, open or to someone specific\n/leaderboard — see top winners\n\nIn DM:\n/start — this intro\n/help — this message\n/newgame — start a round without uploading a screenshot\n/language — (group admins) switch the bot's language\n/stop — (starter or admins) stop the current game, optionally revealing the answer\n/stageconfig, /setstageconfig, /setstage — (admins) view/tune pixelation stages\n/setgamesenabled — (admins) pause or resume starting new games\n/setautostart — (admins) let the bot start games on its own\n/version — show the bot's version and release notes",
+  "onboarding.start": "👋 Welcome! I run an anime-screenshot guessing game in the group.\n\nWhen it's your turn, DM me a screenshot here and I'll walk you through picking the anime — or send /newgame if you'd rather skip the upload and pick a screenshot from Shikimori/Tenrai/TMDB instead. Either way, I'll post a heavily pixelated version to the group for everyone to guess.\n\nUse /help anytime for the full rundown.",
+  "onboarding.help": "How to play:\n1. When it's your turn, DM me a screenshot here — or send /newgame to search without one.\n2. I'll ask you to search for the anime and pick the right result (or, from /newgame, pick a screenshot for it too).\n3. I'll post a pixelated version to the group's game topic.\n4. Everyone guesses with /guess <title> in that topic — it starts unforgiving (one wrong guess reveals more!) and gets more forgiving each stage.\n5. Whoever guesses right wins, and it's their turn next!\n6. If nobody starts a round in time, the bot may start one itself — those are HARD MODE instead: 2 turns, 2 screenshots per turn, only 1 wrong guess per turn, and +2 to the score if you crack it. /correct isn't available on those.\n\nIn the group topic:\n/guess <title> — make a guess\n/correct @username — (starter only, and not on a HARD MODE round the bot started itself) force a correct guess if the bot missed it\n/skip [@username] — pass your turn, open or to someone specific\n/leaderboard — see top winners\n\nIn DM:\n/start — this intro\n/help — this message\n/newgame — start a round without uploading a screenshot\n/language — (group admins) switch the bot's language\n/linkmal — link your MyAnimeList account, so you can pick a title straight from your own list\n/unlinkmal — unlink your MyAnimeList account again\n/stop — (starter or admins) stop the current game, optionally revealing the answer\n/stageconfig, /setstageconfig, /setstage — (admins) view/tune pixelation stages\n/setgamesenabled — (admins) pause or resume starting new games\n/setautostart — (admins) let the bot start games on its own\n/version — show the bot's version and release notes",
   "onboarding.help_dm_failed": "Please message me privately first — @{bot_username} — then try /help again.",
   "onboarding.help_dm_failed_no_handle": "Please message me privately first, then try /help again.",
 
@@ -102,9 +120,14 @@
   "commands.setstage": "Set one pixelation stage (admins)",
   "commands.setgamesenabled": "Pause/resume starting new games (admins)",
   "commands.setautostart": "Let the bot start games itself (admins)",
+  "commands.linkmal": "Link your MyAnimeList account",
+  "commands.unlinkmal": "Unlink your MyAnimeList account",
 
   "keyboards.retry": "None of these — search again",
   "keyboards.manual_entry": "Manual entry",
+  "keyboards.mal_list_entry": "My MAL List",
+  "keyboards.mal_list_previous": "◀️ Back",
+  "keyboards.mal_list_next": "More ▶️",
   "keyboards.upload_own_instead": "📤 Upload my own instead",
   "keyboards.change_image_upload": "📤 Upload a new photo",
   "keyboards.change_image_pick_screenshot": "🖼️ Pick a different screenshot",
@@ -125,6 +148,7 @@
   "stop.confirmed": "Game stopped.",
   "stop.confirmed_revealed": "Game stopped — the answer was posted to the group.",
   "stop.stopped_reveal_caption": "🛑 The game was stopped. It was {title}.\nAnyone can start a new one now!",
+  "stop.hard_mode_stopped_reveal_caption": "🛑 This HARD MODE round was stopped. It was {title}.\nAnyone can start a new one now!",
   "stop.confirmed_group_notice": "🛑 The game was stopped — anyone can start a new one now!",
   "stop.canceled": "Okay, the game continues.",
 
@@ -168,5 +192,14 @@
   "dm_start.algo_desc_box": "averages each block; smooth and even",
   "dm_start.algo_desc_median": "keeps each block's dominant tone; the default",
   "dm_start.algo_desc_mode": "most frequent colour per block; speckles badly",
-  "dm_start.algo_desc_lanczos": "sharpest blocks; can ring on hard edges"
+  "dm_start.algo_desc_lanczos": "sharpest blocks; can ring on hard edges",
+
+  "dm_start.mal_status_completed": "Completed",
+  "dm_start.mal_status_watching": "Watching",
+  "dm_start.mal_status_plan_to_watch": "Plan to Watch",
+  "dm_start.mal_status_on_hold": "On Hold",
+  "dm_start.mal_status_dropped": "Dropped",
+  "dm_start.mal_list_prompt": "Pick an anime from your MyAnimeList list:",
+  "dm_start.mal_list_empty": "Your MyAnimeList list is empty — add something to it, or pick another identification method.",
+  "dm_start.mal_not_found_anymore": "Couldn't find that anime in the catalogue — pick a method below to try again, including going back to your list."
 }

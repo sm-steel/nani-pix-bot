@@ -3,7 +3,7 @@ sub-flow, reached from `search.py`'s `pick_callback_handler` once
 identification is staged but no image exists yet. See MECHANICS.md's
 "Starting a game" section.
 
-Every screenshot-capable provider (Shikimori/Jikan/TMDB) is always
+Every screenshot-capable provider (Shikimori/Tenrai/TMDB) is always
 offered, regardless of which provider did the identification: tapping
 one the game already has an id for goes straight to its gallery
 (same-provider path); tapping any other silently searches it by the
@@ -20,6 +20,7 @@ complexity grew past qlty's threshold; that module imports the
 `_show_gallery_page` helpers below rather than duplicating them."""
 
 from dataclasses import dataclass
+from typing import cast
 
 from loguru import logger
 from telegram import InputMediaPhoto, Update
@@ -43,8 +44,8 @@ from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.search.jikan import JikanResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 GALLERY_PAGE_SIZE = 5
@@ -145,14 +146,27 @@ async def _fetch_screenshots_or_fallback(
 
 async def _search_provider(
     provider: Provider, client, query: str
-) -> list[ShikimoriResult] | list[JikanResult] | list[TMDBResult]:
-    return await provider.screenshot_module.search(client, query)
+) -> list[ShikimoriResult] | list[TenraiResult] | list[TMDBResult]:
+    # `screenshot_module` itself already raises ValueError for
+    # Provider.ANILIST (see its docstring in models/enums.py) — every
+    # caller of this function only ever reaches it for a provider
+    # already known to be screenshot-capable, so AniList can never
+    # actually appear in the result. The cast states what is already
+    # true rather than papering over a doubt (see _shared.py's
+    # _client_for_source for the same pattern): `screenshot_module`'s
+    # declared return type has to cover all three screenshot-capable
+    # providers at once, which is wider than what any one call site
+    # here can ever get back.
+    results = await provider.screenshot_module.search(client, query)
+    return cast("list[ShikimoriResult] | list[TenraiResult] | list[TMDBResult]", results)
 
 
 async def _get_provider_by_id(
     provider: Provider, client, external_id: int
-) -> ShikimoriResult | JikanResult | TMDBResult | None:
-    return await provider.screenshot_module.get_by_id(client, external_id)
+) -> ShikimoriResult | TenraiResult | TMDBResult | None:
+    # See _search_provider's comment above for why this cast is safe.
+    result = await provider.screenshot_module.get_by_id(client, external_id)
+    return cast("ShikimoriResult | TenraiResult | TMDBResult | None", result)
 
 
 @dataclass(frozen=True)
@@ -285,7 +299,7 @@ def stage_screenshot_picker(game: Game) -> ScreenshotPickerPrompt:
     screenshot-capable provider is always offered (see
     game_service.screenshot_capable_providers) since cross-provider resolution means
     even an AniList/manual identification can still get a
-    Shikimori/Jikan/TMDB screenshot."""
+    Shikimori/Tenrai/TMDB screenshot."""
     providers = game_service.screenshot_capable_providers(game)
     game.setup_step = SetupStep.PICKING_SCREENSHOT
     return ScreenshotPickerPrompt(starter_id=game.starter_id, providers=providers)
@@ -525,7 +539,7 @@ async def _resolve_cross_provider_id(
     # intent but not by code, so a reorder there wants a look here.
     # Deliberately not display_title() itself, which is why this is a
     # copy: a *search query* must not follow the bot's display language
-    # (a RU bot would then send Jikan/TMDB a Russian title even when an
+    # (a RU bot would then send Tenrai/TMDB a Russian title even when an
     # English one is on file), and display_title's "?" fallback for a
     # title-less game would be a query rather than the no-query this
     # still wants. Native before Russian for the same reason — all three

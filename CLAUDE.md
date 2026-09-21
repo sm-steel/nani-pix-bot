@@ -2,7 +2,7 @@
 
 Telegram bot for an anime-screenshot guessing game, played in one topic of a
 group chat. A player either DMs the bot a screenshot directly, or sends
-`/newgame` and picks a real screenshot from Shikimori/Jikan/TMDB instead —
+`/newgame` and picks a real screenshot from Shikimori/Tenrai/TMDB instead —
 either way, they identify the anime (see `MECHANICS.md` for exactly how —
 there are five identification methods) and the bot posts the screenshot
 heavily pixelated into the group's game topic, where players guess with
@@ -64,7 +64,7 @@ parity between the two variations files, the same way it already guards
 the main locale files.
 
 Two categories of text are **deliberately not translated**: third-party
-brand names (`"AniList"`/`"Shikimori"`/`"Jikan"`/`"TMDB"` — in the
+brand names (`"AniList"`/`"Shikimori"`/`"Tenrai"`/`"TMDB"` — in the
 method-picker keyboard and everywhere else via `Provider.display_name`
 in `models/enums.py`, the single source of truth for them) and the
 `/language` picker's
@@ -163,7 +163,7 @@ To skip in a genuine emergency: `git commit --no-verify` — but fix what it
 would have caught before the next real commit, don't make a habit of it.
 
 **CI (`.github/workflows/`) runs the exact same checks as the local
-pre-commit hook — never a separate copy of them.** Three workflows,
+pre-commit hook — never a separate copy of them.** Four workflows,
 GitHub-hosted runners only (never self-hosted — GitHub explicitly warns
 against self-hosted runners on public repos, since any fork PR can run
 arbitrary code on one, including reading secrets):
@@ -189,6 +189,21 @@ arbitrary code on one, including reading secrets):
   whoever deploys it needs to remember — its startup queries the `games`
   table (to re-arm pending timeouts) immediately, which is exactly why a
   pending migration has to land first.
+- **`sync-develop.yml`** — also on every push to `master` (i.e. every
+  merged release PR, see "Branching & workflow" below). GitHub's merge
+  button always creates a *new* commit on `master` for that PR, one
+  `develop` never gets back on its own — left alone, that accumulates
+  release after release and the two branches quietly diverge. This
+  workflow closes the loop by opening a `master` → `develop` PR with
+  that commit (skipped if one's already open). It only opens the PR,
+  never merges it: a PR raised by the default `GITHUB_TOKEN` can't
+  trigger `checks.yml`/`tests.yml` (GitHub blocks Actions-created events
+  from recursively triggering more Actions), so there's no auto-merge
+  path that would actually wait on CI without a separate PAT — and
+  merging stays a human's call regardless, same as any other PR into a
+  protected branch. Requires "Allow GitHub Actions to create pull
+  requests" enabled under repo Settings → Actions → General (off by
+  default) — without it `gh pr create` fails on a permissions error.
 
 If a local pre-commit pass ever disagrees with `checks.yml`'s result on the
 same commit, that's a bug in the CI setup worth fixing directly, not
@@ -290,7 +305,11 @@ The standard flow for any task:
 
 Releasing is its own separate step, not something that happens as a side
 effect of a task PR: open a `develop` → `master` PR and merge it when
-you're ready to cut a version.
+you're ready to cut a version. That merge leaves a commit on `master`
+that `develop` doesn't have — `sync-develop.yml` (see the CI section
+above) opens a follow-up `master` → `develop` PR automatically; merge
+that one too before starting new task branches, so they fork from a
+`develop` that's actually caught up.
 
 ## Task tracking (GitHub Issues)
 

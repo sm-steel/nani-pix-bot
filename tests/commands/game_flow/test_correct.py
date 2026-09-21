@@ -39,6 +39,9 @@ def _make_context(session_factory, *, args: list[str] | None = None) -> MagicMoc
     context.args = args or []
     context.job_queue.get_jobs_by_name.return_value = []
     context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+    context.bot.send_media_group = AsyncMock(
+        return_value=[MagicMock(message_id=998), MagicMock(message_id=999)]
+    )
     context.bot.pin_chat_message = AsyncMock()
     context.bot.unpin_chat_message = AsyncMock()
     # Default: close the scheduled coroutine so tests that don't care about
@@ -71,6 +74,30 @@ def _active_game(session_factory, **overrides) -> int:
             "original_image": b"file123",
             "status": GameStatus.ACTIVE,
             "current_stage": PixelStage.STAGE_1,
+            "title_english": "Frieren: Beyond Journey's End",
+        }
+        defaults.update(overrides)
+        game = Game(**defaults)
+        session.add(game)
+        session.commit()
+        return game.id
+
+
+def _active_hard_mode_game(session_factory, **overrides) -> int:
+    """The hard-mode analogue of _active_game — current_stage/original_image
+    stay unset (a hard-mode game never sets them; it carries its fixed
+    screenshot pair via hard_mode_image_a/_b instead) — same shape as
+    test_guess.py's own _active_hard_mode_game fixture."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.commit()
+        defaults = {
+            "starter_id": 1,
+            "status": GameStatus.ACTIVE,
+            "hard_mode": True,
+            "hard_mode_turn": 1,
+            "hard_mode_image_a": b"image-a-bytes",
+            "hard_mode_image_b": b"image-b-bytes",
             "title_english": "Frieren: Beyond Journey's End",
         }
         defaults.update(overrides)
@@ -382,3 +409,52 @@ async def test_correct_command_drops_the_mention_when_the_bot_has_no_handle_yet(
     text = update.message.reply_text.await_args.args[0]
     assert "stranger" in text.lower()
     assert "@" not in text.replace("@stranger", "")
+
+
+async def test_correct_command_hard_mode_reveals_both_stored_screenshots(session_factory) -> None:
+    """A hard-mode /correct win reveals the stored screenshot pair as a
+    2-photo album (post_current_images), not the normal-mode single
+    original_image reveal — the award amount itself (+2 for hard mode)
+    is already covered by Task 3's force_win tests, so this only checks
+    the announcement/reveal shape.
+
+    This is also the regression test for the guard-bug pattern this plan
+    keeps finding: before this task, _validate_active_game_for_starter's
+    `if game.original_image is None: return None` guard silently
+    rejected every hard-mode /correct (original_image is always None for
+    a hard-mode game), so this test would have failed with a "no_game"-
+    style reply and no reveal sent at all."""
+    game_id = _active_hard_mode_game(session_factory, total_guess_count=1)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="winner"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_media_group.assert_awaited_once()
+    context.bot.send_photo.assert_not_awaited()
+    _, kwargs = context.bot.send_media_group.await_args
+    media = kwargs["media"]
+    assert len(media) == 2
+    assert media[0].media.input_file_content == b"image-a-bytes"
+    assert media[1].media.input_file_content == b"image-b-bytes"
+    expected_caption = correct_command_module.i18n.t(
+        "correct.hard_mode_caption", "en", winner="winner", title="Frieren: Beyond Journey's End"
+    )
+    assert media[0].caption == expected_caption
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.WON
+        assert fetched.winner_id == 2
+        # Confirmed sent -> hard-mode image bytes cleared, same cleanup
+        # gate as the normal-mode original_image path (clear_image_if_sent
+        # dispatches on game.hard_mode).
+        assert fetched.hard_mode_image_a is None
+        assert fetched.hard_mode_image_b is None

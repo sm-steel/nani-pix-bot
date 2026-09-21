@@ -10,7 +10,8 @@ just what's currently built.
 
 | Feature | Status |
 |---|---|
-| Game setup (DM photo, or `/newgame` + screenshot picker) + AniList/Shikimori/Jikan/TMDB/manual entry | Implemented |
+| Game setup (DM photo, or `/newgame` + screenshot picker) + AniList/Shikimori/Tenrai/TMDB/manual entry | Implemented |
+| Personal MyAnimeList account linking (`/linkmal`/`/unlinkmal`) + "My MAL List" identification method | Implemented |
 | Group-membership gate on DM setup | Implemented |
 | Pixelation stages (5 stages, scaling wrong-guess allowance, → reveal) | Implemented |
 | Guess matching (`/guess`, local fuzzy match) | Implemented |
@@ -37,7 +38,7 @@ stateDiagram-v2
 
     state SETUP {
         [*] --> PickingMethod
-        PickingMethod --> Confirming: AniList/Shikimori/Jikan/TMDB result picked,\nor manual title + synonym staged\n— screenshot already in hand (DM-photo entry)
+        PickingMethod --> Confirming: AniList/Shikimori/Tenrai/TMDB result picked,\nor manual title + synonym staged\n— screenshot already in hand (DM-photo entry)
         PickingMethod --> PickingScreenshot: same, but no screenshot yet\n(/newgame entry)
         PickingScreenshot --> Confirming: screenshot picked\n(same- or cross-provider, see\n"Picking a screenshot")\nor own photo sent
         PickingScreenshot --> PickingScreenshot: provider down / nothing found\n— back to the source menu\n(see "When a provider fails")
@@ -116,14 +117,17 @@ The timer is canceled the moment they confirm.
 
 The bot asks the starter to pick an identification method: **AniList**,
 **Shikimori** (the Russian-community anime database, with better Russian
-titles/synonyms), **Jikan** (a third-party MyAnimeList API), **TMDB**
-(The Movie Database — English-only, no romaji/native/Russian titles), or
-**manual entry**. If the bot's language is currently Russian, Shikimori is
+titles/synonyms), **Tenrai** (a third-party MyAnimeList API), **TMDB**
+(The Movie Database — English-only, no romaji/native/Russian titles),
+**manual entry**, or — only once MyAnimeList account linking is
+configured bot-wide (see `ARCHITECTURE.md`'s connectivity section) —
+**My MAL List** (see "Linking a personal MyAnimeList account" below). If
+the bot's language is currently Russian, Shikimori is
 listed first with a one-line note explaining why. The choice is stored on
 the game's still-`SETUP` row (`Game.source`), not in memory, so it
 survives a restart before the player finishes typing.
 
-**AniList/Shikimori/Jikan/TMDB**: the bot asks for a search query (the
+**AniList/Shikimori/Tenrai/TMDB**: the bot asks for a search query (the
 anime's name, in whatever form the player remembers it) and searches
 whichever service was picked, showing up to 5 results as an inline
 keyboard (title + year for AniList, each service's own best title
@@ -132,7 +136,7 @@ different text. The player taps the correct result, and the bot
 re-fetches the full record from that service (whichever title fields it
 has, plus its synonyms list where available) and records that service's
 own id (one column per provider — `Game.anilist_id`/`shikimori_id`/
-`jikan_id`/`tmdb_id` — so a later screenshot cross-search can reuse an id
+`tenrai_id`/`tmdb_id` — so a later screenshot cross-search can reuse an id
 already on file instead of re-searching, see below).
 **Manual entry**: for anime none of the above knows about. The bot asks
 for the title, then for at least one alternate title/synonym (comma- or
@@ -144,6 +148,55 @@ External search/detail lookups are cached in memory for a short time
 follow-up screenshot cross-search don't needlessly re-hit the same API
 and risk a 429.
 
+### Linking a personal MyAnimeList account
+
+**Status: Implemented.**
+
+Unlike every method above, **My MAL List** doesn't search a public
+catalog — the player browses their *own* MyAnimeList anime list and
+picks directly from it. Linking is **per-player**, not a shared,
+bot-wide account: each player links (or doesn't) their own MyAnimeList
+account, independently of everyone else, via **`/linkmal`** (DM-only,
+self-service — no admin gate, unlike `/language`) or **`/unlinkmal`** to
+forget it again. The sixth method-picker button is a convenience
+wrapper around the same flow, not a separate thing: it's **always
+visible to every player** once the bot itself has MAL linking
+configured, regardless of whether *that particular player* has linked
+yet — it is never hidden from an unlinked player. Tapping it while
+unlinked (or after MyAnimeList has revoked the stored refresh token)
+walks the player through linking first: open the authorization link,
+log into MyAnimeList, approve access, then paste the code it shows back
+into the DM — and lands them straight in their list browser the moment
+linking succeeds, since reaching the list was the point of tapping the
+button in the first place. Running the standalone `/linkmal` command
+outside of an active setup just confirms the link instead.
+
+Once linked, the browser pages through the player's list **10 entries
+at a time** (a "◀️ Back"/"More ▶️" pair, the same paging shape as the
+screenshot gallery), showing **every list status** — Completed,
+Watching, Plan to Watch, On Hold, Dropped — each entry tagged with its
+own status, not filtered down to completed-only.
+
+Picking an entry does **not** introduce a new identification method
+under the hood: MyAnimeList and Tenrai (a third-party MyAnimeList API)
+share the exact same catalog id space, so a pick resolves through the
+existing Tenrai lookup and lands exactly where a Tenrai search-and-pick
+would — `Game.source` is set to Tenrai's own provider value and
+`Game.tenrai_id` to the picked id, continuing into the same
+screenshot-picker-or-confirmation-preview flow every other method
+already ends in (see "Picking a screenshot" and "The confirmation
+preview" below). There is no separate provider value for "MAL list"
+and no MAL-specific columns on `Game`.
+
+A player's OAuth tokens are refreshed **on demand** — checked against
+their stored expiry right before a list fetch, never on a proactive
+schedule — and encrypted at rest (see `ARCHITECTURE.md`'s data model).
+If the refresh fails (MyAnimeList has revoked the refresh token), or
+the stored tokens no longer decrypt (e.g. after the bot's encryption
+key was rotated), the player is treated exactly like someone who never
+linked at all — walked through `/linkmal` again — rather than shown an
+error.
+
 ### Picking a screenshot (the `/newgame` path only)
 
 Once identification is staged, if `Game.original_image` is still empty
@@ -151,7 +204,7 @@ Once identification is staged, if `Game.original_image` is still empty
 screenshot instead of asking for an upload outright:
 
 1. **Source selection** — every screenshot-capable provider (Shikimori,
-   Jikan, TMDB — AniList has no such capability) is offered, with
+   Tenrai, TMDB — AniList has no such capability) is offered, with
    whichever one did the identification listed first (no extra search
    needed for that one). An **"Upload my own instead"** button is always
    present too, falling back to the traditional upload step.
@@ -324,7 +377,7 @@ own game at all — they already know the answer.
 
 Because everything the matcher needs is cached at setup time, the same
 guess always produces the same verdict for the life of a game — matching
-never depends on AniList/Shikimori/Jikan/TMDB being reachable, rate
+never depends on AniList/Shikimori/Tenrai/TMDB being reachable, rate
 limits, or anything else external, at guess time.
 
 ## Pixelation stages
@@ -655,8 +708,9 @@ and both no-ops while a game is already `SETUP`/`ACTIVE`.
   "Ending unsolved" above) — a 24-hour absolute deadline is armed
   (`turn_state.turn_opened_at`/`autostart_deadline_at`). If nobody has
   started a game by the time it fires, and autostart is enabled, the bot
-  picks a random anime and screenshot for itself (see below) and starts
-  a game exactly as if it had DMed itself a screenshot. A failed pick
+  picks a random anime and screenshot pair for itself (see below) and
+  starts a **HARD MODE** game (see "HARD MODE" below) exactly as if it
+  had DMed itself the screenshots. A failed pick
   (every provider down, or no screenshot found for the anime it randomly
   landed on) doesn't go silent — it retries again in 1 hour rather than
   waiting for the next natural turn-open event. Any human starting a game
@@ -676,22 +730,35 @@ and both no-ops while a game is already `SETUP`/`ACTIVE`.
   (turn already open to anyone), the bot simply claims that already-open
   turn instead of leaving it for a human.
 
-**Picking a random anime + screenshot** (`services/game/autostart.py`,
+**Picking a random anime + screenshot pair** (`services/game/autostart.py`,
 framework-agnostic, no DB writes until a full pick is in hand): a random
 Shikimori anime (`order: random`, `censored: true` — excludes hentai/
-yaoi/yuri, the same scope Jikan's own filter deliberately matches — see
-its docstring), falling back to Jikan's `/random/anime` on any failure or
-empty result, then a screenshot for it via the same same-provider-first,
-cross-search-fallback order human-started games use (see "Picking a
-screenshot" above). Up to 3 different-anime attempts per firing
-(`AUTOSTART_ATTEMPT_LIMIT`) before giving up silently for that firing —
-caps how many API calls one attempt can cost if a provider is down or an
-anime keeps coming up with no screenshots anywhere.
+yaoi/yuri), falling back to Tenrai's `/random/anime` on any failure or
+empty result — Tenrai's request already asks for `sfw=true`, and
+`services/game/autostart.py` also rejects an explicit-rated (`Rx`) pick
+as a backstop, the same rejection Jikan's fallback already had. What's
+new to Tenrai's fallback since the migration off Jikan is its own
+popularity floor (`tenrai.py`'s `RANDOM_PICK_MIN_MEMBERS`, mirroring
+`shikimori.py`'s own `RANDOM_PICK_MIN_WATCHED` floor on the pick above)
+— closing issue #165: Jikan's old fallback had no such floor, so it
+could surface an anime almost nobody had actually watched — then a
+screenshot **pair** for it — two distinct screenshots
+from the same provider, since HARD MODE (see below) always needs a
+genuine pair and never the same screenshot twice — via the same
+same-provider-first, cross-search-fallback provider order human-started
+games use (see "Picking a screenshot" above). Up to 3 different-anime
+attempts per firing (`AUTOSTART_ATTEMPT_LIMIT`) before giving up silently
+for that firing — caps how many API calls one attempt can cost if a
+provider is down or an anime keeps coming up with no screenshots
+anywhere.
 
-**A bot-started game plays out identically to a human-started one** in
-every other respect — same pixelation stages, same guess matching, same
-timers — with one deliberate exception: **`/correct` has no recourse on
-it.** `/correct`'s starter-only check (`user.id == game.starter_id`)
+**A bot-started game plays out under a different ruleset than a
+human-started one — HARD MODE (see below) — for the pixelation/turn
+structure itself**, but everything else — guess matching, the 2-day
+timeout, the inactivity clock, turn handoff on a win — applies exactly as
+it does to a normal game. The one deliberate permission gap is the same
+either way: **`/correct` has no recourse on a bot-started game.**
+`/correct`'s starter-only check (`user.id == game.starter_id`)
 means only the game's starter may force a win, and for a bot-started
 game the starter *is* the bot — no human can ever satisfy that check.
 This is an accepted, deliberate limitation, not a bug: extending
@@ -708,6 +775,51 @@ other starter, and `/stop`'s existing starter-or-admin check
 (`commands/game_flow/stop.py::_may_stop`) already covers a bot-started
 game correctly — no human is ever "the starter" of one, so only a group
 admin/owner can stop it (the bot itself never calls `/stop`).
+
+## HARD MODE
+
+**Status: Implemented.**
+
+Every bot-autostarted game — both "Bot-initiated games" paths above,
+idle auto-start and overthrow, with no exceptions — unconditionally uses
+**HARD MODE**, a different, harder ruleset than the normal 5-stage
+pixelation reveal described in "Pixelation stages" above. A
+player-started game (`/newgame`, or a DM'd screenshot) never uses HARD
+MODE — it's exclusively how the bot's own games play.
+
+HARD MODE replaces stages with **turns**:
+
+- **2 turns total** (`HARD_MODE_TURN_COUNT`), not 5 pixelation stages.
+- Each turn shows **2 different screenshots of the same anime, from the
+  same provider**, posted together as a single Telegram photo album
+  (`post_current_images`) rather than one image at a time — see "Picking
+  a random anime + screenshot pair" above for how that pair is sourced.
+  Both screenshots in the pair are pixelated to that turn's width and
+  live for the whole game on `Game.hard_mode_image_a`/`hard_mode_image_b`
+  (`original_image` is left unpopulated for these games).
+- Each turn is pixelated at its own **fixed target width**
+  (`HARD_MODE_TURN_WIDTHS` in `services/game/hard_mode.py`): turn 1 is
+  64px — the same width as a normal game's `STAGE_1`, not harder — and
+  turn 2 is 160px, comfortably clearer. HARD MODE's difficulty doesn't
+  come from a harsher pixelation width than a normal game starts at; it
+  comes from the guess budget and turn cap below.
+- **1 wrong guess allowed per turn** (`HARD_MODE_WRONG_GUESS_LIMIT`)
+  before it advances (turn 1 → turn 2) or, on turn 2, ends the game
+  unsolved — the same shape as stage exhaustion in "Ending unsolved"
+  above, just against `Game.hard_mode_turn` instead of `current_stage`.
+  This is a **fixed constant, not admin-configurable** — `/stageconfig`,
+  `/setstageconfig`, and `/setstage` only ever read/write the
+  `stage_config` table, which a HARD MODE game never consults.
+- A correct guess awards **+2 wins** (`HARD_MODE_WIN_AWARD`) instead of
+  the normal +1.
+
+Everything else about a HARD MODE game is unchanged from a normal one:
+guess matching, the 2-day timeout, the inactivity nudge/auto-advance
+clock, `/stop`, and turn handoff on a win all apply exactly as described
+above. The one exception is **`/correct`, which is not currently usable
+on a HARD MODE game** — see "Bot-initiated games" above for why (its
+starter-only check can never be satisfied by a human, since the starter
+of a bot-autostarted game is the bot itself).
 
 ## Leaderboard
 
