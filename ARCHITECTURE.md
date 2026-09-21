@@ -51,8 +51,8 @@ involvement) — this bot is Telegram-only.
   `services/search/tenrai.py`'s module docstring — but `api.tenrai.org`
   may still be blocked or unreachable on some hosts, the same risk
   TMDB's paragraph below describes for `api.themoviedb.org`.
-  `services/search/tenrai.py` therefore always constructs its `httpx`
-  client with `TELEGRAM_PROXY_URL` configured too, unlike AniList's and
+  Tenrai is therefore always talked to through a client `app.py` builds
+  with `TELEGRAM_PROXY_URL` configured too, unlike AniList's and
   Shikimori's proxy-free clients above — this is a no-op if you haven't
   set `TELEGRAM_PROXY_URL`.
   `commands/dm_start/screenshot_gallery.py`'s screenshot download
@@ -67,11 +67,11 @@ involvement) — this bot is Telegram-only.
   timing out, which can be confirmed with `getent hosts`/`resolvectl
   status`). If that happens, routing the same request through
   `TELEGRAM_PROXY_URL` (if you've set one) should resolve and connect
-  fine. `services/search/tmdb.py` therefore always constructs its
-  `httpx` client with that same proxy configured, unlike anilist.py's/
-  shikimori.py's proxy-free clients above (tenrai.py also needs the
-  proxy — see its own paragraph above) — this is a no-op if you haven't
-  set `TELEGRAM_PROXY_URL`. A TMDB API key (a v4
+  fine. TMDB is therefore always talked to through a client `app.py`
+  builds with that same proxy configured, unlike anilist.py's/
+  shikimori.py's proxy-free clients above (Tenrai's client also needs
+  the proxy — see its own paragraph above) — this is a no-op if you
+  haven't set `TELEGRAM_PROXY_URL`. A TMDB API key (a v4
   "Read Access Token") needs to be issued from themoviedb.org and placed
   in `.env` — TMDB search/screenshots are optional; without a key,
   everything else still works.
