@@ -68,9 +68,10 @@ involvement) — this bot is Telegram-only.
   status`). If that happens, routing the same request through
   `TELEGRAM_PROXY_URL` (if you've set one) should resolve and connect
   fine. `services/search/tmdb.py` therefore always constructs its
-  `httpx` client with that same proxy configured, unlike every other
-  search service in this package, which are all proxy-free — this is a
-  no-op if you haven't set `TELEGRAM_PROXY_URL`. A TMDB API key (a v4
+  `httpx` client with that same proxy configured, unlike anilist.py's/
+  shikimori.py's proxy-free clients above (tenrai.py also needs the
+  proxy — see its own paragraph above) — this is a no-op if you haven't
+  set `TELEGRAM_PROXY_URL`. A TMDB API key (a v4
   "Read Access Token") needs to be issued from themoviedb.org and placed
   in `.env` — TMDB search/screenshots are optional; without a key,
   everything else still works.
