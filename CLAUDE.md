@@ -2,7 +2,7 @@
 
 Telegram bot for an anime-screenshot guessing game, played in one topic of a
 group chat. A player either DMs the bot a screenshot directly, or sends
-`/newgame` and picks a real screenshot from Shikimori/Jikan/TMDB instead —
+`/newgame` and picks a real screenshot from Shikimori/Tenrai/TMDB instead —
 either way, they identify the anime (see `MECHANICS.md` for exactly how —
 there are five identification methods) and the bot posts the screenshot
 heavily pixelated into the group's game topic, where players guess with
@@ -64,7 +64,7 @@ parity between the two variations files, the same way it already guards
 the main locale files.
 
 Two categories of text are **deliberately not translated**: third-party
-brand names (`"AniList"`/`"Shikimori"`/`"Jikan"`/`"TMDB"` — in the
+brand names (`"AniList"`/`"Shikimori"`/`"Tenrai"`/`"TMDB"` — in the
 method-picker keyboard and everywhere else via `Provider.display_name`
 in `models/enums.py`, the single source of truth for them) and the
 `/language` picker's
