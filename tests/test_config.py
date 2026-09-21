@@ -66,3 +66,38 @@ def test_load_config_raises_when_bot_token_is_missing(monkeypatch: pytest.Monkey
 
     with pytest.raises(RuntimeError, match="BOT_TOKEN"):
         config.load_config()
+
+
+def test_load_config_leaves_mal_fields_none_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("MAL_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MAL_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MAL_REDIRECT_URI", raising=False)
+    monkeypatch.delenv("MAL_TOKEN_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("TMDB_READ_ACCESS_TOKEN", raising=False)
+
+    config_obj = config.load_config()
+
+    assert config_obj.mal_client_id is None
+    assert config_obj.mal_client_secret is None
+    assert config_obj.mal_redirect_uri is None
+    assert config_obj.mal_token_encryption_key is None
+
+
+def test_load_config_reads_mal_fields_when_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("MAL_CLIENT_ID", "cid")
+    monkeypatch.setenv("MAL_CLIENT_SECRET", "csecret")
+    monkeypatch.setenv("MAL_REDIRECT_URI", "https://example.github.io/mal-callback.html")
+    monkeypatch.setenv("MAL_TOKEN_ENCRYPTION_KEY", "keykeykeykeykeykeykeykeykeykeykeykeykey=")
+
+    config_obj = config.load_config()
+
+    assert config_obj.mal_client_id == "cid"
+    assert config_obj.mal_client_secret == "csecret"  # noqa: S105 - test fixture, not a real secret
+    assert config_obj.mal_redirect_uri == "https://example.github.io/mal-callback.html"
+    assert config_obj.mal_token_encryption_key == "keykeykeykeykeykeykeykeykeykeykeykeykey="  # noqa: S105 - test fixture, not a real key

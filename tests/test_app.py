@@ -36,6 +36,10 @@ def _config(**overrides) -> Config:
         "log_level": "INFO",
         "telegram_proxy_url": None,
         "tmdb_read_access_token": None,
+        "mal_client_id": None,
+        "mal_client_secret": None,
+        "mal_redirect_uri": None,
+        "mal_token_encryption_key": None,
         "database_url": "sqlite:///:memory:",
     }
     defaults.update(overrides)
