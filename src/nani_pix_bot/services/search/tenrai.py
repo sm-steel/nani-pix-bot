@@ -65,9 +65,9 @@ class TenraiResult:
     # Tenrai's own MAL content-rating string (e.g. "Rx - Hentai"), not
     # requested/used by search()'s or get_by_id()'s existing callers —
     # kept solely so services/game/autostart.py can reject an
-    # explicit-rated random pick, the same way it already does for
-    # Jikan (issue #159), since Tenrai's /random/anime endpoint has no
-    # server-side SFW filter the way Shikimori's random_anime() does.
+    # explicit-rated random pick as a second, backstop layer on top of
+    # the sfw=true already sent with the /random/anime request itself,
+    # the same way it already does for Jikan (issue #159).
     # Defaults to None so every existing keyword-based TenraiResult(...)
     # construction (tests included) stays valid unchanged.
     rating: str | None = None

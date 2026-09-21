@@ -691,10 +691,11 @@ async def test_random_anime_returns_none_when_the_data_container_is_null() -> No
 
 async def test_random_anime_parses_the_rating_field() -> None:
     """Tenrai's own content-rating field, needed so
-    services/game/autostart.py can reject an explicit-rated random pick,
-    the same way it already does for Jikan (issue #159) — Shikimori's
-    random_anime() already filters this server-side, but Tenrai's REST
-    /random/anime endpoint has no equivalent query parameter."""
+    services/game/autostart.py can reject an explicit-rated random pick
+    as a second, backstop layer, the same way it already does for Jikan
+    (issue #159) — Shikimori's random_anime() already filters this
+    server-side, and Tenrai's REST /random/anime request already sends
+    sfw=true, but this check catches what those miss."""
     entry = {**_MEMBERS_ENTRY, "mal_id": 1, "rating": "Rx - Hentai"}
 
     def handler(request: httpx.Request) -> httpx.Response:

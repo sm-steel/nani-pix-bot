@@ -165,9 +165,10 @@ async def test_gather_pick_gives_up_after_the_attempt_limit_with_no_db_touch(
 async def test_gather_pick_rejects_an_explicit_rated_tenrai_pick_and_retries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tenrai's /random/anime endpoint has no server-side SFW filter
-    (unlike Shikimori's censored: true) — a "rating": "Rx - Hentai" pick
-    must be rejected the same way a screenshot-less pick is: treated as
+    """Tenrai's /random/anime request already sends sfw=true, but this
+    rating check is a second, backstop layer (unlike Shikimori's
+    server-side censored: true) — a "rating": "Rx - Hentai" pick must
+    still be rejected the same way a screenshot-less pick is: treated as
     a failed attempt so gather_pick's loop retries with a different
     anime, never surfacing the explicit pick to a caller (issue #159)."""
 

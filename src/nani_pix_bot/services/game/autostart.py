@@ -125,9 +125,9 @@ def _is_explicit(result: TenraiResult) -> bool:
     """Tenrai's own convention for adult content — see the rating field's
     documented values on MAL; "Rx" is the sole adult-content prefix.
     Shikimori's random_anime() already filters this server-side
-    (censored: true in its GraphQL query) — Tenrai's REST /random/anime
-    endpoint has no equivalent query parameter, so this is the only
-    place that can catch it before a pick reaches the group topic.
+    (censored: true in its GraphQL query), and Tenrai's REST /random/anime
+    request already asks for sfw=true — this is a second, backstop layer
+    that catches it before a pick reaches the group topic.
 
     Deliberately matches Shikimori's `censored: true` scope — hentai
     only, not mild-content ratings like `R+ - Mild Nudity`, which this
