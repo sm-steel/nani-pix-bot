@@ -305,6 +305,27 @@ async def _resume_setup(message, game: Game, lang: str, context: ContextTypes.DE
     await message.reply_text(text, reply_markup=keyboard)
 
 
+async def _reply_service_unavailable(
+    send, lang: str, service_name: str, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """The `Provider`-free half of `_reply_service_down` below, taking a
+    bare display name instead. Exists for the one identification method
+    that isn't backed by a `Provider` at all — a player's own MyAnimeList
+    list (see mal_browse.py, and services/search/mal_user.py's module
+    docstring for why "MAL list" is not a `Provider`). Naming the service
+    that actually failed matters here: routing MAL's own outage through
+    `_reply_service_down` would have to name some `Provider`, and would
+    tell the starter Tenrai is down when it isn't."""
+    prefer_shikimori = _prefer_shikimori(lang)
+    mal_configured = bool(context.bot_data.get("mal_client_id"))
+    await send(
+        i18n.t("dm_start.search_failed", lang, service=service_name),
+        reply_markup=method_selection_keyboard(
+            prefer_shikimori=prefer_shikimori, lang=lang, mal_configured=mal_configured
+        ),
+    )
+
+
 async def _reply_service_down(
     send, lang: str, source: Provider, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -312,14 +333,7 @@ async def _reply_service_down(
     tell the starter the chosen service looks unreachable and hand them
     back the method-selection keyboard rather than leaving them stuck
     with a dead-end SETUP game (see issue #11's orphaned-row incident)."""
-    prefer_shikimori = _prefer_shikimori(lang)
-    mal_configured = bool(context.bot_data.get("mal_client_id"))
-    await send(
-        i18n.t("dm_start.search_failed", lang, service=source.display_name),
-        reply_markup=method_selection_keyboard(
-            prefer_shikimori=prefer_shikimori, lang=lang, mal_configured=mal_configured
-        ),
-    )
+    await _reply_service_unavailable(send, lang, source.display_name, context)
 
 
 async def _start_new_game(

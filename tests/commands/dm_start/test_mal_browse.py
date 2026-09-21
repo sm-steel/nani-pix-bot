@@ -24,6 +24,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, mal_link
+from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.search.tenrai import TenraiResult
 
 _ENCRYPTION_KEY = Fernet.generate_key().decode()
@@ -58,6 +59,7 @@ def _mal_transport(
     *,
     token_status: int = 200,
     token_body: dict | None = None,
+    list_status: int = 200,
     list_body: dict | None = None,
     requests: list[httpx.Request] | None = None,
 ) -> httpx.MockTransport:
@@ -76,23 +78,32 @@ def _mal_transport(
                 json=token_body
                 or {"access_token": "at", "refresh_token": "rt", "expires_in": 3600},
             )
+        if list_status != 200:
+            return httpx.Response(list_status, text="upstream is having a bad day")
         return httpx.Response(200, json=list_body if list_body is not None else _list_body())
 
     return httpx.MockTransport(handler)
 
 
-def _make_context(session_factory, *, transport: httpx.MockTransport | None = None) -> MagicMock:
+def _make_context(
+    session_factory,
+    *,
+    transport: httpx.MockTransport | None = None,
+    encryption_key: str = _ENCRYPTION_KEY,
+) -> MagicMock:
     context = MagicMock()
     context.bot_data = {
         "session_factory": session_factory,
         "mal_client_id": "cid",
         "mal_client_secret": "csecret",
         "mal_redirect_uri": "https://example.com/cb",
-        "mal_token_encryption_key": _ENCRYPTION_KEY,
+        "mal_token_encryption_key": encryption_key,
         "mal_client": httpx.AsyncClient(transport=transport or _mal_transport()),
         "tenrai_client": MagicMock(),
     }
     context.bot.send_message = AsyncMock()
+    context.bot.send_photo = AsyncMock()
+    context.bot.send_media_group = AsyncMock()
     context.job_queue = MagicMock()
     return context
 
@@ -143,9 +154,9 @@ def _add_credentials(session_factory, *, user_id: int = 1, expires_in_seconds: i
         session.commit()
 
 
-def _create_setup_game(session_factory, *, user_id: int = 1) -> None:
+def _create_setup_game(session_factory, *, user_id: int = 1, image: bytes | None = None) -> None:
     with session_factory() as session:
-        game_service.create_setup_game(session, starter_id=user_id, original_image=None)
+        game_service.create_setup_game(session, starter_id=user_id, original_image=image)
         session.commit()
 
 
@@ -467,3 +478,126 @@ async def test_pick_rejects_a_stale_tap_with_no_setup_game_left(
     )
     update.callback_query.edit_message_text.assert_not_awaited()
     context.bot.send_message.assert_not_awaited()
+
+
+async def test_pick_shows_the_preview_when_a_screenshot_was_already_uploaded(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Photo-first entry: the starter uploaded a screenshot and only then
+    identified it from their MAL list. Sending them to "pick a screenshot
+    source" would silently sideline the image they already gave us — so
+    this takes pick_callback_handler's has_image branch instead."""
+    monkeypatch.setattr(pixelate_service, "pixelate", lambda *_: b"pixelated")
+    _add_player(session_factory)
+    _add_credentials(session_factory)
+    _create_setup_game(session_factory, image=b"uploaded-bytes")
+    monkeypatch.setattr(mal_browse.tenrai, "get_by_id", AsyncMock(return_value=_FRIEREN_TENRAI))
+
+    update = _make_callback_update(data="mal_list_pick:52991")
+    context = _make_context(session_factory)
+
+    await mal_browse.mal_list_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_media_group.assert_awaited_once()
+    assert update.callback_query.edit_message_text.await_args.args[0] == i18n.t(
+        "dm_start.preview_sent", "en"
+    )
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.CONFIRMING
+        assert fetched.original_image == b"uploaded-bytes"  # the upload survived the pick
+
+
+# --- provider/API failures must land as a reply, never a dead spinner ---
+
+
+async def test_pick_reports_a_tenrai_outage_and_reoffers_the_methods(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _add_player(session_factory)
+    _create_setup_game(session_factory)
+    monkeypatch.setattr(
+        mal_browse.tenrai,
+        "get_by_id",
+        AsyncMock(side_effect=httpx.ConnectError("tenrai is unreachable")),
+    )
+
+    update = _make_callback_update(data="mal_list_pick:52991")
+    context = _make_context(session_factory)
+
+    await mal_browse.mal_list_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    call = update.callback_query.edit_message_text.await_args
+    assert call.args[0] == i18n.t(
+        "dm_start.search_failed", "en", service=Provider.TENRAI.display_name
+    )
+    assert call.kwargs["reply_markup"] is not None  # handed back the method picker
+    context.bot.send_message.assert_not_awaited()
+
+
+async def test_a_failing_mal_list_fetch_is_reported_not_raised(session_factory) -> None:
+    """fetch_list raises on any non-2xx by design (a 401 for a token MAL
+    revoked server-side, a 5xx outage). Unhandled, that escaped the
+    handler and left the starter on a dead spinner."""
+    _add_player(session_factory)
+    _add_credentials(session_factory)
+    _create_setup_game(session_factory)
+
+    update = _make_callback_update(data=MAL_METHOD_CALLBACK_DATA)
+    context = _make_context(session_factory, transport=_mal_transport(list_status=500))
+
+    await search.method_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    call = update.callback_query.edit_message_text.await_args
+    # Named as MyAnimeList, not as whichever Provider happens to be handy
+    # — Tenrai is not what failed here.
+    assert call.args[0] == i18n.t("dm_start.search_failed", "en", service="MyAnimeList")
+    assert "Tenrai" not in call.args[0]
+    assert call.kwargs["reply_markup"] is not None
+
+
+async def test_a_failing_mal_list_fetch_while_paging_is_reported_too(session_factory) -> None:
+    _add_player(session_factory)
+    _add_credentials(session_factory)
+
+    update = _make_callback_update(data="mal_list_page:10")
+    context = _make_context(session_factory, transport=_mal_transport(list_status=401))
+
+    await mal_browse.mal_list_page_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert update.callback_query.edit_message_text.await_args.args[0] == i18n.t(
+        "dm_start.search_failed", "en", service="MyAnimeList"
+    )
+
+
+# --- encryption-key rotation ---
+
+
+async def test_undecryptable_credentials_are_treated_as_unlinked(session_factory) -> None:
+    """After a MAL_TOKEN_ENCRYPTION_KEY rotation the stored ciphertext is
+    unrecoverable. get_credentials raises InvalidToken by design; the
+    spec says the caller turns that into "unlinked, link again" rather
+    than an error."""
+    _add_player(session_factory)
+    _add_credentials(session_factory)  # encrypted with _ENCRYPTION_KEY
+    _create_setup_game(session_factory)
+
+    update = _make_callback_update(data=MAL_METHOD_CALLBACK_DATA)
+    context = _make_context(session_factory, encryption_key=Fernet.generate_key().decode())
+
+    await search.method_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    reply = update.callback_query.edit_message_text.await_args.args[0]
+    assert "myanimelist.net/v1/oauth2/authorize" in reply
+    with session_factory() as session:
+        assert mal_link.get_pending_link(session, 1) is not None
