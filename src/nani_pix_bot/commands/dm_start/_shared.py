@@ -214,7 +214,9 @@ def _stored_provider(stored: str) -> Provider:
     return Provider(stored)
 
 
-def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
+def _current_setup_screen(
+    game: Game, lang: str, context: ContextTypes.DEFAULT_TYPE
+) -> tuple[str, InlineKeyboardMarkup | None]:
     """The screen `game`'s own starter is already looking at, as the i18n
     key and keyboard to re-send it with — see `_resume_setup`.
 
@@ -240,9 +242,12 @@ def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMar
     now, and loudly at runtime if one is ever added dynamically."""
     if game.setup_step == SetupStep.PICKING_METHOD:
         prefer_shikimori = _prefer_shikimori(lang)
+        mal_configured = bool(context.bot_data.get("mal_client_id"))
         return (
             _method_prompt_key(prefer_shikimori=prefer_shikimori),
-            method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
+            method_selection_keyboard(
+                prefer_shikimori=prefer_shikimori, lang=lang, mal_configured=mal_configured
+            ),
         )
     if game.setup_step == SetupStep.PICKING_SCREENSHOT:
         return (
@@ -258,7 +263,7 @@ def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMar
     assert_never(game.setup_step)
 
 
-async def _resume_setup(message, game: Game, lang: str) -> None:
+async def _resume_setup(message, game: Game, lang: str, context: ContextTypes.DEFAULT_TYPE) -> None:
     """ "Start a new game" from someone whose own setup is still open —
     most often "I'm stuck, let me start over", which is exactly the
     population the "never strand the starter" work was for.
@@ -278,7 +283,7 @@ async def _resume_setup(message, game: Game, lang: str) -> None:
     Genuinely starting over is still `/stop`, unchanged; this only stops
     the bot from denying the setup exists — and says so, on the two steps
     where the screen alone cannot (issue #79, routed from #73)."""
-    key, keyboard = _current_setup_screen(game, lang)
+    key, keyboard = _current_setup_screen(game, lang, context)
     text = i18n.t(key, lang)
     if keyboard is None:
         # AWAITING_PHOTO_CHANGE and AWAITING_SYNONYM: the two steps whose
@@ -300,15 +305,20 @@ async def _resume_setup(message, game: Game, lang: str) -> None:
     await message.reply_text(text, reply_markup=keyboard)
 
 
-async def _reply_service_down(send, lang: str, source: Provider) -> None:
+async def _reply_service_down(
+    send, lang: str, source: Provider, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Shared failure path for both the search step and the pick step:
     tell the starter the chosen service looks unreachable and hand them
     back the method-selection keyboard rather than leaving them stuck
     with a dead-end SETUP game (see issue #11's orphaned-row incident)."""
     prefer_shikimori = _prefer_shikimori(lang)
+    mal_configured = bool(context.bot_data.get("mal_client_id"))
     await send(
         i18n.t("dm_start.search_failed", lang, service=source.display_name),
-        reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
+        reply_markup=method_selection_keyboard(
+            prefer_shikimori=prefer_shikimori, lang=lang, mal_configured=mal_configured
+        ),
     )
 
 
@@ -347,7 +357,7 @@ async def _start_new_game(
         # all, the caller's own included (see _resume_setup).
         own_setup = game_service.get_setup_game_for_starter(session, user.id)
         if own_setup is not None:
-            await _resume_setup(message, own_setup, lang)
+            await _resume_setup(message, own_setup, lang, context)
             return
         if not game_service.can_start(session, user.id):
             logger.warning("{} tried to start a game out of turn", user.id)
@@ -371,9 +381,12 @@ async def _start_new_game(
     )
 
     prefer_shikimori = _prefer_shikimori(lang)
+    mal_configured = bool(context.bot_data.get("mal_client_id"))
     await message.reply_text(
         i18n.t(_method_prompt_key(prefer_shikimori=prefer_shikimori), lang),
-        reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
+        reply_markup=method_selection_keyboard(
+            prefer_shikimori=prefer_shikimori, lang=lang, mal_configured=mal_configured
+        ),
     )
 
 

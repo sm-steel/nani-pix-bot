@@ -75,6 +75,17 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
     user = query.from_user
     if source is None or user is None:
         return
+    if source == "mal_list":
+        # The "My MAL List" button's own browsing flow — keyed off the
+        # player's linked account rather than a Game.source value the
+        # way the other five methods are — isn't wired up yet (a later
+        # step of the MAL-linking plan owns
+        # commands/dm_start/mal_browse.py, referenced from
+        # keyboards.py's mal_list_keyboard docstring). Until then this
+        # tap is a deliberate no-op rather than writing "mal_list" into
+        # a column whose type doesn't include it.
+        logger.debug("Starter {}: MAL list method tapped (browsing flow not wired up yet)", user.id)
+        return
 
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
@@ -199,7 +210,7 @@ async def _search_step(
             )
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} search failed for query {!r}", source, message.text)
-        await _reply_service_down(status_message.edit_text, lang, source)
+        await _reply_service_down(status_message.edit_text, lang, source, context)
         return
 
     logger.debug("{} search for {!r} returned {} results", source, message.text, len(results))
@@ -308,7 +319,7 @@ async def _resolve_picked_result(
         result = await _get_identification_result(source, client, external_id)
     except _SEARCH_SERVICE_ERRORS:
         logger.exception("{} get_by_id failed for id {}", source, external_id)
-        await _reply_service_down(query.edit_message_text, lang, source)
+        await _reply_service_down(query.edit_message_text, lang, source, context)
         return None
 
     if result is None:

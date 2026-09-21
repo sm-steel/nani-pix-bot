@@ -115,6 +115,9 @@
 
   "keyboards.retry": "Ни один из них — искать заново",
   "keyboards.manual_entry": "Ввести вручную",
+  "keyboards.mal_list_entry": "Мой список MAL",
+  "keyboards.mal_list_previous": "◀️ Назад",
+  "keyboards.mal_list_next": "Ещё ▶️",
   "keyboards.upload_own_instead": "📤 Загрузить свой скриншот",
   "keyboards.change_image_upload": "📤 Загрузить новое фото",
   "keyboards.change_image_pick_screenshot": "🖼️ Выбрать другой скриншот",
@@ -179,5 +182,11 @@
   "dm_start.algo_desc_box": "усредняет блок; гладко и ровно",
   "dm_start.algo_desc_median": "сохраняет основной тон блока; по умолчанию",
   "dm_start.algo_desc_mode": "самый частый цвет в блоке; сильный шум",
-  "dm_start.algo_desc_lanczos": "самые чёткие блоки; возможны ореолы на резких краях"
+  "dm_start.algo_desc_lanczos": "самые чёткие блоки; возможны ореолы на резких краях",
+
+  "dm_start.mal_status_completed": "Просмотрено",
+  "dm_start.mal_status_watching": "Смотрю",
+  "dm_start.mal_status_plan_to_watch": "Запланировано",
+  "dm_start.mal_status_on_hold": "Отложено",
+  "dm_start.mal_status_dropped": "Брошено"
 }

@@ -115,6 +115,9 @@
 
   "keyboards.retry": "None of these — search again",
   "keyboards.manual_entry": "Manual entry",
+  "keyboards.mal_list_entry": "My MAL List",
+  "keyboards.mal_list_previous": "◀️ Back",
+  "keyboards.mal_list_next": "More ▶️",
   "keyboards.upload_own_instead": "📤 Upload my own instead",
   "keyboards.change_image_upload": "📤 Upload a new photo",
   "keyboards.change_image_pick_screenshot": "🖼️ Pick a different screenshot",
@@ -179,5 +182,11 @@
   "dm_start.algo_desc_box": "averages each block; smooth and even",
   "dm_start.algo_desc_median": "keeps each block's dominant tone; the default",
   "dm_start.algo_desc_mode": "most frequent colour per block; speckles badly",
-  "dm_start.algo_desc_lanczos": "sharpest blocks; can ring on hard edges"
+  "dm_start.algo_desc_lanczos": "sharpest blocks; can ring on hard edges",
+
+  "dm_start.mal_status_completed": "Completed",
+  "dm_start.mal_status_watching": "Watching",
+  "dm_start.mal_status_plan_to_watch": "Plan to Watch",
+  "dm_start.mal_status_on_hold": "On Hold",
+  "dm_start.mal_status_dropped": "Dropped"
 }
