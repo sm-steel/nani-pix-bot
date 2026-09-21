@@ -58,7 +58,7 @@ async def get_json(
     """GET `url` and decode the body. Returns `Any` rather than `dict`
     because `expect` is caller-supplied rather than hardcoded — the
     *container* the calling endpoint is documented to answer with.
-    Jikan and TMDB, the two remaining callers, both wrap their results
+    Tenrai and TMDB, the two remaining callers, both wrap their results
     in a JSON object, so both pass the default `dict` today; `expect`
     used to also cover Shikimori's bare-array list endpoints before
     issue #104 moved shikimori.py off this module entirely onto
