@@ -16,4 +16,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 # shows nothing until a large buffer fills or the process exits.
 ENV PYTHONUNBUFFERED=1
 
-CMD ["uv", "run", "--no-dev", "nani-pix-bot"]
+CMD ["sh", "-c", "uv run --no-dev alembic upgrade head && exec uv run --no-dev nani-pix-bot"]
