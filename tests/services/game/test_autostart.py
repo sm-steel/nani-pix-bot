@@ -84,10 +84,16 @@ async def test_gather_pick_succeeds_on_shikimori_first_try(monkeypatch: pytest.M
 async def test_gather_pick_falls_back_to_tenrai_when_shikimori_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    tenrai_stub_client = _StubAsyncClient()
+
     async def failing_random_anime(client):
         raise RuntimeError("Shikimori is down")
 
     async def fake_tenrai_random(client):
+        # Confirms _pick_random_anime forwards the tenrai_client it was
+        # given specifically — not just *a* client — to tenrai.random_anime,
+        # distinguishing it from the search/tmdb stubs passed alongside it.
+        assert client is tenrai_stub_client
         return _TENRAI_RESULT
 
     async def fake_screenshots(client, tenrai_id):
@@ -100,7 +106,7 @@ async def test_gather_pick_falls_back_to_tenrai_when_shikimori_fails(
 
     _patch_stub_get(monkeypatch)
 
-    pick = await autostart.gather_pick(_StubAsyncClient(), _StubAsyncClient(), _StubAsyncClient())
+    pick = await autostart.gather_pick(_StubAsyncClient(), _StubAsyncClient(), tenrai_stub_client)
 
     assert pick is not None
     assert pick.anime.source == Provider.TENRAI
