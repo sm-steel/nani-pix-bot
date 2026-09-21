@@ -49,6 +49,12 @@ TMDB_METHOD_CALLBACK_DATA = Provider.TMDB.method_callback_data
 # "manual" is deliberately not a Provider member (see its docstring) —
 # stays a standalone literal.
 MANUAL_METHOD_CALLBACK_DATA = "method:manual"
+# "mal_list" is likewise not a Provider member: a player's own MAL list
+# isn't a public-catalog search source the way AniList/Shikimori/Tenrai/
+# TMDB are (see services/search/mal_user.py's module docstring) — it's a
+# per-player OAuth-gated browse, so it stays a standalone literal the
+# same way "manual" does.
+MAL_METHOD_CALLBACK_DATA = "method:mal_list"
 
 PREVIEW_CONFIRM_CALLBACK_DATA = "preview:confirm"
 PREVIEW_CHANGE_IMAGE_CALLBACK_DATA = "preview:change_image"
@@ -258,14 +264,30 @@ def parse_pick_callback_data(data: str) -> tuple[Provider, int] | None:
     return None
 
 
-def method_selection_keyboard(*, prefer_shikimori: bool, lang: str) -> InlineKeyboardMarkup:
-    """AniList vs. Shikimori vs. Tenrai vs. TMDB vs. manual-entry choice,
-    shown right after the starter's photo (or, from /newgame, before
-    any photo exists). Shikimori is offered first for RU-language bots
-    (see MECHANICS.md's "Starting a game"); Tenrai/TMDB have no
-    RU-specific reason to move around, so they're always third/fourth,
-    before manual entry. "AniList"/"Shikimori"/"Tenrai"/"TMDB" are brand
-    names and stay untranslated regardless of `lang`."""
+def method_selection_keyboard(
+    *, prefer_shikimori: bool, lang: str, mal_configured: bool
+) -> InlineKeyboardMarkup:
+    """AniList vs. Shikimori vs. Tenrai vs. TMDB vs. manual-entry vs.
+    "My MAL List" choice, shown right after the starter's photo (or,
+    from /newgame, before any photo exists). Shikimori is offered first
+    for RU-language bots (see MECHANICS.md's "Starting a game");
+    Tenrai/TMDB have no RU-specific reason to move around, so they're
+    always third/fourth, before manual entry. "AniList"/"Shikimori"/
+    "Tenrai"/"TMDB" are brand names and stay untranslated regardless of
+    `lang`.
+
+    The sixth, "My MAL List", button only renders when `mal_configured`
+    is true — per the spec's "always visible once MAL is configured
+    bot-wide" decision, it isn't gated per-player on whether *this*
+    player has linked their own account yet (an unlinked player who taps
+    it is walked through /linkmal instead, by the callback handler this
+    button's data routes to). Callers compute `mal_configured` by handing
+    `context.bot_data` to `commands/helpers/mal_config.py`'s predicate of
+    the same name (all four MAL settings or nothing) — never from a fresh
+    config lookup here, so this module stays free of a Config/context
+    dependency of its own. In practice every caller goes through
+    `_shared.py`'s `_method_keyboard`, which does both that and the
+    `prefer_shikimori` derivation in one place."""
     anilist_button = InlineKeyboardButton(
         Provider.ANILIST.display_name, callback_data=ANILIST_METHOD_CALLBACK_DATA
     )
@@ -289,24 +311,31 @@ def method_selection_keyboard(*, prefer_shikimori: bool, lang: str) -> InlineKey
     ordered.append(tenrai_button)
     ordered.append(tmdb_button)
     ordered.append(manual_button)
+    if mal_configured:
+        mal_button = InlineKeyboardButton(
+            i18n.t("keyboards.mal_list_entry", lang), callback_data=MAL_METHOD_CALLBACK_DATA
+        )
+        ordered.append(mal_button)
     return InlineKeyboardMarkup([[button] for button in ordered])
 
 
-_METHOD_CALLBACK_DATA_TO_SOURCE: dict[str, Provider | Literal["manual"]] = {
+_METHOD_CALLBACK_DATA_TO_SOURCE: dict[str, Provider | Literal["manual", "mal_list"]] = {
     ANILIST_METHOD_CALLBACK_DATA: Provider.ANILIST,
     SHIKIMORI_METHOD_CALLBACK_DATA: Provider.SHIKIMORI,
     TENRAI_METHOD_CALLBACK_DATA: Provider.TENRAI,
     TMDB_METHOD_CALLBACK_DATA: Provider.TMDB,
     MANUAL_METHOD_CALLBACK_DATA: "manual",
+    MAL_METHOD_CALLBACK_DATA: "mal_list",
 }
 
 
-def parse_method_callback_data(data: str) -> Provider | Literal["manual"] | None:
+def parse_method_callback_data(data: str) -> Provider | Literal["manual", "mal_list"] | None:
     """The identification method picked, or None if `data` isn't a method
-    pick. The one parser whose result isn't purely a `Provider`: manual
-    entry is the fifth button but not a fifth provider, so it stays the
-    bare string `Game.source` has always stored for it (see `Provider`'s
-    docstring)."""
+    pick. Two of the results aren't `Provider` members: manual entry and
+    "My MAL List" are the fifth/sixth buttons but not a fifth/sixth
+    provider, so each stays the bare string `Game.source` stores for it
+    (see `Provider`'s docstring, and services/search/mal_user.py's
+    module docstring for why "mal_list" isn't a Provider either)."""
     return _METHOD_CALLBACK_DATA_TO_SOURCE.get(data)
 
 
@@ -631,3 +660,121 @@ def parse_screenshot_search_pick_callback_data(data: str) -> tuple[Provider, int
     if not data.startswith(SCREENSHOT_SEARCH_PICK_PREFIX):
         return None
     return _parse_provider_and_index(data.removeprefix(SCREENSHOT_SEARCH_PICK_PREFIX), data=data)
+
+
+# --- "My MAL List" browsing keyboard (the identification method behind
+# the mal_configured button above — see commands/dm_start/mal_browse.py
+# for the handler that drives it, and services/search/mal_user.py for
+# where MalAnimeListEntry/MalAnimeListPage, the pre-keyboard shape this
+# reads from, come from). A new, parallel implementation of
+# screenshot_gallery_keyboard's structural pattern above rather than a
+# reuse of it: MAL list entries aren't screenshots — no numbered photo
+# grid, no "Upload my own instead" escape hatch. ---
+
+MAL_LIST_PAGE_PREFIX = "mal_list_page:"
+MAL_LIST_PICK_PREFIX = "mal_list_pick:"
+
+# Every status MAL's own API can report on a list entry
+# (services/search/mal_user.py's MalAnimeListEntry.status), mapped to
+# its locale key rather than a hardcoded English string — this project's
+# i18n convention for a fixed-vocabulary label (see algorithm_name()'s
+# dm_start.algo_name_{value} above for the same pattern applied to
+# PixelAlgorithm). Status is a bare string off the wire rather than a
+# typed enum (MAL can also report "unknown" — see MalAnimeListEntry's
+# docstring), so _mal_status_label() below falls back to showing it
+# verbatim rather than raising or logging an i18n miss for anything not
+# in this dict.
+_MAL_STATUS_LABEL_KEYS = {
+    "completed": "dm_start.mal_status_completed",
+    "watching": "dm_start.mal_status_watching",
+    "plan_to_watch": "dm_start.mal_status_plan_to_watch",
+    "on_hold": "dm_start.mal_status_on_hold",
+    "dropped": "dm_start.mal_status_dropped",
+}
+
+
+def _mal_status_label(status: str, lang: str) -> str:
+    """The localized display tag for one list entry's status (e.g.
+    "watching" -> "Watching" / "Смотрю"), or `status` itself verbatim if
+    it isn't one of the five known values."""
+    key = _MAL_STATUS_LABEL_KEYS.get(status)
+    return i18n.t(key, lang) if key is not None else status
+
+
+@dataclass(frozen=True)
+class MalListPage:
+    """What mal_list_keyboard needs to render one page of a player's own
+    MAL anime list — which offset/count of entries are shown, whether
+    there's another page, and the (mal_id, title, status) triple behind
+    each visible row. Mirrors GalleryPage's shape above (bundled into one
+    object so mal_list_keyboard doesn't need a many-argument signature),
+    but has no `provider`/`cross_provider` fields — a MAL list has
+    exactly one source (the player's own account) and no cross-provider
+    resolution sub-flow."""
+
+    offset: int
+    count: int
+    has_more: bool
+    # Offset of the page to go back to, or None on the first page — same
+    # shape as GalleryPage.previous_offset above, for the same reason
+    # (the caller already knows the page size).
+    previous_offset: int | None
+    entries: list[tuple[int, str, str]]  # (mal_id, title, status)
+
+
+def _mal_list_paging_row(page: MalListPage, lang: str) -> list[InlineKeyboardButton]:
+    """Back and/or forward, sharing one row — either can be absent (the
+    first page has no back, the last has no forward), mirroring
+    _gallery_paging_row's shape above. Both directions page through this
+    keyboard's own MAL_LIST_PAGE_PREFIX rather than
+    SCREENSHOT_MORE_PREFIX: a MAL list has no provider segment to carry
+    in the callback data, just the requested offset."""
+    row = []
+    if page.previous_offset is not None:
+        row.append(
+            InlineKeyboardButton(
+                i18n.t("keyboards.mal_list_previous", lang),
+                callback_data=f"{MAL_LIST_PAGE_PREFIX}{page.previous_offset}",
+            )
+        )
+    if page.has_more:
+        row.append(
+            InlineKeyboardButton(
+                i18n.t("keyboards.mal_list_next", lang),
+                callback_data=f"{MAL_LIST_PAGE_PREFIX}{page.offset + page.count}",
+            )
+        )
+    return row
+
+
+def mal_list_keyboard(page: MalListPage, lang: str) -> InlineKeyboardMarkup:
+    """One button per visible MAL list entry, each labelled with its
+    status tag (e.g. "[Completed] Frieren: Beyond Journey's End"), plus
+    a back/forward paging row. Tapping an entry picks that anime for
+    identification the same way tapping a search result does elsewhere
+    in this module (see parse_mal_list_pick_callback_data)."""
+    rows = [
+        [
+            InlineKeyboardButton(
+                f"[{_mal_status_label(status, lang)}] {title}",
+                callback_data=f"{MAL_LIST_PICK_PREFIX}{mal_id}",
+            )
+        ]
+        for mal_id, title, status in page.entries
+    ]
+    paging_row = _mal_list_paging_row(page, lang)
+    if paging_row:
+        rows.append(paging_row)
+    return InlineKeyboardMarkup(rows)
+
+
+def parse_mal_list_page_callback_data(data: str) -> int | None:
+    if not data.startswith(MAL_LIST_PAGE_PREFIX):
+        return None
+    return _validated_index(data.removeprefix(MAL_LIST_PAGE_PREFIX), data=data)
+
+
+def parse_mal_list_pick_callback_data(data: str) -> int | None:
+    if not data.startswith(MAL_LIST_PICK_PREFIX):
+        return None
+    return _validated_index(data.removeprefix(MAL_LIST_PICK_PREFIX), data=data)

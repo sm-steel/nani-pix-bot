@@ -11,6 +11,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
     _SYNONYM_SPLIT_RE,
+    _method_keyboard,
     _method_prompt_key,
     _post_preview_album,
     _prefer_shikimori,
@@ -28,7 +29,6 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_RESEARCH_CALLBACK_DATA,
     algorithm_name,
     change_image_keyboard,
-    method_selection_keyboard,
     pixel_algorithm_keyboard,
     preview_keyboard,
 )
@@ -156,7 +156,7 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
         elif query.data == PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA:
             await _preview_change_image_upload(query, setup_game, lang)
         elif query.data == PREVIEW_RESEARCH_CALLBACK_DATA:
-            await _preview_research(query, setup_game, lang)
+            await _preview_research(query, setup_game, lang, context)
         elif query.data == PREVIEW_ADD_SYNONYM_CALLBACK_DATA:
             await _preview_add_synonym(query, setup_game, lang)
         elif query.data == PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA:
@@ -294,7 +294,9 @@ async def _handle_change_image_pick_screenshot_tap(
     await query.edit_message_text(text=i18n.t(outcome, lang))
 
 
-async def _preview_research(query, game: Game, lang: str) -> None:
+async def _preview_research(
+    query, game: Game, lang: str, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     logger.debug("Game {}: re-search requested from preview", game.id)
     # An API-sourced screenshot is cleared here (see
     # clear_screenshot_selection's docstring) since re-searching might
@@ -302,10 +304,9 @@ async def _preview_research(query, game: Game, lang: str) -> None:
     # unchanged from before ticket 9.
     clear_screenshot_selection(game)
     game.setup_step = SetupStep.PICKING_METHOD
-    prefer_shikimori = _prefer_shikimori(lang)
     await query.edit_message_text(
-        text=i18n.t(_method_prompt_key(prefer_shikimori=prefer_shikimori), lang),
-        reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
+        text=i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
+        reply_markup=_method_keyboard(context, lang),
     )
 
 

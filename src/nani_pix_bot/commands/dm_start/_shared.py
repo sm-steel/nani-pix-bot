@@ -16,6 +16,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     preview_keyboard,
     screenshot_source_keyboard,
 )
+from nani_pix_bot.commands.helpers.mal_config import mal_configured
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -181,6 +182,25 @@ def _prefer_shikimori(lang: str) -> bool:
     return lang.upper() == "RU"
 
 
+def _method_keyboard(context: ContextTypes.DEFAULT_TYPE, lang: str) -> InlineKeyboardMarkup:
+    """The method-selection keyboard, with both of its arguments derived
+    the one way every site derives them — the RU-first ordering rule and
+    the all-four-MAL-settings gate (see commands/helpers/mal_config.py).
+
+    One helper rather than the same three lines repeated at each of the
+    six sites that hand a starter back to the method picker: this
+    package's own `_start_new_game`/`_current_setup_screen`/
+    `_reply_service_unavailable`, preview.py's re-search step, and
+    mal_browse.py's two dead-end screens. They drifted once already —
+    the MAL gate was spelled three different ways across the branch."""
+    prefer_shikimori = _prefer_shikimori(lang)
+    return method_selection_keyboard(
+        prefer_shikimori=prefer_shikimori,
+        lang=lang,
+        mal_configured=mal_configured(context.bot_data),
+    )
+
+
 def _method_prompt_key(*, prefer_shikimori: bool) -> str:
     return (
         "dm_start.pick_method_prompt_shikimori_preferred"
@@ -214,7 +234,9 @@ def _stored_provider(stored: str) -> Provider:
     return Provider(stored)
 
 
-def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
+def _current_setup_screen(
+    game: Game, lang: str, context: ContextTypes.DEFAULT_TYPE
+) -> tuple[str, InlineKeyboardMarkup | None]:
     """The screen `game`'s own starter is already looking at, as the i18n
     key and keyboard to re-send it with — see `_resume_setup`.
 
@@ -239,10 +261,9 @@ def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMar
     handed the synonym prompt in silence. It fails at type-check time
     now, and loudly at runtime if one is ever added dynamically."""
     if game.setup_step == SetupStep.PICKING_METHOD:
-        prefer_shikimori = _prefer_shikimori(lang)
         return (
-            _method_prompt_key(prefer_shikimori=prefer_shikimori),
-            method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
+            _method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)),
+            _method_keyboard(context, lang),
         )
     if game.setup_step == SetupStep.PICKING_SCREENSHOT:
         return (
@@ -258,7 +279,7 @@ def _current_setup_screen(game: Game, lang: str) -> tuple[str, InlineKeyboardMar
     assert_never(game.setup_step)
 
 
-async def _resume_setup(message, game: Game, lang: str) -> None:
+async def _resume_setup(message, game: Game, lang: str, context: ContextTypes.DEFAULT_TYPE) -> None:
     """ "Start a new game" from someone whose own setup is still open —
     most often "I'm stuck, let me start over", which is exactly the
     population the "never strand the starter" work was for.
@@ -278,7 +299,7 @@ async def _resume_setup(message, game: Game, lang: str) -> None:
     Genuinely starting over is still `/stop`, unchanged; this only stops
     the bot from denying the setup exists — and says so, on the two steps
     where the screen alone cannot (issue #79, routed from #73)."""
-    key, keyboard = _current_setup_screen(game, lang)
+    key, keyboard = _current_setup_screen(game, lang, context)
     text = i18n.t(key, lang)
     if keyboard is None:
         # AWAITING_PHOTO_CHANGE and AWAITING_SYNONYM: the two steps whose
@@ -300,16 +321,31 @@ async def _resume_setup(message, game: Game, lang: str) -> None:
     await message.reply_text(text, reply_markup=keyboard)
 
 
-async def _reply_service_down(send, lang: str, source: Provider) -> None:
+async def _reply_service_unavailable(
+    send, lang: str, service_name: str, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """The `Provider`-free half of `_reply_service_down` below, taking a
+    bare display name instead. Exists for the one identification method
+    that isn't backed by a `Provider` at all — a player's own MyAnimeList
+    list (see mal_browse.py, and services/search/mal_user.py's module
+    docstring for why "MAL list" is not a `Provider`). Naming the service
+    that actually failed matters here: routing MAL's own outage through
+    `_reply_service_down` would have to name some `Provider`, and would
+    tell the starter Tenrai is down when it isn't."""
+    await send(
+        i18n.t("dm_start.search_failed", lang, service=service_name),
+        reply_markup=_method_keyboard(context, lang),
+    )
+
+
+async def _reply_service_down(
+    send, lang: str, source: Provider, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Shared failure path for both the search step and the pick step:
     tell the starter the chosen service looks unreachable and hand them
     back the method-selection keyboard rather than leaving them stuck
     with a dead-end SETUP game (see issue #11's orphaned-row incident)."""
-    prefer_shikimori = _prefer_shikimori(lang)
-    await send(
-        i18n.t("dm_start.search_failed", lang, service=source.display_name),
-        reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
-    )
+    await _reply_service_unavailable(send, lang, source.display_name, context)
 
 
 async def _start_new_game(
@@ -347,7 +383,7 @@ async def _start_new_game(
         # all, the caller's own included (see _resume_setup).
         own_setup = game_service.get_setup_game_for_starter(session, user.id)
         if own_setup is not None:
-            await _resume_setup(message, own_setup, lang)
+            await _resume_setup(message, own_setup, lang, context)
             return
         if not game_service.can_start(session, user.id):
             logger.warning("{} tried to start a game out of turn", user.id)
@@ -370,10 +406,9 @@ async def _start_new_game(
         text=i18n.t("dm_start.setup_started_group_notice", lang, starter=user.full_name),
     )
 
-    prefer_shikimori = _prefer_shikimori(lang)
     await message.reply_text(
-        i18n.t(_method_prompt_key(prefer_shikimori=prefer_shikimori), lang),
-        reply_markup=method_selection_keyboard(prefer_shikimori=prefer_shikimori, lang=lang),
+        i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
+        reply_markup=_method_keyboard(context, lang),
     )
 
 

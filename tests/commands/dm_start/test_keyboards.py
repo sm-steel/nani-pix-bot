@@ -2,6 +2,7 @@ import pytest
 
 from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
+    MAL_METHOD_CALLBACK_DATA,
     MANUAL_METHOD_CALLBACK_DATA,
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
@@ -16,8 +17,12 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     TENRAI_METHOD_CALLBACK_DATA,
     TMDB_METHOD_CALLBACK_DATA,
     GalleryPage,
+    MalListPage,
     anilist_results_keyboard,
+    mal_list_keyboard,
     method_selection_keyboard,
+    parse_mal_list_page_callback_data,
+    parse_mal_list_pick_callback_data,
     parse_method_callback_data,
     parse_pick_callback_data,
     parse_screenshot_more_callback_data,
@@ -524,7 +529,7 @@ def test_parse_method_callback_data_keeps_manual_a_bare_string() -> None:
 
 
 def test_method_selection_keyboard_defaults_to_anilist_first() -> None:
-    markup = method_selection_keyboard(prefer_shikimori=False, lang="en")
+    markup = method_selection_keyboard(prefer_shikimori=False, lang="en", mal_configured=False)
 
     callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
     assert callbacks == [
@@ -537,7 +542,7 @@ def test_method_selection_keyboard_defaults_to_anilist_first() -> None:
 
 
 def test_method_selection_keyboard_prefers_shikimori_first_when_asked() -> None:
-    markup = method_selection_keyboard(prefer_shikimori=True, lang="en")
+    markup = method_selection_keyboard(prefer_shikimori=True, lang="en", mal_configured=False)
 
     callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
     assert callbacks == [
@@ -552,8 +557,8 @@ def test_method_selection_keyboard_prefers_shikimori_first_when_asked() -> None:
 def test_method_selection_keyboard_brand_name_labels_are_untranslated() -> None:
     # Intentional exception — these are third-party brand names, not
     # translated UI text, so they stay the same regardless of lang.
-    markup_en = method_selection_keyboard(prefer_shikimori=False, lang="en")
-    markup_ru = method_selection_keyboard(prefer_shikimori=False, lang="ru")
+    markup_en = method_selection_keyboard(prefer_shikimori=False, lang="en", mal_configured=False)
+    markup_ru = method_selection_keyboard(prefer_shikimori=False, lang="ru", mal_configured=False)
 
     labels_en = [button.text for row in markup_en.inline_keyboard for button in row]
     labels_ru = [button.text for row in markup_ru.inline_keyboard for button in row]
@@ -568,10 +573,35 @@ def test_method_selection_keyboard_brand_name_labels_are_untranslated() -> None:
 
 
 def test_method_selection_keyboard_manual_entry_label_is_translated() -> None:
-    markup = method_selection_keyboard(prefer_shikimori=False, lang="ru")
+    markup = method_selection_keyboard(prefer_shikimori=False, lang="ru", mal_configured=False)
 
     manual_label = markup.inline_keyboard[4][0].text
     assert "вручную" in manual_label.lower()
+
+
+def test_method_selection_keyboard_includes_mal_button_when_configured() -> None:
+    markup = method_selection_keyboard(prefer_shikimori=False, lang="en", mal_configured=True)
+
+    callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
+    assert callbacks == [
+        ANILIST_METHOD_CALLBACK_DATA,
+        SHIKIMORI_METHOD_CALLBACK_DATA,
+        TENRAI_METHOD_CALLBACK_DATA,
+        TMDB_METHOD_CALLBACK_DATA,
+        MANUAL_METHOD_CALLBACK_DATA,
+        MAL_METHOD_CALLBACK_DATA,
+    ]
+
+
+def test_method_selection_keyboard_omits_mal_button_when_not_configured() -> None:
+    markup = method_selection_keyboard(prefer_shikimori=False, lang="en", mal_configured=False)
+
+    callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
+    assert MAL_METHOD_CALLBACK_DATA not in callbacks
+
+
+def test_parse_method_callback_data_recognizes_mal_list() -> None:
+    assert parse_method_callback_data(MAL_METHOD_CALLBACK_DATA) == "mal_list"
 
 
 def test_parse_method_callback_data_round_trips() -> None:
@@ -781,3 +811,107 @@ def test_screenshot_gallery_keyboard_puts_both_paging_buttons_on_one_row() -> No
     ]
     assert len(paging) == 1
     assert len(paging[0]) == 2
+
+
+def test_mal_list_keyboard_includes_one_button_per_entry_with_status_tag() -> None:
+    page = MalListPage(
+        offset=0,
+        count=2,
+        has_more=True,
+        previous_offset=None,
+        entries=[
+            (52991, "Frieren: Beyond Journey's End", "completed"),
+            (1, "Cowboy Bebop", "plan_to_watch"),
+        ],
+    )
+
+    labels = [text for row in _gallery_rows(mal_list_keyboard(page, "en")) for text, _ in row]
+    assert any("Frieren" in label and "Completed" in label for label in labels)
+    assert any("Cowboy Bebop" in label and "Plan to Watch" in label for label in labels)
+
+
+def test_mal_list_keyboard_next_button_present_when_has_more() -> None:
+    page = MalListPage(
+        offset=0, count=1, has_more=True, previous_offset=None, entries=[(1, "X", "completed")]
+    )
+
+    callbacks = [data for row in _gallery_rows(mal_list_keyboard(page, "en")) for _, data in row]
+    next_offset = parse_mal_list_page_callback_data(
+        next(cd for cd in callbacks if cd.startswith("mal_list_page:"))
+    )
+    assert next_offset == 1  # offset + count
+
+
+def test_mal_list_keyboard_previous_button_absent_on_first_page() -> None:
+    page = MalListPage(
+        offset=0, count=1, has_more=True, previous_offset=None, entries=[(1, "X", "completed")]
+    )
+
+    callbacks = [data for row in _gallery_rows(mal_list_keyboard(page, "en")) for _, data in row]
+    page_offsets = [
+        parse_mal_list_page_callback_data(cd) for cd in callbacks if cd.startswith("mal_list_page:")
+    ]
+    assert 0 not in page_offsets  # no "go to offset 0" button when already there
+
+
+def test_mal_list_keyboard_previous_button_present_past_the_first_page() -> None:
+    page = MalListPage(
+        offset=1, count=1, has_more=False, previous_offset=0, entries=[(1, "X", "completed")]
+    )
+
+    callbacks = [data for row in _gallery_rows(mal_list_keyboard(page, "en")) for _, data in row]
+    assert "mal_list_page:0" in callbacks
+
+
+def test_mal_list_keyboard_paging_buttons_share_one_row() -> None:
+    page = MalListPage(
+        offset=1, count=1, has_more=True, previous_offset=0, entries=[(1, "X", "completed")]
+    )
+
+    paging = [
+        row
+        for row in _gallery_rows(mal_list_keyboard(page, "en"))
+        if all(data.startswith("mal_list_page:") for _, data in row)
+    ]
+    assert len(paging) == 1
+    assert len(paging[0]) == 2
+
+
+def test_parse_mal_list_pick_callback_data_extracts_mal_id() -> None:
+    page = MalListPage(
+        offset=0,
+        count=1,
+        has_more=False,
+        previous_offset=None,
+        entries=[(52991, "Frieren", "completed")],
+    )
+
+    callbacks = [data for row in _gallery_rows(mal_list_keyboard(page, "en")) for _, data in row]
+    pick_data = next(cd for cd in callbacks if cd.startswith("mal_list_pick:"))
+    assert parse_mal_list_pick_callback_data(pick_data) == 52991
+
+
+def test_parse_mal_list_page_callback_data_returns_none_for_garbage() -> None:
+    assert parse_mal_list_page_callback_data("not-a-real-prefix:5") is None
+
+
+def test_parse_mal_list_pick_callback_data_returns_none_for_garbage() -> None:
+    assert parse_mal_list_pick_callback_data("not-a-real-prefix:5") is None
+
+
+def test_mal_status_labels_are_translated_to_russian() -> None:
+    page = MalListPage(
+        offset=0, count=1, has_more=False, previous_offset=None, entries=[(1, "X", "watching")]
+    )
+
+    label = _gallery_rows(mal_list_keyboard(page, "ru"))[0][0][0]
+    assert "Смотрю" in label
+
+
+def test_mal_status_label_falls_back_to_raw_status_when_unrecognized() -> None:
+    page = MalListPage(
+        offset=0, count=1, has_more=False, previous_offset=None, entries=[(1, "X", "unknown")]
+    )
+
+    label = _gallery_rows(mal_list_keyboard(page, "en"))[0][0][0]
+    assert label == "[unknown] X"

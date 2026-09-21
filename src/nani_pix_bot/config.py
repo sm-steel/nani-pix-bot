@@ -29,6 +29,10 @@ class Config:
     log_level: str
     telegram_proxy_url: str | None
     tmdb_read_access_token: str | None
+    mal_client_id: str | None
+    mal_client_secret: str | None
+    mal_redirect_uri: str | None
+    mal_token_encryption_key: str | None
     database_url: str
 
 
@@ -47,5 +51,22 @@ def load_config() -> Config:
         # TMDB identification/screenshot method (which degrades to the
         # existing "service down" messaging rather than crashing).
         tmdb_read_access_token=os.environ.get("TMDB_READ_ACCESS_TOKEN") or None,
+        # Optional, and optional together — a fresh clone with none of
+        # these set simply never shows the "My MAL list" identification
+        # method (same degrade-gracefully precedent as TMDB above).
+        # "Together" is enforced at runtime, not here: app.py warns on a
+        # partial set, and commands/helpers/mal_config.py's
+        # `mal_configured` is the single gate every caller asks (all four
+        # or nothing). MAL_TOKEN_ENCRYPTION_KEY must additionally be a
+        # valid Fernet key (44 url-safe-base64 chars); app.py's
+        # `_usable_mal_encryption_key` constructs one at startup to check
+        # that and disables linking if it can't, since
+        # services/security/token_crypto.py builds its Fernet lazily
+        # inside encrypt()/decrypt() and would otherwise only fail on a
+        # player's first real write.
+        mal_client_id=os.environ.get("MAL_CLIENT_ID") or None,
+        mal_client_secret=os.environ.get("MAL_CLIENT_SECRET") or None,
+        mal_redirect_uri=os.environ.get("MAL_REDIRECT_URI") or None,
+        mal_token_encryption_key=os.environ.get("MAL_TOKEN_ENCRYPTION_KEY") or None,
         database_url=database_url(),
     )

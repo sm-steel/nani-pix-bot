@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MAL Link — nani-pix-bot</title>
+  <meta name="robots" content="noindex" />
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 3rem auto; padding: 0 1rem; }
+    code { background: #f0f0f0; padding: 0.5rem; display: block; word-break: break-all; border-radius: 4px; }
+    button { margin-top: 0.5rem; padding: 0.5rem 1rem; }
+    #error { color: #b00020; }
+  </style>
+</head>
+<body>
+  <h1>MyAnimeList linking</h1>
+  <p id="instructions">Copy this code and paste it back into your Telegram chat with the bot:</p>
+  <code id="code"></code>
+  <button id="copy">Copy</button>
+  <p id="error" hidden>No authorization code was found in this page's URL — did you navigate here directly instead of through the bot's link?</p>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    if (code) {
+      document.getElementById("code").textContent = code;
+      document.getElementById("copy").addEventListener("click", () => {
+        navigator.clipboard.writeText(code);
+      });
+    } else {
+      document.getElementById("instructions").hidden = true;
+      document.getElementById("code").hidden = true;
+      document.getElementById("copy").hidden = true;
+      document.getElementById("error").hidden = false;
+    }
+  </script>
+</body>
+</html>

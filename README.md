@@ -23,7 +23,8 @@ design. Want to run your own instance? See **Self-hosting** below.
 - [python-telegram-bot](https://docs.python-telegram-bot.org/) (async, long-polling)
 - SQLAlchemy + Alembic against MariaDB
 - Pillow (pixelation), rapidfuzz (guess matching), httpx (AniList/Shikimori
-  GraphQL, Tenrai/TMDB REST)
+  GraphQL, Tenrai/TMDB/MyAnimeList REST), cryptography (Fernet — encrypts
+  linked players' MyAnimeList tokens at rest)
 - Linting/formatting: `ruff`. Type checking: `ty`. Complexity/duplication/secrets: `qlty`.
 
 ## Dev setup
@@ -99,7 +100,10 @@ admin-gated commands like `/language`/`/setstageconfig`), and the
 `MARIADB_*`/`DATABASE_URL` pair (pick your own passwords; just keep the
 two in sync — see the file's comments). `TMDB_READ_ACCESS_TOKEN` and
 `TELEGRAM_PROXY_URL` are both optional — see the comments in
-`.env.example` for what each unlocks and when you'd need it.
+`.env.example` for what each unlocks and when you'd need it. The four
+`MAL_*` variables are optional too, and take a bit more setup than an
+env var alone — see **6. (Optional) Enable MyAnimeList account
+linking** below.
 
 ### 5. Run it
 
@@ -127,6 +131,45 @@ responding.
 The `mariadb` service owns its data in a named volume (`mariadb_data`); the
 bot connects to it over the compose network as `mariadb:3306`, not
 `localhost`.
+
+### 6. (Optional) Enable MyAnimeList account linking
+
+Lets each player link their own MyAnimeList account and start a game by
+picking straight from their own list, instead of only searching a
+public catalog — the "My MAL List" identification method (see
+`MECHANICS.md`'s "Linking a personal MyAnimeList account"). Skip this
+section entirely if you don't want it; everything else works exactly
+the same without it, and the method simply never appears.
+
+1. Register a free app at MyAnimeList's [API config
+   page](https://myanimelist.net/apiconfig) — App Type "web",
+   Authorization Code Grant with PKCE. This gives you `MAL_CLIENT_ID`
+   and `MAL_CLIENT_SECRET`.
+2. Enable **GitHub Pages** on your fork: Settings → Pages → source
+   branch `master`, folder `/docs`. This is a manual, one-time
+   repo-settings step you have to do yourself — nothing in this repo
+   or its CI enables it for you. Once it's on, this repo's own
+   `docs/mal-callback.html` (a static page with no server-side
+   component of its own — it reads the `code` MyAnimeList redirects
+   back with, shows it, and offers a copy button) becomes reachable at
+   `https://<your-github-username>.github.io/nani-pix-bot/mal-callback.html`.
+   Register that exact URL as your MAL app's redirect URI, and set the
+   same URL as `MAL_REDIRECT_URI` in `.env`.
+3. Generate a Fernet key to encrypt linked players' MAL tokens at rest,
+   and set it as `MAL_TOKEN_ENCRYPTION_KEY`. See `.env.example`'s own
+   comments (right above the `MAL_*` block) for the exact command to
+   generate one and for what happens if you ever rotate or lose it.
+
+All four `MAL_*` variables (`MAL_CLIENT_ID`, `MAL_CLIENT_SECRET`,
+`MAL_REDIRECT_URI`, `MAL_TOKEN_ENCRYPTION_KEY`) must be set together —
+leave any one unset and the "My MAL List" method simply never appears
+and `/linkmal` says linking isn't configured, the same optional-feature
+shape `TMDB_READ_ACCESS_TOKEN` already has above. Set *some* of them and
+the bot logs a `WARNING` naming the missing ones at startup rather than
+half-enabling the feature; a `MAL_TOKEN_ENCRYPTION_KEY` that isn't a
+valid Fernet key is rejected at startup too (logged as an `ERROR`, with
+linking disabled), so a typo can't wait to surface until a player has
+already spent their one-time MyAnimeList authorization code.
 
 ### Updating
 

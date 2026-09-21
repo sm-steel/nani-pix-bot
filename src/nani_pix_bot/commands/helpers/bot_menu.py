@@ -17,6 +17,14 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("help", i18n.t("commands.help", lang)),
         BotCommand("newgame", i18n.t("commands.newgame", lang)),
         BotCommand("language", i18n.t("commands.language", lang)),
+        # Listed unconditionally, like every other command here: this menu
+        # is set once at startup (and on a /language change) for all
+        # private chats, so it can't be varied per player — and on a bot
+        # with MAL unconfigured, /linkmal answers with "not configured"
+        # rather than doing nothing, which is a better dead end than a
+        # command nobody can discover.
+        BotCommand("linkmal", i18n.t("commands.linkmal", lang)),
+        BotCommand("unlinkmal", i18n.t("commands.unlinkmal", lang)),
         BotCommand("stop", i18n.t("commands.stop", lang)),
         BotCommand("stageconfig", i18n.t("commands.stageconfig", lang)),
         BotCommand("setstageconfig", i18n.t("commands.setstageconfig", lang)),

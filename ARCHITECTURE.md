@@ -80,6 +80,45 @@ involvement) — this bot is Telegram-only.
   same client `tmdb.py` itself uses), not a bare client — a TMDB
   screenshot pick would otherwise fail if a proxy is actually needed on
   your host.
+- **MAL (MyAnimeList) connectivity — may need the same optional proxy,
+  and the whole feature is optional:** MyAnimeList's own OAuth +
+  REST API (`myanimelist.net`/`api.myanimelist.net`) powers the
+  optional "My MAL List" identification method (see `MECHANICS.md`'s
+  "Linking a personal MyAnimeList account"). Unlike TMDB above, there's
+  no bot-wide API key/header to preset — every player has their own
+  per-request Bearer access token, added per call by
+  `services/search/mal_user.py`, not on the client itself. `app.py`
+  still builds `mal_client` with `TELEGRAM_PROXY_URL` configured,
+  mirroring `tenrai_client`/`tmdb_client` above, for hosts where
+  `myanimelist.net`/`api.myanimelist.net` need the same proxy path —
+  again a no-op if you haven't set `TELEGRAM_PROXY_URL`. The whole
+  feature is gated behind four env vars set together (`MAL_CLIENT_ID`,
+  `MAL_CLIENT_SECRET`, `MAL_REDIRECT_URI`, `MAL_TOKEN_ENCRYPTION_KEY` —
+  see `.env.example`): with any of them unset (or with
+  `MAL_TOKEN_ENCRYPTION_KEY` set to something that isn't a valid Fernet
+  key, which `app.py` constructs once at startup to check), the
+  method-picker's sixth button never renders and `/linkmal` replies that
+  linking isn't configured — the same "optional, cleanly absent without
+  it" shape TMDB's own paragraph above describes. That gate is one
+  predicate, `commands/helpers/mal_config.py`'s `mal_configured`, which
+  every caller asks rather than spelling out its own subset of the four
+  keys; `app.py` logs a `WARNING` at startup when it sees some-but-not-all
+  of them, so a half-configured deploy says so at boot instead of
+  stranding the first player who tries to link.
+- **OAuth redirect page (`docs/mal-callback.html`):** MyAnimeList's
+  OAuth flow needs somewhere to send the player's browser back to once
+  they approve access, and this bot has no web-facing component of its
+  own to serve one (see "Overview" above). `docs/mal-callback.html` is
+  a static, dependency-free page — reads the `code` MyAnimeList
+  appended to its own URL's query string, displays it, offers a copy
+  button — meant to be served via **this repo's own GitHub Pages**
+  rather than by the bot. `MAL_REDIRECT_URI` (`.env`) must point at
+  wherever that page ends up served and must exactly match the
+  redirect URI registered with the MAL app. **Enabling GitHub Pages
+  (Settings → Pages, source: branch `master`, folder `/docs`) is a
+  manual, one-time repo-settings step the maintainer must still do
+  themselves** — nothing in this codebase or its CI automates it. See
+  README.md's Self-hosting section.
 - **Group admin permission:** the bot needs the group's "Pin messages"
   admin permission for the pinned-current-image behavior (see
   `MECHANICS.md`'s "Pixelation stages" section) to actually take effect.
@@ -202,6 +241,20 @@ src/nani_pix_bot/
                    #                  call), _show_preview() (needed by
                    #                  every path that ends in "an image
                    #                  now exists for this game")
+                   #   mal_browse.py  everything behind the "My MAL
+                   #                  List" 6th method-picker button —
+                   #                  unlinked/linked dispatch, the
+                   #                  pasted-back OAuth code, and the
+                   #                  paginated list browser's own
+                   #                  callback handlers (page/pick),
+                   #                  including refresh-on-demand for an
+                   #                  expired access token. A pick
+                   #                  resolves through tenrai.get_by_id
+                   #                  and hands off to
+                   #                  game_service.stage_result exactly
+                   #                  like search.py's own picks — see
+                   #                  MECHANICS.md's "Linking a personal
+                   #                  MyAnimeList account"
     game_flow/    # commands that run during (or between) an in-progress
                    # game — grouped for symmetry with dm_start/, though
                    # none of these four is individually large:
@@ -215,6 +268,12 @@ src/nani_pix_bot/
                    #               Yes/No confirmation (outcome is still
                    #               announced in the group topic)
     leaderboard.py  # /leaderboard
+    mal_link.py   # /linkmal, /unlinkmal — DM-only, self-service (no
+                   # admin gate, unlike language.py below), standalone
+                   # entry points for personal MyAnimeList account
+                   # linking. dm_start/mal_browse.py's 6th method
+                   # button is a convenience wrapper around the same
+                   # underlying flow, not a replacement for these
     language.py   # /language — DM-only, admin-gated bot language switch
     stageconfig.py  # /stageconfig, /setstageconfig, /setstage — DM-only,
                    # admin-gated view/edit of per-stage pixelation config
@@ -234,7 +293,11 @@ src/nani_pix_bot/
                    # shared across packages: stop_confirm_keyboard()
                    # (keyboards.py, used by game_flow/stop.py and
                    # stageconfig.py), bot command-menu registration
-                   # (bot_menu.py), the shared DM-only/admin-gated on/off
+                   # (bot_menu.py), the one "is MAL linking configured?"
+                   # predicate every caller asks (mal_config.py — all
+                   # four MAL_* settings or nothing; see the MAL bullet
+                   # under "Connectivity" above), the shared
+                   # DM-only/admin-gated on/off
                    # toggle-command factory (admin_toggle.py — built to
                    # de-duplicate /setgamesenabled and /setautostart, see
                    # its own docstring), and the one update callback here
@@ -282,6 +345,22 @@ src/nani_pix_bot/
                    #                      pure picking logic; see
                    #                      MECHANICS.md's "Bot-initiated
                    #                      games" section
+                   #   mal_link_expiry.py the 10min pending-/linkmal-
+                   #                      attempt expiry timer — mirrors
+                   #                      setup_abandon.py's shape (a
+                   #                      scheduled job). Unlike every
+                   #                      other timer here it is NOT the
+                   #                      only thing enforcing its
+                   #                      deadline: a restart mid-link
+                   #                      loses the timer, and a stale
+                   #                      pending row would then hijack
+                   #                      every later plain DM from that
+                   #                      player, so services/mal_link.py's
+                   #                      get_pending_link applies the
+                   #                      same MAL_LINK_EXPIRY_DELAY on
+                   #                      read (and deletes what it finds
+                   #                      expired). This job is cleanup,
+                   #                      not the guarantee
   services/       # the actual game logic — framework-agnostic, no
                    # python-telegram-bot imports in this package
     search/       # anime identification + screenshot fetching, called
@@ -304,6 +383,18 @@ src/nani_pix_bot/
                    #                 above (tenrai.py also needs the
                    #                 proxy, just no token — see
                    #                 "Infrastructure" above)
+                   #   mal_user.py   MyAnimeList's OFFICIAL API (OAuth2 +
+                   #                 PKCE token exchange/refresh, plus the
+                   #                 authenticated player's own anime
+                   #                 list) — NOT part of the shared
+                   #                 Provider/SearchModule/ScreenshotModule
+                   #                 machinery the four providers above
+                   #                 register into: "MAL list" isn't a
+                   #                 Provider, the same way "manual" isn't
+                   #                 (see MECHANICS.md's "Linking a
+                   #                 personal MyAnimeList account"). Still
+                   #                 shares http_retry.py's retry plumbing
+                   #                 with the four above
                    #   rest.py       the JSON-GET + by-id-or-404 plumbing
                    #                 shared by the two REST providers
                    #                 above (tenrai.py, tmdb.py — not
@@ -413,6 +504,16 @@ src/nani_pix_bot/
                    # leaderboard query — everything that touches only
                    # the Player table (win increments themselves happen
                    # in services/game/state.py, alongside the Game row)
+    mal_link.py   # the DB-facing half of personal MyAnimeList account
+                   # linking — CRUD for mal_credentials/pending_mal_link
+                   # (models/mal_link.py), encrypting access_token/
+                   # refresh_token on write and decrypting on read via
+                   # services/security/token_crypto.py, so no other
+                   # module ever touches those two columns' raw
+                   # ciphertext directly. Mirrors players.py's plain-
+                   # session-parameter style — callers own the
+                   # session_scope(...)/commit, these functions just
+                   # mutate
     i18n.py       # simple dict/JSON t(key, lang, **kwargs) — see
                    # CLAUDE.md's "Language / i18n"
     settings/     # bot-wide configuration, two persistence shapes:
@@ -423,6 +524,23 @@ src/nani_pix_bot/
                    #                    width + wrong-guess limit
                    #                    (StageConfig), admin-adjustable
                    #                    via commands/stageconfig.py
+    security/     # narrowly-scoped crypto helpers, not a project-wide
+                   # security layer:
+                   #   token_crypto.py  Fernet symmetric encrypt/decrypt,
+                   #                    scoped to MalCredentials'
+                   #                    access_token/refresh_token
+                   #                    columns only (models/mal_link.py)
+                   #                    — a leaked MAL refresh token
+                   #                    grants a renewable window onto a
+                   #                    real player's personal account,
+                   #                    unlike TMDB's plaintext-stored
+                   #                    read-only catalog token. Keyed by
+                   #                    the bot-wide
+                   #                    MAL_TOKEN_ENCRYPTION_KEY env var
+                   #                    (config.py); a wrong/rotated key
+                   #                    raises rather than silently
+                   #                    returning garbage — callers treat
+                   #                    that the same as "never linked"
   models/         # SQLAlchemy ORM models, one module per table
     base.py       # declarative base
     player.py     # Player
@@ -431,6 +549,10 @@ src/nani_pix_bot/
     bot_settings.py  # BotSettings (singleton row — language, games_enabled,
                    #               autostart_enabled)
     stage_config.py  # StageConfig (one row per PixelStage)
+    mal_link.py   # MalCredentials (one row per linked player, encrypted
+                   #               token columns), PendingMalLink (one
+                   #               row per live /linkmal attempt's PKCE
+                   #               state) — see services/mal_link.py
     enums.py      # GameStatus, PixelStage, SetupStep, and Provider — the
                    # latter also exposes pick_prefix/id_attr_name/
                    # screenshot_module/search_module as properties, the
@@ -475,6 +597,8 @@ erDiagram
     PLAYERS ||--o{ GAMES : starts
     PLAYERS ||--o{ GAMES : wins
     PLAYERS ||--o| TURN_STATE : "is next starter"
+    PLAYERS ||--o| MAL_CREDENTIALS : "has linked"
+    PLAYERS ||--o| PENDING_MAL_LINK : "has pending link"
 
     PLAYERS {
         bigint telegram_user_id PK
@@ -534,6 +658,20 @@ erDiagram
         int target_width
         int wrong_guess_limit
     }
+    MAL_CREDENTIALS {
+        bigint telegram_user_id PK, FK
+        string access_token
+        string refresh_token
+        datetime expires_at
+        string mal_username
+        datetime linked_at
+    }
+    PENDING_MAL_LINK {
+        bigint telegram_user_id PK, FK
+        string state
+        string code_verifier
+        datetime created_at
+    }
 ```
 
 | Table | Status | Purpose |
@@ -543,6 +681,8 @@ erDiagram
 | `turn_state` | v1 | Single row (`id=1`). `next_starter_id` is who's designated to start the next game; `null` means anyone can. Set to the winner on a `WON` game, changed by `/skip`, otherwise left alone (an `UNSOLVED` game doesn't force a turn on anyone). `reminder_at`/`expiry_at` are the win-turn 15min-reminder/12h-expiry absolute deadlines — set alongside `next_starter_id` whenever it becomes a real user, nulled when it's opened back up (see `MECHANICS.md`'s "Turn handoff"). `turn_opened_at`/`autostart_deadline_at` track the 24h idle-autostart backstop: `turn_opened_at` is when the turn most recently became open to anyone with no game running, `autostart_deadline_at` is `turn_opened_at + 24h`, the absolute deadline `jobs/timers/autostart.py`'s `schedule_idle_autostart()` re-arms from on every restart; both are `null` whenever a specific player is designated or a game is running — see `MECHANICS.md`'s "Bot-initiated games" section. |
 | `bot_settings` | v2 | Single row (`id=1`). `language` (`"EN"`/`"RU"`) is the bot's current reply language, changed only via `/language` by a group admin/owner — see CLAUDE.md's "Language / i18n". `games_enabled` gates whether a new game may be *started*, changed via `/setgamesenabled` — see `MECHANICS.md`'s "Pixelation stages" section. `pinned_message_id` is the Telegram `message_id` of whatever "current image" is currently pinned in the game topic — a singleton pointer rather than a per-`games` column since the pin is meant to persist across games (the next game's first post naturally supersedes it); see `MECHANICS.md`'s "Pixelation stages" section. `autostart_enabled` (default `false`, opt-in) gates whether the bot may start a game itself — idle auto-start or "overthrow" — changed via `/setautostart`, checked in addition to (not instead of) `games_enabled`; see `MECHANICS.md`'s "Bot-initiated games" section. |
 | `stage_config` | v5 | One row per `PixelStage` (5 total, `stage` is the primary key). `target_width`/`wrong_guess_limit` are the admin-configurable pixelation width and wrong-guess allowance for that stage, seeded with defaults by migration and changed live via `/setstageconfig`/`/setstage` — see `services/settings/stage_config.py` and `MECHANICS.md`'s "Pixelation stages" section. |
+| `mal_credentials` | v6 | One row per player who has linked a personal MyAnimeList account (`telegram_user_id` PK, FK to `players`) — see `MECHANICS.md`'s "Linking a personal MyAnimeList account". `access_token`/`refresh_token` are stored **encrypted** (Fernet, `services/security/token_crypto.py`), keyed by the bot-wide `MAL_TOKEN_ENCRYPTION_KEY` env var — `services/mal_link.py` is the only code that reads/writes these two columns directly, decrypting on read and encrypting on write; nothing else in the codebase touches the raw ciphertext. `expires_at` is when `access_token` needs refreshing, checked on demand right before a list fetch (`commands/dm_start/mal_browse.py`) rather than proactively. `mal_username` is reserved for a future display-name feature — no code path currently populates it (every write, initial link and re-link alike, passes `None`; nothing calls MAL's user-info endpoint), so it's always `null` today despite being nullable rather than dropped. `linked_at` is set once, on first link, and left alone on a re-link. |
+| `pending_mal_link` | v6 | One row per player with a live `/linkmal` attempt in flight (`telegram_user_id` PK, FK to `players`) — the OAuth2 PKCE `state`/`code_verifier` pair generated when the authorize URL is built, persisted here (not `bot_data`/in-memory) so a bot restart mid-link doesn't silently lose it, matching this codebase's established setup-flow-state convention (issue #11). A second `/linkmal` while one is already pending overwrites this row in place (`services/mal_link.py`'s `upsert_pending_link`). `created_at` is the reference point for the 10-minute TTL, enforced in two places: the scheduled timer (`jobs/timers/mal_link_expiry.py`) that deletes an abandoned row, and — because that timer doesn't survive a restart — `services/mal_link.py`'s `get_pending_link`, which treats a row older than `MAL_LINK_EXPIRY_DELAY` as absent and deletes it. The read-side check isn't optional belt-and-braces: a surviving pending row makes `search_text_handler` route every later plain-text DM from that player into the code-paste branch, so a restart mid-link would otherwise silently eat their search queries, manual titles and synonyms forever. |
 
 ## Game flow, topics, and commands
 
