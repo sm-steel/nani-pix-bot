@@ -11,6 +11,7 @@ just what's currently built.
 | Feature | Status |
 |---|---|
 | Game setup (DM photo, or `/newgame` + screenshot picker) + AniList/Shikimori/Tenrai/TMDB/manual entry | Implemented |
+| Personal MyAnimeList account linking (`/linkmal`/`/unlinkmal`) + "My MAL List" identification method | Implemented |
 | Group-membership gate on DM setup | Implemented |
 | Pixelation stages (5 stages, scaling wrong-guess allowance, → reveal) | Implemented |
 | Guess matching (`/guess`, local fuzzy match) | Implemented |
@@ -117,8 +118,11 @@ The timer is canceled the moment they confirm.
 The bot asks the starter to pick an identification method: **AniList**,
 **Shikimori** (the Russian-community anime database, with better Russian
 titles/synonyms), **Tenrai** (a third-party MyAnimeList API), **TMDB**
-(The Movie Database — English-only, no romaji/native/Russian titles), or
-**manual entry**. If the bot's language is currently Russian, Shikimori is
+(The Movie Database — English-only, no romaji/native/Russian titles),
+**manual entry**, or — only once MyAnimeList account linking is
+configured bot-wide (see `ARCHITECTURE.md`'s connectivity section) —
+**My MAL List** (see "Linking a personal MyAnimeList account" below). If
+the bot's language is currently Russian, Shikimori is
 listed first with a one-line note explaining why. The choice is stored on
 the game's still-`SETUP` row (`Game.source`), not in memory, so it
 survives a restart before the player finishes typing.
@@ -143,6 +147,55 @@ External search/detail lookups are cached in memory for a short time
 (per process, not persisted across a restart) so repeated taps and a
 follow-up screenshot cross-search don't needlessly re-hit the same API
 and risk a 429.
+
+### Linking a personal MyAnimeList account
+
+**Status: Implemented.**
+
+Unlike every method above, **My MAL List** doesn't search a public
+catalog — the player browses their *own* MyAnimeList anime list and
+picks directly from it. Linking is **per-player**, not a shared,
+bot-wide account: each player links (or doesn't) their own MyAnimeList
+account, independently of everyone else, via **`/linkmal`** (DM-only,
+self-service — no admin gate, unlike `/language`) or **`/unlinkmal`** to
+forget it again. The sixth method-picker button is a convenience
+wrapper around the same flow, not a separate thing: it's **always
+visible to every player** once the bot itself has MAL linking
+configured, regardless of whether *that particular player* has linked
+yet — it is never hidden from an unlinked player. Tapping it while
+unlinked (or after MyAnimeList has revoked the stored refresh token)
+walks the player through linking first: open the authorization link,
+log into MyAnimeList, approve access, then paste the code it shows back
+into the DM — and lands them straight in their list browser the moment
+linking succeeds, since reaching the list was the point of tapping the
+button in the first place. Running the standalone `/linkmal` command
+outside of an active setup just confirms the link instead.
+
+Once linked, the browser pages through the player's list **10 entries
+at a time** (a "◀️ Back"/"More ▶️" pair, the same paging shape as the
+screenshot gallery), showing **every list status** — Completed,
+Watching, Plan to Watch, On Hold, Dropped — each entry tagged with its
+own status, not filtered down to completed-only.
+
+Picking an entry does **not** introduce a new identification method
+under the hood: MyAnimeList and Tenrai (a third-party MyAnimeList API)
+share the exact same catalog id space, so a pick resolves through the
+existing Tenrai lookup and lands exactly where a Tenrai search-and-pick
+would — `Game.source` is set to Tenrai's own provider value and
+`Game.tenrai_id` to the picked id, continuing into the same
+screenshot-picker-or-confirmation-preview flow every other method
+already ends in (see "Picking a screenshot" and "The confirmation
+preview" below). There is no separate provider value for "MAL list"
+and no MAL-specific columns on `Game`.
+
+A player's OAuth tokens are refreshed **on demand** — checked against
+their stored expiry right before a list fetch, never on a proactive
+schedule — and encrypted at rest (see `ARCHITECTURE.md`'s data model).
+If the refresh fails (MyAnimeList has revoked the refresh token), or
+the stored tokens no longer decrypt (e.g. after the bot's encryption
+key was rotated), the player is treated exactly like someone who never
+linked at all — walked through `/linkmal` again — rather than shown an
+error.
 
 ### Picking a screenshot (the `/newgame` path only)
 
