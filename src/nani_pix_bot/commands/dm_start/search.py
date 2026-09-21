@@ -30,6 +30,10 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     tenrai_results_keyboard,
     tmdb_results_keyboard,
 )
+from nani_pix_bot.commands.dm_start.mal_browse import (
+    _handle_mal_code_paste,
+    handle_mal_method_tap,
+)
 from nani_pix_bot.commands.dm_start.manual import _manual_synonyms_step, _manual_title_step
 from nani_pix_bot.commands.dm_start.preview import _add_synonym_step
 from nani_pix_bot.commands.dm_start.screenshot_gallery import _screenshot_search_step
@@ -42,7 +46,7 @@ from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services import i18n, mal_link, settings
 from nani_pix_bot.services.search import anilist, shikimori, tenrai, tmdb
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
@@ -75,19 +79,21 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
     user = query.from_user
     if source is None or user is None:
         return
+    session_factory = context.bot_data["session_factory"]
     if source == "mal_list":
-        # The "My MAL List" button's own browsing flow — keyed off the
-        # player's linked account rather than a Game.source value the
-        # way the other five methods are — isn't wired up yet (a later
-        # step of the MAL-linking plan owns
-        # commands/dm_start/mal_browse.py, referenced from
-        # keyboards.py's mal_list_keyboard docstring). Until then this
-        # tap is a deliberate no-op rather than writing "mal_list" into
-        # a column whose type doesn't include it.
-        logger.debug("Starter {}: MAL list method tapped (browsing flow not wired up yet)", user.id)
+        # The "My MAL List" button's own flow is keyed off the player's
+        # linked account rather than a Game.source value the way the
+        # other five methods are — it diverts here rather than falling
+        # into the generic "store the source, ask for a search query"
+        # path below, which would otherwise write "mal_list" into a
+        # column whose type doesn't include it. See
+        # commands/dm_start/mal_browse.py.
+        with session_scope(session_factory) as session:
+            lang = settings.get_language(session)
+        logger.debug("Starter {}: MAL list method tapped", user.id)
+        await handle_mal_method_tap(query, context, lang, user)
         return
 
-    session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
@@ -117,6 +123,19 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
+        has_pending_mal_link = mal_link.get_pending_link(session, user.id) is not None
+
+    if has_pending_mal_link:
+        # A live /linkmal (or 6th-button) attempt outranks everything
+        # below: the very next plain-text DM after one is the pasted
+        # authorization code, not a search query — see
+        # mal_browse._handle_mal_code_paste. The attempt clears itself
+        # either way (on success, or 10min in via the expiry timer), so
+        # this can't shadow normal text handling indefinitely.
+        await _handle_mal_code_paste(message, context, lang, user)
+        return
+
+    with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
             return

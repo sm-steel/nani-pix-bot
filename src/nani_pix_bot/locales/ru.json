@@ -6,6 +6,10 @@
   "mal_link.not_configured": "Привязка аккаунта MyAnimeList не настроена для этого бота.",
   "mal_link.authorize_prompt": "Перейдите по ссылке, войдите в MyAnimeList и разрешите доступ:\n{url}\n\nЗатем пришлите мне код, который там покажут.",
   "mal_link.unlinked": "Ваш аккаунт MyAnimeList отвязан.",
+  "mal_link.authorize_prompt_for_list": "Сначала привяжите аккаунт MyAnimeList: перейдите по ссылке, войдите и разрешите доступ:\n{url}\n\nЗатем пришлите мне код, который там покажут, — и я сразу открою ваш список.",
+  "mal_link.code_rejected": "Код не подошёл — возможно, он неверный или устарел. Пришлите его ещё раз или выполните /linkmal, чтобы получить новую ссылку.",
+  "mal_link.linked": "Ваш аккаунт MyAnimeList привязан!",
+  "mal_link.not_linked_anymore": "Ваш аккаунт MyAnimeList больше не привязан. Выполните /linkmal, чтобы привязать его снова.",
 
   "correct.usage": "Использование: /correct @имя_пользователя",
   "correct.no_game": "Сейчас нет активной игры.",
@@ -192,5 +196,8 @@
   "dm_start.mal_status_watching": "Смотрю",
   "dm_start.mal_status_plan_to_watch": "Запланировано",
   "dm_start.mal_status_on_hold": "Отложено",
-  "dm_start.mal_status_dropped": "Брошено"
+  "dm_start.mal_status_dropped": "Брошено",
+  "dm_start.mal_list_prompt": "Выберите аниме из вашего списка MyAnimeList:",
+  "dm_start.mal_list_empty": "Ваш список MyAnimeList пуст — добавьте в него что-нибудь или выберите другой способ.",
+  "dm_start.mal_not_found_anymore": "Не удалось найти это аниме в каталоге — попробуйте выбрать другое из списка."
 }

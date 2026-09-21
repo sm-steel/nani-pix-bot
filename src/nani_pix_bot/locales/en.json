@@ -6,6 +6,10 @@
   "mal_link.not_configured": "MyAnimeList account linking is not configured on this bot.",
   "mal_link.authorize_prompt": "Open this link, log into MyAnimeList, and approve access:\n{url}\n\nThen paste the code it shows you back here.",
   "mal_link.unlinked": "Your MyAnimeList account has been unlinked.",
+  "mal_link.authorize_prompt_for_list": "First, link your MyAnimeList account: open this link, log in, and approve access:\n{url}\n\nThen paste the code it shows you back here — you'll go straight to your list.",
+  "mal_link.code_rejected": "That code didn't work — it may be wrong or expired. Try pasting it again, or run /linkmal to get a fresh link.",
+  "mal_link.linked": "Your MyAnimeList account is now linked!",
+  "mal_link.not_linked_anymore": "Your MyAnimeList account isn't linked anymore. Run /linkmal to link it again.",
 
   "correct.usage": "Usage: /correct @username",
   "correct.no_game": "No game is currently running.",
@@ -192,5 +196,8 @@
   "dm_start.mal_status_watching": "Watching",
   "dm_start.mal_status_plan_to_watch": "Plan to Watch",
   "dm_start.mal_status_on_hold": "On Hold",
-  "dm_start.mal_status_dropped": "Dropped"
+  "dm_start.mal_status_dropped": "Dropped",
+  "dm_start.mal_list_prompt": "Pick an anime from your MyAnimeList list:",
+  "dm_start.mal_list_empty": "Your MyAnimeList list is empty — add something to it, or pick another identification method.",
+  "dm_start.mal_not_found_anymore": "Couldn't find that anime in the catalogue — try another one from your list."
 }

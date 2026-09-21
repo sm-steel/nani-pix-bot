@@ -192,6 +192,12 @@ def build_application(config: Config) -> Application:
         )
     )
     application.add_handler(
+        CallbackQueryHandler(dm_start.mal_list_page_callback_handler, pattern=r"^mal_list_page:")
+    )
+    application.add_handler(
+        CallbackQueryHandler(dm_start.mal_list_pick_callback_handler, pattern=r"^mal_list_pick:")
+    )
+    application.add_handler(
         CallbackQueryHandler(dm_start.preview_callback_handler, pattern=r"^preview:")
     )
     application.add_handler(
