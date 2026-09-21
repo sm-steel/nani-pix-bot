@@ -281,10 +281,13 @@ def method_selection_keyboard(
     bot-wide" decision, it isn't gated per-player on whether *this*
     player has linked their own account yet (an unlinked player who taps
     it is walked through /linkmal instead, by the callback handler this
-    button's data routes to). Callers compute `mal_configured` from
-    `context.bot_data.get("mal_client_id")` — see app.py's wiring — not
-    from a fresh config lookup here, so this module stays free of a
-    Config/context dependency of its own."""
+    button's data routes to). Callers compute `mal_configured` by handing
+    `context.bot_data` to `commands/helpers/mal_config.py`'s predicate of
+    the same name (all four MAL settings or nothing) — never from a fresh
+    config lookup here, so this module stays free of a Config/context
+    dependency of its own. In practice every caller goes through
+    `_shared.py`'s `_method_keyboard`, which does both that and the
+    `prefer_shikimori` derivation in one place."""
     anilist_button = InlineKeyboardButton(
         Provider.ANILIST.display_name, callback_data=ANILIST_METHOD_CALLBACK_DATA
     )

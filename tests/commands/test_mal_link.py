@@ -6,13 +6,15 @@ from datetime import UTC, datetime
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from cryptography.fernet import Fernet
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import mal_link as mal_link_commands
+from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.models.player import Player
-from nani_pix_bot.services import mal_link
+from nani_pix_bot.services import i18n, mal_link
 
 _ENCRYPTION_KEY = Fernet.generate_key().decode()
 
@@ -79,6 +81,32 @@ async def test_linkmal_replies_with_not_configured_when_mal_is_unset(session_fac
     context.job_queue.run_once.assert_not_called()
 
 
+@pytest.mark.parametrize("missing_key", list(MAL_BOT_DATA_KEYS))
+async def test_linkmal_refuses_a_partial_configuration(session_factory, missing_key: str) -> None:
+    """Any one of the four missing means linking cannot finish, so it must
+    never start. The dangerous case is MAL_TOKEN_ENCRYPTION_KEY: linkmal
+    used to check only client id + redirect uri, so a player could
+    complete a real OAuth consent at MyAnimeList and paste the code back
+    — and storing the tokens then raised AttributeError, with their
+    single-use authorization code already spent."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.commit()
+
+    update = _make_update()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.bot_data = _make_mal_bot_data(session_factory)
+    context.bot_data[missing_key] = None
+    context.job_queue = MagicMock()
+
+    await mal_link_commands.linkmal_command(cast(Update, update), context)
+
+    assert update.message.reply_text.await_args.args[0] == i18n.t("mal_link.not_configured", "en")
+    context.job_queue.run_once.assert_not_called()
+    with session_factory() as session:
+        assert mal_link.get_pending_link(session, 1) is None
+
+
 async def test_linkmal_ignores_group_chats(session_factory) -> None:
     update = _make_update()
     update.effective_chat = MagicMock(type="group")
@@ -117,6 +145,26 @@ async def test_unlinkmal_deletes_credentials_and_confirms(session_factory) -> No
     update.message.reply_text.assert_awaited_once()
     with session_factory() as session:
         assert mal_link.get_credentials(session, 1, encryption_key=_ENCRYPTION_KEY) is None
+
+
+async def test_unlinkmal_also_clears_a_live_pending_link(session_factory) -> None:
+    """Changing your mind mid-re-link has to leave nothing behind: a
+    surviving pending row outranks everything in search_text_handler, so
+    the player's next plain DM would be eaten as a pasted authorization
+    code instead of being handled as what they typed."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        mal_link.upsert_pending_link(session, 1, state="s", code_verifier="v")
+        session.commit()
+
+    update = _make_update()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.bot_data = {"session_factory": session_factory}
+
+    await mal_link_commands.unlinkmal_command(cast(Update, update), context)
+
+    with session_factory() as session:
+        assert mal_link.get_pending_link(session, 1) is None
 
 
 async def test_unlinkmal_ignores_group_chats(session_factory) -> None:

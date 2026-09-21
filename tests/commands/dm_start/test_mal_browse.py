@@ -18,7 +18,10 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import mal_browse, search
-from nani_pix_bot.commands.dm_start.keyboards import MAL_METHOD_CALLBACK_DATA
+from nani_pix_bot.commands.dm_start.keyboards import (
+    MAL_METHOD_CALLBACK_DATA,
+    MANUAL_METHOD_CALLBACK_DATA,
+)
 from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -385,7 +388,10 @@ async def test_page_callback_fetches_the_requested_offset(session_factory) -> No
     ]
 
 
-async def test_an_empty_list_says_so(session_factory) -> None:
+async def test_an_empty_list_says_so_and_reoffers_the_methods(session_factory) -> None:
+    """The caption tells the player to pick another identification
+    method, so one has to be attached — an empty list builds an empty
+    InlineKeyboardMarkup, which stranded them with no route anywhere."""
     _add_player(session_factory)
     _add_credentials(session_factory)
 
@@ -398,9 +404,17 @@ async def test_an_empty_list_says_so(session_factory) -> None:
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    assert update.callback_query.edit_message_text.await_args.args[0] == i18n.t(
-        "dm_start.mal_list_empty", "en"
-    )
+    call = update.callback_query.edit_message_text.await_args
+    assert call.args[0] == i18n.t("dm_start.mal_list_empty", "en")
+    keyboard = call.kwargs["reply_markup"]
+    assert [button.callback_data for row in keyboard.inline_keyboard for button in row] == [
+        Provider.ANILIST.method_callback_data,
+        Provider.SHIKIMORI.method_callback_data,
+        Provider.TENRAI.method_callback_data,
+        Provider.TMDB.method_callback_data,
+        MANUAL_METHOD_CALLBACK_DATA,
+        MAL_METHOD_CALLBACK_DATA,
+    ]
 
 
 # --- picking an entry ---
@@ -441,9 +455,11 @@ async def test_pick_stages_the_tenrai_result_and_opens_the_screenshot_picker(
         assert fetched.title_english == "Frieren: Beyond Journey's End"
 
 
-async def test_pick_says_so_when_the_anime_is_gone(
+async def test_pick_says_so_when_the_anime_is_gone_and_reoffers_the_methods(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """This edit replaces the list keyboard — with nothing, before the
+    fix, even though its own text invites the starter to try again."""
     _add_player(session_factory)
     _create_setup_game(session_factory)
     monkeypatch.setattr(mal_browse.tenrai, "get_by_id", AsyncMock(return_value=None))
@@ -455,9 +471,9 @@ async def test_pick_says_so_when_the_anime_is_gone(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    assert update.callback_query.edit_message_text.await_args.args[0] == i18n.t(
-        "dm_start.mal_not_found_anymore", "en"
-    )
+    call = update.callback_query.edit_message_text.await_args
+    assert call.args[0] == i18n.t("dm_start.mal_not_found_anymore", "en")
+    assert call.kwargs["reply_markup"] is not None
 
 
 async def test_pick_rejects_a_stale_tap_with_no_setup_game_left(

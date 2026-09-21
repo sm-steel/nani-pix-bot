@@ -2,15 +2,20 @@
 (Possible hardcoded password), which are false positives in test data."""
 # ruff: noqa: S105, S106
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.orm import Session
 
+from nani_pix_bot.models.mal_link import PendingMalLink
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import mal_link
-from nani_pix_bot.services.mal_link import CredentialsData, DecryptedCredentials
+from nani_pix_bot.services.mal_link import (
+    MAL_LINK_EXPIRY_DELAY,
+    CredentialsData,
+    DecryptedCredentials,
+)
 
 
 def _make_player(session: Session, telegram_user_id: int = 1) -> Player:
@@ -66,6 +71,59 @@ def test_delete_pending_link_is_a_noop_when_absent(session: Session) -> None:
     player = _make_player(session)
     mal_link.delete_pending_link(session, player.telegram_user_id)  # must not raise
     session.commit()
+
+
+def _age_pending_link(session: Session, telegram_user_id: int, age: timedelta) -> None:
+    """Backdate an existing pending row's created_at, the way a real one
+    ages while its player never comes back with a code. Naive UTC, since
+    that's how a DATETIME column round-trips through SQLite."""
+    pending = session.get(PendingMalLink, telegram_user_id)
+    assert pending is not None
+    pending.created_at = (datetime.now(UTC) - age).replace(tzinfo=None)
+    session.commit()
+
+
+def test_get_pending_link_treats_a_stale_row_as_absent(session: Session) -> None:
+    """The TTL has to hold on read, not just via the scheduled expiry job:
+    that job doesn't survive a bot restart, so a restart during an
+    abandoned /linkmal would otherwise make the pending row permanent —
+    and every later plain DM from that player would be eaten as a MAL
+    code paste."""
+    player = _make_player(session)
+    mal_link.upsert_pending_link(session, player.telegram_user_id, state="s1", code_verifier="v1")
+    session.commit()
+    _age_pending_link(
+        session, player.telegram_user_id, MAL_LINK_EXPIRY_DELAY + timedelta(minutes=1)
+    )
+
+    assert mal_link.get_pending_link(session, player.telegram_user_id) is None
+
+
+def test_get_pending_link_deletes_the_stale_row_it_skipped(session: Session) -> None:
+    """Skipping it isn't enough — the row itself has to go, or it sits in
+    the table forever being re-skipped."""
+    player = _make_player(session)
+    mal_link.upsert_pending_link(session, player.telegram_user_id, state="s1", code_verifier="v1")
+    session.commit()
+    _age_pending_link(
+        session, player.telegram_user_id, MAL_LINK_EXPIRY_DELAY + timedelta(minutes=1)
+    )
+
+    mal_link.get_pending_link(session, player.telegram_user_id)
+    session.commit()
+
+    assert session.get(PendingMalLink, player.telegram_user_id) is None
+
+
+def test_get_pending_link_keeps_a_row_still_inside_its_ttl(session: Session) -> None:
+    player = _make_player(session)
+    mal_link.upsert_pending_link(session, player.telegram_user_id, state="s1", code_verifier="v1")
+    session.commit()
+    _age_pending_link(
+        session, player.telegram_user_id, MAL_LINK_EXPIRY_DELAY - timedelta(minutes=1)
+    )
+
+    assert mal_link.get_pending_link(session, player.telegram_user_id) is not None
 
 
 def test_upsert_and_get_credentials_round_trips_decrypted(session: Session) -> None:

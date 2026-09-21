@@ -4,8 +4,11 @@ JobQueue jobs from the database on startup (JobQueue jobs don't survive
 a process restart — see MECHANICS.md's "Timeout" section)."""
 
 import re
+from collections.abc import Mapping
+from typing import Any
 
 import httpx
+from cryptography.fernet import Fernet
 from loguru import logger
 from telegram import Update
 from telegram.error import Conflict, NetworkError
@@ -39,6 +42,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 )
 from nani_pix_bot.commands.helpers import player_tracking
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
+from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
 from nani_pix_bot.config import Config, load_config
 from nani_pix_bot.jobs.timers import rearm_pending_timeouts
@@ -69,6 +73,53 @@ _PLAYER_TRACKING_GROUP = -1
 # at all. See keyboards.py's `<provider>_pick:` prefixes (also read off
 # Provider.pick_prefix), which this has to keep matching.
 _PICK_PREFIX_PATTERN = "|".join(re.escape(provider.pick_prefix) for provider in Provider)
+
+
+def _usable_mal_encryption_key(key: str | None) -> str | None:
+    """`key` if this bot can actually encrypt with it, None if it isn't a
+    well-formed Fernet key at all.
+
+    Constructing the `Fernet` once here is the only place that happens
+    before a player's tokens are written: services/security/token_crypto.py
+    builds one lazily inside encrypt()/decrypt(), so a malformed key used
+    to surface for the first time on a real link attempt — after the
+    player had already spent their single-use MAL authorization code.
+    Rejecting it here instead hides the "My MAL List" button and makes
+    /linkmal say it isn't configured (see
+    commands/helpers/mal_config.py), which is the honest answer: a bot
+    that cannot store tokens cannot link accounts. Never log the key
+    itself — this repo is public, and so is the deploy logs' audience."""
+    if key is None:
+        return None
+    try:
+        Fernet(key.encode())
+    except ValueError:
+        logger.error(
+            "MAL_TOKEN_ENCRYPTION_KEY is not a valid Fernet key (44 url-safe-base64 "
+            "characters, e.g. from Fernet.generate_key()) — MAL account linking is "
+            "disabled until it is fixed (see .env.example)"
+        )
+        return None
+    return key
+
+
+def _warn_about_partial_mal_config(bot_data: Mapping[str, Any]) -> None:
+    """The four MAL settings are optional *together* — a fresh clone with
+    none of them simply never offers the "My MAL List" method. Some but
+    not all is the dangerous shape, and nothing downstream can recover
+    from it, so it gets said out loud at boot rather than showing up as a
+    method that can't finish (same precedent as the TMDB warning in
+    build_application). Each `bot_data` key is its env var lowercased, so
+    the names below need no second hardcoded list."""
+    missing = [key.upper() for key in MAL_BOT_DATA_KEYS if not bot_data.get(key)]
+    if not missing or len(missing) == len(MAL_BOT_DATA_KEYS):
+        return
+    logger.warning(
+        "MAL account linking is only partly configured — {} missing or unusable, so "
+        'the "My MAL List" identification method stays hidden and /linkmal will say '
+        "it isn't configured (see .env.example)",
+        ", ".join(missing),
+    )
 
 
 def build_application(config: Config) -> Application:
@@ -130,7 +181,10 @@ def build_application(config: Config) -> Application:
     application.bot_data["mal_client_id"] = config.mal_client_id
     application.bot_data["mal_client_secret"] = config.mal_client_secret
     application.bot_data["mal_redirect_uri"] = config.mal_redirect_uri
-    application.bot_data["mal_token_encryption_key"] = config.mal_token_encryption_key
+    application.bot_data["mal_token_encryption_key"] = _usable_mal_encryption_key(
+        config.mal_token_encryption_key
+    )
+    _warn_about_partial_mal_config(application.bot_data)
     application.bot_data["group_chat_id"] = config.group_chat_id
     application.bot_data["game_topic_id"] = config.game_topic_id
 

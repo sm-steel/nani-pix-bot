@@ -37,6 +37,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
+    _method_keyboard,
     _post_preview_album,
     _reject_stale_tap,
     _reply_service_down,
@@ -211,6 +212,18 @@ async def _fetch_mal_list_page(
         offset,
         len(list_page.entries),
     )
+    if not list_page.entries:
+        # An empty list has no entries to build buttons from, so
+        # mal_list_keyboard would render an empty InlineKeyboardMarkup —
+        # and the caption tells the player to "pick another
+        # identification method" with no method picker in sight. Hand
+        # back the picker it names, the same way _reply_service_unavailable
+        # does on the failure path.
+        logger.info("Player {}'s MAL list came back empty at offset {}", request.user.id, offset)
+        return i18n.t("dm_start.mal_list_empty", request.lang), _method_keyboard(
+            context, request.lang
+        )
+
     keyboard_page = MalListPage(
         offset=offset,
         count=len(list_page.entries),
@@ -218,8 +231,9 @@ async def _fetch_mal_list_page(
         previous_offset=max(0, offset - MAL_LIST_PAGE_SIZE) if offset > 0 else None,
         entries=[(entry.mal_id, entry.title, entry.status) for entry in list_page.entries],
     )
-    caption_key = "dm_start.mal_list_prompt" if list_page.entries else "dm_start.mal_list_empty"
-    return i18n.t(caption_key, request.lang), mal_list_keyboard(keyboard_page, request.lang)
+    return i18n.t("dm_start.mal_list_prompt", request.lang), mal_list_keyboard(
+        keyboard_page, request.lang
+    )
 
 
 async def _show_mal_list_page(
@@ -473,6 +487,14 @@ async def _resolve_picked_mal_entry(
     if result is None:
         logger.warning("MAL list entry {} picked but the catalogue no longer has it", mal_id)
         await query.answer()
-        await query.edit_message_text(i18n.t("dm_start.mal_not_found_anymore", lang))
+        # With a keyboard: this edit replaces the list keyboard, and the
+        # text it replaces it with says "try another one from your list"
+        # — which there would be no way back to. The method picker is
+        # the one screen that leads everywhere, including back into the
+        # list (same reasoning as _reply_service_unavailable's).
+        await query.edit_message_text(
+            i18n.t("dm_start.mal_not_found_anymore", lang),
+            reply_markup=_method_keyboard(context, lang),
+        )
         return None
     return result

@@ -11,6 +11,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
     _SYNONYM_SPLIT_RE,
+    _method_keyboard,
     _method_prompt_key,
     _post_preview_album,
     _prefer_shikimori,
@@ -28,7 +29,6 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_RESEARCH_CALLBACK_DATA,
     algorithm_name,
     change_image_keyboard,
-    method_selection_keyboard,
     pixel_algorithm_keyboard,
     preview_keyboard,
 )
@@ -304,13 +304,9 @@ async def _preview_research(
     # unchanged from before ticket 9.
     clear_screenshot_selection(game)
     game.setup_step = SetupStep.PICKING_METHOD
-    prefer_shikimori = _prefer_shikimori(lang)
-    mal_configured = bool(context.bot_data.get("mal_client_id"))
     await query.edit_message_text(
-        text=i18n.t(_method_prompt_key(prefer_shikimori=prefer_shikimori), lang),
-        reply_markup=method_selection_keyboard(
-            prefer_shikimori=prefer_shikimori, lang=lang, mal_configured=mal_configured
-        ),
+        text=i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
+        reply_markup=_method_keyboard(context, lang),
     )
 
 

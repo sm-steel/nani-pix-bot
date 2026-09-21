@@ -8,13 +8,21 @@ Mirrors services/players.py's plain-session-parameter style — callers
 own the session_scope(...)/commit, these functions just mutate."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from loguru import logger
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.mal_link import MalCredentials, PendingMalLink
 from nani_pix_bot.services.security import token_crypto
+
+# How long a /linkmal attempt stays usable before its pending row is
+# discarded. Defined here rather than next to the JobQueue timer that
+# also uses it (jobs/timers/mal_link_expiry.py, which imports it from
+# here) because `get_pending_link` below enforces the same TTL on every
+# read — and services/ can't import from jobs/ without a cycle, since
+# that timer imports this module.
+MAL_LINK_EXPIRY_DELAY = timedelta(minutes=10)
 
 
 @dataclass(frozen=True)
@@ -53,8 +61,45 @@ def upsert_pending_link(
     return pending
 
 
+def _is_expired(pending: PendingMalLink) -> bool:
+    """Whether `pending` is past MAL_LINK_EXPIRY_DELAY. Normalizes the
+    naive datetime a DATETIME column round-trips as to UTC before
+    comparing — the same rule jobs/timers/_shared.py's `seconds_until`
+    applies to every other stored deadline (not imported: services/ must
+    not depend on jobs/, and that one is about a JobQueue delay, not a
+    TTL)."""
+    created_at = pending.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    return datetime.now(UTC) - created_at >= MAL_LINK_EXPIRY_DELAY
+
+
 def get_pending_link(session: Session, telegram_user_id: int) -> PendingMalLink | None:
-    return session.get(PendingMalLink, telegram_user_id)
+    """`telegram_user_id`'s in-flight /linkmal attempt, or None if there
+    isn't one — including one that has simply sat there past
+    MAL_LINK_EXPIRY_DELAY, which is deleted here and reported as absent.
+
+    The TTL is enforced on read, not only by the scheduled expiry job
+    (jobs/timers/mal_link_expiry.py): that job's timer doesn't survive a
+    bot restart, so a restart during an abandoned /linkmal used to leave
+    the row behind permanently — and `search_text_handler` routes the
+    very next plain-text DM from a player with a pending row into the
+    code-paste branch, so a permanent row silently ate every later search
+    query, manual title and synonym that player typed. Doing it here
+    means every caller gets it for free, and the job becomes cleanup
+    rather than the sole guarantee."""
+    pending = session.get(PendingMalLink, telegram_user_id)
+    if pending is None:
+        return None
+    if _is_expired(pending):
+        logger.info(
+            "Player {}'s /linkmal attempt is older than {} — discarding it unused",
+            telegram_user_id,
+            MAL_LINK_EXPIRY_DELAY,
+        )
+        session.delete(pending)
+        return None
+    return pending
 
 
 def delete_pending_link(session: Session, telegram_user_id: int) -> None:

@@ -94,11 +94,17 @@ involvement) — this bot is Telegram-only.
   again a no-op if you haven't set `TELEGRAM_PROXY_URL`. The whole
   feature is gated behind four env vars set together (`MAL_CLIENT_ID`,
   `MAL_CLIENT_SECRET`, `MAL_REDIRECT_URI`, `MAL_TOKEN_ENCRYPTION_KEY` —
-  see `.env.example`): with any of them unset, `mal_client_id`/
-  `mal_redirect_uri` in `bot_data` are falsy, the method-picker's sixth
-  button never renders, and `/linkmal` replies that linking isn't
-  configured — the same "optional, cleanly absent without it" shape
-  TMDB's own paragraph above describes.
+  see `.env.example`): with any of them unset (or with
+  `MAL_TOKEN_ENCRYPTION_KEY` set to something that isn't a valid Fernet
+  key, which `app.py` constructs once at startup to check), the
+  method-picker's sixth button never renders and `/linkmal` replies that
+  linking isn't configured — the same "optional, cleanly absent without
+  it" shape TMDB's own paragraph above describes. That gate is one
+  predicate, `commands/helpers/mal_config.py`'s `mal_configured`, which
+  every caller asks rather than spelling out its own subset of the four
+  keys; `app.py` logs a `WARNING` at startup when it sees some-but-not-all
+  of them, so a half-configured deploy says so at boot instead of
+  stranding the first player who tries to link.
 - **OAuth redirect page (`docs/mal-callback.html`):** MyAnimeList's
   OAuth flow needs somewhere to send the player's browser back to once
   they approve access, and this bot has no web-facing component of its
@@ -287,7 +293,11 @@ src/nani_pix_bot/
                    # shared across packages: stop_confirm_keyboard()
                    # (keyboards.py, used by game_flow/stop.py and
                    # stageconfig.py), bot command-menu registration
-                   # (bot_menu.py), the shared DM-only/admin-gated on/off
+                   # (bot_menu.py), the one "is MAL linking configured?"
+                   # predicate every caller asks (mal_config.py — all
+                   # four MAL_* settings or nothing; see the MAL bullet
+                   # under "Connectivity" above), the shared
+                   # DM-only/admin-gated on/off
                    # toggle-command factory (admin_toggle.py — built to
                    # de-duplicate /setgamesenabled and /setautostart, see
                    # its own docstring), and the one update callback here
@@ -338,14 +348,19 @@ src/nani_pix_bot/
                    #   mal_link_expiry.py the 10min pending-/linkmal-
                    #                      attempt expiry timer — mirrors
                    #                      setup_abandon.py's shape (a
-                   #                      scheduled job, not check-on-
-                   #                      read); like every timer in this
-                   #                      package, a restart mid-link
-                   #                      simply loses the timer, not the
-                   #                      pending row itself (same
-                   #                      accepted gap as
-                   #                      setup_abandon.py's own restart
-                   #                      caveat)
+                   #                      scheduled job). Unlike every
+                   #                      other timer here it is NOT the
+                   #                      only thing enforcing its
+                   #                      deadline: a restart mid-link
+                   #                      loses the timer, and a stale
+                   #                      pending row would then hijack
+                   #                      every later plain DM from that
+                   #                      player, so services/mal_link.py's
+                   #                      get_pending_link applies the
+                   #                      same MAL_LINK_EXPIRY_DELAY on
+                   #                      read (and deletes what it finds
+                   #                      expired). This job is cleanup,
+                   #                      not the guarantee
   services/       # the actual game logic — framework-agnostic, no
                    # python-telegram-bot imports in this package
     search/       # anime identification + screenshot fetching, called
@@ -667,7 +682,7 @@ erDiagram
 | `bot_settings` | v2 | Single row (`id=1`). `language` (`"EN"`/`"RU"`) is the bot's current reply language, changed only via `/language` by a group admin/owner — see CLAUDE.md's "Language / i18n". `games_enabled` gates whether a new game may be *started*, changed via `/setgamesenabled` — see `MECHANICS.md`'s "Pixelation stages" section. `pinned_message_id` is the Telegram `message_id` of whatever "current image" is currently pinned in the game topic — a singleton pointer rather than a per-`games` column since the pin is meant to persist across games (the next game's first post naturally supersedes it); see `MECHANICS.md`'s "Pixelation stages" section. `autostart_enabled` (default `false`, opt-in) gates whether the bot may start a game itself — idle auto-start or "overthrow" — changed via `/setautostart`, checked in addition to (not instead of) `games_enabled`; see `MECHANICS.md`'s "Bot-initiated games" section. |
 | `stage_config` | v5 | One row per `PixelStage` (5 total, `stage` is the primary key). `target_width`/`wrong_guess_limit` are the admin-configurable pixelation width and wrong-guess allowance for that stage, seeded with defaults by migration and changed live via `/setstageconfig`/`/setstage` — see `services/settings/stage_config.py` and `MECHANICS.md`'s "Pixelation stages" section. |
 | `mal_credentials` | v6 | One row per player who has linked a personal MyAnimeList account (`telegram_user_id` PK, FK to `players`) — see `MECHANICS.md`'s "Linking a personal MyAnimeList account". `access_token`/`refresh_token` are stored **encrypted** (Fernet, `services/security/token_crypto.py`), keyed by the bot-wide `MAL_TOKEN_ENCRYPTION_KEY` env var — `services/mal_link.py` is the only code that reads/writes these two columns directly, decrypting on read and encrypting on write; nothing else in the codebase touches the raw ciphertext. `expires_at` is when `access_token` needs refreshing, checked on demand right before a list fetch (`commands/dm_start/mal_browse.py`) rather than proactively. `mal_username` is reserved for a future display-name feature — no code path currently populates it (every write, initial link and re-link alike, passes `None`; nothing calls MAL's user-info endpoint), so it's always `null` today despite being nullable rather than dropped. `linked_at` is set once, on first link, and left alone on a re-link. |
-| `pending_mal_link` | v6 | One row per player with a live `/linkmal` attempt in flight (`telegram_user_id` PK, FK to `players`) — the OAuth2 PKCE `state`/`code_verifier` pair generated when the authorize URL is built, persisted here (not `bot_data`/in-memory) so a bot restart mid-link doesn't silently lose it, matching this codebase's established setup-flow-state convention (issue #11). A second `/linkmal` while one is already pending overwrites this row in place (`services/mal_link.py`'s `upsert_pending_link`). `created_at` is the reference point for the 10-minute expiry timer (`jobs/timers/mal_link_expiry.py`) that deletes an abandoned row — a restart mid-link simply loses that timer, not the row itself, the same accepted gap `setup_abandon.py` already has. |
+| `pending_mal_link` | v6 | One row per player with a live `/linkmal` attempt in flight (`telegram_user_id` PK, FK to `players`) — the OAuth2 PKCE `state`/`code_verifier` pair generated when the authorize URL is built, persisted here (not `bot_data`/in-memory) so a bot restart mid-link doesn't silently lose it, matching this codebase's established setup-flow-state convention (issue #11). A second `/linkmal` while one is already pending overwrites this row in place (`services/mal_link.py`'s `upsert_pending_link`). `created_at` is the reference point for the 10-minute TTL, enforced in two places: the scheduled timer (`jobs/timers/mal_link_expiry.py`) that deletes an abandoned row, and — because that timer doesn't survive a restart — `services/mal_link.py`'s `get_pending_link`, which treats a row older than `MAL_LINK_EXPIRY_DELAY` as absent and deletes it. The read-side check isn't optional belt-and-braces: a surviving pending row makes `search_text_handler` route every later plain-text DM from that player into the code-paste branch, so a restart mid-link would otherwise silently eat their search queries, manual titles and synonyms forever. |
 
 ## Game flow, topics, and commands
 

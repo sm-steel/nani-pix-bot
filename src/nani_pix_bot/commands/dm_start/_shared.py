@@ -16,6 +16,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     preview_keyboard,
     screenshot_source_keyboard,
 )
+from nani_pix_bot.commands.helpers.mal_config import mal_configured
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -181,6 +182,25 @@ def _prefer_shikimori(lang: str) -> bool:
     return lang.upper() == "RU"
 
 
+def _method_keyboard(context: ContextTypes.DEFAULT_TYPE, lang: str) -> InlineKeyboardMarkup:
+    """The method-selection keyboard, with both of its arguments derived
+    the one way every site derives them — the RU-first ordering rule and
+    the all-four-MAL-settings gate (see commands/helpers/mal_config.py).
+
+    One helper rather than the same three lines repeated at each of the
+    six sites that hand a starter back to the method picker: this
+    package's own `_start_new_game`/`_current_setup_screen`/
+    `_reply_service_unavailable`, preview.py's re-search step, and
+    mal_browse.py's two dead-end screens. They drifted once already —
+    the MAL gate was spelled three different ways across the branch."""
+    prefer_shikimori = _prefer_shikimori(lang)
+    return method_selection_keyboard(
+        prefer_shikimori=prefer_shikimori,
+        lang=lang,
+        mal_configured=mal_configured(context.bot_data),
+    )
+
+
 def _method_prompt_key(*, prefer_shikimori: bool) -> str:
     return (
         "dm_start.pick_method_prompt_shikimori_preferred"
@@ -241,13 +261,9 @@ def _current_setup_screen(
     handed the synonym prompt in silence. It fails at type-check time
     now, and loudly at runtime if one is ever added dynamically."""
     if game.setup_step == SetupStep.PICKING_METHOD:
-        prefer_shikimori = _prefer_shikimori(lang)
-        mal_configured = bool(context.bot_data.get("mal_client_id"))
         return (
-            _method_prompt_key(prefer_shikimori=prefer_shikimori),
-            method_selection_keyboard(
-                prefer_shikimori=prefer_shikimori, lang=lang, mal_configured=mal_configured
-            ),
+            _method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)),
+            _method_keyboard(context, lang),
         )
     if game.setup_step == SetupStep.PICKING_SCREENSHOT:
         return (
@@ -316,13 +332,9 @@ async def _reply_service_unavailable(
     that actually failed matters here: routing MAL's own outage through
     `_reply_service_down` would have to name some `Provider`, and would
     tell the starter Tenrai is down when it isn't."""
-    prefer_shikimori = _prefer_shikimori(lang)
-    mal_configured = bool(context.bot_data.get("mal_client_id"))
     await send(
         i18n.t("dm_start.search_failed", lang, service=service_name),
-        reply_markup=method_selection_keyboard(
-            prefer_shikimori=prefer_shikimori, lang=lang, mal_configured=mal_configured
-        ),
+        reply_markup=_method_keyboard(context, lang),
     )
 
 
@@ -394,13 +406,9 @@ async def _start_new_game(
         text=i18n.t("dm_start.setup_started_group_notice", lang, starter=user.full_name),
     )
 
-    prefer_shikimori = _prefer_shikimori(lang)
-    mal_configured = bool(context.bot_data.get("mal_client_id"))
     await message.reply_text(
-        i18n.t(_method_prompt_key(prefer_shikimori=prefer_shikimori), lang),
-        reply_markup=method_selection_keyboard(
-            prefer_shikimori=prefer_shikimori, lang=lang, mal_configured=mal_configured
-        ),
+        i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
+        reply_markup=_method_keyboard(context, lang),
     )
 
 

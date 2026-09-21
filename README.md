@@ -163,9 +163,14 @@ the same without it, and the method simply never appears.
 
 All four `MAL_*` variables (`MAL_CLIENT_ID`, `MAL_CLIENT_SECRET`,
 `MAL_REDIRECT_URI`, `MAL_TOKEN_ENCRYPTION_KEY`) must be set together —
-leave any one unset and the "My MAL List" method simply never appears,
-the same optional-feature shape `TMDB_READ_ACCESS_TOKEN` already has
-above.
+leave any one unset and the "My MAL List" method simply never appears
+and `/linkmal` says linking isn't configured, the same optional-feature
+shape `TMDB_READ_ACCESS_TOKEN` already has above. Set *some* of them and
+the bot logs a `WARNING` naming the missing ones at startup rather than
+half-enabling the feature; a `MAL_TOKEN_ENCRYPTION_KEY` that isn't a
+valid Fernet key is rejected at startup too (logged as an `ERROR`, with
+linking disabled), so a typo can't wait to surface until a player has
+already spent their one-time MyAnimeList authorization code.
 
 ### Updating
 

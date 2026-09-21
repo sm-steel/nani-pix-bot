@@ -8,6 +8,7 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
+from cryptography.fernet import Fernet
 from telegram.error import Conflict, NetworkError
 from telegram.ext import CallbackQueryHandler, ContextTypes, TypeHandler
 
@@ -284,6 +285,71 @@ def test_build_application_warns_once_when_the_tmdb_token_is_missing(
 
     assert len(warnings) == 1
     assert "TMDB_READ_ACCESS_TOKEN" in warnings[0][0]
+
+
+def _full_mal_config(**overrides) -> Config:
+    """A config with all four MAL settings (and the TMDB token, so its
+    own unrelated warning doesn't show up in these assertions)."""
+    defaults = {
+        "tmdb_read_access_token": "tmdb-token-placeholder",
+        "mal_client_id": "cid",
+        "mal_client_secret": "csecret",
+        "mal_redirect_uri": "https://example.com/cb",
+        "mal_token_encryption_key": Fernet.generate_key().decode(),
+    }
+    defaults.update(overrides)
+    return _config(**defaults)
+
+
+def test_build_application_warns_about_a_partial_mal_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The four MAL settings are optional together, never individually —
+    with only some set, a player could reach a linking flow that cannot
+    finish (and spend their one-time MAL authorization code doing it)."""
+    warnings = []
+    monkeypatch.setattr(app.logger, "warning", lambda *args: warnings.append(args))
+
+    app.build_application(_full_mal_config(mal_token_encryption_key=None))
+
+    assert len(warnings) == 1
+    assert "MAL_TOKEN_ENCRYPTION_KEY" in warnings[0][1]
+
+
+def test_build_application_says_nothing_about_mal_when_all_four_are_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logged = []
+    for level in ("debug", "info", "warning", "error"):
+        monkeypatch.setattr(app.logger, level, lambda *args: logged.append(args))
+
+    app.build_application(_full_mal_config())
+
+    assert not logged
+
+
+def test_build_application_rejects_a_malformed_mal_encryption_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """token_crypto builds its Fernet lazily inside encrypt()/decrypt(),
+    so a bad key used to surface only on a player's first real write —
+    after their authorization code was already spent. Checked once at
+    boot instead, and linking is disabled rather than left to explode."""
+    errors = []
+    monkeypatch.setattr(app.logger, "error", lambda *args: errors.append(args))
+    monkeypatch.setattr(app.logger, "warning", lambda *args: None)
+
+    # Deliberately not a real Fernet key. Bound to a local first so ruff's
+    # S106 (hardcoded password in a keyword argument) doesn't fire on a
+    # literal passed straight into `mal_token_encryption_key=`.
+    malformed = "not-a-key"
+    application = app.build_application(_full_mal_config(mal_token_encryption_key=malformed))
+
+    assert len(errors) == 1
+    assert "MAL_TOKEN_ENCRYPTION_KEY" in errors[0][0]
+    # Rejected, not stored — so mal_configured() is False and the "My MAL
+    # List" button stays hidden instead of dead-ending a player.
+    assert application.bot_data["mal_token_encryption_key"] is None
 
 
 def test_build_application_says_nothing_about_a_tmdb_token_that_is_set(

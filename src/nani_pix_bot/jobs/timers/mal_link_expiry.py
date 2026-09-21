@@ -1,12 +1,16 @@
 """Expires an abandoned /linkmal attempt — mirrors
-jobs/timers/setup_abandon.py's exact shape (a scheduled JobQueue job,
-not a check-on-read), for the same reason: this bot's job callbacks
-never survive a restart, so if the bot restarts mid-link, this timer
-simply never fires and the pending_mal_link row lives until the player
-either completes the flow or restarts it with another /linkmal — an
-acceptable gap, same as setup_abandon.py's own restart caveat."""
+jobs/timers/setup_abandon.py's exact shape (a scheduled JobQueue job).
 
-from datetime import timedelta
+Unlike setup_abandon.py, this timer is **not** the only thing enforcing
+its own deadline: this bot's job callbacks never survive a restart, so a
+restart mid-link would leave the pending_mal_link row behind forever —
+and unlike an abandoned setup row, a stale pending link actively
+hijacks every later plain-text DM from that player (see
+services/mal_link.py's `get_pending_link`, which enforces the same
+MAL_LINK_EXPIRY_DELAY on read and deletes what it finds expired). This
+job is the tidy-up that keeps the table from carrying rows nobody ever
+reads again; correctness no longer depends on it firing."""
+
 from typing import cast
 
 from loguru import logger
@@ -15,7 +19,10 @@ from telegram.ext import ContextTypes, JobQueue
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import mal_link
 
-MAL_LINK_EXPIRY_DELAY = timedelta(minutes=10)
+# Re-exported from services/mal_link.py (where it lives so the read-side
+# TTL check can use it too, without services/ importing jobs/) — the
+# schedule below and that check must never drift apart.
+MAL_LINK_EXPIRY_DELAY = mal_link.MAL_LINK_EXPIRY_DELAY
 
 
 def mal_link_expiry_job_name(telegram_user_id: int) -> str:
@@ -41,8 +48,9 @@ def schedule_mal_link_expiry(job_queue: JobQueue | None, telegram_user_id: int) 
 async def mal_link_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires 10min after a /linkmal attempt starts. If the player never
     came back with a code, the pending_mal_link row is still there —
-    delete it. If they already completed (or restarted) the flow, the
-    row is already gone and this is a no-op, not an error."""
+    delete it. If they already completed (or restarted) the flow, or
+    `get_pending_link`'s own TTL check already swept the row on a read
+    that happened first, it's gone and this is a no-op, not an error."""
     job = context.job
     if job is None:
         return

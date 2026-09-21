@@ -30,6 +30,8 @@ async def test_refresh_command_menu_sets_private_and_group_scopes() -> None:
         "setgamesenabled",
         "setautostart",
         "version",
+        "linkmal",
+        "unlinkmal",
     }
 
     group_call = next(c for c in calls if isinstance(c.kwargs["scope"], BotCommandScopeChat))
