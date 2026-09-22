@@ -14,11 +14,16 @@ from sqlalchemy.orm import Mapped, mapped_column
 from nani_pix_bot.models.base import Base
 
 MAL_USERNAME_LENGTH = 64
-# Generous headroom over Fernet's actual ciphertext length for a short
-# plaintext token — same "pick a large-enough fixed length rather than
-# compute the exact one" approach this codebase already uses elsewhere
-# (see models/game.py's TITLE_LENGTH).
-ENCRYPTED_TOKEN_LENGTH = 512
+# A real MyAnimeList OAuth token, once Fernet-encrypted, exceeded the
+# original 512-char guess in production (issue #185 — "Data too long
+# for column 'access_token'" against a real linked account; the real
+# token observed was a ~1010-char opaque string, Fernet-encrypting to
+# ~1444 chars). 4096 gives roughly 2.8x headroom over that observed
+# value — chosen deliberately over an even larger guess (8192 was
+# tried first and rejected outright by MariaDB: two VARCHAR(8192)
+# utf8mb4 columns alone exceed InnoDB's 65535-byte row-size ceiling,
+# not counting BLOB/TEXT columns).
+ENCRYPTED_TOKEN_LENGTH = 4096
 PKCE_TOKEN_LENGTH = 128
 
 
