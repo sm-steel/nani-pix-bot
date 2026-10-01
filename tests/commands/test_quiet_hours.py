@@ -138,7 +138,7 @@ async def test_timezone_command_sets_a_typed_zone(session_factory) -> None:
 
 
 async def test_timezone_command_rejects_unknown_zone(session_factory) -> None:
-    for bad in ("Mars/Olympus", "../etc"):
+    for bad in ("Mars/Olympus", "../etc", "Europe"):
         update = _update()
         await _run(qh_module.timezone_command, update, _context(session_factory, args=[bad]))
         assert bad in _reply_text(update)

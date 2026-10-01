@@ -133,3 +133,11 @@ def test_parse_timezone() -> None:
     assert quiet_hours.parse_timezone("Mars/Olympus") is None
     assert quiet_hours.parse_timezone("../etc/passwd") is None
     assert quiet_hours.parse_timezone("") is None
+
+
+@pytest.mark.parametrize("text", ["Europe", "Etc", "Asia", "A" * 300])
+def test_parse_timezone_rejects_directory_like_and_overlong_names(text: str) -> None:
+    # Bare region names resolve to a directory inside the tzdata package and
+    # an overlong name hits the OS path limit — both raise OSError from
+    # zoneinfo, which must not escape as a crash.
+    assert quiet_hours.parse_timezone(text) is None

@@ -103,5 +103,8 @@ def parse_timezone(text: str) -> ZoneInfo | None:
         return None
     try:
         return ZoneInfo(text)
-    except (ZoneInfoNotFoundError, ValueError):
+    # OSError: a bare region like "Europe" resolves to a directory inside
+    # the tzdata package, and an overlong name hits the OS path limit —
+    # zoneinfo surfaces both as raw OS errors rather than ZoneInfoNotFoundError.
+    except (ZoneInfoNotFoundError, ValueError, OSError):
         return None
