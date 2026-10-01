@@ -27,8 +27,19 @@ jobs:
       # every other third-party linter plugin it could also run is
       # disabled, ruff/ty stay the only linter/type-checker (see
       # CLAUDE.md).
+      #
+      # Version pinned (issue #190) via the install script's QLTY_VERSION —
+      # qltysh/qlty-action/install has no version input and always pulls
+      # the latest CLI, whose bundled plugin defaults can change under us
+      # between runs (that's how an unpinned trufflehog started failing
+      # every branch). Keep this in step with the qlty you run locally
+      # (`qlty upgrade --version <same>`), and bump both deliberately.
       - name: Install qlty
-        uses: qltysh/qlty-action/install@v1
+        env:
+          QLTY_VERSION: "0.650.0"
+        run: |
+          curl -fsSL https://qlty.sh | sh
+          echo "$HOME/.qlty/bin" >> "$GITHUB_PATH"
 
       # Runs the committed .pre-commit-config.yaml as-is — every hook is
       # `language: system`, shelling out to `uv run ruff`/`uv run ty`/
