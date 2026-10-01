@@ -6,6 +6,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.bot_settings import BotSettings
+from nani_pix_bot.services.quiet_hours import QuietHours, parse_timezone
 
 SETTINGS_ID = 1
 DEFAULT_LANGUAGE = "EN"
@@ -82,3 +83,42 @@ def set_pinned_message_id(session: Session, message_id: int | None) -> None:
     else:
         settings.pinned_message_id = message_id
     logger.debug("Pinned message id set to {}", message_id)
+
+
+def get_quiet_hours(session: Session) -> QuietHours | None:
+    """The configured quiet-hours window, or None when off — see
+    /quiethours and services/quiet_hours.py."""
+    # Not logged on the happy path — read by every timer callback and
+    # every deadline computation (see services/game/clock.py).
+    settings = session.get(BotSettings, SETTINGS_ID)
+    if settings is None or settings.quiet_start is None or settings.quiet_end is None:
+        return None
+    tz = parse_timezone(settings.quiet_timezone or "")
+    if tz is None:
+        logger.error(
+            "Stored quiet-hours timezone {!r} is invalid — ignoring quiet hours",
+            settings.quiet_timezone,
+        )
+        return None
+    return QuietHours(start=settings.quiet_start, end=settings.quiet_end, tz=tz)
+
+
+def set_quiet_hours(session: Session, qh: QuietHours) -> None:
+    settings = session.get(BotSettings, SETTINGS_ID)
+    if settings is None:
+        settings = BotSettings(id=SETTINGS_ID)
+        session.add(settings)
+    settings.quiet_start = qh.start
+    settings.quiet_end = qh.end
+    settings.quiet_timezone = qh.tz.key
+    logger.info("Quiet hours set to {}-{} {}", qh.start, qh.end, qh.tz.key)
+
+
+def clear_quiet_hours(session: Session) -> None:
+    settings = session.get(BotSettings, SETTINGS_ID)
+    if settings is None:
+        return
+    settings.quiet_start = None
+    settings.quiet_end = None
+    settings.quiet_timezone = None
+    logger.info("Quiet hours turned off")
