@@ -6,7 +6,6 @@ DB write, JobQueue scheduling, and Telegram posting around it."""
 
 import enum
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -124,7 +123,9 @@ async def idle_autostart_job_callback(context: ContextTypes.DEFAULT_TYPE) -> Non
         turn_state = game_service.get_turn_state(session)
         if turn_state is None or turn_state.next_starter_id is not None:
             return
-        turn_state.autostart_deadline_at = datetime.now(UTC) + game_service.AUTOSTART_RETRY_DELAY
+        turn_state.autostart_deadline_at = game_service.deadline_after(
+            session, game_service.AUTOSTART_RETRY_DELAY
+        )
         logger.info(
             "Idle-autostart pick failed — retrying in {}", game_service.AUTOSTART_RETRY_DELAY
         )

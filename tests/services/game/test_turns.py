@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import quiet_hours, settings
 from nani_pix_bot.services.game import turns
+from nani_pix_bot.services.quiet_hours import QuietHours
 
 
 def test_get_turn_state_returns_none_when_no_row_exists(session: Session) -> None:
@@ -156,3 +158,34 @@ def test_clear_autostart_clears_both_columns(session: Session) -> None:
     assert turn_state is not None
     assert turn_state.turn_opened_at is None
     assert turn_state.autostart_deadline_at is None
+
+
+def test_set_next_starter_freezes_turn_deadlines_during_quiet_hours(
+    session: Session, quiet_now: QuietHours
+) -> None:
+    session.add(Player(telegram_user_id=1))
+    settings.set_quiet_hours(session, quiet_now)
+    session.commit()
+    before = datetime.now(UTC)
+
+    turn_state = game_service.set_next_starter(session, 1)
+
+    window_end = quiet_hours.window_end_after(quiet_now, before)
+    assert turn_state.reminder_at is not None
+    expected = window_end + game_service.TURN_REMINDER_DELAY
+    assert abs((turn_state.reminder_at - expected).total_seconds()) < 5
+
+
+def test_opening_the_turn_freezes_the_idle_autostart_deadline_during_quiet_hours(
+    session: Session, quiet_now: QuietHours
+) -> None:
+    settings.set_quiet_hours(session, quiet_now)
+    session.commit()
+    before = datetime.now(UTC)
+
+    turn_state = game_service.set_next_starter(session, None)
+
+    window_end = quiet_hours.window_end_after(quiet_now, before)
+    assert turn_state.autostart_deadline_at is not None
+    expected = quiet_hours.add_active_time(quiet_now, window_end, game_service.IDLE_AUTOSTART_DELAY)
+    assert abs((turn_state.autostart_deadline_at - expected).total_seconds()) < 5

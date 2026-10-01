@@ -9,6 +9,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.turn_state import TurnState
+from nani_pix_bot.services.game.clock import deadline_after
 
 TURN_STATE_ID = 1
 
@@ -57,12 +58,11 @@ def set_next_starter(session: Session, user_id: int | None) -> TurnState:
     if user_id is None:
         turn_state.reminder_at = None
         turn_state.expiry_at = None
-        _mark_turn_opened(turn_state)
+        _mark_turn_opened(session, turn_state)
         logger.info("Turn opened — anyone may start the next game")
     else:
-        now = datetime.now(UTC)
-        turn_state.reminder_at = now + TURN_REMINDER_DELAY
-        turn_state.expiry_at = now + TURN_EXPIRY_DELAY
+        turn_state.reminder_at = deadline_after(session, TURN_REMINDER_DELAY)
+        turn_state.expiry_at = deadline_after(session, TURN_EXPIRY_DELAY)
         turn_state.turn_opened_at = None
         turn_state.autostart_deadline_at = None
         logger.info("Turn designated to player {}", user_id)
@@ -80,15 +80,17 @@ def mark_turn_open_if_unassigned(session: Session) -> TurnState:
     designated human regardless of which call site invoked it."""
     turn_state = get_or_create_turn_state(session)
     if turn_state.next_starter_id is None:
-        _mark_turn_opened(turn_state)
+        _mark_turn_opened(session, turn_state)
         logger.debug("Idle-autostart backstop armed — turn was already open")
     return turn_state
 
 
-def _mark_turn_opened(turn_state: TurnState) -> None:
+def _mark_turn_opened(session: Session, turn_state: TurnState) -> None:
+    # turn_opened_at records the real moment the turn opened; only the
+    # deadline derived from it is frozen by quiet hours.
     now = datetime.now(UTC)
     turn_state.turn_opened_at = now
-    turn_state.autostart_deadline_at = now + IDLE_AUTOSTART_DELAY
+    turn_state.autostart_deadline_at = deadline_after(session, IDLE_AUTOSTART_DELAY, now=now)
 
 
 def clear_autostart(session: Session) -> None:

@@ -10,7 +10,9 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import quiet_hours, settings
 from nani_pix_bot.services.game import state, turns
+from nani_pix_bot.services.quiet_hours import QuietHours
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
@@ -891,7 +893,7 @@ def test_reset_inactivity_clock_sets_both_deadlines_from_now(session: Session) -
     game = _active_game(session)
     before = datetime.now(UTC)  # not committed/refetched, so still tz-aware unlike scheduled_end_at
 
-    game_service.reset_inactivity_clock(game)
+    game_service.reset_inactivity_clock(session, game)
 
     assert game.inactivity_nudge_at is not None
     assert game.inactivity_advance_at is not None
@@ -905,7 +907,7 @@ def test_reset_inactivity_clock_sets_both_deadlines_from_now(session: Session) -
 
 def test_clear_inactivity_nudge_clears_only_the_nudge_deadline(session: Session) -> None:
     game = _active_game(session)
-    game_service.reset_inactivity_clock(game)
+    game_service.reset_inactivity_clock(session, game)
     advance_at_before = game.inactivity_advance_at
 
     game_service.clear_inactivity_nudge(game)
@@ -1097,3 +1099,32 @@ def test_record_guess_wrong_guess_limit_hit_delegates_to_advance_stage(session: 
 
     assert outcome is game_service.GuessOutcome.STAGE_ADVANCED
     assert game.current_stage == PixelStage.STAGE_5
+
+
+def test_reset_inactivity_clock_freezes_during_quiet_hours(
+    session: Session, quiet_now: QuietHours
+) -> None:
+    game = _active_game(session)
+    settings.set_quiet_hours(session, quiet_now)
+    before = datetime.now(UTC)
+
+    game_service.reset_inactivity_clock(session, game)
+
+    window_end = quiet_hours.window_end_after(quiet_now, before)
+    assert game.inactivity_advance_at is not None
+    expected = window_end + game_service.INACTIVITY_ADVANCE_DELAY
+    assert abs((game.inactivity_advance_at - expected).total_seconds()) < 5
+
+
+def test_activate_game_freezes_the_timeout_during_quiet_hours(
+    session: Session, quiet_now: QuietHours
+) -> None:
+    game = _active_game(session)
+    settings.set_quiet_hours(session, quiet_now)
+    before = datetime.now(UTC)
+
+    game_service.activate_game(session, game)
+
+    assert game.scheduled_end_at is not None
+    expected = quiet_hours.add_active_time(quiet_now, before, game_service.TIMEOUT_DURATION)
+    assert abs((game.scheduled_end_at - expected).total_seconds()) < 5

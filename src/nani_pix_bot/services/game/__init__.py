@@ -11,6 +11,7 @@ involved); seconds_until()/timeout_job_name()/setup_abandon_job_name()
 live in jobs/timers.py instead (scheduling/naming helpers with no
 Game-state-machine logic in them, used only there)."""
 
+from nani_pix_bot.services.game.clock import deadline_after
 from nani_pix_bot.services.game.hard_mode import (
     HARD_MODE_TURN_COUNT,
     HARD_MODE_TURN_WIDTHS,
@@ -102,6 +103,7 @@ __all__ = [
     "clear_original_screenshot",
     "clear_turn_timers",
     "create_setup_game",
+    "deadline_after",
     "display_title",
     "force_unsolved",
     "force_win",

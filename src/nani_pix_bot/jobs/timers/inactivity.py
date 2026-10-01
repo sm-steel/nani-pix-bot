@@ -123,7 +123,7 @@ class _HardModeAnnouncement:
 
 
 def _hard_mode_turn_advance(
-    context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
+    session: Session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
 ) -> _HardModeAnnouncement:
     """Turn 1 -> 2 advance — the hard-mode analogue of state.py's
     advance_stage for the normal path: resets wrong_guess_count,
@@ -143,7 +143,7 @@ def _hard_mode_turn_advance(
         stage=progress.number,
         total=progress.total,
     )
-    game_service.reset_inactivity_clock(game)
+    game_service.reset_inactivity_clock(session, game)
     schedule_inactivity_timers(context.job_queue, game)
     return _HardModeAnnouncement(photos=(pixelated_a, pixelated_b), caption=caption)
 
@@ -172,7 +172,7 @@ def _hard_mode_inactivity_outcome(
     if progress.number < game_service.HARD_MODE_TURN_COUNT:
         return (
             game_service.GuessOutcome.TURN_ADVANCED,
-            _hard_mode_turn_advance(context, game, lang),
+            _hard_mode_turn_advance(session, context, game, lang),
         )
 
     announcement = _hard_mode_unsolved_reveal(game, lang)
@@ -275,7 +275,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
                     stage=progress.number,
                     total=progress.total,
                 )
-                game_service.reset_inactivity_clock(game)
+                game_service.reset_inactivity_clock(session, game)
                 schedule_inactivity_timers(context.job_queue, game)
     # Block closed and committed above — the stage/turn advance (or
     # UNSOLVED ending) is durable now regardless of whether the
