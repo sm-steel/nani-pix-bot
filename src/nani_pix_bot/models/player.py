@@ -6,6 +6,8 @@ from nani_pix_bot.models.base import Base
 # Telegram usernames are capped at 32 chars; headroom for the `@` some
 # callers include.
 USERNAME_LENGTH = 64
+# IANA zone names top out around 30 chars; headroom.
+TIMEZONE_LENGTH = 64
 
 
 class Player(Base):
@@ -22,3 +24,6 @@ class Player(Base):
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     username: Mapped[str | None] = mapped_column(String(USERNAME_LENGTH), default=None)
     wins: Mapped[int] = mapped_column(default=0)
+    # The player's own IANA timezone (via /timezone) — currently only used
+    # to interpret an admin's /quiethours times. NULL = never set.
+    timezone: Mapped[str | None] = mapped_column(String(TIMEZONE_LENGTH), default=None)

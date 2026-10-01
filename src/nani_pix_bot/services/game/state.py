@@ -4,7 +4,7 @@ bookkeeping (a related but distinct concern) lives in turns.py."""
 
 import enum
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import NamedTuple
 
 from loguru import logger
@@ -15,6 +15,7 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import matching, players
 from nani_pix_bot.services.game import turns
+from nani_pix_bot.services.game.clock import deadline_after
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
@@ -211,7 +212,7 @@ def create_setup_game(
         starter_id=starter_id,
         original_image=original_image,
         status=GameStatus.SETUP,
-        setup_deadline=datetime.now(UTC) + SETUP_ABANDON_DELAY,
+        setup_deadline=deadline_after(session, SETUP_ABANDON_DELAY),
     )
     session.add(game)
     session.flush()  # populate game.id for the caller without a full commit
@@ -290,8 +291,8 @@ def activate_game(session: Session, game: Game) -> None:
     else:
         game.current_stage = STAGE_ORDER[0]
     game.wrong_guess_count = 0
-    game.scheduled_end_at = datetime.now(UTC) + TIMEOUT_DURATION
-    reset_inactivity_clock(game)
+    game.scheduled_end_at = deadline_after(session, TIMEOUT_DURATION)
+    reset_inactivity_clock(session, game)
 
     turn_state = turns.get_or_create_turn_state(session)
     turn_state.next_starter_id = None
@@ -356,16 +357,16 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
     return outcome
 
 
-def reset_inactivity_clock(game: Game) -> None:
+def reset_inactivity_clock(session: Session, game: Game) -> None:
     """(Re)starts the inactivity nudge/auto-advance clock from now — see
-    INACTIVITY_NUDGE_DELAY/INACTIVITY_ADVANCE_DELAY. Called on
+    INACTIVITY_NUDGE_DELAY/INACTIVITY_ADVANCE_DELAY. Quiet time doesn't
+    count toward either (see clock.deadline_after). Called on
     activation, after every guess (guess.py), and after every
     inactivity-driven auto-advance (jobs/timers.py) — so the clock
     always measures time since the most recent guess or auto-advance,
     whichever happened last."""
-    now = datetime.now(UTC)
-    game.inactivity_nudge_at = now + INACTIVITY_NUDGE_DELAY
-    game.inactivity_advance_at = now + INACTIVITY_ADVANCE_DELAY
+    game.inactivity_nudge_at = deadline_after(session, INACTIVITY_NUDGE_DELAY)
+    game.inactivity_advance_at = deadline_after(session, INACTIVITY_ADVANCE_DELAY)
 
 
 def clear_inactivity_nudge(game: Game) -> None:

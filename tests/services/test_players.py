@@ -1,3 +1,5 @@
+from zoneinfo import ZoneInfo
+
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.player import Player
@@ -90,3 +92,13 @@ def test_top_players_returns_empty_list_when_no_one_has_won(session: Session) ->
     session.commit()
 
     assert players.top_players(session, limit=10) == []
+
+
+def test_timezone_defaults_to_none(session: Session) -> None:
+    assert players.get_timezone(session, 42) is None
+
+
+def test_set_timezone_creates_player_and_round_trips(session: Session) -> None:
+    players.set_timezone(session, 42, ZoneInfo("Asia/Novosibirsk"))
+    session.commit()
+    assert players.get_timezone(session, 42) == ZoneInfo("Asia/Novosibirsk")

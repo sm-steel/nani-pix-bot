@@ -75,7 +75,7 @@ def _prepare_hard_mode_won_announcement(
 
 
 def _prepare_turn_advanced_announcement(
-    context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
+    session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
 ) -> _Announcement:
     """Handles the new GuessOutcome.TURN_ADVANCED — the hard-mode
     analogue of _prepare_stage_advanced_announcement. By the time this
@@ -91,7 +91,7 @@ def _prepare_turn_advanced_announcement(
     pixelated_a = pixelate_service.pixelate(image_a, width, game.pixel_algorithm)
     pixelated_b = pixelate_service.pixelate(image_b, width, game.pixel_algorithm)
     progress = game_service.hard_mode_turn_progress(game)
-    game_service.reset_inactivity_clock(game)
+    game_service.reset_inactivity_clock(session, game)
     timeout_module.schedule_inactivity_timers(context.job_queue, game)
     caption = i18n.t(
         "guess.hard_mode_turn_advanced_caption",
@@ -132,7 +132,7 @@ def _prepare_stage_advanced_announcement(
     target_width = stage_config.get_stage_config(session, game.current_stage).target_width
     pixelated = pixelate_service.pixelate(original_bytes, target_width, game.pixel_algorithm)
     progress = game_service.stage_progress(session, game)
-    game_service.reset_inactivity_clock(game)
+    game_service.reset_inactivity_clock(session, game)
     timeout_module.schedule_inactivity_timers(context.job_queue, game)
     caption = i18n.t(
         "guess.stage_advanced_caption",
@@ -217,7 +217,7 @@ def _prepare_wrong_feedback(
     else:
         progress = game_service.stage_progress(session, game)
         wrong_feedback_key = "guess.wrong_feedback"
-    game_service.reset_inactivity_clock(game)
+    game_service.reset_inactivity_clock(session, game)
     timeout_module.schedule_inactivity_timers(context.job_queue, game)
     return i18n.t(
         wrong_feedback_key,
@@ -268,7 +268,7 @@ def _dispatch_non_won_outcome(
     if outcome is game_service.GuessOutcome.STAGE_ADVANCED:
         return _prepare_stage_advanced_announcement(session, context, game, lang), False, None
     if outcome is game_service.GuessOutcome.TURN_ADVANCED:
-        return _prepare_turn_advanced_announcement(context, game, lang), False, None
+        return _prepare_turn_advanced_announcement(session, context, game, lang), False, None
     # The only outcome left is GuessOutcome.UNSOLVED.
     return _prepare_unsolved_announcement_dispatch(context, game, lang), True, None
 

@@ -15,6 +15,7 @@ from nani_pix_bot.jobs.timers.current_image import (
     post_current_images,
 )
 from nani_pix_bot.jobs.timers.inactivity import cancel_inactivity_timers
+from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
@@ -71,6 +72,7 @@ def _hard_mode_timeout_reveal(game: Game, lang: str) -> _HardModeTimeoutReveal:
     return _HardModeTimeoutReveal(photos=photos, caption=caption)
 
 
+@quiet_hours_deferred
 async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires 2 days after a game started with no ending yet. A
     hard-mode game (always `original_image is None`) is still eligible

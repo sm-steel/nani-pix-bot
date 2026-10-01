@@ -19,6 +19,7 @@ dependencies = [
     "python-telegram-bot[job-queue]>=21.0",
     "rapidfuzz>=3.10",
     "sqlalchemy>=2.0",
+    "tzdata>=2026.3",
 ]
 
 [project.scripts]

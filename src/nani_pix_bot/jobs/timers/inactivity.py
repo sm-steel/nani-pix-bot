@@ -15,6 +15,7 @@ from nani_pix_bot.jobs.timers.current_image import (
     post_current_image,
     post_current_images,
 )
+from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
@@ -72,6 +73,7 @@ def cancel_inactivity_timers(job_queue: JobQueue | None, game_id: int) -> None:
             job.schedule_removal()
 
 
+@quiet_hours_deferred
 async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires INACTIVITY_NUDGE_DELAY after the last guess (or activation)
     on an ACTIVE game. Points at whatever's currently pinned so the
@@ -123,7 +125,7 @@ class _HardModeAnnouncement:
 
 
 def _hard_mode_turn_advance(
-    context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
+    session: Session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
 ) -> _HardModeAnnouncement:
     """Turn 1 -> 2 advance — the hard-mode analogue of state.py's
     advance_stage for the normal path: resets wrong_guess_count,
@@ -143,7 +145,7 @@ def _hard_mode_turn_advance(
         stage=progress.number,
         total=progress.total,
     )
-    game_service.reset_inactivity_clock(game)
+    game_service.reset_inactivity_clock(session, game)
     schedule_inactivity_timers(context.job_queue, game)
     return _HardModeAnnouncement(photos=(pixelated_a, pixelated_b), caption=caption)
 
@@ -172,7 +174,7 @@ def _hard_mode_inactivity_outcome(
     if progress.number < game_service.HARD_MODE_TURN_COUNT:
         return (
             game_service.GuessOutcome.TURN_ADVANCED,
-            _hard_mode_turn_advance(context, game, lang),
+            _hard_mode_turn_advance(session, context, game, lang),
         )
 
     announcement = _hard_mode_unsolved_reveal(game, lang)
@@ -181,6 +183,7 @@ def _hard_mode_inactivity_outcome(
     return game_service.GuessOutcome.UNSOLVED, announcement
 
 
+@quiet_hours_deferred
 async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires INACTIVITY_ADVANCE_DELAY after the last guess (or
     activation) on an ACTIVE game, with no guess in between to reset the
@@ -275,7 +278,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
                     stage=progress.number,
                     total=progress.total,
                 )
-                game_service.reset_inactivity_clock(game)
+                game_service.reset_inactivity_clock(session, game)
                 schedule_inactivity_timers(context.job_queue, game)
     # Block closed and committed above — the stage/turn advance (or
     # UNSOLVED ending) is durable now regardless of whether the

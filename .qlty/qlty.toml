@@ -102,5 +102,13 @@ mode = "disabled"
 # ruff/ty/complexity checks. Run via `qlty check --filter trufflehog` (not
 # `qlty smells`, which never invokes plugins regardless of this config —
 # see .pre-commit-config.yaml).
+#
+# Version pinned (issue #190): unpinned, CI picked up whatever trufflehog
+# the latest qlty bundled, and pre-3.97.0 releases' Lob detector matched
+# any 40-char pytest name (`test_` + 35 word chars) and counted Lob's 403
+# reply as "verified", failing every branch. 3.97.0 fixed that upstream
+# (trufflesecurity/trufflehog#5188). Bump deliberately, checking locally
+# first — the qlty CLI itself is pinned in .github/workflows/checks.yml.
 [[plugin]]
 name = "trufflehog"
+version = "3.97.9"
