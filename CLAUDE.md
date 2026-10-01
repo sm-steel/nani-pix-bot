@@ -116,6 +116,18 @@ qlty check --filter trufflehog --all      # secret scan
 qlty metrics --all --sort complexity --limit 15   # per-file complexity/LOC table
 ```
 
+**Both the qlty CLI and its trufflehog plugin are version-pinned** — the
+CLI via `QLTY_VERSION` in `checks.yml`'s install step, trufflehog via
+`version = "…"` on its `[[plugin]]` entry in `.qlty/qlty.toml`. Unpinned,
+CI silently picked up whatever the newest qlty bundled; issue #190 is
+what that cost (a trufflehog release whose Lob detector "verified" every
+40-character pytest name as a live secret, failing every branch at once
+with no code change). Run the same qlty locally (`qlty --version` must
+match `checks.yml`; `qlty upgrade --version <x>` to align), and bump
+either pin deliberately in its own change — scan locally against the new
+version first (`qlty check --filter trufflehog --all`), never just bump
+CI and see.
+
 **The secret scan only catches *verified* secrets by default** — qlty's
 bundled trufflehog driver hardcodes `--only-verified`
 (`trufflehog filesystem --json --fail --only-verified --no-update`), and
