@@ -32,6 +32,7 @@ from nani_pix_bot.commands import (
     leaderboard,
     mal_link,
     onboarding,
+    quiet_hours,
     setautostart,
     stageconfig,
     version,
@@ -44,6 +45,7 @@ from nani_pix_bot.commands.helpers import player_tracking
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
+from nani_pix_bot.commands.quiet_hours import SET_TIMEZONE_PREFIX
 from nani_pix_bot.config import Config, load_config
 from nani_pix_bot.jobs.timers import rearm_pending_timeouts
 from nani_pix_bot.logging_config import setup_logging
@@ -260,6 +262,11 @@ def build_application(config: Config) -> Application:
         )
     )
     application.add_handler(
+        CallbackQueryHandler(
+            quiet_hours.timezone_callback_handler, pattern=rf"^{re.escape(SET_TIMEZONE_PREFIX)}"
+        )
+    )
+    application.add_handler(
         CallbackQueryHandler(game_flow.stop_callback_handler, pattern=r"^stop:")
     )
     application.add_handler(CommandHandler("guess", game_flow.guess_command))
@@ -277,6 +284,8 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("setstage", stageconfig.setstage_command))
     application.add_handler(CommandHandler("setgamesenabled", gamesenabled.setgamesenabled_command))
     application.add_handler(CommandHandler("setautostart", setautostart.setautostart_command))
+    application.add_handler(CommandHandler("timezone", quiet_hours.timezone_command))
+    application.add_handler(CommandHandler("quiethours", quiet_hours.quiethours_command))
     application.add_handler(CommandHandler("version", version.version_command))
     application.add_error_handler(_error_handler)
 
