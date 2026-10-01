@@ -1,7 +1,11 @@
+from datetime import time
+from zoneinfo import ZoneInfo
+
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.bot_settings import BotSettings
 from nani_pix_bot.services import settings
+from nani_pix_bot.services.quiet_hours import QuietHours
 
 
 def test_get_language_defaults_to_en_when_no_row_exists(session: Session) -> None:
@@ -142,3 +146,31 @@ def test_set_autostart_enabled_updates_an_existing_row(session: Session) -> None
     fetched = session.get(BotSettings, 1)
     assert fetched is not None
     assert fetched.autostart_enabled is True
+
+
+def test_quiet_hours_default_to_none(session: Session) -> None:
+    assert settings.get_quiet_hours(session) is None
+
+
+def test_set_quiet_hours_round_trips(session: Session) -> None:
+    qh = QuietHours(start=time(23, 0), end=time(8, 0), tz=ZoneInfo("Europe/Moscow"))
+    settings.set_quiet_hours(session, qh)
+    session.commit()
+    assert settings.get_quiet_hours(session) == qh
+
+
+def test_clear_quiet_hours(session: Session) -> None:
+    settings.set_quiet_hours(
+        session, QuietHours(start=time(23, 0), end=time(8, 0), tz=ZoneInfo("UTC"))
+    )
+    settings.clear_quiet_hours(session)
+    session.commit()
+    assert settings.get_quiet_hours(session) is None
+
+
+def test_get_quiet_hours_ignores_an_invalid_stored_timezone(session: Session) -> None:
+    session.add(
+        BotSettings(id=1, quiet_start=time(23, 0), quiet_end=time(8, 0), quiet_timezone="Mars/X")
+    )
+    session.commit()
+    assert settings.get_quiet_hours(session) is None

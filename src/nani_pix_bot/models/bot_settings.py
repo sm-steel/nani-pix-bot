@@ -1,9 +1,13 @@
+from datetime import time
+
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nani_pix_bot.models.base import Base
 
 LANGUAGE_LENGTH = 8
+# IANA zone names top out around 30 chars; headroom.
+TIMEZONE_LENGTH = 64
 
 
 class BotSettings(Base):
@@ -32,3 +36,10 @@ class BotSettings(Base):
     # been possible), bot-initiated games are new behavior an admin
     # should opt into.
     autostart_enabled: Mapped[bool] = mapped_column(default=False)
+    # Quiet hours (see services/quiet_hours.py, /quiethours): local
+    # wall-clock start/end plus the IANA zone they were entered in. All
+    # three NULL = off (the default). Stored as wall-clock + zone, not as
+    # UTC times, so the window follows DST.
+    quiet_start: Mapped[time | None] = mapped_column(default=None)
+    quiet_end: Mapped[time | None] = mapped_column(default=None)
+    quiet_timezone: Mapped[str | None] = mapped_column(String(TIMEZONE_LENGTH), default=None)

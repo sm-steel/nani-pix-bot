@@ -12,9 +12,10 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n
+from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.game import autostart as autostart_service
 from nani_pix_bot.services.game.autostart import AnimePick, GatheredPick, ScreenshotPick
+from nani_pix_bot.services.quiet_hours import QuietHours
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 
 
@@ -432,3 +433,30 @@ async def test_run_bot_autostart_uses_the_overthrow_open_caption_when_no_winner_
     assert media[0].caption == _expected_first_turn_caption(
         "dm_start.hard_mode_game_started_caption_overthrow_open"
     )
+
+
+async def test_maybe_overthrow_skips_the_roll_during_quiet_hours(
+    session_factory, quiet_now: QuietHours, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
+        session.add(BotSettings(id=1, games_enabled=True, autostart_enabled=True))
+        session.commit()
+        settings.set_quiet_hours(session, quiet_now)
+        session.commit()
+    context = _make_context(session_factory)
+    roll = MagicMock(return_value=True)
+    run = AsyncMock(return_value=True)
+    monkeypatch.setattr(autostart_service, "roll_overthrow", roll)
+    monkeypatch.setattr(autostart_timers, "run_bot_autostart", run)
+
+    await autostart_timers.maybe_overthrow(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        winner_id=1,
+        winner_name="frieren",
+    )
+
+    roll.assert_not_called()
+    run.assert_not_awaited()

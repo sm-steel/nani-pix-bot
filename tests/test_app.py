@@ -13,6 +13,7 @@ from telegram.error import Conflict, NetworkError
 from telegram.ext import CallbackQueryHandler, ContextTypes, TypeHandler
 
 from nani_pix_bot import app
+from nani_pix_bot.commands import quiet_hours
 from nani_pix_bot.commands.dm_start import (
     pick_callback_handler,
     screenshot_gallery_callback_handler,
@@ -86,6 +87,8 @@ def test_build_application_registers_every_command() -> None:
         "setstage",
         "setgamesenabled",
         "setautostart",
+        "timezone",
+        "quiethours",
         "version",
         "linkmal",
         "unlinkmal",
@@ -365,3 +368,19 @@ def test_build_application_says_nothing_about_a_tmdb_token_that_is_set(
     app.build_application(_config(tmdb_read_access_token=token))
 
     assert not logged
+
+
+def test_timezone_callback_handler_is_registered_for_its_prefix() -> None:
+    application = app.build_application(_config())
+    matching = [
+        handler
+        for group in application.handlers.values()
+        for handler in group
+        if isinstance(handler, CallbackQueryHandler)
+        and handler.callback is quiet_hours.timezone_callback_handler
+    ]
+    assert len(matching) == 1
+    pattern = matching[0].pattern
+    assert isinstance(pattern, re.Pattern)
+    assert pattern.match("set_timezone:Europe/Moscow")
+    assert not pattern.match("set_language:RU")

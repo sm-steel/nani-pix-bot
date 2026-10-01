@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes, JobQueue
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import seconds_until
 from nani_pix_bot.jobs.timers.autostart import schedule_idle_autostart
+from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
@@ -40,6 +41,7 @@ def cancel_setup_abandon(job_queue: JobQueue | None, game_id: int) -> None:
         job.schedule_removal()
 
 
+@quiet_hours_deferred
 async def setup_abandon_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires 1h after a SETUP game is created. If the starter never
     confirmed (still SETUP), deletes the orphaned row and opens the turn

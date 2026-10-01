@@ -722,7 +722,7 @@ async def test_inactivity_nudge_job_callback_clears_the_nudge_deadline_after_sen
     game_id = _active_game(session_factory)
     with session_factory() as session:
         game = session.get(Game, game_id)
-        game_service.reset_inactivity_clock(game)
+        game_service.reset_inactivity_clock(session, game)
         session.commit()
     with session_factory() as session:
         # Refetched (rather than kept from the write above) so it round-

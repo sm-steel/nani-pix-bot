@@ -24,6 +24,7 @@ just what's currently built.
 | Win-turn reminder (15min) + expiry (12h) | Implemented |
 | Manual stop with confirmation (`/stop`) | Implemented |
 | Leaderboard (`/leaderboard`) | Implemented |
+| Quiet hours (`/quiethours`, `/timezone`) — automatic posts held, clocks frozen | Implemented |
 
 ## Game lifecycle
 
@@ -573,6 +574,8 @@ Because `JobQueue` jobs don't survive a process restart, `app.py` re-arms
 a timeout job on startup for any `Game` still `ACTIVE`, using its stored
 `scheduled_end_at` — a redeploy never silently loses or resets the clock.
 
+During quiet hours this clock is frozen and its post is held back — see "Quiet hours" below.
+
 ## Inactivity
 
 **Status: Implemented.**
@@ -608,6 +611,8 @@ nonzero guessing (say, one wrong guess every ~10 hours) that never
 leaves the game idle long enough to trigger a nudge or auto-advance, yet
 also never racks up enough wrong guesses within 48 hours to advance via
 the normal guess-count path.
+
+During quiet hours both clocks are frozen and their posts are held back — see "Quiet hours" below.
 
 ## Stopping a game (`/stop`)
 
@@ -693,6 +698,8 @@ moment the designated player actually starts their game (a DM photo, or
 `/newgame`); they're clearly not going to miss a turn they've already
 begun.
 
+During quiet hours both timers are frozen and the reminder DM / expiry post are held back — see "Quiet hours" below.
+
 ## Bot-initiated games
 
 **Status: Implemented.**
@@ -775,6 +782,59 @@ other starter, and `/stop`'s existing starter-or-admin check
 (`commands/game_flow/stop.py::_may_stop`) already covers a bot-started
 game correctly — no human is ever "the starter" of one, so only a group
 admin/owner can stop it (the bot itself never calls `/stop`).
+
+## Quiet hours
+
+**Status: Implemented.**
+
+An optional daily window during which the bot keeps quiet on its own
+initiative — **off by default**. A group admin/owner sets it in a DM:
+
+- `/timezone` — saves the admin's own IANA timezone (e.g.
+  `Europe/Moscow`), picked from a keyboard of common zones or typed as
+  `/timezone Asia/Novosibirsk`. Stored as a zone name, not a fixed
+  offset, so DST is followed automatically.
+- `/quiethours 23:00 08:00` — sets the window, interpreted in that
+  admin's saved timezone (the bot asks for one first if it hasn't got
+  it). The window is `[start, end)` in local wall-clock time and may
+  cross midnight; `start == end` is rejected. Every reply echoes the
+  window back with its UTC equivalent, e.g. `23:00–08:00 Europe/Moscow
+  (20:00–05:00 UTC)`. `/quiethours` alone shows the current setting,
+  `/quiethours off` turns it off.
+
+While the window is active:
+
+- **Every automatic, timer-driven message is held back** until the
+  window ends: the 3h inactivity nudge, the 6h inactivity auto-advance
+  (or unsolved ending), the 2-day timeout, the 1h setup-abandon notice,
+  the 15-minute win-turn reminder DM (and its group fallback), the 12h
+  turn expiry, and the 24h idle auto-start (and its 1h retry).
+- **Every one of those clocks freezes** — quiet time doesn't count
+  toward any of their durations. A `/guess` at 03:00 with quiet hours
+  23:00–08:00 puts the next 6h auto-advance at 14:00, not 09:00; a
+  2-day timeout spanning two nights runs two nights longer.
+- **No overthrow roll** after a win (see "Bot-initiated games" above) —
+  the winner simply gets the turn, and the idle auto-start backstop
+  (itself frozen and held back) remains.
+- **Everything a player does keeps working normally** — `/guess`
+  (including guess-driven stage advances and wins, which post their
+  images immediately), `/newgame` and DM setup, `/correct`, `/skip`,
+  `/stop`, and so on. Quiet hours only silence what the bot does on its
+  own.
+
+Under the hood: every deadline is computed through one helper
+(`services/game/clock.py`'s `deadline_after`) that skips quiet time, and
+every timer callback is wrapped in a guard (`jobs/timers/quiet.py`) that,
+if it fires inside a window anyway, re-schedules itself for the window's
+end instead of posting. That guard covers two cases the freeze can't:
+deadlines computed before quiet hours were set or changed, and deadlines
+that went overdue while the bot was down (re-armed on startup to fire
+immediately — and then deferred).
+
+**Known simplification:** turning quiet hours on or changing them does
+not recompute deadlines already set — those are only *deferred* to the
+window's end if they land inside it, not frozen. Every clock reset after
+that (the next guess, the next turn, the next game) freezes correctly.
 
 ## HARD MODE
 

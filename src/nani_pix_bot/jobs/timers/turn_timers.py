@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import seconds_until
+from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
@@ -65,6 +66,7 @@ def cancel_turn_timers(job_queue: JobQueue | None) -> None:
             job.schedule_removal()
 
 
+@quiet_hours_deferred
 async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires 15min after a turn is designated to a real player. DMs
     them a reminder; falls back to an @mention in the group if the DM
@@ -111,6 +113,7 @@ async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
         )
 
 
+@quiet_hours_deferred
 async def turn_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires 12h after a turn is designated to a real player, if they
     never started. Opens the turn to anyone and notifies the group.
