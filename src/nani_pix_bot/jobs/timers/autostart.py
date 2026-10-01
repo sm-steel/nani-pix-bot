@@ -6,6 +6,7 @@ DB write, JobQueue scheduling, and Telegram posting around it."""
 
 import enum
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -16,11 +17,12 @@ from nani_pix_bot.jobs.timers._shared import seconds_until
 from nani_pix_bot.jobs.timers.current_image import post_current_images
 from nani_pix_bot.jobs.timers.game_timeout import schedule_timeout
 from nani_pix_bot.jobs.timers.inactivity import schedule_inactivity_timers
+from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.jobs.timers.turn_timers import cancel_turn_timers
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services import i18n, players, quiet_hours, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.game import autostart as autostart_service
 
@@ -89,6 +91,7 @@ def _autostart_gated(session: Session) -> bool:
     return game_service.active_or_setup_game(session) is not None
 
 
+@quiet_hours_deferred
 async def idle_autostart_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires IDLE_AUTOSTART_DELAY after the turn was last opened with no
     game started since. Re-checks everything fresh before attempting a
@@ -153,9 +156,12 @@ async def maybe_overthrow(
     )
     with session_scope(session_factory) as session:
         gated = _autostart_gated(session)
+        quiet = quiet_hours.is_quiet(settings.get_quiet_hours(session), datetime.now(UTC))
+    if quiet:
+        logger.debug("Quiet hours — skipping the overthrow roll")
 
     claimed = False
-    if not gated and autostart_service.roll_overthrow():
+    if not gated and not quiet and autostart_service.roll_overthrow():
         claim = _AutostartClaim(
             trigger=AutostartTrigger.OVERTHROW,
             dethroned_winner_name=winner_name,

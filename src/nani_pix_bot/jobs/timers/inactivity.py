@@ -15,6 +15,7 @@ from nani_pix_bot.jobs.timers.current_image import (
     post_current_image,
     post_current_images,
 )
+from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
@@ -72,6 +73,7 @@ def cancel_inactivity_timers(job_queue: JobQueue | None, game_id: int) -> None:
             job.schedule_removal()
 
 
+@quiet_hours_deferred
 async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires INACTIVITY_NUDGE_DELAY after the last guess (or activation)
     on an ACTIVE game. Points at whatever's currently pinned so the
@@ -181,6 +183,7 @@ def _hard_mode_inactivity_outcome(
     return game_service.GuessOutcome.UNSOLVED, announcement
 
 
+@quiet_hours_deferred
 async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires INACTIVITY_ADVANCE_DELAY after the last guess (or
     activation) on an ACTIVE game, with no guess in between to reset the
