@@ -49,8 +49,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("pixel_config")
-    op.drop_index(op.f("ix_pixel_transactions_game_id"), table_name="pixel_transactions")
-    op.drop_index(op.f("ix_pixel_transactions_player_id"), table_name="pixel_transactions")
+    # No explicit drop_index for ix_pixel_transactions_*: on MariaDB/InnoDB
+    # those indexes back the foreign keys, so dropping them first fails
+    # (error 1553); drop_table removes them along with the table.
     op.drop_table("pixel_transactions")
     op.drop_column("games", "turn_received_at")
     op.drop_column("turn_state", "turn_received_at")
