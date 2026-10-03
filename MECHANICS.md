@@ -133,7 +133,12 @@ anime's name, in whatever form the player remembers it) and searches
 whichever service was picked, showing up to 5 results as an inline
 keyboard (title + year for AniList, each service's own best title
 otherwise); a "none of these" option lets them retry the search with
-different text. The player taps the correct result, and the bot
+different text. Shikimori's own ranking is poor on punctuated titles
+(`K-On` ranks every K-On entry below 16 unrelated ones), so its search
+fetches a 50-result page, re-ranks it locally by fuzzy title similarity
+(`matching.rank_by_similarity`, ties keep Shikimori's order) and shows
+the top 5. It also passes `censored: true`, so explicit titles never
+reach the picker. The player taps the correct result, and the bot
 re-fetches the full record from that service (whichever title fields it
 has, plus its synonyms list where available) and records that service's
 own id (one column per provider — `Game.anilist_id`/`shikimori_id`/

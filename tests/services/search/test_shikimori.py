@@ -98,8 +98,44 @@ async def test_search_sends_the_query_and_limit_as_graphql_variables() -> None:
         await shikimori.search(client, "frieren", limit=3)
 
     assert captured["url"] == shikimori.SHIKIMORI_GRAPHQL_URL
-    assert captured["json"]["variables"] == {"search": "frieren", "limit": 3}
+    # Always the wide page, whatever `limit` asks for — it's re-ranked
+    # locally and trimmed afterwards (issue #199).
+    assert captured["json"]["variables"] == {
+        "search": "frieren",
+        "limit": shikimori.SEARCH_FETCH_LIMIT,
+    }
     assert "animes" in captured["json"]["query"]
+
+
+async def test_search_excludes_explicit_titles() -> None:
+    """A wider page lets more `rx`-rated titles reach the top results;
+    `censored: true` (the random pick's filter too) drops exactly those
+    (issue #199)."""
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json=_animes_payload([]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await shikimori.search(client, "re zero")
+
+    assert "censored: true" in captured["json"]["query"]
+
+
+async def test_search_reranks_the_wide_page_and_trims_it_to_the_limit() -> None:
+    """Issue #199: Shikimori's own ranking put every K-On entry 17th+ for
+    "K-On", below a 5-result picker's cutoff."""
+    decoys = [
+        {"id": str(i), "name": f"Kono Subarashii Sekai {i}", "russian": None} for i in range(1, 17)
+    ]
+    k_on = {"id": "5680", "name": "K-On!", "russian": "Кэйон!"}
+
+    async with httpx.AsyncClient(transport=_responding(_animes_payload([*decoys, k_on]))) as client:
+        results = await shikimori.search(client, "K-On", limit=5)
+
+    assert len(results) == 5
+    assert results[0].shikimori_id == 5680
 
 
 async def test_get_by_id_sends_the_id_as_a_string_variable() -> None:
