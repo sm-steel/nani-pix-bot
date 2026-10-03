@@ -4,7 +4,7 @@ handlers) — main()'s actual polling loop is not something a unit test
 should run."""
 
 import re
-from typing import cast
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -30,7 +30,7 @@ _VALID_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"  # noqa: S105 - test 
 
 
 def _config(**overrides) -> Config:
-    defaults = {
+    defaults: dict[str, Any] = {
         "bot_token": _VALID_TOKEN,
         "group_chat_id": -100555,
         "game_topic_id": 7,
@@ -293,7 +293,7 @@ def test_build_application_warns_once_when_the_tmdb_token_is_missing(
 def _full_mal_config(**overrides) -> Config:
     """A config with all four MAL settings (and the TMDB token, so its
     own unrelated warning doesn't show up in these assertions)."""
-    defaults = {
+    defaults: dict[str, Any] = {
         "tmdb_read_access_token": "tmdb-token-placeholder",
         "mal_client_id": "cid",
         "mal_client_secret": "csecret",

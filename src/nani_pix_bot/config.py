@@ -2,6 +2,7 @@
 
 import os
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -34,6 +35,26 @@ class Config:
     mal_redirect_uri: str | None
     mal_token_encryption_key: str | None
     database_url: str
+    # Not read by the bot itself (the mariadb container bootstraps from
+    # them), but they're in the bot's env too (compose `env_file: .env`),
+    # so they're secrets the logging filter must know about.
+    mariadb_passwords: tuple[str, ...] = ()
+
+    def secret_values(self) -> list[str]:
+        """Every configured secret, by exact value — what logging_config's
+        filter masks (issue #184). Only the password half of a URL counts:
+        its user/host/database are not secret. Unset/empty values are
+        dropped, since an empty string would "match" everywhere."""
+        candidates = [
+            self.bot_token,
+            self.tmdb_read_access_token,
+            self.mal_client_secret,
+            self.mal_token_encryption_key,
+            urlsplit(self.database_url).password,
+            urlsplit(self.telegram_proxy_url or "").password,
+            *self.mariadb_passwords,
+        ]
+        return [value for value in candidates if value]
 
 
 def load_config() -> Config:
@@ -69,4 +90,7 @@ def load_config() -> Config:
         mal_redirect_uri=os.environ.get("MAL_REDIRECT_URI") or None,
         mal_token_encryption_key=os.environ.get("MAL_TOKEN_ENCRYPTION_KEY") or None,
         database_url=database_url(),
+        mariadb_passwords=tuple(
+            os.environ.get(name, "") for name in ("MARIADB_PASSWORD", "MARIADB_ROOT_PASSWORD")
+        ),
     )
