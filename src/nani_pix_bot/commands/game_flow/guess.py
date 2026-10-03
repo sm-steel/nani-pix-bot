@@ -1,8 +1,7 @@
 """The /guess command — see MECHANICS.md's "Guess matching" and
 "Pixelation stages" sections."""
 
-import dataclasses
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from loguru import logger
 from telegram import Message, Update
@@ -280,7 +279,7 @@ def _with_suffix(announcement: _Announcement | None, suffix: str) -> _Announceme
     """Appends the pixel-earnings lines to an outcome's group caption."""
     if announcement is None or not suffix:
         return announcement
-    return dataclasses.replace(announcement, caption=announcement.caption + suffix)
+    return replace(announcement, caption=announcement.caption + suffix)
 
 
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

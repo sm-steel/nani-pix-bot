@@ -139,6 +139,25 @@ def test_unsolved_game_in_between_breaks_the_streak(session: Session) -> None:
     assert earning.award_win(session, game, winner_id=ALICE).streak == 0
 
 
+def test_previous_game_won_by_someone_else_gives_no_streak(session: Session) -> None:
+    session.add_all([Player(telegram_user_id=u) for u in (STARTER, ALICE, BOB)])
+    session.flush()
+    session.add(Game(starter_id=STARTER, status=GameStatus.WON, winner_id=BOB))
+    session.flush()
+    game = Game(starter_id=STARTER, status=GameStatus.ACTIVE, current_stage=PixelStage.STAGE_1)
+    session.add(game)
+    session.flush()
+
+    assert earning.award_win(session, game, winner_id=ALICE).streak == 0
+
+
+def test_game_created_from_an_open_turn_earns_no_prompt_bonus(session: Session) -> None:
+    game = _setup(session, turn_received_at=None, created_at=datetime.now(UTC))
+
+    assert earning.award_prompt_start(session, game) == 0
+    assert _pixels(session, STARTER) == 0
+
+
 def test_prompt_start_pays_starter_within_an_hour(session: Session) -> None:
     received = datetime.now(UTC) - timedelta(minutes=10)
     game = _setup(session, turn_received_at=received, created_at=datetime.now(UTC))
