@@ -172,92 +172,6 @@ async def test_method_pick_callback_handler_stores_the_source_and_prompts_for_se
         assert fetched.status == GameStatus.SETUP
 
 
-def _only_button_data(markup) -> list[str]:
-    return [button.callback_data for row in markup.inline_keyboard for button in row]
-
-
-async def test_method_pick_callback_handler_offers_a_way_back_on_the_query_prompt(
-    session_factory,
-) -> None:
-    """Issue #200: the "type your query" prompt used to have no buttons,
-    so a starter who'd picked the wrong provider had no way out."""
-    _create_setup_game(session_factory, starter_id=1)
-    update = _make_method_callback_update(data=SHIKIMORI_METHOD_CALLBACK_DATA, user_id=1)
-    context = _make_context(session_factory)
-
-    await search.method_pick_callback_handler(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )
-
-    markup = update.callback_query.edit_message_text.await_args.kwargs["reply_markup"]
-    assert _only_button_data(markup) == [METHOD_BACK_CALLBACK_DATA]
-
-
-async def test_method_back_tap_reshows_the_method_selection(session_factory) -> None:
-    _create_setup_game(session_factory, starter_id=1, source=Provider.SHIKIMORI)
-    update = _make_method_callback_update(data=METHOD_BACK_CALLBACK_DATA, user_id=1)
-    context = _make_context(session_factory)
-
-    await search.method_pick_callback_handler(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )
-
-    update.callback_query.answer.assert_awaited_once()
-    call = update.callback_query.edit_message_text.await_args
-    assert call.args[0] == i18n.t("dm_start.pick_method_prompt", "en")
-    assert ANILIST_METHOD_CALLBACK_DATA in _only_button_data(call.kwargs["reply_markup"])
-    with session_factory() as session:
-        fetched = session.query(Game).filter_by(starter_id=1).one()
-        assert fetched.setup_step == SetupStep.PICKING_METHOD
-
-
-async def test_method_back_tap_from_an_old_message_only_drops_its_buttons(
-    session_factory,
-) -> None:
-    """A "back" button left on an old results message, tapped once the
-    setup has moved on (e.g. to the preview), must not drag the starter
-    back to the method menu while the row says CONFIRMING."""
-    _create_setup_game(session_factory, starter_id=1)
-    with session_factory() as session:
-        game = session.query(Game).filter_by(starter_id=1).one()
-        game.setup_step = SetupStep.CONFIRMING
-        session.commit()
-    update = _make_method_callback_update(data=METHOD_BACK_CALLBACK_DATA, user_id=1)
-    update.callback_query.edit_message_reply_markup = AsyncMock()
-    context = _make_context(session_factory)
-
-    await search.method_pick_callback_handler(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )
-
-    update.callback_query.edit_message_text.assert_not_awaited()
-    update.callback_query.edit_message_reply_markup.assert_awaited_once_with(reply_markup=None)
-    with session_factory() as session:
-        fetched = session.query(Game).filter_by(starter_id=1).one()
-        assert fetched.setup_step == SetupStep.CONFIRMING
-
-
-async def test_search_text_handler_offers_a_way_back_when_nothing_is_found(
-    session_factory, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Issue #200: "nothing found" used to be a dead end — retyping was
-    the only option, with no way to try another provider."""
-    _create_setup_game(session_factory, starter_id=1)
-    monkeypatch.setattr(search.anilist, "search", AsyncMock(return_value=[]))
-    update = _make_text_update(user_id=1)
-    status_message = MagicMock()
-    status_message.edit_text = AsyncMock()
-    update.message.reply_text = AsyncMock(return_value=status_message)
-    context = _make_context(session_factory, search_client=MagicMock())
-
-    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
-
-    call = status_message.edit_text.await_args
-    assert call is not None
-    markup = call.kwargs["reply_markup"]
-    assert _only_button_data(markup) == [METHOD_BACK_CALLBACK_DATA]
-
-
 async def test_method_pick_callback_handler_asks_a_screenshotless_prompt_for_newgame(
     session_factory,
 ) -> None:
@@ -852,3 +766,89 @@ async def test_pick_callback_handler_preview_lists_every_accepted_answer(
         for button in row
     ]
     assert PREVIEW_CONFIRM_CALLBACK_DATA in callbacks
+
+
+def _only_button_data(markup) -> list[str]:
+    return [button.callback_data for row in markup.inline_keyboard for button in row]
+
+
+async def test_method_pick_callback_handler_offers_a_way_back_on_the_query_prompt(
+    session_factory,
+) -> None:
+    """Issue #200: the "type your query" prompt used to have no buttons,
+    so a starter who'd picked the wrong provider had no way out."""
+    _create_setup_game(session_factory, starter_id=1)
+    update = _make_method_callback_update(data=SHIKIMORI_METHOD_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await search.method_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    markup = update.callback_query.edit_message_text.await_args.kwargs["reply_markup"]
+    assert _only_button_data(markup) == [METHOD_BACK_CALLBACK_DATA]
+
+
+async def test_method_back_tap_reshows_the_method_selection(session_factory) -> None:
+    _create_setup_game(session_factory, starter_id=1, source=Provider.SHIKIMORI)
+    update = _make_method_callback_update(data=METHOD_BACK_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await search.method_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.answer.assert_awaited_once()
+    call = update.callback_query.edit_message_text.await_args
+    assert call.args[0] == i18n.t("dm_start.pick_method_prompt", "en")
+    assert ANILIST_METHOD_CALLBACK_DATA in _only_button_data(call.kwargs["reply_markup"])
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.PICKING_METHOD
+
+
+async def test_method_back_tap_from_an_old_message_only_drops_its_buttons(
+    session_factory,
+) -> None:
+    """A "back" button left on an old results message, tapped once the
+    setup has moved on (e.g. to the preview), must not drag the starter
+    back to the method menu while the row says CONFIRMING."""
+    _create_setup_game(session_factory, starter_id=1)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.setup_step = SetupStep.CONFIRMING
+        session.commit()
+    update = _make_method_callback_update(data=METHOD_BACK_CALLBACK_DATA, user_id=1)
+    update.callback_query.edit_message_reply_markup = AsyncMock()
+    context = _make_context(session_factory)
+
+    await search.method_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.edit_message_text.assert_not_awaited()
+    update.callback_query.edit_message_reply_markup.assert_awaited_once_with(reply_markup=None)
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.CONFIRMING
+
+
+async def test_search_text_handler_offers_a_way_back_when_nothing_is_found(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #200: "nothing found" used to be a dead end — retyping was
+    the only option, with no way to try another provider."""
+    _create_setup_game(session_factory, starter_id=1)
+    monkeypatch.setattr(search.anilist, "search", AsyncMock(return_value=[]))
+    update = _make_text_update(user_id=1)
+    status_message = MagicMock()
+    status_message.edit_text = AsyncMock()
+    update.message.reply_text = AsyncMock(return_value=status_message)
+    context = _make_context(session_factory, search_client=MagicMock())
+
+    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    call = status_message.edit_text.await_args
+    assert call is not None
+    markup = call.kwargs["reply_markup"]
+    assert _only_button_data(markup) == [METHOD_BACK_CALLBACK_DATA]
