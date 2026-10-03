@@ -37,8 +37,8 @@ class TurnState(Base):
     # is running.
     turn_opened_at: Mapped[datetime | None] = mapped_column(default=None)
     autostart_deadline_at: Mapped[datetime | None] = mapped_column(default=None)
-    # When the turn last changed hands — designated to a player or opened
-    # to anyone (services/game/turns.py). Unlike turn_opened_at it is never
+    # Set when the turn is handed to a specific player, cleared when opened
+    # to anyone (services/game/turns.py). Unlike turn_opened_at it is not
     # cleared at game start: create_setup_game copies it onto the Game for
     # the prompt-turn pixel bonus (services/economy/earning.py).
     turn_received_at: Mapped[datetime | None] = mapped_column(default=None)
