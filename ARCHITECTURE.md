@@ -186,8 +186,11 @@ disagree, trust the docstring and fix this tree, not the other way around.
 ```
 src/nani_pix_bot/
   config.py       # env/.env loading — the only place that reads os.environ
-  db.py           # SQLAlchemy engine/session factory, session_scope()
-  logging_config.py  # loguru setup, redirects PTB's stdlib logging into it
+  db.py           # SQLAlchemy engine/session factory, session_scope();
+                   # the engine pre-pings/recycles pooled connections so
+                   # one MariaDB dropped after 8h idle isn't reused (#194)
+  logging_config.py  # loguru setup, redirects PTB's stdlib logging into it;
+                   # redacts the bot token from every line/traceback (#184)
   heartbeat.py    # wraps bot.get_updates so a liveness file is only
                    # touched after a real successful poll — lets
                    # docker-compose.yml's HEALTHCHECK (+ fleet autoheal)
@@ -333,6 +336,11 @@ src/nani_pix_bot/
                    #                      posting timer callback; inside a quiet
                    #                      window it re-schedules the job to the
                    #                      window's end instead of running it
+                   #   retry.py           @retry_on_failure — outermost on the
+                   #                      same callbacks; a callback that
+                   #                      raises is re-scheduled (3x, 1min
+                   #                      apart) rather than lost until the
+                   #                      next restart (#194)
                    #   current_image.py   post_current_image (the shared
                    #                      "post + best-effort pin" send,
                    #                      decoupled from any caller's own
