@@ -101,3 +101,61 @@ def test_load_config_reads_mal_fields_when_set(
     assert config_obj.mal_client_secret == "csecret"  # noqa: S105 - test fixture, not a real secret
     assert config_obj.mal_redirect_uri == "https://example.github.io/mal-callback.html"
     assert config_obj.mal_token_encryption_key == "keykeykeykeykeykeykeykeykeykeykeykeykey="  # noqa: S105 - test fixture, not a real key
+
+
+def _set_all_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("BOT_TOKEN", "bot-credential-value")
+    monkeypatch.setenv("DATABASE_URL", "mysql+pymysql://appuser:db-pw-value@mariadb:3306/appdb")
+    monkeypatch.setenv("TELEGRAM_PROXY_URL", "http://proxyuser:proxy-pw-value@proxyhost:8888")
+    monkeypatch.setenv("TMDB_READ_ACCESS_TOKEN", "tmdb-credential-value")
+    monkeypatch.setenv("MAL_CLIENT_SECRET", "mal-client-credential-value")
+    monkeypatch.setenv("MAL_TOKEN_ENCRYPTION_KEY", "mal-fernet-credential-value")
+    monkeypatch.setenv("MARIADB_PASSWORD", "mariadb-pw-value")
+    monkeypatch.setenv("MARIADB_ROOT_PASSWORD", "mariadb-root-pw-value")
+
+
+def test_secret_values_collects_every_configured_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Issue #184: everything the logging filter must mask, by exact value."""
+    _set_all_secrets(monkeypatch)
+
+    secrets = config.load_config().secret_values()
+
+    assert set(secrets) == {
+        "bot-credential-value",
+        "db-pw-value",
+        "proxy-pw-value",
+        "tmdb-credential-value",
+        "mal-client-credential-value",
+        "mal-fernet-credential-value",
+        "mariadb-pw-value",
+        "mariadb-root-pw-value",
+    }
+
+
+def test_secret_values_leaves_out_non_secret_parts_of_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_all_secrets(monkeypatch)
+
+    secrets = config.load_config().secret_values()
+
+    for not_secret in ("appuser", "proxyuser", "mariadb", "proxyhost", "appdb", "-100555"):
+        assert not any(not_secret == s for s in secrets)
+
+
+def test_secret_values_skips_unset_and_empty_ones(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty string in the list would "match" at every position."""
+    _set_required_env(monkeypatch)
+    for name in (
+        "TMDB_READ_ACCESS_TOKEN",
+        "MAL_CLIENT_SECRET",
+        "MAL_TOKEN_ENCRYPTION_KEY",
+        "MARIADB_ROOT_PASSWORD",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("MARIADB_PASSWORD", "")
+
+    secrets = config.load_config().secret_values()
+
+    assert secrets == ["test-token"]

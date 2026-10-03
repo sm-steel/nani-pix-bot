@@ -190,7 +190,9 @@ src/nani_pix_bot/
                    # the engine pre-pings/recycles pooled connections so
                    # one MariaDB dropped after 8h idle isn't reused (#194)
   logging_config.py  # loguru setup, redirects PTB's stdlib logging into it;
-                   # redacts the bot token from every line/traceback (#184)
+                   # its filter masks every .env secret (Config.secret_values())
+                   # in messages and exception chains, plus anything
+                   # token-shaped (#184)
   heartbeat.py    # wraps bot.get_updates so a liveness file is only
                    # touched after a real successful poll — lets
                    # docker-compose.yml's HEALTHCHECK (+ fleet autoheal)
