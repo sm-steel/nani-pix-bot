@@ -7,8 +7,8 @@ from datetime import UTC, datetime, timedelta
 
 from nani_pix_bot.services.economy.config import WIN_STAGE_KEYS, EconomyKey
 
-# Setter bonus: solved at stage 2–4 — not stage 1 (too easy) and not  # noqa: RUF003
-# stage 5 (barely solvable). Unsolved games pay the setter nothing.
+# Setter bonus: solved at stage 2 to 4 (not stage 1, too easy; not
+# stage 5, barely solvable). Unsolved games pay the setter nothing.
 SETTER_REWARD_STAGES = range(2, 5)
 
 # Prompt-turn bonus: game created within this long of receiving the turn.

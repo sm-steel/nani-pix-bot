@@ -56,6 +56,7 @@ def test_is_prompt_start_outside_window() -> None:
 
 
 def test_is_prompt_start_handles_naive_and_aware() -> None:
-    received_naive = datetime(2026, 10, 4, 12, 0)  # noqa: DTZ001 # as read back from the DB
+    # as read back from the DB
+    received_naive = datetime(2026, 10, 4, 12, 0, tzinfo=UTC).replace(tzinfo=None)
     created_aware = datetime(2026, 10, 4, 12, 30, tzinfo=UTC)
     assert rewards.is_prompt_start(created_at=created_aware, turn_received_at=received_naive)
