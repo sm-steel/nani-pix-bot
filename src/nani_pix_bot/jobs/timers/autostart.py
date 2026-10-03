@@ -18,6 +18,7 @@ from nani_pix_bot.jobs.timers.current_image import post_current_images
 from nani_pix_bot.jobs.timers.game_timeout import schedule_timeout
 from nani_pix_bot.jobs.timers.inactivity import schedule_inactivity_timers
 from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
+from nani_pix_bot.jobs.timers.retry import retry_on_failure
 from nani_pix_bot.jobs.timers.turn_timers import cancel_turn_timers
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.turn_state import TurnState
@@ -91,6 +92,7 @@ def _autostart_gated(session: Session) -> bool:
     return game_service.active_or_setup_game(session) is not None
 
 
+@retry_on_failure
 @quiet_hours_deferred
 async def idle_autostart_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires IDLE_AUTOSTART_DELAY after the turn was last opened with no

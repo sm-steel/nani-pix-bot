@@ -338,7 +338,7 @@ async def _post_shutdown(application: Application) -> None:
 
 def main() -> None:
     config = load_config()
-    setup_logging(config.log_level)
+    setup_logging(config.log_level, config.secret_values())
     application = build_application(config)
     heartbeat.install(application)
     application.run_polling()
