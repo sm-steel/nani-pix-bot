@@ -211,6 +211,19 @@ async def test_newgame_command_creates_a_setup_game_with_no_image_yet(session_fa
     update.message.reply_text.assert_awaited_once()
 
 
+async def test_newgame_command_sends_no_stage_preview_without_an_image(session_factory) -> None:
+    """Issue #201's early stage-1 preview needs an uploaded image —
+    /newgame has none until a screenshot is picked later."""
+    update = _make_update(user_id=1)
+    update.message.reply_photo = AsyncMock()
+    context = _make_context(session_factory)
+
+    await newgame.newgame_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    update.message.reply_photo.assert_not_awaited()
+    update.message.reply_text.assert_awaited_once()
+
+
 async def test_newgame_command_notifies_the_group_that_setup_started(session_factory) -> None:
     update = _make_update(user_id=1, full_name="Starter Name")
     context = _make_context(session_factory)

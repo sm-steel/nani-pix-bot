@@ -114,6 +114,14 @@ to anyone, and posts that to the group — the same class of "stuck DM
 flow" bug issue #11 fixed reactively can no longer linger indefinitely.
 The timer is canceled the moment they confirm.
 
+When the setup started from an uploaded screenshot, the bot first replies
+with that screenshot pixelated at **stage 1** (the blockiest, with the
+game's current pixelation algorithm) so the starter can judge whether it
+works as a puzzle before identifying anything. It's a convenience only:
+if the image can't be pixelated or the send fails, it's logged and
+skipped and the method selection follows regardless. `/newgame` has no
+image at this point, so it skips this.
+
 ### Identifying the anime
 
 The bot asks the starter to pick an identification method: **AniList**,

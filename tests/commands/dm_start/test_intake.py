@@ -1,7 +1,9 @@
+import io
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from PIL import Image
 from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.error import TimedOut
@@ -15,12 +17,15 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 )
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.bot_settings import BotSettings
-from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
+from nani_pix_bot.models.enums import DEFAULT_ALGORITHM, GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import i18n
+from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.settings import stage_config
 
 _FRIEREN = AniListResult(
     anilist_id=99,
@@ -181,6 +186,81 @@ async def test_photo_handler_shows_the_method_selection_keyboard(session_factory
         button.callback_data for row in kwargs["reply_markup"].inline_keyboard for button in row
     ]
     assert callbacks[:2] == [ANILIST_METHOD_CALLBACK_DATA, SHIKIMORI_METHOD_CALLBACK_DATA]
+
+
+def _real_png() -> bytes:
+    image = Image.new("RGB", (64, 64))
+    pixels = image.load()
+    assert pixels is not None
+    for x in range(64):
+        for y in range(64):
+            pixels[x, y] = (x * 4, y * 4, (x + y) * 2)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _uploading(context: MagicMock, image_bytes: bytes) -> None:
+    context.bot.get_file.return_value.download_as_bytearray = AsyncMock(
+        return_value=bytearray(image_bytes)
+    )
+
+
+async def test_photo_handler_shows_the_first_stage_before_the_method_selection(
+    session_factory,
+) -> None:
+    """Issue #201: the starter sees how their screenshot will look at
+    stage 1 before spending any effort identifying the anime — not only
+    in the confirmation album at the very end."""
+    original = _real_png()
+    update = _make_update(user_id=1, photo_file_id="file123")
+    calls = MagicMock()
+    update.message.reply_photo = AsyncMock()
+    calls.attach_mock(update.message.reply_photo, "reply_photo")
+    calls.attach_mock(update.message.reply_text, "reply_text")
+    context = _make_context(session_factory)
+    _uploading(context, original)
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        first_stage = stage_config.get_stage_config(session, game_service.STAGE_ORDER[0])
+    expected = pixelate_service.pixelate(original, first_stage.target_width, DEFAULT_ALGORITHM)
+    photo_call = update.message.reply_photo.await_args
+    assert photo_call is not None
+    assert photo_call.kwargs["photo"] == expected
+    assert photo_call.kwargs["caption"] == i18n.t("dm_start.first_stage_preview", "en")
+    assert [name for name, _, _ in calls.mock_calls] == ["reply_photo", "reply_text"]
+
+
+async def test_photo_handler_still_offers_the_methods_when_the_image_cannot_be_pixelated(
+    session_factory,
+) -> None:
+    """The preview is a convenience: an image Pillow can't read must not
+    strand the starter before the method selection."""
+    update = _make_update(user_id=1, photo_file_id="file123")
+    update.message.reply_photo = AsyncMock()
+    context = _make_context(session_factory)
+    _uploading(context, b"not an image")
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    update.message.reply_photo.assert_not_awaited()
+    assert "reply_markup" in update.message.reply_text.await_args.kwargs
+
+
+async def test_photo_handler_still_offers_the_methods_when_the_preview_send_fails(
+    session_factory,
+) -> None:
+    update = _make_update(user_id=1, photo_file_id="file123")
+    update.message.reply_photo = AsyncMock(side_effect=TimedOut())
+    context = _make_context(session_factory)
+    _uploading(context, _real_png())
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    update.message.reply_photo.assert_awaited_once()
+    assert "reply_markup" in update.message.reply_text.await_args.kwargs
 
 
 async def test_photo_handler_prefers_shikimori_first_when_language_is_ru(session_factory) -> None:
