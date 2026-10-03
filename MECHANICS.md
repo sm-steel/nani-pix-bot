@@ -114,6 +114,14 @@ to anyone, and posts that to the group — the same class of "stuck DM
 flow" bug issue #11 fixed reactively can no longer linger indefinitely.
 The timer is canceled the moment they confirm.
 
+When the setup started from an uploaded screenshot, the bot first replies
+with that screenshot pixelated at **stage 1** (the blockiest, with the
+game's current pixelation algorithm) so the starter can judge whether it
+works as a puzzle before identifying anything. It's a convenience only:
+if the image can't be pixelated or the send fails, it's logged and
+skipped and the method selection follows regardless. `/newgame` has no
+image at this point, so it skips this.
+
 ### Identifying the anime
 
 The bot asks the starter to pick an identification method: **AniList**,
@@ -133,12 +141,21 @@ anime's name, in whatever form the player remembers it) and searches
 whichever service was picked, showing up to 5 results as an inline
 keyboard (title + year for AniList, each service's own best title
 otherwise); a "none of these" option lets them retry the search with
-different text. The player taps the correct result, and the bot
+different text. Shikimori's own ranking is poor on punctuated titles
+(`K-On` ranks every K-On entry below 16 unrelated ones), so its search
+fetches a 50-result page, re-ranks it locally by fuzzy title similarity
+(`matching.rank_by_similarity`, ties keep Shikimori's order) and shows
+the top 5. It also passes `censored: true`, so explicit titles never
+reach the picker. The player taps the correct result, and the bot
 re-fetches the full record from that service (whichever title fields it
 has, plus its synonyms list where available) and records that service's
 own id (one column per provider — `Game.anilist_id`/`shikimori_id`/
 `tenrai_id`/`tmdb_id` — so a later screenshot cross-search can reuse an id
-already on file instead of re-searching, see below).
+already on file instead of re-searching, see below). The query prompt,
+the results, and a "nothing found" reply also carry a **↩ Different
+search method** button back to the method-selection keyboard, for when
+the anime isn't on that provider at all — before it, the only way out
+was picking a wrong result to reach the preview's "Re-search title".
 **Manual entry**: for anime none of the above knows about. The bot asks
 for the title, then for at least one alternate title/synonym (comma- or
 newline-separated, re-prompted if left blank) — both typed by the
@@ -321,7 +338,10 @@ before it goes live:
   screenshot is cleared instead, along with the provider id that
   resolved it, since a re-search might land on a completely different
   anime — the starter goes through "Picking a screenshot" again once
-  the new title is staged.
+  the new title is staged. Picking a method (and staging any result or
+  manual entry) also clears the previous identification entirely —
+  every title variant, the synonyms, and every provider id — so nothing
+  of the old anime survives into the new one's accepted answers.
 - **Add a synonym** — type one more (or several); appended to the
   list, repeatable.
 - **Confirm and start game** — pixelates the (possibly updated)

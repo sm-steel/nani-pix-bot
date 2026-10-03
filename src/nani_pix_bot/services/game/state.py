@@ -236,7 +236,11 @@ def stage_result(
     `source` is a `Provider`, never `"manual"`: every caller arrives
     holding a real result from one of the four services. Manual entry has
     no result to stage and goes through `stage_manual_entry` below, which
-    writes the bare `"manual"` string itself."""
+    writes the bare `"manual"` string itself.
+
+    Starts from `clear_identification` because each provider fills in
+    only its own subset of fields — see that function's docstring."""
+    clear_identification(game)
     game.title_romaji = result.title_romaji
     game.title_english = result.title_english
     game.synonyms = result.synonyms
@@ -273,9 +277,40 @@ def set_screenshot_provider_id(
         game.tmdb_id = result.tmdb_id
 
 
+def clear_identification(game: Game) -> None:
+    """Forget which anime a still-SETUP game was identified as: every
+    title variant, the synonyms, and every provider id.
+
+    Each provider's result fills in only its own subset of these (only
+    Shikimori has `title_russian`, only AniList/Tenrai/TMDB have
+    `title_native`, each sets just its own id), so overwriting field by
+    field left an earlier pick's leftovers behind whenever the starter
+    re-identified with a different provider — issue #198, where the old
+    anime's Russian title became both the RU preview's Title and an
+    accepted /guess. Called before every new identification is staged,
+    and when a new identification method is picked.
+
+    The screenshot columns (`screenshot_source`, `original_image`) are
+    not touched — that's `commands/dm_start/screenshots.py`'s
+    `clear_screenshot_selection`, which the preview's "Re-search" runs
+    before any of this can happen."""
+    logger.debug("Game {}: clearing previous identification (source={})", game.id, game.source)
+    game.title_romaji = None
+    game.title_english = None
+    game.title_native = None
+    game.title_russian = None
+    game.synonyms = None
+    game.anilist_id = None
+    game.shikimori_id = None
+    game.tenrai_id = None
+    game.tmdb_id = None
+
+
 def stage_manual_entry(game: Game, *, title: str, synonyms: list[str]) -> None:
     """Manual entry's equivalent of stage_result() — there's no external
-    search result to draw from, just what the starter typed."""
+    search result to draw from, just what the starter typed. Clears any
+    earlier identification first, same as stage_result()."""
+    clear_identification(game)
     game.title_english = title
     game.synonyms = synonyms
     game.source = "manual"

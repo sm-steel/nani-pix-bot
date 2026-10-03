@@ -4,6 +4,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
     MAL_METHOD_CALLBACK_DATA,
     MANUAL_METHOD_CALLBACK_DATA,
+    METHOD_BACK_CALLBACK_DATA,
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
@@ -19,6 +20,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     GalleryPage,
     MalListPage,
     anilist_results_keyboard,
+    back_to_methods_keyboard,
     mal_list_keyboard,
     method_selection_keyboard,
     parse_mal_list_page_callback_data,
@@ -39,6 +41,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     tmdb_results_keyboard,
 )
 from nani_pix_bot.models.enums import DEFAULT_ALGORITHM, PixelAlgorithm, Provider
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
@@ -109,8 +112,9 @@ _TENRAI_NO_ENGLISH_TITLE = TenraiResult(
 def test_keyboard_has_one_button_per_result_plus_a_retry_button() -> None:
     markup = anilist_results_keyboard([_FRIEREN, _NO_YEAR], lang="en")
 
-    assert len(markup.inline_keyboard) == 3
-    assert markup.inline_keyboard[-1][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
+    assert len(markup.inline_keyboard) == 4
+    assert markup.inline_keyboard[-2][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
+    assert markup.inline_keyboard[-1][0].callback_data == METHOD_BACK_CALLBACK_DATA
 
 
 def test_keyboard_button_label_prefers_english_title_and_shows_year() -> None:
@@ -134,10 +138,25 @@ def test_keyboard_button_label_prefers_english_regardless_of_lang() -> None:
     assert markup_en.inline_keyboard[0][0].text == markup_ru.inline_keyboard[0][0].text
 
 
+def test_back_to_methods_keyboard_is_a_single_translated_button() -> None:
+    markup = back_to_methods_keyboard("ru")
+
+    assert len(markup.inline_keyboard) == 1
+    button = markup.inline_keyboard[0][0]
+    assert button.callback_data == METHOD_BACK_CALLBACK_DATA
+    assert button.text == i18n.t("keyboards.back_to_methods", "ru")
+
+
+def test_parse_method_callback_data_ignores_the_back_button() -> None:
+    """Back isn't a method pick — method_pick_callback_handler checks
+    for it before parsing."""
+    assert parse_method_callback_data(METHOD_BACK_CALLBACK_DATA) is None
+
+
 def test_retry_button_label_is_translated() -> None:
     markup = anilist_results_keyboard([_NO_YEAR], lang="ru")
 
-    assert "искать" in markup.inline_keyboard[-1][0].text.lower()
+    assert "искать" in markup.inline_keyboard[-2][0].text.lower()
 
 
 def test_pick_callback_data_round_trips_the_anilist_id() -> None:
@@ -179,8 +198,9 @@ def test_parse_pick_callback_data_returns_none_for_retry() -> None:
 def test_shikimori_keyboard_has_one_button_per_result_plus_a_retry_button() -> None:
     markup = shikimori_results_keyboard([_FRIEREN_SHIKIMORI, _NO_RUSSIAN_TITLE], lang="en")
 
-    assert len(markup.inline_keyboard) == 3
-    assert markup.inline_keyboard[-1][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
+    assert len(markup.inline_keyboard) == 4
+    assert markup.inline_keyboard[-2][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
+    assert markup.inline_keyboard[-1][0].callback_data == METHOD_BACK_CALLBACK_DATA
 
 
 def test_shikimori_keyboard_button_label_prefers_the_russian_title_when_lang_is_ru() -> None:
@@ -227,8 +247,9 @@ def test_shikimori_pick_callback_data_round_trips_the_shikimori_id() -> None:
 def test_tenrai_keyboard_has_one_button_per_result_plus_a_retry_button() -> None:
     markup = tenrai_results_keyboard([_FRIEREN_TENRAI, _TENRAI_NO_ENGLISH_TITLE], lang="en")
 
-    assert len(markup.inline_keyboard) == 3
-    assert markup.inline_keyboard[-1][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
+    assert len(markup.inline_keyboard) == 4
+    assert markup.inline_keyboard[-2][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
+    assert markup.inline_keyboard[-1][0].callback_data == METHOD_BACK_CALLBACK_DATA
 
 
 def test_tenrai_keyboard_button_label_prefers_english_title() -> None:
@@ -254,8 +275,9 @@ def test_tenrai_pick_callback_data_round_trips_the_tenrai_id() -> None:
 def test_tmdb_keyboard_has_one_button_per_result_plus_a_retry_button() -> None:
     markup = tmdb_results_keyboard([_FRIEREN_TMDB, _TMDB_NO_ENGLISH_TITLE], lang="en")
 
-    assert len(markup.inline_keyboard) == 3
-    assert markup.inline_keyboard[-1][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
+    assert len(markup.inline_keyboard) == 4
+    assert markup.inline_keyboard[-2][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
+    assert markup.inline_keyboard[-1][0].callback_data == METHOD_BACK_CALLBACK_DATA
 
 
 def test_tmdb_keyboard_button_label_prefers_english_title() -> None:
@@ -306,6 +328,14 @@ def test_cross_search_keyboard_retries_into_the_screenshot_flow(build, results, 
     markup = build(results, lang="en", pick_prefix=f"screenshot_search_pick:{provider}:")
 
     assert markup.inline_keyboard[-1][0].callback_data == f"screenshot_search_again:{provider}"
+    # The screenshot sub-flow has its own way out (the source menu); a
+    # "different search method" button there would abandon a perfectly
+    # good identification just to change the screenshot.
+    assert all(
+        button.callback_data != METHOD_BACK_CALLBACK_DATA
+        for row in markup.inline_keyboard
+        for button in row
+    )
 
 
 def test_identification_keyboard_still_retries_into_the_identification_flow() -> None:
@@ -314,7 +344,8 @@ def test_identification_keyboard_still_retries_into_the_identification_flow() ->
     pick_callback_handler's own retry branch."""
     markup = shikimori_results_keyboard([_FRIEREN_SHIKIMORI], lang="en")
 
-    assert markup.inline_keyboard[-1][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
+    assert markup.inline_keyboard[-2][0].callback_data == SEARCH_RETRY_CALLBACK_DATA
+    assert markup.inline_keyboard[-1][0].callback_data == METHOD_BACK_CALLBACK_DATA
 
 
 def test_tenrai_keyboard_accepts_a_custom_pick_prefix() -> None:

@@ -24,6 +24,7 @@
   "dm_start.not_a_member": "Чтобы начать игру, нужно быть участником группы.",
   "dm_start.not_your_turn": "Сейчас не ваша очередь начинать новую игру.",
   "dm_start.games_disabled": "Начало новых игр временно приостановлено — попробуйте позже.",
+  "dm_start.first_stage_preview": "🔍 Так ваш скриншот будет выглядеть на первом, самом пиксельном этапе.",
   "dm_start.pick_method_prompt": "Как вы хотите определить аниме?",
   "dm_start.pick_method_prompt_shikimori_preferred": "Как вы хотите определить аниме? 💡 Шикимори указан первым — там обычно лучше с русскими названиями и синонимами.",
   "dm_start.search_failed": "Похоже, {service} сейчас не работает — выберите способ ещё раз.",
@@ -126,6 +127,7 @@
   "commands.unlinkmal": "Отвязать аккаунт MyAnimeList",
 
   "keyboards.retry": "Ни один из них — искать заново",
+  "keyboards.back_to_methods": "↩ Другой способ поиска",
   "keyboards.manual_entry": "Ввести вручную",
   "keyboards.mal_list_entry": "Мой список MAL",
   "keyboards.mal_list_previous": "◀️ Назад",
