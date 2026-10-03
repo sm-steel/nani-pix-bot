@@ -41,11 +41,19 @@ import httpx
 from loguru import logger
 
 from nani_pix_bot.models.enums import Provider
+from nani_pix_bot.services import matching
 from nani_pix_bot.services.search import cache, graphql, parsing
 from nani_pix_bot.services.search.base import ScreenshotModule
 
 SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 SEARCH_RESULT_LIMIT = 5
+# How many results search() actually requests before re-ranking them
+# locally and keeping the top `limit` — Shikimori's own ordering is poor
+# on punctuated titles (issue #199: for "K-On" it ranks every K-On entry
+# 17th-23rd, below unrelated titles), but the right entries are almost
+# always somewhere on a page this wide. The search query only asks for
+# id/name/russian, so a wider page costs little.
+SEARCH_FETCH_LIMIT = 50
 # A fixed cap on how many screenshots are ever fetched/cached per anime
 # — not a per-call parameter, so the cache key never needs to encode it
 # (some titles have 30+ screenshots; the gallery UI (ticket 7) does its
@@ -81,7 +89,7 @@ _API = graphql.GraphQLApi(name=_API_NAME, url=SHIKIMORI_GRAPHQL_URL, headers=_RE
 
 _SEARCH_QUERY = """
 query ($search: String, $limit: Int) {
-  animes(search: $search, limit: $limit) {
+  animes(search: $search, limit: $limit, censored: true) {
     id
     name
     russian
@@ -144,16 +152,33 @@ async def search(
     """Search Shikimori anime titles matching `query`. The search query
     doesn't request synonyms/english — those are filled in by get_by_id
     once a result is picked. Cached briefly (see cache.py) so a starter
-    repeating the same query doesn't re-hit the API each time."""
-    variables = {"search": query, "limit": limit}
+    repeating the same query doesn't re-hit the API each time.
+
+    Always requests SEARCH_FETCH_LIMIT results, re-ranks them by title
+    similarity to `query` (`matching.rank_by_similarity`) and returns
+    the top `limit` — see SEARCH_FETCH_LIMIT. `censored: true` drops
+    explicit (`rx`-rated) titles, which a page this wide would otherwise
+    let into the picker; verified live that it drops exactly those and
+    keeps `r`/`r_plus`. Same filter as random_anime(): every pick ends
+    up in the shared group topic either way."""
+    variables = {"search": query, "limit": SEARCH_FETCH_LIMIT}
     data = await graphql.request(_API, client, query=_SEARCH_QUERY, variables=variables)
     # `animes` is a list directly — unlike AniList's `Page`, Shikimori's
     # schema has no wrapper object here, so there's no nested container
     # for graphql.require_object to validate; parse_entries below already
     # guards the list shape itself (and raises RuntimeError if it isn't
     # one), the same guard REST's `expect=list` used to provide.
-    results = parsing.parse_entries(_API_NAME, data.get("animes"), _parse_search_result)
-    logger.debug("Shikimori search {!r} returned {} result(s)", query, len(results))
+    page = parsing.parse_entries(_API_NAME, data.get("animes"), _parse_search_result)
+    results = matching.rank_by_similarity(
+        query, page, lambda result: (result.title_romaji, result.title_russian)
+    )[:limit]
+    logger.debug(
+        "Shikimori search {!r} returned {} result(s), kept top {} after re-ranking: {}",
+        query,
+        len(page),
+        len(results),
+        [result.shikimori_id for result in results],
+    )
     return results
 
 
