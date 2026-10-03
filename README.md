@@ -14,6 +14,10 @@ as wrong `/guess` attempts accumulate — each of the five stages has its
 own admin-configurable wrong-guess limit (1/1/2/3/3 by default) — until
 someone's right or it's revealed unsolved.
 
+Players also earn a small 💠 currency for guessing and winning: `/balance`
+shows yours, and admins tune the amounts in a DM with `/pixelconfig` (see
+`MECHANICS.md`'s "Pixels" section).
+
 See `MECHANICS.md` for the full rules and `ARCHITECTURE.md` for the system
 design. Want to run your own instance? See **Self-hosting** below.
 

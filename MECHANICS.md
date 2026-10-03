@@ -24,6 +24,7 @@ just what's currently built.
 | Win-turn reminder (15min) + expiry (12h) | Implemented |
 | Manual stop with confirmation (`/stop`) | Implemented |
 | Leaderboard (`/leaderboard`) | Implemented |
+| Pixels 💠 — earning, `/balance`, `/pixelconfig` (spending: later phases) | Implemented |
 | Quiet hours (`/quiethours`, `/timezone`) — automatic posts held, clocks frozen | Implemented |
 
 ## Game lifecycle
@@ -907,3 +908,51 @@ of a bot-autostarted game is the bot itself).
 
 `/leaderboard`, usable at any time in the game topic regardless of whether
 a game is running, lists players ordered by `players.wins` descending.
+
+## Pixels 💠
+
+**Status: Implemented (earning only — spending arrives in later phases, #209 and #210).**
+
+Every player has a 💠 balance (`players.pixels`), shown by `/balance` (in
+the game topic or a DM) and next to the win count on `/leaderboard`. A
+new player starts with 50 💠. Every change is also recorded as a row in
+the `pixel_transactions` ledger, so a balance can always be explained.
+
+### Earning
+
+| Event | Default | Paid to |
+|---|---|---|
+| Starting balance (first time the bot sees a player) | 50 | the new player |
+| Wrong guess | 2 each, up to 10 per game | the guesser |
+| First guess of a game (right or wrong) | 5 | whoever guessed first |
+| Win at stage 1 / 2 / 3 / 4 / 5 | 40 / 30 / 25 / 20 / 15 | the winner |
+| Win streak | 10 | the winner |
+| Setter bonus (win at stage 2-4 only) | 15 | the game's starter |
+| Prompt turn | 10 | the starter |
+
+### Rules
+
+- The first-guess bonus is paid once per game, to whoever guesses first,
+  whether that guess is right or wrong.
+- The wrong-guess cap is per player per game. A player who has already
+  earned the cap (or more, if an admin lowered it) earns nothing further
+  from wrong guesses in that game.
+- The win reward depends on the stage the game was won at.
+- A HARD MODE win on turn N pays the stage-N reward x 2, with no setter
+  and no prompt bonus (the starter is the bot itself).
+- A streak means the previous finished game (by game id) was won by the
+  same player. An unsolved game has no winner, so it breaks the streak.
+- The setter is paid only for a win at stages 2-4 (stage 1 is too easy,
+  stage 5 barely solvable), and never for an unsolved game. A starter who
+  wins their own game is not paid the setter bonus.
+- A prompt turn means the game was created at most 1 hour after the
+  starter received the turn.
+- The bot's guess and win replies and the game-start message show what was
+  just earned.
+
+### Tuning
+
+Admins view and change every amount with `/pixelconfig` (DM-only,
+admin-gated): `/pixelconfig` lists them, `/pixelconfig <key> <amount>`
+sets one. Unlike `/stageconfig`, it also works mid-game; a change only
+affects payouts from then on. An amount of 0 disables that reward.
