@@ -92,6 +92,8 @@ def test_build_application_registers_every_command() -> None:
         "version",
         "linkmal",
         "unlinkmal",
+        "balance",
+        "pixelconfig",
     }
 
 

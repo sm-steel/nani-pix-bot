@@ -70,3 +70,16 @@ async def test_leaderboard_command_handles_no_winners_yet(session_factory) -> No
 
     update.message.reply_text.assert_awaited_once()
     assert "no" in update.message.reply_text.await_args.args[0].lower()
+
+
+async def test_leaderboard_command_shows_pixels(session_factory) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1, username="rich", wins=2, pixels=77))
+        session.commit()
+    update = _make_update()
+
+    await leaderboard_command_module.leaderboard_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory))
+    )
+
+    assert "77 💠" in update.message.reply_text.await_args.args[0]

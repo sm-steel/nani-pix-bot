@@ -6,9 +6,15 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n, players, settings
 
 LEADERBOARD_SIZE = 10
+
+
+def _row(rank: int, player: Player) -> str:
+    name = player.username or player.telegram_user_id
+    return f"{rank}. {name} — {player.wins} 🏆 · {player.pixels} 💠"
 
 
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -31,8 +37,5 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await message.reply_text(i18n.t("leaderboard.empty", lang))
         return
 
-    lines = [
-        f"{i}. {player.username or player.telegram_user_id} — {player.wins}"
-        for i, player in enumerate(top, start=1)
-    ]
+    lines = [_row(i, player) for i, player in enumerate(top, start=1)]
     await message.reply_text(i18n.t("leaderboard.header", lang) + "\n" + "\n".join(lines))
