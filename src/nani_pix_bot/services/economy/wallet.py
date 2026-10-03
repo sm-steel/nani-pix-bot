@@ -44,7 +44,7 @@ def _record(
         detail=entry.detail,
     )
     session.add(tx)
-    logger.info(
+    logger.debug(
         "Player {} {:+d} 💠 ({}, game {}) -> balance {}",
         player.telegram_user_id,
         signed_amount,

@@ -147,4 +147,9 @@ def award_prompt_start(session: Session, game: Game) -> int:
         logger.debug("Game {}: not a prompt start, no bonus", game.id)
         return 0
     amount = config.get_amounts(session)[EconomyKey.PROMPT_TURN]
-    return _pay(session, _player(session, game.starter_id), amount, PixelReason.PROMPT_TURN, game)
+    paid = _pay(session, _player(session, game.starter_id), amount, PixelReason.PROMPT_TURN, game)
+    if paid > 0:
+        logger.info(
+            "Game {}: prompt-turn bonus {} 💠 to starter {}", game.id, paid, game.starter_id
+        )
+    return paid
