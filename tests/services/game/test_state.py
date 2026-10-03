@@ -411,6 +411,84 @@ def test_stage_manual_entry_assigns_the_typed_title_and_synonyms(session: Sessio
     assert fetched.anilist_id is None
 
 
+_IDENTIFICATION_FIELDS = (
+    "title_romaji",
+    "title_english",
+    "title_native",
+    "title_russian",
+    "synonyms",
+    "anilist_id",
+    "shikimori_id",
+    "tenrai_id",
+    "tmdb_id",
+)
+
+# A different anime from every _FRIEREN* fixture, with no Russian title
+# and no ids in common — the shape that leaked a stale title in #198.
+_K_ON_MOVIE = TMDBResult(
+    tmdb_id=1234,
+    title_romaji=None,
+    title_english="K-On! The Movie",
+    title_native=None,
+    synonyms=["Eiga K-On!"],
+)
+
+
+def _identification_snapshot(game: Game) -> dict[str, object]:
+    return {field: getattr(game, field) for field in _IDENTIFICATION_FIELDS}
+
+
+def test_clear_identification_resets_every_title_synonym_and_provider_id(
+    session: Session,
+) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    game_service.stage_result(game, _FRIEREN_SHIKIMORI, source=Provider.SHIKIMORI)
+    game_service.set_screenshot_provider_id(game, _FRIEREN_TENRAI)
+    game.anilist_id = 99
+    game.tmdb_id = 209867
+    game.title_native = "葬送のフリーレン"
+
+    game_service.clear_identification(game)
+
+    assert all(value is None for value in _identification_snapshot(game).values())
+
+
+def test_stage_result_from_another_provider_drops_the_previous_picks_fields(
+    session: Session,
+) -> None:
+    """Issue #198: re-identifying with a result that has no Russian
+    title kept the earlier Shikimori pick's — shown as the RU preview's
+    Title and still accepted as a correct /guess."""
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    game_service.stage_result(game, _FRIEREN_SHIKIMORI, source=Provider.SHIKIMORI)
+
+    game_service.stage_result(game, _K_ON_MOVIE, source=Provider.TMDB)
+
+    assert game.title_russian is None
+    assert game.shikimori_id is None
+    assert game.tmdb_id == 1234
+    assert game_service.display_title(game, "ru") == "K-On! The Movie"
+    assert game_service.match_candidates(game) == ["K-On! The Movie", "Eiga K-On!"]
+
+
+def test_stage_manual_entry_drops_the_previous_picks_fields(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    game_service.stage_result(game, _FRIEREN, source=Provider.ANILIST)
+
+    game_service.stage_manual_entry(game, title="K-On!", synonyms=["Keion"])
+
+    assert game.anilist_id is None
+    assert game.title_romaji is None
+    assert game.title_native is None
+    assert game_service.match_candidates(game) == ["K-On!", "Keion"]
+
+
 def test_activate_game_sets_active_state_and_opens_the_turn(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.add(TurnState(id=1, next_starter_id=1))

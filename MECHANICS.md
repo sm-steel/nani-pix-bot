@@ -321,7 +321,10 @@ before it goes live:
   screenshot is cleared instead, along with the provider id that
   resolved it, since a re-search might land on a completely different
   anime — the starter goes through "Picking a screenshot" again once
-  the new title is staged.
+  the new title is staged. Picking a method (and staging any result or
+  manual entry) also clears the previous identification entirely —
+  every title variant, the synonyms, and every provider id — so nothing
+  of the old anime survives into the new one's accepted answers.
 - **Add a synonym** — type one more (or several); appended to the
   list, repeatable.
 - **Confirm and start game** — pixelates the (possibly updated)
