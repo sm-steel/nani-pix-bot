@@ -396,6 +396,10 @@ async def _start_new_game(
         # started it — the setup-abandon timer takes over from here.
         game_service.clear_turn_timers(session)
         game_service.clear_autostart(session)
+        first_stage_width = stage_config.get_stage_config(
+            session, game_service.STAGE_ORDER[0]
+        ).target_width
+        algorithm = new_game.pixel_algorithm
 
     timeout_module.cancel_turn_timers(context.job_queue)
     timeout_module.cancel_idle_autostart(context.job_queue)
@@ -406,10 +410,45 @@ async def _start_new_game(
         text=i18n.t("dm_start.setup_started_group_notice", lang, starter=user.full_name),
     )
 
+    if image_bytes is not None:
+        await _send_first_stage_preview(message, image_bytes, first_stage_width, algorithm, lang)
     await message.reply_text(
         i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
         reply_markup=_method_keyboard(context, lang),
     )
+
+
+async def _send_first_stage_preview(
+    message, image_bytes: bytes, width: int, algorithm: PixelAlgorithm, lang: str
+) -> None:
+    """The just-uploaded screenshot at stage 1 (the blockiest), sent
+    before the method selection so the starter can judge whether it
+    works as a puzzle before spending any effort identifying it — the
+    full 5-stage album otherwise only arrives at the confirmation step
+    (issue #201). /newgame has no image yet, so only the photo-first
+    entry point gets this.
+
+    Strictly a convenience, so it never blocks the setup: an image
+    Pillow can't read (`OSError`, which `UnidentifiedImageError`
+    subclasses — Telegram re-encodes every photo it delivers, so this is
+    not expected in practice) or a failed send is logged and skipped,
+    and the method selection is sent regardless."""
+    try:
+        pixelated = pixelate_service.pixelate(image_bytes, width, algorithm)
+    except OSError:
+        logger.warning(
+            "Couldn't pixelate the uploaded screenshot for the stage-1 preview — skipping it",
+            exc_info=True,
+        )
+        return
+    try:
+        await message.reply_photo(
+            photo=pixelated, caption=i18n.t("dm_start.first_stage_preview", lang)
+        )
+    except TelegramError:
+        logger.warning("Failed to send the stage-1 preview — skipping it", exc_info=True)
+        return
+    logger.debug("Sent the stage-1 preview (width {}, {})", width, algorithm)
 
 
 @dataclass(frozen=True)
