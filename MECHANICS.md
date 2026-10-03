@@ -907,7 +907,8 @@ of a bot-autostarted game is the bot itself).
 **Status: Implemented.**
 
 `/leaderboard`, usable at any time in the game topic regardless of whether
-a game is running, lists players ordered by `players.wins` descending.
+a game is running, lists players ordered by `players.wins` descending. Each row also shows the
+player's 💠 balance as a column (ranking is still by wins, not 💠).
 
 ## Pixels 💠
 
@@ -917,6 +918,8 @@ Every player has a 💠 balance (`players.pixels`), shown by `/balance` (in
 the game topic or a DM) and next to the win count on `/leaderboard`. A
 new player starts with 50 💠. Every change is also recorded as a row in
 the `pixel_transactions` ledger, so a balance can always be explained.
+Players who already existed before this release start at 0 until a
+one-time backfill is run.
 
 ### Earning
 
@@ -945,8 +948,12 @@ the `pixel_transactions` ledger, so a balance can always be explained.
 - The setter is paid only for a win at stages 2-4 (stage 1 is too easy,
   stage 5 barely solvable), and never for an unsolved game. A starter who
   wins their own game is not paid the setter bonus.
-- A prompt turn means the game was created at most 1 hour after the
-  starter received the turn.
+- A prompt turn means the game was created at most 1 hour after the turn
+  was handed to the starter specifically (by winning, or by `/skip @you`).
+  A turn that is open to anyone earns no prompt bonus, and re-designating
+  the same player does not restart the hour.
+- A starter can't `/correct` themselves: awarding the win to the game's own
+  starter is rejected, so `/correct` can't be used to farm 💠.
 - The bot's guess and win replies and the game-start message show what was
   just earned.
 
