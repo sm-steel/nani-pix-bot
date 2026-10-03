@@ -1,12 +1,14 @@
 """The /guess command — see MECHANICS.md's "Guess matching" and
 "Pixelation stages" sections."""
 
+import dataclasses
 from dataclasses import dataclass
 
 from loguru import logger
 from telegram import Message, Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.earnings import earnings_suffix
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -15,6 +17,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.economy import earning
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -273,6 +276,13 @@ def _dispatch_non_won_outcome(
     return _prepare_unsolved_announcement_dispatch(context, game, lang), True, None
 
 
+def _with_suffix(announcement: _Announcement | None, suffix: str) -> _Announcement | None:
+    """Appends the pixel-earnings lines to an outcome's group caption."""
+    if announcement is None or not suffix:
+        return announcement
+    return dataclasses.replace(announcement, caption=announcement.caption + suffix)
+
+
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     user = update.effective_user
@@ -313,6 +323,10 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         outcome = game_service.record_guess(
             session, game, guesser_id=user.id, guess_text=guess_text
         )
+        earnings = earning.award_guess(
+            session, game, guesser_id=user.id, won=outcome is game_service.GuessOutcome.WON
+        )
+        suffix = earnings_suffix(session, game, earnings, lang, player_name=user.full_name)
         game_id = game.id
         if outcome is game_service.GuessOutcome.WON:
             announcement = _prepare_won_announcement_dispatch(
@@ -324,7 +338,8 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 session, context, game, lang, outcome
             )
             if wrong_reply_text is not None:
-                await message.reply_text(wrong_reply_text)
+                await message.reply_text(wrong_reply_text + suffix)
+        announcement = _with_suffix(announcement, suffix)
     # Block closed and committed above — the outcome is durable now
     # regardless of whether the announcement below actually reaches the
     # group (see post_current_image's docstring).

@@ -84,5 +84,9 @@
   ],
   "dm_start.game_started_caption_idle": [
     "🤖 Слишком долго было тихо. Держите раунд.\n📸 Этап {stage}/{total} — попыток: {remaining}/{limit}"
+  ],
+  "economy.earned": [
+    "💠 {name} забирает +{amount}",
+    "💠 {name}: +{amount} в копилку"
   ]
 }

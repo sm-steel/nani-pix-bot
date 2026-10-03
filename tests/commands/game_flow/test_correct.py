@@ -446,7 +446,7 @@ async def test_correct_command_hard_mode_reveals_both_stored_screenshots(session
     expected_caption = correct_command_module.i18n.t(
         "correct.hard_mode_caption", "en", winner="winner", title="Frieren: Beyond Journey's End"
     )
-    assert media[0].caption == expected_caption
+    assert media[0].caption.startswith(expected_caption)  # plus the pixel-earnings lines
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
@@ -458,3 +458,18 @@ async def test_correct_command_hard_mode_reveals_both_stored_screenshots(session
         # dispatches on game.hard_mode).
         assert fetched.hard_mode_image_a is None
         assert fetched.hard_mode_image_b is None
+
+
+async def test_correct_command_caption_shows_the_targets_win_pixels(session_factory) -> None:
+    _active_game(session_factory, total_guess_count=1)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="winner"))
+        session.commit()
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert "+40" in context.bot.send_photo.await_args.kwargs["caption"]

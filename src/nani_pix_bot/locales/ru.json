@@ -216,5 +216,10 @@
   "dm_start.mal_status_dropped": "Брошено",
   "dm_start.mal_list_prompt": "Выберите аниме из вашего списка MyAnimeList:",
   "dm_start.mal_list_empty": "Ваш список MyAnimeList пуст — добавьте в него что-нибудь или выберите другой способ.",
-  "dm_start.mal_not_found_anymore": "Не удалось найти это аниме в каталоге — выберите способ ниже, чтобы попробовать снова, в том числе вернуться к своему списку."
+  "dm_start.mal_not_found_anymore": "Не удалось найти это аниме в каталоге — выберите способ ниже, чтобы попробовать снова, в том числе вернуться к своему списку.",
+  "economy.earned": "💠 +{amount} — {name}",
+  "economy.streak_bonus": "🔥 Серия побед! +{amount} 💠",
+  "economy.setter_bonus": "🎨 {name} получает +{amount} 💠 за удачно подобранный скриншот",
+  "economy.setter_fallback_name": "Ведущий",
+  "economy.prompt_turn_bonus": "⚡ {name} получает +{amount} 💠 за быстрый старт"
 }

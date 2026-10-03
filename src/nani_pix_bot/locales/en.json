@@ -216,5 +216,10 @@
   "dm_start.mal_status_dropped": "Dropped",
   "dm_start.mal_list_prompt": "Pick an anime from your MyAnimeList list:",
   "dm_start.mal_list_empty": "Your MyAnimeList list is empty — add something to it, or pick another identification method.",
-  "dm_start.mal_not_found_anymore": "Couldn't find that anime in the catalogue — pick a method below to try again, including going back to your list."
+  "dm_start.mal_not_found_anymore": "Couldn't find that anime in the catalogue — pick a method below to try again, including going back to your list.",
+  "economy.earned": "💠 +{amount} for {name}",
+  "economy.streak_bonus": "🔥 Win streak! +{amount} 💠",
+  "economy.setter_bonus": "🎨 {name} gets +{amount} 💠 for a well-pitched screenshot",
+  "economy.setter_fallback_name": "The setter",
+  "economy.prompt_turn_bonus": "⚡ {name} gets +{amount} 💠 for starting promptly"
 }
