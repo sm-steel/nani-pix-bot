@@ -171,6 +171,35 @@ async def test_method_pick_callback_handler_stores_the_source_and_prompts_for_se
         assert fetched.status == GameStatus.SETUP
 
 
+async def test_method_pick_callback_handler_clears_a_previous_identification(
+    session_factory,
+) -> None:
+    """Issue #198: after the preview's "Re-search", a previous pick's
+    title_english made the manual-entry router treat the newly typed
+    *title* as the synonyms step, silently keeping the old title. A
+    method pick starts a fresh identification, so nothing of the old one
+    survives it."""
+    _create_setup_game(session_factory, starter_id=1)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game_service.stage_result(game, _FRIEREN_SHIKIMORI, source=Provider.SHIKIMORI)
+        session.commit()
+    update = _make_method_callback_update(data=MANUAL_METHOD_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await search.method_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.source == "manual"
+        assert fetched.title_english is None
+        assert fetched.title_russian is None
+        assert fetched.shikimori_id is None
+        assert fetched.synonyms is None
+
+
 async def test_method_pick_callback_handler_asks_a_screenshotless_prompt_for_newgame(
     session_factory,
 ) -> None:

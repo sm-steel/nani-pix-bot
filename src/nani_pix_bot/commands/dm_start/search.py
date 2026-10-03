@@ -99,6 +99,12 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
             return
+        # A method pick starts a fresh identification — reached again
+        # after the preview's "Re-search", where the previous pick is
+        # still on the row. Left there, its title_english made a manual
+        # entry skip straight to the synonyms step and keep the old
+        # title (issue #198).
+        game_service.clear_identification(setup_game)
         setup_game.source = source
         setup_game.setup_step = SetupStep.PICKING_METHOD
         # Read inside the session block — the prompt below depends on it,
