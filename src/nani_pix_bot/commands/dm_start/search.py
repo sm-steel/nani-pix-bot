@@ -14,7 +14,10 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
     _client_for_source,
+    _method_keyboard,
+    _method_prompt_key,
     _post_preview_album,
+    _prefer_shikimori,
     _reject_stale_tap,
     _reply_service_down,
     _search_and_build_keyboard,
@@ -22,8 +25,10 @@ from nani_pix_bot.commands.dm_start._shared import (
     _stored_provider,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
+    METHOD_BACK_CALLBACK_DATA,
     SEARCH_RETRY_CALLBACK_DATA,
     anilist_results_keyboard,
+    back_to_methods_keyboard,
     parse_method_callback_data,
     parse_pick_callback_data,
     shikimori_results_keyboard,
@@ -75,6 +80,9 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
         return
     await query.answer()
 
+    if query.data == METHOD_BACK_CALLBACK_DATA:
+        await _back_to_method_selection(query, context)
+        return
     source = parse_method_callback_data(query.data)
     user = query.from_user
     if source is None or user is None:
@@ -113,7 +121,44 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
         logger.debug("Game {}: starter picked identification method {!r}", setup_game.id, source)
 
     await query.edit_message_text(
-        i18n.t(_search_prompt_key(source=source, has_image=has_image), lang)
+        i18n.t(_search_prompt_key(source=source, has_image=has_image), lang),
+        reply_markup=back_to_methods_keyboard(lang),
+    )
+
+
+async def _back_to_method_selection(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """The "different search method" button (issue #200), on a
+    provider's query prompt, its results, or its "nothing found" reply:
+    re-show the method-selection keyboard in place. The step is already
+    PICKING_METHOD for the whole search, so nothing is written — the
+    stored `source` is simply overwritten by the next method pick, the
+    same as after the preview's "Re-search".
+
+    Only honored while the setup is still at PICKING_METHOD. The button
+    stays on old messages, and tapped from one after the setup has moved
+    on (to the preview, say) it would show the method menu over a row
+    that's CONFIRMING — so a stale tap just drops that message's
+    buttons instead."""
+    user = query.from_user
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        setup_step = setup_game.setup_step if setup_game is not None else None
+
+    if setup_step != SetupStep.PICKING_METHOD:
+        logger.debug(
+            "Starter {}: ignoring a stale 'different search method' tap (setup step {})",
+            user.id,
+            setup_step,
+        )
+        await query.edit_message_reply_markup(reply_markup=None)
+        return
+
+    logger.debug("Starter {}: back to method selection", user.id)
+    await query.edit_message_text(
+        i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
+        reply_markup=_method_keyboard(context, lang),
     )
 
 
@@ -241,7 +286,8 @@ async def _search_step(
     logger.debug("{} search for {!r} returned {} results", source, message.text, len(results))
     if not results:
         await status_message.edit_text(
-            i18n.t("dm_start.no_results", lang, service=source.display_name)
+            i18n.t("dm_start.no_results", lang, service=source.display_name),
+            reply_markup=back_to_methods_keyboard(lang),
         )
         return
 
@@ -331,7 +377,9 @@ async def _resolve_picked_result(
     callback data, the search service erroring, or the id no longer
     existing."""
     if query.data == SEARCH_RETRY_CALLBACK_DATA:
-        await query.edit_message_text(i18n.t("dm_start.retry", lang))
+        await query.edit_message_text(
+            i18n.t("dm_start.retry", lang), reply_markup=back_to_methods_keyboard(lang)
+        )
         return None
 
     parsed = parse_pick_callback_data(query.data)

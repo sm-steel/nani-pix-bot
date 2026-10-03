@@ -55,6 +55,12 @@ MANUAL_METHOD_CALLBACK_DATA = "method:manual"
 # per-player OAuth-gated browse, so it stays a standalone literal the
 # same way "manual" does.
 MAL_METHOD_CALLBACK_DATA = "method:mal_list"
+# "Different search method" — back from a provider's query prompt or
+# results to the method-selection keyboard (issue #200). Under the
+# "method:" prefix so method_pick_callback_handler receives it without a
+# handler of its own, but not a method pick: parse_method_callback_data
+# doesn't know it, and the handler checks for it before parsing.
+METHOD_BACK_CALLBACK_DATA = "method:back"
 
 PREVIEW_CONFIRM_CALLBACK_DATA = "preview:confirm"
 PREVIEW_CHANGE_IMAGE_CALLBACK_DATA = "preview:change_image"
@@ -95,7 +101,15 @@ def _results_keyboard(
     button per result plus a trailing retry button. Where that retry
     lands follows from `pick_prefix` (see `_retry_data_for`), so the two
     can't drift apart the way they did while the retry was its own
-    never-passed keyword."""
+    never-passed keyword.
+
+    Identification search also gets a last "different search method"
+    row (issue #200) — before it, "None of these" only re-searched the
+    same provider, and a starter who couldn't find their anime there
+    picked a wrong result on purpose just to reach the preview's
+    "Re-search". The screenshot cross-search doesn't: its way out is the
+    screenshot source menu, and going back to method selection there
+    would throw away an identification that's already fine."""
     buttons = [
         [
             InlineKeyboardButton(
@@ -112,7 +126,30 @@ def _results_keyboard(
             )
         ]
     )
+    if not _is_screenshot_cross_search(pick_prefix):
+        buttons.append([_back_to_methods_button(lang)])
     return InlineKeyboardMarkup(buttons)
+
+
+def _back_to_methods_button(lang: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        i18n.t("keyboards.back_to_methods", lang), callback_data=METHOD_BACK_CALLBACK_DATA
+    )
+
+
+def back_to_methods_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Just the "different search method" button, for the identification
+    screens that have no other keyboard: a provider's query prompt, its
+    "nothing found" reply, and the "type a new query" retry prompt."""
+    return InlineKeyboardMarkup([[_back_to_methods_button(lang)]])
+
+
+def _is_screenshot_cross_search(pick_prefix: str) -> bool:
+    """Whether a results keyboard belongs to the screenshot sub-flow's
+    cross-provider search rather than identification search — the one
+    caller that overrides `pick_prefix`. Its prefix is defined further
+    down in this module and read when this runs, not at import."""
+    return pick_prefix.startswith(SCREENSHOT_SEARCH_PICK_PREFIX)
 
 
 def _retry_data_for(pick_prefix: str) -> str:
@@ -130,7 +167,7 @@ def _retry_data_for(pick_prefix: str) -> str:
     The prefixes below are defined further down in this module, with the
     rest of the screenshot sub-flow's callback data; they're read when
     this runs, not at import."""
-    if not pick_prefix.startswith(SCREENSHOT_SEARCH_PICK_PREFIX):
+    if not _is_screenshot_cross_search(pick_prefix):
         return SEARCH_RETRY_CALLBACK_DATA
     provider = pick_prefix.removeprefix(SCREENSHOT_SEARCH_PICK_PREFIX).rstrip(":")
     return f"{SCREENSHOT_SEARCH_AGAIN_PREFIX}{provider}"

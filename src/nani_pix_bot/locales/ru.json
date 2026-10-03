@@ -127,6 +127,7 @@
   "commands.unlinkmal": "Отвязать аккаунт MyAnimeList",
 
   "keyboards.retry": "Ни один из них — искать заново",
+  "keyboards.back_to_methods": "↩ Другой способ поиска",
   "keyboards.manual_entry": "Ввести вручную",
   "keyboards.mal_list_entry": "Мой список MAL",
   "keyboards.mal_list_previous": "◀️ Назад",
