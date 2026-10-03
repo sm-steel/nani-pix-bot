@@ -2,6 +2,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from nani_pix_bot.models.pixel_transaction import PixelTransaction
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import players
 
@@ -112,3 +113,15 @@ def test_get_or_create_player_grants_starting_balance_once(session: Session) -> 
     player = session.get(Player, 1)
     assert player is not None
     assert player.pixels == 50
+
+
+def test_get_or_create_player_without_grant_starts_at_zero_with_no_ledger_row(
+    session: Session,
+) -> None:
+    players.get_or_create_player(session, 1, username="bot", grant=False)
+    session.commit()
+
+    player = session.get(Player, 1)
+    assert player is not None
+    assert player.pixels == 0
+    assert session.query(PixelTransaction).count() == 0

@@ -279,7 +279,9 @@ async def run_bot_autostart(
             )
             return False
         lang = settings.get_language(session)
-        players.get_or_create_player(session, bot_id, username=context.bot_data.get("bot_username"))
+        players.get_or_create_player(
+            session, bot_id, username=context.bot_data.get("bot_username"), grant=False
+        )
         game = game_service.create_setup_game(session, starter_id=bot_id)
         game_service.stage_result(game, pick.anime.result, source=pick.anime.source)
         # Every autostart pick is hard mode now — no `if` needed.
