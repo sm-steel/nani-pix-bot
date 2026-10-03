@@ -16,6 +16,7 @@ from nani_pix_bot.jobs.timers.current_image import (
     post_current_images,
 )
 from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
+from nani_pix_bot.jobs.timers.retry import retry_on_failure
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
@@ -73,6 +74,7 @@ def cancel_inactivity_timers(job_queue: JobQueue | None, game_id: int) -> None:
             job.schedule_removal()
 
 
+@retry_on_failure
 @quiet_hours_deferred
 async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires INACTIVITY_NUDGE_DELAY after the last guess (or activation)
@@ -183,6 +185,7 @@ def _hard_mode_inactivity_outcome(
     return game_service.GuessOutcome.UNSOLVED, announcement
 
 
+@retry_on_failure
 @quiet_hours_deferred
 async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires INACTIVITY_ADVANCE_DELAY after the last guess (or
