@@ -21,12 +21,13 @@ from nani_pix_bot.services.economy import earning
 async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     user = update.effective_user
-    if message is None or user is None:
-        return
-
     group_chat_id = context.bot_data["group_chat_id"]
     game_topic_id = context.bot_data["game_topic_id"]
-    if not is_game_topic(update, group_chat_id=group_chat_id, game_topic_id=game_topic_id):
+    if (
+        message is None
+        or user is None
+        or not is_game_topic(update, group_chat_id=group_chat_id, game_topic_id=game_topic_id)
+    ):
         return
 
     session_factory = context.bot_data["session_factory"]
@@ -45,6 +46,10 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
         target = await _resolve_target_player(session, message, context, target_username, lang)
         if target is None:
+            return
+        if target.telegram_user_id == game.starter_id:
+            logger.warning("Starter {} tried to /correct themselves on game {}", user.id, game.id)
+            await message.reply_text(i18n.t("correct.cannot_target_self", lang))
             return
         game_id = game.id
         original_bytes, photos, caption = _prepare_correct_reveal(game, target_username, lang)

@@ -18,6 +18,7 @@
   "correct.unknown_username": "I don't know anyone called @{username} yet — they need to send me a direct message first: @{bot_username}",
   "correct.unknown_username_no_handle": "I don't know anyone called @{username} yet — they need to send me a direct message first.",
   "correct.cannot_target_bot": "I can't award a win to myself — /correct is for crediting a player.",
+  "correct.cannot_target_self": "You can't award the win to yourself — /correct is for crediting another player.",
   "correct.caption": "🎉 Correct! @{winner} got it — it was {title}. Your turn to start the next game!",
   "correct.hard_mode_caption": "🎉 Correct! @{winner} cracked HARD MODE — it was {title}. That's +2 to the score. Your turn to start the next game!",
 

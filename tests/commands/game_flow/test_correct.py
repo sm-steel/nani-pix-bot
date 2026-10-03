@@ -195,6 +195,35 @@ async def test_correct_command_rejects_targeting_the_bot_itself(session_factory)
         assert fetched.status == GameStatus.ACTIVE
 
 
+async def test_correct_command_rejects_the_starter_targeting_themselves(session_factory) -> None:
+    _active_game(session_factory, total_guess_count=1)
+    with session_factory() as session:
+        starter = session.get(Player, 1)
+        assert starter is not None
+        starter.username = "starter"
+        session.commit()
+        pixels_before = starter.pixels
+
+    update = _make_update(user_id=1, args=["@starter"])
+    context = _make_context(session_factory, args=["@starter"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_awaited_once()
+    assert update.message.reply_text.await_args.args[0] == correct_command_module.i18n.t(
+        "correct.cannot_target_self", "en"
+    )
+    context.bot.send_photo.assert_not_awaited()
+    with session_factory() as session:
+        assert session.query(Game).one().status == GameStatus.ACTIVE
+        starter = session.get(Player, 1)
+        assert starter is not None
+        assert starter.pixels == pixels_before
+        assert starter.wins == 0
+
+
 async def test_correct_command_forces_a_win_for_the_named_player(session_factory) -> None:
     game_id = _active_game(session_factory, total_guess_count=1)
     with session_factory() as session:
@@ -447,6 +476,7 @@ async def test_correct_command_hard_mode_reveals_both_stored_screenshots(session
         "correct.hard_mode_caption", "en", winner="winner", title="Frieren: Beyond Journey's End"
     )
     assert media[0].caption.startswith(expected_caption)  # plus the pixel-earnings lines
+    assert "+80" in media[0].caption  # turn-1 win 40 x 2 (HARD MODE)
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
