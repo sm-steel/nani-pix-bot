@@ -52,7 +52,8 @@ def set_next_starter(session: Session, user_id: int | None) -> TurnState:
     a designated human means the turn isn't "open to anyone" for that
     backstop's purposes. Returns the row so the command layer can
     schedule/cancel the actual JobQueue jobs (this module stays
-    Telegram-agnostic)."""
+    Telegram-agnostic). Records `turn_received_at` either way
+    (prompt-turn pixel bonus)."""
     turn_state = get_or_create_turn_state(session)
     turn_state.next_starter_id = user_id
     if user_id is None:
@@ -65,6 +66,7 @@ def set_next_starter(session: Session, user_id: int | None) -> TurnState:
         turn_state.expiry_at = deadline_after(session, TURN_EXPIRY_DELAY)
         turn_state.turn_opened_at = None
         turn_state.autostart_deadline_at = None
+        turn_state.turn_received_at = datetime.now(UTC)
         logger.info("Turn designated to player {}", user_id)
     return turn_state
 
@@ -90,6 +92,7 @@ def _mark_turn_opened(session: Session, turn_state: TurnState) -> None:
     # deadline derived from it is frozen by quiet hours.
     now = datetime.now(UTC)
     turn_state.turn_opened_at = now
+    turn_state.turn_received_at = now
     turn_state.autostart_deadline_at = deadline_after(session, IDLE_AUTOSTART_DELAY, now=now)
 
 

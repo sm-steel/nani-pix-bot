@@ -9,7 +9,10 @@ from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from nani_pix_bot.models.enums import PixelReason
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.services.economy import config as economy_config
+from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.quiet_hours import parse_timezone
 
 
@@ -19,7 +22,8 @@ def get_or_create_player(
     """Look up a player, creating the row if this is their first time. On
     an existing row, opportunistically refreshes `username` — unless the
     caller has none to offer, which must not blank out a handle we
-    already know (it's what /correct and /skip match against).
+    already know (it's what /correct and /skip match against). A new
+    player also receives the starting 💠 balance (services/economy/).
 
     The creation branch logs at INFO because a person entering the game
     for the first time is a real event; the refresh branch stays silent
@@ -29,7 +33,12 @@ def get_or_create_player(
     if player is None:
         player = Player(telegram_user_id=telegram_user_id, username=username)
         session.add(player)
+        # Flush before the ledger row so its FK target exists.
+        session.flush()
         logger.info("First time seeing player {} (@{})", telegram_user_id, username or "?")
+        grant = economy_config.get_amounts(session)[economy_config.EconomyKey.STARTING_BALANCE]
+        if grant > 0:
+            wallet.credit(session, player, grant, wallet.LedgerEntry(PixelReason.GRANT))
     elif username is not None:
         player.username = username
     return player

@@ -208,10 +208,12 @@ def create_setup_game(
     point always has bytes in hand immediately; the screenshot-less
     /newgame entry point creates the row before any image exists yet
     (it's filled in once a screenshot is picked, later in the flow)."""
+    turn_state = turns.get_turn_state(session)
     game = Game(
         starter_id=starter_id,
         original_image=original_image,
         status=GameStatus.SETUP,
+        turn_received_at=turn_state.turn_received_at if turn_state is not None else None,
         setup_deadline=deadline_after(session, SETUP_ABANDON_DELAY),
     )
     session.add(game)

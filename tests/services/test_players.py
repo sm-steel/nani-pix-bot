@@ -102,3 +102,13 @@ def test_set_timezone_creates_player_and_round_trips(session: Session) -> None:
     players.set_timezone(session, 42, ZoneInfo("Asia/Novosibirsk"))
     session.commit()
     assert players.get_timezone(session, 42) == ZoneInfo("Asia/Novosibirsk")
+
+
+def test_get_or_create_player_grants_starting_balance_once(session: Session) -> None:
+    players.get_or_create_player(session, 1, username="frieren")
+    players.get_or_create_player(session, 1, username="frieren")
+    session.commit()
+
+    player = session.get(Player, 1)
+    assert player is not None
+    assert player.pixels == 50
