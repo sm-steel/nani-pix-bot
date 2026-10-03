@@ -138,7 +138,11 @@ re-fetches the full record from that service (whichever title fields it
 has, plus its synonyms list where available) and records that service's
 own id (one column per provider — `Game.anilist_id`/`shikimori_id`/
 `tenrai_id`/`tmdb_id` — so a later screenshot cross-search can reuse an id
-already on file instead of re-searching, see below).
+already on file instead of re-searching, see below). The query prompt,
+the results, and a "nothing found" reply also carry a **↩ Different
+search method** button back to the method-selection keyboard, for when
+the anime isn't on that provider at all — before it, the only way out
+was picking a wrong result to reach the preview's "Re-search title".
 **Manual entry**: for anime none of the above knows about. The bot asks
 for the title, then for at least one alternate title/synonym (comma- or
 newline-separated, re-prompted if left blank) — both typed by the

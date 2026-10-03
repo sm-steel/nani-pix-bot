@@ -126,6 +126,7 @@
   "commands.unlinkmal": "Unlink your MyAnimeList account",
 
   "keyboards.retry": "None of these — search again",
+  "keyboards.back_to_methods": "↩ Different search method",
   "keyboards.manual_entry": "Manual entry",
   "keyboards.mal_list_entry": "My MAL List",
   "keyboards.mal_list_previous": "◀️ Back",
