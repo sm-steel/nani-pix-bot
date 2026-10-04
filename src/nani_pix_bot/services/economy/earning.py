@@ -3,15 +3,14 @@ the command layer right after record_guess (/guess), force_win
 (/correct) and activate_game (DM setup confirm); each call returns what
 was earned so the handler can show it in the reply it already sends.
 Every fact it needs ("first guess already paid?", "wrong-guess earnings
-so far", "who won the previous game?") is read back from the DB."""
+so far") is read back from the DB."""
 
 from dataclasses import dataclass
 
 from loguru import logger
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import GameStatus, PixelReason
+from nani_pix_bot.models.enums import PixelReason
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
@@ -24,12 +23,11 @@ from nani_pix_bot.services.game.hard_mode import HARD_MODE_WIN_AWARD
 class Earnings:
     guess: int = 0  # first-guess bonus + wrong-guess reward, to the guesser
     win: int = 0  # to the winner
-    streak: int = 0  # to the winner
     setter: int = 0  # to the game's starter
 
     @property
     def player_total(self) -> int:
-        return self.guess + self.win + self.streak
+        return self.guess + self.win
 
 
 def _player(session: Session, user_id: int) -> Player:
@@ -61,26 +59,6 @@ def _stage_number(game: Game) -> int:
     return game_service.STAGE_ORDER.index(game.current_stage) + 1
 
 
-def _previous_game_winner(session: Session, game: Game) -> int | None:
-    """Winner of the most recent finished game before this one, by id
-    (`ended_at` is never written). UNSOLVED has no winner → breaks a streak."""
-    stmt = (
-        select(Game.winner_id)
-        .where(Game.id < game.id, Game.status.in_([GameStatus.WON, GameStatus.UNSOLVED]))
-        .order_by(Game.id.desc())
-        .limit(1)
-    )
-    return session.scalars(stmt).first()
-
-
-def _pay_streak(
-    session: Session, game: Game, winner: Player, amounts: dict[EconomyKey, int]
-) -> int:
-    if _previous_game_winner(session, game) != winner.telegram_user_id:
-        return 0
-    return _pay(session, winner, amounts[EconomyKey.STREAK], PixelReason.STREAK, game)
-
-
 def _setter_eligible(game: Game, *, winner_id: int, stage: int) -> bool:
     # HARD MODE games are bot-started — no human setter to reward.
     return not game.hard_mode and rewards.setter_rewarded(stage) and game.starter_id != winner_id
@@ -98,20 +76,12 @@ def award_win(session: Session, game: Game, *, winner_id: int) -> Earnings:
         PixelReason.WIN,
         game,
     )
-    streak = _pay_streak(session, game, winner, amounts)
     setter = 0
     if _setter_eligible(game, winner_id=winner_id, stage=stage):
         starter = _player(session, game.starter_id)
         setter = _pay(session, starter, amounts[EconomyKey.SETTER], PixelReason.SETTER, game)
-    logger.info(
-        "Game {}: win pays {} 💠 (+{} streak) to {}, {} 💠 to setter",
-        game.id,
-        win,
-        streak,
-        winner_id,
-        setter,
-    )
-    return Earnings(win=win, streak=streak, setter=setter)
+    logger.info("Game {}: win pays {} 💠 to {}, {} 💠 to setter", game.id, win, winner_id, setter)
+    return Earnings(win=win, setter=setter)
 
 
 def award_guess(session: Session, game: Game, *, guesser_id: int, won: bool) -> Earnings:
@@ -135,7 +105,7 @@ def award_guess(session: Session, game: Game, *, guesser_id: int, won: bool) -> 
         )
         return Earnings(guess=guess)
     win = award_win(session, game, winner_id=guesser_id)
-    return Earnings(guess=guess, win=win.win, streak=win.streak, setter=win.setter)
+    return Earnings(guess=guess, win=win.win, setter=win.setter)
 
 
 def award_prompt_start(session: Session, game: Game) -> int:

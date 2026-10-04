@@ -929,7 +929,6 @@ one-time backfill is run.
 | Wrong guess | 2 each, up to 10 per game | the guesser |
 | First guess of a game (right or wrong) | 5 | whoever guessed first |
 | Win at stage 1 / 2 / 3 / 4 / 5 | 40 / 30 / 25 / 20 / 15 | the winner |
-| Win streak | 10 | the winner |
 | Setter bonus (win at stage 2-4 only) | 15 | the game's starter |
 | Prompt turn | 10 | the starter |
 
@@ -943,8 +942,6 @@ one-time backfill is run.
 - The win reward depends on the stage the game was won at.
 - A HARD MODE win on turn N pays the stage-N reward x 2, with no setter
   and no prompt bonus (the starter is the bot itself).
-- A streak means the previous finished game (by game id) was won by the
-  same player. An unsolved game has no winner, so it breaks the streak.
 - The setter is paid only for a win at stages 2-4 (stage 1 is too easy,
   stage 5 barely solvable), and never for an unsolved game. A starter who
   wins their own game is not paid the setter bonus.

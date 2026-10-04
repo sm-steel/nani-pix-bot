@@ -301,4 +301,3 @@ class PixelReason(enum.StrEnum):
     WIN = "win"
     SETTER = "setter"
     PROMPT_TURN = "prompt_turn"
-    STREAK = "streak"

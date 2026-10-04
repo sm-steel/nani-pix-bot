@@ -21,11 +21,8 @@ def earnings_suffix(
     session: Session, game: Game, earnings: Earnings, lang: str, player_name: str
 ) -> str:
     lines: list[str] = []
-    base = earnings.guess + earnings.win
-    if base:
-        lines.append(i18n.t("economy.earned", lang, name=player_name, amount=base))
-    if earnings.streak:
-        lines.append(i18n.t("economy.streak_bonus", lang, amount=earnings.streak))
+    if earnings.player_total:
+        lines.append(i18n.t("economy.earned", lang, name=player_name, amount=earnings.player_total))
     if earnings.setter:
         lines.append(
             i18n.t(

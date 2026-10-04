@@ -20,22 +20,21 @@ def test_nothing_earned_gives_empty_suffix(session: Session) -> None:
     assert earnings_suffix(session, _game(session), Earnings(), "en", player_name="Ann") == ""
 
 
-def test_suffix_lists_player_streak_and_setter_lines(session: Session) -> None:
+def test_suffix_lists_player_and_setter_lines(session: Session) -> None:
     suffix = earnings_suffix(
         session,
         _game(session),
-        Earnings(guess=5, win=25, streak=10, setter=15),
+        Earnings(guess=5, win=25, setter=15),
         "en",
         player_name="Ann",
     )
 
     lines = suffix.strip("\n").split("\n")
-    assert len(lines) == 3
+    assert len(lines) == 2
     assert "+30" in lines[0]
     assert "Ann" in lines[0]
-    assert "+10" in lines[1]
-    assert "@setter" in lines[2]
-    assert "+15" in lines[2]
+    assert "@setter" in lines[1]
+    assert "+15" in lines[1]
     assert suffix.startswith("\n")
 
 

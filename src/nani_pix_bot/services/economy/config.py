@@ -25,7 +25,6 @@ class EconomyKey(enum.StrEnum):
     WIN_STAGE_5 = "win_stage_5"
     SETTER = "setter"
     PROMPT_TURN = "prompt_turn"
-    STREAK = "streak"
 
 
 DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
@@ -41,7 +40,6 @@ DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
         EconomyKey.WIN_STAGE_5: 15,
         EconomyKey.SETTER: 15,
         EconomyKey.PROMPT_TURN: 10,
-        EconomyKey.STREAK: 10,
     }
 )
 

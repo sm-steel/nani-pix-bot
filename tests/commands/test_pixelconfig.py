@@ -70,7 +70,7 @@ async def test_unknown_key_stores_nothing(monkeypatch, session_factory) -> None:
     assert _stored(session_factory) == dict(DEFAULT_AMOUNTS)
 
 
-@pytest.mark.parametrize("args", [["streak", "-1"], ["streak", "x"], ["streak"]])
+@pytest.mark.parametrize("args", [["setter", "-1"], ["setter", "x"], ["setter"]])
 async def test_bad_args_reply_usage(monkeypatch, session_factory, args) -> None:
     update = await _run(monkeypatch, session_factory, args)
 
