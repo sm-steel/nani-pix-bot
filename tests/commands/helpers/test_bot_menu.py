@@ -46,6 +46,7 @@ async def test_refresh_command_menu_sets_private_and_group_scopes() -> None:
     assert group_commands == {
         "guess",
         "bounty",
+        "sharpen",
         "correct",
         "skip",
         "leaderboard",

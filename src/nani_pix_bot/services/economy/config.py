@@ -31,6 +31,7 @@ class EconomyKey(enum.StrEnum):
     CLUE_SCREENSHOT = "clue_screenshot"
     CLUE_SCREENSHOT_STEP = "clue_screenshot_step"
     CLUE_TILE = "clue_tile"
+    SHARPEN = "sharpen"
 
 
 DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
@@ -52,18 +53,20 @@ DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
         EconomyKey.CLUE_SCREENSHOT: 30,
         EconomyKey.CLUE_SCREENSHOT_STEP: 15,
         EconomyKey.CLUE_TILE: 10,
+        EconomyKey.SHARPEN: 50,
     }
 )
 
-# Prices a purchase charges as-is; wallet.transfer rejects 0, so they stay >= 1.
+# Prices a purchase (clue or /sharpen) charges as-is; wallet.transfer rejects 0, so they stay >= 1.
 # (CLUE_SCREENSHOT_STEP is a surcharge, not a price: 0 is fine.)
-CLUE_PRICE_KEYS: frozenset[EconomyKey] = frozenset(
+PRICE_KEYS: frozenset[EconomyKey] = frozenset(
     {
         EconomyKey.CLUE_LAST_LETTER,
         EconomyKey.CLUE_FIRST_LETTER,
         EconomyKey.CLUE_TITLE_SHAPE,
         EconomyKey.CLUE_SCREENSHOT,
         EconomyKey.CLUE_TILE,
+        EconomyKey.SHARPEN,
     }
 )
 
@@ -88,8 +91,8 @@ def set_amount(session: Session, key: EconomyKey, value: int) -> None:
     if value < 0:
         msg = f"Currency amount for {key} cannot be negative: {value}"
         raise ValueError(msg)
-    if key in CLUE_PRICE_KEYS and value < 1:
-        msg = f"Clue price for {key} must be at least 1: {value}"
+    if key in PRICE_KEYS and value < 1:
+        msg = f"Price for {key} must be at least 1: {value}"
         raise ValueError(msg)
     row = session.get(CurrencyConfig, key.value)
     if row is None:
