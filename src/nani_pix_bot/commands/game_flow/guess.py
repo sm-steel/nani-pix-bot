@@ -275,6 +275,29 @@ def _dispatch_non_won_outcome(
     return _prepare_unsolved_announcement_dispatch(context, game, lang), True, None
 
 
+@dataclass(frozen=True)
+class _GuessResult:
+    """Everything guess_command sends once its session has committed —
+    nothing reaches Telegram while the guess (and the pixels it paid) could
+    still be rolled back by a failed send."""
+
+    game_id: int
+    reply_text: str | None
+    announcement: _Announcement | None
+    needs_cleanup_after_send: bool
+
+
+async def _send_guess_result(
+    message: Message, context: ContextTypes.DEFAULT_TYPE, session_factory, result: _GuessResult
+) -> None:
+    if result.reply_text is not None:
+        await message.reply_text(result.reply_text)
+    if result.announcement is not None:
+        sent = await _send_announcement(context, session_factory, result.announcement)
+        if result.needs_cleanup_after_send:
+            timeout_module.clear_image_if_sent(session_factory, result.game_id, sent)
+
+
 def _with_suffix(announcement: _Announcement | None, suffix: str) -> _Announcement | None:
     """Appends the pixel-earnings lines to an outcome's group caption."""
     if announcement is None or not suffix:
@@ -302,8 +325,6 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await message.reply_text(i18n.t("guess.usage", lang))
         return
 
-    announcement: _Announcement | None = None
-    needs_cleanup_after_send = False
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         game = await _validate_guess(session, message, user, lang)
@@ -326,26 +347,25 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             session, game, guesser_id=user.id, won=outcome is game_service.GuessOutcome.WON
         )
         suffix = earnings_suffix(session, game, earnings, lang, player_name=user.full_name)
-        game_id = game.id
         if outcome is game_service.GuessOutcome.WON:
             announcement = _prepare_won_announcement_dispatch(
                 session, context, game, lang, user.full_name
             )
-            needs_cleanup_after_send = True
+            result = _GuessResult(game.id, None, _with_suffix(announcement, suffix), True)
         else:
             announcement, needs_cleanup_after_send, wrong_reply_text = _dispatch_non_won_outcome(
                 session, context, game, lang, outcome
             )
-            if wrong_reply_text is not None:
-                await message.reply_text(wrong_reply_text + suffix)
-        announcement = _with_suffix(announcement, suffix)
-    # Block closed and committed above — the outcome is durable now
-    # regardless of whether the announcement below actually reaches the
-    # group (see post_current_image's docstring).
-    if announcement is not None:
-        sent = await _send_announcement(context, session_factory, announcement)
-        if needs_cleanup_after_send:
-            timeout_module.clear_image_if_sent(session_factory, game_id, sent)
+            result = _GuessResult(
+                game.id,
+                None if wrong_reply_text is None else wrong_reply_text + suffix,
+                _with_suffix(announcement, suffix),
+                needs_cleanup_after_send,
+            )
+    # Block closed and committed above — the outcome (and the pixels it
+    # paid) is durable now regardless of whether the reply/announcement
+    # below actually reaches the group (see post_current_image's docstring).
+    await _send_guess_result(message, context, session_factory, result)
 
     # Fire-and-forget: maybe_overthrow() can run gather_pick()'s several
     # real HTTP round-trips (up to AUTOSTART_ATTEMPT_LIMIT attempts, each

@@ -807,3 +807,26 @@ async def test_correct_guess_caption_shows_win_pixels(session_factory) -> None:
 
     caption = context.bot.send_photo.await_args.kwargs["caption"]
     assert "+45" in caption  # 5 first-guess + 40 stage-1 win
+
+
+async def test_wrong_guess_stays_committed_when_the_reply_times_out(session_factory) -> None:
+    game_id = _active_game(session_factory)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_1, wrong_guess_limit=3)
+    update = _make_update(user_id=2, args=["naruto"])
+    update.message.reply_text = AsyncMock(side_effect=TimedOut())
+    context = _make_context(session_factory, args=["naruto"])
+
+    with pytest.raises(TimedOut):
+        await guess_command_module.guess_command(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    # The reply (with its "+7 💠") goes out only after the guess and its
+    # pixels are committed, so a failed send can't roll either back.
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.wrong_guess_count == 1
+        guesser = session.get(Player, 2)
+        assert guesser is not None
+        assert guesser.pixels == 50 + 7
