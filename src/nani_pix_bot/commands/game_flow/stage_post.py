@@ -25,7 +25,7 @@ class Announcement:
     Exactly one of `photo`/`photos` is populated: a normal-mode outcome
     sets `photo` (sent via post_current_image), a hard-mode outcome sets
     `photos` (sent via post_current_images as a 2-photo album) — see
-    guess_command's send-dispatch below, which picks between the two
+    `send_announcement` in this module, which picks between the two
     functions based on which field is set."""
 
     caption: str

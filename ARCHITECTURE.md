@@ -277,7 +277,8 @@ src/nani_pix_bot/
                    #   sharpen.py  /sharpen — confirm button (requester
                    #               only), then charge and advance
                    #   stage_post.py  the stage-advance announcement,
-                   #               shared by the timers and /sharpen
+                   #               shared by /guess and /sharpen (the timers
+                   #               can't import commands/)
     tip.py        # /tip @user <amount> — topic or DM
     leaderboard.py  # /leaderboard (wins and 💠 balance)
     balance.py    # /balance — the caller's 💠 balance, DM or game topic
