@@ -83,7 +83,7 @@ PREVIEW_BOUNTY_BACK_CALLBACK_DATA = "preview:bounty:back"
 PREVIEW_BOUNTY_PICK_PREFIX = "preview:bounty:pick:"
 # The only amounts a setter can put up from the preview; the pick handler
 # validates against this since callback data is client-supplied.
-BOUNTY_PRESETS = (10, 25, 50)
+BOUNTY_PRESETS = (30, 60, 100)
 
 
 _ResultT = TypeVar("_ResultT")

@@ -5,12 +5,15 @@ from nani_pix_bot.models import CluePurchase, CurrencyTransfer, Player
 from nani_pix_bot.models.enums import ClueKind, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services.clues import shop
-from nani_pix_bot.services.economy import wallet
+from nani_pix_bot.services.economy import config, wallet
+from nani_pix_bot.services.economy.config import EconomyKey
 
 STARTER, BUYER = 1, 2
+START = 1000
+PRICES = config.DEFAULT_AMOUNTS
 
 
-def _setup(session: Session, *, currency: int = 100, **game_fields) -> tuple[Game, Player]:
+def _setup(session: Session, *, currency: int = START, **game_fields) -> tuple[Game, Player]:
     buyer = Player(telegram_user_id=BUYER, currency=currency)
     session.add_all([Player(telegram_user_id=STARTER), buyer])
     session.flush()
@@ -34,11 +37,11 @@ def test_offers_list_all_kinds_with_default_prices(session: Session) -> None:
     offers = {o.kind: o for o in shop.offers(session, game, buyer, "en")}
 
     assert {k: o.price for k, o in offers.items()} == {
-        ClueKind.LAST_LETTER: 10,
-        ClueKind.FIRST_LETTER: 20,
-        ClueKind.TITLE_SHAPE: 25,
-        ClueKind.SCREENSHOT: 30,
-        ClueKind.TILE: 10,
+        ClueKind.LAST_LETTER: 60,
+        ClueKind.FIRST_LETTER: 100,
+        ClueKind.TITLE_SHAPE: 120,
+        ClueKind.SCREENSHOT: 150,
+        ClueKind.TILE: 100,
     }
     assert all(o.affordable for o in offers.values())
 
@@ -60,7 +63,7 @@ def test_offers_hide_screenshot_without_a_screenshot_provider(session: Session) 
 
 
 def test_offers_mark_unaffordable(session: Session) -> None:
-    game, buyer = _setup(session, currency=15)
+    game, buyer = _setup(session, currency=PRICES[EconomyKey.CLUE_LAST_LETTER])
 
     affordable = {o.kind: o.affordable for o in shop.offers(session, game, buyer, "en")}
 
@@ -73,10 +76,10 @@ def test_purchase_charges_and_records(session: Session) -> None:
 
     bought = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.FIRST_LETTER))
 
-    assert buyer.currency == 80
+    assert buyer.currency == START - PRICES[EconomyKey.CLUE_FIRST_LETTER]
     charge = session.get(CurrencyTransfer, bought.transfer_id)
     assert charge is not None
-    assert charge.amount == 20
+    assert charge.amount == PRICES[EconomyKey.CLUE_FIRST_LETTER]
     assert charge.to_type == "house"
     assert shop.owned_kinds(session, game.id, BUYER) == {ClueKind.FIRST_LETTER}
 
@@ -89,7 +92,7 @@ def test_purchase_rejects_already_owned_kind(session: Session) -> None:
         shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.LAST_LETTER))
 
     assert refused.value.refusal is shop.Refusal.ALREADY_OWNED
-    assert buyer.currency == 90
+    assert buyer.currency == START - PRICES[EconomyKey.CLUE_LAST_LETTER]
 
 
 def test_purchase_rejects_the_setter(session: Session) -> None:
@@ -105,18 +108,18 @@ def test_purchase_rejects_the_setter(session: Session) -> None:
 
 
 def test_purchase_rejects_insufficient_funds_without_charging(session: Session) -> None:
-    game, buyer = _setup(session, currency=5)
+    game, buyer = _setup(session, currency=PRICES[EconomyKey.CLUE_LAST_LETTER] - 1)
 
     with pytest.raises(shop.ShopRefusedError) as refused:
         shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.LAST_LETTER))
 
     assert refused.value.refusal is shop.Refusal.INSUFFICIENT
-    assert buyer.currency == 5
+    assert buyer.currency == PRICES[EconomyKey.CLUE_LAST_LETTER] - 1
     assert session.query(CluePurchase).count() == 0
 
 
 def test_screenshot_price_escalates_and_caps_at_three(session: Session) -> None:
-    game, buyer = _setup(session, currency=500)
+    game, buyer = _setup(session, currency=START)
     prices = []
     for n in range(3):
         prices.append(shop.price(session, game, buyer, ClueKind.SCREENSHOT))
@@ -127,7 +130,7 @@ def test_screenshot_price_escalates_and_caps_at_three(session: Session) -> None:
             shop.PurchaseRequest(ClueKind.SCREENSHOT, screenshot_url=f"https://x/{n}.jpg"),
         )
 
-    assert prices == [30, 45, 60]
+    assert prices == [150, 225, 300]
     assert ClueKind.SCREENSHOT not in {o.kind for o in shop.offers(session, game, buyer, "en")}
     with pytest.raises(shop.ShopRefusedError) as refused:
         shop.purchase(
@@ -163,7 +166,7 @@ def test_later_buyer_gets_the_round_tile_and_a_different_index_is_refused(
     session: Session,
 ) -> None:
     game, first = _setup(session)
-    second = Player(telegram_user_id=3, currency=100)
+    second = Player(telegram_user_id=3, currency=START)
     session.add(second)
     session.flush()
     shop.purchase(session, game, first, shop.PurchaseRequest(ClueKind.TILE, tile_index=7))
@@ -171,16 +174,16 @@ def test_later_buyer_gets_the_round_tile_and_a_different_index_is_refused(
     with pytest.raises(shop.ShopRefusedError) as refused:
         shop.purchase(session, game, second, shop.PurchaseRequest(ClueKind.TILE, tile_index=8))
     assert refused.value.refusal is shop.Refusal.UNAVAILABLE
-    assert second.currency == 100
+    assert second.currency == START
 
     row = shop.purchase(session, game, second, shop.PurchaseRequest(ClueKind.TILE, tile_index=7))
     assert row.tile_index == 7
-    assert second.currency == 100 - shop.price(session, game, second, ClueKind.TILE)
+    assert second.currency == START - shop.price(session, game, second, ClueKind.TILE)
 
 
 def test_tile_offer_stays_for_others_and_goes_for_the_owner(session: Session) -> None:
     game, buyer = _setup(session)
-    other = Player(telegram_user_id=3, currency=100)
+    other = Player(telegram_user_id=3, currency=START)
     session.add(other)
     session.flush()
     shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TILE, tile_index=7))
@@ -199,12 +202,12 @@ def test_refund_restores_balance_links_the_charge_and_drops_the_purchase(
     shop.refund(session, bought)
     session.flush()
 
-    assert buyer.currency == 100
+    assert buyer.currency == START
     refund_row = session.query(CurrencyTransfer).filter_by(reverses_id=charge_id).one()
-    assert refund_row.amount == 25
+    assert refund_row.amount == PRICES[EconomyKey.CLUE_TITLE_SHAPE]
     assert session.query(CluePurchase).count() == 0
     # opening 100 was seeded directly, not via the ledger
-    assert buyer.currency == wallet.ledger_balance(session, BUYER) + 100
+    assert buyer.currency == wallet.ledger_balance(session, BUYER) + START
 
 
 def test_active_game_for_rejects_a_different_or_finished_game(session: Session) -> None:
@@ -231,7 +234,7 @@ def test_purchase_rejects_a_tile_outside_the_grid(session: Session, index) -> No
         shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TILE, tile_index=index))
 
     assert refused.value.refusal is shop.Refusal.UNAVAILABLE
-    assert buyer.currency == 100
+    assert buyer.currency == START
 
 
 @pytest.mark.parametrize("url", [None, ""])
@@ -244,7 +247,7 @@ def test_purchase_rejects_a_screenshot_without_a_url(session: Session, url) -> N
         )
 
     assert refused.value.refusal is shop.Refusal.UNAVAILABLE
-    assert buyer.currency == 100
+    assert buyer.currency == START
 
 
 def test_screenshot_offer_carries_the_owned_count(session: Session) -> None:
@@ -264,7 +267,7 @@ def test_screenshot_offer_carries_the_owned_count(session: Session) -> None:
 
 def test_refund_game_refunds_every_purchase_of_every_player(session: Session) -> None:
     game, buyer = _setup(session)
-    other = Player(telegram_user_id=3, currency=100)
+    other = Player(telegram_user_id=3, currency=START)
     session.add(other)
     session.flush()
     shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.FIRST_LETTER))
@@ -275,5 +278,5 @@ def test_refund_game_refunds_every_purchase_of_every_player(session: Session) ->
     session.flush()
 
     assert refunded == 3
-    assert (buyer.currency, other.currency) == (100, 100)
+    assert (buyer.currency, other.currency) == (START, START)
     assert session.query(CluePurchase).count() == 0

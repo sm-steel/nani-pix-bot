@@ -973,11 +973,11 @@ played. Clues are delivered by DM, not shown to the group.
 
 | Clue | Default price | `/pixelconfig` key |
 |---|---|---|
-| Last letter | 10 | `clue_last_letter` |
-| First letter | 20 | `clue_first_letter` |
-| Title shape | 25 | `clue_title_shape` |
-| Extra screenshot | 30 for the first, then +15 for each one already bought in that game (30 / 45 / 60) | `clue_screenshot`, `clue_screenshot_step` |
-| Reveal a tile | 10 per tile | `clue_tile` |
+| Last letter | 60 | `clue_last_letter` |
+| First letter | 100 | `clue_first_letter` |
+| Title shape | 120 | `clue_title_shape` |
+| Extra screenshot | 150 for the first, then +75 for each one already bought in that game (150 / 225 / 300) | `clue_screenshot`, `clue_screenshot_step` |
+| Reveal a tile | 100 | `clue_tile` |
 
 Admins change these with `/pixelconfig` like any other amount; a change
 applies to purchases from then on.
@@ -1055,9 +1055,9 @@ round's bounty, tip a player, or pay to sharpen the image.
 
 **Bounty.** The bounty is a pot of 💠 on one round, paid to whoever solves it.
 - `/bounty <amount>` works only in the game topic, during an `ACTIVE` game,
-  with a minimum of 5. Anyone with the balance can add, any number of times,
+  with a minimum of 30. Anyone with the balance can add, any number of times,
   the setter included.
-- The setter can also, before posting, pick a preset of 10, 25 or 50 from the
+- The setter can also, before posting, pick a preset of 30, 60 or 100 from the
   setup preview's bounty submenu (only the presets they can afford are
   offered). That 💠 goes into the pot as soon as they tap the preset, while the
   game is still in setup, and is refunded if the setup is abandoned.
@@ -1078,7 +1078,7 @@ round's bounty, tip a player, or pay to sharpen the image.
 - A plain transfer tied to no game; nothing is refunded later.
 
 **`/sharpen`.** Pays to advance the current round one pixelation stage.
-- Costs 50 by default (`/pixelconfig` key `sharpen`, at least 1).
+- Costs 250 by default (`/pixelconfig` key `sharpen`, at least 1).
 - Normal games only, not HARD MODE; not at the last stage; and never for the
   round's setter.
 - It asks for confirmation first; only the player who requested it can press

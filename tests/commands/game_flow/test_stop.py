@@ -20,7 +20,8 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services.clues import shop
-from nani_pix_bot.services.economy import bounty
+from nani_pix_bot.services.economy import bounty, config
+from nani_pix_bot.services.economy.config import EconomyKey
 
 
 def _make_update(
@@ -491,14 +492,14 @@ async def test_stop_callback_handler_reveal_falls_back_when_hard_mode_image_miss
 async def test_stop_confirm_refunds_clue_purchases(session_factory) -> None:
     game_id = _active_game(session_factory, starter_id=1)
     with session_factory() as session:
-        buyer = Player(telegram_user_id=2, currency=100)
+        buyer = Player(telegram_user_id=2, currency=200)
         session.add(buyer)
         session.flush()
         game = session.get(Game, game_id)
         assert game is not None
         shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.FIRST_LETTER))
         session.commit()
-        assert buyer.currency == 80
+        assert buyer.currency == 200 - config.DEFAULT_AMOUNTS[EconomyKey.CLUE_FIRST_LETTER]
     update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
     context = _make_context(session_factory)
 
@@ -510,7 +511,7 @@ async def test_stop_confirm_refunds_clue_purchases(session_factory) -> None:
         assert session.get(Game, game_id) is None
         refunded = session.get(Player, 2)
         assert refunded is not None
-        assert refunded.currency == 100
+        assert refunded.currency == 200
         assert session.query(CluePurchase).count() == 0
 
 
@@ -560,9 +561,9 @@ async def test_stop_refunds_a_setup_games_preset_deposit(session_factory) -> Non
         assert game is not None
         assert starter is not None
         starter.currency = 100
-        bounty.contribute(session, game, starter, 25)
+        bounty.contribute(session, game, starter, 30)
         session.commit()
-        assert starter.currency == 75
+        assert starter.currency == 70
     update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
     context = _make_context(session_factory)
 
@@ -583,7 +584,7 @@ async def test_stop_refunds_pot(session_factory) -> None:
     with session_factory() as session:
         game = session.get(Game, game_id)
         assert game is not None
-        for user_id, amount in ((2, 10), (3, 20)):
+        for user_id, amount in ((2, 30), (3, 40)):
             player = Player(telegram_user_id=user_id, currency=100)
             session.add(player)
             session.flush()

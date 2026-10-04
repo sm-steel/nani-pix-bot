@@ -638,21 +638,21 @@ async def test_preview_keyboard_has_the_bounty_button(session_factory) -> None:
 
 async def test_bounty_button_offers_only_affordable_presets(session_factory) -> None:
     _staged_setup_game(session_factory)
-    _fund_setter(session_factory, 30)
+    _fund_setter(session_factory, 60)
 
     update = await _run_preview_callback(session_factory, PREVIEW_BOUNTY_CALLBACK_DATA)
 
     callbacks = _callbacks(update)
-    assert f"{PREVIEW_BOUNTY_PICK_PREFIX}10" in callbacks
-    assert f"{PREVIEW_BOUNTY_PICK_PREFIX}25" in callbacks
-    assert f"{PREVIEW_BOUNTY_PICK_PREFIX}50" not in callbacks
+    assert f"{PREVIEW_BOUNTY_PICK_PREFIX}30" in callbacks
+    assert f"{PREVIEW_BOUNTY_PICK_PREFIX}60" in callbacks
+    assert f"{PREVIEW_BOUNTY_PICK_PREFIX}100" not in callbacks
     assert PREVIEW_BOUNTY_BACK_CALLBACK_DATA in callbacks
-    assert "30" in update.callback_query.edit_message_text.call_args.kwargs["text"]
+    assert "60" in update.callback_query.edit_message_text.call_args.kwargs["text"]
 
 
 async def test_bounty_button_with_a_low_balance_offers_no_presets(session_factory) -> None:
     _staged_setup_game(session_factory)
-    _fund_setter(session_factory, 9)
+    _fund_setter(session_factory, 29)
 
     update = await _run_preview_callback(session_factory, PREVIEW_BOUNTY_CALLBACK_DATA)
 
@@ -662,15 +662,15 @@ async def test_bounty_button_with_a_low_balance_offers_no_presets(session_factor
 
 async def test_picking_a_bounty_charges_the_setter_and_grows_the_pot(session_factory) -> None:
     _staged_setup_game(session_factory)
-    _fund_setter(session_factory, 100)
+    _fund_setter(session_factory, 200)
 
-    await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}25")
-    update = await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}10")
+    await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}60")
+    update = await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}30")
 
-    assert _setter_state(session_factory) == (65, 35)
+    assert _setter_state(session_factory) == (110, 90)
     text = update.callback_query.edit_message_text.call_args.kwargs["text"]
-    assert "35" in text
-    assert "65" in text
+    assert "90" in text
+    assert "110" in text
     update.callback_query.answer.assert_awaited_once_with()
 
 
@@ -691,7 +691,7 @@ async def test_a_refused_bounty_alerts_and_charges_nothing(session_factory) -> N
     _staged_setup_game(session_factory)
     _fund_setter(session_factory, 5)
 
-    update = await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}10")
+    update = await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}30")
 
     update.callback_query.answer.assert_awaited_once()
     assert update.callback_query.answer.call_args.kwargs["show_alert"] is True
@@ -712,7 +712,7 @@ async def test_confirming_shows_the_bounty_in_the_game_start_caption(
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     _fund_setter(session_factory, 100)
-    await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}25")
+    await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}60")
     update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA)
     context = _make_callback_context(session_factory)
 
@@ -720,4 +720,4 @@ async def test_confirming_shows_the_bounty_in_the_game_start_caption(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    assert "Bounty: 25" in context.bot.send_photo.await_args.kwargs["caption"]
+    assert "Bounty: 60" in context.bot.send_photo.await_args.kwargs["caption"]

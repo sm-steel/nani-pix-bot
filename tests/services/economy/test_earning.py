@@ -166,7 +166,7 @@ def test_prompt_start_pays_nothing_when_late_or_unknown_or_hard_mode(session: Se
 
 def test_award_win_pays_the_bounty(session: Session) -> None:
     game = _setup(session)
-    for user_id, amount in ((STARTER, 10), (BOB, 15)):
+    for user_id, amount in ((STARTER, 30), (BOB, 40)):
         player = session.get(Player, user_id)
         assert player is not None
         player.currency = 100
@@ -174,7 +174,7 @@ def test_award_win_pays_the_bounty(session: Session) -> None:
 
     earned = earning.award_win(session, game, winner_id=ALICE)
 
-    assert earned.bounty == 25
+    assert earned.bounty == 70
     assert earned.player_total == earned.win
     assert bounty.pot_balance(session, game.id) == 0
-    assert _currency(session, ALICE) == earned.win + 25
+    assert _currency(session, ALICE) == earned.win + 70

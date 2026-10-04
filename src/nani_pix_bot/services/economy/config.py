@@ -47,13 +47,13 @@ DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
         EconomyKey.WIN_STAGE_5: 15,
         EconomyKey.SETTER: 15,
         EconomyKey.PROMPT_TURN: 10,
-        EconomyKey.CLUE_LAST_LETTER: 10,
-        EconomyKey.CLUE_FIRST_LETTER: 20,
-        EconomyKey.CLUE_TITLE_SHAPE: 25,
-        EconomyKey.CLUE_SCREENSHOT: 30,
-        EconomyKey.CLUE_SCREENSHOT_STEP: 15,
-        EconomyKey.CLUE_TILE: 10,
-        EconomyKey.SHARPEN: 50,
+        EconomyKey.CLUE_LAST_LETTER: 60,
+        EconomyKey.CLUE_FIRST_LETTER: 100,
+        EconomyKey.CLUE_TITLE_SHAPE: 120,
+        EconomyKey.CLUE_SCREENSHOT: 150,
+        EconomyKey.CLUE_SCREENSHOT_STEP: 75,
+        EconomyKey.CLUE_TILE: 100,
+        EconomyKey.SHARPEN: 250,
     }
 )
 

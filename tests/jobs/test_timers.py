@@ -1432,43 +1432,43 @@ def _assert_refunded(session_factory, game_id: int, user_ids: tuple[int, ...]) -
 
 async def test_every_unsolved_path_refunds_the_pot_timeout(session_factory) -> None:
     game_id = _active_game(session_factory)
-    _fund_pot(session_factory, game_id, {2: 10, 3: 15})
+    _fund_pot(session_factory, game_id, {2: 30, 3: 40})
     context = _make_job_context(session_factory, game_id=game_id)
 
     await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
     caption = context.bot.send_photo.await_args.kwargs["caption"]
-    assert "25" in caption
+    assert "70" in caption
     _assert_refunded(session_factory, game_id, (2, 3))
 
 
 async def test_every_unsolved_path_refunds_the_pot_inactivity_last_stage(session_factory) -> None:
     game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5)
-    _fund_pot(session_factory, game_id, {2: 10, 3: 15})
+    _fund_pot(session_factory, game_id, {2: 30, 3: 40})
     context = _make_advance_job_context(session_factory, game_id=game_id)
 
     await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
     caption = context.bot.send_photo.await_args.kwargs["caption"]
-    assert "25" in caption
+    assert "70" in caption
     _assert_refunded(session_factory, game_id, (2, 3))
 
 
 async def test_every_unsolved_path_refunds_the_pot_hard_mode_inactivity(session_factory) -> None:
     game_id = _hard_mode_active_game(session_factory, hard_mode_turn=2)
-    _fund_pot(session_factory, game_id, {2: 10, 3: 15})
+    _fund_pot(session_factory, game_id, {2: 30, 3: 40})
     context = _make_advance_job_context(session_factory, game_id=game_id)
 
     await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
     media = context.bot.send_media_group.call_args.kwargs["media"]
-    assert "25" in media[0].caption
+    assert "70" in media[0].caption
     _assert_refunded(session_factory, game_id, (2, 3))
 
 
 async def test_setup_abandon_refunds_setter_deposit(session_factory) -> None:
     game_id = _setup_game(session_factory)
-    _fund_pot(session_factory, game_id, {1: 25})
+    _fund_pot(session_factory, game_id, {1: 30})
     context = _make_group_job_context(session_factory)
     context.job.data = game_id
 
@@ -1502,7 +1502,7 @@ def _seed_game_with_pot(session_factory, pot: int) -> None:
 
 
 async def test_post_stage_image_caption_shows_the_pot(session_factory) -> None:
-    _seed_game_with_pot(session_factory, 15)
+    _seed_game_with_pot(session_factory, 30)
     context = _make_post_image_context(session_factory)
 
     await timeout_module.post_stage_image(
@@ -1512,7 +1512,7 @@ async def test_post_stage_image_caption_shows_the_pot(session_factory) -> None:
     caption = context.bot.send_photo.call_args.kwargs["caption"]
     assert caption.startswith("a caption")
     assert "💰" in caption
-    assert "15 💠" in caption
+    assert "30 💠" in caption
 
 
 async def test_post_stage_image_caption_unchanged_without_a_pot(session_factory) -> None:
@@ -1527,7 +1527,7 @@ async def test_post_stage_image_caption_unchanged_without_a_pot(session_factory)
 
 
 async def test_post_stage_images_puts_the_pot_before_the_shop_link(session_factory) -> None:
-    _seed_game_with_pot(session_factory, 15)
+    _seed_game_with_pot(session_factory, 30)
     context = _make_post_images_context(session_factory)
     context.bot_data["bot_username"] = "testbot"
 
@@ -1539,12 +1539,12 @@ async def test_post_stage_images_puts_the_pot_before_the_shop_link(session_facto
     )
 
     caption = context.bot.send_media_group.call_args.kwargs["media"][0].caption
-    assert "15 💠" in caption
+    assert "30 💠" in caption
     assert caption.index("💰") < caption.index("🛒")
 
 
 async def test_post_current_image_never_shows_the_pot(session_factory) -> None:
-    _seed_game_with_pot(session_factory, 15)
+    _seed_game_with_pot(session_factory, 30)
     context = _make_post_image_context(session_factory)
 
     await timeout_module.post_current_image(
@@ -1556,11 +1556,11 @@ async def test_post_current_image_never_shows_the_pot(session_factory) -> None:
 
 async def test_hard_mode_timeout_refunds_the_pot(session_factory) -> None:
     game_id = _hard_mode_active_game(session_factory)
-    _fund_pot(session_factory, game_id, {2: 10, 3: 15})
+    _fund_pot(session_factory, game_id, {2: 30, 3: 40})
     context = _make_job_context(session_factory, game_id=game_id)
 
     await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
     media = context.bot.send_media_group.call_args.kwargs["media"]
-    assert "25" in media[0].caption
+    assert "70" in media[0].caption
     _assert_refunded(session_factory, game_id, (2, 3))
