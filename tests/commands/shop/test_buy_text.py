@@ -164,8 +164,8 @@ async def test_malformed_data_is_answered_silently_without_charge(session_factor
     assert balance(session_factory) == 100
 
 
-async def test_unimplemented_branches_answer_silently(session_factory) -> None:
-    query = make_query("shop:share:1")
+async def test_malformed_callback_answers_silently(session_factory) -> None:
+    query = make_query("shop:nonsense:1")
     await tap(make_context(session_factory), query)
     query.answer.assert_awaited_once_with()
 

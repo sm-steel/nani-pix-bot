@@ -98,3 +98,22 @@ async def post_bought_notice(
         )
     except TelegramError:
         logger.warning("Could not post the clue-bought notice for {}", kind, exc_info=True)
+
+
+async def share_clue(context: ContextTypes.DEFAULT_TYPE, text: str, file_id: str | None) -> bool:
+    """Post a bought clue to the game topic: the photo (by its stored
+    file_id) with `text` as caption, or `text` alone as an HTML message.
+    False (logged) if Telegram refused it, so the caller can undo the mark."""
+    target = {
+        "chat_id": context.bot_data["group_chat_id"],
+        "message_thread_id": context.bot_data["game_topic_id"],
+    }
+    try:
+        if file_id is None:
+            await context.bot.send_message(text=text, parse_mode="HTML", **target)
+        else:
+            await context.bot.send_photo(photo=file_id, caption=text, **target)
+    except TelegramError:
+        logger.exception("Could not share a clue to the game topic")
+        return False
+    return True

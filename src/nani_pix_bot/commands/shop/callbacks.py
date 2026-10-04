@@ -1,5 +1,5 @@
 """Inline-button router for the DM clue shop (`shop:` callbacks). Text and
-image clues are bought here; the share branch is still a stub."""
+image clues are bought here, and a bought clue can be shared to the group."""
 
 from dataclasses import dataclass
 
@@ -10,7 +10,7 @@ from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.membership import is_group_member
-from nani_pix_bot.commands.shop import images
+from nani_pix_bot.commands.shop import images, share
 from nani_pix_bot.commands.shop.deliver import (
     deliver_image_clue,
     deliver_text_clue,
@@ -19,6 +19,7 @@ from nani_pix_bot.commands.shop.deliver import (
 )
 from nani_pix_bot.commands.shop.keyboards import (
     SHOP_BUY_PREFIX,
+    SHOP_SHARE_PREFIX,
     SHOP_TILE_PREFIX,
     share_keyboard,
     tile_keyboard,
@@ -128,6 +129,8 @@ async def shop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         handled = await _route_buy(context, query, query.from_user)
     elif query.data.startswith(SHOP_TILE_PREFIX):
         handled = await _route_tile(context, query, query.from_user)
+    elif query.data.startswith(SHOP_SHARE_PREFIX):
+        handled = await share.route_share(context, query, query.from_user)
     else:
         handled = False
     if not handled:

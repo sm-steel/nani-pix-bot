@@ -282,5 +282,10 @@
   "shop.tile_pick": "🧩 Pick a tile to reveal (✅ = already yours):",
   "clue.screenshot_caption": "🖼 Another screenshot from the same anime (pixelated to the current stage).",
   "clue.tile_caption": "🧩 Your unpixelated tiles.",
+  "shop.shared": "📢 {name} shared a clue:",
+  "shop.shared_ok": "Shared with the group.",
+  "shop.already_shared": "You already shared this clue.",
+  "shop.share_not_yours": "This isn't your clue.",
+  "shop.share_failed": "Couldn't post it — try again.",
   "commands.shop": "Clue shop (spend pixels)"
 }
