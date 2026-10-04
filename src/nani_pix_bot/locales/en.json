@@ -303,5 +303,14 @@
   "keyboards.preview_bounty": "💰 Bounty",
   "dm_start.bounty_prompt": "💰 Put up a bounty for whoever solves your round — it comes out of your pixels and goes to the winner (refunded if nobody solves it).\nPot: {pot} 💠 · your balance: {balance} 💠",
   "dm_start.bounty_option": "+{amount} 💠",
-  "dm_start.bounty_none_affordable": "You don't have enough pixels for a bounty right now."
+  "dm_start.bounty_none_affordable": "You don't have enough pixels for a bounty right now.",
+  "tip.usage": "Usage: /tip @username <amount>",
+  "tip.unknown_user": "I don't know anyone called @{username} yet.",
+  "tip.unknown_user_hint": "I don't know anyone called @{username} yet — they need to send me a direct message first: @{bot_username}",
+  "tip.cannot_tip_bot": "Thanks, but I can't take tips 🙂",
+  "tip.refusal.self": "You can't tip yourself.",
+  "tip.refusal.below_min": "A tip must be at least {minimum} 💠.",
+  "tip.refusal.insufficient": "Not enough 💠 — you have {balance} 💠.",
+  "tip.done": "💸 {sender} tipped @{recipient} {amount} 💠.",
+  "commands.tip": "Give pixels to another player"
 }

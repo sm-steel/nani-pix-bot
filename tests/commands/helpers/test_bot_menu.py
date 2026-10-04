@@ -24,6 +24,7 @@ async def test_refresh_command_menu_sets_private_and_group_scopes() -> None:
         "newgame",
         "balance",
         "shop",
+        "tip",
         "language",
         "stop",
         "stageconfig",
@@ -49,6 +50,7 @@ async def test_refresh_command_menu_sets_private_and_group_scopes() -> None:
         "skip",
         "leaderboard",
         "balance",
+        "tip",
         "help",
         "version",
     }
