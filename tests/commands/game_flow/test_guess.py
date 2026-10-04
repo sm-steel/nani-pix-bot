@@ -822,7 +822,7 @@ async def test_wrong_guess_stays_committed_when_the_reply_times_out(session_fact
         )
 
     # The reply (with its "+7 💠") goes out only after the guess and its
-    # currency are committed, so a failed send can't roll either back.
+    # currency is committed, so a failed send can't roll either back.
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None

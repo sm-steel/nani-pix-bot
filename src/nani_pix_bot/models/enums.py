@@ -232,7 +232,7 @@ class PixelAlgorithm(enum.Enum):
     # speck can define a whole block and fine texture aliases into
     # misleading patterns.
     NEAREST = "nearest"
-    # The canonical mosaic — each block is the mean of its currency.
+    # The canonical mosaic — each block is the mean of its pixels.
     BOX = "box"
     # The default: keeps the block's dominant tone where averaging
     # muddies it toward grey.
@@ -307,6 +307,6 @@ class CurrencyParty(enum.StrEnum):
     """One side of a currency transfer (services/economy/wallet.py). Stored as a
     plain string, like CurrencyReason."""
 
-    HOUSE = "house"  # the game itself: currency are created (rewards) or spent (purchases)
+    HOUSE = "house"  # the game itself: currency is created (rewards) or spent (purchases)
     PLAYER = "player"  # a player's balance — the matching *_player_id is set
     POT = "pot"  # a game's bounty escrow (phase 3) — game_id is set
