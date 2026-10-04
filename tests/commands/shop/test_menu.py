@@ -7,9 +7,10 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import onboarding
 from nani_pix_bot.commands.shop import menu as shop_menu
-from nani_pix_bot.models.enums import GameStatus, PixelStage
+from nani_pix_bot.models.enums import ClueKind, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.services.clues import shop
 
 
 def _make_update(*, user_id: int = 2, chat_type: str = "private") -> MagicMock:
@@ -116,6 +117,22 @@ async def test_shop_lists_five_offers_for_a_rich_buyer(session_factory) -> None:
         f"shop:buy:{game_id}:screenshot:0",
         f"shop:buy:{game_id}:tile",
     ]
+
+
+async def test_menu_still_lists_the_tile_after_someone_else_bought_it(session_factory) -> None:
+    game_id = _seed_game(session_factory)
+    _set_currency(session_factory, 2, 100)
+    _set_currency(session_factory, 3, 100)
+    with session_factory() as session:
+        game, other = session.get(Game, game_id), session.get(Player, 3)
+        assert game is not None
+        assert other is not None
+        shop.purchase(session, game, other, shop.PurchaseRequest(ClueKind.TILE, tile_index=5))
+        session.commit()
+    call = await _run(_make_update(), _make_context(session_factory))
+
+    rows = call.kwargs["reply_markup"].inline_keyboard
+    assert f"shop:buy:{game_id}:tile" in [row[0].callback_data for row in rows]
 
 
 async def test_shop_marks_unaffordable_offers_as_locked(session_factory) -> None:

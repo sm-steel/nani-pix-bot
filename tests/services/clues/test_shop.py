@@ -139,16 +139,54 @@ def test_screenshot_price_escalates_and_caps_at_three(session: Session) -> None:
     assert refused.value.refusal is shop.Refusal.UNAVAILABLE
 
 
-def test_tiles_are_bought_once_each(session: Session) -> None:
+def test_round_tile_is_none_until_someone_buys_one(session: Session) -> None:
+    game, _ = _setup(session)
+
+    assert shop.round_tile(session, game.id) is None
+
+
+def test_first_buyer_picks_the_round_tile_and_a_player_buys_it_once(session: Session) -> None:
     game, buyer = _setup(session)
     shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TILE, tile_index=7))
 
-    with pytest.raises(shop.ShopRefusedError) as refused:
-        shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TILE, tile_index=7))
+    assert shop.round_tile(session, game.id) == 7
+    for index in (7, 8):
+        with pytest.raises(shop.ShopRefusedError) as refused:
+            shop.purchase(
+                session, game, buyer, shop.PurchaseRequest(ClueKind.TILE, tile_index=index)
+            )
+        assert refused.value.refusal is shop.Refusal.ALREADY_OWNED
+    assert session.query(CluePurchase).count() == 1
 
-    assert refused.value.refusal is shop.Refusal.ALREADY_OWNED
-    shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TILE, tile_index=8))
-    assert shop.owned_tiles(session, game.id, BUYER) == {7, 8}
+
+def test_later_buyer_gets_the_round_tile_and_a_different_index_is_refused(
+    session: Session,
+) -> None:
+    game, first = _setup(session)
+    second = Player(telegram_user_id=3, currency=100)
+    session.add(second)
+    session.flush()
+    shop.purchase(session, game, first, shop.PurchaseRequest(ClueKind.TILE, tile_index=7))
+
+    with pytest.raises(shop.ShopRefusedError) as refused:
+        shop.purchase(session, game, second, shop.PurchaseRequest(ClueKind.TILE, tile_index=8))
+    assert refused.value.refusal is shop.Refusal.UNAVAILABLE
+    assert second.currency == 100
+
+    row = shop.purchase(session, game, second, shop.PurchaseRequest(ClueKind.TILE, tile_index=7))
+    assert row.tile_index == 7
+    assert second.currency == 100 - shop.price(session, game, second, ClueKind.TILE)
+
+
+def test_tile_offer_stays_for_others_and_goes_for_the_owner(session: Session) -> None:
+    game, buyer = _setup(session)
+    other = Player(telegram_user_id=3, currency=100)
+    session.add(other)
+    session.flush()
+    shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TILE, tile_index=7))
+
+    assert ClueKind.TILE not in {o.kind for o in shop.offers(session, game, buyer, "en")}
+    assert ClueKind.TILE in {o.kind for o in shop.offers(session, game, other, "en")}
 
 
 def test_refund_restores_balance_links_the_charge_and_drops_the_purchase(

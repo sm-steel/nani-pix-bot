@@ -1,7 +1,7 @@
 """Inline-button router for the DM clue shop (`shop:` callbacks). Text and
 image clues are bought here, and a bought clue can be shared to the group."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -70,7 +70,6 @@ class _ImageBought:
     amount: int
     photo: bytes
     caption_key: str
-    owned_tiles: frozenset[int] = frozenset()
 
 
 async def _route_buy(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, user: User) -> bool:
@@ -83,7 +82,7 @@ async def _route_buy(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, u
     elif tap.kind is ClueKind.SCREENSHOT:
         await _buy_screenshot(context, tap)
     elif tap.kind is ClueKind.TILE:
-        await _open_tile_grid(context, tap)
+        await _tile_button(context, tap)
     else:
         return False
     return True
@@ -287,22 +286,32 @@ async def _buy_screenshot(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> N
         await _announce(context, tap, bought.lang)
 
 
-async def _open_tile_grid(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> None:
-    """No charge: just show the 8x8 grid, ticking the tiles already owned."""
+async def _tile_button(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> None:
+    """The shop's tile button. The first buyer of the round gets the grid
+    (no charge yet) to pick the one tile; once a tile is chosen, every
+    later buyer is charged for and sent that same tile straight away."""
     if not await _member_ok(context, tap):
         return
     try:
         with session_scope(context.bot_data["session_factory"]) as session:
             _, lang, _ = images.offered_game(session, tap.user, tap.game_id, ClueKind.TILE)
-            owned = shop.owned_tiles(session, tap.game_id, tap.user.id)
+            chosen = shop.round_tile(session, tap.game_id)
     except ShopRefusedError as refused:
         await _alert_refusal(context, tap, refused)
         return
+    if chosen is None:
+        await _open_tile_grid(context, tap, lang)
+    elif await _buy_and_send_tile(context, replace(tap, tile_index=chosen)):
+        await _announce(context, tap, lang)
+
+
+async def _open_tile_grid(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, lang: str) -> None:
+    """No charge: just show the 8x8 grid to pick the round's tile."""
     try:
         await context.bot.send_message(
             chat_id=tap.user.id,
             text=i18n.t("shop.tile_pick", lang),
-            reply_markup=tile_keyboard(tap.game_id, owned),
+            reply_markup=tile_keyboard(tap.game_id),
         )
     except TelegramError:
         logger.exception("Could not DM the tile grid to {}", tap.user.id)
@@ -310,17 +319,23 @@ async def _open_tile_grid(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> N
 
 
 async def _buy_tile(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> None:
+    """A tap on a grid cell; a forged or stale one is refused by the shop."""
     if not await _member_ok(context, tap):
         return
+    if not await _buy_and_send_tile(context, tap):
+        return
+    await _clear_grid(tap)
+    await _announce(context, tap, _language(context))
+
+
+async def _buy_and_send_tile(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> bool:
+    """Charge and DM the tile; False if refused, or if the DM failed (refunded)."""
     try:
         bought = _purchase_tile(context.bot_data["session_factory"], tap)
     except ShopRefusedError as refused:
         await _alert_refusal(context, tap, refused)
-        return
-    if not await _send_image(context, tap, bought):
-        return
-    await _refresh_grid(tap, bought.owned_tiles)
-    await _announce(context, tap, bought.lang)
+        return False
+    return await _send_image(context, tap, bought)
 
 
 def _purchase_tile(session_factory, tap: _BuyTap) -> _ImageBought:
@@ -330,9 +345,10 @@ def _purchase_tile(session_factory, tap: _BuyTap) -> _ImageBought:
         lang = settings.get_language(session)
         request = PurchaseRequest(tap.kind, tile_index=tap.tile_index)
         game, row, amount = _charge(session, tap, request)
-        owned = shop.owned_tiles(session, game.id, tap.user.id)
-        photo = images.render_tile_clue(session, game, owned)
-        return _ImageBought(lang, row.id, amount, photo, "clue.tile_caption", frozenset(owned))
+        if row.tile_index is None:
+            raise RuntimeError("a bought tile has no tile_index")
+        photo = images.render_tile_clue(session, game, row.tile_index)
+        return _ImageBought(lang, row.id, amount, photo, "clue.tile_caption")
 
 
 async def _send_image(
@@ -357,14 +373,13 @@ async def _send_image(
     return True
 
 
-async def _refresh_grid(tap: _BuyTap, owned: frozenset[int]) -> None:
-    """Tick the new tile on the grid message the buyer tapped."""
+async def _clear_grid(tap: _BuyTap) -> None:
+    """Take the buttons off the grid message the buyer tapped: the round's
+    tile is chosen, so its other cells are no longer valid."""
     try:
-        await tap.query.edit_message_reply_markup(
-            reply_markup=tile_keyboard(tap.game_id, set(owned))
-        )
+        await tap.query.edit_message_reply_markup(reply_markup=None)
     except BadRequest as error:
         if "not modified" not in str(error).lower():
-            logger.warning("Could not refresh the tile grid: {}", error)
+            logger.warning("Could not clear the tile grid: {}", error)
     except TelegramError:
-        logger.warning("Could not refresh the tile grid", exc_info=True)
+        logger.warning("Could not clear the tile grid", exc_info=True)

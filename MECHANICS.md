@@ -1015,12 +1015,14 @@ player's balance.
   It is never a screenshot that is already in play in this round (the
   one used by the round, or either one of a HARD MODE pair) and never
   one the player already bought. Available in HARD MODE too.
-- *Reveal a tile*: the player picks one square of an 8x8 grid laid over
-  the round's screenshot, and gets the image back with that square shown
-  unpixelated. Each tile can be bought once, the grid ticks the tiles
-  already owned, and later purchases accumulate (the picture shows every
-  tile the player has bought). Not available in HARD MODE, whose two
-  images are not a single screenshot to tile.
+- *Reveal a tile*: one tile per round, the same for every buyer. The
+  first player to buy it picks one square of an 8x8 grid laid over the
+  round's screenshot, and gets the image back with that square shown
+  unpixelated. Every later buyer in that round gets the same square,
+  with no grid: the button charges and delivers straight away (the
+  picture is the stage the round is on now). Each player can buy it
+  once per round. Not available in HARD MODE, whose two images are not
+  a single screenshot to tile.
 
 **The group is told.** When someone buys a clue, the game topic gets a
 short notice naming the buyer and the type of clue (not its contents).
