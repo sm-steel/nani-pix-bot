@@ -308,6 +308,28 @@ async def test_later_buyer_gets_the_same_tile_without_a_grid(session_factory) ->
     assert [p.tile_index for p in purchases(session_factory)] == [5, 5]
 
 
+async def test_refunded_first_tile_lets_the_next_buyer_pick_again(session_factory) -> None:
+    game_id = seed_game(session_factory, original_image=_png())
+    set_currency(session_factory, 2, RICH)
+    set_currency(session_factory, 3, RICH)
+    failing = _image_context(session_factory)
+    failing.bot.send_photo = AsyncMock(side_effect=TimedOut())
+    await tap(failing, make_query(f"shop:tile:{game_id}:5"))
+    assert balance(session_factory) == RICH
+    assert purchases(session_factory) == []
+    with session_factory() as session:
+        assert shop.round_tile(session, game_id) is None
+    context = _image_context(session_factory)
+
+    await tap(context, make_query(f"shop:buy:{game_id}:tile", user_id=3))
+
+    grid = context.bot.send_message.await_args
+    assert grid.kwargs["chat_id"] == 3
+    assert len(grid.kwargs["reply_markup"].inline_keyboard) == shop.TILE_GRID
+    assert balance(session_factory, 3) == RICH
+    assert purchases(session_factory) == []
+
+
 async def test_forged_different_tile_after_the_choice_is_refused(session_factory) -> None:
     game_id = seed_game(session_factory, original_image=_png())
     set_currency(session_factory, 2, RICH)

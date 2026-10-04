@@ -192,6 +192,35 @@ def test_tile_offer_stays_for_others_and_goes_for_the_owner(session: Session) ->
     assert ClueKind.TILE in {o.kind for o in shop.offers(session, game, other, "en")}
 
 
+def test_refunded_only_tile_purchase_unchooses_the_round_tile(session: Session) -> None:
+    game, buyer = _setup(session)
+    bought = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TILE, tile_index=7))
+    assert shop.round_tile(session, game.id) == 7
+
+    shop.refund(session, bought)
+    session.flush()
+
+    assert shop.round_tile(session, game.id) is None
+    assert ClueKind.TILE in {o.kind for o in shop.offers(session, game, buyer, "en")}
+
+
+def test_refunding_the_first_tile_buyer_keeps_the_later_buyers_tile(session: Session) -> None:
+    game, first = _setup(session)
+    second = Player(telegram_user_id=3, currency=START)
+    session.add(second)
+    session.flush()
+    a_row = shop.purchase(session, game, first, shop.PurchaseRequest(ClueKind.TILE, tile_index=7))
+    b_row = shop.purchase(session, game, second, shop.PurchaseRequest(ClueKind.TILE, tile_index=7))
+
+    shop.refund(session, a_row)
+    session.flush()
+
+    assert shop.round_tile(session, game.id) == 7
+    assert b_row.tile_index == 7
+    assert session.query(CluePurchase).one() is b_row
+    assert second.currency == START - shop.price(session, game, second, ClueKind.TILE)
+
+
 def test_refund_restores_balance_links_the_charge_and_drops_the_purchase(
     session: Session,
 ) -> None:

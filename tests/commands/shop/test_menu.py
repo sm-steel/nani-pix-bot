@@ -11,6 +11,10 @@ from nani_pix_bot.models.enums import ClueKind, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services.clues import shop
+from nani_pix_bot.services.economy import config
+from nani_pix_bot.services.economy.config import EconomyKey
+
+PRICES = config.DEFAULT_AMOUNTS
 
 
 def _make_update(*, user_id: int = 2, chat_type: str = "private") -> MagicMock:
@@ -137,11 +141,14 @@ async def test_menu_still_lists_the_tile_after_someone_else_bought_it(session_fa
 
 async def test_shop_marks_unaffordable_offers_as_locked(session_factory) -> None:
     _seed_game(session_factory)
-    _set_currency(session_factory, 2, 15)
+    # exactly the cheapest clue's price: it is affordable, the next one up is not
+    _set_currency(session_factory, 2, PRICES[EconomyKey.CLUE_LAST_LETTER])
     update = _make_update()
     call = await _run(update, _make_context(session_factory))
 
     rows = call.kwargs["reply_markup"].inline_keyboard
+    last_letter = next(r[0] for r in rows if r[0].callback_data.endswith(":last_letter"))
+    assert not last_letter.text.startswith("🔒")
     first_letter = next(r[0] for r in rows if r[0].callback_data.endswith(":first_letter"))
     assert first_letter.text.startswith("🔒")
 
