@@ -74,6 +74,7 @@ def test_build_application_registers_every_command() -> None:
 
     assert registered_commands == {
         "guess",
+        "bounty",
         "correct",
         "skip",
         "stop",

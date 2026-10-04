@@ -40,6 +40,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
     ]
     group_commands = [
         BotCommand("guess", i18n.t("commands.guess", lang)),
+        BotCommand("bounty", i18n.t("commands.bounty", lang)),
         BotCommand("correct", i18n.t("commands.correct", lang)),
         BotCommand("skip", i18n.t("commands.skip", lang)),
         BotCommand("leaderboard", i18n.t("commands.leaderboard", lang)),

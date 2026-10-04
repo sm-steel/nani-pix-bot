@@ -96,5 +96,9 @@
   "shop.shared": [
     "📢 {name} passed a clue to the group:",
     "📢 {name} is sharing a clue:"
+  ],
+  "bounty.added": [
+    "💰 {name} tops up the bounty by {amount} 💠 — the pot sits at {pot} 💠.",
+    "💰 {name} throws {amount} 💠 into the pot — {pot} 💠 up for grabs."
   ]
 }
