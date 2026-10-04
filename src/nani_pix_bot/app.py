@@ -25,6 +25,8 @@ from telegram.ext import (
 
 from nani_pix_bot import db, heartbeat
 from nani_pix_bot.commands import (
+    balance,
+    currency_config,
     dm_start,
     game_flow,
     gamesenabled,
@@ -274,6 +276,8 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("skip", game_flow.skip_command))
     application.add_handler(CommandHandler("stop", game_flow.stop_command))
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
+    application.add_handler(CommandHandler("balance", balance.balance_command))
+    application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))
     application.add_handler(CommandHandler("language", language.language_command))
     application.add_handler(CommandHandler("linkmal", mal_link.linkmal_command))
     application.add_handler(CommandHandler("unlinkmal", mal_link.unlinkmal_command))

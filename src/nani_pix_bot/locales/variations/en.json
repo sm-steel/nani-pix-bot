@@ -84,5 +84,9 @@
   ],
   "dm_start.game_started_caption_idle": [
     "🤖 It's been quiet for too long. Here, have a round.\n📸 Stage {stage}/{total} — guesses: {remaining}/{limit}"
+  ],
+  "economy.earned": [
+    "💠 {name} pockets +{amount}",
+    "💠 +{amount} into {name}'s wallet"
   ]
 }

@@ -9,17 +9,22 @@ from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from nani_pix_bot.models.enums import CurrencyReason
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.services.economy import config as economy_config
+from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.quiet_hours import parse_timezone
 
 
 def get_or_create_player(
-    session: Session, telegram_user_id: int, *, username: str | None = None
+    session: Session, telegram_user_id: int, *, username: str | None = None, grant: bool = True
 ) -> Player:
     """Look up a player, creating the row if this is their first time. On
     an existing row, opportunistically refreshes `username` — unless the
     caller has none to offer, which must not blank out a handle we
-    already know (it's what /correct and /skip match against).
+    already know (it's what /correct and /skip match against). A new
+    player also receives the starting 💠 balance (services/economy/)
+    unless `grant=False` (the bot's own row, which has no use for it).
 
     The creation branch logs at INFO because a person entering the game
     for the first time is a real event; the refresh branch stays silent
@@ -29,7 +34,17 @@ def get_or_create_player(
     if player is None:
         player = Player(telegram_user_id=telegram_user_id, username=username)
         session.add(player)
+        # Flush before the ledger row so its FK target exists.
+        session.flush()
         logger.info("First time seeing player {} (@{})", telegram_user_id, username or "?")
+        if grant:
+            starting_balance = economy_config.get_amounts(session)[
+                economy_config.EconomyKey.STARTING_BALANCE
+            ]
+            if starting_balance > 0:
+                wallet.credit(
+                    session, player, starting_balance, wallet.LedgerEntry(CurrencyReason.GRANT)
+                )
     elif username is not None:
         player.username = username
     return player

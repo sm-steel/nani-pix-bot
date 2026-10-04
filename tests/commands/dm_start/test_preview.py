@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -153,6 +154,27 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
         preview.timeout_module.setup_abandon_job_name(fetched.id)
     )
     update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_preview_confirm_shows_and_pays_the_prompt_start_bonus(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    _staged_setup_game(session_factory, turn_received_at=datetime.now(UTC) - timedelta(minutes=5))
+    update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_callback_context(session_factory)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert "+10" in context.bot.send_photo.await_args.kwargs["caption"]
+    with session_factory() as session:
+        starter = session.get(Player, 1)
+        assert starter is not None
+        assert (
+            starter.currency == 10
+        )  # the helper creates the Player directly, so no starting grant
 
 
 async def test_preview_confirm_activates_the_game_even_when_the_group_post_times_out(

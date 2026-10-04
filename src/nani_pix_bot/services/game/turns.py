@@ -52,8 +52,12 @@ def set_next_starter(session: Session, user_id: int | None) -> TurnState:
     a designated human means the turn isn't "open to anyone" for that
     backstop's purposes. Returns the row so the command layer can
     schedule/cancel the actual JobQueue jobs (this module stays
-    Telegram-agnostic)."""
+    Telegram-agnostic). `turn_received_at` (prompt-turn currency bonus) is
+    set when the turn is handed to a *different* specific player and
+    cleared when opened to anyone; re-designating the same player keeps
+    the original timestamp."""
     turn_state = get_or_create_turn_state(session)
+    previous_starter_id = turn_state.next_starter_id
     turn_state.next_starter_id = user_id
     if user_id is None:
         turn_state.reminder_at = None
@@ -65,6 +69,8 @@ def set_next_starter(session: Session, user_id: int | None) -> TurnState:
         turn_state.expiry_at = deadline_after(session, TURN_EXPIRY_DELAY)
         turn_state.turn_opened_at = None
         turn_state.autostart_deadline_at = None
+        if previous_starter_id != user_id:
+            turn_state.turn_received_at = datetime.now(UTC)
         logger.info("Turn designated to player {}", user_id)
     return turn_state
 
@@ -87,9 +93,11 @@ def mark_turn_open_if_unassigned(session: Session) -> TurnState:
 
 def _mark_turn_opened(session: Session, turn_state: TurnState) -> None:
     # turn_opened_at records the real moment the turn opened; only the
-    # deadline derived from it is frozen by quiet hours.
+    # deadline derived from it is frozen by quiet hours. An open turn
+    # earns no prompt-turn bonus, so turn_received_at is cleared.
     now = datetime.now(UTC)
     turn_state.turn_opened_at = now
+    turn_state.turn_received_at = None
     turn_state.autostart_deadline_at = deadline_after(session, IDLE_AUTOSTART_DELAY, now=now)
 
 
