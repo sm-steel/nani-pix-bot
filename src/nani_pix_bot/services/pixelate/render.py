@@ -15,7 +15,7 @@ from the original screenshot's bytes on demand.
 """
 
 import io
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from PIL import Image, ImageFilter
 
@@ -72,3 +72,38 @@ def rank_mosaic(image_bytes: bytes, width: int, *, kernel: ImageFilter.Filter) -
         return blocks.resize(full, Image.Resampling.NEAREST)
 
     return apply(image_bytes, run)
+
+
+def tile_box(size: tuple[int, int], index: int, grid: int) -> tuple[int, int, int, int]:
+    """(left, top, right, bottom) of tile `index` (row-major from 0) on a
+    grid-by-grid split of `size`. Edges are i*W//grid, so neighbouring tiles
+    share edges and together cover every pixel even when W or H isn't a
+    multiple of `grid`."""
+    if not 0 <= index < grid * grid:
+        msg = f"tile index {index} out of range for a {grid}x{grid} grid"
+        raise ValueError(msg)
+    width, height = size
+    row, column = divmod(index, grid)
+    return (
+        column * width // grid,
+        row * height // grid,
+        (column + 1) * width // grid,
+        (row + 1) * height // grid,
+    )
+
+
+def reveal_tiles(original: bytes, pixelated: bytes, tiles: Iterable[int], grid: int) -> bytes:
+    """`pixelated` with every tile in `tiles` replaced by the same region
+    of `original` — the "reveal a tile" clue. PNG out, like pixelate()."""
+    with Image.open(io.BytesIO(original)) as source:
+        clear = source.convert("RGB")
+    with Image.open(io.BytesIO(pixelated)) as blocky_source:
+        blocky = blocky_source.convert("RGB")
+    if blocky.size != clear.size:
+        blocky = blocky.resize(clear.size, Image.Resampling.NEAREST)
+    for index in tiles:
+        box = tile_box(clear.size, index, grid)
+        blocky.paste(clear.crop(box), box[:2])
+    buffer = io.BytesIO()
+    blocky.save(buffer, format="PNG")
+    return buffer.getvalue()
