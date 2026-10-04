@@ -82,8 +82,7 @@ def screenshot_plan(session: Session, user: User, game_id: int) -> ScreenshotPla
     )
     sources = tuple(
         (provider, getattr(game, provider.id_attr_name))
-        for provider in game_service.screenshot_capable_providers(game)
-        if getattr(game, provider.id_attr_name)
+        for provider in shop.clue_screenshot_providers(game)
     )
     width = stage_width(session, game)
     return ScreenshotPlan(lang, frozenset(excluded), sources, width, game.pixel_algorithm)
