@@ -2,6 +2,7 @@ from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from loguru import logger
 from telegram import Update
 from telegram.constants import ChatType
 from telegram.ext import ContextTypes
@@ -102,6 +103,18 @@ async def test_tip_is_ignored_in_another_topic(session_factory) -> None:
 
     update.message.reply_text.assert_not_awaited()
     assert _balances(session_factory) == (50, 10, 0)
+
+
+async def test_malformed_tip_is_logged_as_a_warning(session_factory) -> None:
+    _seed(session_factory)
+    captured: list[str] = []
+    sink_id = logger.add(captured.append, level="WARNING", format="{message}")
+    try:
+        await _run(session_factory, ["@bob"])
+    finally:
+        logger.remove(sink_id)
+
+    assert any("malformed /tip" in line for line in captured)
 
 
 @pytest.mark.parametrize(

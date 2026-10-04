@@ -44,7 +44,8 @@ async def bounty_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
             if amount is None:
-                reply = i18n.t("bounty.usage", lang)
+                logger.warning("{} sent a malformed /bounty: {!r}", user.id, context.args)
+                reply = i18n.t("bounty.usage", lang, minimum=bounty.BOUNTY_MIN)
             else:
                 player = players.get_or_create_player(session, user.id, username=user.username)
                 game = game_service.active_or_setup_game(session)

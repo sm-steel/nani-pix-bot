@@ -2,6 +2,7 @@ from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -105,7 +106,20 @@ async def test_bad_args_get_the_usage_reply(session_factory, args: list[str]) ->
     update = await _run(session_factory, args)
 
     assert "Usage: /bounty" in _reply(update)
+    assert f"at least {bounty_service.BOUNTY_MIN} " in _reply(update)
     assert _state(session_factory) == (100, 0)
+
+
+async def test_bad_args_are_logged_as_a_warning(session_factory) -> None:
+    _seed(session_factory)
+    captured: list[str] = []
+    sink_id = logger.add(captured.append, level="WARNING", format="{message}")
+    try:
+        await _run(session_factory, ["abc"])
+    finally:
+        logger.remove(sink_id)
+
+    assert any("malformed /bounty" in line for line in captured)
 
 
 async def test_outside_the_topic_is_ignored(session_factory) -> None:

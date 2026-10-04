@@ -50,6 +50,7 @@ async def tip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
             if parsed is None:
+                logger.warning("{} sent a malformed /tip: {!r}", user.id, context.args)
                 reply = i18n.t("tip.usage", lang)
             else:
                 username, amount = parsed

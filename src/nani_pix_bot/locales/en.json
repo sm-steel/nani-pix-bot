@@ -292,7 +292,7 @@
   "shop.share_not_yours": "This isn't your clue.",
   "shop.share_failed": "Couldn't post it — try again.",
   "commands.shop": "Clue shop (spend pixels)",
-  "bounty.usage": "Usage: /bounty <amount> — at least 5 💠, added to this round's pot for whoever solves it.",
+  "bounty.usage": "Usage: /bounty <amount> — at least {minimum} 💠, added to this round's pot for whoever solves it.",
   "bounty.no_game": "No round is running — bounties go on an active round.",
   "bounty.added": "💰 {name} adds {amount} 💠 to the bounty — the pot is now {pot} 💠.",
   "bounty.refusal.below_min": "A bounty contribution must be at least {minimum} 💠.",
