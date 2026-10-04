@@ -76,3 +76,10 @@ async def test_bad_args_reply_usage(monkeypatch, session_factory, args) -> None:
 
     assert update.message.reply_text.await_args.args[0] == i18n.t("currency_config.usage", "en")
     assert _stored(session_factory) == dict(DEFAULT_AMOUNTS)
+
+
+async def test_zero_clue_price_is_refused(monkeypatch, session_factory) -> None:
+    update = await _run(monkeypatch, session_factory, ["clue_last_letter", "0"])
+
+    assert update.message.reply_text.await_args.args[0] == i18n.t("currency_config.price_min", "en")
+    assert _stored(session_factory) == dict(DEFAULT_AMOUNTS)

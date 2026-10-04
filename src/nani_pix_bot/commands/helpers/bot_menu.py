@@ -17,6 +17,8 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("help", i18n.t("commands.help", lang)),
         BotCommand("newgame", i18n.t("commands.newgame", lang)),
         BotCommand("balance", i18n.t("commands.balance", lang)),
+        BotCommand("shop", i18n.t("commands.shop", lang)),
+        BotCommand("tip", i18n.t("commands.tip", lang)),
         BotCommand("language", i18n.t("commands.language", lang)),
         # Listed unconditionally, like every other command here: this menu
         # is set once at startup (and on a /language change) for all
@@ -39,10 +41,13 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
     ]
     group_commands = [
         BotCommand("guess", i18n.t("commands.guess", lang)),
+        BotCommand("bounty", i18n.t("commands.bounty", lang)),
+        BotCommand("sharpen", i18n.t("commands.sharpen", lang)),
         BotCommand("correct", i18n.t("commands.correct", lang)),
         BotCommand("skip", i18n.t("commands.skip", lang)),
         BotCommand("leaderboard", i18n.t("commands.leaderboard", lang)),
         BotCommand("balance", i18n.t("commands.balance", lang)),
+        BotCommand("tip", i18n.t("commands.tip", lang)),
         BotCommand("help", i18n.t("commands.help", lang)),
         BotCommand("version", i18n.t("commands.version", lang)),
     ]

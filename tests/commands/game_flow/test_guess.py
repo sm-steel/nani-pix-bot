@@ -11,6 +11,7 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
+from nani_pix_bot.services.economy import bounty
 
 
 def _make_update(
@@ -830,3 +831,95 @@ async def test_wrong_guess_stays_committed_when_the_reply_times_out(session_fact
         guesser = session.get(Player, 2)
         assert guesser is not None
         assert guesser.currency == 50 + 7
+
+
+async def test_stage_advance_post_carries_the_shop_button_but_the_win_reveal_does_not(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
+    _active_game(
+        session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2, total_guess_count=3
+    )
+    _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=3)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_4, wrong_guess_limit=5)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+    context.bot_data["bot_username"] = "testbot"
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert kwargs["reply_markup"].inline_keyboard[0][0].url == "https://t.me/testbot?start=shop"
+
+
+async def test_win_reveal_post_has_no_shop_button(session_factory) -> None:
+    _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+    context.bot_data["bot_username"] = "testbot"
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert kwargs.get("reply_markup") is None
+
+
+def _fund_pot(session_factory, game_id: int, amounts: dict[int, int]) -> None:
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        for user_id, amount in amounts.items():
+            player = Player(telegram_user_id=user_id, currency=100)
+            session.add(player)
+            session.flush()
+            bounty.contribute(session, game, player, amount)
+        session.commit()
+
+
+def _currency_of(session, user_id: int) -> int:
+    player = session.get(Player, user_id)
+    assert player is not None
+    return player.currency
+
+
+async def test_winning_guess_takes_the_bounty(session_factory) -> None:
+    game_id = _active_game(session_factory)
+    _fund_pot(session_factory, game_id, {3: 10, 4: 15})
+    update = _make_update(user_id=2)
+    context = _make_context(session_factory, args=["Frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    caption = context.bot.send_photo.await_args.kwargs["caption"]
+    assert "takes the bounty: +25" in caption
+    with session_factory() as session:
+        assert _currency_of(session, 2) == 50 + 45 + 25  # grant + first-guess + win + bounty
+        assert bounty.pot_balance(session, game_id) == 0
+
+
+async def test_every_unsolved_path_refunds_the_pot_last_stage_wrong_guess(session_factory) -> None:
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5, wrong_guess_count=7)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_5, wrong_guess_limit=8)
+    _fund_pot(session_factory, game_id, {3: 10, 4: 15})
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    caption = context.bot.send_photo.await_args.kwargs["caption"]
+    assert "25" in caption
+    assert "went back to its contributors" in caption
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.status == GameStatus.UNSOLVED
+        assert (_currency_of(session, 3), _currency_of(session, 4)) == (100, 100)
+        assert bounty.pot_balance(session, game_id) == 0

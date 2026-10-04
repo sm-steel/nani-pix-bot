@@ -12,8 +12,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
-    _SEARCH_SERVICE_ERRORS,
-    _client_for_source,
+    SEARCH_SERVICE_ERRORS,
     _method_keyboard,
     _method_prompt_key,
     _post_preview_album,
@@ -23,6 +22,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _search_and_build_keyboard,
     _stage_preview,
     _stored_provider,
+    client_for_source,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     METHOD_BACK_CALLBACK_DATA,
@@ -257,7 +257,7 @@ async def _search_step(
     status_message = await message.reply_text(i18n.t("dm_start.searching", lang))
     logger.debug("{} search started for query {!r}", source, message.text)
 
-    client = _client_for_source(context, source)
+    client = client_for_source(context, source)
     try:
         if source == Provider.SHIKIMORI:
             results, keyboard = await _search_and_build_keyboard(
@@ -278,7 +278,7 @@ async def _search_step(
             results, keyboard = await _search_and_build_keyboard(
                 client, message.text, anilist.search, lambda rs: anilist_results_keyboard(rs, lang)
             )
-    except _SEARCH_SERVICE_ERRORS:
+    except SEARCH_SERVICE_ERRORS:
         logger.exception("{} search failed for query {!r}", source, message.text)
         await _reply_service_down(status_message.edit_text, lang, source, context)
         return
@@ -387,10 +387,10 @@ async def _resolve_picked_result(
         return None
     source, external_id = parsed
 
-    client = _client_for_source(context, source)
+    client = client_for_source(context, source)
     try:
         result = await _get_identification_result(source, client, external_id)
-    except _SEARCH_SERVICE_ERRORS:
+    except SEARCH_SERVICE_ERRORS:
         logger.exception("{} get_by_id failed for id {}", source, external_id)
         await _reply_service_down(query.edit_message_text, lang, source, context)
         return None

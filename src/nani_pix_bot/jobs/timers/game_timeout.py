@@ -21,6 +21,7 @@ from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services.economy import bounty
 
 
 def timeout_job_name(game_id: int) -> str:
@@ -62,7 +63,7 @@ class _HardModeTimeoutReveal:
     caption: str
 
 
-def _hard_mode_timeout_reveal(game: Game, lang: str) -> _HardModeTimeoutReveal:
+def _hard_mode_timeout_reveal(game: Game, lang: str, refund_note: str) -> _HardModeTimeoutReveal:
     """Both stored hard-mode screenshots, unpixelated, with a
     hard-mode-specific timeout caption — the hard-mode analogue of the
     normal path's `game.original_image` + `timeout.caption` reveal."""
@@ -70,6 +71,7 @@ def _hard_mode_timeout_reveal(game: Game, lang: str) -> _HardModeTimeoutReveal:
     caption = i18n.t(
         "timeout.hard_mode_caption", lang, title=game_service.display_title(game, lang)
     )
+    caption += refund_note
     return _HardModeTimeoutReveal(photos=photos, caption=caption)
 
 
@@ -111,13 +113,15 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
 
         logger.info("Game {} timed out after 2 days — ending unsolved", game_id)
         game_service.force_unsolved(game)
+        refund_note = bounty.refund_note(session, game_id, lang)
         game_service.mark_turn_open_if_unassigned(session)
         cancel_inactivity_timers(context.job_queue, game.id)
         if game.hard_mode:
-            hard_mode_reveal = _hard_mode_timeout_reveal(game, lang)
+            hard_mode_reveal = _hard_mode_timeout_reveal(game, lang, refund_note)
         else:
             original_bytes = game.original_image
             caption = i18n.t("timeout.caption", lang, title=game_service.display_title(game, lang))
+            caption += refund_note
     # Block closed and committed above — the UNSOLVED ending is durable
     # now regardless of whether the announcement below actually reaches
     # the group (see post_current_image's docstring).

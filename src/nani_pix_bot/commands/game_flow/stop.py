@@ -23,6 +23,8 @@ from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services.clues import shop as shop_service
+from nani_pix_bot.services.economy import bounty
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,10 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
     group announcement differs (see _announce_stop)."""
     group_chat_id = context.bot_data["group_chat_id"]
     session_factory = context.bot_data["session_factory"]
+    # A Telegram call, so resolved before the transaction opens: a job can end
+    # the game during an await, and the refunds below would then re-run on
+    # stale rows inside the open session.
+    is_admin = await is_group_admin(context.bot, group_chat_id, user.id)
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
 
@@ -135,7 +141,7 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
             await query.edit_message_text(i18n.t("stop.no_game", lang))
             return
 
-        if not await _may_stop(context, group_chat_id, user.id, game):
+        if game.starter_id != user.id and not is_admin:
             logger.warning(
                 "{} tried to confirm /stop without permission on game {}", user.id, game.id
             )
@@ -162,6 +168,9 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
             timeout_module.cancel_inactivity_timers(context.job_queue, game_id)
         else:
             timeout_module.cancel_setup_abandon(context.job_queue, game_id)
+        # The CASCADE would drop the game's clue purchases unrefunded.
+        shop_service.refund_game(session, game_id)
+        bounty.refund_pot(session, game_id)
         session.delete(game)
         turn_state = game_service.set_next_starter(session, None)
     # Block closed and committed above — the row deletion and turn-open

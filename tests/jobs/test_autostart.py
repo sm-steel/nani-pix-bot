@@ -29,7 +29,12 @@ def _fake_pick() -> GatheredPick:
             result=ShikimoriResult(1, "Frieren", None, None, []), source=Provider.SHIKIMORI
         ),
         screenshot=ScreenshotPick(
-            provider=Provider.SHIKIMORI, provider_id=1, image_bytes_a=b"x", image_bytes_b=b"y"
+            provider=Provider.SHIKIMORI,
+            provider_id=1,
+            image_bytes_a=b"x",
+            image_bytes_b=b"y",
+            url_a="https://x/a.jpg",
+            url_b="https://x/b.jpg",
         ),
     )
 
@@ -42,7 +47,7 @@ def _expected_first_turn_caption(key: str, **kwargs) -> str:
     tests/commands/test_version.py), which stays correct symmetrically
     whether or not Task 9's real translated text has landed yet (a
     missing key just makes both sides equal the bare key)."""
-    return i18n.t(
+    caption = i18n.t(
         key,
         "en",
         turn=1,
@@ -51,6 +56,8 @@ def _expected_first_turn_caption(key: str, **kwargs) -> str:
         limit=game_service.HARD_MODE_WRONG_GUESS_LIMIT,
         **kwargs,
     )
+    # The first post is a stage post, so it ends with the clue-shop link.
+    return f"{caption}\n🛒 https://t.me/nani_pix_bot?start=shop"
 
 
 def test_schedule_idle_autostart_calls_run_once_from_the_stored_deadline() -> None:
@@ -394,6 +401,7 @@ async def test_run_bot_autostart_creates_a_hard_mode_game_and_posts_both_images(
         assert game.hard_mode is True
         assert game.hard_mode_image_a == b"x"
         assert game.hard_mode_image_b == b"y"
+        assert game.shown_screenshot_urls == ["https://x/a.jpg", "https://x/b.jpg"]
         assert game.original_image is None
 
 

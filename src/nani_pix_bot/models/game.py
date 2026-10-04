@@ -46,6 +46,9 @@ class Game(Base):
     title_native: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
     title_russian: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
     synonyms: Mapped[list[str] | None] = mapped_column(JSON, default=None)
+    # Provider URL(s) of the image(s) in play — the extra-screenshot clue never
+    # sells one of these. None for an uploaded photo.
+    shown_screenshot_urls: Mapped[list[str] | None] = mapped_column(JSON, default=None)
     # Which identification method staged this game's title/synonyms — a
     # Provider, or "manual", which is deliberately outside that enum
     # because it names the *absence* of an automatic provider rather than

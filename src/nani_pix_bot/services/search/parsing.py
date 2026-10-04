@@ -24,7 +24,7 @@ found". The single-entry (by-id) path skips the same way into `None`,
 rendered the same as a 404.
 
 The container itself keeps `rest.py`'s answer and still raises
-`RuntimeError` (caught by `_SEARCH_SERVICE_ERRORS`): a `data`/`media`/
+`RuntimeError` (caught by `SEARCH_SERVICE_ERRORS`): a `data`/`media`/
 `results` key holding a number instead of an array is wholly unusable,
 so there is no partial result to salvage.
 

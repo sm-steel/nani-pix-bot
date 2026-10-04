@@ -78,6 +78,12 @@ PREVIEW_ADD_SYNONYM_CALLBACK_DATA = "preview:add_synonym"
 PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA = "preview:algo"
 PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA = "preview:algo:back"
 PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX = "preview:algo:pick:"
+PREVIEW_BOUNTY_CALLBACK_DATA = "preview:bounty"
+PREVIEW_BOUNTY_BACK_CALLBACK_DATA = "preview:bounty:back"
+PREVIEW_BOUNTY_PICK_PREFIX = "preview:bounty:pick:"
+# The only amounts a setter can put up from the preview; the pick handler
+# validates against this since callback data is client-supplied.
+BOUNTY_PRESETS = (10, 25, 50)
 
 
 _ResultT = TypeVar("_ResultT")
@@ -407,9 +413,36 @@ def preview_keyboard(lang: str, algorithm: PixelAlgorithm) -> InlineKeyboardMark
         i18n.t("keyboards.preview_pixel_algorithm", lang, name=algorithm_name(algorithm, lang)),
         callback_data=PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA,
     )
-    return InlineKeyboardMarkup(
-        [[confirm], [change_image], [research], [add_synonym], [pixel_algorithm]]
+    bounty = InlineKeyboardButton(
+        i18n.t("keyboards.preview_bounty", lang), callback_data=PREVIEW_BOUNTY_CALLBACK_DATA
     )
+    return InlineKeyboardMarkup(
+        [[confirm], [change_image], [research], [add_synonym], [pixel_algorithm], [bounty]]
+    )
+
+
+def bounty_keyboard(lang: str, balance: int) -> InlineKeyboardMarkup:
+    """The bounty submenu: one button per preset the balance covers, plus
+    a way back."""
+    rows = [
+        [
+            InlineKeyboardButton(
+                i18n.t("dm_start.bounty_option", lang, amount=amount),
+                callback_data=f"{PREVIEW_BOUNTY_PICK_PREFIX}{amount}",
+            )
+        ]
+        for amount in BOUNTY_PRESETS
+        if amount <= balance
+    ]
+    rows.append(
+        [
+            InlineKeyboardButton(
+                i18n.t("keyboards.pixel_algorithm_back", lang),
+                callback_data=PREVIEW_BOUNTY_BACK_CALLBACK_DATA,
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(rows)
 
 
 def pixel_algorithm_keyboard(lang: str, current: PixelAlgorithm) -> InlineKeyboardMarkup:

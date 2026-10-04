@@ -13,6 +13,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import settings
+from nani_pix_bot.services.economy import bounty
 
 
 def _active_game(session_factory, **overrides) -> int:
@@ -1316,3 +1317,250 @@ async def test_rearm_pending_timeouts_reschedules_idle_autostart(session_factory
 
     names = [call.kwargs["name"] for call in job_queue.run_once.call_args_list]
     assert timeout_module.IDLE_AUTOSTART_JOB_NAME in names
+
+
+async def test_post_stage_image_attaches_a_shop_deep_link_button(session_factory) -> None:
+    context = _make_post_image_context(session_factory)
+    context.bot_data["bot_username"] = "testbot"
+
+    message = await timeout_module.post_stage_image(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photo=b"bytes",
+        caption="a caption",
+    )
+
+    assert message is not None
+    _, kwargs = context.bot.send_photo.call_args
+    buttons = kwargs["reply_markup"].inline_keyboard
+    assert len(buttons) == 1
+    assert len(buttons[0]) == 1
+    assert buttons[0][0].url == "https://t.me/testbot?start=shop"
+    assert buttons[0][0].text.startswith("🛒")
+    context.bot.pin_chat_message.assert_awaited_once()
+
+
+async def test_post_stage_image_omits_the_button_without_a_bot_username(session_factory) -> None:
+    context = _make_post_image_context(session_factory)
+
+    await timeout_module.post_stage_image(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photo=b"bytes",
+        caption="a caption",
+    )
+
+    _, kwargs = context.bot.send_photo.call_args
+    assert kwargs.get("reply_markup") is None
+
+
+async def test_post_current_image_never_carries_a_shop_button(session_factory) -> None:
+    context = _make_post_image_context(session_factory)
+    context.bot_data["bot_username"] = "testbot"
+
+    await timeout_module.post_current_image(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photo=b"bytes",
+        caption="a caption",
+    )
+
+    _, kwargs = context.bot.send_photo.call_args
+    assert kwargs.get("reply_markup") is None
+
+
+async def test_post_stage_images_appends_the_shop_link_to_the_first_caption(
+    session_factory,
+) -> None:
+    context = _make_post_images_context(session_factory)
+    context.bot_data["bot_username"] = "testbot"
+
+    result = await timeout_module.post_stage_images(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photos=(b"photo-a", b"photo-b"),
+        caption="a caption",
+    )
+
+    assert result is not None
+    _, kwargs = context.bot.send_media_group.call_args
+    media = kwargs["media"]
+    assert media[0].caption == "a caption\n🛒 https://t.me/testbot?start=shop"
+    assert media[1].caption is None
+    context.bot.pin_chat_message.assert_awaited_once()
+
+
+async def test_post_stage_images_leaves_the_caption_alone_without_a_bot_username(
+    session_factory,
+) -> None:
+    context = _make_post_images_context(session_factory)
+
+    await timeout_module.post_stage_images(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photos=(b"photo-a", b"photo-b"),
+        caption="a caption",
+    )
+
+    _, kwargs = context.bot.send_media_group.call_args
+    assert kwargs["media"][0].caption == "a caption"
+
+
+def _fund_pot(session_factory, game_id: int, amounts: dict[int, int]) -> None:
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        for user_id, amount in amounts.items():
+            player = session.get(Player, user_id)
+            if player is None:
+                player = Player(telegram_user_id=user_id)
+                session.add(player)
+            player.currency = 100
+            session.flush()
+            bounty.contribute(session, game, player, amount)
+        session.commit()
+
+
+def _assert_refunded(session_factory, game_id: int, user_ids: tuple[int, ...]) -> None:
+    with session_factory() as session:
+        assert bounty.pot_balance(session, game_id) == 0
+        for user_id in user_ids:
+            player = session.get(Player, user_id)
+            assert player is not None
+            assert player.currency == 100
+
+
+async def test_every_unsolved_path_refunds_the_pot_timeout(session_factory) -> None:
+    game_id = _active_game(session_factory)
+    _fund_pot(session_factory, game_id, {2: 10, 3: 15})
+    context = _make_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    caption = context.bot.send_photo.await_args.kwargs["caption"]
+    assert "25" in caption
+    _assert_refunded(session_factory, game_id, (2, 3))
+
+
+async def test_every_unsolved_path_refunds_the_pot_inactivity_last_stage(session_factory) -> None:
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5)
+    _fund_pot(session_factory, game_id, {2: 10, 3: 15})
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    caption = context.bot.send_photo.await_args.kwargs["caption"]
+    assert "25" in caption
+    _assert_refunded(session_factory, game_id, (2, 3))
+
+
+async def test_every_unsolved_path_refunds_the_pot_hard_mode_inactivity(session_factory) -> None:
+    game_id = _hard_mode_active_game(session_factory, hard_mode_turn=2)
+    _fund_pot(session_factory, game_id, {2: 10, 3: 15})
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    media = context.bot.send_media_group.call_args.kwargs["media"]
+    assert "25" in media[0].caption
+    _assert_refunded(session_factory, game_id, (2, 3))
+
+
+async def test_setup_abandon_refunds_setter_deposit(session_factory) -> None:
+    game_id = _setup_game(session_factory)
+    _fund_pot(session_factory, game_id, {1: 25})
+    context = _make_group_job_context(session_factory)
+    context.job.data = game_id
+
+    await timeout_module.setup_abandon_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
+        starter = session.get(Player, 1)
+        assert starter is not None
+        assert starter.currency == 100
+        assert bounty.pot_balance(session, game_id) == 0
+
+
+def _seed_game_with_pot(session_factory, pot: int) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1, currency=100))
+        session.commit()
+        game = Game(
+            starter_id=2,
+            original_image=b"f",
+            status=GameStatus.ACTIVE,
+            current_stage=PixelStage.STAGE_1,
+        )
+        session.add(game)
+        session.commit()
+        if pot:
+            player = session.get(Player, 1)
+            assert player is not None
+            bounty.contribute(session, game, player, pot)
+            session.commit()
+
+
+async def test_post_stage_image_caption_shows_the_pot(session_factory) -> None:
+    _seed_game_with_pot(session_factory, 15)
+    context = _make_post_image_context(session_factory)
+
+    await timeout_module.post_stage_image(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, photo=b"b", caption="a caption"
+    )
+
+    caption = context.bot.send_photo.call_args.kwargs["caption"]
+    assert caption.startswith("a caption")
+    assert "💰" in caption
+    assert "15 💠" in caption
+
+
+async def test_post_stage_image_caption_unchanged_without_a_pot(session_factory) -> None:
+    _seed_game_with_pot(session_factory, 0)
+    context = _make_post_image_context(session_factory)
+
+    await timeout_module.post_stage_image(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, photo=b"b", caption="a caption"
+    )
+
+    assert context.bot.send_photo.call_args.kwargs["caption"] == "a caption"
+
+
+async def test_post_stage_images_puts_the_pot_before_the_shop_link(session_factory) -> None:
+    _seed_game_with_pot(session_factory, 15)
+    context = _make_post_images_context(session_factory)
+    context.bot_data["bot_username"] = "testbot"
+
+    await timeout_module.post_stage_images(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photos=(b"a", b"b"),
+        caption="a caption",
+    )
+
+    caption = context.bot.send_media_group.call_args.kwargs["media"][0].caption
+    assert "15 💠" in caption
+    assert caption.index("💰") < caption.index("🛒")
+
+
+async def test_post_current_image_never_shows_the_pot(session_factory) -> None:
+    _seed_game_with_pot(session_factory, 15)
+    context = _make_post_image_context(session_factory)
+
+    await timeout_module.post_current_image(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, photo=b"b", caption="a caption"
+    )
+
+    assert context.bot.send_photo.call_args.kwargs["caption"] == "a caption"
+
+
+async def test_hard_mode_timeout_refunds_the_pot(session_factory) -> None:
+    game_id = _hard_mode_active_game(session_factory)
+    _fund_pot(session_factory, game_id, {2: 10, 3: 15})
+    context = _make_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    media = context.bot.send_media_group.call_args.kwargs["media"]
+    assert "25" in media[0].caption
+    _assert_refunded(session_factory, game_id, (2, 3))

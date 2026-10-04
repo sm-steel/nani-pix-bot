@@ -430,7 +430,7 @@ async def test_get_by_id_raises_when_animes_is_not_a_list() -> None:
     """The container guard search() already has via parsing.parse_entries
     must apply to get_by_id too — a truthy non-list `animes` (a dict here)
     is an outage, not a vanished pick, and must reach
-    _SEARCH_SERVICE_ERRORS as a RuntimeError rather than raising an
+    SEARCH_SERVICE_ERRORS as a RuntimeError rather than raising an
     uncaught KeyError/TypeError from unguarded indexing (issue #83,
     reintroduced for this call shape)."""
 
@@ -662,7 +662,7 @@ async def test_screenshots_skips_an_entry_whose_original_url_is_not_a_string(
 async def test_search_raises_when_shikimori_reports_graphql_errors_with_no_data() -> None:
     """A GraphQL error response with a null `data` is an explicit "I am
     broken" signal, not an empty result — has to reach
-    _SEARCH_SERVICE_ERRORS as a RuntimeError, not "nothing found"."""
+    SEARCH_SERVICE_ERRORS as a RuntimeError, not "nothing found"."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": None, "errors": [{"message": "boom"}]})

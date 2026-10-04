@@ -247,7 +247,7 @@ background noise nobody reads.
 **This table sat unapplied for two full rounds of feature work (v1 and
 most of v2)** — by the time issue #23 swept the codebase for it, only 3
 files logged anything at all, and every exception-swallowing branch
-(`except _SEARCH_SERVICE_ERRORS`, `except Forbidden`, the DB
+(`except SEARCH_SERVICE_ERRORS`, `except Forbidden`, the DB
 rollback path) had zero trace of what actually went wrong. That gap was
 a real cost, not a hypothetical one: diagnosing a live-group issue meant
 guessing. **Every new command handler, service function, or job

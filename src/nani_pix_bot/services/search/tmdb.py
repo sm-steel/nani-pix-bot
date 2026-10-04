@@ -147,7 +147,7 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
         # read: the still is third-party data, and this one sits inside
         # the TaskGroup rather than inside a `_parse_*` call, so a raise
         # here would leave the group as a `TypeError` that
-        # `_SEARCH_SERVICE_ERRORS` doesn't match — a dead keyboard for
+        # `SEARCH_SERVICE_ERRORS` doesn't match — a dead keyboard for
         # one bad episode out of twenty (issue #86).
         stills[index] = parsing.parse_entry(_API.name, episode, _parse_still_url)
 
@@ -157,7 +157,7 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
                 group.create_task(fetch_still(index, season_number, episode_number))
     except BaseExceptionGroup as failures:
         # Unwrapped, because a TaskGroup reports failures as a group and
-        # `_SEARCH_SERVICE_ERRORS` (httpx.HTTPError, RuntimeError) matches
+        # `SEARCH_SERVICE_ERRORS` (httpx.HTTPError, RuntimeError) matches
         # the provider's own exception, not a group wrapping it — leaving
         # it wrapped would strand the starter on a dead keyboard, the same
         # outcome issue #75 closed.
@@ -172,7 +172,7 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
         # under `rest.get_json` can raise a group of its own. Putting a
         # nested TaskGroup or an anyio-based client inside a provider call
         # would make `exceptions[0]` itself a group, and hand the caller
-        # something `_SEARCH_SERVICE_ERRORS` doesn't match — #75's door,
+        # something `SEARCH_SERVICE_ERRORS` doesn't match — #75's door,
         # reopened quietly. Flatten here if that day comes.
         logger.warning(
             "TMDB id {} still fetch abandoned: {} of {} episode request(s) failed: {}",

@@ -74,6 +74,8 @@ def test_build_application_registers_every_command() -> None:
 
     assert registered_commands == {
         "guess",
+        "bounty",
+        "sharpen",
         "correct",
         "skip",
         "stop",
@@ -93,6 +95,8 @@ def test_build_application_registers_every_command() -> None:
         "linkmal",
         "unlinkmal",
         "balance",
+        "shop",
+        "tip",
         "pixelconfig",
     }
 

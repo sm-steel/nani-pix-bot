@@ -474,6 +474,7 @@ def test_clear_screenshot_selection_drops_an_api_sourced_image_and_its_id(sessio
         shikimori_id=52991,
         screenshot_source="shikimori",
         original_image=b"api-bytes",
+        shown_screenshot_urls=["https://x/1.jpg"],
     )
 
     with session_factory() as session:
@@ -487,6 +488,7 @@ def test_clear_screenshot_selection_drops_an_api_sourced_image_and_its_id(sessio
         assert fetched is not None
         assert fetched.shikimori_id is None
         assert fetched.original_image is None
+        assert fetched.shown_screenshot_urls is None
         assert fetched.screenshot_source is None
 
 

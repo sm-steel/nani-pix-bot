@@ -7,6 +7,7 @@ from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
+from nani_pix_bot.commands.shop import open_shop
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, settings
 
@@ -15,6 +16,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     message = update.message
     user = update.effective_user
     if not is_private_chat(update) or message is None or user is None:
+        return
+
+    if context.args == ["shop"]:
+        logger.debug("/start shop deep link from {}", user.id)
+        await open_shop(message, context, user)
         return
 
     session_factory = context.bot_data["session_factory"]

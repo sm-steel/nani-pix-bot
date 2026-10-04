@@ -45,7 +45,7 @@ async def request(
     doesn't decode, and one that decodes to anything other than an
     object (`null` decodes perfectly well and would otherwise reach
     callers as an `AttributeError`), both become a `RuntimeError`,
-    which callers keep in their `_SEARCH_SERVICE_ERRORS` tuple (issue
+    which callers keep in their `SEARCH_SERVICE_ERRORS` tuple (issue
     #75).
 
     GraphQL reports failures in an `errors` array rather than in the
@@ -109,7 +109,7 @@ def require_object(api: GraphQLApi, value: Any, *, label: str, variables: dict) 
     `parsing.require_int` draws: a null container key is an empty
     result a caller's picker already renders as "nothing found", while
     a number where an object belongs is a provider that can't be read
-    at all — `RuntimeError`, which is in `_SEARCH_SERVICE_ERRORS`,
+    at all — `RuntimeError`, which is in `SEARCH_SERVICE_ERRORS`,
     unlike the `AttributeError` an unguarded `.get` would raise."""
     if value is None:
         return {}

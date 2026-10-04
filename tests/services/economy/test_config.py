@@ -16,6 +16,13 @@ def test_get_amounts_returns_spec_defaults_with_no_overrides(session: Session) -
     assert [amounts[k] for k in config.WIN_STAGE_KEYS] == [40, 30, 25, 20, 15]
     assert amounts[EconomyKey.SETTER] == 15
     assert amounts[EconomyKey.PROMPT_TURN] == 10
+    assert amounts[EconomyKey.CLUE_LAST_LETTER] == 10
+    assert amounts[EconomyKey.CLUE_FIRST_LETTER] == 20
+    assert amounts[EconomyKey.CLUE_TITLE_SHAPE] == 25
+    assert amounts[EconomyKey.CLUE_SCREENSHOT] == 30
+    assert amounts[EconomyKey.CLUE_SCREENSHOT_STEP] == 15
+    assert amounts[EconomyKey.CLUE_TILE] == 10
+    assert amounts[EconomyKey.SHARPEN] == 50
     assert set(amounts) == set(EconomyKey)
 
 
@@ -47,3 +54,19 @@ def test_get_amounts_ignores_unknown_stored_keys(session: Session) -> None:
     session.commit()
 
     assert "from_a_future_phase" not in config.get_amounts(session)
+
+
+def test_set_amount_rejects_zero_clue_price(session: Session) -> None:
+    with pytest.raises(ValueError, match="at least 1"):
+        config.set_amount(session, EconomyKey.CLUE_LAST_LETTER, 0)
+
+
+def test_set_amount_still_accepts_zero_for_rewards(session: Session) -> None:
+    config.set_amount(session, EconomyKey.FIRST_GUESS, 0)
+
+    assert config.get_amounts(session)[EconomyKey.FIRST_GUESS] == 0
+
+
+def test_set_amount_rejects_zero_sharpen_price(session: Session) -> None:
+    with pytest.raises(ValueError, match="at least 1"):
+        config.set_amount(session, EconomyKey.SHARPEN, 0)

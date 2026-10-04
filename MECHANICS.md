@@ -24,7 +24,9 @@ just what's currently built.
 | Win-turn reminder (15min) + expiry (12h) | Implemented |
 | Manual stop with confirmation (`/stop`) | Implemented |
 | Leaderboard (`/leaderboard`) | Implemented |
-| Pixels 💠 — earning, `/balance`, `/pixelconfig` (spending: later phases) | Implemented |
+| Pixels 💠 — earning, `/balance`, `/pixelconfig` | Implemented |
+| Clue shop (`/shop`) — spend 💠 on private clues | Implemented |
+| Public spends — bounty (`/bounty`), `/tip`, `/sharpen` | Implemented |
 | Quiet hours (`/quiethours`, `/timezone`) — automatic posts held, clocks frozen | Implemented |
 
 ## Game lifecycle
@@ -912,7 +914,7 @@ player's 💠 balance as a column (ranking is still by wins, not 💠).
 
 ## Pixels 💠
 
-**Status: Implemented (earning only — spending arrives in later phases, #209 and #210).**
+**Status: Implemented (earning, the clue shop and public spends, below).**
 
 Every player has a 💠 balance (`players.currency`), shown by `/balance` (in
 the game topic or a DM) and next to the win count on `/leaderboard`. A
@@ -931,6 +933,7 @@ one-time backfill is run.
 | Win at stage 1 / 2 / 3 / 4 / 5 | 40 / 30 / 25 / 20 / 15 | the winner |
 | Setter bonus (win at stage 2-4 only) | 15 | the game's starter |
 | Prompt turn | 10 | the starter |
+| Bounty (the pot, if any) | whatever players put in | the winner, all of it, including their own contribution; see "Public spends" |
 
 ### Rules
 
@@ -960,3 +963,125 @@ Admins view and change every amount with `/pixelconfig` (DM-only,
 admin-gated): `/pixelconfig` lists them, `/pixelconfig <key> <amount>`
 sets one. Unlike `/stageconfig`, it also works mid-game; a change only
 affects payouts from then on. An amount of 0 disables that reward.
+
+### Clue shop
+
+**Status: Implemented.**
+
+Players spend 💠 on private clues to the round that is currently being
+played. Clues are delivered by DM, not shown to the group.
+
+| Clue | Default price | `/pixelconfig` key |
+|---|---|---|
+| Last letter | 10 | `clue_last_letter` |
+| First letter | 20 | `clue_first_letter` |
+| Title shape | 25 | `clue_title_shape` |
+| Extra screenshot | 30 for the first, then +15 for each one already bought in that game (30 / 45 / 60) | `clue_screenshot`, `clue_screenshot_step` |
+| Reveal a tile | 10 per tile | `clue_tile` |
+
+Admins change these with `/pixelconfig` like any other amount; a change
+applies to purchases from then on.
+
+**Opening the shop.** Every stage post in the game topic carries a
+🛒 entry that opens the shop in a DM with the bot (a button under the
+image; in a HARD MODE album, which cannot carry buttons, a link in the
+caption). The shop is also open with `/shop` in a DM, or `/start shop`
+(which is what the 🛒 link sends). It lists only what can currently be
+bought, with a 🔒 on anything the player cannot afford, and shows the
+player's balance.
+
+**Who can buy.**
+- Only members of the group.
+- Only while a round is `ACTIVE`; a button from an earlier round answers
+  that the round is over, and spends nothing.
+- Never the setter of that round: they know the answer.
+
+**The clues.**
+- *First letter*, *last letter* and *title shape* are all taken from the
+  title the round's display title uses, choosing the title field by the
+  same language fallback as the rest of the bot. The message says
+  which source the clue came from (for example the English, romaji or
+  Russian title), so a clue taken from a romanised title is not mistaken
+  for the Russian one. A letter or digit counts (so Cyrillic and kana
+  work); spaces and punctuation are not hidden.
+- *Title shape* shows the title with every letter hidden as `_`, words
+  separated, plus the length of each word. It also shows the first and
+  last letter if the player has already bought them. Buying a letter
+  *after* the shape re-sends the updated shape, so the player never has
+  to piece the two together.
+- *Extra screenshot*: another pixelated screenshot of the same anime, at
+  the stage the round is on now (in HARD MODE, at the current turn's
+  stage). At most 3 per player per game, with the escalating price above.
+  It is never a screenshot that is already in play in this round (the
+  one used by the round, or either one of a HARD MODE pair) and never
+  one the player already bought. Available in HARD MODE too.
+- *Reveal a tile*: the player picks one square of an 8x8 grid laid over
+  the round's screenshot, and gets the image back with that square shown
+  unpixelated. Each tile can be bought once, the grid ticks the tiles
+  already owned, and later purchases accumulate (the picture shows every
+  tile the player has bought). Not available in HARD MODE, whose two
+  images are not a single screenshot to tile.
+
+**The group is told.** When someone buys a clue, the game topic gets a
+short notice naming the buyer and the type of clue (not its contents).
+
+**Sharing.** Every delivered clue message has a *Share with the group*
+button. (The re-sent title shape after a later letter purchase is a
+follow-up to that message and has no button of its own.) Sharing is free, works once per clue, and only while that round is still
+active; it posts the clue (the text, or the picture) to the game topic
+under the player's name.
+
+**Failure and refunds.**
+- If Telegram refuses to deliver a clue, the player is refunded in full
+  (a `refund` ledger row that reverses the charge) and told so.
+- For an extra screenshot the bot first finds, downloads and pixelates
+  the picture, and only then charges. When no unused screenshot is
+  available, the player is never charged and is told there is none left;
+  when the lookup or download itself fails, they are told the screenshot
+  could not be loaded, also without a charge.
+- A screenshot button remembers how many screenshots the player owned
+  when the shop menu was drawn. A tap with a different count (a double
+  tap, an older menu) is refused as stale, so nobody pays the escalated
+  price by accident.
+- If a round is stopped (`/stop`) its clue purchases are refunded in
+  full, since they die with the round.
+
+### Public spends
+
+**Status: Implemented.** Three ways to spend 💠 in the open: put it into a
+round's bounty, tip a player, or pay to sharpen the image.
+
+**Bounty.** The bounty is a pot of 💠 on one round, paid to whoever solves it.
+- `/bounty <amount>` works only in the game topic, during an `ACTIVE` game,
+  with a minimum of 5. Anyone with the balance can add, any number of times,
+  the setter included.
+- The setter can also, before posting, pick a preset of 10, 25 or 50 from the
+  setup preview's bounty submenu (only the presets they can afford are
+  offered). That 💠 goes into the pot as soon as they tap the preset, while the
+  game is still in setup, and is refunded if the setup is abandoned.
+- The pot is shown in the caption of each stage post (also in HARD MODE).
+- The winner takes all of the pot, including their own contribution. The win
+  reply shows it as its own line, separate from the other earnings.
+- The pot is refunded to its contributors when the game ends unsolved by any
+  route (wrong guesses running out, the 2-day timeout, the inactivity
+  auto-advance running out of stages; HARD MODE included), on `/stop`, and when
+  a setup is abandoned. The unsolved reveal message lists the refunded amount.
+- The pot is derived from the `currency_transfers` ledger (contributions into
+  the pot minus what has left it); there is no `games.bounty` column.
+
+**`/tip @username <amount>`.** Sends 💠 from you to another player.
+- Works in the game topic or in a DM, with a minimum of 1.
+- You cannot tip yourself or the bot, the recipient must be a player the bot
+  knows by username, and you need the balance.
+- A plain transfer tied to no game; nothing is refunded later.
+
+**`/sharpen`.** Pays to advance the current round one pixelation stage.
+- Costs 50 by default (`/pixelconfig` key `sharpen`, at least 1).
+- Normal games only, not HARD MODE; not at the last stage; and never for the
+  round's setter.
+- It asks for confirmation first; only the player who requested it can press
+  the confirm button. A confirm made for an earlier stage (the stage moved on
+  in the meantime) is refused and charges nothing.
+- On confirm the player is charged and the round gets the same effects as any
+  stage advance: the next stage image is posted, the wrong-guess counter resets
+  and the new stage is announced in the group topic.

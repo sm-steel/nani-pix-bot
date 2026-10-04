@@ -16,13 +16,13 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
-    _IMAGE_DOWNLOAD_ERRORS,
-    _SEARCH_SERVICE_ERRORS,
-    _client_for_source,
+    IMAGE_DOWNLOAD_ERRORS,
+    SEARCH_SERVICE_ERRORS,
     _post_preview_album,
     _reject_stale_tap,
     _search_and_build_keyboard,
     _stage_preview,
+    client_for_source,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     SCREENSHOT_SEARCH_PICK_PREFIX,
@@ -238,7 +238,7 @@ async def _screenshot_search_step(
     status_message = await message.reply_text(i18n.t("dm_start.searching", lang))
     logger.debug("{} screenshot cross-search started for query {!r}", provider, message.text)
 
-    client = _client_for_source(context, provider)
+    client = client_for_source(context, provider)
     pick_prefix = f"{SCREENSHOT_SEARCH_PICK_PREFIX}{provider}:"
     try:
         # Each branch's *_results_keyboard builder needs its own specific
@@ -267,7 +267,7 @@ async def _screenshot_search_step(
                 tmdb.search,
                 lambda rs: tmdb_results_keyboard(rs, lang, pick_prefix=pick_prefix),
             )
-    except _SEARCH_SERVICE_ERRORS:
+    except SEARCH_SERVICE_ERRORS:
         logger.exception("{} screenshot cross-search failed for query {!r}", provider, message.text)
         await reply_with_source_menu(
             status_message.edit_text, menu, lang, "dm_start.screenshot_service_down"
@@ -441,10 +441,10 @@ async def _resolve_screenshot_search_pick(
     provider, external_id = parsed
     menu = replace(menu, provider=provider)
 
-    client = _client_for_source(context, provider)
+    client = client_for_source(context, provider)
     try:
         result = await _get_provider_by_id(provider, client, external_id)
-    except _SEARCH_SERVICE_ERRORS:
+    except SEARCH_SERVICE_ERRORS:
         logger.exception("{} get_by_id failed for id {}", provider, external_id)
         await reply_with_source_menu(
             query.edit_message_text, menu, lang, "dm_start.screenshot_service_down"
@@ -730,12 +730,12 @@ async def _handle_screenshot_pick(
     # These are external URLs (Shikimori/Tenrai/TMDB), not Telegram
     # file_ids — the gallery album itself lets Telegram fetch them
     # server-side, but storing one as original_image needs the actual
-    # bytes downloaded ourselves. Routed through _client_for_source
+    # bytes downloaded ourselves. Routed through client_for_source
     # (not the bare search_client) so a TMDB pick downloads through the
     # same proxied, Bearer-authed client its search/screenshots calls
     # already use — TMDB's image CDN may be behind the same DNS block
     # as api.themoviedb.org (see ARCHITECTURE.md's connectivity notes).
-    # _IMAGE_DOWNLOAD_ERRORS, not _SEARCH_SERVICE_ERRORS: this is a plain
+    # IMAGE_DOWNLOAD_ERRORS, not SEARCH_SERVICE_ERRORS: this is a plain
     # GET against a CDN, so only a transport error means "the provider is
     # unreachable" — see _shared.py for why the broader tuple is the
     # wrong one to reuse here.
@@ -743,11 +743,11 @@ async def _handle_screenshot_pick(
     # spinner stops before it rather than after (that download plus the
     # preview album is the longest stretch in the flow).
     await tap.answer()
-    download_client = _client_for_source(context, provider)
+    download_client = client_for_source(context, provider)
     try:
         response = await download_client.get(urls[index])
         response.raise_for_status()
-    except _IMAGE_DOWNLOAD_ERRORS:
+    except IMAGE_DOWNLOAD_ERRORS:
         logger.exception(
             "Game {}: downloading {} screenshot #{} failed", game.id, provider, index + 1
         )
@@ -781,6 +781,7 @@ async def _handle_screenshot_pick(
             # is done resolving at the same moment — the next screen is
             # the confirmation preview.
             fresh_game.original_image = response.content
+            fresh_game.shown_screenshot_urls = [urls[index]]
             fresh_game.screenshot_source = provider
             fresh_game.screenshot_picker_provider = None
             logger.debug("Game {}: picked {} screenshot #{}", fresh_game.id, provider, index + 1)

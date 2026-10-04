@@ -32,4 +32,6 @@ def earnings_suffix(
                 amount=earnings.setter,
             )
         )
+    if earnings.bounty:
+        lines.append(i18n.t("economy.bounty_won", lang, name=player_name, amount=earnings.bounty))
     return "".join(f"\n{line}" for line in lines)
