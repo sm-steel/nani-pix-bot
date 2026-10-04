@@ -272,6 +272,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(
         CallbackQueryHandler(game_flow.stop_callback_handler, pattern=r"^stop:")
     )
+    application.add_handler(CallbackQueryHandler(shop.shop_callback_handler, pattern=r"^shop:"))
     application.add_handler(CommandHandler("guess", game_flow.guess_command))
     application.add_handler(CommandHandler("correct", game_flow.correct_command))
     application.add_handler(CommandHandler("skip", game_flow.skip_command))
