@@ -14,7 +14,7 @@ LEADERBOARD_SIZE = 10
 
 def _row(rank: int, player: Player) -> str:
     name = player.username or player.telegram_user_id
-    return f"{rank}. {name} — {player.wins} 🏆 · {player.pixels} 💠"
+    return f"{rank}. {name} — {player.wins} 🏆 · {player.currency} 💠"
 
 
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

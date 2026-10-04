@@ -914,10 +914,10 @@ player's 💠 balance as a column (ranking is still by wins, not 💠).
 
 **Status: Implemented (earning only — spending arrives in later phases, #209 and #210).**
 
-Every player has a 💠 balance (`players.pixels`), shown by `/balance` (in
+Every player has a 💠 balance (`players.currency`), shown by `/balance` (in
 the game topic or a DM) and next to the win count on `/leaderboard`. A
 new player starts with 50 💠. Every change is also recorded as a row in
-the `pixel_transfers` ledger, so a balance can always be explained.
+the `currency_transfers` ledger, so a balance can always be explained.
 Players who already existed before this release start at 0 until a
 one-time backfill is run.
 

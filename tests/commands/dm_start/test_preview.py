@@ -172,7 +172,9 @@ async def test_preview_confirm_shows_and_pays_the_prompt_start_bonus(
     with session_factory() as session:
         starter = session.get(Player, 1)
         assert starter is not None
-        assert starter.pixels == 10  # the helper creates the Player directly, so no starting grant
+        assert (
+            starter.currency == 10
+        )  # the helper creates the Player directly, so no starting grant
 
 
 async def test_preview_confirm_activates_the_game_even_when_the_group_post_times_out(

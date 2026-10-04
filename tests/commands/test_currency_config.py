@@ -5,7 +5,7 @@ import pytest
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands import pixelconfig as pixelconfig_module
+from nani_pix_bot.commands import currency_config as currency_config_module
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.economy import config
 from nani_pix_bot.services.economy.config import DEFAULT_AMOUNTS, EconomyKey
@@ -27,9 +27,9 @@ def _make_context(session_factory, args: list[str]) -> MagicMock:
 
 
 async def _run(monkeypatch, session_factory, args: list[str], *, admin: bool = True) -> MagicMock:
-    monkeypatch.setattr(pixelconfig_module, "is_group_admin", AsyncMock(return_value=admin))
+    monkeypatch.setattr(currency_config_module, "is_group_admin", AsyncMock(return_value=admin))
     update = _make_update()
-    await pixelconfig_module.pixelconfig_command(
+    await currency_config_module.currency_config_command(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory, args))
     )
     return update
@@ -74,5 +74,5 @@ async def test_unknown_key_stores_nothing(monkeypatch, session_factory) -> None:
 async def test_bad_args_reply_usage(monkeypatch, session_factory, args) -> None:
     update = await _run(monkeypatch, session_factory, args)
 
-    assert update.message.reply_text.await_args.args[0] == i18n.t("pixelconfig.usage", "en")
+    assert update.message.reply_text.await_args.args[0] == i18n.t("currency_config.usage", "en")
     assert _stored(session_factory) == dict(DEFAULT_AMOUNTS)

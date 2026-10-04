@@ -2,7 +2,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.pixel_transfer import PixelTransfer
+from nani_pix_bot.models.currency_transfer import CurrencyTransfer
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import players
 
@@ -112,7 +112,7 @@ def test_get_or_create_player_grants_starting_balance_once(session: Session) -> 
 
     player = session.get(Player, 1)
     assert player is not None
-    assert player.pixels == 50
+    assert player.currency == 50
 
 
 def test_get_or_create_player_without_grant_starts_at_zero_with_no_ledger_row(
@@ -123,5 +123,5 @@ def test_get_or_create_player_without_grant_starts_at_zero_with_no_ledger_row(
 
     player = session.get(Player, 1)
     assert player is not None
-    assert player.pixels == 0
-    assert session.query(PixelTransfer).count() == 0
+    assert player.currency == 0
+    assert session.query(CurrencyTransfer).count() == 0

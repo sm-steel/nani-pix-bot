@@ -190,11 +190,11 @@ async def test_photo_handler_shows_the_method_selection_keyboard(session_factory
 
 def _real_png() -> bytes:
     image = Image.new("RGB", (64, 64))
-    pixels = image.load()
-    assert pixels is not None
+    currency = image.load()
+    assert currency is not None
     for x in range(64):
         for y in range(64):
-            pixels[x, y] = (x * 4, y * 4, (x + y) * 2)
+            currency[x, y] = (x * 4, y * 4, (x + y) * 2)
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     return buffer.getvalue()

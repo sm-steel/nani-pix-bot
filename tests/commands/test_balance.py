@@ -32,7 +32,7 @@ def _make_context(session_factory) -> MagicMock:
 
 async def test_balance_in_dm_shows_amount(session_factory) -> None:
     with session_factory() as session:
-        session.add(Player(telegram_user_id=1, pixels=123))
+        session.add(Player(telegram_user_id=1, currency=123))
         session.commit()
     update = _make_update(chat_type=ChatType.PRIVATE, thread_id=None)
 

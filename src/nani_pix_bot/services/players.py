@@ -9,7 +9,7 @@ from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import PixelReason
+from nani_pix_bot.models.enums import CurrencyReason
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services.economy import config as economy_config
 from nani_pix_bot.services.economy import wallet
@@ -43,7 +43,7 @@ def get_or_create_player(
             ]
             if starting_balance > 0:
                 wallet.credit(
-                    session, player, starting_balance, wallet.LedgerEntry(PixelReason.GRANT)
+                    session, player, starting_balance, wallet.LedgerEntry(CurrencyReason.GRANT)
                 )
     elif username is not None:
         player.username = username

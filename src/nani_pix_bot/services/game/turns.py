@@ -52,7 +52,7 @@ def set_next_starter(session: Session, user_id: int | None) -> TurnState:
     a designated human means the turn isn't "open to anyone" for that
     backstop's purposes. Returns the row so the command layer can
     schedule/cancel the actual JobQueue jobs (this module stays
-    Telegram-agnostic). `turn_received_at` (prompt-turn pixel bonus) is
+    Telegram-agnostic). `turn_received_at` (prompt-turn currency bonus) is
     set when the turn is handed to a *different* specific player and
     cleared when opened to anyone; re-designating the same player keeps
     the original timestamp."""

@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models import PixelTransfer, Player
+from nani_pix_bot.models import CurrencyTransfer, Player
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services.economy import config, earning
@@ -26,10 +26,10 @@ def _setup(session: Session, **game_overrides) -> Game:
     return game
 
 
-def _pixels(session: Session, user_id: int) -> int:
+def _currency(session: Session, user_id: int) -> int:
     player = session.get(Player, user_id)
     assert player is not None
-    return player.pixels
+    return player.currency
 
 
 def _guess(session: Session, game: Game, guesser_id: int, *, won: bool = False):
@@ -44,7 +44,7 @@ def test_first_wrong_guess_pays_first_guess_bonus_plus_wrong_guess(session: Sess
     earned = _guess(session, game, ALICE)
 
     assert earned.guess == 7
-    assert _pixels(session, ALICE) == 7
+    assert _currency(session, ALICE) == 7
 
 
 def test_first_guess_bonus_is_paid_once_per_game(session: Session) -> None:
@@ -73,7 +73,7 @@ def test_wrong_guess_earnings_stop_at_cap(session: Session) -> None:
         _guess(session, game, ALICE)
 
     # 5 first-guess + 10 capped wrong-guess
-    assert _pixels(session, ALICE) == 15
+    assert _currency(session, ALICE) == 15
 
 
 def test_award_guess_skips_zero_amounts(session: Session) -> None:
@@ -84,7 +84,7 @@ def test_award_guess_skips_zero_amounts(session: Session) -> None:
     earned = _guess(session, game, ALICE)
 
     assert earned.player_total == 0
-    assert session.query(PixelTransfer).count() == 0
+    assert session.query(CurrencyTransfer).count() == 0
 
 
 def test_winning_first_guess_at_stage_one(session: Session) -> None:
@@ -95,8 +95,8 @@ def test_winning_first_guess_at_stage_one(session: Session) -> None:
     earned = _guess(session, game, ALICE, won=True)
 
     assert (earned.guess, earned.win, earned.setter) == (5, 40, 0)
-    assert _pixels(session, ALICE) == 45
-    assert _pixels(session, STARTER) == 0
+    assert _currency(session, ALICE) == 45
+    assert _currency(session, STARTER) == 0
 
 
 def test_award_win_pays_setter_at_stage_two_to_four(session: Session) -> None:
@@ -105,7 +105,7 @@ def test_award_win_pays_setter_at_stage_two_to_four(session: Session) -> None:
     earned = earning.award_win(session, game, winner_id=ALICE)
 
     assert (earned.win, earned.setter) == (25, 15)
-    assert _pixels(session, STARTER) == 15
+    assert _currency(session, STARTER) == 15
 
 
 def test_award_win_alone_never_pays_first_guess(session: Session) -> None:
@@ -115,7 +115,7 @@ def test_award_win_alone_never_pays_first_guess(session: Session) -> None:
     earned = earning.award_win(session, game, winner_id=ALICE)  # /correct path
 
     assert earned.guess == 0
-    assert _pixels(session, ALICE) == 30
+    assert _currency(session, ALICE) == 30
 
 
 def test_award_win_hard_mode_turn_two(session: Session) -> None:
@@ -124,14 +124,14 @@ def test_award_win_hard_mode_turn_two(session: Session) -> None:
     earned = earning.award_win(session, game, winner_id=ALICE)
 
     assert (earned.win, earned.setter) == (60, 0)
-    assert _pixels(session, STARTER) == 0
+    assert _currency(session, STARTER) == 0
 
 
 def test_game_created_from_an_open_turn_earns_no_prompt_bonus(session: Session) -> None:
     game = _setup(session, turn_received_at=None, created_at=datetime.now(UTC))
 
     assert earning.award_prompt_start(session, game) == 0
-    assert _pixels(session, STARTER) == 0
+    assert _currency(session, STARTER) == 0
 
 
 def test_prompt_start_pays_starter_within_an_hour(session: Session) -> None:
@@ -139,7 +139,7 @@ def test_prompt_start_pays_starter_within_an_hour(session: Session) -> None:
     game = _setup(session, turn_received_at=received, created_at=datetime.now(UTC))
 
     assert earning.award_prompt_start(session, game) == 10
-    assert _pixels(session, STARTER) == 10
+    assert _currency(session, STARTER) == 10
 
 
 def test_prompt_start_pays_nothing_when_late_or_unknown_or_hard_mode(session: Session) -> None:

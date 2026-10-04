@@ -1,4 +1,4 @@
-"""/balance — the caller's 💠 pixel balance, in DM or the game topic."""
+"""/balance — the caller's currency balance (pixels 💠), in DM or the game topic."""
 
 from loguru import logger
 from telegram import Update

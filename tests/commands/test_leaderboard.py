@@ -72,9 +72,9 @@ async def test_leaderboard_command_handles_no_winners_yet(session_factory) -> No
     assert "no" in update.message.reply_text.await_args.args[0].lower()
 
 
-async def test_leaderboard_command_shows_pixels(session_factory) -> None:
+async def test_leaderboard_command_shows_currency(session_factory) -> None:
     with session_factory() as session:
-        session.add(Player(telegram_user_id=1, username="rich", wins=2, pixels=77))
+        session.add(Player(telegram_user_id=1, username="rich", wins=2, currency=77))
         session.commit()
     update = _make_update()
 

@@ -132,7 +132,7 @@ class Game(Base):
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     # TurnState.turn_received_at at creation time (set when the turn is
     # handed to a specific player; None if it was open to anyone) — the
-    # prompt-turn pixel bonus compares it with created_at (services/economy/earning.py).
+    # prompt-turn currency bonus compares it with created_at (services/economy/earning.py).
     turn_received_at: Mapped[datetime | None] = mapped_column(default=None)
     scheduled_end_at: Mapped[datetime | None] = mapped_column(default=None)
     ended_at: Mapped[datetime | None] = mapped_column(default=None)

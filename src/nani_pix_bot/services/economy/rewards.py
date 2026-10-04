@@ -1,4 +1,4 @@
-"""Pure pixel-reward math — no DB, no Telegram; deterministic given its
+"""Pure currency-reward math — no DB, no Telegram; deterministic given its
 inputs (CLAUDE.md: game logic as pure functions). earning.py feeds it
 amounts from config.get_amounts() and facts read from the DB."""
 

@@ -278,7 +278,7 @@ def _dispatch_non_won_outcome(
 @dataclass(frozen=True)
 class _GuessResult:
     """Everything guess_command sends once its session has committed —
-    nothing reaches Telegram while the guess (and the pixels it paid) could
+    nothing reaches Telegram while the guess (and the currency it paid) could
     still be rolled back by a failed send."""
 
     game_id: int
@@ -299,7 +299,7 @@ async def _send_guess_result(
 
 
 def _with_suffix(announcement: _Announcement | None, suffix: str) -> _Announcement | None:
-    """Appends the pixel-earnings lines to an outcome's group caption."""
+    """Appends the currency-earnings lines to an outcome's group caption."""
     if announcement is None or not suffix:
         return announcement
     return replace(announcement, caption=announcement.caption + suffix)
@@ -362,7 +362,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 _with_suffix(announcement, suffix),
                 needs_cleanup_after_send,
             )
-    # Block closed and committed above — the outcome (and the pixels it
+    # Block closed and committed above — the outcome (and the currency it
     # paid) is durable now regardless of whether the reply/announcement
     # below actually reaches the group (see post_current_image's docstring).
     await _send_guess_result(message, context, session_factory, result)

@@ -2,8 +2,8 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models import PixelConfig, PixelTransfer, Player
-from nani_pix_bot.models.enums import PixelParty, PixelReason
+from nani_pix_bot.models import CurrencyConfig, CurrencyTransfer, Player
+from nani_pix_bot.models.enums import CurrencyParty, CurrencyReason
 
 
 def _players(session: Session, *ids: int) -> None:
@@ -12,34 +12,34 @@ def _players(session: Session, *ids: int) -> None:
     session.flush()
 
 
-def _transfer(**overrides: object) -> PixelTransfer:
+def _transfer(**overrides: object) -> CurrencyTransfer:
     fields: dict[str, object] = {
-        "from_type": PixelParty.HOUSE,
-        "to_type": PixelParty.PLAYER,
+        "from_type": CurrencyParty.HOUSE,
+        "to_type": CurrencyParty.PLAYER,
         "to_player_id": 1,
         "amount": 5,
-        "reason": PixelReason.FIRST_GUESS,
+        "reason": CurrencyReason.FIRST_GUESS,
     }
     fields.update(overrides)
-    return PixelTransfer(**fields)
+    return CurrencyTransfer(**fields)
 
 
-def test_player_pixels_default_to_zero(session: Session) -> None:
+def test_player_currency_default_to_zero(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
 
     player = session.get(Player, 1)
     assert player is not None
-    assert player.pixels == 0
+    assert player.currency == 0
 
 
-def test_pixel_transfer_round_trips_house_to_player(session: Session) -> None:
+def test_currency_transfer_round_trips_house_to_player(session: Session) -> None:
     _players(session, 1)
     session.add(_transfer())
     session.commit()
 
-    row = session.query(PixelTransfer).one()
-    assert row.from_type == PixelParty.HOUSE
+    row = session.query(CurrencyTransfer).one()
+    assert row.from_type == CurrencyParty.HOUSE
     assert row.from_player_id is None
     assert row.to_type == "player"
     assert row.to_player_id == 1
@@ -52,28 +52,28 @@ def test_pixel_transfer_round_trips_house_to_player(session: Session) -> None:
 @pytest.mark.parametrize(
     ("overrides", "constraint"),
     [
-        ({"amount": 0}, "ck_pixel_transfers_amount_positive"),
-        ({"to_player_id": None}, "ck_pixel_transfers_to_player"),
-        ({"from_player_id": 1}, "ck_pixel_transfers_from_player"),
+        ({"amount": 0}, "ck_currency_transfers_amount_positive"),
+        ({"to_player_id": None}, "ck_currency_transfers_to_player"),
+        ({"from_player_id": 1}, "ck_currency_transfers_from_player"),
         (
-            {"from_type": PixelParty.POT, "to_type": PixelParty.HOUSE, "to_player_id": None},
-            "ck_pixel_transfers_pot_has_game",
+            {"from_type": CurrencyParty.POT, "to_type": CurrencyParty.HOUSE, "to_player_id": None},
+            "ck_currency_transfers_pot_has_game",
         ),
         (
-            {"to_type": PixelParty.HOUSE, "to_player_id": None},
-            "ck_pixel_transfers_distinct_sides",
+            {"to_type": CurrencyParty.HOUSE, "to_player_id": None},
+            "ck_currency_transfers_distinct_sides",
         ),
         (
             {
-                "from_type": PixelParty.PLAYER,
+                "from_type": CurrencyParty.PLAYER,
                 "from_player_id": 1,
-                "to_type": PixelParty.PLAYER,
+                "to_type": CurrencyParty.PLAYER,
                 "to_player_id": 1,
             },
-            "ck_pixel_transfers_distinct_sides",
+            "ck_currency_transfers_distinct_sides",
         ),
-        ({"from_type": "bank"}, "ck_pixel_transfers_from_type_valid"),
-        ({"to_type": "bank", "to_player_id": None}, "ck_pixel_transfers_to_type_valid"),
+        ({"from_type": "bank"}, "ck_currency_transfers_from_type_valid"),
+        ({"to_type": "bank", "to_player_id": None}, "ck_currency_transfers_to_type_valid"),
     ],
     ids=[
         "zero-amount",
@@ -86,7 +86,7 @@ def test_pixel_transfer_round_trips_house_to_player(session: Session) -> None:
         "unknown-to-type",
     ],
 )
-def test_pixel_transfer_check_constraints_reject_bad_rows(
+def test_currency_transfer_check_constraints_reject_bad_rows(
     session: Session, overrides: dict[str, object], constraint: str
 ) -> None:
     _players(session, 1)
@@ -97,20 +97,20 @@ def test_pixel_transfer_check_constraints_reject_bad_rows(
     assert constraint in str(exc.value)
 
 
-def test_pixel_transfer_allows_player_to_other_player(session: Session) -> None:
+def test_currency_transfer_allows_player_to_other_player(session: Session) -> None:
     _players(session, 1, 2)
     session.add(
         _transfer(
-            from_type=PixelParty.PLAYER,
+            from_type=CurrencyParty.PLAYER,
             from_player_id=1,
-            to_type=PixelParty.PLAYER,
+            to_type=CurrencyParty.PLAYER,
             to_player_id=2,
         )
     )
     session.flush()
 
 
-def test_pixel_transfer_reverses_id_is_unique(session: Session) -> None:
+def test_currency_transfer_reverses_id_is_unique(session: Session) -> None:
     _players(session, 1)
     original = _transfer()
     session.add(original)
@@ -123,10 +123,10 @@ def test_pixel_transfer_reverses_id_is_unique(session: Session) -> None:
         session.flush()
 
 
-def test_pixel_config_stores_key_value(session: Session) -> None:
-    session.add(PixelConfig(key="wrong_guess", value=3))
+def test_currency_config_stores_key_value(session: Session) -> None:
+    session.add(CurrencyConfig(key="wrong_guess", value=3))
     session.commit()
 
-    row = session.get(PixelConfig, "wrong_guess")
+    row = session.get(CurrencyConfig, "wrong_guess")
     assert row is not None
     assert row.value == 3

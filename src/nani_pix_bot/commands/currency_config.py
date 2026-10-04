@@ -1,4 +1,4 @@
-"""/pixelconfig — admin view/tune of pixel amounts (services/economy/config.py).
+"""/pixelconfig — admin view/tune of currency amounts (services/economy/config.py).
 DM-only and admin-gated like /stageconfig. Unlike stage config it is
 *not* blocked mid-game: an amount change only affects future payouts."""
 
@@ -16,10 +16,10 @@ from nani_pix_bot.services.economy.config import EconomyKey
 
 def _render(lang: str, amounts: dict[EconomyKey, int]) -> str:
     rows = [
-        f"{key.value} — {value} — {i18n.t(f'pixelconfig.desc.{key.value}', lang)}"
+        f"{key.value} — {value} — {i18n.t(f'currency_config.desc.{key.value}', lang)}"
         for key, value in amounts.items()
     ]
-    return i18n.t("pixelconfig.header", lang) + "\n" + "\n".join(rows)
+    return i18n.t("currency_config.header", lang) + "\n" + "\n".join(rows)
 
 
 def _parse(args: list[str]) -> tuple[str, int] | None:
@@ -32,7 +32,7 @@ def _parse(args: list[str]) -> tuple[str, int] | None:
     return (args[0], value) if value >= 0 else None
 
 
-async def pixelconfig_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def currency_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     user = update.effective_user
     if not is_private_chat(update) or message is None or user is None:
@@ -55,16 +55,16 @@ async def pixelconfig_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     parsed = _parse(args)
     if parsed is None:
-        await message.reply_text(i18n.t("pixelconfig.usage", lang))
+        await message.reply_text(i18n.t("currency_config.usage", lang))
         return
     raw_key, value = parsed
     try:
         key = EconomyKey(raw_key)
     except ValueError:
-        await message.reply_text(i18n.t("pixelconfig.unknown_key", lang, name=raw_key))
+        await message.reply_text(i18n.t("currency_config.unknown_key", lang, name=raw_key))
         return
 
     with session_scope(session_factory) as session:
         config.set_amount(session, key, value)
-    logger.info("Admin {} set pixel config {} = {}", user.id, key, value)
-    await message.reply_text(i18n.t("pixelconfig.updated", lang, name=key.value, value=value))
+    logger.info("Admin {} set currency config {} = {}", user.id, key, value)
+    await message.reply_text(i18n.t("currency_config.updated", lang, name=key.value, value=value))

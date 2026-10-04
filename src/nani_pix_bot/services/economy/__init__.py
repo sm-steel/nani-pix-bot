@@ -1,4 +1,4 @@
-"""The 💠 pixel economy — see the pixel-economy design spec and
+"""The currency economy (shown to players as pixels 💠) — see the currency-economy design spec and
 MECHANICS.md's "Pixels" section. Import submodules directly
 (`from nani_pix_bot.services.economy import wallet`); this package
 deliberately re-exports nothing, because services/players.py imports

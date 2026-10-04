@@ -1,4 +1,4 @@
-"""Applies the pixel reward rules (rewards.py) to real games. Called by
+"""Applies the currency reward rules (rewards.py) to real games. Called by
 the command layer right after record_guess (/guess), force_win
 (/correct) and activate_game (DM setup confirm); each call returns what
 was earned so the handler can show it in the reply it already sends.
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import PixelReason
+from nani_pix_bot.models.enums import CurrencyReason
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
@@ -33,12 +33,12 @@ class Earnings:
 def _player(session: Session, user_id: int) -> Player:
     player = session.get(Player, user_id)
     if player is None:
-        msg = f"pixel award for unknown player {user_id}"
+        msg = f"currency award for unknown player {user_id}"
         raise ValueError(msg)
     return player
 
 
-def _pay(session: Session, player: Player, amount: int, reason: PixelReason, game: Game) -> int:
+def _pay(session: Session, player: Player, amount: int, reason: CurrencyReason, game: Game) -> int:
     """Credit only a positive amount — an admin may set any amount to 0."""
     if amount <= 0:
         logger.debug("Game {}: {} is 0 💠, nothing credited", game.id, reason)
@@ -73,13 +73,13 @@ def award_win(session: Session, game: Game, *, winner_id: int) -> Earnings:
         session,
         winner,
         rewards.win_reward(amounts, stage_number=stage, multiplier=multiplier),
-        PixelReason.WIN,
+        CurrencyReason.WIN,
         game,
     )
     setter = 0
     if _setter_eligible(game, winner_id=winner_id, stage=stage):
         starter = _player(session, game.starter_id)
-        setter = _pay(session, starter, amounts[EconomyKey.SETTER], PixelReason.SETTER, game)
+        setter = _pay(session, starter, amounts[EconomyKey.SETTER], CurrencyReason.SETTER, game)
     logger.info("Game {}: win pays {} 💠 to {}, {} 💠 to setter", game.id, win, winner_id, setter)
     return Earnings(win=win, setter=setter)
 
@@ -92,17 +92,17 @@ def award_guess(session: Session, game: Game, *, guesser_id: int, won: bool) -> 
     # guess is exactly the one that brought the count to 1.
     if game.total_guess_count == 1:
         guess += _pay(
-            session, guesser, amounts[EconomyKey.FIRST_GUESS], PixelReason.FIRST_GUESS, game
+            session, guesser, amounts[EconomyKey.FIRST_GUESS], CurrencyReason.FIRST_GUESS, game
         )
     if not won:
         earned = wallet.game_total(
-            session, player_id=guesser_id, game_id=game.id, reason=PixelReason.WRONG_GUESS
+            session, player_id=guesser_id, game_id=game.id, reason=CurrencyReason.WRONG_GUESS
         )
         guess += _pay(
             session,
             guesser,
             rewards.wrong_guess_reward(amounts, earned_this_game=earned),
-            PixelReason.WRONG_GUESS,
+            CurrencyReason.WRONG_GUESS,
             game,
         )
         return Earnings(guess=guess)
@@ -119,7 +119,9 @@ def award_prompt_start(session: Session, game: Game) -> int:
         logger.debug("Game {}: not a prompt start, no bonus", game.id)
         return 0
     amount = config.get_amounts(session)[EconomyKey.PROMPT_TURN]
-    paid = _pay(session, _player(session, game.starter_id), amount, PixelReason.PROMPT_TURN, game)
+    paid = _pay(
+        session, _player(session, game.starter_id), amount, CurrencyReason.PROMPT_TURN, game
+    )
     if paid > 0:
         logger.info(
             "Game {}: prompt-turn bonus {} 💠 to starter {}", game.id, paid, game.starter_id

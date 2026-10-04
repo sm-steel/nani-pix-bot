@@ -1,5 +1,5 @@
-"""Admin-tunable pixel amounts. Defaults are the constants below (the
-single source of truth — DRY per CLAUDE.md); `pixel_config` rows hold
+"""Admin-tunable currency amounts. Defaults are the constants below (the
+single source of truth — DRY per CLAUDE.md); `currency_config` rows hold
 only what an admin changed via /pixelconfig."""
 
 import enum
@@ -10,7 +10,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.pixel_config import PixelConfig
+from nani_pix_bot.models.currency_config import CurrencyConfig
 
 
 class EconomyKey(enum.StrEnum):
@@ -56,17 +56,17 @@ WIN_STAGE_KEYS: tuple[EconomyKey, ...] = (
 def get_amounts(session: Session) -> dict[EconomyKey, int]:
     """Every amount, overrides applied. Rows for keys this version doesn't
     know (e.g. left behind by a rollback) are ignored."""
-    overrides = {row.key: row.value for row in session.scalars(select(PixelConfig))}
+    overrides = {row.key: row.value for row in session.scalars(select(CurrencyConfig))}
     return {key: overrides.get(key.value, default) for key, default in DEFAULT_AMOUNTS.items()}
 
 
 def set_amount(session: Session, key: EconomyKey, value: int) -> None:
     if value < 0:
-        msg = f"Pixel amount for {key} cannot be negative: {value}"
+        msg = f"Currency amount for {key} cannot be negative: {value}"
         raise ValueError(msg)
-    row = session.get(PixelConfig, key.value)
+    row = session.get(CurrencyConfig, key.value)
     if row is None:
-        session.add(PixelConfig(key=key.value, value=value))
+        session.add(CurrencyConfig(key=key.value, value=value))
     else:
         row.value = value
-    logger.info("Pixel config {} set to {}", key, value)
+    logger.info("Currency config {} set to {}", key, value)

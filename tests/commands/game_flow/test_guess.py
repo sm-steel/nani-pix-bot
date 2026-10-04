@@ -698,7 +698,7 @@ async def test_guess_command_hard_mode_unsolved_reveals_two_photo_album(
     expected_caption = guess_command_module.i18n.t(
         "guess.hard_mode_unsolved_caption", "en", title="Frieren: Beyond Journey's End"
     )
-    assert media[0].caption.startswith(expected_caption)  # plus pixel-earnings lines
+    assert media[0].caption.startswith(expected_caption)  # plus currency-earnings lines
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
@@ -760,7 +760,7 @@ async def test_guess_command_hard_mode_wrong_guess_never_actually_fires(
     update.message.reply_text.assert_not_awaited()
 
 
-async def test_wrong_guess_that_advances_the_stage_shows_pixels_earned(
+async def test_wrong_guess_that_advances_the_stage_shows_currency_earned(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
@@ -780,10 +780,10 @@ async def test_wrong_guess_that_advances_the_stage_shows_pixels_earned(
     with session_factory() as session:
         player = session.get(Player, 2)
         assert player is not None
-        assert player.pixels == 50 + 7  # starting grant + earnings
+        assert player.currency == 50 + 7  # starting grant + earnings
 
 
-async def test_wrong_guess_without_advance_shows_pixels_in_the_reply(session_factory) -> None:
+async def test_wrong_guess_without_advance_shows_currency_in_the_reply(session_factory) -> None:
     _active_game(session_factory)
     _seed_stage_limit(session_factory, PixelStage.STAGE_1, wrong_guess_limit=3)
     update = _make_update(user_id=2)
@@ -796,7 +796,7 @@ async def test_wrong_guess_without_advance_shows_pixels_in_the_reply(session_fac
     assert "+7" in update.message.reply_text.await_args.args[0]
 
 
-async def test_correct_guess_caption_shows_win_pixels(session_factory) -> None:
+async def test_correct_guess_caption_shows_win_currency(session_factory) -> None:
     _active_game(session_factory)
     update = _make_update(user_id=2)
     context = _make_context(session_factory, args=["Frieren"])
@@ -822,11 +822,11 @@ async def test_wrong_guess_stays_committed_when_the_reply_times_out(session_fact
         )
 
     # The reply (with its "+7 💠") goes out only after the guess and its
-    # pixels are committed, so a failed send can't roll either back.
+    # currency are committed, so a failed send can't roll either back.
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.wrong_guess_count == 1
         guesser = session.get(Player, 2)
         assert guesser is not None
-        assert guesser.pixels == 50 + 7
+        assert guesser.currency == 50 + 7

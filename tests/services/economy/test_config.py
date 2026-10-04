@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models import PixelConfig
+from nani_pix_bot.models import CurrencyConfig
 from nani_pix_bot.services.economy import config
 from nani_pix_bot.services.economy.config import EconomyKey
 
@@ -34,7 +34,7 @@ def test_set_amount_updates_an_existing_override(session: Session) -> None:
     session.commit()
 
     assert config.get_amounts(session)[EconomyKey.SETTER] == 0
-    assert session.query(PixelConfig).count() == 1
+    assert session.query(CurrencyConfig).count() == 1
 
 
 def test_set_amount_rejects_negative(session: Session) -> None:
@@ -43,7 +43,7 @@ def test_set_amount_rejects_negative(session: Session) -> None:
 
 
 def test_get_amounts_ignores_unknown_stored_keys(session: Session) -> None:
-    session.add(PixelConfig(key="from_a_future_phase", value=99))
+    session.add(CurrencyConfig(key="from_a_future_phase", value=99))
     session.commit()
 
     assert "from_a_future_phase" not in config.get_amounts(session)

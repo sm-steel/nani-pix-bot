@@ -202,7 +202,7 @@ async def test_correct_command_rejects_the_starter_targeting_themselves(session_
         assert starter is not None
         starter.username = "starter"
         session.commit()
-        pixels_before = starter.pixels
+        currency_before = starter.currency
 
     update = _make_update(user_id=1, args=["@starter"])
     context = _make_context(session_factory, args=["@starter"])
@@ -220,7 +220,7 @@ async def test_correct_command_rejects_the_starter_targeting_themselves(session_
         assert session.query(Game).one().status == GameStatus.ACTIVE
         starter = session.get(Player, 1)
         assert starter is not None
-        assert starter.pixels == pixels_before
+        assert starter.currency == currency_before
         assert starter.wins == 0
 
 
@@ -475,7 +475,7 @@ async def test_correct_command_hard_mode_reveals_both_stored_screenshots(session
     expected_caption = correct_command_module.i18n.t(
         "correct.hard_mode_caption", "en", winner="winner", title="Frieren: Beyond Journey's End"
     )
-    assert media[0].caption.startswith(expected_caption)  # plus the pixel-earnings lines
+    assert media[0].caption.startswith(expected_caption)  # plus the currency-earnings lines
     assert "+80" in media[0].caption  # turn-1 win 40 x 2 (HARD MODE)
 
     with session_factory() as session:
@@ -490,7 +490,7 @@ async def test_correct_command_hard_mode_reveals_both_stored_screenshots(session
         assert fetched.hard_mode_image_b is None
 
 
-async def test_correct_command_caption_shows_the_targets_win_pixels(session_factory) -> None:
+async def test_correct_command_caption_shows_the_targets_win_currency(session_factory) -> None:
     _active_game(session_factory, total_guess_count=1)
     with session_factory() as session:
         session.add(Player(telegram_user_id=2, username="winner"))

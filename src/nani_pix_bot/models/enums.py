@@ -232,7 +232,7 @@ class PixelAlgorithm(enum.Enum):
     # speck can define a whole block and fine texture aliases into
     # misleading patterns.
     NEAREST = "nearest"
-    # The canonical mosaic — each block is the mean of its pixels.
+    # The canonical mosaic — each block is the mean of its currency.
     BOX = "box"
     # The default: keeps the block's dominant tone where averaging
     # muddies it toward grey.
@@ -288,8 +288,8 @@ class SetupStep(enum.Enum):
     CONFIRMING = "confirming"  # showing the preview, waiting for a button tap
 
 
-class PixelReason(enum.StrEnum):
-    """Why a `pixel_transfers` row moved pixels — see
+class CurrencyReason(enum.StrEnum):
+    """Why a `currency_transfers` row moved currency — see
     services/economy/. A `StrEnum` stored in a plain `String` column
     (same reasoning as `Provider` above), not a native `sa.Enum`: later
     economy phases add members, and a MariaDB ENUM would need an
@@ -303,10 +303,10 @@ class PixelReason(enum.StrEnum):
     PROMPT_TURN = "prompt_turn"
 
 
-class PixelParty(enum.StrEnum):
-    """One side of a pixel transfer (services/economy/wallet.py). Stored as a
-    plain string, like PixelReason."""
+class CurrencyParty(enum.StrEnum):
+    """One side of a currency transfer (services/economy/wallet.py). Stored as a
+    plain string, like CurrencyReason."""
 
-    HOUSE = "house"  # the game itself: pixels are created (rewards) or spent (purchases)
+    HOUSE = "house"  # the game itself: currency are created (rewards) or spent (purchases)
     PLAYER = "player"  # a player's balance — the matching *_player_id is set
     POT = "pot"  # a game's bounty escrow (phase 3) — game_id is set
