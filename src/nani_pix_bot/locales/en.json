@@ -249,5 +249,19 @@
   "title_field.english": "English",
   "title_field.romaji": "romaji",
   "title_field.native": "Japanese",
-  "title_field.russian": "Russian"
+  "title_field.russian": "Russian",
+
+  "shop.button": "🛒 Clues",
+  "shop.menu": "🛒 Clue shop — balance: {balance} 💠\nClues come to you privately here; you can share any of them with the group for free.",
+  "shop.no_game": "No game is running right now — the shop opens while a round is on.",
+  "shop.setter": "You set this round, so the shop is closed for you until the next one.",
+  "shop.nothing_left": "Nothing left to buy in this round.",
+  "shop.item.last_letter": "🔤 Last letter — {price} 💠",
+  "shop.item.first_letter": "🔤 First letter — {price} 💠",
+  "shop.item.title_shape": "📏 Title shape — {price} 💠",
+  "shop.item.screenshot": "🖼 Extra screenshot — {price} 💠",
+  "shop.item.tile": "🧩 Reveal a tile — {price} 💠 each",
+  "shop.locked": "🔒 {label}",
+  "shop.share_button": "📣 Share with the group",
+  "commands.shop": "Clue shop (spend pixels)"
 }

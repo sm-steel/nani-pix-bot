@@ -14,6 +14,8 @@ from nani_pix_bot.jobs.timers.current_image import (
     clear_image_if_sent,
     post_current_image,
     post_current_images,
+    post_stage_image,
+    post_stage_images,
 )
 from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.jobs.timers.retry import retry_on_failure
@@ -185,6 +187,30 @@ def _hard_mode_inactivity_outcome(
     return game_service.GuessOutcome.UNSOLVED, announcement
 
 
+async def _post_hard_mode_outcome(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory,
+    game_id: int,
+    outcome: game_service.GuessOutcome,
+    announcement: _HardModeAnnouncement,
+) -> None:
+    """Posts a hard-mode inactivity outcome: a turn advance is a stage post
+    (with the clue-shop link), an UNSOLVED ending is the reveal (no link,
+    then cleanup and the overthrow check)."""
+    from nani_pix_bot.jobs.timers.autostart import maybe_overthrow  # circular at module level
+
+    if outcome is not game_service.GuessOutcome.UNSOLVED:
+        await post_stage_images(
+            context, session_factory, photos=announcement.photos, caption=announcement.caption
+        )
+        return
+    sent = await post_current_images(
+        context, session_factory, photos=announcement.photos, caption=announcement.caption
+    )
+    clear_image_if_sent(session_factory, game_id, sent)
+    await maybe_overthrow(context, session_factory)
+
+
 @retry_on_failure
 @quiet_hours_deferred
 async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -288,15 +314,9 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
     # announcement below actually reaches the group (see
     # post_current_image's docstring).
     if hard_mode_announcement is not None:
-        sent = await post_current_images(
-            context,
-            session_factory,
-            photos=hard_mode_announcement.photos,
-            caption=hard_mode_announcement.caption,
+        await _post_hard_mode_outcome(
+            context, session_factory, game_id, outcome, hard_mode_announcement
         )
-        if outcome is game_service.GuessOutcome.UNSOLVED:
-            clear_image_if_sent(session_factory, game_id, sent)
-            await maybe_overthrow(context, session_factory)
         return
 
     if outcome is game_service.GuessOutcome.UNSOLVED:
@@ -307,4 +327,4 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
         await maybe_overthrow(context, session_factory)
         return
 
-    await post_current_image(context, session_factory, photo=pixelated, caption=advanced_caption)
+    await post_stage_image(context, session_factory, photo=pixelated, caption=advanced_caption)

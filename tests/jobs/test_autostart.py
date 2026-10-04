@@ -47,7 +47,7 @@ def _expected_first_turn_caption(key: str, **kwargs) -> str:
     tests/commands/test_version.py), which stays correct symmetrically
     whether or not Task 9's real translated text has landed yet (a
     missing key just makes both sides equal the bare key)."""
-    return i18n.t(
+    caption = i18n.t(
         key,
         "en",
         turn=1,
@@ -56,6 +56,8 @@ def _expected_first_turn_caption(key: str, **kwargs) -> str:
         limit=game_service.HARD_MODE_WRONG_GUESS_LIMIT,
         **kwargs,
     )
+    # The first post is a stage post, so it ends with the clue-shop link.
+    return f"{caption}\n🛒 https://t.me/nani_pix_bot?start=shop"
 
 
 def test_schedule_idle_autostart_calls_run_once_from_the_stored_deadline() -> None:

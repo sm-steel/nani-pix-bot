@@ -218,7 +218,7 @@ async def _handle_confirm_tap(
     # Block closed and committed above — activation is durable now
     # regardless of whether the announcement below actually reaches the
     # group (see post_current_image's docstring).
-    await timeout_module.post_current_image(
+    await timeout_module.post_stage_image(
         context, session_factory, photo=first_stage_post.photo, caption=first_stage_post.caption
     )
     return lang

@@ -249,5 +249,19 @@
   "title_field.english": "английское",
   "title_field.romaji": "ромадзи",
   "title_field.native": "японское",
-  "title_field.russian": "русское"
+  "title_field.russian": "русское",
+
+  "shop.button": "🛒 Подсказки",
+  "shop.menu": "🛒 Магазин подсказок — баланс: {balance} 💠\nПодсказки приходят вам сюда лично; любой можно бесплатно поделиться с группой.",
+  "shop.no_game": "Сейчас нет активной игры — магазин работает во время раунда.",
+  "shop.setter": "Этот раунд загадали вы, так что магазин для вас закрыт до следующего.",
+  "shop.nothing_left": "В этом раунде купить больше нечего.",
+  "shop.item.last_letter": "🔤 Последняя буква — {price} 💠",
+  "shop.item.first_letter": "🔤 Первая буква — {price} 💠",
+  "shop.item.title_shape": "📏 Форма названия — {price} 💠",
+  "shop.item.screenshot": "🖼 Доп. скриншот — {price} 💠",
+  "shop.item.tile": "🧩 Открыть тайл — {price} 💠 за штуку",
+  "shop.locked": "🔒 {label}",
+  "shop.share_button": "📣 Поделиться с группой",
+  "commands.shop": "Магазин подсказок (за пиксели)"
 }

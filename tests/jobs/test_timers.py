@@ -1316,3 +1316,90 @@ async def test_rearm_pending_timeouts_reschedules_idle_autostart(session_factory
 
     names = [call.kwargs["name"] for call in job_queue.run_once.call_args_list]
     assert timeout_module.IDLE_AUTOSTART_JOB_NAME in names
+
+
+async def test_post_stage_image_attaches_a_shop_deep_link_button(session_factory) -> None:
+    context = _make_post_image_context(session_factory)
+    context.bot_data["bot_username"] = "testbot"
+
+    message = await timeout_module.post_stage_image(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photo=b"bytes",
+        caption="a caption",
+    )
+
+    assert message is not None
+    _, kwargs = context.bot.send_photo.call_args
+    buttons = kwargs["reply_markup"].inline_keyboard
+    assert len(buttons) == 1
+    assert len(buttons[0]) == 1
+    assert buttons[0][0].url == "https://t.me/testbot?start=shop"
+    assert buttons[0][0].text.startswith("🛒")
+    context.bot.pin_chat_message.assert_awaited_once()
+
+
+async def test_post_stage_image_omits_the_button_without_a_bot_username(session_factory) -> None:
+    context = _make_post_image_context(session_factory)
+
+    await timeout_module.post_stage_image(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photo=b"bytes",
+        caption="a caption",
+    )
+
+    _, kwargs = context.bot.send_photo.call_args
+    assert kwargs.get("reply_markup") is None
+
+
+async def test_post_current_image_never_carries_a_shop_button(session_factory) -> None:
+    context = _make_post_image_context(session_factory)
+    context.bot_data["bot_username"] = "testbot"
+
+    await timeout_module.post_current_image(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photo=b"bytes",
+        caption="a caption",
+    )
+
+    _, kwargs = context.bot.send_photo.call_args
+    assert kwargs.get("reply_markup") is None
+
+
+async def test_post_stage_images_appends_the_shop_link_to_the_first_caption(
+    session_factory,
+) -> None:
+    context = _make_post_images_context(session_factory)
+    context.bot_data["bot_username"] = "testbot"
+
+    result = await timeout_module.post_stage_images(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photos=(b"photo-a", b"photo-b"),
+        caption="a caption",
+    )
+
+    assert result is not None
+    _, kwargs = context.bot.send_media_group.call_args
+    media = kwargs["media"]
+    assert media[0].caption == "a caption\n🛒 https://t.me/testbot?start=shop"
+    assert media[1].caption is None
+    context.bot.pin_chat_message.assert_awaited_once()
+
+
+async def test_post_stage_images_leaves_the_caption_alone_without_a_bot_username(
+    session_factory,
+) -> None:
+    context = _make_post_images_context(session_factory)
+
+    await timeout_module.post_stage_images(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        photos=(b"photo-a", b"photo-b"),
+        caption="a caption",
+    )
+
+    _, kwargs = context.bot.send_media_group.call_args
+    assert kwargs["media"][0].caption == "a caption"
