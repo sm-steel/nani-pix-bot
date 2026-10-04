@@ -303,6 +303,10 @@ class CurrencyReason(enum.StrEnum):
     PROMPT_TURN = "prompt_turn"
     CLUE_PURCHASE = "clue_purchase"
     REFUND = "refund"
+    BOUNTY = "bounty"
+    BOUNTY_WIN = "bounty_win"
+    TIP = "tip"
+    SHARPEN = "sharpen"
 
 
 class CurrencyParty(enum.StrEnum):
