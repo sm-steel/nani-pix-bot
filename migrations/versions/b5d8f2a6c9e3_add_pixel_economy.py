@@ -1,4 +1,4 @@
-"""add pixel economy: balance, ledger, config, turn_received_at
+"""add pixel economy: balance, transfer ledger, config, turn_received_at
 
 Revision ID: b5d8f2a6c9e3
 Revises: e3a91c7b5d24
@@ -25,20 +25,48 @@ def upgrade() -> None:
     op.add_column("turn_state", sa.Column("turn_received_at", sa.DateTime(), nullable=True))
     op.add_column("games", sa.Column("turn_received_at", sa.DateTime(), nullable=True))
     op.create_table(
-        "pixel_transactions",
+        "pixel_transfers",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("player_id", sa.BigInteger(), nullable=False),
-        sa.Column("game_id", sa.Integer(), nullable=True),
+        sa.Column("from_type", sa.String(16), nullable=False),
+        sa.Column("from_player_id", sa.BigInteger(), nullable=True),
+        sa.Column("to_type", sa.String(16), nullable=False),
+        sa.Column("to_player_id", sa.BigInteger(), nullable=True),
         sa.Column("amount", sa.Integer(), nullable=False),
         sa.Column("reason", sa.String(32), nullable=False),
-        sa.Column("detail", sa.String(255), nullable=True),
+        # No FK on game_id: the ledger outlives deleted games.
+        sa.Column("game_id", sa.Integer(), nullable=True),
+        sa.Column("reverses_id", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(["player_id"], ["players.telegram_user_id"]),
-        sa.ForeignKeyConstraint(["game_id"], ["games.id"], ondelete="SET NULL"),
+        sa.CheckConstraint("amount > 0", name="ck_pixel_transfers_amount_positive"),
+        sa.CheckConstraint(
+            "(from_type = 'player' AND from_player_id IS NOT NULL)"
+            " OR (from_type <> 'player' AND from_player_id IS NULL)",
+            name="ck_pixel_transfers_from_player",
+        ),
+        sa.CheckConstraint(
+            "(to_type = 'player' AND to_player_id IS NOT NULL)"
+            " OR (to_type <> 'player' AND to_player_id IS NULL)",
+            name="ck_pixel_transfers_to_player",
+        ),
+        sa.CheckConstraint(
+            "(from_type <> 'pot' AND to_type <> 'pot') OR game_id IS NOT NULL",
+            name="ck_pixel_transfers_pot_has_game",
+        ),
+        sa.CheckConstraint(
+            "from_type <> to_type OR (from_type = 'player' AND from_player_id <> to_player_id)",
+            name="ck_pixel_transfers_distinct_sides",
+        ),
+        sa.ForeignKeyConstraint(["from_player_id"], ["players.telegram_user_id"]),
+        sa.ForeignKeyConstraint(["to_player_id"], ["players.telegram_user_id"]),
+        sa.ForeignKeyConstraint(["reverses_id"], ["pixel_transfers.id"]),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("reverses_id"),
     )
-    op.create_index(op.f("ix_pixel_transactions_player_id"), "pixel_transactions", ["player_id"])
-    op.create_index(op.f("ix_pixel_transactions_game_id"), "pixel_transactions", ["game_id"])
+    op.create_index(
+        op.f("ix_pixel_transfers_from_player_id"), "pixel_transfers", ["from_player_id"]
+    )
+    op.create_index(op.f("ix_pixel_transfers_to_player_id"), "pixel_transfers", ["to_player_id"])
+    op.create_index(op.f("ix_pixel_transfers_game_id"), "pixel_transfers", ["game_id"])
     op.create_table(
         "pixel_config",
         sa.Column("key", sa.String(64), nullable=False),
@@ -49,10 +77,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("pixel_config")
-    # No explicit drop_index for ix_pixel_transactions_*: on MariaDB/InnoDB
+    # No explicit drop_index for ix_pixel_transfers_*: on MariaDB/InnoDB
     # those indexes back the foreign keys, so dropping them first fails
     # (error 1553); drop_table removes them along with the table.
-    op.drop_table("pixel_transactions")
+    op.drop_table("pixel_transfers")
     op.drop_column("games", "turn_received_at")
     op.drop_column("turn_state", "turn_received_at")
     op.drop_column("players", "pixels")

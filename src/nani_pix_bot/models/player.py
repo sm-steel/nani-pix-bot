@@ -20,7 +20,7 @@ class Player(Base):
     filtered out of the leaderboard by `players.top_players`.
 
     `pixels` is the 💠 balance, always moved together with a
-    `pixel_transactions` row (services/economy/wallet.py)."""
+    `pixel_transfers` row (services/economy/wallet.py)."""
 
     __tablename__ = "players"
 

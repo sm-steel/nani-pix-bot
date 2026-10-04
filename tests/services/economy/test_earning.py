@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models import PixelTransaction, Player
+from nani_pix_bot.models import PixelTransfer, Player
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services.economy import config, earning
@@ -84,7 +84,7 @@ def test_award_guess_skips_zero_amounts(session: Session) -> None:
     earned = _guess(session, game, ALICE)
 
     assert earned.player_total == 0
-    assert session.query(PixelTransaction).count() == 0
+    assert session.query(PixelTransfer).count() == 0
 
 
 def test_winning_first_guess_at_stage_one(session: Session) -> None:

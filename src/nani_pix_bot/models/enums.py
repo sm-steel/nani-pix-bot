@@ -289,7 +289,7 @@ class SetupStep(enum.Enum):
 
 
 class PixelReason(enum.StrEnum):
-    """Why a `pixel_transactions` row moved a balance — see
+    """Why a `pixel_transfers` row moved pixels — see
     services/economy/. A `StrEnum` stored in a plain `String` column
     (same reasoning as `Provider` above), not a native `sa.Enum`: later
     economy phases add members, and a MariaDB ENUM would need an
@@ -301,3 +301,12 @@ class PixelReason(enum.StrEnum):
     WIN = "win"
     SETTER = "setter"
     PROMPT_TURN = "prompt_turn"
+
+
+class PixelParty(enum.StrEnum):
+    """One side of a pixel transfer (services/economy/wallet.py). Stored as a
+    plain string, like PixelReason."""
+
+    HOUSE = "house"  # the game itself: pixels are created (rewards) or spent (purchases)
+    PLAYER = "player"  # a player's balance — the matching *_player_id is set
+    POT = "pot"  # a game's bounty escrow (phase 3) — game_id is set
