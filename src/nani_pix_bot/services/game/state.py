@@ -139,6 +139,26 @@ def display_title_field(game: Game, lang: str) -> tuple[TitleField, str] | None:
     return prioritized_title_field(_variants(game), lang=lang)
 
 
+def clue_titles(game: Game, lang: str) -> list[tuple[TitleField, str]]:
+    """The titles a text clue covers, in order: the group-language one
+    (display_title_field(), fallback chain included), then romaji, then
+    English, each field once and each text once (case-insensitive). The
+    native title only appears when it is that fallback default. Empty if
+    the game has no title at all."""
+    default = display_title_field(game, lang)
+    if default is None:
+        return []
+    listed = [default]
+    seen = {default[1].strip().casefold()}
+    for field in (TitleField.ROMAJI, TitleField.ENGLISH):
+        title = getattr(game, f"title_{field.value}")
+        if not title or field is default[0] or title.strip().casefold() in seen:
+            continue
+        seen.add(title.strip().casefold())
+        listed.append((field, title))
+    return listed
+
+
 def match_candidates(game: Game) -> list[str]:
     """Every string a /guess is matched against for this game — the
     single source of truth for both record_guess() and the DM setup
