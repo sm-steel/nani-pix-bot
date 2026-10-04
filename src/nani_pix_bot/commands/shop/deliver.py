@@ -61,6 +61,25 @@ async def deliver_text_clue(
     return True
 
 
+async def deliver_image_clue(
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    photo: bytes,
+    caption: str,
+    reply_markup: InlineKeyboardMarkup,
+) -> str | None:
+    """DM the clue picture; its Telegram file_id (for the share flow), or
+    None (logged) if Telegram refused it, so the caller can refund."""
+    try:
+        message = await context.bot.send_photo(
+            chat_id=user_id, photo=photo, caption=caption, reply_markup=reply_markup
+        )
+    except TelegramError:
+        logger.exception("Could not DM an image clue to {}", user_id)
+        return None
+    return message.photo[-1].file_id
+
+
 async def post_bought_notice(
     context: ContextTypes.DEFAULT_TYPE, buyer_name: str, kind: ClueKind, lang: str
 ) -> None:

@@ -36,13 +36,13 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
-    _client_for_source,
     _method_keyboard,
     _post_preview_album,
     _reject_stale_tap,
     _reply_service_down,
     _reply_service_unavailable,
     _stage_preview,
+    client_for_source,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     MalListPage,
@@ -475,7 +475,7 @@ async def _resolve_picked_mal_entry(
     success path, for the reason pick_callback_handler spells out: a
     query id can only be answered once, and `_reject_stale_tap` needs
     that one answer to deliver its alert."""
-    client = _client_for_source(context, Provider.TENRAI)
+    client = client_for_source(context, Provider.TENRAI)
     try:
         result = await tenrai.get_by_id(client, mal_id)
     except _SEARCH_SERVICE_ERRORS:

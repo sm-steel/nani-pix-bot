@@ -29,9 +29,9 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
     _SEARCH_SERVICE_ERRORS,
-    _client_for_source,
     _reject_stale_tap,
     _stored_provider,
+    client_for_source,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     GalleryPage,
@@ -128,7 +128,7 @@ async def _fetch_screenshots_or_fallback(
         )
         return ScreenshotFailure("dm_start.no_screenshots_available", provider)
 
-    client = _client_for_source(context, provider)
+    client = client_for_source(context, provider)
     try:
         urls = await _fetch_screenshots(provider, client, provider_id)
     except _SEARCH_SERVICE_ERRORS:
@@ -153,7 +153,7 @@ async def _search_provider(
     # already known to be screenshot-capable, so AniList can never
     # actually appear in the result. The cast states what is already
     # true rather than papering over a doubt (see _shared.py's
-    # _client_for_source for the same pattern): `screenshot_module`'s
+    # client_for_source for the same pattern): `screenshot_module`'s
     # declared return type has to cover all three screenshot-capable
     # providers at once, which is wider than what any one call site
     # here can ever get back.
@@ -563,7 +563,7 @@ async def _resolve_cross_provider_id(
         ),
         "",
     )
-    client = _client_for_source(context, provider)
+    client = client_for_source(context, provider)
     try:
         results = await _search_provider(provider, client, query_text)
     except _SEARCH_SERVICE_ERRORS:

@@ -116,7 +116,7 @@ async def _search_and_build_keyboard(
     return results, keyboard
 
 
-def _client_for_source(context: ContextTypes.DEFAULT_TYPE, source: Provider) -> httpx.AsyncClient:
+def client_for_source(context: ContextTypes.DEFAULT_TYPE, source: Provider) -> httpx.AsyncClient:
     """The httpx client to talk to `source` with. Annotated on both ends
     on purpose: `bot_data` is an untyped dict, so an unannotated return
     made this Unknown — and since every search, screenshot fetch and

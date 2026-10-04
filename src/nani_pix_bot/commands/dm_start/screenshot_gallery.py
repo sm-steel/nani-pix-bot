@@ -18,11 +18,11 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start._shared import (
     _IMAGE_DOWNLOAD_ERRORS,
     _SEARCH_SERVICE_ERRORS,
-    _client_for_source,
     _post_preview_album,
     _reject_stale_tap,
     _search_and_build_keyboard,
     _stage_preview,
+    client_for_source,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     SCREENSHOT_SEARCH_PICK_PREFIX,
@@ -238,7 +238,7 @@ async def _screenshot_search_step(
     status_message = await message.reply_text(i18n.t("dm_start.searching", lang))
     logger.debug("{} screenshot cross-search started for query {!r}", provider, message.text)
 
-    client = _client_for_source(context, provider)
+    client = client_for_source(context, provider)
     pick_prefix = f"{SCREENSHOT_SEARCH_PICK_PREFIX}{provider}:"
     try:
         # Each branch's *_results_keyboard builder needs its own specific
@@ -441,7 +441,7 @@ async def _resolve_screenshot_search_pick(
     provider, external_id = parsed
     menu = replace(menu, provider=provider)
 
-    client = _client_for_source(context, provider)
+    client = client_for_source(context, provider)
     try:
         result = await _get_provider_by_id(provider, client, external_id)
     except _SEARCH_SERVICE_ERRORS:
@@ -730,7 +730,7 @@ async def _handle_screenshot_pick(
     # These are external URLs (Shikimori/Tenrai/TMDB), not Telegram
     # file_ids — the gallery album itself lets Telegram fetch them
     # server-side, but storing one as original_image needs the actual
-    # bytes downloaded ourselves. Routed through _client_for_source
+    # bytes downloaded ourselves. Routed through client_for_source
     # (not the bare search_client) so a TMDB pick downloads through the
     # same proxied, Bearer-authed client its search/screenshots calls
     # already use — TMDB's image CDN may be behind the same DNS block
@@ -743,7 +743,7 @@ async def _handle_screenshot_pick(
     # spinner stops before it rather than after (that download plus the
     # preview album is the longest stretch in the flow).
     await tap.answer()
-    download_client = _client_for_source(context, provider)
+    download_client = client_for_source(context, provider)
     try:
         response = await download_client.get(urls[index])
         response.raise_for_status()

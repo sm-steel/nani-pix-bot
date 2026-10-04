@@ -278,5 +278,9 @@
   "shop.refusal.unavailable": "This clue isn't available in this round.",
   "shop.refusal.insufficient": "Not enough 💠 — you have {balance} 💠.",
   "shop.delivery_failed": "Couldn't send the clue — your {amount} 💠 were refunded.",
+  "shop.no_screenshot_left": "No other screenshots of this anime are available — you weren't charged.",
+  "shop.tile_pick": "🧩 Pick a tile to reveal (✅ = already yours):",
+  "clue.screenshot_caption": "🖼 Another screenshot from the same anime (pixelated to the current stage).",
+  "clue.tile_caption": "🧩 Your unpixelated tiles.",
   "commands.shop": "Clue shop (spend pixels)"
 }
