@@ -348,6 +348,10 @@ async def test_try_provider_returns_pick_with_distinct_images_when_both_download
     assert pick.provider_id == 1
     assert pick.image_bytes_a != pick.image_bytes_b
     assert {pick.image_bytes_a, pick.image_bytes_b} == {b"image-a", b"image-b"}
+    assert {pick.url_a, pick.url_b} == {
+        "https://shikimori.io/x/a.jpg",
+        "https://shikimori.io/x/b.jpg",
+    }
 
 
 async def test_try_provider_returns_none_when_pair_fetch_returns_none(

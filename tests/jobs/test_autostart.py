@@ -29,7 +29,12 @@ def _fake_pick() -> GatheredPick:
             result=ShikimoriResult(1, "Frieren", None, None, []), source=Provider.SHIKIMORI
         ),
         screenshot=ScreenshotPick(
-            provider=Provider.SHIKIMORI, provider_id=1, image_bytes_a=b"x", image_bytes_b=b"y"
+            provider=Provider.SHIKIMORI,
+            provider_id=1,
+            image_bytes_a=b"x",
+            image_bytes_b=b"y",
+            url_a="https://x/a.jpg",
+            url_b="https://x/b.jpg",
         ),
     )
 
@@ -394,6 +399,7 @@ async def test_run_bot_autostart_creates_a_hard_mode_game_and_posts_both_images(
         assert game.hard_mode is True
         assert game.hard_mode_image_a == b"x"
         assert game.hard_mode_image_b == b"y"
+        assert game.shown_screenshot_urls == ["https://x/a.jpg", "https://x/b.jpg"]
         assert game.original_image is None
 
 

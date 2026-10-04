@@ -159,6 +159,7 @@ async def test_screenshot_gallery_callback_handler_pick_downloads_and_shows_prev
         fetched = session.get(Game, game_id)
         assert fetched is not None
         assert fetched.original_image == b"real-screenshot-bytes"
+        assert fetched.shown_screenshot_urls == [urls[1]]
         # The one place image provenance is written: these bytes really
         # do come from the shikimori_id on file.
         assert fetched.screenshot_source == "shikimori"

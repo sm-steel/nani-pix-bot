@@ -301,6 +301,8 @@ class CurrencyReason(enum.StrEnum):
     WIN = "win"
     SETTER = "setter"
     PROMPT_TURN = "prompt_turn"
+    CLUE_PURCHASE = "clue_purchase"
+    REFUND = "refund"
 
 
 class CurrencyParty(enum.StrEnum):
@@ -310,3 +312,13 @@ class CurrencyParty(enum.StrEnum):
     HOUSE = "house"  # the game itself: currency is created (rewards) or spent (purchases)
     PLAYER = "player"  # a player's balance — the matching *_player_id is set
     POT = "pot"  # a game's bounty escrow (phase 3) — game_id is set
+
+
+class ClueKind(enum.StrEnum):
+    """Stored as a plain string, like CurrencyReason."""
+
+    FIRST_LETTER = "first_letter"
+    LAST_LETTER = "last_letter"
+    TITLE_SHAPE = "title_shape"
+    SCREENSHOT = "screenshot"
+    TILE = "tile"

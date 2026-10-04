@@ -56,6 +56,8 @@ class ScreenshotPick:
     provider_id: int
     image_bytes_a: bytes
     image_bytes_b: bytes
+    url_a: str
+    url_b: str
 
 
 @dataclass(frozen=True)
@@ -278,6 +280,8 @@ async def _try_provider(
         provider_id=provider_id,
         image_bytes_a=image_bytes_a,
         image_bytes_b=image_bytes_b,
+        url_a=url_a,
+        url_b=url_b,
     )
 
 

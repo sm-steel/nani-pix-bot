@@ -338,6 +338,7 @@ def clear_screenshot_selection(game: Game) -> None:
     # — a plain str has no such attribute.
     setattr(game, _stored_provider(game.screenshot_source).id_attr_name, None)
     game.original_image = None
+    game.shown_screenshot_urls = None
     game.screenshot_source = None
 
 

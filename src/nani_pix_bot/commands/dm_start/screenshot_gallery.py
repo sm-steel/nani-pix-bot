@@ -781,6 +781,7 @@ async def _handle_screenshot_pick(
             # is done resolving at the same moment — the next screen is
             # the confirmation preview.
             fresh_game.original_image = response.content
+            fresh_game.shown_screenshot_urls = [urls[index]]
             fresh_game.screenshot_source = provider
             fresh_game.screenshot_picker_provider = None
             logger.debug("Game {}: picked {} screenshot #{}", fresh_game.id, provider, index + 1)

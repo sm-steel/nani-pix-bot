@@ -290,6 +290,7 @@ async def run_bot_autostart(
         game.hard_mode = True
         game.hard_mode_image_a = pick.screenshot.image_bytes_a
         game.hard_mode_image_b = pick.screenshot.image_bytes_b
+        game.shown_screenshot_urls = [pick.screenshot.url_a, pick.screenshot.url_b]
         game.screenshot_source = pick.screenshot.provider
         setattr(game, pick.screenshot.provider.id_attr_name, pick.screenshot.provider_id)
         game_service.clear_turn_timers(session)

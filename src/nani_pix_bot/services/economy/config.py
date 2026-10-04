@@ -25,6 +25,12 @@ class EconomyKey(enum.StrEnum):
     WIN_STAGE_5 = "win_stage_5"
     SETTER = "setter"
     PROMPT_TURN = "prompt_turn"
+    CLUE_LAST_LETTER = "clue_last_letter"
+    CLUE_FIRST_LETTER = "clue_first_letter"
+    CLUE_TITLE_SHAPE = "clue_title_shape"
+    CLUE_SCREENSHOT = "clue_screenshot"
+    CLUE_SCREENSHOT_STEP = "clue_screenshot_step"
+    CLUE_TILE = "clue_tile"
 
 
 DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
@@ -40,6 +46,12 @@ DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
         EconomyKey.WIN_STAGE_5: 15,
         EconomyKey.SETTER: 15,
         EconomyKey.PROMPT_TURN: 10,
+        EconomyKey.CLUE_LAST_LETTER: 10,
+        EconomyKey.CLUE_FIRST_LETTER: 20,
+        EconomyKey.CLUE_TITLE_SHAPE: 25,
+        EconomyKey.CLUE_SCREENSHOT: 30,
+        EconomyKey.CLUE_SCREENSHOT_STEP: 15,
+        EconomyKey.CLUE_TILE: 10,
     }
 )
 
