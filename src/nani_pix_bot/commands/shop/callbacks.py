@@ -10,7 +10,7 @@ from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.membership import is_group_member
-from nani_pix_bot.commands.shop import images, share
+from nani_pix_bot.commands.shop import images, parsing, share
 from nani_pix_bot.commands.shop.deliver import (
     deliver_image_clue,
     deliver_text_clue,
@@ -32,14 +32,12 @@ from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.clues import shop
 from nani_pix_bot.services.clues.shop import (
     TEXT_KINDS,
-    TILE_GRID,
     PurchaseRequest,
     Refusal,
     ShopRefusedError,
 )
 
 _LETTER_KINDS = frozenset({ClueKind.FIRST_LETTER, ClueKind.LAST_LETTER})
-_BUY_PARTS = 4  # shop:buy:<game_id>:<kind>  and  shop:tile:<game_id>:<index>
 
 
 @dataclass(frozen=True)
@@ -49,6 +47,7 @@ class _BuyTap:
     game_id: int
     kind: ClueKind
     tile_index: int | None = None
+    screenshot_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -74,34 +73,11 @@ class _ImageBought:
     owned_tiles: frozenset[int] = frozenset()
 
 
-def _parse_buy(data: str) -> tuple[int, ClueKind] | None:
-    parts = data.split(":")
-    if len(parts) != _BUY_PARTS:
-        return None
-    try:
-        return int(parts[2]), ClueKind(parts[3])
-    except ValueError:
-        return None
-
-
-def _parse_tile(data: str) -> tuple[int, int] | None:
-    """(game_id, tile index) from `shop:tile:<gid>:<index>`; None unless
-    the index is an integer inside the grid."""
-    parts = data.split(":")
-    if len(parts) != _BUY_PARTS:
-        return None
-    try:
-        game_id, index = int(parts[2]), int(parts[3])
-    except ValueError:
-        return None
-    return (game_id, index) if 0 <= index < TILE_GRID * TILE_GRID else None
-
-
 async def _route_buy(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, user: User) -> bool:
-    parsed = _parse_buy(query.data or "")
+    parsed = parsing.parse_buy(query.data or "")
     if parsed is None:
         return False
-    tap = _BuyTap(query, user, *parsed)
+    tap = _BuyTap(query, user, parsed[0], parsed[1], screenshot_count=parsed[2])
     if tap.kind in TEXT_KINDS:
         await _buy_text(context, tap)
     elif tap.kind is ClueKind.SCREENSHOT:
@@ -114,7 +90,7 @@ async def _route_buy(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, u
 
 
 async def _route_tile(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, user: User) -> bool:
-    parsed = _parse_tile(query.data or "")
+    parsed = parsing.parse_tile(query.data or "")
     if parsed is None:
         return False
     await _buy_tile(context, _BuyTap(query, user, parsed[0], ClueKind.TILE, parsed[1]))
@@ -169,11 +145,29 @@ async def _buy_text(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> None:
     await _deliver(context, tap, bought)
 
 
+def _require_fresh(session: Session, tap: _BuyTap) -> None:
+    """A screenshot button remembers how many the buyer owned when the
+    menu was drawn; if that changed (a double tap, an older menu), refuse
+    as stale rather than charge the escalated price unawares."""
+    if tap.screenshot_count is None:
+        return
+    owned = len(shop.owned_screenshot_urls(session, tap.game_id, tap.user.id))
+    if owned != tap.screenshot_count:
+        logger.warning(
+            "Stale screenshot button for {}: menu saw {}, owns {}",
+            tap.user.id,
+            tap.screenshot_count,
+            owned,
+        )
+        raise ShopRefusedError(Refusal.NO_GAME)  # answered with shop.stale
+
+
 def _charge(
     session: Session, tap: _BuyTap, request: PurchaseRequest
 ) -> tuple[Game, CluePurchase, int]:
     """Charge and record `request` for the tapping player inside the
     caller's transaction; a refusal raises ShopRefusedError."""
+    _require_fresh(session, tap)
     buyer = players.get_or_create_player(session, tap.user.id, username=tap.user.username)
     game = shop.active_game_for(session, tap.game_id)
     if game is None:
@@ -221,8 +215,13 @@ async def _fail_delivery(
 
 
 async def _announce(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, lang: str) -> None:
-    await tap.query.answer()
+    """Post the topic notice, then answer the tap — in that order, so a
+    callback that timed out (BadRequest on the answer) skips nothing."""
     await post_bought_notice(context, tap.user.full_name, tap.kind, lang)
+    try:
+        await tap.query.answer()
+    except BadRequest:
+        logger.warning("Could not answer shop callback from {}", tap.user.id, exc_info=True)
 
 
 async def _deliver(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, bought: _Bought) -> None:
@@ -247,6 +246,21 @@ def _refund(session_factory, purchase_id: int) -> None:
     logger.error("Clue delivery failed; refunded purchase {}", purchase_id)
 
 
+async def _find_screenshot(
+    context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, plan: images.ScreenshotPlan
+) -> images.FetchedScreenshot | None:
+    """The screenshot to sell, or None after alerting why there is none:
+    nothing unused left, or the fetch itself failed (nobody was charged)."""
+    try:
+        fetched = await images.fetch_extra_screenshot(context, plan)
+    except images.ScreenshotFetchError:
+        await tap.query.answer(i18n.t("shop.screenshot_fetch_failed", plan.lang), show_alert=True)
+        return None
+    if fetched is None:
+        await tap.query.answer(i18n.t("shop.no_screenshot_left", plan.lang), show_alert=True)
+    return fetched
+
+
 async def _buy_screenshot(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> None:
     """Network first, charge second: nobody pays for a screenshot that
     could not be found, downloaded or pixelated."""
@@ -255,10 +269,10 @@ async def _buy_screenshot(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> N
         return
     try:
         with session_scope(session_factory) as session:
+            _require_fresh(session, tap)
             plan = images.screenshot_plan(session, tap.user, tap.game_id)
-        fetched = await images.fetch_extra_screenshot(context, plan)
+        fetched = await _find_screenshot(context, tap, plan)
         if fetched is None:
-            await tap.query.answer(i18n.t("shop.no_screenshot_left", plan.lang), show_alert=True)
             return
         with session_scope(session_factory) as session:
             request = PurchaseRequest(tap.kind, screenshot_url=fetched.url)

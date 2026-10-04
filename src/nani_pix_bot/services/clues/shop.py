@@ -60,6 +60,7 @@ class Offer:
     kind: ClueKind
     price: int
     affordable: bool
+    owned_screenshots: int = 0  # screenshots the buyer holds (SCREENSHOT offer only)
 
 
 @dataclass(frozen=True)
@@ -160,8 +161,19 @@ def offers(session: Session, game: Game, buyer: Player, lang: str) -> list[Offer
         if not _available(session, game, buyer, kind, lang):
             continue
         cost = price(session, game, buyer, kind)
-        result.append(Offer(kind, cost, buyer.currency >= cost))
+        held = _screenshot_count(session, game, buyer) if kind is ClueKind.SCREENSHOT else 0
+        result.append(Offer(kind, cost, buyer.currency >= cost, held))
     return result
+
+
+def _malformed(request: PurchaseRequest) -> bool:
+    """A request missing (or out of range on) the detail its kind needs."""
+    if request.kind is ClueKind.TILE:
+        index = request.tile_index
+        return not isinstance(index, int) or not 0 <= index < TILE_GRID * TILE_GRID
+    if request.kind is ClueKind.SCREENSHOT:
+        return not request.screenshot_url
+    return False
 
 
 def _refusal(
@@ -173,7 +185,9 @@ def _refusal(
         return Refusal.SETTER
     if _already_owned(session, game, buyer, request):
         return Refusal.ALREADY_OWNED
-    if not _available(session, game, buyer, request.kind, "en"):
+    # "en" is arbitrary: availability only depends on whether *any* title
+    # exists, and every language's fallback chain covers all four fields.
+    if _malformed(request) or not _available(session, game, buyer, request.kind, "en"):
         return Refusal.UNAVAILABLE
     return None
 
@@ -250,6 +264,17 @@ def refund(session: Session, purchase_row: CluePurchase) -> None:
         charge.amount,
         buyer.telegram_user_id,
     )
+
+
+def refund_game(session: Session, game_id: int) -> int:
+    """Refund every clue purchase of a game that is being deleted (its
+    purchase rows would otherwise vanish with it, unrefunded). Returns
+    how many were refunded."""
+    rows = list(session.scalars(select(CluePurchase).where(CluePurchase.game_id == game_id)))
+    for row in rows:
+        refund(session, row)
+    logger.info("Refunded {} clue purchases of game {}", len(rows), game_id)
+    return len(rows)
 
 
 def mark_shared(purchase_row: CluePurchase) -> bool:

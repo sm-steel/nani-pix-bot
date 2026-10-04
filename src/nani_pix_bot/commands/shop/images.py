@@ -9,8 +9,8 @@ from telegram import User
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
-    _IMAGE_DOWNLOAD_ERRORS,
-    _SEARCH_SERVICE_ERRORS,
+    IMAGE_DOWNLOAD_ERRORS,
+    SEARCH_SERVICE_ERRORS,
     client_for_source,
 )
 from nani_pix_bot.models.enums import ClueKind, PixelAlgorithm, Provider
@@ -33,6 +33,11 @@ class ScreenshotPlan:
     sources: tuple[tuple[Provider, int], ...]
     width: int
     algorithm: PixelAlgorithm
+
+
+class ScreenshotFetchError(Exception):
+    """A provider lookup, the download or the pixelation failed (as opposed
+    to there being no unused screenshot): the buyer was not charged."""
 
 
 @dataclass(frozen=True)
@@ -87,16 +92,20 @@ def screenshot_plan(session: Session, user: User, game_id: int) -> ScreenshotPla
 async def _first_unused_url(
     context: ContextTypes.DEFAULT_TYPE, plan: ScreenshotPlan
 ) -> tuple[Provider, str] | None:
+    failed = False
     for provider, provider_id in plan.sources:
         client = client_for_source(context, provider)
         try:
             urls = await provider.screenshot_module.screenshots(client, provider_id)
-        except _SEARCH_SERVICE_ERRORS:
+        except SEARCH_SERVICE_ERRORS:
             logger.warning("Extra screenshot: {} lookup failed", provider, exc_info=True)
+            failed = True
             continue
         unused = next((url for url in urls if url not in plan.excluded), None)
         if unused is not None:
             return provider, unused
+    if failed:
+        raise ScreenshotFetchError("provider lookup failed")
     logger.info("Extra screenshot: no unused screenshot among {} providers", len(plan.sources))
     return None
 
@@ -105,7 +114,9 @@ async def fetch_extra_screenshot(
     context: ContextTypes.DEFAULT_TYPE, plan: ScreenshotPlan
 ) -> FetchedScreenshot | None:
     """Find, download and pixelate an unused screenshot, or None (logged)
-    if any step fails — the caller hasn't charged anyone yet."""
+    if every provider answered but none had an unused one. A failed
+    lookup, download or pixelation raises ScreenshotFetchError — the
+    caller hasn't charged anyone yet."""
     found = await _first_unused_url(context, plan)
     if found is None:
         return None
@@ -113,14 +124,14 @@ async def fetch_extra_screenshot(
     try:
         response = await client_for_source(context, provider).get(url)
         response.raise_for_status()
-    except _IMAGE_DOWNLOAD_ERRORS:
+    except IMAGE_DOWNLOAD_ERRORS:
         logger.warning("Extra screenshot: download failed", exc_info=True)
-        return None
+        raise ScreenshotFetchError("download failed") from None
     try:
         pixelated = pixelate_service.pixelate(response.content, plan.width, plan.algorithm)
     except (OSError, ValueError):
         logger.warning("Extra screenshot: could not pixelate the download", exc_info=True)
-        return None
+        raise ScreenshotFetchError("pixelation failed") from None
     return FetchedScreenshot(url, pixelated)
 
 

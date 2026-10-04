@@ -310,7 +310,7 @@ def _single_anime(data: dict) -> dict | None:
     without this, a truthy non-list `animes` (a dict, a number, a
     malformed string) would reach `[0]`/`.get(...)` unguarded and raise
     a `KeyError`/`TypeError`/`AttributeError` that escapes
-    `_SEARCH_SERVICE_ERRORS` entirely (issue #83, reintroduced for this
+    `SEARCH_SERVICE_ERRORS` entirely (issue #83, reintroduced for this
     call shape). The identity parse function is deliberate: this helper
     only validates the *container*, exactly one level of guard — each
     caller still runs its own `_parse_*` over the single entry

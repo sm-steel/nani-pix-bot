@@ -188,7 +188,7 @@ async def test_fetch_by_id_returns_none_when_the_id_is_gone() -> None:
 
 async def test_fetch_by_id_reraises_anything_that_is_not_a_404() -> None:
     """A provider being down is not "this id is gone" — it has to reach
-    the caller's _SEARCH_SERVICE_ERRORS handling instead of silently
+    the caller's SEARCH_SERVICE_ERRORS handling instead of silently
     looking like an empty result."""
 
     def handler(request: httpx.Request) -> httpx.Response:

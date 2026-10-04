@@ -113,7 +113,7 @@ async def test_shop_lists_five_offers_for_a_rich_buyer(session_factory) -> None:
         f"shop:buy:{game_id}:last_letter",
         f"shop:buy:{game_id}:first_letter",
         f"shop:buy:{game_id}:title_shape",
-        f"shop:buy:{game_id}:screenshot",
+        f"shop:buy:{game_id}:screenshot:0",
         f"shop:buy:{game_id}:tile",
     ]
 

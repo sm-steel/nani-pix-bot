@@ -183,3 +183,59 @@ def test_mark_shared_only_once(session: Session) -> None:
 
     assert shop.mark_shared(bought) is True
     assert shop.mark_shared(bought) is False
+
+
+@pytest.mark.parametrize("index", [None, -1, 64])
+def test_purchase_rejects_a_tile_outside_the_grid(session: Session, index) -> None:
+    game, buyer = _setup(session, original_image=b"x")
+
+    with pytest.raises(shop.ShopRefusedError) as refused:
+        shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TILE, tile_index=index))
+
+    assert refused.value.refusal is shop.Refusal.UNAVAILABLE
+    assert buyer.currency == 100
+
+
+@pytest.mark.parametrize("url", [None, ""])
+def test_purchase_rejects_a_screenshot_without_a_url(session: Session, url) -> None:
+    game, buyer = _setup(session)
+
+    with pytest.raises(shop.ShopRefusedError) as refused:
+        shop.purchase(
+            session, game, buyer, shop.PurchaseRequest(ClueKind.SCREENSHOT, screenshot_url=url)
+        )
+
+    assert refused.value.refusal is shop.Refusal.UNAVAILABLE
+    assert buyer.currency == 100
+
+
+def test_screenshot_offer_carries_the_owned_count(session: Session) -> None:
+    game, buyer = _setup(session)
+    shop.purchase(
+        session,
+        game,
+        buyer,
+        shop.PurchaseRequest(ClueKind.SCREENSHOT, screenshot_url="https://x/0.jpg"),
+    )
+
+    offers = {o.kind: o for o in shop.offers(session, game, buyer, "en")}
+
+    assert offers[ClueKind.SCREENSHOT].owned_screenshots == 1
+    assert offers[ClueKind.LAST_LETTER].owned_screenshots == 0
+
+
+def test_refund_game_refunds_every_purchase_of_every_player(session: Session) -> None:
+    game, buyer = _setup(session)
+    other = Player(telegram_user_id=3, currency=100)
+    session.add(other)
+    session.flush()
+    shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.FIRST_LETTER))
+    shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.LAST_LETTER))
+    shop.purchase(session, game, other, shop.PurchaseRequest(ClueKind.TITLE_SHAPE))
+
+    refunded = shop.refund_game(session, game.id)
+    session.flush()
+
+    assert refunded == 3
+    assert (buyer.currency, other.currency) == (100, 100)
+    assert session.query(CluePurchase).count() == 0

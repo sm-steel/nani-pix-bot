@@ -28,7 +28,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
-    _SEARCH_SERVICE_ERRORS,
+    SEARCH_SERVICE_ERRORS,
     _reject_stale_tap,
     _stored_provider,
     client_for_source,
@@ -131,7 +131,7 @@ async def _fetch_screenshots_or_fallback(
     client = client_for_source(context, provider)
     try:
         urls = await _fetch_screenshots(provider, client, provider_id)
-    except _SEARCH_SERVICE_ERRORS:
+    except SEARCH_SERVICE_ERRORS:
         logger.exception(
             "Game {}: fetching {} screenshots failed for id {}", game.id, provider, provider_id
         )
@@ -566,7 +566,7 @@ async def _resolve_cross_provider_id(
     client = client_for_source(context, provider)
     try:
         results = await _search_provider(provider, client, query_text)
-    except _SEARCH_SERVICE_ERRORS:
+    except SEARCH_SERVICE_ERRORS:
         logger.exception(
             "Game {}: {} cross-provider screenshot search failed for {!r}",
             game.id,

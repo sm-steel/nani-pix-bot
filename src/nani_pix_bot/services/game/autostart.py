@@ -30,7 +30,7 @@ OVERTHROW_PROBABILITY = 0.12
 AUTOSTART_ATTEMPT_LIMIT = 3
 
 # "The provider is unreachable" — the services/-layer subset of
-# commands/dm_start/_shared.py's _SEARCH_SERVICE_ERRORS (no TelegramError
+# commands/dm_start/_shared.py's SEARCH_SERVICE_ERRORS (no TelegramError
 # here: services/ can't import telegram, and nothing in this module makes
 # a Telegram call).
 _AUTOSTART_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError)

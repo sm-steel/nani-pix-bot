@@ -40,7 +40,7 @@ async def test_sharing_a_text_clue_posts_it_to_the_topic_once(session_factory) -
     assert post.kwargs["chat_id"] == 555
     assert post.kwargs["message_thread_id"] == 7
     assert post.kwargs["parse_mode"] == "HTML"
-    assert "Buyer Name shared a clue" in post.kwargs["text"]
+    assert "Buyer Name" in post.kwargs["text"]
     assert "<b>S</b>" in post.kwargs["text"]
     assert "(romaji)" in post.kwargs["text"]
     first.answer.assert_awaited_once_with("Shared with the group.")
@@ -72,7 +72,7 @@ async def test_sharing_an_image_clue_reuses_the_file_id(session_factory) -> None
     assert post.kwargs["photo"] == "FILE123"
     assert post.kwargs["chat_id"] == 555
     assert post.kwargs["message_thread_id"] == 7
-    assert "Buyer Name shared a clue" in post.kwargs["caption"]
+    assert "Buyer Name" in post.kwargs["caption"]
 
 
 async def test_image_clue_without_file_id_alerts_failure(session_factory) -> None:
@@ -158,3 +158,24 @@ async def test_failed_share_post_can_be_retried(session_factory) -> None:
 
     retry.answer.assert_awaited_once_with("Shared with the group.")
     assert purchases(session_factory)[0].shared_at is not None
+
+
+async def test_shared_image_caption_is_sent_as_html(session_factory) -> None:
+    _, purchase_id = await _bought(session_factory)
+    with session_factory() as session:
+        row = session.get(CluePurchase, purchase_id)
+        assert row is not None
+        row.kind = ClueKind.SCREENSHOT
+        row.telegram_file_id = "FILE123"
+        session.commit()
+    context = make_context(session_factory)
+    context.bot.send_photo = AsyncMock()
+    query = make_query(f"shop:share:{purchase_id}")
+    query.from_user.full_name = "A&B"
+
+    await tap(context, query)
+
+    post = context.bot.send_photo.await_args
+    assert post is not None
+    assert post.kwargs["parse_mode"] == "HTML"
+    assert "A&amp;B" in post.kwargs["caption"]

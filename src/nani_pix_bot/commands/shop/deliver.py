@@ -112,7 +112,7 @@ async def share_clue(context: ContextTypes.DEFAULT_TYPE, text: str, file_id: str
         if file_id is None:
             await context.bot.send_message(text=text, parse_mode="HTML", **target)
         else:
-            await context.bot.send_photo(photo=file_id, caption=text, **target)
+            await context.bot.send_photo(photo=file_id, caption=text, parse_mode="HTML", **target)
     except TelegramError:
         logger.exception("Could not share a clue to the game topic")
         return False

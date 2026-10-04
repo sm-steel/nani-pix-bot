@@ -16,8 +16,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
-    _IMAGE_DOWNLOAD_ERRORS,
-    _SEARCH_SERVICE_ERRORS,
+    IMAGE_DOWNLOAD_ERRORS,
+    SEARCH_SERVICE_ERRORS,
     _post_preview_album,
     _reject_stale_tap,
     _search_and_build_keyboard,
@@ -267,7 +267,7 @@ async def _screenshot_search_step(
                 tmdb.search,
                 lambda rs: tmdb_results_keyboard(rs, lang, pick_prefix=pick_prefix),
             )
-    except _SEARCH_SERVICE_ERRORS:
+    except SEARCH_SERVICE_ERRORS:
         logger.exception("{} screenshot cross-search failed for query {!r}", provider, message.text)
         await reply_with_source_menu(
             status_message.edit_text, menu, lang, "dm_start.screenshot_service_down"
@@ -444,7 +444,7 @@ async def _resolve_screenshot_search_pick(
     client = client_for_source(context, provider)
     try:
         result = await _get_provider_by_id(provider, client, external_id)
-    except _SEARCH_SERVICE_ERRORS:
+    except SEARCH_SERVICE_ERRORS:
         logger.exception("{} get_by_id failed for id {}", provider, external_id)
         await reply_with_source_menu(
             query.edit_message_text, menu, lang, "dm_start.screenshot_service_down"
@@ -735,7 +735,7 @@ async def _handle_screenshot_pick(
     # same proxied, Bearer-authed client its search/screenshots calls
     # already use — TMDB's image CDN may be behind the same DNS block
     # as api.themoviedb.org (see ARCHITECTURE.md's connectivity notes).
-    # _IMAGE_DOWNLOAD_ERRORS, not _SEARCH_SERVICE_ERRORS: this is a plain
+    # IMAGE_DOWNLOAD_ERRORS, not SEARCH_SERVICE_ERRORS: this is a plain
     # GET against a CDN, so only a transport error means "the provider is
     # unreachable" — see _shared.py for why the broader tuple is the
     # wrong one to reuse here.
@@ -747,7 +747,7 @@ async def _handle_screenshot_pick(
     try:
         response = await download_client.get(urls[index])
         response.raise_for_status()
-    except _IMAGE_DOWNLOAD_ERRORS:
+    except IMAGE_DOWNLOAD_ERRORS:
         logger.exception(
             "Game {}: downloading {} screenshot #{} failed", game.id, provider, index + 1
         )

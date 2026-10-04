@@ -1023,8 +1023,9 @@ player's balance.
 **The group is told.** When someone buys a clue, the game topic gets a
 short notice naming the buyer and the type of clue (not its contents).
 
-**Sharing.** Every delivered clue has a *Share with the group* button.
-Sharing is free, works once per clue, and only while that round is still
+**Sharing.** Every delivered clue message has a *Share with the group*
+button. (The re-sent title shape after a later letter purchase is a
+follow-up to that message and has no button of its own.) Sharing is free, works once per clue, and only while that round is still
 active; it posts the clue (the text, or the picture) to the game topic
 under the player's name.
 
@@ -1033,4 +1034,12 @@ under the player's name.
   (a `refund` ledger row that reverses the charge) and told so.
 - For an extra screenshot the bot first finds, downloads and pixelates
   the picture, and only then charges. When no unused screenshot is
-  available, the player is never charged and is told there is none left.
+  available, the player is never charged and is told there is none left;
+  when the lookup or download itself fails, they are told the screenshot
+  could not be loaded, also without a charge.
+- A screenshot button remembers how many screenshots the player owned
+  when the shop menu was drawn. A tap with a different count (a double
+  tap, an older menu) is refused as stale, so nobody pays the escalated
+  price by accident.
+- If a round is stopped (`/stop`) its clue purchases are refunded in
+  full, since they die with the round.

@@ -785,7 +785,7 @@ async def test_screenshots_drops_an_episode_whose_still_path_is_not_a_string(
 ) -> None:
     """The still read sits inside the TaskGroup rather than inside a
     `_parse_*` function, so it had no guard at all — and a raise there
-    would surface as a TypeError `_SEARCH_SERVICE_ERRORS` doesn't match.
+    would surface as a TypeError `SEARCH_SERVICE_ERRORS` doesn't match.
     It goes through `parse_entry` for exactly that reason: one unusable
     episode costs its own still, not the gallery (issue #86)."""
 

@@ -61,9 +61,9 @@ async def test_screenshot_clue_skips_shown_and_owned_urls_and_charges_30(
     set_currency(session_factory, 2, 100)
     context = _image_context(session_factory)
 
-    await tap(context, make_query(f"shop:buy:{game_id}:screenshot"))
+    await tap(context, make_query(f"shop:buy:{game_id}:screenshot:0"))
     assert balance(session_factory) == 70
-    await tap(context, make_query(f"shop:buy:{game_id}:screenshot"))
+    await tap(context, make_query(f"shop:buy:{game_id}:screenshot:1"))
 
     assert _owned_urls(session_factory) == [_URLS[1], _URLS[2]]
     assert balance(session_factory) == 25  # 30, then 30 + 15
@@ -83,7 +83,7 @@ async def test_no_unused_screenshot_left_charges_nothing(session_factory, monkey
     game_id = seed_game(session_factory, shikimori_id=1, shown_screenshot_urls=[_URLS[0]])
     set_currency(session_factory, 2, 100)
     context = _image_context(session_factory)
-    query = make_query(f"shop:buy:{game_id}:screenshot")
+    query = make_query(f"shop:buy:{game_id}:screenshot:0")
 
     await tap(context, query)
 
@@ -102,11 +102,11 @@ async def test_screenshot_provider_failure_charges_nothing(session_factory, monk
     game_id = seed_game(session_factory, shikimori_id=1)
     set_currency(session_factory, 2, 100)
     context = _image_context(session_factory)
-    query = make_query(f"shop:buy:{game_id}:screenshot")
+    query = make_query(f"shop:buy:{game_id}:screenshot:0")
 
     await tap(context, query)
 
-    assert "No other screenshots" in query.answer.await_args.args[0]
+    assert "Couldn't load a screenshot" in query.answer.await_args.args[0]
     assert balance(session_factory) == 100
     assert purchases(session_factory) == []
 
@@ -118,12 +118,79 @@ async def test_screenshot_download_failure_charges_nothing(
     set_currency(session_factory, 2, 100)
     context = _image_context(session_factory)
     context.bot_data["search_client"].get = AsyncMock(side_effect=httpx.ConnectError("down"))
-    query = make_query(f"shop:buy:{game_id}:screenshot")
+    query = make_query(f"shop:buy:{game_id}:screenshot:0")
 
     await tap(context, query)
 
+    assert "Couldn't load a screenshot" in query.answer.await_args.args[0]
+    assert balance(session_factory) == 100
+
+
+async def test_empty_screenshot_list_still_says_none_left(session_factory, monkeypatch) -> None:
+    async def nothing(_client, _provider_id):
+        return []
+
+    monkeypatch.setattr(shikimori, "screenshots", nothing)
+    game_id = seed_game(session_factory, shikimori_id=1)
+    set_currency(session_factory, 2, 100)
+    query = make_query(f"shop:buy:{game_id}:screenshot:0")
+
+    await tap(_image_context(session_factory), query)
+
     assert "No other screenshots" in query.answer.await_args.args[0]
     assert balance(session_factory) == 100
+
+
+async def test_stale_screenshot_tap_is_refused_and_charges_once(
+    session_factory, stub_screenshots
+) -> None:
+    game_id = seed_game(session_factory, shikimori_id=1)
+    set_currency(session_factory, 2, 100)
+    context = _image_context(session_factory)
+
+    await tap(context, make_query(f"shop:buy:{game_id}:screenshot:0"))
+    stale = make_query(f"shop:buy:{game_id}:screenshot:0")
+    await tap(context, stale)
+
+    assert balance(session_factory) == 70
+    assert len(purchases(session_factory)) == 1
+    assert "over" in stale.answer.await_args.args[0]
+    assert stale.answer.await_args.kwargs["show_alert"] is True
+
+
+@pytest.mark.parametrize("suffix", ["", ":x", ":0:1"])
+async def test_malformed_screenshot_button_is_ignored(session_factory, suffix) -> None:
+    game_id = seed_game(session_factory, shikimori_id=1)
+    set_currency(session_factory, 2, 100)
+    query = make_query(f"shop:buy:{game_id}:screenshot{suffix}")
+
+    await tap(_image_context(session_factory), query)
+
+    assert balance(session_factory) == 100
+    assert purchases(session_factory) == []
+
+
+async def test_other_kinds_reject_a_fifth_part(session_factory) -> None:
+    game_id = seed_game(session_factory)
+    set_currency(session_factory, 2, 100)
+
+    await tap(make_context(session_factory), make_query(f"shop:buy:{game_id}:last_letter:0"))
+
+    assert balance(session_factory) == 100
+
+
+async def test_late_answer_does_not_skip_the_topic_notice(
+    session_factory, stub_screenshots
+) -> None:
+    game_id = seed_game(session_factory, shikimori_id=1)
+    set_currency(session_factory, 2, 100)
+    context = _image_context(session_factory)
+    query = make_query(f"shop:buy:{game_id}:screenshot:0")
+    query.answer = AsyncMock(side_effect=BadRequest("Query is too old"))
+
+    await tap(context, query)
+
+    assert "extra screenshot" in context.bot.send_message.await_args.kwargs["text"]
 
 
 async def test_screenshot_send_failure_refunds(session_factory, stub_screenshots) -> None:
@@ -131,7 +198,7 @@ async def test_screenshot_send_failure_refunds(session_factory, stub_screenshots
     set_currency(session_factory, 2, 100)
     context = _image_context(session_factory)
     context.bot.send_photo = AsyncMock(side_effect=TimedOut())
-    query = make_query(f"shop:buy:{game_id}:screenshot")
+    query = make_query(f"shop:buy:{game_id}:screenshot:0")
 
     await tap(context, query)
 
@@ -147,7 +214,7 @@ async def test_screenshot_without_provider_id_is_unavailable(
     game_id = seed_game(session_factory)
     set_currency(session_factory, 2, 100)
     context = _image_context(session_factory)
-    query = make_query(f"shop:buy:{game_id}:screenshot")
+    query = make_query(f"shop:buy:{game_id}:screenshot:0")
 
     await tap(context, query)
 

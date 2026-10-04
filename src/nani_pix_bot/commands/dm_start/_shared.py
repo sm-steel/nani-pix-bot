@@ -46,15 +46,15 @@ from nani_pix_bot.services.settings import stage_config
 # statements in that try are the two sends, and widening it to this tuple
 # would put RuntimeError around the keyboard/i18n construction evaluated
 # inside the call, which is the "report a bug as a provider outage"
-# pattern _IMAGE_DOWNLOAD_ERRORS below exists to avoid.
+# pattern IMAGE_DOWNLOAD_ERRORS below exists to avoid.
 #
 # So the member is defensive, not load-bearing: no current `except
-# _SEARCH_SERVICE_ERRORS` site can raise one, since all six wrap provider
+# SEARCH_SERVICE_ERRORS` site can raise one, since all six wrap provider
 # HTTP calls only. Keep it that way. Moving a Telegram call inside one of
 # those blocks would silently relabel its failure "the provider is down"
 # — give such a call its own `except TelegramError` instead, the way
 # _show_gallery_page does.
-_SEARCH_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError, TelegramError)
+SEARCH_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError, TelegramError)
 
 # Deliberately narrower than the tuple above, for the one call that is a
 # plain httpx GET against a provider's CDN and nothing else:
@@ -63,7 +63,7 @@ _SEARCH_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError, TelegramError)
 # path, swallow its traceback and report it to the starter as "the
 # provider is down" — sending them round the source menu for a provider
 # that is working fine.
-_IMAGE_DOWNLOAD_ERRORS = (httpx.HTTPError,)
+IMAGE_DOWNLOAD_ERRORS = (httpx.HTTPError,)
 
 # Used by both manual.py's second-message step and preview.py's
 # "add a synonym" step.
@@ -110,7 +110,7 @@ async def _search_and_build_keyboard(
 
     Deliberately doesn't catch anything — the two call sites' failure
     handling genuinely differs (different fallback screens), so each
-    keeps its own `try/except _SEARCH_SERVICE_ERRORS` around the call."""
+    keeps its own `try/except SEARCH_SERVICE_ERRORS` around the call."""
     results = await search_fn(client, query)
     keyboard = keyboard_fn(results) if results else None
     return results, keyboard

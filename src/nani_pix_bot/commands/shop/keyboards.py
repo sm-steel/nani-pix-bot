@@ -2,6 +2,7 @@
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from nani_pix_bot.models.enums import ClueKind
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.clues.shop import TILE_GRID, Offer
 
@@ -26,7 +27,11 @@ def shop_keyboard(offers: list[Offer], game_id: int, lang: str) -> InlineKeyboar
 
 
 def _buy_data(game_id: int, offer: Offer) -> str:
-    return f"{SHOP_BUY_PREFIX}{game_id}:{offer.kind.value}"
+    data = f"{SHOP_BUY_PREFIX}{game_id}:{offer.kind.value}"
+    if offer.kind is ClueKind.SCREENSHOT:
+        # The owned count lets the callback refuse a stale second tap.
+        data += f":{offer.owned_screenshots}"
+    return data
 
 
 def tile_keyboard(game_id: int, owned: set[int]) -> InlineKeyboardMarkup:
