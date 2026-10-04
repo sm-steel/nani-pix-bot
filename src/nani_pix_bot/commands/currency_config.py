@@ -32,6 +32,21 @@ def _parse(args: list[str]) -> tuple[str, int] | None:
     return (args[0], value) if value >= 0 else None
 
 
+def _resolve(args: list[str], lang: str) -> tuple[EconomyKey, int] | str:
+    """The (key, value) to set, or the reply text explaining what's wrong."""
+    parsed = _parse(args)
+    if parsed is None:
+        return i18n.t("currency_config.usage", lang)
+    raw_key, value = parsed
+    try:
+        key = EconomyKey(raw_key)
+    except ValueError:
+        return i18n.t("currency_config.unknown_key", lang, name=raw_key)
+    if key in config.CLUE_PRICE_KEYS and value < 1:
+        return i18n.t("currency_config.clue_price_min", lang)
+    return key, value
+
+
 async def currency_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     user = update.effective_user
@@ -53,17 +68,11 @@ async def currency_config_command(update: Update, context: ContextTypes.DEFAULT_
         await message.reply_text(_render(lang, amounts))
         return
 
-    parsed = _parse(args)
-    if parsed is None:
-        await message.reply_text(i18n.t("currency_config.usage", lang))
+    resolved = _resolve(args, lang)
+    if isinstance(resolved, str):
+        await message.reply_text(resolved)
         return
-    raw_key, value = parsed
-    try:
-        key = EconomyKey(raw_key)
-    except ValueError:
-        await message.reply_text(i18n.t("currency_config.unknown_key", lang, name=raw_key))
-        return
-
+    key, value = resolved
     with session_scope(session_factory) as session:
         config.set_amount(session, key, value)
     logger.info("Admin {} set currency config {} = {}", user.id, key, value)

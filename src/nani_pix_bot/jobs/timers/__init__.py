@@ -42,6 +42,9 @@ from nani_pix_bot.jobs.timers.current_image import (
     clear_image_if_sent,
     post_current_image,
     post_current_images,
+    post_stage_image,
+    post_stage_images,
+    shop_link_url,
 )
 from nani_pix_bot.jobs.timers.game_timeout import (
     cancel_timeout,
@@ -92,6 +95,8 @@ __all__ = [
     "maybe_overthrow",
     "post_current_image",
     "post_current_images",
+    "post_stage_image",
+    "post_stage_images",
     "rearm_pending_timeouts",
     "run_bot_autostart",
     "schedule_idle_autostart",
@@ -103,6 +108,7 @@ __all__ = [
     "seconds_until_timeout",
     "setup_abandon_job_callback",
     "setup_abandon_job_name",
+    "shop_link_url",
     "timeout_job_callback",
     "timeout_job_name",
     "turn_expiry_job_callback",

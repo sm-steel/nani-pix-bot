@@ -30,7 +30,7 @@ OVERTHROW_PROBABILITY = 0.12
 AUTOSTART_ATTEMPT_LIMIT = 3
 
 # "The provider is unreachable" — the services/-layer subset of
-# commands/dm_start/_shared.py's _SEARCH_SERVICE_ERRORS (no TelegramError
+# commands/dm_start/_shared.py's SEARCH_SERVICE_ERRORS (no TelegramError
 # here: services/ can't import telegram, and nothing in this module makes
 # a Telegram call).
 _AUTOSTART_SERVICE_ERRORS = (httpx.HTTPError, RuntimeError)
@@ -56,6 +56,8 @@ class ScreenshotPick:
     provider_id: int
     image_bytes_a: bytes
     image_bytes_b: bytes
+    url_a: str
+    url_b: str
 
 
 @dataclass(frozen=True)
@@ -278,6 +280,8 @@ async def _try_provider(
         provider_id=provider_id,
         image_bytes_a=image_bytes_a,
         image_bytes_b=image_bytes_b,
+        url_a=url_a,
+        url_b=url_b,
     )
 
 

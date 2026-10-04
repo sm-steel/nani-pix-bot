@@ -172,7 +172,7 @@ async def test_get_by_id_is_cached_for_repeated_identical_ids() -> None:
 
 async def test_search_raises_a_runtime_error_on_a_non_json_body() -> None:
     """A 200 that isn't JSON at all (a Cloudflare interstitial, say) has
-    to reach the caller's _SEARCH_SERVICE_ERRORS tuple as a RuntimeError
+    to reach the caller's SEARCH_SERVICE_ERRORS tuple as a RuntimeError
     instead of escaping as a ValueError nobody catches (issue #75)."""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -195,7 +195,7 @@ async def test_search_raises_when_anilist_reports_graphql_errors() -> None:
     """A GraphQL error response carries "errors" and a null "data". That
     is an explicit "I am broken" signal, not an empty result: reporting
     "no results found" would tell the starter a flat lie about a working
-    search. It has to reach _SEARCH_SERVICE_ERRORS as a RuntimeError."""
+    search. It has to reach SEARCH_SERVICE_ERRORS as a RuntimeError."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": None, "errors": [{"message": "boom"}]})
@@ -400,7 +400,7 @@ def _responding(body: Any) -> httpx.MockTransport:
 # covers it (issue #85). Two nested objects are read on the way to an
 # entry — the `data` object itself, which both entry points go through,
 # and the `Page` object inside it — and a scalar in either position used
-# to escape as an AttributeError that _SEARCH_SERVICE_ERRORS doesn't
+# to escape as an AttributeError that SEARCH_SERVICE_ERRORS doesn't
 # catch. Probed as entry point x malformed shape rather than one case per
 # shape: a fix at only one of the two reads leaves the other live.
 _MALFORMED_DATA_BODIES = [

@@ -77,7 +77,7 @@ async def get_json(
     string, a number, or an array where an object belongs. `null` is the
     easy one to miss: `json.loads("null")` succeeds, so only the `expect`
     check catches it. `RuntimeError` is in the handlers'
-    `_SEARCH_SERVICE_ERRORS` tuple, so the starter gets the "service is
+    `SEARCH_SERVICE_ERRORS` tuple, so the starter gets the "service is
     down" reply instead of being stranded on a SETUP row with a dead
     keyboard (issue #75)."""
 
@@ -117,7 +117,7 @@ async def fetch_by_id(
     a search result that has since been removed, and the picker tells
     them so (`dm_start.not_found_anymore`). Anything else — including a
     provider being down — propagates, so it reaches the caller's
-    `_SEARCH_SERVICE_ERRORS` handling and is reported as an outage
+    `SEARCH_SERVICE_ERRORS` handling and is reported as an outage
     rather than silently looking like a missing entry.
 
     An entry that arrives but can't be parsed (no `id`, a scalar where

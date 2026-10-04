@@ -74,6 +74,33 @@ class TitleVariants:
     russian: str | None = None
 
 
+class TitleField(enum.StrEnum):
+    """Which of a game's title fields a value came from — clues name it
+    to the player (services/clues/), so a fallback title is never passed
+    off as the group-language one."""
+
+    ENGLISH = "english"
+    ROMAJI = "romaji"
+    NATIVE = "native"
+    RUSSIAN = "russian"
+
+
+def prioritized_title_field(variants: TitleVariants, *, lang: str) -> tuple[TitleField, str] | None:
+    """The priority-order rule behind prioritized_title(), plus which
+    field won. RU-language bots prefer the Russian title first; otherwise
+    English leads. None if every field is unset."""
+    order = (
+        (TitleField.RUSSIAN, TitleField.ENGLISH, TitleField.ROMAJI, TitleField.NATIVE)
+        if lang.upper() == "RU"
+        else (TitleField.ENGLISH, TitleField.ROMAJI, TitleField.NATIVE, TitleField.RUSSIAN)
+    )
+    for field in order:
+        title = getattr(variants, field.value)
+        if title:
+            return field, title
+    return None
+
+
 def prioritized_title(variants: TitleVariants, *, lang: str) -> str:
     """The shared priority-order rule behind both display_title() below
     and the DM setup's AniList/Shikimori result-picker button labels
@@ -82,12 +109,17 @@ def prioritized_title(variants: TitleVariants, *, lang: str) -> str:
     what the confirmation preview then calls that same pick. RU-language
     bots prefer the Russian title first; otherwise English leads. Falls
     back to "?" if every field is unset."""
-    candidates = (
-        (variants.russian, variants.english, variants.romaji, variants.native)
-        if lang.upper() == "RU"
-        else (variants.english, variants.romaji, variants.native, variants.russian)
+    picked = prioritized_title_field(variants, lang=lang)
+    return "?" if picked is None else picked[1]
+
+
+def _variants(game: Game) -> TitleVariants:
+    return TitleVariants(
+        english=game.title_english,
+        romaji=game.title_romaji,
+        native=game.title_native,
+        russian=game.title_russian,
     )
-    return next((title for title in candidates if title), "?")
 
 
 def display_title(game: Game, lang: str) -> str:
@@ -98,13 +130,13 @@ def display_title(game: Game, lang: str) -> str:
     stop.py) were missing the Russian fallback entirely (a
     Shikimori-only result would show "?" instead of its actual
     title)."""
-    variants = TitleVariants(
-        english=game.title_english,
-        romaji=game.title_romaji,
-        native=game.title_native,
-        russian=game.title_russian,
-    )
-    return prioritized_title(variants, lang=lang)
+    return prioritized_title(_variants(game), lang=lang)
+
+
+def display_title_field(game: Game, lang: str) -> tuple[TitleField, str] | None:
+    """display_title() plus which field it came from; None if the game
+    has no title at all."""
+    return prioritized_title_field(_variants(game), lang=lang)
 
 
 def match_candidates(game: Game) -> list[str]:

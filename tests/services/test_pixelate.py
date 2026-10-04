@@ -8,7 +8,7 @@ from nani_pix_bot.models.enums import (
     DISCOURAGED_ALGORITHMS,
     PixelAlgorithm,
 )
-from nani_pix_bot.services.pixelate import ALGORITHMS, pixelate
+from nani_pix_bot.services.pixelate import ALGORITHMS, pixelate, render
 
 _TEST_IMAGE_SIZE = 192
 # Every algorithm must satisfy the shared mosaic properties below; which
@@ -157,3 +157,50 @@ def test_pixelate_is_resolution_independent(algorithm: PixelAlgorithm) -> None:
     expected = 12 - 1
     assert small_transitions == expected
     assert large_transitions == expected
+
+
+def _png(color: tuple[int, int, int], size: tuple[int, int]) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", size, color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_tile_box_covers_a_divisible_image() -> None:
+    assert render.tile_box((80, 40), 0, 8) == (0, 0, 10, 5)
+    assert render.tile_box((80, 40), 63, 8) == (70, 35, 80, 40)
+
+
+def test_tile_boxes_exactly_tile_a_non_divisible_image() -> None:
+    size = (83, 47)
+    covered = sum(
+        (right - left) * (bottom - top)
+        for left, top, right, bottom in (render.tile_box(size, i, 8) for i in range(64))
+    )
+    assert covered == 83 * 47
+    assert render.tile_box(size, 63, 8)[2:] == (83, 47)
+
+
+@pytest.mark.parametrize("index", [-1, 64])
+def test_tile_box_rejects_out_of_range_index(index: int) -> None:
+    with pytest.raises(ValueError, match="tile"):
+        render.tile_box((80, 40), index, 8)
+
+
+def test_reveal_tiles_pastes_only_the_chosen_tiles() -> None:
+    original = _png((255, 0, 0), (80, 40))
+    pixelated = _png((0, 0, 255), (80, 40))
+
+    result = Image.open(io.BytesIO(render.reveal_tiles(original, pixelated, [0, 63], 8)))
+
+    assert result.getpixel((1, 1)) == (255, 0, 0)
+    assert result.getpixel((79, 39)) == (255, 0, 0)
+    assert result.getpixel((40, 20)) == (0, 0, 255)
+
+
+def test_reveal_tiles_resizes_a_differently_sized_pixelated_image() -> None:
+    original = _png((255, 0, 0), (80, 40))
+    pixelated = _png((0, 0, 255), (8, 4))
+
+    result = Image.open(io.BytesIO(render.reveal_tiles(original, pixelated, [], 8)))
+
+    assert result.size == (80, 40)

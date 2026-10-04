@@ -16,7 +16,9 @@ someone's right or it's revealed unsolved.
 
 Players also earn a small 💠 currency for guessing and winning: `/balance`
 shows yours, and admins tune the amounts in a DM with `/pixelconfig` (see
-`MECHANICS.md`'s "Pixels" section).
+`MECHANICS.md`'s "Pixels" section). Spend it with `/shop` (or the 🛒 under
+each round image) on private clues: a letter, the title's shape, an extra
+screenshot or an unpixelated tile (see "Clue shop" there).
 
 See `MECHANICS.md` for the full rules and `ARCHITECTURE.md` for the system
 design. Want to run your own instance? See **Self-hosting** below.

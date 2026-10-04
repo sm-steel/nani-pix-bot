@@ -14,7 +14,7 @@ from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import seconds_until
-from nani_pix_bot.jobs.timers.current_image import post_current_images
+from nani_pix_bot.jobs.timers.current_image import post_stage_images
 from nani_pix_bot.jobs.timers.game_timeout import schedule_timeout
 from nani_pix_bot.jobs.timers.inactivity import schedule_inactivity_timers
 from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
@@ -290,6 +290,7 @@ async def run_bot_autostart(
         game.hard_mode = True
         game.hard_mode_image_a = pick.screenshot.image_bytes_a
         game.hard_mode_image_b = pick.screenshot.image_bytes_b
+        game.shown_screenshot_urls = [pick.screenshot.url_a, pick.screenshot.url_b]
         game.screenshot_source = pick.screenshot.provider
         setattr(game, pick.screenshot.provider.id_attr_name, pick.screenshot.provider_id)
         game_service.clear_turn_timers(session)
@@ -306,7 +307,7 @@ async def run_bot_autostart(
         pick.anime.source,
         pick.screenshot.provider,
     )
-    await post_current_images(
+    await post_stage_images(
         context,
         session_factory,
         photos=(first_turn_post.photo_a, first_turn_post.photo_b),

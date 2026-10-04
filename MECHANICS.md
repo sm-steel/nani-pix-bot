@@ -24,7 +24,8 @@ just what's currently built.
 | Win-turn reminder (15min) + expiry (12h) | Implemented |
 | Manual stop with confirmation (`/stop`) | Implemented |
 | Leaderboard (`/leaderboard`) | Implemented |
-| Pixels 💠 — earning, `/balance`, `/pixelconfig` (spending: later phases) | Implemented |
+| Pixels 💠 — earning, `/balance`, `/pixelconfig` | Implemented |
+| Clue shop (`/shop`) — spend 💠 on private clues | Implemented |
 | Quiet hours (`/quiethours`, `/timezone`) — automatic posts held, clocks frozen | Implemented |
 
 ## Game lifecycle
@@ -912,7 +913,7 @@ player's 💠 balance as a column (ranking is still by wins, not 💠).
 
 ## Pixels 💠
 
-**Status: Implemented (earning only — spending arrives in later phases, #209 and #210).**
+**Status: Implemented (earning, and spending in the clue shop below; further sinks arrive in a later phase, #210).**
 
 Every player has a 💠 balance (`players.currency`), shown by `/balance` (in
 the game topic or a DM) and next to the win count on `/leaderboard`. A
@@ -960,3 +961,85 @@ Admins view and change every amount with `/pixelconfig` (DM-only,
 admin-gated): `/pixelconfig` lists them, `/pixelconfig <key> <amount>`
 sets one. Unlike `/stageconfig`, it also works mid-game; a change only
 affects payouts from then on. An amount of 0 disables that reward.
+
+### Clue shop
+
+**Status: Implemented.**
+
+Players spend 💠 on private clues to the round that is currently being
+played. Clues are delivered by DM, not shown to the group.
+
+| Clue | Default price | `/pixelconfig` key |
+|---|---|---|
+| Last letter | 10 | `clue_last_letter` |
+| First letter | 20 | `clue_first_letter` |
+| Title shape | 25 | `clue_title_shape` |
+| Extra screenshot | 30 for the first, then +15 for each one already bought in that game (30 / 45 / 60) | `clue_screenshot`, `clue_screenshot_step` |
+| Reveal a tile | 10 per tile | `clue_tile` |
+
+Admins change these with `/pixelconfig` like any other amount; a change
+applies to purchases from then on.
+
+**Opening the shop.** Every stage post in the game topic carries a
+🛒 entry that opens the shop in a DM with the bot (a button under the
+image; in a HARD MODE album, which cannot carry buttons, a link in the
+caption). The shop is also open with `/shop` in a DM, or `/start shop`
+(which is what the 🛒 link sends). It lists only what can currently be
+bought, with a 🔒 on anything the player cannot afford, and shows the
+player's balance.
+
+**Who can buy.**
+- Only members of the group.
+- Only while a round is `ACTIVE`; a button from an earlier round answers
+  that the round is over, and spends nothing.
+- Never the setter of that round: they know the answer.
+
+**The clues.**
+- *First letter*, *last letter* and *title shape* are all taken from the
+  title the round's display title uses, choosing the title field by the
+  same language fallback as the rest of the bot. The message says
+  which source the clue came from (for example the English, romaji or
+  Russian title), so a clue taken from a romanised title is not mistaken
+  for the Russian one. A letter or digit counts (so Cyrillic and kana
+  work); spaces and punctuation are not hidden.
+- *Title shape* shows the title with every letter hidden as `_`, words
+  separated, plus the length of each word. It also shows the first and
+  last letter if the player has already bought them. Buying a letter
+  *after* the shape re-sends the updated shape, so the player never has
+  to piece the two together.
+- *Extra screenshot*: another pixelated screenshot of the same anime, at
+  the stage the round is on now (in HARD MODE, at the current turn's
+  stage). At most 3 per player per game, with the escalating price above.
+  It is never a screenshot that is already in play in this round (the
+  one used by the round, or either one of a HARD MODE pair) and never
+  one the player already bought. Available in HARD MODE too.
+- *Reveal a tile*: the player picks one square of an 8x8 grid laid over
+  the round's screenshot, and gets the image back with that square shown
+  unpixelated. Each tile can be bought once, the grid ticks the tiles
+  already owned, and later purchases accumulate (the picture shows every
+  tile the player has bought). Not available in HARD MODE, whose two
+  images are not a single screenshot to tile.
+
+**The group is told.** When someone buys a clue, the game topic gets a
+short notice naming the buyer and the type of clue (not its contents).
+
+**Sharing.** Every delivered clue message has a *Share with the group*
+button. (The re-sent title shape after a later letter purchase is a
+follow-up to that message and has no button of its own.) Sharing is free, works once per clue, and only while that round is still
+active; it posts the clue (the text, or the picture) to the game topic
+under the player's name.
+
+**Failure and refunds.**
+- If Telegram refuses to deliver a clue, the player is refunded in full
+  (a `refund` ledger row that reverses the charge) and told so.
+- For an extra screenshot the bot first finds, downloads and pixelates
+  the picture, and only then charges. When no unused screenshot is
+  available, the player is never charged and is told there is none left;
+  when the lookup or download itself fails, they are told the screenshot
+  could not be loaded, also without a charge.
+- A screenshot button remembers how many screenshots the player owned
+  when the shop menu was drawn. A tap with a different count (a double
+  tap, an older menu) is refused as stale, so nobody pays the escalated
+  price by accident.
+- If a round is stopped (`/stop`) its clue purchases are refunded in
+  full, since they die with the round.

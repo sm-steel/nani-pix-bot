@@ -36,6 +36,7 @@ class _Announcement:
     caption: str
     photo: bytes | None = None
     photos: tuple[bytes, bytes] | None = None
+    is_stage_post: bool = False
 
 
 def _prepare_won_announcement(
@@ -103,7 +104,7 @@ def _prepare_turn_advanced_announcement(
         remaining=progress.remaining,
         limit=progress.limit,
     )
-    return _Announcement(photos=(pixelated_a, pixelated_b), caption=caption)
+    return _Announcement(photos=(pixelated_a, pixelated_b), caption=caption, is_stage_post=True)
 
 
 def _prepare_hard_mode_unsolved_announcement(
@@ -144,7 +145,7 @@ def _prepare_stage_advanced_announcement(
         remaining=progress.remaining,
         limit=progress.limit,
     )
-    return _Announcement(photo=pixelated, caption=caption)
+    return _Announcement(photo=pixelated, caption=caption, is_stage_post=True)
 
 
 def _prepare_unsolved_announcement(
@@ -239,11 +240,21 @@ async def _send_announcement(
     Hoisted out of guess_command purely to keep its own cyclomatic
     complexity down, same reasoning as _require_original_image above."""
     if announcement.photos is not None:
-        return await timeout_module.post_current_images(
+        post_album = (
+            timeout_module.post_stage_images
+            if announcement.is_stage_post
+            else timeout_module.post_current_images
+        )
+        return await post_album(
             context, session_factory, photos=announcement.photos, caption=announcement.caption
         )
     if announcement.photo is not None:
-        return await timeout_module.post_current_image(
+        post_photo = (
+            timeout_module.post_stage_image
+            if announcement.is_stage_post
+            else timeout_module.post_current_image
+        )
+        return await post_photo(
             context, session_factory, photo=announcement.photo, caption=announcement.caption
         )
     raise RuntimeError("_Announcement has neither photo nor photos set")

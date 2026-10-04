@@ -6,14 +6,14 @@ notes."""
 
 from loguru import logger
 from sqlalchemy.orm import Session, sessionmaker
-from telegram import InputMediaPhoto, Message
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Message
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import settings
+from nani_pix_bot.services import i18n, settings
 
 
 async def post_current_image(
@@ -47,6 +47,18 @@ async def post_current_image(
     work a caller already committed; callers that need to react to a
     failed announcement (e.g. gating cleanup on a confirmed send) check
     for `None`."""
+    return await _post_photo(context, session_factory, photo, caption, None)
+
+
+async def _post_photo(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory: sessionmaker[Session],
+    photo,
+    caption: str,
+    reply_markup: InlineKeyboardMarkup | None,
+) -> Message | None:
+    """The shared send-then-pin tail of post_current_image/post_stage_image
+    — see post_current_image's docstring for the contract."""
     chat_id = context.bot_data["group_chat_id"]
     message_thread_id = context.bot_data["game_topic_id"]
     try:
@@ -55,11 +67,22 @@ async def post_current_image(
             message_thread_id=message_thread_id,
             photo=photo,
             caption=caption,
+            reply_markup=reply_markup,
         )
     except TelegramError as exc:
         logger.warning("Failed to post the current image to chat {}: {}", chat_id, exc)
         return None
 
+    await _pin(context, session_factory, message.message_id)
+    return message
+
+
+async def _pin(
+    context: ContextTypes.DEFAULT_TYPE, session_factory: sessionmaker[Session], message_id: int
+) -> None:
+    """Best-effort swap of the pinned "current image" for `message_id` —
+    pin/unpin failures are logged and swallowed, never raised."""
+    chat_id = context.bot_data["group_chat_id"]
     with session_scope(session_factory) as session:
         previous_pinned_id = settings.get_pinned_message_id(session)
         if previous_pinned_id is not None:
@@ -72,15 +95,43 @@ async def post_current_image(
 
         try:
             await context.bot.pin_chat_message(
-                chat_id=chat_id, message_id=message.message_id, disable_notification=True
+                chat_id=chat_id, message_id=message_id, disable_notification=True
             )
-            settings.set_pinned_message_id(session, message.message_id)
+            settings.set_pinned_message_id(session, message_id)
         except TelegramError as exc:
-            logger.warning(
-                "Failed to pin message {} in chat {}: {}", message.message_id, chat_id, exc
-            )
+            logger.warning("Failed to pin message {} in chat {}: {}", message_id, chat_id, exc)
 
-    return message
+
+def shop_link_url(context: ContextTypes.DEFAULT_TYPE) -> str | None:
+    """The DM deep link that opens the clue shop, or None while the bot's
+    own username is unknown (bot_data["bot_username"] is written by
+    app.py's _post_init, so it is absent until the first getMe answers
+    and in tests)."""
+    username = context.bot_data.get("bot_username")
+    if not username:
+        return None
+    return f"https://t.me/{username}?start=shop"
+
+
+async def post_stage_image(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory: sessionmaker[Session],
+    *,
+    photo,
+    caption: str,
+) -> Message | None:
+    """post_current_image for a pixelation *stage* post (never a reveal):
+    the same send/pin contract, plus a single URL button that deep-links
+    to the DM clue shop. The button is omitted while the bot's username
+    is unknown."""
+    url = shop_link_url(context)
+    markup = None
+    if url is not None:
+        with session_scope(session_factory) as session:
+            lang = settings.get_language(session)
+        button = InlineKeyboardButton(i18n.t("shop.button", lang), url=url)
+        markup = InlineKeyboardMarkup([[button]])
+    return await _post_photo(context, session_factory, photo, caption, markup)
 
 
 async def post_current_images(
@@ -103,6 +154,16 @@ async def post_current_images(
     both. Same best-effort spirit as post_current_image's own
     pin-permission-failure handling: this is a known, accepted
     limitation, not a bug to work around."""
+    return await _post_album(context, session_factory, photos, caption)
+
+
+async def _post_album(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory: sessionmaker[Session],
+    photos: tuple[bytes, bytes],
+    caption: str,
+) -> tuple[Message, ...] | None:
+    """The shared send-then-pin tail of post_current_images/post_stage_images."""
     chat_id = context.bot_data["group_chat_id"]
     message_thread_id = context.bot_data["game_topic_id"]
     try:
@@ -122,28 +183,24 @@ async def post_current_images(
         logger.warning("send_media_group returned an empty result for chat {}", chat_id)
         return None
 
-    first_message_id = result[0].message_id
-    with session_scope(session_factory) as session:
-        previous_pinned_id = settings.get_pinned_message_id(session)
-        if previous_pinned_id is not None:
-            try:
-                await context.bot.unpin_chat_message(chat_id=chat_id, message_id=previous_pinned_id)
-            except TelegramError as exc:
-                logger.warning(
-                    "Failed to unpin message {} in chat {}: {}", previous_pinned_id, chat_id, exc
-                )
-
-        try:
-            await context.bot.pin_chat_message(
-                chat_id=chat_id, message_id=first_message_id, disable_notification=True
-            )
-            settings.set_pinned_message_id(session, first_message_id)
-        except TelegramError as exc:
-            logger.warning(
-                "Failed to pin message {} in chat {}: {}", first_message_id, chat_id, exc
-            )
-
+    await _pin(context, session_factory, result[0].message_id)
     return tuple(result)
+
+
+async def post_stage_images(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory: sessionmaker[Session],
+    *,
+    photos: tuple[bytes, bytes],
+    caption: str,
+) -> tuple[Message, ...] | None:
+    """post_current_images for a HARD MODE *stage* post (never a reveal):
+    a media group can't carry buttons, so the DM clue-shop link goes in
+    the caption instead (omitted while the bot's username is unknown)."""
+    url = shop_link_url(context)
+    if url is not None:
+        caption = f"{caption}\n🛒 {url}"
+    return await _post_album(context, session_factory, photos, caption)
 
 
 def clear_image_if_sent(

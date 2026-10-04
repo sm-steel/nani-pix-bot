@@ -12,10 +12,12 @@ from nani_pix_bot.commands.helpers.keyboards import (
     STOP_CONFIRM_CALLBACK_DATA,
     STOP_REVEAL_CALLBACK_DATA,
 )
-from nani_pix_bot.models.enums import GameStatus, PixelStage
+from nani_pix_bot.models import CluePurchase
+from nani_pix_bot.models.enums import ClueKind, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
+from nani_pix_bot.services.clues import shop
 
 
 def _make_update(
@@ -481,3 +483,29 @@ async def test_stop_callback_handler_reveal_falls_back_when_hard_mode_image_miss
     context.bot.send_message.assert_awaited_once()
     text = update.callback_query.edit_message_text.await_args.args[0]
     assert "revealed" not in text.lower()
+
+
+async def test_stop_confirm_refunds_clue_purchases(session_factory) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    with session_factory() as session:
+        buyer = Player(telegram_user_id=2, currency=100)
+        session.add(buyer)
+        session.flush()
+        game = session.get(Game, game_id)
+        assert game is not None
+        shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.FIRST_LETTER))
+        session.commit()
+        assert buyer.currency == 80
+    update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
+        refunded = session.get(Player, 2)
+        assert refunded is not None
+        assert refunded.currency == 100
+        assert session.query(CluePurchase).count() == 0

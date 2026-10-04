@@ -277,6 +277,27 @@ src/nani_pix_bot/
     currency_config.py  # /pixelconfig — DM-only, admin-gated view/edit of
                    # the currency amounts (services/economy/config.py);
                    # unlike stageconfig.py, allowed mid-game
+    shop/         # the private clue shop (#209) — see MECHANICS.md's "Clue
+                   # shop". /shop and `/start shop` open it in DM; the 🛒
+                   # on stage posts deep-links there
+                   #   menu.py       /shop and `/start shop` (open_shop,
+                   #                 shared by both): members only, ACTIVE
+                   #                 round only, setter refused; renders the
+                   #                 offers
+                   #   callbacks.py  the `shop:` inline-button router: buy
+                   #                 text/screenshot/tile clues (charge and
+                   #                 commit first, then deliver; a failed
+                   #                 delivery refunds)
+                   #   deliver.py    builds and sends text clues (reused by
+                   #                 share), image clues and the topic
+                   #                 "bought" notice
+                   #   images.py     the image clues: fetch + pixelate an
+                   #                 extra screenshot (before anyone is
+                   #                 charged) and render a tile reveal
+                   #   keyboards.py  shop menu, 8x8 tile grid and share
+                   #                 keyboards, and the callback prefixes
+                   #   share.py      the free once-per-clue "share with the
+                   #                 group" action
     mal_link.py   # /linkmal, /unlinkmal — DM-only, self-service (no
                    # admin gate, unlike language.py below), standalone
                    # entry points for personal MyAnimeList account
@@ -299,7 +320,7 @@ src/nani_pix_bot/
                    # the admin's own IANA timezone (Player.timezone) and
                    # the bot-wide quiet-hours window entered in it — see
                    # MECHANICS.md's "Quiet hours"
-    onboarding.py # /start, /help
+    onboarding.py # /start (and `/start shop`, the clue-shop deep link), /help
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
                    # (membership.py), the one inline keyboard genuinely
@@ -354,7 +375,13 @@ src/nani_pix_bot/
                    #                      "post + best-effort pin" send,
                    #                      decoupled from any caller's own
                    #                      DB transaction — see MECHANICS.md's
-                   #                      "Cleanup" note) + clear_image_if_sent
+                   #                      "Cleanup" note) + clear_image_if_sent;
+                   #                      post_stage_image/post_stage_images
+                   #                      are the stage-post variants that add
+                   #                      the 🛒 clue-shop entry (a URL button;
+                   #                      in a HARD MODE album, which can't
+                   #                      carry buttons, a caption link),
+                   #                      via shop_link_url
                    #   game_timeout.py    the 2-day absolute timeout
                    #   setup_abandon.py   the 1h setup-abandon timer
                    #   turn_timers.py     the win-turn 15min-reminder/
@@ -488,7 +515,11 @@ src/nani_pix_bot/
                    # game row first:
                    #   render.py      the shared Pillow primitives (the
                    #                  plain mosaic, and the rank mosaic
-                   #                  median/mode need)
+                   #                  median/mode need), plus the clue
+                   #                  shop's tile_box (a tile's pixel
+                   #                  rectangle on the 8x8 grid) and
+                   #                  reveal_tiles (pastes the original's
+                   #                  tiles over the pixelated image)
                    #   algorithms.py  PixelAlgorithm -> implementation
                    #                  registry, and pixelate() itself
     game/         # the state machine — the only package that mutates a
@@ -568,6 +599,15 @@ src/nani_pix_bot/
                    #               award_prompt_start, called by the
                    #               /guess, /correct and DM-setup-confirm
                    #               handlers; returns an Earnings value
+    clues/        # the clue shop's rules (#209), no Telegram — see MECHANICS.md's
+                   # "Clue shop"
+                   #   text.py   pure first/last letter and title-shape
+                   #             (masked title) logic
+                   #   shop.py   offers/price/purchase/refund/mark_shared:
+                   #             what a player may buy, at what price, and
+                   #             the charge (through economy/wallet.py) plus
+                   #             CluePurchase bookkeeping; Refusal and
+                   #             ShopRefusedError for the rejected cases
     i18n.py       # simple dict/JSON t(key, lang, **kwargs) — see
                    # CLAUDE.md's "Language / i18n"
     settings/     # bot-wide configuration, two persistence shapes:
@@ -605,6 +645,7 @@ src/nani_pix_bot/
     stage_config.py  # StageConfig (one row per PixelStage)
     currency_transfer.py  # CurrencyTransfer (append-only two-sided 💠 ledger)
     currency_config.py  # CurrencyConfig (admin overrides of currency amounts)
+    clue_purchase.py  # CluePurchase (one clue a player bought in one game)
     mal_link.py   # MalCredentials (one row per linked player, encrypted
                    #               token columns), PendingMalLink (one
                    #               row per live /linkmal attempt's PKCE
@@ -657,6 +698,9 @@ erDiagram
     PLAYERS ||--o| PENDING_MAL_LINK : "has pending link"
     PLAYERS ||--o{ CURRENCY_TRANSFERS : "sends"
     PLAYERS ||--o{ CURRENCY_TRANSFERS : "receives"
+    PLAYERS ||--o{ CLUE_PURCHASES : buys
+    GAMES ||--o{ CLUE_PURCHASES : "has"
+    CURRENCY_TRANSFERS ||--o| CLUE_PURCHASES : "pays for"
     CURRENCY_TRANSFERS |o--o| CURRENCY_TRANSFERS : reverses
 
     PLAYERS {
@@ -699,6 +743,7 @@ erDiagram
         blob hard_mode_image_a
         blob hard_mode_image_b
         datetime turn_received_at
+        json shown_screenshot_urls
     }
     TURN_STATE {
         int id PK
@@ -754,19 +799,32 @@ erDiagram
         string key PK
         int value
     }
+    CLUE_PURCHASES {
+        int id PK
+        int game_id FK
+        bigint player_id FK
+        string kind
+        int tile_index
+        string screenshot_url
+        string telegram_file_id
+        datetime shared_at
+        int transfer_id FK
+        datetime created_at
+    }
 ```
 
 | Table | Status | Purpose |
 |---|---|---|
 | `players` | v1 | Telegram user id, opportunistically-captured `username`, `wins` counter (feeds `/leaderboard`), `currency` (v7: the 💠 pixel balance, `NOT NULL` with `server_default="0"` because the table already had live rows; only `services/economy/wallet.py` changes it, always together with a `currency_transfers` row), and an optional IANA `timezone` (set via `/timezone`, used to interpret that admin's `/quiethours` times). |
-| `games` | v1 | One row per round. `status` is `SETUP` (starter is picking/confirming the anime in DM) → `ACTIVE` (posted to the group, guessing open) → `WON`/`UNSOLVED` (terminal). `source` (`"anilist"`/`"shikimori"`/`"tenrai"`/`"tmdb"`/`"manual"`) records which identification method was used; `anilist_id`/`shikimori_id`/`tenrai_id`/`tmdb_id` are one nullable column per provider — at most one is ever set from identification, but a screenshot cross-search (see below) can also populate one of these even when that provider wasn't the identification source. `setup_step` (`PICKING_METHOD`/`PICKING_SCREENSHOT`/`AWAITING_PHOTO_CHANGE`/`AWAITING_SYNONYM`/`CONFIRMING`) tracks exactly where in the multi-step DM setup flow the starter is — only meaningful while `status` is `SETUP`, and (like everything else in that flow) derived from the DB rather than in-memory state, so a restart mid-edit resolves correctly. `pixel_algorithm` (`NEAREST`/`BOX`/`MEDIAN`/`MODE`/`LANCZOS`, defaulting to `MEDIAN`) is how each pixelation block's colour is chosen — picked by the starter from the confirmation preview, and stored per game rather than read from a shared setting because stages 2-5 are rendered much later and from elsewhere, so a mid-round change to a shared setting would make a round's later stages look unlike the ones already posted. `setup_deadline` (`created_at + 1h`) is when the setup-abandon timer fires if the row is still `SETUP` — see `MECHANICS.md`'s "Starting a game". `current_stage` tracks which pixelation level is currently shown (`STAGE_1`→`STAGE_2`→`STAGE_3`→`STAGE_4`→`STAGE_5`); `wrong_guess_count` resets to 0 each time the stage advances, while `total_guess_count` never resets (gates `/correct` on at least one real attempt). `inactivity_nudge_at`/`inactivity_advance_at` are the absolute deadlines for the 3h-nudge/6h-auto-advance inactivity clock, reset on every `/guess` — see `MECHANICS.md`'s "Inactivity" section. `original_image` holds the current game's screenshot as raw bytes directly, rather than a Telegram file_id — deferred-loaded (SQLAlchemy `deferred()`) so routine queries (status checks, the `/guess` hot path) don't pull a multi-hundred-KB blob every time; cleared once the reveal message (win or unsolved) is confirmed sent — see `MECHANICS.md`'s "Cleanup" note; nothing after a game ends needs to re-fetch the screenshot. `hard_mode`/`hard_mode_turn`/`hard_mode_image_a`/`hard_mode_image_b` are populated only for bot-autostarted games (see `MECHANICS.md`'s "HARD MODE" section) — `hard_mode` flags the row as one, `hard_mode_turn` is the 1-or-2 turn it's currently on (a plain nullable int, not a new enum: no admin config, no third value), and `hard_mode_image_a`/`_b` (both deferred-loaded like `original_image`) hold the one screenshot pair played across both turns. For these rows, `current_stage` and `original_image` stay `NULL` instead — a HARD MODE game never enters `state.py`'s normal PixelStage progression, so those columns have nothing to hold. `screenshot_source` and `screenshot_picker_provider` (both nullable, both `"shikimori"`/`"tenrai"`/`"tmdb"`) are two separate meanings that used to share one column, which is what let a genuine upload delete an identification provider id and let text typed at a same-provider gallery be read as a search query: `screenshot_source` is **image provenance** — which provider's `*_id` column is currently backing `original_image`, `null` for a genuine upload or no image yet, written only where the bytes themselves are (`commands/dm_start/screenshot_gallery.py`'s pick) — while `screenshot_picker_provider` is **picker state** — which provider the screenshot picker is currently *resolving* an anime for, i.e. which provider a typed DM message would be searched against, written by whichever screen the starter lands on, since only that screen knows whether anything is left to resolve: the screen a source-button *tap* lands on (the tap handler itself deliberately writes nothing — it does not yet know whether it will end on a gallery or a failure), any failure screen, and any gallery page that carries "Wrong anime? Search again" (every page past the first, and every cross-provider one) all set it, while a same-provider gallery and a finished pick clear it. A screen that draws that button without setting it is a bug — the button itself re-arms the column when *tapped*, but a typed correction has only the column to route on. Re-entering the picker from a later step (the "Search again" prompt reached from a stale gallery message after the preview went up) has to re-assert `setup_step` alongside it, or `search_text_handler` never reaches the branch that reads the column at all. `search_text_handler` routes on the picker column; the preview's "Change image" reads the provenance one. `turn_received_at` (v7, nullable) is the starter's `turn_state.turn_received_at` as of game creation — `null` if the turn was open to anyone; a game created within 1h of a non-null value earns the prompt-turn bonus (`services/economy/earning.py`). Only one row may be `SETUP`/`ACTIVE` at a time, enforced in `services/game/state.py`, not a DB constraint. |
+| `games` | v1 | One row per round. `status` is `SETUP` (starter is picking/confirming the anime in DM) → `ACTIVE` (posted to the group, guessing open) → `WON`/`UNSOLVED` (terminal). `source` (`"anilist"`/`"shikimori"`/`"tenrai"`/`"tmdb"`/`"manual"`) records which identification method was used; `anilist_id`/`shikimori_id`/`tenrai_id`/`tmdb_id` are one nullable column per provider — at most one is ever set from identification, but a screenshot cross-search (see below) can also populate one of these even when that provider wasn't the identification source. `setup_step` (`PICKING_METHOD`/`PICKING_SCREENSHOT`/`AWAITING_PHOTO_CHANGE`/`AWAITING_SYNONYM`/`CONFIRMING`) tracks exactly where in the multi-step DM setup flow the starter is — only meaningful while `status` is `SETUP`, and (like everything else in that flow) derived from the DB rather than in-memory state, so a restart mid-edit resolves correctly. `pixel_algorithm` (`NEAREST`/`BOX`/`MEDIAN`/`MODE`/`LANCZOS`, defaulting to `MEDIAN`) is how each pixelation block's colour is chosen — picked by the starter from the confirmation preview, and stored per game rather than read from a shared setting because stages 2-5 are rendered much later and from elsewhere, so a mid-round change to a shared setting would make a round's later stages look unlike the ones already posted. `setup_deadline` (`created_at + 1h`) is when the setup-abandon timer fires if the row is still `SETUP` — see `MECHANICS.md`'s "Starting a game". `current_stage` tracks which pixelation level is currently shown (`STAGE_1`→`STAGE_2`→`STAGE_3`→`STAGE_4`→`STAGE_5`); `wrong_guess_count` resets to 0 each time the stage advances, while `total_guess_count` never resets (gates `/correct` on at least one real attempt). `inactivity_nudge_at`/`inactivity_advance_at` are the absolute deadlines for the 3h-nudge/6h-auto-advance inactivity clock, reset on every `/guess` — see `MECHANICS.md`'s "Inactivity" section. `original_image` holds the current game's screenshot as raw bytes directly, rather than a Telegram file_id — deferred-loaded (SQLAlchemy `deferred()`) so routine queries (status checks, the `/guess` hot path) don't pull a multi-hundred-KB blob every time; cleared once the reveal message (win or unsolved) is confirmed sent — see `MECHANICS.md`'s "Cleanup" note; nothing after a game ends needs to re-fetch the screenshot. `hard_mode`/`hard_mode_turn`/`hard_mode_image_a`/`hard_mode_image_b` are populated only for bot-autostarted games (see `MECHANICS.md`'s "HARD MODE" section) — `hard_mode` flags the row as one, `hard_mode_turn` is the 1-or-2 turn it's currently on (a plain nullable int, not a new enum: no admin config, no third value), and `hard_mode_image_a`/`_b` (both deferred-loaded like `original_image`) hold the one screenshot pair played across both turns. For these rows, `current_stage` and `original_image` stay `NULL` instead — a HARD MODE game never enters `state.py`'s normal PixelStage progression, so those columns have nothing to hold. `screenshot_source` and `screenshot_picker_provider` (both nullable, both `"shikimori"`/`"tenrai"`/`"tmdb"`) are two separate meanings that used to share one column, which is what let a genuine upload delete an identification provider id and let text typed at a same-provider gallery be read as a search query: `screenshot_source` is **image provenance** — which provider's `*_id` column is currently backing `original_image`, `null` for a genuine upload or no image yet, written only where the bytes themselves are (`commands/dm_start/screenshot_gallery.py`'s pick) — while `screenshot_picker_provider` is **picker state** — which provider the screenshot picker is currently *resolving* an anime for, i.e. which provider a typed DM message would be searched against, written by whichever screen the starter lands on, since only that screen knows whether anything is left to resolve: the screen a source-button *tap* lands on (the tap handler itself deliberately writes nothing — it does not yet know whether it will end on a gallery or a failure), any failure screen, and any gallery page that carries "Wrong anime? Search again" (every page past the first, and every cross-provider one) all set it, while a same-provider gallery and a finished pick clear it. A screen that draws that button without setting it is a bug — the button itself re-arms the column when *tapped*, but a typed correction has only the column to route on. Re-entering the picker from a later step (the "Search again" prompt reached from a stale gallery message after the preview went up) has to re-assert `setup_step` alongside it, or `search_text_handler` never reaches the branch that reads the column at all. `search_text_handler` routes on the picker column; the preview's "Change image" reads the provenance one. `turn_received_at` (v7, nullable) is the starter's `turn_state.turn_received_at` as of game creation — `null` if the turn was open to anyone; a game created within 1h of a non-null value earns the prompt-turn bonus (`services/economy/earning.py`). `shown_screenshot_urls` (v8, nullable JSON list) holds the screenshot URL(s) currently in play — the one a gallery pick or a bot autostart used, or both URLs of a HARD MODE pair; `null` for an uploaded photo — so the clue shop's extra-screenshot clue never offers one the group is already looking at. Only one row may be `SETUP`/`ACTIVE` at a time, enforced in `services/game/state.py`, not a DB constraint. |
 | `turn_state` | v1 | Single row (`id=1`). `turn_received_at` (v7, nullable) is set when the turn is handed to a *different* specific player (a win, or `/skip @user`; re-designating the same player keeps the old value) and cleared (`null`) when the turn is opened to anyone, so an open turn earns no prompt bonus; unlike `turn_opened_at` it is not cleared at game start, because `create_setup_game` copies it onto `games.turn_received_at` for the prompt-turn currency bonus. `next_starter_id` is who's designated to start the next game; `null` means anyone can. Set to the winner on a `WON` game, changed by `/skip`, otherwise left alone (an `UNSOLVED` game doesn't force a turn on anyone). `reminder_at`/`expiry_at` are the win-turn 15min-reminder/12h-expiry absolute deadlines — set alongside `next_starter_id` whenever it becomes a real user, nulled when it's opened back up (see `MECHANICS.md`'s "Turn handoff"). `turn_opened_at`/`autostart_deadline_at` track the 24h idle-autostart backstop: `turn_opened_at` is when the turn most recently became open to anyone with no game running, `autostart_deadline_at` is `turn_opened_at + 24h`, the absolute deadline `jobs/timers/autostart.py`'s `schedule_idle_autostart()` re-arms from on every restart; both are `null` whenever a specific player is designated or a game is running — see `MECHANICS.md`'s "Bot-initiated games" section. |
 | `bot_settings` | v2 | Single row (`id=1`). `language` (`"EN"`/`"RU"`) is the bot's current reply language, changed only via `/language` by a group admin/owner — see CLAUDE.md's "Language / i18n". `games_enabled` gates whether a new game may be *started*, changed via `/setgamesenabled` — see `MECHANICS.md`'s "Pixelation stages" section. `pinned_message_id` is the Telegram `message_id` of whatever "current image" is currently pinned in the game topic — a singleton pointer rather than a per-`games` column since the pin is meant to persist across games (the next game's first post naturally supersedes it); see `MECHANICS.md`'s "Pixelation stages" section. `autostart_enabled` (default `false`, opt-in) gates whether the bot may start a game itself — idle auto-start or "overthrow" — changed via `/setautostart`, checked in addition to (not instead of) `games_enabled`; see `MECHANICS.md`'s "Bot-initiated games" section. `quiet_start`/`quiet_end`/`quiet_timezone` (all `null` = off, the default) hold the quiet-hours window as local wall-clock times plus the IANA zone they were entered in, set via `/quiethours`; see `MECHANICS.md`'s "Quiet hours" section. |
 | `stage_config` | v5 | One row per `PixelStage` (5 total, `stage` is the primary key). `target_width`/`wrong_guess_limit` are the admin-configurable pixelation width and wrong-guess allowance for that stage, seeded with defaults by migration and changed live via `/setstageconfig`/`/setstage` — see `services/settings/stage_config.py` and `MECHANICS.md`'s "Pixelation stages" section. |
 | `mal_credentials` | v6 | One row per player who has linked a personal MyAnimeList account (`telegram_user_id` PK, FK to `players`) — see `MECHANICS.md`'s "Linking a personal MyAnimeList account". `access_token`/`refresh_token` are stored **encrypted** (Fernet, `services/security/token_crypto.py`), keyed by the bot-wide `MAL_TOKEN_ENCRYPTION_KEY` env var — `services/mal_link.py` is the only code that reads/writes these two columns directly, decrypting on read and encrypting on write; nothing else in the codebase touches the raw ciphertext. `expires_at` is when `access_token` needs refreshing, checked on demand right before a list fetch (`commands/dm_start/mal_browse.py`) rather than proactively. `mal_username` is reserved for a future display-name feature — no code path currently populates it (every write, initial link and re-link alike, passes `None`; nothing calls MAL's user-info endpoint), so it's always `null` today despite being nullable rather than dropped. `linked_at` is set once, on first link, and left alone on a re-link. |
 | `pending_mal_link` | v6 | One row per player with a live `/linkmal` attempt in flight (`telegram_user_id` PK, FK to `players`) — the OAuth2 PKCE `state`/`code_verifier` pair generated when the authorize URL is built, persisted here (not `bot_data`/in-memory) so a bot restart mid-link doesn't silently lose it, matching this codebase's established setup-flow-state convention (issue #11). A second `/linkmal` while one is already pending overwrites this row in place (`services/mal_link.py`'s `upsert_pending_link`). `created_at` is the reference point for the 10-minute TTL, enforced in two places: the scheduled timer (`jobs/timers/mal_link_expiry.py`) that deletes an abandoned row, and — because that timer doesn't survive a restart — `services/mal_link.py`'s `get_pending_link`, which treats a row older than `MAL_LINK_EXPIRY_DELAY` as absent and deletes it. The read-side check isn't optional belt-and-braces: a surviving pending row makes `search_text_handler` route every later plain-text DM from that player into the code-paste branch, so a restart mid-link would otherwise silently eat their search queries, manual titles and synonyms forever. |
 | `currency_transfers` | v7 | Append-only 💠 ledger: one row per movement, both sides explicit. `from_type`/`to_type` are a `CurrencyParty` (`house` = the game itself, where currency is created or spent; `player`; `pot` = a game's bounty escrow, phase 3) stored as plain strings; `from_player_id`/`to_player_id` (FKs to `players`) are set exactly for a `player` side. `amount` is always positive, `reason` a `CurrencyReason` stored as a plain string. Named CHECK constraints enforce the amount, that both party types are valid (`reason` deliberately has no CHECK: an open set that grows each phase), the player-id/type pairing, that a pot side has a `game_id`, and that the two sides differ. `game_id` is a plain integer with **no** FK, since `/stop` and setup-abandon delete `games` rows, the ledger must outlive them and a pot row must keep its game. `reverses_id` (self-FK, unique) names the row a refund undoes and blocks a double refund. `players.currency` is a cache of these rows (`wallet.ledger_balance` is the audit). The per-game wrong-guess cap is answered by summing these rows (the first-guess bonus uses `games.total_guess_count`), so no earnings state lives in memory. Written only via `services/economy/wallet.py`. |
-| `currency_config` | v7 | Admin overrides of currency amounts (`key` PK, `value`), set via `/pixelconfig`. Only changed values have a row; defaults are constants in `services/economy/config.py`, so a new amount needs no seeding migration. |
+| `currency_config` | v7 | Admin overrides of currency amounts (`key` PK, `value`), set via `/pixelconfig`. Only changed values have a row; defaults are constants in `services/economy/config.py`, so a new amount needs no seeding migration. The clue-shop prices (`clue_*` keys) live here too. |
+| `clue_purchases` | v8 | One clue a player bought in one game (`kind` is a `ClueKind` stored as a plain string: first/last letter, title shape, screenshot, tile). `game_id` is a real FK with `ON DELETE CASCADE`, so a game deletion drops its purchases (the ledger rows stay); `/stop` refunds them first via `shop.refund_game`, and setup-abandon only deletes `SETUP` games, which cannot have any; `player_id` FKs `players`. `tile_index` (0-63, row-major on the 8x8 grid) is set for a tile and `screenshot_url` for an extra screenshot, so *what* was bought lives here and never in the ledger. `telegram_file_id` is the delivered image's file_id, kept so sharing re-posts it without re-rendering; `shared_at` is set once when the player shares it with the group (free, once per clue). `transfer_id` (FK, unique) is the `currency_transfers` charge that paid for it; a failed delivery is refunded through a `reverses_id` ledger row and the purchase row is deleted. Written only via `services/clues/shop.py`. |
 
 ## Game flow, topics, and commands
 

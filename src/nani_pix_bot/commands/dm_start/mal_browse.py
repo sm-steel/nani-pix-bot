@@ -35,14 +35,14 @@ from telegram import InlineKeyboardMarkup, Update, User
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
-    _SEARCH_SERVICE_ERRORS,
-    _client_for_source,
+    SEARCH_SERVICE_ERRORS,
     _method_keyboard,
     _post_preview_album,
     _reject_stale_tap,
     _reply_service_down,
     _reply_service_unavailable,
     _stage_preview,
+    client_for_source,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     MalListPage,
@@ -258,7 +258,7 @@ async def _show_mal_list_page(
     staring at a dead spinner."""
     try:
         page = await _fetch_mal_list_page(context, request)
-    except _SEARCH_SERVICE_ERRORS:
+    except SEARCH_SERVICE_ERRORS:
         logger.exception(
             "MAL list fetch failed for player {} at offset {}", request.user.id, request.offset
         )
@@ -466,7 +466,7 @@ async def _resolve_picked_mal_entry(
     """Resolve a tapped list entry to its Tenrai result, or reply and
     return None for either already-handled failure (Tenrai unreachable,
     or the id gone from the catalogue). Mirrors search.py's
-    `_resolve_picked_result`, including its `_SEARCH_SERVICE_ERRORS`
+    `_resolve_picked_result`, including its `SEARCH_SERVICE_ERRORS`
     guard — a MAL-list pick resolves through a genuine Tenrai API call,
     so it can fail exactly the same ways every other pick site can, and
     was leaving the starter on a dead spinner when it did.
@@ -475,10 +475,10 @@ async def _resolve_picked_mal_entry(
     success path, for the reason pick_callback_handler spells out: a
     query id can only be answered once, and `_reject_stale_tap` needs
     that one answer to deliver its alert."""
-    client = _client_for_source(context, Provider.TENRAI)
+    client = client_for_source(context, Provider.TENRAI)
     try:
         result = await tenrai.get_by_id(client, mal_id)
-    except _SEARCH_SERVICE_ERRORS:
+    except SEARCH_SERVICE_ERRORS:
         logger.exception("Tenrai get_by_id failed for MAL list entry {}", mal_id)
         await query.answer()
         await _reply_service_down(query.edit_message_text, lang, Provider.TENRAI, context)

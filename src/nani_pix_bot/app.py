@@ -36,6 +36,7 @@ from nani_pix_bot.commands import (
     onboarding,
     quiet_hours,
     setautostart,
+    shop,
     stageconfig,
     version,
 )
@@ -271,12 +272,14 @@ def build_application(config: Config) -> Application:
     application.add_handler(
         CallbackQueryHandler(game_flow.stop_callback_handler, pattern=r"^stop:")
     )
+    application.add_handler(CallbackQueryHandler(shop.shop_callback_handler, pattern=r"^shop:"))
     application.add_handler(CommandHandler("guess", game_flow.guess_command))
     application.add_handler(CommandHandler("correct", game_flow.correct_command))
     application.add_handler(CommandHandler("skip", game_flow.skip_command))
     application.add_handler(CommandHandler("stop", game_flow.stop_command))
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
     application.add_handler(CommandHandler("balance", balance.balance_command))
+    application.add_handler(CommandHandler("shop", shop.shop_command))
     application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))
     application.add_handler(CommandHandler("language", language.language_command))
     application.add_handler(CommandHandler("linkmal", mal_link.linkmal_command))

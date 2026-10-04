@@ -25,6 +25,12 @@ class EconomyKey(enum.StrEnum):
     WIN_STAGE_5 = "win_stage_5"
     SETTER = "setter"
     PROMPT_TURN = "prompt_turn"
+    CLUE_LAST_LETTER = "clue_last_letter"
+    CLUE_FIRST_LETTER = "clue_first_letter"
+    CLUE_TITLE_SHAPE = "clue_title_shape"
+    CLUE_SCREENSHOT = "clue_screenshot"
+    CLUE_SCREENSHOT_STEP = "clue_screenshot_step"
+    CLUE_TILE = "clue_tile"
 
 
 DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
@@ -40,6 +46,24 @@ DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
         EconomyKey.WIN_STAGE_5: 15,
         EconomyKey.SETTER: 15,
         EconomyKey.PROMPT_TURN: 10,
+        EconomyKey.CLUE_LAST_LETTER: 10,
+        EconomyKey.CLUE_FIRST_LETTER: 20,
+        EconomyKey.CLUE_TITLE_SHAPE: 25,
+        EconomyKey.CLUE_SCREENSHOT: 30,
+        EconomyKey.CLUE_SCREENSHOT_STEP: 15,
+        EconomyKey.CLUE_TILE: 10,
+    }
+)
+
+# Prices a purchase charges as-is; wallet.transfer rejects 0, so they stay >= 1.
+# (CLUE_SCREENSHOT_STEP is a surcharge, not a price: 0 is fine.)
+CLUE_PRICE_KEYS: frozenset[EconomyKey] = frozenset(
+    {
+        EconomyKey.CLUE_LAST_LETTER,
+        EconomyKey.CLUE_FIRST_LETTER,
+        EconomyKey.CLUE_TITLE_SHAPE,
+        EconomyKey.CLUE_SCREENSHOT,
+        EconomyKey.CLUE_TILE,
     }
 )
 
@@ -63,6 +87,9 @@ def get_amounts(session: Session) -> dict[EconomyKey, int]:
 def set_amount(session: Session, key: EconomyKey, value: int) -> None:
     if value < 0:
         msg = f"Currency amount for {key} cannot be negative: {value}"
+        raise ValueError(msg)
+    if key in CLUE_PRICE_KEYS and value < 1:
+        msg = f"Clue price for {key} must be at least 1: {value}"
         raise ValueError(msg)
     row = session.get(CurrencyConfig, key.value)
     if row is None:

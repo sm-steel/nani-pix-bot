@@ -830,3 +830,38 @@ async def test_wrong_guess_stays_committed_when_the_reply_times_out(session_fact
         guesser = session.get(Player, 2)
         assert guesser is not None
         assert guesser.currency == 50 + 7
+
+
+async def test_stage_advance_post_carries_the_shop_button_but_the_win_reveal_does_not(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
+    _active_game(
+        session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2, total_guess_count=3
+    )
+    _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=3)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_4, wrong_guess_limit=5)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+    context.bot_data["bot_username"] = "testbot"
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert kwargs["reply_markup"].inline_keyboard[0][0].url == "https://t.me/testbot?start=shop"
+
+
+async def test_win_reveal_post_has_no_shop_button(session_factory) -> None:
+    _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+    context.bot_data["bot_username"] = "testbot"
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert kwargs.get("reply_markup") is None
