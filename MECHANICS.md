@@ -26,6 +26,7 @@ just what's currently built.
 | Leaderboard (`/leaderboard`) | Implemented |
 | Pixels 💠 — earning, `/balance`, `/pixelconfig` | Implemented |
 | Clue shop (`/shop`) — spend 💠 on private clues | Implemented |
+| Public spends — bounty (`/bounty`), `/tip`, `/sharpen` | Implemented |
 | Quiet hours (`/quiethours`, `/timezone`) — automatic posts held, clocks frozen | Implemented |
 
 ## Game lifecycle
@@ -913,7 +914,7 @@ player's 💠 balance as a column (ranking is still by wins, not 💠).
 
 ## Pixels 💠
 
-**Status: Implemented (earning, and spending in the clue shop below; further sinks arrive in a later phase, #210).**
+**Status: Implemented (earning, the clue shop and public spends, below).**
 
 Every player has a 💠 balance (`players.currency`), shown by `/balance` (in
 the game topic or a DM) and next to the win count on `/leaderboard`. A
@@ -932,6 +933,7 @@ one-time backfill is run.
 | Win at stage 1 / 2 / 3 / 4 / 5 | 40 / 30 / 25 / 20 / 15 | the winner |
 | Setter bonus (win at stage 2-4 only) | 15 | the game's starter |
 | Prompt turn | 10 | the starter |
+| Bounty (the pot, if any) | whatever players put in | the winner, all of it, including their own contribution; see "Public spends" |
 
 ### Rules
 
@@ -1043,3 +1045,41 @@ under the player's name.
   price by accident.
 - If a round is stopped (`/stop`) its clue purchases are refunded in
   full, since they die with the round.
+
+### Public spends
+
+**Status: Implemented.** Three ways to spend 💠 in the open: put it into a
+round's bounty, tip a player, or pay to sharpen the image.
+
+**Bounty.** The bounty is a pot of 💠 on one round, paid to whoever solves it.
+- `/bounty <amount>` works only in the game topic, during an `ACTIVE` game,
+  with a minimum of 5. Anyone with the balance can add, any number of times.
+- The setter cannot use `/bounty`: during setup they pick a preset of 10, 25
+  or 50 from the preview's bounty submenu instead (only the presets they can
+  afford are offered). That 💠 goes into the pot when the game starts.
+- The pot is shown on the stage posts and the pinned current image.
+- The winner takes all of the pot, including their own contribution. It is
+  paid as its own line next to the win reward and is not part of the earnings
+  total.
+- The pot is refunded to its contributors when the game ends unsolved by any
+  route (timeout, inactivity auto-advance running out of stages), on `/stop`,
+  and when a setup is abandoned. The bot's message lists the refund.
+- The pot is derived from the `currency_transfers` ledger (contributions into
+  the pot minus what has left it); there is no `games.bounty` column.
+
+**`/tip @username <amount>`.** Sends 💠 from you to another player.
+- Works in the game topic or in a DM, with a minimum of 1.
+- You cannot tip yourself or the bot, the recipient must be a player the bot
+  knows, and you need the balance.
+- A plain transfer tied to no game; nothing is refunded later.
+
+**`/sharpen`.** Pays to advance the current round one pixelation stage.
+- Costs 50 by default (`/pixelconfig` key `sharpen`, at least 1).
+- Normal games only, not HARD MODE; not at the last stage; and never for the
+  round's setter.
+- It asks for confirmation first; only the player who requested it can press
+  the confirm button. A confirm made for an earlier stage (the stage moved on
+  in the meantime) is refused and charges nothing.
+- On confirm the player is charged and the round gets the same effects as any
+  stage advance: the next stage image is posted, the wrong-guess counter resets
+  and the new stage is announced in the group topic.
