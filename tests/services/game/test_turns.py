@@ -189,3 +189,57 @@ def test_opening_the_turn_freezes_the_idle_autostart_deadline_during_quiet_hours
     assert turn_state.autostart_deadline_at is not None
     expected = quiet_hours.add_active_time(quiet_now, window_end, game_service.IDLE_AUTOSTART_DELAY)
     assert abs((turn_state.autostart_deadline_at - expected).total_seconds()) < 5
+
+
+def test_set_next_starter_records_turn_received_at(session: Session) -> None:
+    session.add(Player(telegram_user_id=5))
+    session.flush()
+
+    turn_state = turns.set_next_starter(session, 5)
+
+    assert turn_state.turn_received_at is not None
+
+
+def test_opening_the_turn_clears_turn_received_at(session: Session) -> None:
+    session.add(Player(telegram_user_id=5))
+    session.flush()
+    turns.set_next_starter(session, 5)
+
+    turn_state = turns.set_next_starter(session, None)
+
+    assert turn_state.turn_received_at is None
+
+
+def test_mark_turn_open_if_unassigned_clears_turn_received_at(session: Session) -> None:
+    turn_state = turns.get_or_create_turn_state(session)
+    turn_state.turn_received_at = datetime.now(UTC)
+
+    turns.mark_turn_open_if_unassigned(session)
+
+    assert turn_state.turn_received_at is None
+
+
+def test_redesignating_the_same_player_keeps_turn_received_at(session: Session) -> None:
+    session.add(Player(telegram_user_id=5))
+    session.flush()
+    turn_state = turns.set_next_starter(session, 5)
+    original = datetime.now(UTC) - timedelta(minutes=30)
+    turn_state.turn_received_at = original
+
+    turns.set_next_starter(session, 5)
+
+    assert turn_state.turn_received_at == original
+
+
+def test_designating_a_different_player_refreshes_turn_received_at(session: Session) -> None:
+    session.add_all([Player(telegram_user_id=5), Player(telegram_user_id=6)])
+    session.flush()
+    turn_state = turns.set_next_starter(session, 5)
+    turn_state.turn_received_at = datetime.now(UTC) - timedelta(minutes=30)
+
+    turns.set_next_starter(session, 6)
+
+    assert turn_state.turn_received_at is not None
+    assert (datetime.now(UTC) - turn_state.turn_received_at.replace(tzinfo=UTC)) < timedelta(
+        minutes=1
+    )

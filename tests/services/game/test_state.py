@@ -1206,3 +1206,13 @@ def test_activate_game_freezes_the_timeout_during_quiet_hours(
     assert game.scheduled_end_at is not None
     expected = quiet_hours.add_active_time(quiet_now, before, game_service.TIMEOUT_DURATION)
     assert abs((game.scheduled_end_at - expected).total_seconds()) < 5
+
+
+def test_create_setup_game_copies_turn_received_at(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.flush()
+    turn_state = turns.set_next_starter(session, 1)
+
+    game = state.create_setup_game(session, starter_id=1)
+
+    assert game.turn_received_at == turn_state.turn_received_at

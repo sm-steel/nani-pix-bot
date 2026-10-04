@@ -49,6 +49,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.economy import earning
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -100,6 +101,11 @@ def _activate_and_stage_first_post(
         limit=first_stage_settings.wrong_guess_limit,
     )
     game_service.activate_game(session, game)
+    prompt_bonus = earning.award_prompt_start(session, game)
+    if prompt_bonus:
+        caption += "\n" + i18n.t(
+            "economy.prompt_turn_bonus", lang, name=starter_name, amount=prompt_bonus
+        )
     timeout_module.schedule_timeout(context.job_queue, game)
     timeout_module.schedule_inactivity_timers(context.job_queue, game)
     return _FirstStagePost(photo=pixelated, caption=caption)

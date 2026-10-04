@@ -17,7 +17,10 @@ class Player(Base):
     resolve a typed handle against this table, and `/correct` exists
     precisely for someone who answered in plain prose without ever
     issuing a command. A row with `wins == 0` is the normal case and is
-    filtered out of the leaderboard by `players.top_players`."""
+    filtered out of the leaderboard by `players.top_players`.
+
+    `currency` is the 💠 balance, always moved together with a
+    `currency_transfers` row (services/economy/wallet.py)."""
 
     __tablename__ = "players"
 
@@ -27,3 +30,4 @@ class Player(Base):
     # The player's own IANA timezone (via /timezone) — currently only used
     # to interpret an admin's /quiethours times. NULL = never set.
     timezone: Mapped[str | None] = mapped_column(String(TIMEZONE_LENGTH), default=None)
+    currency: Mapped[int] = mapped_column(default=0)

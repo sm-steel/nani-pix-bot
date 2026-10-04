@@ -6,6 +6,7 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.earnings import earnings_suffix
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -14,17 +15,19 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services.economy import earning
 
 
 async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     user = update.effective_user
-    if message is None or user is None:
-        return
-
     group_chat_id = context.bot_data["group_chat_id"]
     game_topic_id = context.bot_data["game_topic_id"]
-    if not is_game_topic(update, group_chat_id=group_chat_id, game_topic_id=game_topic_id):
+    if (
+        message is None
+        or user is None
+        or not is_game_topic(update, group_chat_id=group_chat_id, game_topic_id=game_topic_id)
+    ):
         return
 
     session_factory = context.bot_data["session_factory"]
@@ -44,10 +47,16 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         target = await _resolve_target_player(session, message, context, target_username, lang)
         if target is None:
             return
+        if target.telegram_user_id == game.starter_id:
+            logger.warning("Starter {} tried to /correct themselves on game {}", user.id, game.id)
+            await message.reply_text(i18n.t("correct.cannot_target_self", lang))
+            return
         game_id = game.id
         original_bytes, photos, caption = _prepare_correct_reveal(game, target_username, lang)
 
         game_service.force_win(session, game, winner_id=target.telegram_user_id)
+        earnings = earning.award_win(session, game, winner_id=target.telegram_user_id)
+        caption += earnings_suffix(session, game, earnings, lang, player_name=f"@{target_username}")
         logger.info(
             "Game {} force-won for {} by starter {} (/correct)",
             game.id,

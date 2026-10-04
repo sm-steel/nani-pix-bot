@@ -698,7 +698,7 @@ async def test_guess_command_hard_mode_unsolved_reveals_two_photo_album(
     expected_caption = guess_command_module.i18n.t(
         "guess.hard_mode_unsolved_caption", "en", title="Frieren: Beyond Journey's End"
     )
-    assert media[0].caption == expected_caption
+    assert media[0].caption.startswith(expected_caption)  # plus currency-earnings lines
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
@@ -734,7 +734,7 @@ async def test_guess_command_hard_mode_wrong_feedback_uses_turn_progress(
     expected_text = guess_command_module.i18n.t(
         "guess.hard_mode_wrong_feedback", "en", remaining=1, limit=1, stage=1, total=2
     )
-    assert update.message.reply_text.await_args.args[0] == expected_text
+    assert update.message.reply_text.await_args.args[0].startswith(expected_text)
 
 
 async def test_guess_command_hard_mode_wrong_guess_never_actually_fires(
@@ -758,3 +758,75 @@ async def test_guess_command_hard_mode_wrong_guess_never_actually_fires(
     # image; TURN_ADVANCED posts the 2-photo album instead.
     context.bot.send_media_group.assert_awaited_once()
     update.message.reply_text.assert_not_awaited()
+
+
+async def test_wrong_guess_that_advances_the_stage_shows_currency_earned(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
+    _active_game(session_factory)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_1, wrong_guess_limit=1)
+    update = _make_update(user_id=2)
+    context = _make_context(session_factory, args=["Naruto"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    # the wrong guess advances the stage, so the earning line rides on the
+    # stage-advance caption instead of a reply.
+    caption = context.bot.send_photo.await_args.kwargs["caption"]
+    assert "+7" in caption  # 5 first-guess + 2 wrong-guess
+    with session_factory() as session:
+        player = session.get(Player, 2)
+        assert player is not None
+        assert player.currency == 50 + 7  # starting grant + earnings
+
+
+async def test_wrong_guess_without_advance_shows_currency_in_the_reply(session_factory) -> None:
+    _active_game(session_factory)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_1, wrong_guess_limit=3)
+    update = _make_update(user_id=2)
+    context = _make_context(session_factory, args=["Naruto"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert "+7" in update.message.reply_text.await_args.args[0]
+
+
+async def test_correct_guess_caption_shows_win_currency(session_factory) -> None:
+    _active_game(session_factory)
+    update = _make_update(user_id=2)
+    context = _make_context(session_factory, args=["Frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    caption = context.bot.send_photo.await_args.kwargs["caption"]
+    assert "+45" in caption  # 5 first-guess + 40 stage-1 win
+
+
+async def test_wrong_guess_stays_committed_when_the_reply_times_out(session_factory) -> None:
+    game_id = _active_game(session_factory)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_1, wrong_guess_limit=3)
+    update = _make_update(user_id=2, args=["naruto"])
+    update.message.reply_text = AsyncMock(side_effect=TimedOut())
+    context = _make_context(session_factory, args=["naruto"])
+
+    with pytest.raises(TimedOut):
+        await guess_command_module.guess_command(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    # The reply (with its "+7 💠") goes out only after the guess and its
+    # currency is committed, so a failed send can't roll either back.
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.wrong_guess_count == 1
+        guesser = session.get(Player, 2)
+        assert guesser is not None
+        assert guesser.currency == 50 + 7

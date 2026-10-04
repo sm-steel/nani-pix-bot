@@ -41,7 +41,8 @@ WHAT THIS DOES NOT CATCH — the SQLite-vs-MariaDB limit
       here — omit one entirely and this test still passes while
       production rejects the new member.
     * Server defaults, indexes, unique constraints, collation, charset
-      and storage engine.
+      and storage engine — except `currency_transfers`' CHECKs, unique
+      `reverses_id` and indexes, which have their own tests at the end.
     * Whether a migration's DDL would even execute against a *populated*
       table. The scratch database is empty, so an `op.add_column` of a
       NOT NULL column with no `server_default` — which aborts on a live
@@ -335,3 +336,40 @@ def test_chain_matches_the_models_foreign_keys(
         for constraint in Base.metadata.tables[table_name].foreign_key_constraints
     )
     assert migrated_foreign_keys == model_foreign_keys
+
+
+def test_currency_transfers_checks_match_the_model(migrated_connection: Connection) -> None:
+    """The ledger's integrity lives in its named CHECKs; the generic
+    comparisons above never look at them, so drift would pass silently."""
+    model_checks = {
+        constraint.name
+        for constraint in Base.metadata.tables["currency_transfers"].constraints
+        if isinstance(constraint, sa.CheckConstraint)
+    }
+    migrated_checks = {
+        check["name"]
+        for check in sa.inspect(migrated_connection).get_check_constraints("currency_transfers")
+    }
+    assert model_checks
+    assert migrated_checks == model_checks
+
+
+def test_currency_transfers_reverses_id_is_unique(migrated_inspector: sa.Inspector) -> None:
+    unique_columns = [
+        tuple(constraint["column_names"])
+        for constraint in migrated_inspector.get_unique_constraints("currency_transfers")
+    ] + [
+        tuple(index["column_names"])
+        for index in migrated_inspector.get_indexes("currency_transfers")
+        if index["unique"]
+    ]
+    assert ("reverses_id",) in unique_columns
+
+
+def test_currency_transfers_has_its_lookup_indexes(migrated_inspector: sa.Inspector) -> None:
+    index_names = {index["name"] for index in migrated_inspector.get_indexes("currency_transfers")}
+    assert {
+        "ix_currency_transfers_from_player_id",
+        "ix_currency_transfers_to_player_id",
+        "ix_currency_transfers_game_id",
+    } <= index_names

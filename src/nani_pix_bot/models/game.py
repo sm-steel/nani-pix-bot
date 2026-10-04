@@ -130,6 +130,10 @@ class Game(Base):
         BigInteger, ForeignKey("players.telegram_user_id"), default=None
     )
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+    # TurnState.turn_received_at at creation time (set when the turn is
+    # handed to a specific player; None if it was open to anyone) — the
+    # prompt-turn currency bonus compares it with created_at (services/economy/earning.py).
+    turn_received_at: Mapped[datetime | None] = mapped_column(default=None)
     scheduled_end_at: Mapped[datetime | None] = mapped_column(default=None)
     ended_at: Mapped[datetime | None] = mapped_column(default=None)
     # created_at + 1h — see services/game/state.py's SETUP_ABANDON_DELAY. Only

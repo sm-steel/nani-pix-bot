@@ -2,6 +2,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from nani_pix_bot.models.currency_transfer import CurrencyTransfer
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import players
 
@@ -102,3 +103,25 @@ def test_set_timezone_creates_player_and_round_trips(session: Session) -> None:
     players.set_timezone(session, 42, ZoneInfo("Asia/Novosibirsk"))
     session.commit()
     assert players.get_timezone(session, 42) == ZoneInfo("Asia/Novosibirsk")
+
+
+def test_get_or_create_player_grants_starting_balance_once(session: Session) -> None:
+    players.get_or_create_player(session, 1, username="frieren")
+    players.get_or_create_player(session, 1, username="frieren")
+    session.commit()
+
+    player = session.get(Player, 1)
+    assert player is not None
+    assert player.currency == 50
+
+
+def test_get_or_create_player_without_grant_starts_at_zero_with_no_ledger_row(
+    session: Session,
+) -> None:
+    players.get_or_create_player(session, 1, username="bot", grant=False)
+    session.commit()
+
+    player = session.get(Player, 1)
+    assert player is not None
+    assert player.currency == 0
+    assert session.query(CurrencyTransfer).count() == 0

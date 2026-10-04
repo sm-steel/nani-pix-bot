@@ -16,6 +16,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("start", i18n.t("commands.start", lang)),
         BotCommand("help", i18n.t("commands.help", lang)),
         BotCommand("newgame", i18n.t("commands.newgame", lang)),
+        BotCommand("balance", i18n.t("commands.balance", lang)),
         BotCommand("language", i18n.t("commands.language", lang)),
         # Listed unconditionally, like every other command here: this menu
         # is set once at startup (and on a /language change) for all
@@ -31,6 +32,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("setstage", i18n.t("commands.setstage", lang)),
         BotCommand("setgamesenabled", i18n.t("commands.setgamesenabled", lang)),
         BotCommand("setautostart", i18n.t("commands.setautostart", lang)),
+        BotCommand("pixelconfig", i18n.t("commands.pixelconfig", lang)),
         BotCommand("timezone", i18n.t("commands.timezone", lang)),
         BotCommand("quiethours", i18n.t("commands.quiethours", lang)),
         BotCommand("version", i18n.t("commands.version", lang)),
@@ -40,6 +42,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("correct", i18n.t("commands.correct", lang)),
         BotCommand("skip", i18n.t("commands.skip", lang)),
         BotCommand("leaderboard", i18n.t("commands.leaderboard", lang)),
+        BotCommand("balance", i18n.t("commands.balance", lang)),
         BotCommand("help", i18n.t("commands.help", lang)),
         BotCommand("version", i18n.t("commands.version", lang)),
     ]

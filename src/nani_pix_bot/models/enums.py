@@ -286,3 +286,27 @@ class SetupStep(enum.Enum):
     AWAITING_PHOTO_CHANGE = "awaiting_photo_change"  # preview's "Change image" tapped
     AWAITING_SYNONYM = "awaiting_synonym"  # preview's "Add a synonym" tapped
     CONFIRMING = "confirming"  # showing the preview, waiting for a button tap
+
+
+class CurrencyReason(enum.StrEnum):
+    """Why a `currency_transfers` row moved currency — see
+    services/economy/. A `StrEnum` stored in a plain `String` column
+    (same reasoning as `Provider` above), not a native `sa.Enum`: later
+    economy phases add members, and a MariaDB ENUM would need an
+    ALTER-widening migration every time."""
+
+    GRANT = "grant"
+    WRONG_GUESS = "wrong_guess"
+    FIRST_GUESS = "first_guess"
+    WIN = "win"
+    SETTER = "setter"
+    PROMPT_TURN = "prompt_turn"
+
+
+class CurrencyParty(enum.StrEnum):
+    """One side of a currency transfer (services/economy/wallet.py). Stored as a
+    plain string, like CurrencyReason."""
+
+    HOUSE = "house"  # the game itself: currency is created (rewards) or spent (purchases)
+    PLAYER = "player"  # a player's balance — the matching *_player_id is set
+    POT = "pot"  # a game's bounty escrow (phase 3) — game_id is set

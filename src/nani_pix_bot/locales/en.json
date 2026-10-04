@@ -18,6 +18,7 @@
   "correct.unknown_username": "I don't know anyone called @{username} yet — they need to send me a direct message first: @{bot_username}",
   "correct.unknown_username_no_handle": "I don't know anyone called @{username} yet — they need to send me a direct message first.",
   "correct.cannot_target_bot": "I can't award a win to myself — /correct is for crediting a player.",
+  "correct.cannot_target_self": "You can't award the win to yourself — /correct is for crediting another player.",
   "correct.caption": "🎉 Correct! @{winner} got it — it was {title}. Your turn to start the next game!",
   "correct.hard_mode_caption": "🎉 Correct! @{winner} cracked HARD MODE — it was {title}. That's +2 to the score. Your turn to start the next game!",
 
@@ -103,7 +104,7 @@
   "turn.expired": "⌛ Nobody started a new game in time — it's open to anyone now! DM me a screenshot to begin, or send /newgame to pick one instead.",
 
   "onboarding.start": "👋 Welcome! I run an anime-screenshot guessing game in the group.\n\nWhen it's your turn, DM me a screenshot here and I'll walk you through picking the anime — or send /newgame if you'd rather skip the upload and pick a screenshot from Shikimori/Tenrai/TMDB instead. Either way, I'll post a heavily pixelated version to the group for everyone to guess.\n\nUse /help anytime for the full rundown.",
-  "onboarding.help": "How to play:\n1. When it's your turn, DM me a screenshot here — or send /newgame to search without one.\n2. I'll ask you to search for the anime and pick the right result (or, from /newgame, pick a screenshot for it too).\n3. I'll post a pixelated version to the group's game topic.\n4. Everyone guesses with /guess <title> in that topic — it starts unforgiving (one wrong guess reveals more!) and gets more forgiving each stage.\n5. Whoever guesses right wins, and it's their turn next!\n6. If nobody starts a round in time, the bot may start one itself — those are HARD MODE instead: 2 turns, 2 screenshots per turn, only 1 wrong guess per turn, and +2 to the score if you crack it. /correct isn't available on those.\n\nIn the group topic:\n/guess <title> — make a guess\n/correct @username — (starter only, and not on a HARD MODE round the bot started itself) force a correct guess if the bot missed it\n/skip [@username] — pass your turn, open or to someone specific\n/leaderboard — see top winners\n\nIn DM:\n/start — this intro\n/help — this message\n/newgame — start a round without uploading a screenshot\n/language — (group admins) switch the bot's language\n/linkmal — link your MyAnimeList account, so you can pick a title straight from your own list\n/unlinkmal — unlink your MyAnimeList account again\n/stop — (starter or admins) stop the current game, optionally revealing the answer\n/stageconfig, /setstageconfig, /setstage — (admins) view/tune pixelation stages\n/setgamesenabled — (admins) pause or resume starting new games\n/setautostart — (admins) let the bot start games on its own\n/timezone — (admins) set your timezone\n/quiethours — (admins) quiet hours: no automatic posts, game clocks paused\n/version — show the bot's version and release notes",
+  "onboarding.help": "How to play:\n1. When it's your turn, DM me a screenshot here — or send /newgame to search without one.\n2. I'll ask you to search for the anime and pick the right result (or, from /newgame, pick a screenshot for it too).\n3. I'll post a pixelated version to the group's game topic.\n4. Everyone guesses with /guess <title> in that topic — it starts unforgiving (one wrong guess reveals more!) and gets more forgiving each stage.\n5. Whoever guesses right wins, and it's their turn next!\n6. If nobody starts a round in time, the bot may start one itself — those are HARD MODE instead: 2 turns, 2 screenshots per turn, only 1 wrong guess per turn, and +2 to the score if you crack it. /correct isn't available on those.\n7. Every guess earns pixels 💠 (wrong ones a little, capped per game); a correct guess earns more the earlier you get it. Setters earn too when their round is solved at a fair stage.\n\nIn the group topic:\n/guess <title> — make a guess\n/correct @username — (starter only, and not on a HARD MODE round the bot started itself) force a correct guess if the bot missed it\n/skip [@username] — pass your turn, open or to someone specific\n/leaderboard — see top winners\n/balance — your pixel balance\n\nIn DM:\n/start — this intro\n/help — this message\n/newgame — start a round without uploading a screenshot\n/balance — your pixel balance\n/language — (group admins) switch the bot's language\n/linkmal — link your MyAnimeList account, so you can pick a title straight from your own list\n/unlinkmal — unlink your MyAnimeList account again\n/stop — (starter or admins) stop the current game, optionally revealing the answer\n/stageconfig, /setstageconfig, /setstage — (admins) view/tune pixelation stages\n/setgamesenabled — (admins) pause or resume starting new games\n/setautostart — (admins) let the bot start games on its own\n/pixelconfig — (admins) view/tune pixel rewards\n/timezone — (admins) set your timezone\n/quiethours — (admins) quiet hours: no automatic posts, game clocks paused\n/version — show the bot's version and release notes",
   "onboarding.help_dm_failed": "Please message me privately first — @{bot_username} — then try /help again.",
   "onboarding.help_dm_failed_no_handle": "Please message me privately first, then try /help again.",
 
@@ -216,5 +217,27 @@
   "dm_start.mal_status_dropped": "Dropped",
   "dm_start.mal_list_prompt": "Pick an anime from your MyAnimeList list:",
   "dm_start.mal_list_empty": "Your MyAnimeList list is empty — add something to it, or pick another identification method.",
-  "dm_start.mal_not_found_anymore": "Couldn't find that anime in the catalogue — pick a method below to try again, including going back to your list."
+  "dm_start.mal_not_found_anymore": "Couldn't find that anime in the catalogue — pick a method below to try again, including going back to your list.",
+  "economy.earned": "💠 +{amount} for {name}",
+  "economy.setter_bonus": "🎨 {name} gets +{amount} 💠 for a well-pitched screenshot",
+  "economy.setter_fallback_name": "The setter",
+  "economy.prompt_turn_bonus": "⚡ {name} gets +{amount} 💠 for starting promptly",
+  "economy.balance": "Your balance: {amount} 💠",
+  "commands.balance": "Show your pixel balance",
+  "commands.pixelconfig": "View/tune pixel rewards (admins)",
+  "currency_config.header": "💠 Pixel rewards (key — value — what it is):",
+  "currency_config.usage": "Usage:\n/pixelconfig — show all values\n/pixelconfig <key> <value> — set one (a whole number ≥ 0)",
+  "currency_config.unknown_key": "Unknown key \"{name}\". Send /pixelconfig to see the list.",
+  "currency_config.updated": "✅ {name} set to {value}.",
+  "currency_config.desc.starting_balance": "Starting balance for a new player",
+  "currency_config.desc.wrong_guess": "Per wrong guess",
+  "currency_config.desc.wrong_guess_cap": "Max wrong-guess earnings per player per game",
+  "currency_config.desc.first_guess": "First guess of a game",
+  "currency_config.desc.win_stage_1": "Correct guess at stage 1",
+  "currency_config.desc.win_stage_2": "Correct guess at stage 2",
+  "currency_config.desc.win_stage_3": "Correct guess at stage 3",
+  "currency_config.desc.win_stage_4": "Correct guess at stage 4",
+  "currency_config.desc.win_stage_5": "Correct guess at stage 5",
+  "currency_config.desc.setter": "Setter, when their game is solved at stage 2–4",
+  "currency_config.desc.prompt_turn": "Setter, for starting within 1h of getting the turn"
 }
