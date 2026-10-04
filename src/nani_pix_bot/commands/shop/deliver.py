@@ -2,6 +2,7 @@
 itself (also reused by the share flow), the DM, and the topic notice."""
 
 import html
+from collections.abc import Callable
 
 from loguru import logger
 from telegram import InlineKeyboardMarkup
@@ -13,34 +14,59 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.clues import text
+from nani_pix_bot.services.game import TitleField
 
-_UNKNOWN_CHAR = "?"
+
+def _letter_lines(
+    titles: list[tuple[TitleField, str]], pick: Callable[[str], str | None], lang: str
+) -> list[str]:
+    """One bullet per title that has a letter or digit at all."""
+    lines = []
+    for field, title in titles:
+        letter = pick(title)
+        if letter is None:
+            continue
+        field_name = i18n.t(f"title_field.{field.value}", lang)
+        lines.append(i18n.t("clue.letter_line", lang, field=field_name, letter=html.escape(letter)))
+    return lines
+
+
+def _shape_entries(
+    titles: list[tuple[TitleField, str]], owned: set[ClueKind], lang: str
+) -> list[str]:
+    """One shape block per title, with the letters the buyer owns filled in."""
+    return [
+        i18n.t(
+            "clue.title_shape_entry",
+            lang,
+            field=i18n.t(f"title_field.{field.value}", lang),
+            shape=html.escape(
+                text.title_shape(
+                    title,
+                    reveal_first=ClueKind.FIRST_LETTER in owned,
+                    reveal_last=ClueKind.LAST_LETTER in owned,
+                )
+            ),
+            lengths=", ".join(map(str, text.word_lengths(title))),
+        )
+        for field, title in titles
+    ]
 
 
 def text_clue_message(game: Game, kind: ClueKind, owned: set[ClueKind], lang: str) -> str:
-    """The HTML message for a text clue. `owned` is every text clue the
-    buyer holds: a shape message fills in the letters they also bought."""
-    found = game_service.display_title_field(game, lang)
-    if found is None:
+    """The HTML message for a text clue, covering every title in
+    game_service.clue_titles(). `owned` is every text clue the buyer
+    holds: a shape message fills in the letters they also bought."""
+    titles = game_service.clue_titles(game, lang)
+    if not titles:
         logger.error("Game {} has no title for a {} clue", game.id, kind)
         return i18n.t("shop.stale", lang)
-    field, title = found
-    field_name = i18n.t(f"title_field.{field.value}", lang)
-    if kind is ClueKind.FIRST_LETTER:
-        letter = text.first_char(title) or _UNKNOWN_CHAR
-        return i18n.t("clue.first_letter", lang, field=field_name, letter=html.escape(letter))
-    if kind is ClueKind.LAST_LETTER:
-        letter = text.last_char(title) or _UNKNOWN_CHAR
-        return i18n.t("clue.last_letter", lang, field=field_name, letter=html.escape(letter))
-    shape = text.title_shape(
-        title,
-        reveal_first=ClueKind.FIRST_LETTER in owned,
-        reveal_last=ClueKind.LAST_LETTER in owned,
-    )
-    lengths = ", ".join(map(str, text.word_lengths(title)))
-    return i18n.t(
-        "clue.title_shape", lang, field=field_name, shape=html.escape(shape), lengths=lengths
-    )
+    if kind is ClueKind.TITLE_SHAPE:
+        body = _shape_entries(titles, owned, lang)
+    else:
+        pick = text.first_char if kind is ClueKind.FIRST_LETTER else text.last_char
+        body = _letter_lines(titles, pick, lang)
+    return "\n".join([i18n.t(f"clue.{kind.value}", lang), *body])
 
 
 async def deliver_text_clue(
