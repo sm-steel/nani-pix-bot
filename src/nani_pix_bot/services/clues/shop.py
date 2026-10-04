@@ -14,16 +14,21 @@ from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.clue_purchase import CluePurchase
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
-from nani_pix_bot.models.enums import ClueKind, CurrencyReason, GameStatus
+from nani_pix_bot.models.enums import ClueKind, CurrencyReason, GameStatus, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services.clues import text
 from nani_pix_bot.services.economy import config, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
 
 MAX_EXTRA_SCREENSHOTS = 3
 TILE_GRID = 8
+# Providers whose screenshot lists are real in-episode frames. Tenrai is
+# deliberately absent: its /pictures endpoint returns promotional art.
+CLUE_SCREENSHOT_PROVIDERS: tuple[Provider, ...] = (Provider.SHIKIMORI, Provider.TMDB)
 TEXT_KINDS = frozenset({ClueKind.FIRST_LETTER, ClueKind.LAST_LETTER, ClueKind.TITLE_SHAPE})
+_LETTER_KINDS = frozenset({ClueKind.FIRST_LETTER, ClueKind.LAST_LETTER})
 
 _PRICE_KEYS = {
     ClueKind.LAST_LETTER: EconomyKey.CLUE_LAST_LETTER,
@@ -123,14 +128,31 @@ def price(session: Session, game: Game, buyer: Player, kind: ClueKind) -> int:
     return amounts[_PRICE_KEYS[kind]]
 
 
+def clue_screenshot_providers(game: Game) -> list[Provider]:
+    """Where the extra-screenshot clue may fetch from, best first: only the
+    providers with genuine in-episode frames (CLUE_SCREENSHOT_PROVIDERS) the
+    game has an id for, with the provider the round's own screenshot came
+    from ahead of the rest. Tenrai is never used here — its pictures are
+    promotional art (posters/key visuals) that can show the title."""
+    providers = [
+        provider
+        for provider in CLUE_SCREENSHOT_PROVIDERS
+        if getattr(game, provider.id_attr_name) is not None
+    ]
+    if game.screenshot_source in providers:
+        own = Provider(game.screenshot_source)
+        providers.remove(own)
+        providers.insert(0, own)
+    return providers
+
+
 def _has_screenshot_provider(game: Game) -> bool:
-    return any(
-        getattr(game, provider.id_attr_name) is not None
-        for provider in game_service.SCREENSHOT_CAPABLE_PROVIDERS
-    )
+    return bool(clue_screenshot_providers(game))
 
 
 def _available(session: Session, game: Game, buyer: Player, kind: ClueKind, lang: str) -> bool:
+    if kind in _LETTER_KINDS:
+        return any(text.first_char(title) for _, title in game_service.clue_titles(game, lang))
     if kind in TEXT_KINDS:
         return game_service.display_title_field(game, lang) is not None
     if kind is ClueKind.SCREENSHOT:
@@ -193,10 +215,10 @@ def _refusal(
         return Refusal.SETTER
     if _already_owned(session, game, buyer, request):
         return Refusal.ALREADY_OWNED
-    # "en" is arbitrary: availability only depends on whether *any* title
-    # exists, and every language's fallback chain covers all four fields.
-    if _malformed(session, game, request) or not _available(
-        session, game, buyer, request.kind, "en"
+    # The purchase doesn't know the group language, so a clue is sellable
+    # if it would be offered in any supported one.
+    if _malformed(session, game, request) or not any(
+        _available(session, game, buyer, request.kind, lang) for lang in ("en", "ru")
     ):
         return Refusal.UNAVAILABLE
     return None

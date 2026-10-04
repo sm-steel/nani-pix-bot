@@ -998,14 +998,18 @@ player's balance.
 - Never the setter of that round: they know the answer.
 
 **The clues.**
-- *First letter*, *last letter* and *title shape* are all taken from the
-  title the round's display title uses, choosing the title field by the
-  same language fallback as the rest of the bot. The message says
-  which source the clue came from (for example the English, romaji or
-  Russian title), so a clue taken from a romanised title is not mistaken
-  for the Russian one. A letter or digit counts (so Cyrillic and kana
-  work); spaces and punctuation are not hidden.
-- *Title shape* shows the title with every letter hidden as `_`, words
+- *First letter*, *last letter* and *title shape* cover a list of titles,
+  not just one: first the round's display title (the group-language one,
+  with the usual language fallback), then the romaji title, then the
+  English title, each listed once. A title whose text matches one
+  already listed (ignoring case) is skipped, and the original (native)
+  title appears only when it is the fallback display title. Each line
+  or block names its source (for example the English, romaji or Russian
+  title), so a clue taken from a romanised title is not mistaken for the
+  Russian one. A letter or digit counts (so Cyrillic and kana work);
+  spaces and punctuation are not hidden. A title with no letter or digit
+  gets no line in the letter clues.
+- *Title shape* shows each title with every letter hidden as `_`, words
   separated, plus the length of each word. It also shows the first and
   last letter if the player has already bought them. Buying a letter
   *after* the shape re-sends the updated shape, so the player never has
@@ -1015,7 +1019,12 @@ player's balance.
   stage). At most 3 per player per game, with the escalating price above.
   It is never a screenshot that is already in play in this round (the
   one used by the round, or either one of a HARD MODE pair) and never
-  one the player already bought. Available in HARD MODE too.
+  one the player already bought. Available in HARD MODE too. It comes
+  only from sources with real in-episode frames — Shikimori and TMDB,
+  starting with whichever one the round's own screenshot came from —
+  never from Tenrai, whose pictures are promotional art (posters) that
+  can show the title. A game with no Shikimori or TMDB id doesn't offer
+  this clue.
 - *Reveal a tile*: one tile per round, the same for every buyer. The
   first player to buy it picks one square of an 8x8 grid laid over the
   round's screenshot, and gets the image back with that square shown

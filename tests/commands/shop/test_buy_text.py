@@ -34,8 +34,8 @@ async def test_buying_first_letter_dms_the_letter_and_charges(session_factory) -
     dm = context.bot.send_message.await_args_list[0]
     assert dm.kwargs["chat_id"] == 2
     assert dm.kwargs["parse_mode"] == "HTML"
-    assert "<b>S</b>" in dm.kwargs["text"]
-    assert "(romaji)" in dm.kwargs["text"]
+    assert "First letters of the titles" in dm.kwargs["text"]
+    assert "• romaji: <b>S</b>" in dm.kwargs["text"]
     assert dm.kwargs["reply_markup"].inline_keyboard[0][0].callback_data.startswith("shop:share:")
     assert balance(session_factory) == RICH - PRICES[EconomyKey.CLUE_FIRST_LETTER]
     notice = context.bot.send_message.await_args_list[1]
@@ -109,6 +109,7 @@ async def test_letter_after_shape_resends_the_filled_shape(session_factory) -> N
     dms = [c for c in context.bot.send_message.await_args_list if c.kwargs["chat_id"] == 2]
     assert len(dms) == 2
     assert "<code>S " in dms[1].kwargs["text"]
+    assert dms[1].kwargs["text"].count("<code>") == 1
     assert dms[1].kwargs.get("reply_markup") is None
 
 
@@ -122,7 +123,7 @@ async def test_ru_group_falls_back_and_names_the_field(session_factory) -> None:
 
     await tap(context, make_query(f"shop:buy:{game_id}:last_letter"))
 
-    assert "(английское)" in _sent_texts(context)[0]
+    assert "• английское: <b>n</b>" in _sent_texts(context)[0]
 
 
 async def test_unaffordable_is_refused_with_balance(session_factory) -> None:
@@ -185,3 +186,45 @@ async def test_notice_failure_does_not_break_the_purchase(session_factory) -> No
     assert balance(session_factory) == RICH - PRICES[EconomyKey.CLUE_FIRST_LETTER]
     assert len(purchases(session_factory)) == 1
     query.answer.assert_awaited_once_with()
+
+
+async def _ru_three_title_game(session_factory) -> int:
+    game_id = seed_game(
+        session_factory,
+        title_russian="Фрирен",
+        title_romaji="Sousou no Frieren",
+        title_english="Frieren",
+    )
+    set_currency(session_factory, 2, RICH)
+    with session_factory() as session:
+        settings.set_language(session, "ru")
+        session.commit()
+    return game_id
+
+
+async def test_ru_first_letter_lists_every_title(session_factory) -> None:
+    game_id = await _ru_three_title_game(session_factory)
+    context = make_context(session_factory)
+
+    await tap(context, make_query(f"shop:buy:{game_id}:first_letter"))
+
+    text = _sent_texts(context)[0]
+    assert "Первые буквы названий:" in text
+    assert "• русское: <b>Ф</b>" in text
+    assert "• ромадзи: <b>S</b>" in text
+    assert "• английское: <b>F</b>" in text
+
+
+async def test_shape_has_a_block_per_title_with_bought_letters_filled(session_factory) -> None:
+    game_id = await _ru_three_title_game(session_factory)
+    context = make_context(session_factory)
+
+    await tap(context, make_query(f"shop:buy:{game_id}:first_letter"))
+    await tap(context, make_query(f"shop:buy:{game_id}:title_shape"))
+
+    text = _sent_texts(context)[-2]
+    assert "Форма названий:" in text
+    assert text.count("<code>") == 3
+    assert "<code>Ф _ _ _ _ _</code> (6)" in text
+    assert "<code>S _ _ _ _ _   _ _   _ _ _ _ _ _ _</code> (6, 2, 7)" in text
+    assert "<code>F _ _ _ _ _ _</code> (7)" in text
