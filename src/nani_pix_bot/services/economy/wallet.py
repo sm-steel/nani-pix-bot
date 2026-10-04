@@ -100,12 +100,3 @@ def game_total(session: Session, *, player_id: int, game_id: int, reason: PixelR
         PixelTransaction.reason == reason,
     )
     return int(session.scalar(stmt) or 0)
-
-
-def game_has(session: Session, *, game_id: int, reason: PixelReason) -> bool:
-    stmt = (
-        select(PixelTransaction.id)
-        .where(PixelTransaction.game_id == game_id, PixelTransaction.reason == reason)
-        .limit(1)
-    )
-    return session.scalar(stmt) is not None

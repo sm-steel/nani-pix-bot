@@ -2,8 +2,8 @@
 the command layer right after record_guess (/guess), force_win
 (/correct) and activate_game (DM setup confirm); each call returns what
 was earned so the handler can show it in the reply it already sends.
-Every fact it needs ("first guess already paid?", "wrong-guess earnings
-so far") is read back from the DB."""
+Every fact it needs (the game's guess count, wrong-guess earnings so
+far) is read back from the DB."""
 
 from dataclasses import dataclass
 
@@ -88,7 +88,9 @@ def award_guess(session: Session, game: Game, *, guesser_id: int, won: bool) -> 
     amounts = config.get_amounts(session)
     guesser = _player(session, guesser_id)
     guess = 0
-    if not wallet.game_has(session, game_id=game.id, reason=PixelReason.FIRST_GUESS):
+    # record_guess has already counted this guess, so the game's first
+    # guess is exactly the one that brought the count to 1.
+    if game.total_guess_count == 1:
         guess += _pay(
             session, guesser, amounts[EconomyKey.FIRST_GUESS], PixelReason.FIRST_GUESS, game
         )

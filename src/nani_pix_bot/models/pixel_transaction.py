@@ -15,9 +15,8 @@ DETAIL_LENGTH = 255
 class PixelTransaction(Base):
     """One balance change — the append-only ledger behind `Player.pixels`.
     Every write goes through services/economy/wallet.py, which updates the
-    balance and adds the row in the same transaction. Per-game rules (the
-    wrong-guess cap, "first guess already paid") are answered by summing
-    or probing these rows, so nothing about earnings is held in memory.
+    balance and adds the row in the same transaction. The per-game wrong-guess
+    cap is answered by summing these rows, so nothing about earnings is held in memory.
 
     `game_id` is SET NULL on delete: /stop and setup-abandon delete Game
     rows, and the ledger must outlive them."""

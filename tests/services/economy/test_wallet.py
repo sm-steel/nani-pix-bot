@@ -107,19 +107,3 @@ def test_game_total_sums_one_reason_for_one_player_in_one_game(session: Session)
 
     total = wallet.game_total(session, player_id=1, game_id=game.id, reason=PixelReason.WRONG_GUESS)
     assert total == 4
-
-
-def test_game_has_detects_any_row_for_reason(session: Session) -> None:
-    player = _player(session)
-    game = _game(session)
-    assert not wallet.game_has(session, game_id=game.id, reason=PixelReason.FIRST_GUESS)
-
-    wallet.credit(
-        session,
-        player,
-        5,
-        wallet.LedgerEntry(PixelReason.FIRST_GUESS, game_id=game.id),
-    )
-    session.flush()
-
-    assert wallet.game_has(session, game_id=game.id, reason=PixelReason.FIRST_GUESS)

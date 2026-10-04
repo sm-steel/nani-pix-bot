@@ -32,10 +32,16 @@ def _pixels(session: Session, user_id: int) -> int:
     return player.pixels
 
 
+def _guess(session: Session, game: Game, guesser_id: int, *, won: bool = False):
+    """What /guess does: record_guess counts the guess, then award_guess pays."""
+    game.total_guess_count += 1
+    return earning.award_guess(session, game, guesser_id=guesser_id, won=won)
+
+
 def test_first_wrong_guess_pays_first_guess_bonus_plus_wrong_guess(session: Session) -> None:
     game = _setup(session)
 
-    earned = earning.award_guess(session, game, guesser_id=ALICE, won=False)
+    earned = _guess(session, game, ALICE)
 
     assert earned.guess == 7
     assert _pixels(session, ALICE) == 7
@@ -43,9 +49,20 @@ def test_first_wrong_guess_pays_first_guess_bonus_plus_wrong_guess(session: Sess
 
 def test_first_guess_bonus_is_paid_once_per_game(session: Session) -> None:
     game = _setup(session)
-    earning.award_guess(session, game, guesser_id=ALICE, won=False)
+    _guess(session, game, ALICE)
 
-    earned = earning.award_guess(session, game, guesser_id=BOB, won=False)
+    earned = _guess(session, game, BOB)
+
+    assert earned.guess == 2
+
+
+def test_first_guess_bonus_follows_the_guess_count_not_the_ledger(session: Session) -> None:
+    game = _setup(session)
+    config.set_amount(session, EconomyKey.FIRST_GUESS, 0)
+    _guess(session, game, ALICE)  # the real first guess, bonus disabled
+    config.set_amount(session, EconomyKey.FIRST_GUESS, 5)
+
+    earned = _guess(session, game, BOB)  # second guess: no first-guess bonus
 
     assert earned.guess == 2
 
@@ -53,7 +70,7 @@ def test_first_guess_bonus_is_paid_once_per_game(session: Session) -> None:
 def test_wrong_guess_earnings_stop_at_cap(session: Session) -> None:
     game = _setup(session)
     for _ in range(8):
-        earning.award_guess(session, game, guesser_id=ALICE, won=False)
+        _guess(session, game, ALICE)
 
     # 5 first-guess + 10 capped wrong-guess
     assert _pixels(session, ALICE) == 15
@@ -64,7 +81,7 @@ def test_award_guess_skips_zero_amounts(session: Session) -> None:
     config.set_amount(session, EconomyKey.FIRST_GUESS, 0)
     config.set_amount(session, EconomyKey.WRONG_GUESS, 0)
 
-    earned = earning.award_guess(session, game, guesser_id=ALICE, won=False)
+    earned = _guess(session, game, ALICE)
 
     assert earned.player_total == 0
     assert session.query(PixelTransaction).count() == 0
@@ -75,7 +92,7 @@ def test_winning_first_guess_at_stage_one(session: Session) -> None:
     game.status = GameStatus.WON
     game.winner_id = ALICE
 
-    earned = earning.award_guess(session, game, guesser_id=ALICE, won=True)
+    earned = _guess(session, game, ALICE, won=True)
 
     assert (earned.guess, earned.win, earned.setter) == (5, 40, 0)
     assert _pixels(session, ALICE) == 45
@@ -93,7 +110,7 @@ def test_award_win_pays_setter_at_stage_two_to_four(session: Session) -> None:
 
 def test_award_win_alone_never_pays_first_guess(session: Session) -> None:
     game = _setup(session, current_stage=PixelStage.STAGE_2)
-    earning.award_guess(session, game, guesser_id=BOB, won=False)  # BOB got first-guess
+    _guess(session, game, BOB)  # BOB got first-guess
 
     earned = earning.award_win(session, game, winner_id=ALICE)  # /correct path
 
