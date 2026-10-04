@@ -1,6 +1,8 @@
+from contextlib import contextmanager
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.error import TimedOut
@@ -510,6 +512,44 @@ async def test_stop_confirm_refunds_clue_purchases(session_factory) -> None:
         assert refunded is not None
         assert refunded.currency == 100
         assert session.query(CluePurchase).count() == 0
+
+
+async def test_stop_confirm_checks_admin_outside_the_session(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    open_scopes = 0
+    real_scope = stop_command_module.session_scope
+
+    @contextmanager
+    def _counting_scope(factory):
+        nonlocal open_scopes
+        open_scopes += 1
+        try:
+            with real_scope(factory) as session:
+                yield session
+        finally:
+            open_scopes -= 1
+
+    admin_checks: list[int] = []
+
+    async def _is_group_admin(_bot, _chat_id, user_id) -> bool:
+        assert open_scopes == 0, "the admin check ran inside an open session"
+        admin_checks.append(user_id)
+        return True
+
+    monkeypatch.setattr(stop_command_module, "session_scope", _counting_scope)
+    monkeypatch.setattr(stop_command_module, "is_group_admin", _is_group_admin)
+    update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=99)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert admin_checks == [99]
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
 
 
 async def test_stop_refunds_pot(session_factory) -> None:
