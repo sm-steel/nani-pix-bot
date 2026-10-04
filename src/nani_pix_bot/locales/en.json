@@ -299,5 +299,9 @@
   "bounty.refusal.insufficient": "Not enough 💠 — you have {balance} 💠.",
   "bounty.refusal.not_open": "No round is running — bounties go on an active round.",
   "bounty.caption_line": "💰 Bounty: {amount} 💠",
-  "commands.bounty": "Add pixels to this round's bounty"
+  "commands.bounty": "Add pixels to this round's bounty",
+  "keyboards.preview_bounty": "💰 Bounty",
+  "dm_start.bounty_prompt": "💰 Put up a bounty for whoever solves your round — it comes out of your pixels and goes to the winner (refunded if nobody solves it).\nPot: {pot} 💠 · your balance: {balance} 💠",
+  "dm_start.bounty_option": "+{amount} 💠",
+  "dm_start.bounty_none_affordable": "You don't have enough pixels for a bounty right now."
 }
