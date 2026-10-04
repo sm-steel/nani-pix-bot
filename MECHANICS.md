@@ -1019,7 +1019,12 @@ player's balance.
   stage). At most 3 per player per game, with the escalating price above.
   It is never a screenshot that is already in play in this round (the
   one used by the round, or either one of a HARD MODE pair) and never
-  one the player already bought. Available in HARD MODE too.
+  one the player already bought. Available in HARD MODE too. It comes
+  only from sources with real in-episode frames — Shikimori and TMDB,
+  starting with whichever one the round's own screenshot came from —
+  never from Tenrai, whose pictures are promotional art (posters) that
+  can show the title. A game with no Shikimori or TMDB id doesn't offer
+  this clue.
 - *Reveal a tile*: one tile per round, the same for every buyer. The
   first player to buy it picks one square of an 8x8 grid laid over the
   round's screenshot, and gets the image back with that square shown
