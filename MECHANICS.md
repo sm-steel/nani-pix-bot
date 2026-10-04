@@ -1053,24 +1053,26 @@ round's bounty, tip a player, or pay to sharpen the image.
 
 **Bounty.** The bounty is a pot of 💠 on one round, paid to whoever solves it.
 - `/bounty <amount>` works only in the game topic, during an `ACTIVE` game,
-  with a minimum of 5. Anyone with the balance can add, any number of times.
-- The setter cannot use `/bounty`: during setup they pick a preset of 10, 25
-  or 50 from the preview's bounty submenu instead (only the presets they can
-  afford are offered). That 💠 goes into the pot when the game starts.
-- The pot is shown on the stage posts and the pinned current image.
-- The winner takes all of the pot, including their own contribution. It is
-  paid as its own line next to the win reward and is not part of the earnings
-  total.
+  with a minimum of 5. Anyone with the balance can add, any number of times,
+  the setter included.
+- The setter can also, before posting, pick a preset of 10, 25 or 50 from the
+  setup preview's bounty submenu (only the presets they can afford are
+  offered). That 💠 goes into the pot as soon as they tap the preset, while the
+  game is still in setup, and is refunded if the setup is abandoned.
+- The pot is shown in the caption of each stage post (also in HARD MODE).
+- The winner takes all of the pot, including their own contribution. The win
+  reply shows it as its own line, separate from the other earnings.
 - The pot is refunded to its contributors when the game ends unsolved by any
-  route (timeout, inactivity auto-advance running out of stages), on `/stop`,
-  and when a setup is abandoned. The bot's message lists the refund.
+  route (wrong guesses running out, the 2-day timeout, the inactivity
+  auto-advance running out of stages; HARD MODE included), on `/stop`, and when
+  a setup is abandoned. The unsolved reveal message lists the refunded amount.
 - The pot is derived from the `currency_transfers` ledger (contributions into
   the pot minus what has left it); there is no `games.bounty` column.
 
 **`/tip @username <amount>`.** Sends 💠 from you to another player.
 - Works in the game topic or in a DM, with a minimum of 1.
 - You cannot tip yourself or the bot, the recipient must be a player the bot
-  knows, and you need the balance.
+  knows by username, and you need the balance.
 - A plain transfer tied to no game; nothing is refunded later.
 
 **`/sharpen`.** Pays to advance the current round one pixelation stage.
