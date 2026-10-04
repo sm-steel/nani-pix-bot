@@ -88,5 +88,13 @@
   "economy.earned": [
     "💠 {name} pockets +{amount}",
     "💠 +{amount} into {name}'s wallet"
+  ],
+  "shop.bought_notice": [
+    "🕵️ {name} just bought a clue: {item}",
+    "🕵️ {name} picked up a clue ({item})"
+  ],
+  "shop.shared": [
+    "📢 {name} passed a clue to the group:",
+    "📢 {name} is sharing a clue:"
   ]
 }

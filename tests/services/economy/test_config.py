@@ -53,3 +53,14 @@ def test_get_amounts_ignores_unknown_stored_keys(session: Session) -> None:
     session.commit()
 
     assert "from_a_future_phase" not in config.get_amounts(session)
+
+
+def test_set_amount_rejects_zero_clue_price(session: Session) -> None:
+    with pytest.raises(ValueError, match="at least 1"):
+        config.set_amount(session, EconomyKey.CLUE_LAST_LETTER, 0)
+
+
+def test_set_amount_still_accepts_zero_for_rewards(session: Session) -> None:
+    config.set_amount(session, EconomyKey.FIRST_GUESS, 0)
+
+    assert config.get_amounts(session)[EconomyKey.FIRST_GUESS] == 0

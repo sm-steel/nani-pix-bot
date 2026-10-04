@@ -55,6 +55,18 @@ DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
     }
 )
 
+# Prices a purchase charges as-is; wallet.transfer rejects 0, so they stay >= 1.
+# (CLUE_SCREENSHOT_STEP is a surcharge, not a price: 0 is fine.)
+CLUE_PRICE_KEYS: frozenset[EconomyKey] = frozenset(
+    {
+        EconomyKey.CLUE_LAST_LETTER,
+        EconomyKey.CLUE_FIRST_LETTER,
+        EconomyKey.CLUE_TITLE_SHAPE,
+        EconomyKey.CLUE_SCREENSHOT,
+        EconomyKey.CLUE_TILE,
+    }
+)
+
 # Index i is the win reward for stage number i + 1.
 WIN_STAGE_KEYS: tuple[EconomyKey, ...] = (
     EconomyKey.WIN_STAGE_1,
@@ -75,6 +87,9 @@ def get_amounts(session: Session) -> dict[EconomyKey, int]:
 def set_amount(session: Session, key: EconomyKey, value: int) -> None:
     if value < 0:
         msg = f"Currency amount for {key} cannot be negative: {value}"
+        raise ValueError(msg)
+    if key in CLUE_PRICE_KEYS and value < 1:
+        msg = f"Clue price for {key} must be at least 1: {value}"
         raise ValueError(msg)
     row = session.get(CurrencyConfig, key.value)
     if row is None:
