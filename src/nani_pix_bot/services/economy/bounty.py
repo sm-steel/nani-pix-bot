@@ -18,7 +18,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.economy import wallet
 
-BOUNTY_MIN = 5
+BOUNTY_MIN = 30
 
 
 class BountyRefusal(enum.StrEnum):

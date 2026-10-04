@@ -516,7 +516,7 @@ async def test_correct_command_pays_the_pot_to_the_winner_and_names_it(session_f
         contributor = Player(telegram_user_id=3, currency=100)
         session.add_all([winner, contributor])
         session.flush()
-        bounty.contribute(session, game, contributor, 20)
+        bounty.contribute(session, game, contributor, 30)
         session.commit()
         before = winner.currency
 
@@ -528,11 +528,11 @@ async def test_correct_command_pays_the_pot_to_the_winner_and_names_it(session_f
     )
 
     _, kwargs = context.bot.send_photo.await_args
-    assert "takes the bounty: +20" in kwargs["caption"]
+    assert "takes the bounty: +30" in kwargs["caption"]
     with session_factory() as session:
         assert bounty.pot_balance(session, game_id) == 0
         winner = session.get(Player, 2)
         assert winner is not None
         paid = session.query(CurrencyTransfer).filter_by(reason=CurrencyReason.BOUNTY_WIN).one()
-        assert (paid.amount, paid.to_player_id) == (20, 2)
-        assert winner.currency >= before + 20
+        assert (paid.amount, paid.to_player_id) == (30, 2)
+        assert winner.currency >= before + 30

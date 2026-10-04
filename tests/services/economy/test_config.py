@@ -16,13 +16,13 @@ def test_get_amounts_returns_spec_defaults_with_no_overrides(session: Session) -
     assert [amounts[k] for k in config.WIN_STAGE_KEYS] == [40, 30, 25, 20, 15]
     assert amounts[EconomyKey.SETTER] == 15
     assert amounts[EconomyKey.PROMPT_TURN] == 10
-    assert amounts[EconomyKey.CLUE_LAST_LETTER] == 10
-    assert amounts[EconomyKey.CLUE_FIRST_LETTER] == 20
-    assert amounts[EconomyKey.CLUE_TITLE_SHAPE] == 25
-    assert amounts[EconomyKey.CLUE_SCREENSHOT] == 30
-    assert amounts[EconomyKey.CLUE_SCREENSHOT_STEP] == 15
-    assert amounts[EconomyKey.CLUE_TILE] == 10
-    assert amounts[EconomyKey.SHARPEN] == 50
+    assert amounts[EconomyKey.CLUE_LAST_LETTER] == 60
+    assert amounts[EconomyKey.CLUE_FIRST_LETTER] == 100
+    assert amounts[EconomyKey.CLUE_TITLE_SHAPE] == 120
+    assert amounts[EconomyKey.CLUE_SCREENSHOT] == 150
+    assert amounts[EconomyKey.CLUE_SCREENSHOT_STEP] == 75
+    assert amounts[EconomyKey.CLUE_TILE] == 100
+    assert amounts[EconomyKey.SHARPEN] == 250
     assert set(amounts) == set(EconomyKey)
 
 

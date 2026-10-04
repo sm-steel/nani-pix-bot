@@ -13,6 +13,7 @@ from nani_pix_bot.models import CluePurchase
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.services.economy import config
 
 
 def make_query(data: str, *, user_id: int = 2) -> MagicMock:
@@ -85,3 +86,7 @@ async def tap(context, query) -> None:
     await callbacks.shop_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
+
+
+RICH = 1000  # a balance that covers any clue several times over
+PRICES = config.DEFAULT_AMOUNTS

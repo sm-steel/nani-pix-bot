@@ -918,7 +918,8 @@ player's 💠 balance as a column (ranking is still by wins, not 💠).
 
 Every player has a 💠 balance (`players.currency`), shown by `/balance` (in
 the game topic or a DM) and next to the win count on `/leaderboard`. A
-new player starts with 50 💠. Every change is also recorded as a row in
+new player starts with 50 💠, which pays for a bounty contribution but not for
+any clue, so clues need some earnings first. Every change is also recorded as a row in
 the `currency_transfers` ledger, so a balance can always be explained.
 Players who already existed before this release start at 0 until a
 one-time backfill is run.
@@ -973,11 +974,11 @@ played. Clues are delivered by DM, not shown to the group.
 
 | Clue | Default price | `/pixelconfig` key |
 |---|---|---|
-| Last letter | 10 | `clue_last_letter` |
-| First letter | 20 | `clue_first_letter` |
-| Title shape | 25 | `clue_title_shape` |
-| Extra screenshot | 30 for the first, then +15 for each one already bought in that game (30 / 45 / 60) | `clue_screenshot`, `clue_screenshot_step` |
-| Reveal a tile | 10 per tile | `clue_tile` |
+| Last letter | 60 | `clue_last_letter` |
+| First letter | 100 | `clue_first_letter` |
+| Title shape | 120 | `clue_title_shape` |
+| Extra screenshot | 150 for the first, then +75 for each one already bought in that game (150 / 225 / 300) | `clue_screenshot`, `clue_screenshot_step` |
+| Reveal a tile | 100 | `clue_tile` |
 
 Admins change these with `/pixelconfig` like any other amount; a change
 applies to purchases from then on.
@@ -1015,12 +1016,14 @@ player's balance.
   It is never a screenshot that is already in play in this round (the
   one used by the round, or either one of a HARD MODE pair) and never
   one the player already bought. Available in HARD MODE too.
-- *Reveal a tile*: the player picks one square of an 8x8 grid laid over
-  the round's screenshot, and gets the image back with that square shown
-  unpixelated. Each tile can be bought once, the grid ticks the tiles
-  already owned, and later purchases accumulate (the picture shows every
-  tile the player has bought). Not available in HARD MODE, whose two
-  images are not a single screenshot to tile.
+- *Reveal a tile*: one tile per round, the same for every buyer. The
+  first player to buy it picks one square of an 8x8 grid laid over the
+  round's screenshot, and gets the image back with that square shown
+  unpixelated. Every later buyer in that round gets the same square,
+  with no grid: the button charges and delivers straight away (the
+  picture is the stage the round is on now). Each player can buy it
+  once per round. Not available in HARD MODE, whose two images are not
+  a single screenshot to tile.
 
 **The group is told.** When someone buys a clue, the game topic gets a
 short notice naming the buyer and the type of clue (not its contents).
@@ -1053,9 +1056,9 @@ round's bounty, tip a player, or pay to sharpen the image.
 
 **Bounty.** The bounty is a pot of 💠 on one round, paid to whoever solves it.
 - `/bounty <amount>` works only in the game topic, during an `ACTIVE` game,
-  with a minimum of 5. Anyone with the balance can add, any number of times,
+  with a minimum of 30. Anyone with the balance can add, any number of times,
   the setter included.
-- The setter can also, before posting, pick a preset of 10, 25 or 50 from the
+- The setter can also, before posting, pick a preset of 30, 60 or 100 from the
   setup preview's bounty submenu (only the presets they can afford are
   offered). That 💠 goes into the pot as soon as they tap the preset, while the
   game is still in setup, and is refunded if the setup is abandoned.
@@ -1076,7 +1079,7 @@ round's bounty, tip a player, or pay to sharpen the image.
 - A plain transfer tied to no game; nothing is refunded later.
 
 **`/sharpen`.** Pays to advance the current round one pixelation stage.
-- Costs 50 by default (`/pixelconfig` key `sharpen`, at least 1).
+- Costs 250 by default (`/pixelconfig` key `sharpen`, at least 1).
 - Normal games only, not HARD MODE; not at the last stage; and never for the
   round's setter.
 - It asks for confirmation first; only the player who requested it can press
