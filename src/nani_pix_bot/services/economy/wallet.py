@@ -68,6 +68,9 @@ def transfer(
     if amount <= 0:
         msg = f"transfer amount must be positive, got {amount}"
         raise ValueError(msg)
+    if source == target:
+        msg = f"can't transfer between the same party ({source.type}, {source.player_id})"
+        raise ValueError(msg)
     if source.player is not None and source.player.pixels < amount:
         logger.warning(
             "Player {} can't afford {} 💠 ({}): balance {}",

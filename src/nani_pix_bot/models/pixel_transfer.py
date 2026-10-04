@@ -22,10 +22,22 @@ class PixelTransfer(Base):
     `game_id` is deliberately a plain integer, not a foreign key: /stop and
     setup-abandon delete Game rows, the ledger must outlive them, and a pot
     row must keep naming its game. `reverses_id` names the row a refund undoes;
-    its unique index blocks a double refund."""
+    its unique index blocks a double refund.
+
+    The party types are CHECK-restricted to PixelParty's values, but `reason`
+    deliberately is not: PixelReason is an open set that grows every phase, so
+    a CHECK on it would need a migration each time (hence a plain String)."""
 
     __tablename__ = "pixel_transfers"
     __table_args__ = (
+        CheckConstraint(
+            "from_type IN ('house', 'player', 'pot')",
+            name="ck_pixel_transfers_from_type_valid",
+        ),
+        CheckConstraint(
+            "to_type IN ('house', 'player', 'pot')",
+            name="ck_pixel_transfers_to_type_valid",
+        ),
         CheckConstraint("amount > 0", name="ck_pixel_transfers_amount_positive"),
         CheckConstraint(
             "(from_type = 'player' AND from_player_id IS NOT NULL)"

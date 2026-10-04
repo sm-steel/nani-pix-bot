@@ -50,19 +50,30 @@ def test_pixel_transfer_round_trips_house_to_player(session: Session) -> None:
 
 
 @pytest.mark.parametrize(
-    "overrides",
+    ("overrides", "constraint"),
     [
-        {"amount": 0},
-        {"to_player_id": None},
-        {"from_player_id": 1},
-        {"from_type": PixelParty.POT, "to_type": PixelParty.HOUSE, "to_player_id": None},
-        {"to_type": PixelParty.HOUSE, "to_player_id": None},
-        {
-            "from_type": PixelParty.PLAYER,
-            "from_player_id": 1,
-            "to_type": PixelParty.PLAYER,
-            "to_player_id": 1,
-        },
+        ({"amount": 0}, "ck_pixel_transfers_amount_positive"),
+        ({"to_player_id": None}, "ck_pixel_transfers_to_player"),
+        ({"from_player_id": 1}, "ck_pixel_transfers_from_player"),
+        (
+            {"from_type": PixelParty.POT, "to_type": PixelParty.HOUSE, "to_player_id": None},
+            "ck_pixel_transfers_pot_has_game",
+        ),
+        (
+            {"to_type": PixelParty.HOUSE, "to_player_id": None},
+            "ck_pixel_transfers_distinct_sides",
+        ),
+        (
+            {
+                "from_type": PixelParty.PLAYER,
+                "from_player_id": 1,
+                "to_type": PixelParty.PLAYER,
+                "to_player_id": 1,
+            },
+            "ck_pixel_transfers_distinct_sides",
+        ),
+        ({"from_type": "bank"}, "ck_pixel_transfers_from_type_valid"),
+        ({"to_type": "bank", "to_player_id": None}, "ck_pixel_transfers_to_type_valid"),
     ],
     ids=[
         "zero-amount",
@@ -71,16 +82,19 @@ def test_pixel_transfer_round_trips_house_to_player(session: Session) -> None:
         "pot-without-game",
         "house-to-house",
         "same-player",
+        "unknown-from-type",
+        "unknown-to-type",
     ],
 )
 def test_pixel_transfer_check_constraints_reject_bad_rows(
-    session: Session, overrides: dict[str, object]
+    session: Session, overrides: dict[str, object], constraint: str
 ) -> None:
     _players(session, 1)
     session.add(_transfer(**overrides))
 
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError) as exc:
         session.flush()
+    assert constraint in str(exc.value)
 
 
 def test_pixel_transfer_allows_player_to_other_player(session: Session) -> None:

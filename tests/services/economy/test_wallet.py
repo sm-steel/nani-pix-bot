@@ -96,6 +96,19 @@ def test_transfer_rejects_non_positive_amount(session: Session) -> None:
         )
 
 
+@pytest.mark.parametrize("kind", ["player", "house", "pot"])
+def test_transfer_rejects_same_party_before_touching_anything(session: Session, kind: str) -> None:
+    alice = _player(session, 1, pixels=10)
+    parties = {"player": Party.of(alice), "house": Party.house(), "pot": Party.pot()}
+    same = parties[kind]
+
+    with pytest.raises(ValueError, match="same"):
+        wallet.transfer(session, same, same, 3, wallet.LedgerEntry(PixelReason.GRANT, game_id=1))
+
+    assert alice.pixels == 10
+    assert session.query(PixelTransfer).count() == 0
+
+
 def test_transfer_player_to_pot_requires_game_id(session: Session) -> None:
     alice = _player(session, 1, pixels=10)
     wallet.transfer(session, Party.of(alice), Party.pot(), 3, wallet.LedgerEntry(PixelReason.GRANT))
@@ -158,6 +171,19 @@ def test_game_total_sums_one_reason_for_one_player_in_one_game(session: Session)
     assert total == 4
 
 
+def test_game_total_counts_only_what_a_player_received(session: Session) -> None:
+    alice = _player(session, 1, pixels=20)
+    game = _game(session)
+    entry = wallet.LedgerEntry(PixelReason.WRONG_GUESS, game_id=game.id)
+    wallet.credit(session, alice, 2, entry)
+    wallet.debit(session, alice, 5, entry)
+    wallet.transfer(session, Party.of(alice), Party.pot(), 4, entry)
+    session.flush()
+
+    total = wallet.game_total(session, player_id=1, game_id=game.id, reason=PixelReason.WRONG_GUESS)
+    assert total == 2
+
+
 def test_cached_balance_always_equals_ledger_balance(session: Session) -> None:
     alice = _player(session, 1)
     bob = _player(session, 2)
@@ -167,7 +193,11 @@ def test_cached_balance_always_equals_ledger_balance(session: Session) -> None:
     wallet.credit(session, alice, 50, entry)
     wallet.credit(session, bob, 20, entry)
     wallet.debit(session, alice, 5, entry)
+    with pytest.raises(wallet.InsufficientPixelsError):
+        wallet.transfer(session, Party.of(bob), Party.of(alice), 999, entry)
     wallet.transfer(session, Party.of(alice), Party.of(bob), 12, entry)
+    with pytest.raises(wallet.InsufficientPixelsError):
+        wallet.debit(session, alice, 999, entry)
     wallet.transfer(session, Party.of(alice), Party.pot(), 10, entry)
     wallet.transfer(session, Party.pot(), Party.of(bob), 4, entry)
     session.flush()

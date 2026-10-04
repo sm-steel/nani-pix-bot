@@ -37,6 +37,14 @@ def upgrade() -> None:
         sa.Column("game_id", sa.Integer(), nullable=True),
         sa.Column("reverses_id", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.CheckConstraint(
+            "from_type IN ('house', 'player', 'pot')",
+            name="ck_pixel_transfers_from_type_valid",
+        ),
+        sa.CheckConstraint(
+            "to_type IN ('house', 'player', 'pot')",
+            name="ck_pixel_transfers_to_type_valid",
+        ),
         sa.CheckConstraint("amount > 0", name="ck_pixel_transfers_amount_positive"),
         sa.CheckConstraint(
             "(from_type = 'player' AND from_player_id IS NOT NULL)"
