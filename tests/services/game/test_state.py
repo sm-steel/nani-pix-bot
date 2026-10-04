@@ -155,6 +155,71 @@ def test_display_title_falls_back_to_a_literal_question_mark() -> None:
     assert game_service.display_title(game, "EN") == "?"
 
 
+@pytest.mark.parametrize(
+    ("variants", "lang", "expected"),
+    [
+        (
+            game_service.TitleVariants(russian="Фрирен", english="E", romaji="R", native="N"),
+            "RU",
+            (game_service.TitleField.RUSSIAN, "Фрирен"),
+        ),
+        (
+            game_service.TitleVariants(english="E", romaji="R", native="N"),
+            "RU",
+            (game_service.TitleField.ENGLISH, "E"),
+        ),
+        (
+            game_service.TitleVariants(romaji="R", native="N"),
+            "RU",
+            (game_service.TitleField.ROMAJI, "R"),
+        ),
+        (
+            game_service.TitleVariants(native="N"),
+            "RU",
+            (game_service.TitleField.NATIVE, "N"),
+        ),
+        (
+            game_service.TitleVariants(english="E", russian="Фрирен"),
+            "EN",
+            (game_service.TitleField.ENGLISH, "E"),
+        ),
+        (
+            game_service.TitleVariants(romaji="R", russian="Фрирен"),
+            "EN",
+            (game_service.TitleField.ROMAJI, "R"),
+        ),
+        (
+            game_service.TitleVariants(native="N", russian="Фрирен"),
+            "EN",
+            (game_service.TitleField.NATIVE, "N"),
+        ),
+        (
+            game_service.TitleVariants(russian="Фрирен"),
+            "EN",
+            (game_service.TitleField.RUSSIAN, "Фрирен"),
+        ),
+    ],
+)
+def test_prioritized_title_field_follows_the_fallback_chain(variants, lang, expected) -> None:
+    assert game_service.prioritized_title_field(variants, lang=lang) == expected
+
+
+def test_prioritized_title_field_is_none_without_any_title() -> None:
+    assert game_service.prioritized_title_field(game_service.TitleVariants(), lang="EN") is None
+
+
+def test_prioritized_title_keeps_its_question_mark_fallback() -> None:
+    assert game_service.prioritized_title(game_service.TitleVariants(), lang="EN") == "?"
+
+
+def test_display_title_field_reads_the_game() -> None:
+    game = Game(title_english=None, title_romaji="Sousou no Frieren", title_russian=None)
+    assert game_service.display_title_field(game, "RU") == (
+        game_service.TitleField.ROMAJI,
+        "Sousou no Frieren",
+    )
+
+
 def test_match_candidates_includes_every_title_variant_and_synonym() -> None:
     game = Game(
         starter_id=1,
