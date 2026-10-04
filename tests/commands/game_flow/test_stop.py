@@ -18,6 +18,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services.clues import shop
+from nani_pix_bot.services.economy import bounty
 
 
 def _make_update(
@@ -509,3 +510,29 @@ async def test_stop_confirm_refunds_clue_purchases(session_factory) -> None:
         assert refunded is not None
         assert refunded.currency == 100
         assert session.query(CluePurchase).count() == 0
+
+
+async def test_stop_refunds_pot(session_factory) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        for user_id, amount in ((2, 10), (3, 20)):
+            player = Player(telegram_user_id=user_id, currency=100)
+            session.add(player)
+            session.flush()
+            bounty.contribute(session, game, player, amount)
+        session.commit()
+    update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
+        for user_id in (2, 3):
+            player = session.get(Player, user_id)
+            assert player is not None
+            assert player.currency == 100

@@ -220,6 +220,8 @@
   "dm_start.mal_not_found_anymore": "Не удалось найти это аниме в каталоге — выберите способ ниже, чтобы попробовать снова, в том числе вернуться к своему списку.",
   "economy.earned": "💠 +{amount} — {name}",
   "economy.setter_bonus": "🎨 {name} получает +{amount} 💠 за удачно подобранный скриншот",
+  "economy.bounty_won": "💰 {name} забирает награду: +{amount} 💠",
+  "economy.bounty_refunded": "💰 Никто не отгадал — награда {amount} 💠 возвращена вкладчикам.",
   "economy.setter_fallback_name": "Ведущий",
   "economy.prompt_turn_bonus": "⚡ {name} получает +{amount} 💠 за быстрый старт",
   "economy.balance": "Ваш баланс: {amount} 💠",

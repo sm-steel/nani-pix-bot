@@ -220,6 +220,8 @@
   "dm_start.mal_not_found_anymore": "Couldn't find that anime in the catalogue — pick a method below to try again, including going back to your list.",
   "economy.earned": "💠 +{amount} for {name}",
   "economy.setter_bonus": "🎨 {name} gets +{amount} 💠 for a well-pitched screenshot",
+  "economy.bounty_won": "💰 {name} takes the bounty: +{amount} 💠",
+  "economy.bounty_refunded": "💰 Nobody solved it — the {amount} 💠 bounty went back to its contributors.",
   "economy.setter_fallback_name": "The setter",
   "economy.prompt_turn_bonus": "⚡ {name} gets +{amount} 💠 for starting promptly",
   "economy.balance": "Your balance: {amount} 💠",

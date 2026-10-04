@@ -24,6 +24,7 @@ from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.clues import shop as shop_service
+from nani_pix_bot.services.economy import bounty
 
 
 @dataclass(frozen=True)
@@ -165,6 +166,7 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
             timeout_module.cancel_setup_abandon(context.job_queue, game_id)
         # The CASCADE would drop the game's clue purchases unrefunded.
         shop_service.refund_game(session, game_id)
+        bounty.refund_pot(session, game_id)
         session.delete(game)
         turn_state = game_service.set_next_starter(session, None)
     # Block closed and committed above — the row deletion and turn-open

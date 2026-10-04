@@ -14,7 +14,7 @@ from nani_pix_bot.models.enums import CurrencyReason
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services.economy import config, rewards, wallet
+from nani_pix_bot.services.economy import bounty, config, rewards, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
 from nani_pix_bot.services.game.hard_mode import HARD_MODE_WIN_AWARD
 
@@ -24,6 +24,7 @@ class Earnings:
     guess: int = 0  # first-guess bonus + wrong-guess reward, to the guesser
     win: int = 0  # to the winner
     setter: int = 0  # to the game's starter
+    bounty: int = 0  # the pot, to the winner — its own line, not part of player_total
 
     @property
     def player_total(self) -> int:
@@ -80,8 +81,16 @@ def award_win(session: Session, game: Game, *, winner_id: int) -> Earnings:
     if _setter_eligible(game, winner_id=winner_id, stage=stage):
         starter = _player(session, game.starter_id)
         setter = _pay(session, starter, amounts[EconomyKey.SETTER], CurrencyReason.SETTER, game)
-    logger.info("Game {}: win pays {} 💠 to {}, {} 💠 to setter", game.id, win, winner_id, setter)
-    return Earnings(win=win, setter=setter)
+    pot = bounty.pay_out(session, game, winner)
+    logger.info(
+        "Game {}: win pays {} 💠 to {}, {} 💠 to setter, {} 💠 bounty",
+        game.id,
+        win,
+        winner_id,
+        setter,
+        pot,
+    )
+    return Earnings(win=win, setter=setter, bounty=pot)
 
 
 def award_guess(session: Session, game: Game, *, guesser_id: int, won: bool) -> Earnings:
@@ -107,7 +116,7 @@ def award_guess(session: Session, game: Game, *, guesser_id: int, won: bool) -> 
         )
         return Earnings(guess=guess)
     win = award_win(session, game, winner_id=guesser_id)
-    return Earnings(guess=guess, win=win.win, setter=win.setter)
+    return Earnings(guess=guess, win=win.win, setter=win.setter, bounty=win.bounty)
 
 
 def award_prompt_start(session: Session, game: Game) -> int:

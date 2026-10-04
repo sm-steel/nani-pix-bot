@@ -13,6 +13,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import settings
+from nani_pix_bot.services.economy import bounty
 
 
 def _active_game(session_factory, **overrides) -> int:
@@ -1403,3 +1404,79 @@ async def test_post_stage_images_leaves_the_caption_alone_without_a_bot_username
 
     _, kwargs = context.bot.send_media_group.call_args
     assert kwargs["media"][0].caption == "a caption"
+
+
+def _fund_pot(session_factory, game_id: int, amounts: dict[int, int]) -> None:
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        for user_id, amount in amounts.items():
+            player = session.get(Player, user_id)
+            if player is None:
+                player = Player(telegram_user_id=user_id)
+                session.add(player)
+            player.currency = 100
+            session.flush()
+            bounty.contribute(session, game, player, amount)
+        session.commit()
+
+
+def _assert_refunded(session_factory, game_id: int, user_ids: tuple[int, ...]) -> None:
+    with session_factory() as session:
+        assert bounty.pot_balance(session, game_id) == 0
+        for user_id in user_ids:
+            player = session.get(Player, user_id)
+            assert player is not None
+            assert player.currency == 100
+
+
+async def test_every_unsolved_path_refunds_the_pot_timeout(session_factory) -> None:
+    game_id = _active_game(session_factory)
+    _fund_pot(session_factory, game_id, {2: 10, 3: 15})
+    context = _make_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    caption = context.bot.send_photo.await_args.kwargs["caption"]
+    assert "25" in caption
+    _assert_refunded(session_factory, game_id, (2, 3))
+
+
+async def test_every_unsolved_path_refunds_the_pot_inactivity_last_stage(session_factory) -> None:
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5)
+    _fund_pot(session_factory, game_id, {2: 10, 3: 15})
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    caption = context.bot.send_photo.await_args.kwargs["caption"]
+    assert "25" in caption
+    _assert_refunded(session_factory, game_id, (2, 3))
+
+
+async def test_every_unsolved_path_refunds_the_pot_hard_mode_inactivity(session_factory) -> None:
+    game_id = _hard_mode_active_game(session_factory, hard_mode_turn=2)
+    _fund_pot(session_factory, game_id, {2: 10, 3: 15})
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    media = context.bot.send_media_group.call_args.kwargs["media"]
+    assert "25" in media[0].caption
+    _assert_refunded(session_factory, game_id, (2, 3))
+
+
+async def test_setup_abandon_refunds_setter_deposit(session_factory) -> None:
+    game_id = _setup_game(session_factory)
+    _fund_pot(session_factory, game_id, {1: 25})
+    context = _make_group_job_context(session_factory)
+    context.job.data = game_id
+
+    await timeout_module.setup_abandon_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
+        starter = session.get(Player, 1)
+        assert starter is not None
+        assert starter.currency == 100
+        assert bounty.pot_balance(session, game_id) == 0

@@ -16,7 +16,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
-from nani_pix_bot.services.economy import earning
+from nani_pix_bot.services.economy import bounty, earning
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -358,6 +358,8 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             session, game, guesser_id=user.id, won=outcome is game_service.GuessOutcome.WON
         )
         suffix = earnings_suffix(session, game, earnings, lang, player_name=user.full_name)
+        if outcome is game_service.GuessOutcome.UNSOLVED:
+            suffix += bounty.refund_note(session, game.id, lang)
         if outcome is game_service.GuessOutcome.WON:
             announcement = _prepare_won_announcement_dispatch(
                 session, context, game, lang, user.full_name

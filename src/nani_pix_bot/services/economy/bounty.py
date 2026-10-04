@@ -15,6 +15,7 @@ from nani_pix_bot.models.currency_transfer import CurrencyTransfer
 from nani_pix_bot.models.enums import CurrencyParty, CurrencyReason, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.economy import wallet
 
 BOUNTY_MIN = 5
@@ -124,3 +125,12 @@ def refund_pot(session: Session, game_id: int) -> int:
         total += contribution.amount
     logger.info("Game {}: bounty of {} refunded to contributors", game_id, total)
     return total
+
+
+def refund_note(session: Session, game_id: int, lang: str) -> str:
+    """Refunds the pot for a game that just ended unsolved and returns the
+    line to append to its reveal caption ("" when the pot was empty)."""
+    refunded = refund_pot(session, game_id)
+    if refunded <= 0:
+        return ""
+    return "\n" + i18n.t("economy.bounty_refunded", lang, amount=refunded)

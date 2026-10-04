@@ -44,3 +44,17 @@ def test_setter_without_username_uses_fallback(session: Session) -> None:
     )
 
     assert "Ведущий" in suffix
+
+
+def test_bounty_line_shows_amount_and_name(session: Session) -> None:
+    suffix = earnings_suffix(session, _game(session), Earnings(bounty=35), "en", player_name="Ann")
+
+    assert suffix.startswith("\n")
+    assert "+35" in suffix
+    assert "Ann" in suffix
+
+
+def test_no_bounty_line_when_the_pot_was_empty(session: Session) -> None:
+    suffix = earnings_suffix(session, _game(session), Earnings(win=25), "en", player_name="Ann")
+
+    assert "bounty" not in suffix
