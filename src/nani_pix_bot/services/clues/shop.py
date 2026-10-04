@@ -81,12 +81,16 @@ def owned_kinds(session: Session, game_id: int, player_id: int) -> set[ClueKind]
     return {ClueKind(p.kind) for p in _purchases(session, game_id, player_id)}
 
 
-def owned_tiles(session: Session, game_id: int, player_id: int) -> set[int]:
-    return {
-        p.tile_index
-        for p in _purchases(session, game_id, player_id)
-        if p.kind == ClueKind.TILE and p.tile_index is not None
-    }
+def round_tile(session: Session, game_id: int) -> int | None:
+    """The round's one tile: the position the game's first tile buyer
+    picked, which every later buyer gets too. None until someone buys."""
+    stmt = (
+        select(CluePurchase.tile_index)
+        .where(CluePurchase.game_id == game_id, CluePurchase.kind == ClueKind.TILE)
+        .order_by(CluePurchase.id)
+        .limit(1)
+    )
+    return session.scalars(stmt).first()
 
 
 def owned_screenshot_urls(session: Session, game_id: int, player_id: int) -> set[str]:
@@ -134,23 +138,23 @@ def _available(session: Session, game: Game, buyer: Player, kind: ClueKind, lang
             _has_screenshot_provider(game)
             and _screenshot_count(session, game, buyer) < MAX_EXTRA_SCREENSHOTS
         )
-    # TILE: only a single-original-image game, with a tile left to buy.
-    owned = owned_tiles(session, game.id, buyer.telegram_user_id)
-    return not game.hard_mode and len(owned) < TILE_GRID * TILE_GRID
+    # TILE: only a single-original-image game, and once per player.
+    return not game.hard_mode and ClueKind.TILE not in owned_kinds(
+        session, game.id, buyer.telegram_user_id
+    )
 
 
 def _already_owned(session: Session, game: Game, buyer: Player, request: PurchaseRequest) -> bool:
     player_id = buyer.telegram_user_id
-    if request.kind in TEXT_KINDS:
+    if request.kind in TEXT_KINDS or request.kind is ClueKind.TILE:
         return request.kind in owned_kinds(session, game.id, player_id)
-    if request.kind is ClueKind.TILE:
-        return request.tile_index in owned_tiles(session, game.id, player_id)
     return False
 
 
 def offers(session: Session, game: Game, buyer: Player, lang: str) -> list[Offer]:
     """What the shop menu lists: available, not-yet-owned items. Owned
-    text clues drop out; screenshot/tile stay while more can be bought.
+    text clues and the tile drop out; the screenshot stays while more can
+    be bought.
     `lang` picks the title fallback chain, so availability matches the
     title the clue will actually use."""
     owned = owned_kinds(session, game.id, buyer.telegram_user_id)
@@ -166,11 +170,15 @@ def offers(session: Session, game: Game, buyer: Player, lang: str) -> list[Offer
     return result
 
 
-def _malformed(request: PurchaseRequest) -> bool:
-    """A request missing (or out of range on) the detail its kind needs."""
+def _malformed(session: Session, game: Game, request: PurchaseRequest) -> bool:
+    """A request missing (or out of range on) the detail its kind needs; a
+    tile must also be the round's tile once someone has chosen it."""
     if request.kind is ClueKind.TILE:
         index = request.tile_index
-        return not isinstance(index, int) or not 0 <= index < TILE_GRID * TILE_GRID
+        if not isinstance(index, int) or not 0 <= index < TILE_GRID * TILE_GRID:
+            return True
+        chosen = round_tile(session, game.id)
+        return chosen is not None and index != chosen
     if request.kind is ClueKind.SCREENSHOT:
         return not request.screenshot_url
     return False
@@ -187,7 +195,9 @@ def _refusal(
         return Refusal.ALREADY_OWNED
     # "en" is arbitrary: availability only depends on whether *any* title
     # exists, and every language's fallback chain covers all four fields.
-    if _malformed(request) or not _available(session, game, buyer, request.kind, "en"):
+    if _malformed(session, game, request) or not _available(
+        session, game, buyer, request.kind, "en"
+    ):
         return Refusal.UNAVAILABLE
     return None
 

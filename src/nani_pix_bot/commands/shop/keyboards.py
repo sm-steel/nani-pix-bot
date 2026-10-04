@@ -34,11 +34,9 @@ def _buy_data(game_id: int, offer: Offer) -> str:
     return data
 
 
-def tile_keyboard(game_id: int, owned: set[int]) -> InlineKeyboardMarkup:
+def tile_keyboard(game_id: int) -> InlineKeyboardMarkup:
     def _cell(index: int) -> InlineKeyboardButton:
-        return InlineKeyboardButton(
-            "✅" if index in owned else "⬜", callback_data=f"{SHOP_TILE_PREFIX}{game_id}:{index}"
-        )
+        return InlineKeyboardButton("⬜", callback_data=f"{SHOP_TILE_PREFIX}{game_id}:{index}")
 
     return InlineKeyboardMarkup(
         [[_cell(row * TILE_GRID + col) for col in range(TILE_GRID)] for row in range(TILE_GRID)]

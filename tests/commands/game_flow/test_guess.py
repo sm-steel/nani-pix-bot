@@ -888,7 +888,7 @@ def _currency_of(session, user_id: int) -> int:
 
 async def test_winning_guess_takes_the_bounty(session_factory) -> None:
     game_id = _active_game(session_factory)
-    _fund_pot(session_factory, game_id, {3: 10, 4: 15})
+    _fund_pot(session_factory, game_id, {3: 30, 4: 40})
     update = _make_update(user_id=2)
     context = _make_context(session_factory, args=["Frieren"])
 
@@ -897,16 +897,16 @@ async def test_winning_guess_takes_the_bounty(session_factory) -> None:
     )
 
     caption = context.bot.send_photo.await_args.kwargs["caption"]
-    assert "takes the bounty: +25" in caption
+    assert "takes the bounty: +70" in caption
     with session_factory() as session:
-        assert _currency_of(session, 2) == 50 + 45 + 25  # grant + first-guess + win + bounty
+        assert _currency_of(session, 2) == 50 + 45 + 70  # grant + first-guess + win + bounty
         assert bounty.pot_balance(session, game_id) == 0
 
 
 async def test_every_unsolved_path_refunds_the_pot_last_stage_wrong_guess(session_factory) -> None:
     game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5, wrong_guess_count=7)
     _seed_stage_limit(session_factory, PixelStage.STAGE_5, wrong_guess_limit=8)
-    _fund_pot(session_factory, game_id, {3: 10, 4: 15})
+    _fund_pot(session_factory, game_id, {3: 30, 4: 40})
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
@@ -915,7 +915,7 @@ async def test_every_unsolved_path_refunds_the_pot_last_stage_wrong_guess(sessio
     )
 
     caption = context.bot.send_photo.await_args.kwargs["caption"]
-    assert "25" in caption
+    assert "70" in caption
     assert "went back to its contributors" in caption
     with session_factory() as session:
         fetched = session.get(Game, game_id)

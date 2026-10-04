@@ -8,6 +8,8 @@ from nani_pix_bot.services.economy import config, sharpen
 from nani_pix_bot.services.economy.config import EconomyKey
 
 STARTER, ALICE = 1, 2
+PRICE = config.DEFAULT_AMOUNTS[EconomyKey.SHARPEN]
+START = PRICE + 50
 
 
 def _setup(
@@ -15,7 +17,7 @@ def _setup(
     *,
     stage: PixelStage = PixelStage.STAGE_1,
     hard_mode: bool = False,
-    currency: int = 100,
+    currency: int = START,
     status: GameStatus = GameStatus.ACTIVE,
 ) -> tuple[Game, Player, Player]:
     starter = Player(telegram_user_id=STARTER, currency=100)
@@ -28,7 +30,7 @@ def _setup(
     return game, starter, alice
 
 
-def _offer(stage: PixelStage = PixelStage.STAGE_1, price: int = 50) -> sharpen.SharpenOffer:
+def _offer(stage: PixelStage = PixelStage.STAGE_1, price: int = PRICE) -> sharpen.SharpenOffer:
     return sharpen.SharpenOffer(stage, price)
 
 
@@ -68,11 +70,11 @@ def test_sharpen_charges_and_advances_one_stage(session: Session) -> None:
     paid = sharpen.sharpen(session, game, alice, _offer())
     session.flush()
 
-    assert paid == 50
-    assert alice.currency == 50
+    assert paid == PRICE
+    assert alice.currency == START - PRICE
     assert game.current_stage is PixelStage.STAGE_2
     row = session.query(CurrencyTransfer).one()
-    assert (row.reason, row.amount, row.game_id) == (CurrencyReason.SHARPEN, 50, game.id)
+    assert (row.reason, row.amount, row.game_id) == (CurrencyReason.SHARPEN, PRICE, game.id)
 
 
 def test_stale_sharpen_confirm_is_refused(session: Session) -> None:
@@ -82,19 +84,19 @@ def test_stale_sharpen_confirm_is_refused(session: Session) -> None:
         sharpen.sharpen(session, game, alice, _offer())
 
     assert refused.value.refusal is sharpen.SharpenRefusal.STALE
-    assert alice.currency == 100
+    assert alice.currency == START
     assert game.current_stage is PixelStage.STAGE_2
     assert session.query(CurrencyTransfer).count() == 0
 
 
 def test_insufficient_funds_move_nothing(session: Session) -> None:
-    game, _, alice = _setup(session, currency=49)
+    game, _, alice = _setup(session, currency=PRICE - 1)
 
     with pytest.raises(sharpen.SharpenRefusedError) as refused:
         sharpen.sharpen(session, game, alice, _offer())
 
     assert refused.value.refusal is sharpen.SharpenRefusal.INSUFFICIENT
-    assert alice.currency == 49
+    assert alice.currency == PRICE - 1
     assert game.current_stage is PixelStage.STAGE_1
     assert session.query(CurrencyTransfer).count() == 0
 
@@ -106,7 +108,7 @@ def test_rechecks_the_rules_before_charging(session: Session) -> None:
         sharpen.sharpen(session, game, alice, _offer())
 
     assert refused.value.refusal is sharpen.SharpenRefusal.HARD_MODE
-    assert alice.currency == 100
+    assert alice.currency == START
 
 
 def test_price_comes_from_config(session: Session) -> None:
@@ -115,7 +117,7 @@ def test_price_comes_from_config(session: Session) -> None:
 
     assert sharpen.price(session) == 30
     assert sharpen.sharpen(session, game, alice, _offer(price=30)) == 30
-    assert alice.currency == 70
+    assert alice.currency == START - 30
 
 
 def test_price_changed_since_the_prompt_is_refused_as_stale(session: Session) -> None:
@@ -123,9 +125,9 @@ def test_price_changed_since_the_prompt_is_refused_as_stale(session: Session) ->
     config.set_amount(session, EconomyKey.SHARPEN, 80)
 
     with pytest.raises(sharpen.SharpenRefusedError) as refused:
-        sharpen.sharpen(session, game, alice, _offer(price=50))
+        sharpen.sharpen(session, game, alice, _offer())
 
     assert refused.value.refusal is sharpen.SharpenRefusal.STALE
-    assert alice.currency == 100
+    assert alice.currency == START
     assert game.current_stage is PixelStage.STAGE_1
     assert session.query(CurrencyTransfer).count() == 0

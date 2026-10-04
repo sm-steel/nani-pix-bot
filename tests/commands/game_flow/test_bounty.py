@@ -79,15 +79,15 @@ def _state(session_factory, user_id: int = ALICE) -> tuple[int, int]:
 
 async def test_valid_bounty_charges_and_fills_the_pot(session_factory) -> None:
     _seed(session_factory)
-    update = await _run(session_factory, ["10"])
+    update = await _run(session_factory, ["30"])
 
-    assert "10 💠" in _reply(update)
-    assert _state(session_factory) == (90, 10)
+    assert "30 💠" in _reply(update)
+    assert _state(session_factory) == (70, 30)
 
 
 async def test_below_minimum_is_refused_without_charge(session_factory) -> None:
     _seed(session_factory)
-    update = await _run(session_factory, ["3"])
+    update = await _run(session_factory, ["5"])
 
     assert str(bounty_service.BOUNTY_MIN) in _reply(update)
     assert _state(session_factory) == (100, 0)
@@ -95,7 +95,7 @@ async def test_below_minimum_is_refused_without_charge(session_factory) -> None:
 
 async def test_no_game_gets_the_no_game_reply(session_factory) -> None:
     _seed(session_factory, game=False)
-    update = await _run(session_factory, ["10"])
+    update = await _run(session_factory, ["30"])
 
     assert "No round" in _reply(update)
 
@@ -124,7 +124,7 @@ async def test_bad_args_are_logged_as_a_warning(session_factory) -> None:
 
 async def test_outside_the_topic_is_ignored(session_factory) -> None:
     _seed(session_factory)
-    update = await _run(session_factory, ["10"], thread_id=999)
+    update = await _run(session_factory, ["30"], thread_id=999)
 
     update.message.reply_text.assert_not_awaited()
     assert _state(session_factory) == (100, 0)
@@ -132,7 +132,7 @@ async def test_outside_the_topic_is_ignored(session_factory) -> None:
 
 async def test_insufficient_funds_reply_names_the_balance(session_factory) -> None:
     _seed(session_factory, currency=7)
-    update = await _run(session_factory, ["10"])
+    update = await _run(session_factory, ["30"])
 
     assert "7 💠" in _reply(update)
     assert _state(session_factory) == (7, 0)
@@ -143,10 +143,10 @@ async def test_the_setter_can_contribute(session_factory) -> None:
     with session_factory() as session:
         player = session.get(Player, STARTER)
         assert player is not None
-        player.currency = 50
+        player.currency = 100
         session.commit()
 
-    update = await _run(session_factory, ["20"], user_id=STARTER)
+    update = await _run(session_factory, ["40"], user_id=STARTER)
 
-    assert "20 💠" in _reply(update)
-    assert _state(session_factory, STARTER) == (30, 20)
+    assert "40 💠" in _reply(update)
+    assert _state(session_factory, STARTER) == (60, 40)

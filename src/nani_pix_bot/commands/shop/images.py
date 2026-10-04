@@ -135,9 +135,8 @@ async def fetch_extra_screenshot(
     return FetchedScreenshot(url, pixelated)
 
 
-def render_tile_clue(session: Session, game: Game, tiles: set[int]) -> bytes:
-    """The pixelated screenshot with every tile in `tiles` shown
-    unpixelated."""
+def render_tile_clue(session: Session, game: Game, tile: int) -> bytes:
+    """The pixelated screenshot with the round's `tile` shown unpixelated."""
     original = game.original_image
     if original is None:
         logger.error("Game {} has no original image for a tile clue", game.id)
@@ -145,4 +144,4 @@ def render_tile_clue(session: Session, game: Game, tiles: set[int]) -> bytes:
     pixelated = pixelate_service.pixelate(
         original, stage_width(session, game), game.pixel_algorithm
     )
-    return render.reveal_tiles(original, pixelated, tiles, shop.TILE_GRID)
+    return render.reveal_tiles(original, pixelated, [tile], shop.TILE_GRID)

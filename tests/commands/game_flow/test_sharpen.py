@@ -14,8 +14,12 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.economy import config
+from nani_pix_bot.services.economy.config import EconomyKey
 
 STARTER, ALICE, BOB = 1, 2, 3
+PRICE = config.DEFAULT_AMOUNTS[EconomyKey.SHARPEN]
+START = PRICE + 50
 
 
 def _update(*, user_id: int = ALICE, thread_id: int | None = 7) -> MagicMock:
@@ -56,7 +60,7 @@ def _context(session_factory) -> MagicMock:
     return context
 
 
-def _seed(session_factory, *, currency: int = 100, **game_overrides) -> int:
+def _seed(session_factory, *, currency: int = START, **game_overrides) -> int:
     with session_factory() as session:
         session.add_all(
             [
@@ -80,7 +84,7 @@ def _seed(session_factory, *, currency: int = 100, **game_overrides) -> int:
 
 
 def _confirm_data(
-    game_id: int, stage: str = "stage_1", user_id: int = ALICE, price: int = 50
+    game_id: int, stage: str = "stage_1", user_id: int = ALICE, price: int = PRICE
 ) -> str:
     return f"sharpen:ok:{game_id}:{stage}:{user_id}:{price}"
 
@@ -122,10 +126,10 @@ async def test_command_replies_with_a_confirm_button(session_factory) -> None:
 
     update.message.reply_text.assert_awaited_once()
     call = update.message.reply_text.await_args
-    assert call.args[0] == i18n.t("sharpen.confirm_prompt", "en", price=50)
+    assert call.args[0] == i18n.t("sharpen.confirm_prompt", "en", price=PRICE)
     buttons = [b for row in call.kwargs["reply_markup"].inline_keyboard for b in row]
     assert buttons[0].callback_data == _confirm_data(game_id)
-    assert buttons[0].text == i18n.t("sharpen.confirm_button", "en", price=50)
+    assert buttons[0].text == i18n.t("sharpen.confirm_button", "en", price=PRICE)
     assert buttons[1].callback_data == f"sharpen:no:{ALICE}"
     assert all(len(b.callback_data.encode()) <= 64 for b in buttons)
 
@@ -170,7 +174,7 @@ async def test_confirm_charges_advances_and_posts_the_stage_photo(session_factor
 
     update, context = await _callback(session_factory, _confirm_data(game_id))
 
-    assert _state(session_factory) == (PixelStage.STAGE_2, 50, 1)
+    assert _state(session_factory) == (PixelStage.STAGE_2, START - PRICE, 1)
     context.bot.send_photo.assert_awaited_once()
     kwargs = context.bot.send_photo.await_args.kwargs
     assert kwargs["photo"] == b"pixelated"
@@ -211,7 +215,7 @@ async def test_only_requester_can_confirm(session_factory) -> None:
         i18n.t("sharpen.not_yours", "en"), show_alert=True
     )
     context.bot.send_photo.assert_not_awaited()
-    assert _state(session_factory) == (PixelStage.STAGE_1, 100, 0)
+    assert _state(session_factory) == (PixelStage.STAGE_1, START, 0)
 
 
 async def test_stale_confirm_alerts_and_charges_nothing(session_factory) -> None:
@@ -223,7 +227,7 @@ async def test_stale_confirm_alerts_and_charges_nothing(session_factory) -> None
         i18n.t("sharpen.refusal.stale", "en"), show_alert=True
     )
     context.bot.send_photo.assert_not_awaited()
-    assert _state(session_factory) == (PixelStage.STAGE_2, 100, 0)
+    assert _state(session_factory) == (PixelStage.STAGE_2, START, 0)
 
 
 async def test_price_changed_since_the_prompt_is_stale(session_factory) -> None:
@@ -235,7 +239,7 @@ async def test_price_changed_since_the_prompt_is_stale(session_factory) -> None:
         i18n.t("sharpen.refusal.stale", "en"), show_alert=True
     )
     context.bot.send_photo.assert_not_awaited()
-    assert _state(session_factory) == (PixelStage.STAGE_1, 100, 0)
+    assert _state(session_factory) == (PixelStage.STAGE_1, START, 0)
 
 
 async def test_confirm_from_stage_4_reaches_stage_5_and_stays_active(session_factory) -> None:
@@ -243,7 +247,7 @@ async def test_confirm_from_stage_4_reaches_stage_5_and_stays_active(session_fac
 
     await _callback(session_factory, _confirm_data(game_id, "stage_4"))
 
-    assert _state(session_factory) == (PixelStage.STAGE_5, 50, 1)
+    assert _state(session_factory) == (PixelStage.STAGE_5, START - PRICE, 1)
     with session_factory() as session:
         assert session.query(Game).one().status is GameStatus.ACTIVE
 
@@ -268,7 +272,7 @@ async def test_confirm_for_another_game_is_refused(session_factory) -> None:
     update.callback_query.answer.assert_awaited_once_with(
         i18n.t("sharpen.refusal.no_game", "en"), show_alert=True
     )
-    assert _state(session_factory) == (PixelStage.STAGE_1, 100, 0)
+    assert _state(session_factory) == (PixelStage.STAGE_1, START, 0)
 
 
 async def test_cancel_edits_the_message(session_factory) -> None:
@@ -279,7 +283,7 @@ async def test_cancel_edits_the_message(session_factory) -> None:
     update.callback_query.edit_message_text.assert_awaited_once_with(
         i18n.t("sharpen.cancelled", "en")
     )
-    assert _state(session_factory) == (PixelStage.STAGE_1, 100, 0)
+    assert _state(session_factory) == (PixelStage.STAGE_1, START, 0)
 
 
 async def test_only_requester_can_cancel(session_factory) -> None:
@@ -318,4 +322,4 @@ async def test_malformed_data_is_answered_silently(session_factory, data: str) -
     update.callback_query.answer.assert_awaited_once_with()
     update.callback_query.edit_message_text.assert_not_awaited()
     context.bot.send_photo.assert_not_awaited()
-    assert _state(session_factory) == (PixelStage.STAGE_1, 100, 0)
+    assert _state(session_factory) == (PixelStage.STAGE_1, START, 0)
