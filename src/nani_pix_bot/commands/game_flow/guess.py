@@ -1,12 +1,19 @@
 """The /guess command — see MECHANICS.md's "Guess matching" and
 "Pixelation stages" sections."""
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from loguru import logger
 from telegram import Message, Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.game_flow.stage_post import (
+    Announcement,
+    prepare_stage_advanced_announcement,
+    require_original_image,
+    send_announcement,
+    with_suffix,
+)
 from nani_pix_bot.commands.helpers.earnings import earnings_suffix
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
@@ -17,32 +24,12 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.economy import bounty, earning
-from nani_pix_bot.services.settings import stage_config
-
-
-@dataclass(frozen=True)
-class _Announcement:
-    """What a WON/STAGE_ADVANCED/TURN_ADVANCED/UNSOLVED outcome needs to
-    post once its session has committed — captured as plain values (not
-    the ORM object) since the announcement happens after that session
-    closes.
-
-    Exactly one of `photo`/`photos` is populated: a normal-mode outcome
-    sets `photo` (sent via post_current_image), a hard-mode outcome sets
-    `photos` (sent via post_current_images as a 2-photo album) — see
-    guess_command's send-dispatch below, which picks between the two
-    functions based on which field is set."""
-
-    caption: str
-    photo: bytes | None = None
-    photos: tuple[bytes, bytes] | None = None
-    is_stage_post: bool = False
 
 
 def _prepare_won_announcement(
     session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str, winner_name: str
-) -> _Announcement:
-    original_bytes = _require_original_image(game, "a WON outcome")
+) -> Announcement:
+    original_bytes = require_original_image(game, "a WON outcome")
     timeout_module.cancel_timeout(context.job_queue, game.id)
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
     turn_state = game_service.get_turn_state(session)
@@ -51,12 +38,12 @@ def _prepare_won_announcement(
     caption = i18n.t(
         "guess.won_caption", lang, winner=winner_name, title=game_service.display_title(game, lang)
     )
-    return _Announcement(photo=original_bytes, caption=caption)
+    return Announcement(photo=original_bytes, caption=caption)
 
 
 def _prepare_hard_mode_won_announcement(
     session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str, winner_name: str
-) -> _Announcement:
+) -> Announcement:
     """The hard-mode analogue of _prepare_won_announcement — reveals the
     stored screenshot pair via post_current_images (a 2-photo album)
     instead of a single post_current_image call. Timer/turn-state
@@ -74,14 +61,14 @@ def _prepare_hard_mode_won_announcement(
         winner=winner_name,
         title=game_service.display_title(game, lang),
     )
-    return _Announcement(photos=photos, caption=caption)
+    return Announcement(photos=photos, caption=caption)
 
 
 def _prepare_turn_advanced_announcement(
     session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
-) -> _Announcement:
+) -> Announcement:
     """Handles the new GuessOutcome.TURN_ADVANCED — the hard-mode
-    analogue of _prepare_stage_advanced_announcement. By the time this
+    analogue of prepare_stage_advanced_announcement. By the time this
     runs, record_guess (via hard_mode.record_hard_mode_guess, Task 3)
     has already advanced game.hard_mode_turn and reset
     wrong_guess_count, so this only re-pixelates the stored screenshot
@@ -104,88 +91,42 @@ def _prepare_turn_advanced_announcement(
         remaining=progress.remaining,
         limit=progress.limit,
     )
-    return _Announcement(photos=(pixelated_a, pixelated_b), caption=caption, is_stage_post=True)
+    return Announcement(photos=(pixelated_a, pixelated_b), caption=caption, is_stage_post=True)
 
 
 def _prepare_hard_mode_unsolved_announcement(
     context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
-) -> _Announcement:
+) -> Announcement:
     """The hard-mode analogue of _prepare_unsolved_announcement — reveals
     the stored screenshot pair via post_current_images instead of a
     single post_current_image call. Doesn't need a hard-mode analogue of
-    _require_original_image: hard_mode_reveal_images already raises a
+    require_original_image: hard_mode_reveal_images already raises a
     RuntimeError itself if either image is missing."""
     photos = game_service.hard_mode_reveal_images(game)
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
     caption = i18n.t(
         "guess.hard_mode_unsolved_caption", lang, title=game_service.display_title(game, lang)
     )
-    return _Announcement(photos=photos, caption=caption)
-
-
-def _prepare_stage_advanced_announcement(
-    session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
-) -> _Announcement:
-    # guess_command already checked this is set — restores the type
-    # narrowing lost by passing `game` across a function boundary, same
-    # as _require_original_image does for original_image below.
-    if game.current_stage is None:
-        raise RuntimeError("game.current_stage is None on a STAGE_ADVANCED outcome")
-    original_bytes = _require_original_image(game, "a STAGE_ADVANCED outcome")
-    target_width = stage_config.get_stage_config(session, game.current_stage).target_width
-    pixelated = pixelate_service.pixelate(original_bytes, target_width, game.pixel_algorithm)
-    progress = game_service.stage_progress(session, game)
-    game_service.reset_inactivity_clock(session, game)
-    timeout_module.schedule_inactivity_timers(context.job_queue, game)
-    caption = i18n.t(
-        "guess.stage_advanced_caption",
-        lang,
-        stage=progress.number,
-        total=progress.total,
-        remaining=progress.remaining,
-        limit=progress.limit,
-    )
-    return _Announcement(photo=pixelated, caption=caption, is_stage_post=True)
+    return Announcement(photos=photos, caption=caption)
 
 
 def _prepare_unsolved_announcement(
     context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
-) -> _Announcement:
-    original_bytes = _require_original_image(game, "an UNSOLVED outcome")
+) -> Announcement:
+    original_bytes = require_original_image(game, "an UNSOLVED outcome")
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
     caption = i18n.t("guess.unsolved_caption", lang, title=game_service.display_title(game, lang))
-    return _Announcement(photo=original_bytes, caption=caption)
-
-
-def _require_original_image(game: Game, situation: str) -> bytes:
-    """Restores the type narrowing lost across guess_command's WON/
-    STAGE_ADVANCED/UNSOLVED branches for original_image, converting the
-    old bare `assert` at each site to a real exception (S101, issue
-    #117) so it can't silently vanish under `python -O`. Hoisted out of
-    guess_command into its own function (rather than an inline
-    `if ... raise` at each of the three call sites) purely to keep
-    guess_command's own cyclomatic complexity under qlty's threshold —
-    see CLAUDE.md's Tooling section.
-
-    original_image is deliberately NOT checked/loaded any earlier than
-    this: it's a deferred column (see models/game.py), and a WRONG
-    guess — by far the most common outcome — never reads it. Checking
-    it up front would force-load the blob on every single /guess; each
-    branch that actually needs the bytes calls this once, right where
-    it's used."""
-    if game.original_image is None:
-        raise RuntimeError(f"game.original_image is None on {situation}")
-    return game.original_image
+    return Announcement(photo=original_bytes, caption=caption)
 
 
 def _prepare_won_announcement_dispatch(
     session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str, winner_name: str
-) -> _Announcement:
+) -> Announcement:
     """Picks the hard-mode or normal-mode WON announcement helper based
     on game.hard_mode — hoisted out of guess_command's own dispatch
     purely to keep its cyclomatic complexity down (see CLAUDE.md's
-    Tooling section), same reasoning as _require_original_image/
-    _send_announcement. Neither _prepare_won_announcement nor
+    Tooling section), same reasoning as require_original_image/
+    send_announcement. Neither _prepare_won_announcement nor
     _prepare_hard_mode_won_announcement is touched by this wrapper."""
     if game.hard_mode:
         return _prepare_hard_mode_won_announcement(session, context, game, lang, winner_name)
@@ -194,7 +135,7 @@ def _prepare_won_announcement_dispatch(
 
 def _prepare_unsolved_announcement_dispatch(
     context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
-) -> _Announcement:
+) -> Announcement:
     """The UNSOLVED analogue of _prepare_won_announcement_dispatch —
     same hard-mode/normal-mode picking, same reason for existing."""
     if game.hard_mode:
@@ -232,37 +173,9 @@ def _prepare_wrong_feedback(
     )
 
 
-async def _send_announcement(
-    context: ContextTypes.DEFAULT_TYPE, session_factory, announcement: _Announcement
-) -> Message | tuple[Message, ...] | None:
-    """Picks post_current_image vs. post_current_images based on which
-    of _Announcement's photo/photos fields is populated, and sends it.
-    Hoisted out of guess_command purely to keep its own cyclomatic
-    complexity down, same reasoning as _require_original_image above."""
-    if announcement.photos is not None:
-        post_album = (
-            timeout_module.post_stage_images
-            if announcement.is_stage_post
-            else timeout_module.post_current_images
-        )
-        return await post_album(
-            context, session_factory, photos=announcement.photos, caption=announcement.caption
-        )
-    if announcement.photo is not None:
-        post_photo = (
-            timeout_module.post_stage_image
-            if announcement.is_stage_post
-            else timeout_module.post_current_image
-        )
-        return await post_photo(
-            context, session_factory, photo=announcement.photo, caption=announcement.caption
-        )
-    raise RuntimeError("_Announcement has neither photo nor photos set")
-
-
 def _dispatch_non_won_outcome(
     session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str, outcome
-) -> tuple[_Announcement | None, bool, str | None]:
+) -> tuple[Announcement | None, bool, str | None]:
     """Routes every recorded GuessOutcome except WON to its announcement/
     reply text (guess_command handles WON itself — see its own
     hard_mode branch — so this doesn't need a winner_name param to stay
@@ -279,7 +192,7 @@ def _dispatch_non_won_outcome(
     if outcome is game_service.GuessOutcome.WRONG:
         return None, False, _prepare_wrong_feedback(session, context, game, lang)
     if outcome is game_service.GuessOutcome.STAGE_ADVANCED:
-        return _prepare_stage_advanced_announcement(session, context, game, lang), False, None
+        return prepare_stage_advanced_announcement(session, context, game, lang), False, None
     if outcome is game_service.GuessOutcome.TURN_ADVANCED:
         return _prepare_turn_advanced_announcement(session, context, game, lang), False, None
     # The only outcome left is GuessOutcome.UNSOLVED.
@@ -294,7 +207,7 @@ class _GuessResult:
 
     game_id: int
     reply_text: str | None
-    announcement: _Announcement | None
+    announcement: Announcement | None
     needs_cleanup_after_send: bool
 
 
@@ -304,16 +217,9 @@ async def _send_guess_result(
     if result.reply_text is not None:
         await message.reply_text(result.reply_text)
     if result.announcement is not None:
-        sent = await _send_announcement(context, session_factory, result.announcement)
+        sent = await send_announcement(context, session_factory, result.announcement)
         if result.needs_cleanup_after_send:
             timeout_module.clear_image_if_sent(session_factory, result.game_id, sent)
-
-
-def _with_suffix(announcement: _Announcement | None, suffix: str) -> _Announcement | None:
-    """Appends the currency-earnings lines to an outcome's group caption."""
-    if announcement is None or not suffix:
-        return announcement
-    return replace(announcement, caption=announcement.caption + suffix)
 
 
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -364,7 +270,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             announcement = _prepare_won_announcement_dispatch(
                 session, context, game, lang, user.full_name
             )
-            result = _GuessResult(game.id, None, _with_suffix(announcement, suffix), True)
+            result = _GuessResult(game.id, None, with_suffix(announcement, suffix), True)
         else:
             announcement, needs_cleanup_after_send, wrong_reply_text = _dispatch_non_won_outcome(
                 session, context, game, lang, outcome
@@ -372,7 +278,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             result = _GuessResult(
                 game.id,
                 None if wrong_reply_text is None else wrong_reply_text + suffix,
-                _with_suffix(announcement, suffix),
+                with_suffix(announcement, suffix),
                 needs_cleanup_after_send,
             )
     # Block closed and committed above — the outcome (and the currency it
