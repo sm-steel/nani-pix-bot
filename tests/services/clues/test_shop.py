@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models import CluePurchase, CurrencyTransfer, Player
 from nani_pix_bot.models.enums import ClueKind, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.clues import shop
 from nani_pix_bot.services.economy import config, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
@@ -309,3 +310,34 @@ def test_refund_game_refunds_every_purchase_of_every_player(session: Session) ->
     assert refunded == 3
     assert (buyer.currency, other.currency) == (START, START)
     assert session.query(CluePurchase).count() == 0
+
+
+def test_letter_clues_are_not_offered_or_sold_when_no_title_has_a_letter(
+    session: Session,
+) -> None:
+    game, buyer = _setup(session, title_romaji="!!!")
+
+    kinds = {o.kind for o in shop.offers(session, game, buyer, "en")}
+
+    assert ClueKind.FIRST_LETTER not in kinds
+    assert ClueKind.LAST_LETTER not in kinds
+    assert ClueKind.TITLE_SHAPE in kinds
+    for kind in (ClueKind.FIRST_LETTER, ClueKind.LAST_LETTER):
+        with pytest.raises(shop.ShopRefusedError) as refused:
+            shop.purchase(session, game, buyer, shop.PurchaseRequest(kind))
+        assert refused.value.refusal is shop.Refusal.UNAVAILABLE
+    assert buyer.currency == START
+
+
+def test_ru_clue_titles_drop_english_equal_to_romaji(session: Session) -> None:
+    game, _ = _setup(
+        session,
+        title_russian="Фрирен",
+        title_romaji="Sousou no Frieren",
+        title_english="SOUSOU NO FRIEREN",
+    )
+
+    assert [field.value for field, _ in game_service.clue_titles(game, "RU")] == [
+        "russian",
+        "romaji",
+    ]
