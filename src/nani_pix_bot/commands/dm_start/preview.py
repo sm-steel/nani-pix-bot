@@ -6,7 +6,7 @@ group topic. See MECHANICS.md's "Starting a game" section."""
 from dataclasses import dataclass
 
 from loguru import logger
-from telegram import Update
+from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
@@ -15,10 +15,15 @@ from nani_pix_bot.commands.dm_start._shared import (
     _method_prompt_key,
     _post_preview_album,
     _prefer_shikimori,
+    _reject_stale_tap,
     _stage_preview,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
+    BOUNTY_PRESETS,
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
+    PREVIEW_BOUNTY_BACK_CALLBACK_DATA,
+    PREVIEW_BOUNTY_CALLBACK_DATA,
+    PREVIEW_BOUNTY_PICK_PREFIX,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA,
@@ -28,6 +33,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX,
     PREVIEW_RESEARCH_CALLBACK_DATA,
     algorithm_name,
+    bounty_keyboard,
     change_image_keyboard,
     pixel_algorithm_keyboard,
     preview_keyboard,
@@ -46,10 +52,11 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import DISCOURAGED_ALGORITHMS, PixelAlgorithm, SetupStep
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services import pixelate as pixelate_service
-from nani_pix_bot.services.economy import earning
+from nani_pix_bot.services.economy import bounty, earning, wallet
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -141,13 +148,17 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
     query = update.callback_query
     if query is None or query.data is None:
         return
-    await query.answer()
-
     user = query.from_user
+    session_factory = context.bot_data["session_factory"]
+    if user is not None and query.data.startswith(PREVIEW_BOUNTY_PICK_PREFIX):
+        # Answers the query itself: a refusal is an alert, and Telegram
+        # takes only one answer per callback query.
+        await _handle_bounty_pick_tap(session_factory, query, user)
+        return
+    await query.answer()
     if user is None:
         return
 
-    session_factory = context.bot_data["session_factory"]
     if await _handle_posting_tap(context, session_factory, query, user):
         return
 
@@ -169,6 +180,10 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
             await _preview_pixel_algorithm(query, setup_game, lang)
         elif query.data == PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA:
             await _preview_pixel_algorithm_back(query, setup_game, lang)
+        elif query.data == PREVIEW_BOUNTY_CALLBACK_DATA:
+            await _preview_bounty(query, session, setup_game, lang)
+        elif query.data == PREVIEW_BOUNTY_BACK_CALLBACK_DATA:
+            await _preview_bounty_back(query, setup_game, lang)
 
 
 async def _handle_posting_tap(
@@ -402,3 +417,82 @@ async def _handle_pixel_algorithm_pick_tap(
         text=i18n.t("dm_start.pixel_algorithm_updated", lang, name=algorithm_name(algorithm, lang))
     )
     await _post_preview_album(context, album, lang)
+
+
+def _bounty_menu(session, game: Game, lang: str) -> tuple[str, InlineKeyboardMarkup]:
+    """The bounty submenu's text and keyboard: the current pot and the
+    setter's balance, with only the presets that balance covers."""
+    balance = wallet.balance(session, game.starter_id)
+    text = i18n.t(
+        "dm_start.bounty_prompt",
+        lang,
+        pot=bounty.pot_balance(session, game.id),
+        balance=balance,
+    )
+    if balance < min(BOUNTY_PRESETS):
+        text += "\n" + i18n.t("dm_start.bounty_none_affordable", lang)
+    return text, bounty_keyboard(lang, balance)
+
+
+async def _preview_bounty(query, session, game: Game, lang: str) -> None:
+    logger.debug("Game {}: bounty submenu opened from preview", game.id)
+    text, markup = _bounty_menu(session, game, lang)
+    await query.edit_message_text(text=text, reply_markup=markup)
+
+
+async def _preview_bounty_back(query, game: Game, lang: str) -> None:
+    logger.debug("Game {}: bounty submenu dismissed", game.id)
+    await query.edit_message_text(
+        text=i18n.t("dm_start.preview_confirm_prompt", lang),
+        reply_markup=preview_keyboard(lang, game.pixel_algorithm),
+    )
+
+
+async def _handle_bounty_pick_tap(session_factory, query, user) -> None:
+    """Put the tapped preset into the setter's SETUP game's pot and
+    re-show the submenu. Owns its session (and the query's one answer):
+    a refusal rolls the block back and alerts instead of editing."""
+    try:
+        amount = int(str(query.data).removeprefix(PREVIEW_BOUNTY_PICK_PREFIX))
+    except ValueError:
+        amount = None
+    if amount not in BOUNTY_PRESETS:
+        # Callback data is client-supplied (see keyboards.py's trust-boundary note).
+        logger.warning("Ignoring bounty amount {!r} from user {}", query.data, user.id)
+        await query.answer()
+        return
+
+    refusal: bounty.BountyRefusal | None = None
+    shown: tuple[str, InlineKeyboardMarkup] | None = None
+    try:
+        with session_scope(session_factory) as session:
+            lang = settings.get_language(session)
+            setup_game = game_service.get_setup_game_for_starter(session, user.id)
+            player = session.get(Player, user.id)
+            if setup_game is None or player is None:
+                await _reject_stale_tap(query, user.id, lang)
+                return
+            bounty.contribute(session, setup_game, player, amount)
+            shown = _bounty_menu(session, setup_game, lang)
+    except bounty.BountyRefusedError as error:
+        refusal = error.refusal
+    if refusal is not None:
+        await _alert_bounty_refusal(session_factory, query, user.id, refusal)
+        return
+    if shown is None:
+        raise RuntimeError("bounty pick finished with neither a refusal nor a menu")
+    await query.answer()
+    await query.edit_message_text(text=shown[0], reply_markup=shown[1])
+
+
+async def _alert_bounty_refusal(
+    session_factory, query, user_id: int, refusal: bounty.BountyRefusal
+) -> None:
+    logger.warning("{}'s preview bounty was refused: {}", user_id, refusal.value)
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        balance = wallet.balance(session, user_id)
+    await query.answer(
+        i18n.t(f"bounty.refusal.{refusal.value}", lang, minimum=bounty.BOUNTY_MIN, balance=balance),
+        show_alert=True,
+    )

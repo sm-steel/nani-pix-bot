@@ -12,6 +12,9 @@ from nani_pix_bot.commands.dm_start import preview, search
 from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
+    PREVIEW_BOUNTY_BACK_CALLBACK_DATA,
+    PREVIEW_BOUNTY_CALLBACK_DATA,
+    PREVIEW_BOUNTY_PICK_PREFIX,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA,
@@ -31,6 +34,7 @@ from nani_pix_bot.models.enums import (
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.search import shikimori
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.settings import stage_config
@@ -572,7 +576,7 @@ async def test_picking_an_algorithm_reflects_it_in_the_new_preview_keyboard(
     )
 
     markup = context.bot.send_message.call_args.kwargs["reply_markup"]
-    assert "Box" in markup.inline_keyboard[-1][0].text
+    assert any("Box" in row[0].text for row in markup.inline_keyboard)
 
 
 async def test_an_unknown_algorithm_value_is_ignored(session_factory) -> None:
@@ -603,3 +607,117 @@ async def test_back_returns_to_the_preview_buttons(session_factory) -> None:
     assert PREVIEW_CONFIRM_CALLBACK_DATA in callbacks
     # Nothing was changed by opening and dismissing the submenu.
     assert _stored_algorithm(session_factory) is PixelAlgorithm.MODE
+
+
+def _callbacks(update: MagicMock) -> list[str]:
+    markup = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
+    return [str(button.callback_data) for row in markup.inline_keyboard for button in row]
+
+
+def _fund_setter(session_factory, amount: int) -> None:
+    with session_factory() as session:
+        session.get(Player, 1).currency = amount
+        session.commit()
+
+
+def _setter_state(session_factory) -> tuple[int, int]:
+    with session_factory() as session:
+        game = session.query(Game).one()
+        return session.get(Player, 1).currency, bounty.pot_balance(session, game.id)
+
+
+async def test_preview_keyboard_has_the_bounty_button(session_factory) -> None:
+    _staged_setup_game(session_factory)
+
+    update = await _run_preview_callback(
+        session_factory, PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA
+    )
+
+    assert PREVIEW_BOUNTY_CALLBACK_DATA in _callbacks(update)
+
+
+async def test_bounty_button_offers_only_affordable_presets(session_factory) -> None:
+    _staged_setup_game(session_factory)
+    _fund_setter(session_factory, 30)
+
+    update = await _run_preview_callback(session_factory, PREVIEW_BOUNTY_CALLBACK_DATA)
+
+    callbacks = _callbacks(update)
+    assert f"{PREVIEW_BOUNTY_PICK_PREFIX}10" in callbacks
+    assert f"{PREVIEW_BOUNTY_PICK_PREFIX}25" in callbacks
+    assert f"{PREVIEW_BOUNTY_PICK_PREFIX}50" not in callbacks
+    assert PREVIEW_BOUNTY_BACK_CALLBACK_DATA in callbacks
+    assert "30" in update.callback_query.edit_message_text.call_args.kwargs["text"]
+
+
+async def test_bounty_button_with_a_low_balance_offers_no_presets(session_factory) -> None:
+    _staged_setup_game(session_factory)
+    _fund_setter(session_factory, 9)
+
+    update = await _run_preview_callback(session_factory, PREVIEW_BOUNTY_CALLBACK_DATA)
+
+    assert _callbacks(update) == [PREVIEW_BOUNTY_BACK_CALLBACK_DATA]
+    assert "enough pixels" in update.callback_query.edit_message_text.call_args.kwargs["text"]
+
+
+async def test_picking_a_bounty_charges_the_setter_and_grows_the_pot(session_factory) -> None:
+    _staged_setup_game(session_factory)
+    _fund_setter(session_factory, 100)
+
+    await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}25")
+    update = await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}10")
+
+    assert _setter_state(session_factory) == (65, 35)
+    text = update.callback_query.edit_message_text.call_args.kwargs["text"]
+    assert "35" in text
+    assert "65" in text
+    update.callback_query.answer.assert_awaited_once_with()
+
+
+async def test_a_forged_bounty_amount_charges_nothing(session_factory) -> None:
+    _staged_setup_game(session_factory)
+    _fund_setter(session_factory, 100)
+
+    for forged in ("7", "-10", "abc", "1000"):
+        update = await _run_preview_callback(
+            session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}{forged}"
+        )
+        update.callback_query.edit_message_text.assert_not_awaited()
+
+    assert _setter_state(session_factory) == (100, 0)
+
+
+async def test_a_refused_bounty_alerts_and_charges_nothing(session_factory) -> None:
+    _staged_setup_game(session_factory)
+    _fund_setter(session_factory, 5)
+
+    update = await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}10")
+
+    update.callback_query.answer.assert_awaited_once()
+    assert update.callback_query.answer.call_args.kwargs["show_alert"] is True
+    assert _setter_state(session_factory) == (5, 0)
+
+
+async def test_bounty_back_returns_to_the_preview_buttons(session_factory) -> None:
+    _staged_setup_game(session_factory)
+
+    update = await _run_preview_callback(session_factory, PREVIEW_BOUNTY_BACK_CALLBACK_DATA)
+
+    assert PREVIEW_CONFIRM_CALLBACK_DATA in _callbacks(update)
+
+
+async def test_confirming_shows_the_bounty_in_the_game_start_caption(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    _staged_setup_game(session_factory)
+    _fund_setter(session_factory, 100)
+    await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}25")
+    update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA)
+    context = _make_callback_context(session_factory)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert "Bounty: 25" in context.bot.send_photo.await_args.kwargs["caption"]

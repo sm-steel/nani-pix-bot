@@ -6,6 +6,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     MANUAL_METHOD_CALLBACK_DATA,
     METHOD_BACK_CALLBACK_DATA,
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
+    PREVIEW_BOUNTY_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
     PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA,
@@ -644,7 +645,7 @@ def test_parse_method_callback_data_round_trips() -> None:
     assert parse_method_callback_data(SEARCH_RETRY_CALLBACK_DATA) is None
 
 
-def test_preview_keyboard_has_the_five_expected_buttons() -> None:
+def test_preview_keyboard_has_the_six_expected_buttons() -> None:
     markup = preview_keyboard(lang="en", algorithm=DEFAULT_ALGORITHM)
 
     callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
@@ -654,6 +655,7 @@ def test_preview_keyboard_has_the_five_expected_buttons() -> None:
         PREVIEW_RESEARCH_CALLBACK_DATA,
         PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
         PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA,
+        PREVIEW_BOUNTY_CALLBACK_DATA,
     ]
 
 
@@ -663,8 +665,8 @@ def test_preview_keyboard_names_the_games_current_algorithm() -> None:
     default = preview_keyboard(lang="en", algorithm=DEFAULT_ALGORITHM)
     lanczos = preview_keyboard(lang="en", algorithm=PixelAlgorithm.LANCZOS)
 
-    assert "Median" in default.inline_keyboard[-1][0].text
-    assert "Lanczos" in lanczos.inline_keyboard[-1][0].text
+    assert "Median" in default.inline_keyboard[-2][0].text
+    assert "Lanczos" in lanczos.inline_keyboard[-2][0].text
 
 
 def test_pixel_algorithm_keyboard_offers_every_algorithm_plus_back() -> None:

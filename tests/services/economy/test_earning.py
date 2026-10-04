@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models import CurrencyTransfer, Player
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.services.economy import config, earning
+from nani_pix_bot.services.economy import bounty, config, earning
 from nani_pix_bot.services.economy.config import EconomyKey
 
 STARTER, ALICE, BOB = 1, 2, 3
@@ -162,3 +162,19 @@ def test_prompt_start_pays_nothing_when_late_or_unknown_or_hard_mode(session: Se
     session.add(hard)
     session.flush()
     assert earning.award_prompt_start(session, hard) == 0
+
+
+def test_award_win_pays_the_bounty(session: Session) -> None:
+    game = _setup(session)
+    for user_id, amount in ((STARTER, 10), (BOB, 15)):
+        player = session.get(Player, user_id)
+        assert player is not None
+        player.currency = 100
+        bounty.contribute(session, game, player, amount)
+
+    earned = earning.award_win(session, game, winner_id=ALICE)
+
+    assert earned.bounty == 25
+    assert earned.player_total == earned.win
+    assert bounty.pot_balance(session, game.id) == 0
+    assert _currency(session, ALICE) == earned.win + 25

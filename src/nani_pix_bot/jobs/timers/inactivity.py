@@ -24,6 +24,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -154,7 +155,7 @@ def _hard_mode_turn_advance(
     return _HardModeAnnouncement(photos=(pixelated_a, pixelated_b), caption=caption)
 
 
-def _hard_mode_unsolved_reveal(game: Game, lang: str) -> _HardModeAnnouncement:
+def _hard_mode_unsolved_reveal(session: Session, game: Game, lang: str) -> _HardModeAnnouncement:
     """Turn-2-exhausted ending — the hard-mode analogue of the normal
     UNSOLVED-by-inactivity path below: reveals both stored screenshots
     unpixelated via post_current_images, same as the normal path's
@@ -164,6 +165,7 @@ def _hard_mode_unsolved_reveal(game: Game, lang: str) -> _HardModeAnnouncement:
     caption = i18n.t(
         "guess.hard_mode_unsolved_caption", lang, title=game_service.display_title(game, lang)
     )
+    caption += bounty.refund_note(session, game.id, lang)
     return _HardModeAnnouncement(photos=photos, caption=caption)
 
 
@@ -181,7 +183,7 @@ def _hard_mode_inactivity_outcome(
             _hard_mode_turn_advance(session, context, game, lang),
         )
 
-    announcement = _hard_mode_unsolved_reveal(game, lang)
+    announcement = _hard_mode_unsolved_reveal(session, game, lang)
     game_service.mark_turn_open_if_unassigned(session)
     logger.info("Game {} auto-ended unsolved after repeated inactivity (hard mode)", game.id)
     return game_service.GuessOutcome.UNSOLVED, announcement
@@ -288,6 +290,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
                 unsolved_caption = i18n.t(
                     "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
                 )
+                unsolved_caption += bounty.refund_note(session, game_id, lang)
             else:
                 logger.info(
                     "Game {} auto-advanced to stage {} after inactivity",

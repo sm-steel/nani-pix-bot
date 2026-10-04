@@ -13,6 +13,7 @@ from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services.economy import bounty
 
 
 def setup_abandon_job_name(game_id: int) -> str:
@@ -62,6 +63,7 @@ async def setup_abandon_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
             logger.debug("Setup-abandon fired for game {} but it's already resolved", game_id)
             return
         logger.info("Game {} setup abandoned after 1h — deleting and opening the turn", game_id)
+        bounty.refund_pot(session, game.id)
         session.delete(game)
         turn_state = game_service.set_next_starter(session, None)
 

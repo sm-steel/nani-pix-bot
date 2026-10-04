@@ -42,8 +42,8 @@ def _resolve(args: list[str], lang: str) -> tuple[EconomyKey, int] | str:
         key = EconomyKey(raw_key)
     except ValueError:
         return i18n.t("currency_config.unknown_key", lang, name=raw_key)
-    if key in config.CLUE_PRICE_KEYS and value < 1:
-        return i18n.t("currency_config.clue_price_min", lang)
+    if key in config.PRICE_KEYS and value < 1:
+        return i18n.t("currency_config.price_min", lang)
     return key, value
 
 

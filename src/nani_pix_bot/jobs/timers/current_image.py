@@ -11,9 +11,11 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services.economy import bounty
 
 
 async def post_current_image(
@@ -113,6 +115,18 @@ def shop_link_url(context: ContextTypes.DEFAULT_TYPE) -> str | None:
     return f"https://t.me/{username}?start=shop"
 
 
+def _pot_line(session: Session, lang: str) -> str:
+    """The "\n💰 Bounty: N 💠" caption line for the running game's pot, or
+    "" when there is no active game or its pot is empty."""
+    game = game_service.active_or_setup_game(session)
+    if game is None or game.status != GameStatus.ACTIVE:
+        return ""
+    pot = bounty.pot_balance(session, game.id)
+    if pot <= 0:
+        return ""
+    return "\n" + i18n.t("bounty.caption_line", lang, amount=pot)
+
+
 async def post_stage_image(
     context: ContextTypes.DEFAULT_TYPE,
     session_factory: sessionmaker[Session],
@@ -126,9 +140,10 @@ async def post_stage_image(
     is unknown."""
     url = shop_link_url(context)
     markup = None
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        caption += _pot_line(session, lang)
     if url is not None:
-        with session_scope(session_factory) as session:
-            lang = settings.get_language(session)
         button = InlineKeyboardButton(i18n.t("shop.button", lang), url=url)
         markup = InlineKeyboardMarkup([[button]])
     return await _post_photo(context, session_factory, photo, caption, markup)
@@ -197,6 +212,8 @@ async def post_stage_images(
     """post_current_images for a HARD MODE *stage* post (never a reveal):
     a media group can't carry buttons, so the DM clue-shop link goes in
     the caption instead (omitted while the bot's username is unknown)."""
+    with session_scope(session_factory) as session:
+        caption += _pot_line(session, settings.get_language(session))
     url = shop_link_url(context)
     if url is not None:
         caption = f"{caption}\n🛒 {url}"
