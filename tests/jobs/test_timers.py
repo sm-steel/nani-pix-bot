@@ -1552,3 +1552,15 @@ async def test_post_current_image_never_shows_the_pot(session_factory) -> None:
     )
 
     assert context.bot.send_photo.call_args.kwargs["caption"] == "a caption"
+
+
+async def test_hard_mode_timeout_refunds_the_pot(session_factory) -> None:
+    game_id = _hard_mode_active_game(session_factory)
+    _fund_pot(session_factory, game_id, {2: 10, 3: 15})
+    context = _make_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    media = context.bot.send_media_group.call_args.kwargs["media"]
+    assert "25" in media[0].caption
+    _assert_refunded(session_factory, game_id, (2, 3))

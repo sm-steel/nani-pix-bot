@@ -7,9 +7,11 @@ from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import correct as correct_command_module
-from nani_pix_bot.models.enums import GameStatus, PixelStage
+from nani_pix_bot.models import CurrencyTransfer
+from nani_pix_bot.models.enums import CurrencyReason, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.services.economy import bounty
 
 
 def _make_update(
@@ -503,3 +505,34 @@ async def test_correct_command_caption_shows_the_targets_win_currency(session_fa
     )
 
     assert "+40" in context.bot.send_photo.await_args.kwargs["caption"]
+
+
+async def test_correct_command_pays_the_pot_to_the_winner_and_names_it(session_factory) -> None:
+    game_id = _active_game(session_factory, total_guess_count=1)
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        winner = Player(telegram_user_id=2, username="winner")
+        contributor = Player(telegram_user_id=3, currency=100)
+        session.add_all([winner, contributor])
+        session.flush()
+        bounty.contribute(session, game, contributor, 20)
+        session.commit()
+        before = winner.currency
+
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert "takes the bounty: +20" in kwargs["caption"]
+    with session_factory() as session:
+        assert bounty.pot_balance(session, game_id) == 0
+        winner = session.get(Player, 2)
+        assert winner is not None
+        paid = session.query(CurrencyTransfer).filter_by(reason=CurrencyReason.BOUNTY_WIN).one()
+        assert (paid.amount, paid.to_player_id) == (20, 2)
+        assert winner.currency >= before + 20

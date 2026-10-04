@@ -552,6 +552,32 @@ async def test_stop_confirm_checks_admin_outside_the_session(
         assert session.get(Game, game_id) is None
 
 
+async def test_stop_refunds_a_setup_games_preset_deposit(session_factory) -> None:
+    game_id = _setup_game(session_factory, starter_id=1)
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        starter = session.get(Player, 1)
+        assert game is not None
+        assert starter is not None
+        starter.currency = 100
+        bounty.contribute(session, game, starter, 25)
+        session.commit()
+        assert starter.currency == 75
+    update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
+        starter = session.get(Player, 1)
+        assert starter is not None
+        assert starter.currency == 100
+        assert bounty.pot_balance(session, game_id) == 0
+
+
 async def test_stop_refunds_pot(session_factory) -> None:
     game_id = _active_game(session_factory, starter_id=1)
     with session_factory() as session:

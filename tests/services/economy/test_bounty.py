@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models import CurrencyTransfer, Player
-from nani_pix_bot.models.enums import GameStatus, PixelStage
+from nani_pix_bot.models.enums import CurrencyReason, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services.economy import bounty, wallet
 
@@ -115,3 +115,87 @@ def test_refund_after_payout_moves_nothing(session: Session) -> None:
     session.flush()
 
     assert bounty.refund_pot(session, game.id) == 0
+
+
+def _seed_ledgered(session: Session, *, status=GameStatus.ACTIVE) -> tuple[Game, dict[int, Player]]:
+    """Like _setup, but every balance comes from a wallet.credit, so the
+    ledger is complete and players.currency can be audited against it."""
+    players = {u: Player(telegram_user_id=u) for u in (STARTER, ALICE, BOB)}
+    session.add_all(players.values())
+    session.flush()
+    for player in players.values():
+        wallet.credit(session, player, 100, wallet.LedgerEntry(CurrencyReason.WIN))
+    game = Game(starter_id=STARTER, status=status, current_stage=PixelStage.STAGE_1)
+    session.add(game)
+    session.flush()
+    return game, players
+
+
+def _assert_cache_matches_ledger(session: Session, players: dict[int, Player]) -> None:
+    for user_id, player in players.items():
+        assert player.currency == wallet.ledger_balance(session, user_id)
+
+
+def test_cached_balances_match_the_ledger_after_contribute_and_refund(session: Session) -> None:
+    game, p = _seed_ledgered(session)
+    bounty.contribute(session, game, p[ALICE], 10)
+    bounty.contribute(session, game, p[BOB], 25)
+    session.flush()
+    _assert_cache_matches_ledger(session, p)
+
+    bounty.refund_pot(session, game.id)
+    session.flush()
+
+    assert (p[ALICE].currency, p[BOB].currency) == (100, 100)
+    _assert_cache_matches_ledger(session, p)
+
+
+def test_cached_balances_match_the_ledger_after_contribute_and_payout(session: Session) -> None:
+    game, p = _seed_ledgered(session)
+    bounty.contribute(session, game, p[ALICE], 10)
+    bounty.contribute(session, game, p[BOB], 25)
+    session.flush()
+
+    bounty.pay_out(session, game, p[BOB])
+    session.flush()
+
+    assert (p[ALICE].currency, p[BOB].currency) == (90, 110)
+    _assert_cache_matches_ledger(session, p)
+
+
+def test_refunding_twice_refunds_once(session: Session) -> None:
+    game, p = _seed_ledgered(session)
+    bounty.contribute(session, game, p[ALICE], 10)
+    bounty.contribute(session, game, p[BOB], 25)
+    session.flush()
+
+    first = bounty.refund_pot(session, game.id)
+    second = bounty.refund_pot(session, game.id)
+    session.flush()
+
+    assert (first, second) == (35, 0)
+    assert (p[ALICE].currency, p[BOB].currency) == (100, 100)
+    assert (
+        session.query(CurrencyTransfer).filter(CurrencyTransfer.reverses_id.is_not(None)).count()
+        == 2
+    )
+    _assert_cache_matches_ledger(session, p)
+
+
+def test_pot_balance_is_isolated_per_game(session: Session) -> None:
+    first, p = _seed_ledgered(session)
+    second = Game(starter_id=STARTER, status=GameStatus.ACTIVE, current_stage=PixelStage.STAGE_1)
+    session.add(second)
+    session.flush()
+    bounty.contribute(session, first, p[ALICE], 10)
+    bounty.contribute(session, second, p[BOB], 25)
+    session.flush()
+
+    assert bounty.pot_balance(session, first.id) == 10
+    assert bounty.pot_balance(session, second.id) == 25
+
+    bounty.refund_pot(session, first.id)
+    session.flush()
+
+    assert bounty.pot_balance(session, first.id) == 0
+    assert bounty.pot_balance(session, second.id) == 25
