@@ -41,8 +41,8 @@ async def test_sharing_a_text_clue_posts_it_to_the_topic_once(session_factory) -
     assert post.kwargs["message_thread_id"] == 7
     assert post.kwargs["parse_mode"] == "HTML"
     assert "Buyer Name" in post.kwargs["text"]
-    assert "<b>S</b>" in post.kwargs["text"]
-    assert "(romaji)" in post.kwargs["text"]
+    assert "First letters of the titles" in post.kwargs["text"]
+    assert "• romaji: <b>S</b>" in post.kwargs["text"]
     first.answer.assert_awaited_once_with("Shared with the group.")
     first.edit_message_reply_markup.assert_awaited_once_with(reply_markup=None)
     assert purchases(session_factory)[0].shared_at is not None

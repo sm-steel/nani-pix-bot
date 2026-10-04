@@ -220,6 +220,59 @@ def test_display_title_field_reads_the_game() -> None:
     )
 
 
+def _titles_game(**fields: str | None) -> Game:
+    return Game(**fields)
+
+
+def test_clue_titles_lists_group_language_then_romaji_then_english_for_ru() -> None:
+    game = _titles_game(
+        title_russian="Фрирен", title_romaji="Sousou no Frieren", title_english="Frieren"
+    )
+    fields = [field for field, _ in game_service.clue_titles(game, "RU")]
+    assert fields == [
+        game_service.TitleField.RUSSIAN,
+        game_service.TitleField.ROMAJI,
+        game_service.TitleField.ENGLISH,
+    ]
+
+
+def test_clue_titles_for_en_leaves_out_russian() -> None:
+    game = _titles_game(
+        title_russian="Фрирен", title_romaji="Sousou no Frieren", title_english="Frieren"
+    )
+    fields = [field for field, _ in game_service.clue_titles(game, "EN")]
+    assert fields == [game_service.TitleField.ENGLISH, game_service.TitleField.ROMAJI]
+
+
+def test_clue_titles_with_only_romaji() -> None:
+    game = _titles_game(title_romaji="Sousou no Frieren")
+    assert game_service.clue_titles(game, "EN") == [
+        (game_service.TitleField.ROMAJI, "Sousou no Frieren")
+    ]
+
+
+def test_clue_titles_lists_identical_text_once_ignoring_case() -> None:
+    game = _titles_game(title_romaji="Naruto", title_english=" naruto ")
+    assert game_service.clue_titles(game, "RU") == [(game_service.TitleField.ENGLISH, " naruto ")]
+
+
+def test_clue_titles_with_only_native_uses_it_as_the_default() -> None:
+    game = _titles_game(title_native="葬送のフリーレン")
+    assert game_service.clue_titles(game, "EN") == [
+        (game_service.TitleField.NATIVE, "葬送のフリーレン")
+    ]
+
+
+def test_clue_titles_native_is_not_added_beside_other_titles() -> None:
+    game = _titles_game(title_native="葬送のフリーレン", title_english="Frieren")
+    fields = [field for field, _ in game_service.clue_titles(game, "EN")]
+    assert fields == [game_service.TitleField.ENGLISH]
+
+
+def test_clue_titles_is_empty_without_any_title() -> None:
+    assert game_service.clue_titles(_titles_game(), "EN") == []
+
+
 def test_match_candidates_includes_every_title_variant_and_synonym() -> None:
     game = Game(
         starter_id=1,
