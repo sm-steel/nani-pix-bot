@@ -79,8 +79,10 @@ def _seed(session_factory, *, currency: int = 100, **game_overrides) -> int:
         return game.id
 
 
-def _confirm_data(game_id: int, stage: str = "stage_1", user_id: int = ALICE) -> str:
-    return f"sharpen:ok:{game_id}:{stage}:{user_id}"
+def _confirm_data(
+    game_id: int, stage: str = "stage_1", user_id: int = ALICE, price: int = 50
+) -> str:
+    return f"sharpen:ok:{game_id}:{stage}:{user_id}:{price}"
 
 
 async def _command(session_factory, **kwargs) -> MagicMock:
@@ -224,6 +226,28 @@ async def test_stale_confirm_alerts_and_charges_nothing(session_factory) -> None
     assert _state(session_factory) == (PixelStage.STAGE_2, 100, 0)
 
 
+async def test_price_changed_since_the_prompt_is_stale(session_factory) -> None:
+    game_id = _seed(session_factory)
+
+    update, context = await _callback(session_factory, _confirm_data(game_id, price=30))
+
+    update.callback_query.answer.assert_awaited_once_with(
+        i18n.t("sharpen.refusal.stale", "en"), show_alert=True
+    )
+    context.bot.send_photo.assert_not_awaited()
+    assert _state(session_factory) == (PixelStage.STAGE_1, 100, 0)
+
+
+async def test_confirm_from_stage_4_reaches_stage_5_and_stays_active(session_factory) -> None:
+    game_id = _seed(session_factory, current_stage=PixelStage.STAGE_4)
+
+    await _callback(session_factory, _confirm_data(game_id, "stage_4"))
+
+    assert _state(session_factory) == (PixelStage.STAGE_5, 50, 1)
+    with session_factory() as session:
+        assert session.query(Game).one().status is GameStatus.ACTIVE
+
+
 async def test_insufficient_funds_alert_shows_the_balance(session_factory) -> None:
     game_id = _seed(session_factory, currency=20)
 
@@ -275,9 +299,12 @@ async def test_only_requester_can_cancel(session_factory) -> None:
         "sharpen:",
         "sharpen:ok",
         "sharpen:ok:1:stage_1",
+        "sharpen:ok:1:stage_1:2",
+        "sharpen:ok:1:stage_1:2:x",
+        "sharpen:ok:1:stage_1:2:-5",
         "sharpen:ok:x:stage_1:2",
         "sharpen:ok:1:stage_9:2",
-        "sharpen:ok:1:stage_1:2:3",
+        "sharpen:ok:1:stage_1:2:3:4",
         "sharpen:no",
         "sharpen:no:abc",
         "sharpen:maybe:2",

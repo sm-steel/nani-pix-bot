@@ -3,6 +3,7 @@ stage one step. Pure rules plus the charge-and-advance; the confirm flow and
 the group post live in commands/game_flow/sharpen.py."""
 
 import enum
+from dataclasses import dataclass
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -20,7 +21,7 @@ class SharpenRefusal(enum.StrEnum):
     HARD_MODE = "hard_mode"
     LAST_STAGE = "last_stage"
     SETTER = "setter"
-    STALE = "stale"  # the stage moved since the button was made
+    STALE = "stale"  # the stage or the price moved since the button was made
     INSUFFICIENT = "insufficient"
 
 
@@ -47,15 +48,25 @@ def price(session: Session) -> int:
     return config.get_amounts(session)[EconomyKey.SHARPEN]
 
 
-def sharpen(session: Session, game: Game, player: Player, expected_stage: PixelStage) -> int:
+@dataclass(frozen=True)
+class SharpenOffer:
+    """What the confirm prompt promised: the stage it was made for and the
+    price it showed."""
+
+    stage: PixelStage
+    price: int
+
+
+def sharpen(session: Session, game: Game, player: Player, offer: SharpenOffer) -> int:
     """Charge `player` and advance `game` one stage; returns the price paid.
-    Raises SharpenRefusedError (nothing charged) when it isn't allowed."""
+    Raises SharpenRefusedError (nothing charged) when it isn't allowed, or when
+    the stage or price moved since `offer` was made."""
     refusal = check(game, player)
-    if refusal is None and game.current_stage != expected_stage:
+    amount = price(session)
+    if refusal is None and (game.current_stage != offer.stage or amount != offer.price):
         refusal = SharpenRefusal.STALE
     if refusal is not None:
         raise SharpenRefusedError(refusal)
-    amount = price(session)
     try:
         wallet.debit(
             session, player, amount, wallet.LedgerEntry(CurrencyReason.SHARPEN, game_id=game.id)

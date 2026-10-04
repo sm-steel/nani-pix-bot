@@ -35,13 +35,14 @@ class _Tap:
     requester_id: int
     game_id: int | None = None
     stage: PixelStage | None = None
+    price: int | None = None
 
 
-def _confirm_data(game: Game, requester_id: int) -> str:
+def _confirm_data(game: Game, requester_id: int, price: int) -> str:
     stage = game.current_stage
     if stage is None:
         raise RuntimeError(f"game {game.id} has no current_stage to sharpen")
-    return f"{_PREFIX}ok:{game.id}:{stage.value}:{requester_id}"
+    return f"{_PREFIX}ok:{game.id}:{stage.value}:{requester_id}:{price}"
 
 
 def _cancel_data(requester_id: int) -> str:
@@ -53,21 +54,21 @@ def _int(text: str) -> int | None:
 
 
 def _parse_confirm(parts: list[str]) -> _Tap | None:
-    game_id, requester = _int(parts[2]), _int(parts[4])
+    game_id, requester, price = _int(parts[2]), _int(parts[4]), _int(parts[5])
     try:
         stage = PixelStage(parts[3])
     except ValueError:
         return None
-    if game_id is None or requester is None:
+    if game_id is None or requester is None or price is None:
         return None
-    return _Tap(requester, game_id, stage)
+    return _Tap(requester, game_id, stage, price)
 
 
 def _parse(data: str) -> _Tap | None:
     """The press `data` encodes, or None when it isn't exactly one of the two
     shapes this module builds."""
     parts = data.split(":")
-    if parts[0] == "sharpen" and len(parts) == 5 and parts[1] == "ok":
+    if parts[0] == "sharpen" and len(parts) == 6 and parts[1] == "ok":
         return _parse_confirm(parts)
     if parts[0] == "sharpen" and len(parts) == 3 and parts[1] == "no":
         requester = _int(parts[2])
@@ -81,7 +82,7 @@ def _keyboard(game: Game, requester_id: int, price: int, lang: str) -> InlineKey
             [
                 InlineKeyboardButton(
                     i18n.t("sharpen.confirm_button", lang, price=price),
-                    callback_data=_confirm_data(game, requester_id),
+                    callback_data=_confirm_data(game, requester_id, price),
                 ),
                 InlineKeyboardButton(
                     i18n.t("sharpen.cancel_button", lang),
@@ -136,7 +137,7 @@ class _Sharpened:
 def _apply(context: ContextTypes.DEFAULT_TYPE, user: User, tap: _Tap) -> _Sharpened:
     """One transaction: charge, advance, and render the new stage post. Raises
     SharpenRefusedError (rolling everything back) on any refusal."""
-    if tap.game_id is None or tap.stage is None:
+    if tap.game_id is None or tap.stage is None or tap.price is None:
         raise RuntimeError("_apply needs a confirm press")
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
@@ -144,7 +145,7 @@ def _apply(context: ContextTypes.DEFAULT_TYPE, user: User, tap: _Tap) -> _Sharpe
         game = shop.active_game_for(session, tap.game_id)
         if game is None:
             raise sharpen.SharpenRefusedError(sharpen.SharpenRefusal.NO_GAME)
-        paid = sharpen.sharpen(session, game, player, tap.stage)
+        paid = sharpen.sharpen(session, game, player, sharpen.SharpenOffer(tap.stage, tap.price))
         announcement = prepare_stage_advanced_announcement(session, context, game, lang)
         prefix = i18n.t("sharpen.done", lang, name=user.full_name, amount=paid)
         return _Sharpened(lang, replace(announcement, caption=f"{prefix}\n{announcement.caption}"))
