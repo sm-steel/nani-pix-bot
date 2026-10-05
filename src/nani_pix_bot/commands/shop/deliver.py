@@ -5,10 +5,11 @@ import html
 from collections.abc import Callable
 
 from loguru import logger
-from telegram import InlineKeyboardMarkup
+from telegram import InlineKeyboardMarkup, User
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.models.enums import ClueKind
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
@@ -71,7 +72,7 @@ def text_clue_message(game: Game, kind: ClueKind, owned: set[ClueKind], lang: st
 
 async def deliver_text_clue(
     context: ContextTypes.DEFAULT_TYPE,
-    user_id: int,
+    user: User,
     message: str,
     reply_markup: InlineKeyboardMarkup | None = None,
 ) -> bool:
@@ -79,17 +80,17 @@ async def deliver_text_clue(
     can refund."""
     try:
         await context.bot.send_message(
-            chat_id=user_id, text=message, parse_mode="HTML", reply_markup=reply_markup
+            chat_id=user.id, text=message, parse_mode="HTML", reply_markup=reply_markup
         )
     except TelegramError:
-        logger.exception("Could not DM a clue to {}", user_id)
+        logger.exception("Could not DM a clue to {}", describe_user(user))
         return False
     return True
 
 
 async def deliver_image_clue(
     context: ContextTypes.DEFAULT_TYPE,
-    user_id: int,
+    user: User,
     photo: bytes,
     caption: str,
     reply_markup: InlineKeyboardMarkup,
@@ -98,10 +99,10 @@ async def deliver_image_clue(
     None (logged) if Telegram refused it, so the caller can refund."""
     try:
         message = await context.bot.send_photo(
-            chat_id=user_id, photo=photo, caption=caption, reply_markup=reply_markup
+            chat_id=user.id, photo=photo, caption=caption, reply_markup=reply_markup
         )
     except TelegramError:
-        logger.exception("Could not DM an image clue to {}", user_id)
+        logger.exception("Could not DM an image clue to {}", describe_user(user))
         return None
     return message.photo[-1].file_id
 

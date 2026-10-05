@@ -15,7 +15,7 @@ from nani_pix_bot.models.currency_transfer import CurrencyTransfer
 from nani_pix_bot.models.enums import CurrencyParty, CurrencyReason, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
-from nani_pix_bot.services import i18n
+from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.economy import wallet
 
 BOUNTY_MIN = 30
@@ -74,7 +74,13 @@ def contribute(session: Session, game: Game, player: Player, amount: int) -> Cur
     except wallet.InsufficientCurrencyError as error:
         raise BountyRefusedError(BountyRefusal.INSUFFICIENT) from error
     session.flush()
-    logger.info("Player {} added {} to game {}'s bounty", player.telegram_user_id, amount, game.id)
+    logger.info(
+        "Game {}: {} added {} 💠 to the bounty (pot now {} 💠)",
+        game.id,
+        players.describe_player_id(session, player.telegram_user_id),
+        amount,
+        pot_balance(session, game.id),
+    )
     return row
 
 
@@ -90,7 +96,12 @@ def pay_out(session: Session, game: Game, winner: Player) -> int:
         amount,
         wallet.LedgerEntry(CurrencyReason.BOUNTY_WIN, game_id=game.id),
     )
-    logger.info("Game {}: bounty of {} paid to {}", game.id, amount, winner.telegram_user_id)
+    logger.info(
+        "Game {}: bounty of {} 💠 paid to winner {}",
+        game.id,
+        amount,
+        players.describe_player_id(session, winner.telegram_user_id),
+    )
     return amount
 
 
@@ -123,7 +134,12 @@ def refund_pot(session: Session, game_id: int) -> int:
             wallet.LedgerEntry(CurrencyReason.REFUND, game_id=game_id, reverses_id=contribution.id),
         )
         total += contribution.amount
-    logger.info("Game {}: bounty of {} refunded to contributors", game_id, total)
+        logger.info(
+            "Game {}: refunded {} 💠 bounty contribution to {}",
+            game_id,
+            contribution.amount,
+            players.describe_player_id(session, contributor.telegram_user_id),
+        )
     return total
 
 

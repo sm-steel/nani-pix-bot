@@ -4,6 +4,7 @@ session; the send happens after that session commits."""
 
 from dataclasses import dataclass, replace
 
+from loguru import logger
 from telegram import Message
 from telegram.ext import ContextTypes
 
@@ -32,6 +33,10 @@ class Announcement:
     photo: bytes | None = None
     photos: tuple[bytes, bytes] | None = None
     is_stage_post: bool = False
+    # Logged at INFO once the post is confirmed sent, e.g. "Game 5: posted
+    # stage 2/5 image" — says which stage, which the generic post helpers
+    # in jobs/timers/current_image.py can't know.
+    posted_log: str | None = None
 
 
 def require_original_image(game: Game, situation: str) -> bytes:
@@ -77,7 +82,15 @@ def prepare_stage_advanced_announcement(
         remaining=progress.remaining,
         limit=progress.limit,
     )
-    return Announcement(photo=pixelated, caption=caption, is_stage_post=True)
+    return Announcement(
+        photo=pixelated,
+        caption=caption,
+        is_stage_post=True,
+        posted_log=(
+            f"Game {game.id}: posted {game_service.stage_label(game.current_stage)} image"
+            f" ({target_width}px wide)"
+        ),
+    )
 
 
 async def send_announcement(
@@ -87,6 +100,15 @@ async def send_announcement(
     of Announcement's photo/photos fields is populated, and sends it.
     Hoisted out of guess_command purely to keep its own cyclomatic
     complexity down, same reasoning as require_original_image above."""
+    sent = await _send(context, session_factory, announcement)
+    if sent is not None and announcement.posted_log is not None:
+        logger.info("{}", announcement.posted_log)
+    return sent
+
+
+async def _send(
+    context: ContextTypes.DEFAULT_TYPE, session_factory, announcement: Announcement
+) -> Message | tuple[Message, ...] | None:
     if announcement.photos is not None:
         post_album = (
             timeout_module.post_stage_images

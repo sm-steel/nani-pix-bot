@@ -65,16 +65,25 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         lang = settings.get_language(session)
         game = game_service.active_or_setup_game(session)
         if game is None:
+            logger.info("{} sent /stop with no game running", describe_user(user))
             await message.reply_text(i18n.t("stop.no_game", lang))
             return
 
         if not await _may_stop(context, group_chat_id, user.id, game):
-            logger.warning("{} tried /stop without permission on game {}", user.id, game.id)
+            logger.warning(
+                "Game {}: {} tried /stop without permission", game.id, describe_user(user)
+            )
             await message.reply_text(i18n.t("stop.not_allowed", lang))
             return
 
         title = game_service.display_title(game, lang)
         can_reveal = game_service.has_answer_to_reveal(game)
+        logger.info(
+            "Game {}: {} sent /stop — confirm prompt shown (reveal {})",
+            game.id,
+            describe_user(user),
+            "offered" if can_reveal else "not offered",
+        )
 
     await message.reply_text(
         i18n.t("stop.confirm_prompt", lang, title=title),
@@ -97,6 +106,7 @@ async def stop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     if query.data == STOP_CANCEL_CALLBACK_DATA:
+        logger.info("{} cancelled /stop", describe_user(user))
         await _handle_cancel(query, context)
     elif query.data in (STOP_CONFIRM_CALLBACK_DATA, STOP_REVEAL_CALLBACK_DATA):
         reveal = query.data == STOP_REVEAL_CALLBACK_DATA
@@ -139,12 +149,15 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
 
         game = game_service.active_or_setup_game(session)
         if game is None:
+            logger.info("{} confirmed /stop, but no game is running any more", describe_user(user))
             await query.edit_message_text(i18n.t("stop.no_game", lang))
             return
 
         if game.starter_id != user.id and not is_admin:
             logger.warning(
-                "{} tried to confirm /stop without permission on game {}", user.id, game.id
+                "Game {}: {} tried to confirm /stop without permission",
+                game.id,
+                describe_user(user),
             )
             return
 
@@ -185,9 +198,9 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
     )
     revealed = await _announce_stop(context, session_factory, stopped_game, lang, reveal)
     logger.info(
-        "Game {} stopped by {} (was {}, answer {})",
+        "Game {}: stopped by {} (was {}, answer {})",
         game_id,
-        user.id,
+        describe_user(user),
         "ACTIVE" if was_active else "SETUP",
         "revealed" if revealed else "not revealed",
     )

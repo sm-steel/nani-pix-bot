@@ -13,6 +13,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     SEARCH_SERVICE_ERRORS,
     client_for_source,
 )
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.models.enums import ClueKind, PixelAlgorithm, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
@@ -62,21 +63,34 @@ def offered_game(
     would. Affordability is left to the caller (`offer.affordable`)."""
     game = shop.active_game_for(session, game_id)
     if game is None:
-        raise ShopRefusedError(Refusal.NO_GAME)
+        raise _refused(user, game_id, kind, Refusal.NO_GAME)
     buyer = players.get_or_create_player(session, user.id, username=user.username)
     if buyer.telegram_user_id == game.starter_id:
-        raise ShopRefusedError(Refusal.SETTER)
+        raise _refused(user, game_id, kind, Refusal.SETTER)
     lang = settings.get_language(session)
     offer = next((o for o in shop.offers(session, game, buyer, lang) if o.kind is kind), None)
     if offer is None:
-        raise ShopRefusedError(Refusal.UNAVAILABLE)
+        raise _refused(user, game_id, kind, Refusal.UNAVAILABLE)
     return game, lang, offer
+
+
+def _refused(user: User, game_id: int, kind: ClueKind, refusal: Refusal) -> ShopRefusedError:
+    """Logs a shop button refused before any charge, and returns the error
+    to raise. Refusals at the charge itself are logged by shop.purchase."""
+    logger.warning(
+        "Game {}: {} tapped the {} clue button — refused: {}",
+        game_id,
+        describe_user(user),
+        kind,
+        refusal,
+    )
+    return ShopRefusedError(refusal)
 
 
 def screenshot_plan(session: Session, user: User, game_id: int) -> ScreenshotPlan:
     game, lang, offer = offered_game(session, user, game_id, ClueKind.SCREENSHOT)
     if not offer.affordable:
-        raise ShopRefusedError(Refusal.INSUFFICIENT)
+        raise _refused(user, game_id, ClueKind.SCREENSHOT, Refusal.INSUFFICIENT)
     excluded = set(game.shown_screenshot_urls or []) | shop.owned_screenshot_urls(
         session, game.id, user.id
     )

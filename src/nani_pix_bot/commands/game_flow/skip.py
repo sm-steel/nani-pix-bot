@@ -30,14 +30,18 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         if game_service.active_or_setup_game(session) is not None:
-            logger.warning("{} tried /skip while a game is running", user.id)
+            logger.warning("{} tried /skip while a game is running", describe_user(user))
             await message.reply_text(i18n.t("skip.game_running", lang))
             return
 
         turn_state_check = game_service.get_turn_state(session)
         current = turn_state_check.next_starter_id if turn_state_check is not None else None
         if current is not None and current != user.id:
-            logger.warning("{} tried /skip out of turn (designated: {})", user.id, current)
+            logger.warning(
+                "{} tried /skip out of turn (designated: {})",
+                describe_user(user),
+                players.describe_player_id(session, current),
+            )
             await message.reply_text(i18n.t("skip.not_your_turn", lang))
             return
 
@@ -79,7 +83,11 @@ async def _pass_turn(
     target_username = raw_username.lstrip("@")
     target = players.find_player_by_username(session, target_username)
     if target is None:
-        logger.warning("/skip: unknown username {!r}", target_username)
+        logger.warning(
+            "{} tried /skip to unknown username {!r}",
+            describe_user(message.from_user),
+            target_username,
+        )
         # Same handle-less window as correct.py's identical lookup — see
         # the comment there for why the fallback drops the sentence
         # rather than rendering a bare "@".
@@ -96,7 +104,11 @@ async def _pass_turn(
         # /correct's (a self-designated bot turn self-heals via the 12h
         # turn-expiry timer), but still not a turn worth handing to it
         # explicitly.
-        logger.warning("/skip: rejected targeting the bot itself ({!r})", target_username)
+        logger.warning(
+            "{} tried /skip to the bot itself (@{})",
+            describe_user(message.from_user),
+            target_username,
+        )
         await message.reply_text(i18n.t("skip.cannot_target_bot", lang))
         return None
 

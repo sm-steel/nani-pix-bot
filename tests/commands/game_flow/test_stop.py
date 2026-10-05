@@ -603,3 +603,35 @@ async def test_stop_refunds_pot(session_factory) -> None:
             player = session.get(Player, user_id)
             assert player is not None
             assert player.currency == 100
+
+
+async def test_stop_cancel_is_logged_at_info(session_factory, records) -> None:
+    _active_game(session_factory, starter_id=1)
+    update = _make_callback_update(data=STOP_CANCEL_CALLBACK_DATA, user_id=1)
+    update.callback_query.from_user.username = "bob"
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory))
+    )
+
+    assert ("INFO", "1 (@bob) cancelled /stop") in records
+
+
+async def test_stop_prompt_and_stop_are_logged_at_info(session_factory, records) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    update = _make_update(user_id=1)
+    update.effective_user.username = "bob"
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+    callback = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
+    callback.callback_query.from_user.username = "bob"
+    await stop_command_module.stop_callback_handler(
+        cast(Update, callback), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    infos = [message for level, message in records if level == "INFO"]
+    assert any(m.startswith(f"Game {game_id}: 1 (@bob) sent /stop — confirm prompt") for m in infos)
+    assert f"Game {game_id}: stopped by 1 (@bob) (was ACTIVE, answer not revealed)" in infos

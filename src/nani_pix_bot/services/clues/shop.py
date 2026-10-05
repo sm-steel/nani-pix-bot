@@ -18,6 +18,7 @@ from nani_pix_bot.models.enums import ClueKind, CurrencyReason, GameStatus, Prov
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import players
 from nani_pix_bot.services.clues import text
 from nani_pix_bot.services.economy import config, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
@@ -224,14 +225,24 @@ def _refusal(
     return None
 
 
+def _detail(request: PurchaseRequest) -> str:
+    """The part of a purchase log line that says which tile/screenshot."""
+    if request.kind is ClueKind.TILE:
+        return f" (tile {request.tile_index})"
+    if request.kind is ClueKind.SCREENSHOT:
+        return f" ({request.screenshot_url})"
+    return ""
+
+
 def purchase(session: Session, game: Game, buyer: Player, request: PurchaseRequest) -> CluePurchase:
     refusal = _refusal(session, game, buyer, request)
     if refusal is not None:
         logger.warning(
-            "Player {} refused {} in game {}: {}",
-            buyer.telegram_user_id,
-            request.kind,
+            "Game {}: {} refused {} clue{}: {}",
             game.id,
+            players.describe_player_id(session, buyer.telegram_user_id),
+            request.kind,
+            _detail(request),
             refusal,
         )
         raise ShopRefusedError(refusal)
@@ -245,11 +256,12 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
         )
     except wallet.InsufficientCurrencyError as error:
         logger.warning(
-            "Player {} cannot afford {} ({}) in game {}",
-            buyer.telegram_user_id,
-            request.kind,
-            cost,
+            "Game {}: {} cannot afford {} clue{} ({} 💠)",
             game.id,
+            players.describe_player_id(session, buyer.telegram_user_id),
+            request.kind,
+            _detail(request),
+            cost,
         )
         raise ShopRefusedError(Refusal.INSUFFICIENT) from error
     session.flush()  # charge.id for the purchase's transfer_id
@@ -264,11 +276,13 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
     session.add(bought)
     session.flush()
     logger.info(
-        "Player {} bought {} for {} in game {}",
-        buyer.telegram_user_id,
-        request.kind,
-        cost,
+        "Game {}: {} bought {} clue{} for {} 💠 (purchase {})",
         game.id,
+        players.describe_player_id(session, buyer.telegram_user_id),
+        request.kind,
+        _detail(request),
+        cost,
+        bought.id,
     )
     return bought
 
@@ -291,10 +305,12 @@ def refund(session: Session, purchase_row: CluePurchase) -> None:
     )
     session.delete(purchase_row)
     logger.info(
-        "Refunded purchase {} ({} to player {})",
+        "Game {}: refunded {} clue purchase {} ({} 💠 to {})",
+        purchase_row.game_id,
+        purchase_row.kind,
         purchase_row.id,
         charge.amount,
-        buyer.telegram_user_id,
+        players.describe_player_id(session, buyer.telegram_user_id),
     )
 
 
@@ -305,7 +321,7 @@ def refund_game(session: Session, game_id: int) -> int:
     rows = list(session.scalars(select(CluePurchase).where(CluePurchase.game_id == game_id)))
     for row in rows:
         refund(session, row)
-    logger.info("Refunded {} clue purchases of game {}", len(rows), game_id)
+    logger.info("Game {}: refunded {} clue purchase(s)", game_id, len(rows))
     return len(rows)
 
 

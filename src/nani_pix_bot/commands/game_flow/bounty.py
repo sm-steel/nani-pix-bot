@@ -3,9 +3,10 @@ whoever solves it. Group game topic only; see services/economy/bounty.py
 for the pot rules."""
 
 from loguru import logger
-from telegram import Update
+from telegram import Update, User
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import GameStatus
@@ -44,13 +45,15 @@ async def bounty_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
             if amount is None:
-                logger.warning("{} sent a malformed /bounty: {!r}", user.id, context.args)
+                logger.warning(
+                    "{} sent a malformed /bounty: {!r}", describe_user(user), context.args
+                )
                 reply = i18n.t("bounty.usage", lang, minimum=bounty.BOUNTY_MIN)
             else:
                 player = players.get_or_create_player(session, user.id, username=user.username)
                 game = game_service.active_or_setup_game(session)
                 if game is None or game.status != GameStatus.ACTIVE:
-                    logger.warning("{} tried /bounty with no active round", user.id)
+                    logger.warning("{} tried /bounty with no active round", describe_user(user))
                     reply = i18n.t("bounty.no_game", lang)
                 else:
                     bounty.contribute(session, game, player, amount)
@@ -61,17 +64,17 @@ async def bounty_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except bounty.BountyRefusedError as error:
         refusal = error.refusal
     if refusal is not None:
-        reply = _refusal_reply(session_factory, user.id, refusal)
+        reply = _refusal_reply(session_factory, user, refusal)
     await message.reply_text(reply)
 
 
-def _refusal_reply(session_factory, user_id: int, refusal: bounty.BountyRefusal) -> str:
+def _refusal_reply(session_factory, user: User, refusal: bounty.BountyRefusal) -> str:
     """The reply for a refused contribution; its transaction already rolled
     back, so the balance is read in a fresh scope."""
-    logger.warning("{}'s /bounty was refused: {}", user_id, refusal.value)
+    logger.warning("{}'s /bounty was refused: {}", describe_user(user), refusal.value)
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
-        player = session.get(Player, user_id)
+        player = session.get(Player, user.id)
         balance = player.currency if player is not None else 0
     return i18n.t(
         f"bounty.refusal.{refusal.value}",
