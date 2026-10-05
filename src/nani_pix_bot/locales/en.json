@@ -89,6 +89,7 @@
 
   "skip.game_running": "Can't skip while a game is running.",
   "skip.not_your_turn": "It's not your turn to skip.",
+  "skip.turn_open": "Nobody holds the turn right now — there's nothing to skip. Anyone can start the next game.",
   "skip.opened": "Turn opened up — anyone can start the next game!",
   "skip.unknown_username": "I don't know anyone called @{username} yet — they need to send me a direct message first: @{bot_username}",
   "skip.unknown_username_no_handle": "I don't know anyone called @{username} yet — they need to send me a direct message first.",
