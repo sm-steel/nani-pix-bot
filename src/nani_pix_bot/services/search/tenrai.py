@@ -44,6 +44,10 @@ SCREENSHOT_FETCH_LIMIT = 20
 # this is a different scale, not a like-for-like number — a starting
 # guess, tune here if it feels wrong in practice.
 RANDOM_PICK_MIN_MEMBERS = 5000
+# Tenrai/MAL `type` values a random pick may have — the Tenrai spelling of
+# shikimori.py's RANDOM_PICK_KINDS (issue #247). Tenrai's /random/anime has
+# no server-side type filter, so this is checked after the parse.
+RANDOM_PICK_TYPES: frozenset[str] = frozenset({"TV", "Movie"})
 
 # Tenrai's public tier (120 RPM / 4 RPS / 40,000 RPD) is far more than
 # this bot's call volume needs, so no X-Server-Key support here — YAGNI.
@@ -79,6 +83,10 @@ class TenraiResult:
     # stays valid unchanged — same reasoning `rating` already documents
     # for itself.
     members: int | None = None
+    # Tenrai/MAL's `type` ("TV", "Movie", "OVA", ...). Read only for
+    # random_anime()'s RANDOM_PICK_TYPES gate; defaults to None so every
+    # existing keyword construction stays valid (same reasoning as `rating`).
+    kind: str | None = None
 
 
 @cache.cached()
@@ -146,6 +154,7 @@ async def random_anime(client: httpx.AsyncClient) -> TenraiResult | None:
     floor so this fallback doesn't surface an anime almost nobody has
     actually watched. A pick with no `members` field at all parses as
     None, which fails that floor exactly like a too-low count would.
+    Then a type gate: only `RANDOM_PICK_TYPES` (TV, Movie) — issue #247.
 
     Deliberately NOT `@cache.cached()` — see test_random_anime_is_not_cached_across_calls."""
     data = await rest.get_json(_API, client, TENRAI_RANDOM_URL, {"sfw": "true"})
@@ -158,6 +167,13 @@ async def random_anime(client: httpx.AsyncClient) -> TenraiResult | None:
             tenrai_id=result.tenrai_id,
             members=result.members,
             floor=RANDOM_PICK_MIN_MEMBERS,
+        )
+        return None
+    if result.kind not in RANDOM_PICK_TYPES:
+        logger.debug(
+            "Tenrai id {tenrai_id} is a {kind!r}, not TV/movie, rejecting",
+            tenrai_id=result.tenrai_id,
+            kind=result.kind,
         )
         return None
     return result
@@ -272,4 +288,5 @@ def _parse_result(raw: dict) -> TenraiResult | None:
         synonyms=synonyms,
         rating=parsing.optional_str(raw, "rating"),
         members=members,
+        kind=parsing.optional_str(raw, "type"),
     )

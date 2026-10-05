@@ -766,7 +766,9 @@ and both no-ops while a game is already `SETUP`/`ACTIVE`.
 **Picking a random anime + screenshot pair** (`services/game/autostart.py`,
 framework-agnostic, no DB writes until a full pick is in hand): a random
 Shikimori anime (`order: random`, `censored: true` — excludes hentai/
-yaoi/yuri), falling back to Tenrai's `/random/anime` on any failure or
+yaoi/yuri — and restricted to TV series and movies (`kind: tv,movie`) —
+specials, OVAs, ONAs and recaps often reuse their parent's footage, so
+their screenshots read as the parent show, issue #247), falling back to Tenrai's `/random/anime` on any failure or
 empty result — Tenrai's request already asks for `sfw=true`, and
 `services/game/autostart.py` also rejects an explicit-rated (`Rx`) pick
 as a backstop, the same rejection Jikan's fallback already had. What's
@@ -774,7 +776,8 @@ new to Tenrai's fallback since the migration off Jikan is its own
 popularity floor (`tenrai.py`'s `RANDOM_PICK_MIN_MEMBERS`, mirroring
 `shikimori.py`'s own `RANDOM_PICK_MIN_WATCHED` floor on the pick above)
 — closing issue #165: Jikan's old fallback had no such floor, so it
-could surface an anime almost nobody had actually watched — then a
+could surface an anime almost nobody had actually watched. The Tenrai
+fallback applies the same TV/movie rule to its `type` field. Then a
 screenshot **pair** for it — two distinct screenshots
 from the same provider, since HARD MODE (see below) always needs a
 genuine pair and never the same screenshot twice — via the same
