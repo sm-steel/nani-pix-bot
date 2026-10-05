@@ -101,6 +101,9 @@ async def _share(
         await query.answer(refused.text, show_alert=True)
         return
     if not await share_clue(context, post.text, post.file_id):
+        logger.warning(
+            "Game {}: sharing purchase {} failed — marked unshared again", post.game_id, purchase_id
+        )
         _unshare(session_factory, purchase_id)
         await query.answer(i18n.t("shop.share_failed", post.lang), show_alert=True)
         return

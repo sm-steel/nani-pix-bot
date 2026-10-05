@@ -226,7 +226,7 @@ async def _fail_delivery(
 async def _announce(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, lang: str) -> None:
     """Post the topic notice, then answer the tap — in that order, so a
     callback that timed out (BadRequest on the answer) skips nothing."""
-    await post_bought_notice(context, tap.user.full_name, tap.kind, lang)
+    await post_bought_notice(context, tap.game_id, tap.user.full_name, tap.kind, lang)
     try:
         await tap.query.answer()
     except BadRequest:
@@ -242,9 +242,20 @@ async def _deliver(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, bought: _Bo
     if not await deliver_text_clue(context, tap.user, bought.message, markup):
         await _fail_delivery(context, tap, bought)
         return
+    _log_delivered(tap, bought.purchase_id)
     if bought.followup is not None:
         await deliver_text_clue(context, tap.user, bought.followup)
     await _announce(context, tap, bought.lang)
+
+
+def _log_delivered(tap: _BuyTap, purchase_id: int) -> None:
+    logger.info(
+        "Game {}: DM'd the {} clue (purchase {}) to {}",
+        tap.game_id,
+        tap.kind.value,
+        purchase_id,
+        describe_user(tap.user),
+    )
 
 
 def _refund(session_factory, purchase_id: int) -> None:
@@ -384,6 +395,7 @@ async def _send_image(
     if file_id is None:
         await _fail_delivery(context, tap, bought)
         return False
+    _log_delivered(tap, bought.purchase_id)
     with session_scope(context.bot_data["session_factory"]) as session:
         row = session.get(CluePurchase, bought.purchase_id)
         if row is not None:

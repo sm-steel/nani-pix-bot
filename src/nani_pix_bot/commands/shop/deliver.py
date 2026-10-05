@@ -108,7 +108,7 @@ async def deliver_image_clue(
 
 
 async def post_bought_notice(
-    context: ContextTypes.DEFAULT_TYPE, buyer_name: str, kind: ClueKind, lang: str
+    context: ContextTypes.DEFAULT_TYPE, game_id: int, buyer_name: str, kind: ClueKind, lang: str
 ) -> None:
     """Tell the game topic that someone bought a clue (not what it says)."""
     notice = i18n.t(
@@ -124,7 +124,11 @@ async def post_bought_notice(
             text=notice,
         )
     except TelegramError:
-        logger.warning("Could not post the clue-bought notice for {}", kind, exc_info=True)
+        logger.opt(exception=True).warning(
+            "Game {}: could not post the {} clue-bought notice", game_id, kind.value
+        )
+        return
+    logger.info("Game {}: posted the {} clue-bought notice to the group", game_id, kind.value)
 
 
 async def share_clue(context: ContextTypes.DEFAULT_TYPE, text: str, file_id: str | None) -> bool:
