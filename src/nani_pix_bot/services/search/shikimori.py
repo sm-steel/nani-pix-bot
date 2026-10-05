@@ -173,11 +173,12 @@ async def search(
         query, page, lambda result: (result.title_romaji, result.title_russian)
     )[:limit]
     logger.debug(
-        "Shikimori search {!r} returned {} result(s), kept top {} after re-ranking: {}",
-        query,
-        len(page),
-        len(results),
-        [result.shikimori_id for result in results],
+        "Shikimori search {query!r} returned {count} result(s), kept top {kept} "
+        "after re-ranking: {ids}",
+        query=query,
+        count=len(page),
+        kept=len(results),
+        ids=[result.shikimori_id for result in results],
     )
     return results
 
@@ -210,7 +211,7 @@ async def get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriRe
     data = await graphql.request(_API, client, query=_DETAIL_QUERY, variables=variables)
     entry = _single_anime(data)
     if entry is None:
-        logger.debug("Shikimori id {} no longer found", shikimori_id)
+        logger.debug("Shikimori id {shikimori_id} no longer found", shikimori_id=shikimori_id)
         return None
     return parsing.parse_entry(_API_NAME, entry, _parse_detail_result)
 
@@ -255,10 +256,11 @@ async def random_anime(client: httpx.AsyncClient) -> ShikimoriResult | None:
     watched = _watched_count(entry)
     if watched < RANDOM_PICK_MIN_WATCHED:
         logger.debug(
-            "Shikimori id {} has only {} watched (below floor {}), rejecting",
-            parsed.shikimori_id,
-            watched,
-            RANDOM_PICK_MIN_WATCHED,
+            "Shikimori id {shikimori_id} has only {watched} watched (below floor {floor}), "
+            "rejecting",
+            shikimori_id=parsed.shikimori_id,
+            watched=watched,
+            floor=RANDOM_PICK_MIN_WATCHED,
         )
         return None
     return parsed
@@ -288,7 +290,11 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
     # this endpoint's entries are third-party data exactly like the
     # search endpoint's (issue #83).
     urls = parsing.parse_entries(_API_NAME, entries, _parse_screenshot_url)[:SCREENSHOT_FETCH_LIMIT]
-    logger.debug("Shikimori id {} has {} screenshot(s) available", shikimori_id, len(entries))
+    logger.debug(
+        "Shikimori id {shikimori_id} has {count} screenshot(s) available",
+        shikimori_id=shikimori_id,
+        count=len(entries),
+    )
     return urls
 
 
@@ -395,11 +401,11 @@ def _watched_count(raw: dict) -> int:
     entries = raw.get("statusesStats")
     if not isinstance(entries, list):
         logger.warning(
-            "Shikimori id {} sent a {} for statusesStats, expected an array"
-            " — treating watched count as 0: {!r}",
-            raw.get("id"),
-            type(entries).__name__,
-            entries,
+            "Shikimori id {shikimori_id} sent a {entry_type} for statusesStats, expected an array"
+            " — treating watched count as 0: {entries!r}",
+            shikimori_id=raw.get("id"),
+            entry_type=type(entries).__name__,
+            entries=entries,
         )
         return 0
     counts = parsing.parse_entries(_API_NAME, entries, parse_one_status_entry)
@@ -429,7 +435,10 @@ def _parse_search_result(raw: dict) -> ShikimoriResult | None:
     title_romaji = parsing.optional_str(raw, "name")
     title_russian = parsing.optional_str(raw, "russian")
     if not parsing.has_answer_key((title_romaji, title_russian), []):
-        logger.debug("Shikimori id {} has no title in name/russian, skipping", shikimori_id)
+        logger.debug(
+            "Shikimori id {shikimori_id} has no title in name/russian, skipping",
+            shikimori_id=shikimori_id,
+        )
         return None
     return ShikimoriResult(
         shikimori_id=shikimori_id,
@@ -463,7 +472,8 @@ def _parse_detail_result(raw: dict) -> ShikimoriResult | None:
     synonyms = parsing.optional_str_list(raw, "synonyms")
     if not parsing.has_answer_key((title_romaji, title_english, title_russian), synonyms):
         logger.debug(
-            "Shikimori id {} has no title in any variant and no synonyms, skipping", shikimori_id
+            "Shikimori id {shikimori_id} has no title in any variant and no synonyms, skipping",
+            shikimori_id=shikimori_id,
         )
         return None
     return ShikimoriResult(

@@ -45,9 +45,9 @@ def tip(session: Session, sender: Player, recipient: Player, amount: int) -> Cur
         raise TipRefusedError(TipRefusal.INSUFFICIENT) from error
     session.flush()
     logger.info(
-        "{} tipped {} {} 💠",
-        players.describe_player_id(session, sender.telegram_user_id),
-        players.describe_player_id(session, recipient.telegram_user_id),
-        amount,
+        "tipped {recipient} {amount} 💠",
+        recipient=players.describe_player_id(session, recipient.telegram_user_id),
+        recipient_id=recipient.telegram_user_id,
+        amount=amount,
     )
     return row

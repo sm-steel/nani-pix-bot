@@ -134,10 +134,10 @@ async def rearm_pending_timeouts(job_queue: JobQueue | None, session_factory) ->
             turn_timers = (turn_state.reminder_at is not None) + (turn_state.expiry_at is not None)
             idle_autostart = turn_state.autostart_deadline_at is not None
     logger.info(
-        "Re-armed on startup: {} game timeout(s), {} setup-abandon timer(s), "
-        "{} turn timer(s), idle-autostart {}",
-        len(active),
-        len(setups),
-        turn_timers,
-        "armed" if idle_autostart else "not armed",
+        "re-armed on startup: {timeouts} game timeout(s), {setups} setup-abandon timer(s), "
+        "{turn_timers} turn timer(s), idle-autostart {idle_autostart}",
+        timeouts=len(active),
+        setups=len(setups),
+        turn_timers=turn_timers,
+        idle_autostart="armed" if idle_autostart else "not armed",
     )

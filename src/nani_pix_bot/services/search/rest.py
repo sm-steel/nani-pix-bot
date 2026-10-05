@@ -129,7 +129,7 @@ async def fetch_by_id(
         raw = await get_json(api, client, url, {})
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == HTTPStatus.NOT_FOUND:
-            logger.debug("{} id {} no longer found", api.name, entity_id)
+            logger.debug("{api} id {entity_id} no longer found", api=api.name, entity_id=entity_id)
             return None
         raise
     return parsing.parse_entry(api.name, raw, parse)

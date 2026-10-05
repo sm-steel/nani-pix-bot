@@ -418,12 +418,19 @@ async def test_tile_in_hard_mode_is_unavailable(session_factory) -> None:
         context.bot.send_photo.assert_not_awaited()
 
 
-async def test_tile_purchase_logs_its_delivery_at_info(session_factory, records) -> None:
+async def test_tile_purchase_logs_its_delivery_at_info(session_factory, log_records) -> None:
     game_id = seed_game(session_factory, original_image=_png())
     set_currency(session_factory, 2, RICH)
     context = _image_context(session_factory)
 
     await tap(context, make_query(f"shop:tile:{game_id}:5"))
 
-    info = [message for level, message in records if level == "INFO"]
-    assert any(m.startswith(f"Game {game_id}: DM'd the tile clue (purchase ") for m in info)
+    info = [r for r in log_records if r.level == "INFO"]
+    (bought,) = [r for r in info if r.message.startswith("bought the tile clue (tile 5) for ")]
+    (dm,) = [r for r in info if r.message.startswith("DM'd the tile clue (purchase ")]
+    assert (bought.extra["kind"], bought.extra["tile"], bought.extra["game_id"]) == (
+        "tile",
+        5,
+        game_id,
+    )
+    assert (dm.extra["game_id"], dm.extra["purchase_id"]) == (game_id, bought.extra["purchase_id"])

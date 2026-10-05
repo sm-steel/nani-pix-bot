@@ -63,7 +63,7 @@ async def test_balance_ignored_in_other_topics(session_factory) -> None:
     update.message.reply_text.assert_not_awaited()
 
 
-async def test_balance_is_logged_at_info(session_factory, records) -> None:
+async def test_balance_is_logged_at_info(session_factory, log_records) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=1, currency=123))
         session.commit()
@@ -74,4 +74,5 @@ async def test_balance_is_logged_at_info(session_factory, records) -> None:
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory))
     )
 
-    assert ("INFO", "1 (@bob) checked /balance: 123 💠") in records
+    (line,) = [r for r in log_records if r.message == "checked /balance: 123 💠"]
+    assert (line.level, line.extra["balance"]) == ("INFO", 123)

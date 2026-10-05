@@ -62,10 +62,11 @@ def _parse_retry_after(raw_value: str | None, *, service_name: str) -> float:
             retry_at = parsedate_to_datetime(raw_value)
         except ValueError:
             logger.warning(
-                "{} sent an unparseable Retry-After header ({!r}), using the default {}s delay",
-                service_name,
-                raw_value,
-                DEFAULT_RETRY_AFTER_SECONDS,
+                "{service} sent an unparseable Retry-After header ({raw!r}), "
+                "using the default {default}s delay",
+                service=service_name,
+                raw=raw_value,
+                default=DEFAULT_RETRY_AFTER_SECONDS,
             )
             return DEFAULT_RETRY_AFTER_SECONDS
         if retry_at.tzinfo is None:
@@ -83,22 +84,23 @@ def _parse_retry_after(raw_value: str | None, *, service_name: str) -> float:
     # keep saving it.
     if not math.isfinite(delay):
         logger.warning(
-            "{} sent a Retry-After header ({!r}) resolving to a non-finite delay ({}), "
-            "using the default {}s delay",
-            service_name,
-            raw_value,
-            delay,
-            DEFAULT_RETRY_AFTER_SECONDS,
+            "{service} sent a Retry-After header ({raw!r}) resolving to a non-finite delay "
+            "({delay}), using the default {default}s delay",
+            service=service_name,
+            raw=raw_value,
+            delay=delay,
+            default=DEFAULT_RETRY_AFTER_SECONDS,
         )
         return DEFAULT_RETRY_AFTER_SECONDS
     bounded_delay = max(0.0, min(delay, MAX_RETRY_AFTER_SECONDS))
     if bounded_delay != delay:
         logger.warning(
-            "{} sent a Retry-After header ({!r}) resolving to {}s, clamping to [0, {}]",
-            service_name,
-            raw_value,
-            delay,
-            MAX_RETRY_AFTER_SECONDS,
+            "{service} sent a Retry-After header ({raw!r}) resolving to {delay}s, "
+            "clamping to [0, {max_delay}]",
+            service=service_name,
+            raw=raw_value,
+            delay=delay,
+            max_delay=MAX_RETRY_AFTER_SECONDS,
         )
     return bounded_delay
 
@@ -122,7 +124,11 @@ async def request_with_retry(
         retry_after = _parse_retry_after(
             response.headers.get("Retry-After"), service_name=service_name
         )
-        logger.warning("{} rate-limited request, retrying in {}s", service_name, retry_after)
+        logger.warning(
+            "{service} rate-limited request, retrying in {delay}s",
+            service=service_name,
+            delay=retry_after,
+        )
         await asyncio.sleep(retry_after)
     msg = f"{service_name} rate limit retries exhausted ({context})"
     logger.error(msg)

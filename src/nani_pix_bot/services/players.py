@@ -55,7 +55,11 @@ def get_or_create_player(
         session.add(player)
         # Flush before the ledger row so its FK target exists.
         session.flush()
-        logger.info("First time seeing player {} (@{})", telegram_user_id, username or "?")
+        logger.info(
+            "first time seeing player {player}",
+            player=describe_person(telegram_user_id, username=username),
+            player_id=telegram_user_id,
+        )
         if grant:
             starting_balance = economy_config.get_amounts(session)[
                 economy_config.EconomyKey.STARTING_BALANCE
@@ -80,7 +84,11 @@ def top_players(session: Session, *, limit: int) -> list[Player]:
     """Players with at least one win, ordered by wins descending."""
     stmt = select(Player).where(Player.wins > 0).order_by(Player.wins.desc()).limit(limit)
     players = list(session.scalars(stmt))
-    logger.debug("Leaderboard query returned {} player(s) (limit {})", len(players), limit)
+    logger.debug(
+        "leaderboard query returned {count} player(s) (limit {limit})",
+        count=len(players),
+        limit=limit,
+    )
     return players
 
 
@@ -97,5 +105,8 @@ def set_timezone(session: Session, telegram_user_id: int, tz: ZoneInfo) -> None:
     player = get_or_create_player(session, telegram_user_id)
     player.timezone = tz.key
     logger.info(
-        "{} set their timezone to {}", describe_player_id(session, telegram_user_id), tz.key
+        "{player} set their timezone to {timezone}",
+        player=describe_player_id(session, telegram_user_id),
+        player_id=telegram_user_id,
+        timezone=tz.key,
     )

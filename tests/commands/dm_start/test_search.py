@@ -1,11 +1,8 @@
-from collections.abc import Iterator
-from contextlib import contextmanager
 from typing import Literal, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from loguru import logger
 from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.error import TimedOut
@@ -20,6 +17,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     SEARCH_RETRY_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
 )
+from nani_pix_bot.commands.helpers.log_scope import bind_update
 from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -29,6 +27,7 @@ from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
+from tests.conftest import LogLine
 
 _FRIEREN = AniListResult(
     anilist_id=99,
@@ -109,13 +108,14 @@ def _create_setup_game(
     starter_id: int = 1,
     image: bytes | None = b"file123",
     source: Provider | Literal["manual"] = Provider.ANILIST,
-) -> None:
+) -> int:
     with session_factory() as session:
         session.add(Player(telegram_user_id=starter_id))
         session.commit()
         game = game_service.create_setup_game(session, starter_id=starter_id, original_image=image)
         game.source = source
         session.commit()
+        return game.id
 
 
 def _make_method_callback_update(*, data: str, user_id: int = 1) -> MagicMock:
@@ -125,20 +125,6 @@ def _make_method_callback_update(*, data: str, user_id: int = 1) -> MagicMock:
     update.callback_query.answer = AsyncMock()
     update.callback_query.edit_message_text = AsyncMock()
     return update
-
-
-@contextmanager
-def _captured_warnings(fmt: str = "{message}") -> Iterator[list[str]]:
-    """Every WARNING+ line the code under test emits — mirrors
-    test_screenshot_gallery.py's helper of the same name, since a silent
-    return is only acceptable on screen if it is *not* silent in the
-    logs (see #79/#95)."""
-    captured: list[str] = []
-    sink_id = logger.add(captured.append, level="WARNING", format=fmt)
-    try:
-        yield captured
-    finally:
-        logger.remove(sink_id)
 
 
 def _make_callback_update(
@@ -543,7 +529,7 @@ async def test_pick_callback_handler_retry_offers_a_way_back(session_factory) ->
 
 
 async def test_pick_callback_handler_says_so_when_the_setup_row_is_gone(
-    session_factory, monkeypatch: pytest.MonkeyPatch
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
 ) -> None:
     """The one remaining silent-drop site from issue #79's sweep (#95):
     unlike the other five call sites of _reject_stale_tap, this
@@ -555,16 +541,17 @@ async def test_pick_callback_handler_says_so_when_the_setup_row_is_gone(
     id."""
     monkeypatch.setattr(search.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
     update = _make_callback_update(data="anilist_pick:99", user_id=7)
+    update.effective_user = update.callback_query.from_user
     context = _make_callback_context(session_factory)  # no SETUP row for starter 7 at all
+    await bind_update(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    with _captured_warnings() as warnings:
-        await search.pick_callback_handler(
-            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-        )
+    await search.pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
 
-    assert len(warnings) == 1
-    assert "7" in warnings[0]
-    assert "anilist_pick:99" in warnings[0]
+    [warning] = [line for line in log_records if line.level == "WARNING"]
+    assert warning.extra["user_id"] == 7
+    assert "anilist_pick:99" in warning.message
     update.callback_query.answer.assert_awaited_once_with(
         i18n.t("dm_start.setup_gone", "EN"), show_alert=True
     )
@@ -887,17 +874,20 @@ async def test_search_text_handler_offers_a_way_back_when_nothing_is_found(
 #
 # At LOG_LEVEL=INFO the log alone has to tell the story of a setup: who
 # picked what, searched for what, and which buttons they tapped. These
-# pin the level and the wording that makes `grep "Game N"` work.
+# pin the level, the wording, and (issue #230) the game the line is about,
+# which travels as a structured field rather than in the text.
 
 
-def _info_lines(records: list[tuple[str, str]]) -> list[str]:
-    return [message for level, message in records if level == "INFO"]
+def _info(log_records: list[LogLine], message: str) -> LogLine:
+    """The one INFO line with exactly this message."""
+    (line,) = [r for r in log_records if r.level == "INFO" and r.message == message]
+    return line
 
 
 async def test_method_pick_logs_the_starter_and_method_at_info(
-    session_factory, records: list[tuple[str, str]]
+    session_factory, log_records: list[LogLine]
 ) -> None:
-    _create_setup_game(session_factory, starter_id=1)
+    game_id = _create_setup_game(session_factory, starter_id=1)
     update = _make_method_callback_update(data=SHIKIMORI_METHOD_CALLBACK_DATA, user_id=1)
     update.callback_query.from_user.username = "alice"
     context = _make_context(session_factory)
@@ -906,32 +896,35 @@ async def test_method_pick_logs_the_starter_and_method_at_info(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    assert any(
-        line.startswith("Game ") and "1 (@alice) picked identification method shikimori" in line
-        for line in _info_lines(records)
-    )
+    line = _info(log_records, "picked identification method shikimori")
+    assert line.extra["game_id"] == game_id
+    assert line.extra["method"] == Provider.SHIKIMORI
 
 
 async def test_method_pick_with_no_setup_row_logs_a_warning(
-    session_factory, records: list[tuple[str, str]]
+    session_factory, log_records: list[LogLine]
 ) -> None:
-    """Used to be a bare `return` — the tap did nothing and said nothing."""
+    """Used to be a bare `return` — the tap did nothing and said nothing.
+    No game to name, so the update's own log context names the tapper."""
     update = _make_method_callback_update(data=ANILIST_METHOD_CALLBACK_DATA, user_id=7)
     update.callback_query.from_user.username = "bob"
+    update.effective_user = update.callback_query.from_user
     context = _make_context(session_factory)  # no SETUP row at all
+    await bind_update(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
     await search.method_pick_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    warnings = [message for level, message in records if level == "WARNING"]
-    assert any("7 (@bob)" in line and "anilist" in line for line in warnings)
+    [warning] = [line for line in log_records if line.level == "WARNING"]
+    assert "anilist" in warning.message
+    assert (warning.extra["user_id"], warning.extra["username"]) == (7, "bob")
 
 
 async def test_a_search_logs_its_query_and_result_count_at_info_even_when_empty(
-    session_factory, monkeypatch: pytest.MonkeyPatch, records: list[tuple[str, str]]
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
 ) -> None:
-    _create_setup_game(session_factory, starter_id=1)
+    game_id = _create_setup_game(session_factory, starter_id=1)
     monkeypatch.setattr(search.anilist, "search", AsyncMock(return_value=[]))
     update = _make_text_update(user_id=1, text="frieren")
     update.message.from_user.id = 1
@@ -943,19 +936,17 @@ async def test_a_search_logs_its_query_and_result_count_at_info_even_when_empty(
 
     await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    assert any(
-        line.startswith("Game ")
-        and "1 (@alice) searched anilist for 'frieren' — 0 result(s)" in line
-        for line in _info_lines(records)
-    )
+    line = _info(log_records, "searched anilist for 'frieren' — 0 result(s)")
+    assert line.extra["game_id"] == game_id
+    assert (line.extra["query"], line.extra["count"]) == ("frieren", 0)
 
 
 async def test_a_result_pick_logs_the_picked_title_and_provider_id_at_info(
-    session_factory, monkeypatch: pytest.MonkeyPatch, records: list[tuple[str, str]]
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
 ) -> None:
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     monkeypatch.setattr(search.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
-    _create_setup_game(session_factory, starter_id=1)
+    game_id = _create_setup_game(session_factory, starter_id=1)
     update = _make_callback_update(data="anilist_pick:99", user_id=1)
     update.callback_query.from_user.username = "alice"
     context = _make_callback_context(session_factory)
@@ -964,15 +955,13 @@ async def test_a_result_pick_logs_the_picked_title_and_provider_id_at_info(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    assert any(
-        line.startswith("Game ")
-        and '1 (@alice) picked "Frieren: Beyond Journey\'s End" (anilist 99)' in line
-        for line in _info_lines(records)
-    )
+    line = _info(log_records, 'picked "Frieren: Beyond Journey\'s End" (anilist 99)')
+    assert line.extra["game_id"] == game_id
+    assert line.extra["provider_id"] == 99
 
 
-async def test_none_of_these_logs_at_info(session_factory, records: list[tuple[str, str]]) -> None:
-    _create_setup_game(session_factory, starter_id=1)
+async def test_none_of_these_logs_at_info(session_factory, log_records: list[LogLine]) -> None:
+    game_id = _create_setup_game(session_factory, starter_id=1)
     update = _make_callback_update(data=SEARCH_RETRY_CALLBACK_DATA, user_id=1)
     update.callback_query.from_user.username = "alice"
     context = _make_callback_context(session_factory)
@@ -981,16 +970,13 @@ async def test_none_of_these_logs_at_info(session_factory, records: list[tuple[s
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    assert any(
-        line.startswith("Game ") and '1 (@alice) tapped "None of these"' in line
-        for line in _info_lines(records)
-    )
+    assert _info(log_records, 'tapped "None of these"').extra["game_id"] == game_id
 
 
 async def test_text_typed_on_the_preview_is_logged_as_ignored_at_info(
-    session_factory, records: list[tuple[str, str]]
+    session_factory, log_records: list[LogLine]
 ) -> None:
-    _create_setup_game(session_factory, starter_id=1)
+    game_id = _create_setup_game(session_factory, starter_id=1)
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()
         game.setup_step = SetupStep.CONFIRMING
@@ -1001,5 +987,9 @@ async def test_text_typed_on_the_preview_is_logged_as_ignored_at_info(
 
     await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    assert any("1 (@alice) typed 'hello?' at confirming" in line for line in _info_lines(records))
+    line = _info(
+        log_records,
+        "typed 'hello?' at confirming — ignored, this step takes a button or a photo",
+    )
+    assert line.extra["game_id"] == game_id
     update.message.reply_text.assert_not_awaited()

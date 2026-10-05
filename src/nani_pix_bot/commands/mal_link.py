@@ -11,7 +11,6 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.mal_config import mal_configured
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
@@ -35,9 +34,7 @@ async def linkmal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # bot with no MAL_TOKEN_ENCRYPTION_KEY, where storing the tokens
         # then blew up — with their single-use code already spent.
         if not mal_configured(context.bot_data):
-            logger.warning(
-                "{} ran /linkmal but MAL account linking isn't configured", describe_user(user)
-            )
+            logger.warning("ran /linkmal but MAL account linking isn't configured")
             await update.message.reply_text(i18n.t("mal_link.not_configured", lang))
             return
 
@@ -51,7 +48,7 @@ async def linkmal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
     schedule_mal_link_expiry(context.job_queue, user.id)
-    logger.info("{} started a /linkmal attempt", describe_user(user))
+    logger.info("started a /linkmal attempt")
     await update.message.reply_text(i18n.t("mal_link.authorize_prompt", lang, url=authorize_url))
 
 
@@ -71,5 +68,5 @@ async def unlinkmal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # authorization code and answered with a rejection.
         mal_link.delete_pending_link(session, user.id)
 
-    logger.info("{} ran /unlinkmal — MAL link and any pending attempt removed", describe_user(user))
+    logger.info("ran /unlinkmal — MAL link and any pending attempt removed")
     await update.message.reply_text(i18n.t("mal_link.unlinked", lang))

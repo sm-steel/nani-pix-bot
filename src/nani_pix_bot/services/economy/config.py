@@ -99,4 +99,4 @@ def set_amount(session: Session, key: EconomyKey, value: int) -> None:
         session.add(CurrencyConfig(key=key.value, value=value))
     else:
         row.value = value
-    logger.debug("Currency config {} set to {}", key, value)
+    logger.debug("currency config {key} set to {value}", key=key.value, value=value)

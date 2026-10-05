@@ -17,6 +17,17 @@ from nani_pix_bot.services.settings import stage_config
 
 
 @dataclass(frozen=True)
+class PostedLog:
+    """The INFO line logged once a stage post is confirmed sent, e.g.
+    "posted stage 2/5 image (320px wide)" — says which stage, which the
+    generic post helpers in jobs/timers/current_image.py can't know."""
+
+    stage: str
+    game_id: int
+    width: int | None = None
+
+
+@dataclass(frozen=True)
 class Announcement:
     """What a WON/STAGE_ADVANCED/TURN_ADVANCED/UNSOLVED outcome needs to
     post once its session has committed — captured as plain values (not
@@ -33,10 +44,7 @@ class Announcement:
     photo: bytes | None = None
     photos: tuple[bytes, bytes] | None = None
     is_stage_post: bool = False
-    # Logged at INFO once the post is confirmed sent, e.g. "Game 5: posted
-    # stage 2/5 image" — says which stage, which the generic post helpers
-    # in jobs/timers/current_image.py can't know.
-    posted_log: str | None = None
+    posted_log: PostedLog | None = None
 
 
 def require_original_image(game: Game, situation: str) -> bytes:
@@ -86,9 +94,10 @@ def prepare_stage_advanced_announcement(
         photo=pixelated,
         caption=caption,
         is_stage_post=True,
-        posted_log=(
-            f"Game {game.id}: posted {game_service.stage_label(game.current_stage)} image"
-            f" ({target_width}px wide)"
+        posted_log=PostedLog(
+            stage=game_service.stage_label(game.current_stage),
+            game_id=game.id,
+            width=target_width,
         ),
     )
 
@@ -102,8 +111,20 @@ async def send_announcement(
     complexity down, same reasoning as require_original_image above."""
     sent = await _send(context, session_factory, announcement)
     if sent is not None and announcement.posted_log is not None:
-        logger.info("{}", announcement.posted_log)
+        _log_posted(announcement.posted_log)
     return sent
+
+
+def _log_posted(posted: PostedLog) -> None:
+    if posted.width is None:
+        logger.info("posted {stage} images", stage=posted.stage, game_id=posted.game_id)
+    else:
+        logger.info(
+            "posted {stage} image ({width}px wide)",
+            stage=posted.stage,
+            width=posted.width,
+            game_id=posted.game_id,
+        )
 
 
 async def _send(

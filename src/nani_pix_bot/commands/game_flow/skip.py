@@ -6,7 +6,6 @@ from telegram import Update
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -30,7 +29,7 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         if game_service.active_or_setup_game(session) is not None:
-            logger.warning("{} tried /skip while a game is running", describe_user(user))
+            logger.warning("tried /skip while a game is running")
             await message.reply_text(i18n.t("skip.game_running", lang))
             return
 
@@ -38,16 +37,16 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         current = turn_state_check.next_starter_id if turn_state_check is not None else None
         if current is not None and current != user.id:
             logger.warning(
-                "{} tried /skip out of turn (designated: {})",
-                describe_user(user),
-                players.describe_player_id(session, current),
+                "tried /skip out of turn (designated: {next_starter})",
+                next_starter=players.describe_player_id(session, current),
+                next_starter_id=current,
             )
             await message.reply_text(i18n.t("skip.not_your_turn", lang))
             return
 
         turn_state: TurnState | None = None
         if not context.args:
-            turn_state = _open_turn(context, session, actor=describe_user(user))
+            turn_state = _open_turn(context, session)
             reply_key, reply_kwargs = "skip.opened", {}
         else:
             target_username = await _pass_turn(message, context, session, lang, context.args[0])
@@ -63,11 +62,11 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         await message.reply_text(i18n.t(reply_key, lang, **reply_kwargs))
     except TelegramError as exc:
-        logger.warning("Failed to send the /skip confirmation: {}", exc)
+        logger.warning("failed to send the /skip confirmation: {error}", error=exc)
 
 
-def _open_turn(context: ContextTypes.DEFAULT_TYPE, session, *, actor: str) -> TurnState:
-    turn_state = game_service.set_next_starter(session, None, reason=f"/skip by {actor}")
+def _open_turn(context: ContextTypes.DEFAULT_TYPE, session) -> TurnState:
+    turn_state = game_service.set_next_starter(session, None, reason="/skip")
     timeout_module.cancel_turn_timers(context.job_queue)
     return turn_state
 
@@ -84,9 +83,8 @@ async def _pass_turn(
     target = players.find_player_by_username(session, target_username)
     if target is None:
         logger.warning(
-            "{} tried /skip to unknown username {!r}",
-            describe_user(message.from_user),
-            target_username,
+            "tried /skip to unknown username {target_username!r}",
+            target_username=target_username,
         )
         # Same handle-less window as correct.py's identical lookup — see
         # the comment there for why the fallback drops the sentence
@@ -105,18 +103,13 @@ async def _pass_turn(
         # turn-expiry timer), but still not a turn worth handing to it
         # explicitly.
         logger.warning(
-            "{} tried /skip to the bot itself (@{})",
-            describe_user(message.from_user),
-            target_username,
+            "tried /skip to the bot itself (@{target_username})",
+            target_username=target_username,
         )
         await message.reply_text(i18n.t("skip.cannot_target_bot", lang))
         return None
 
-    turn_state = game_service.set_next_starter(
-        session,
-        target.telegram_user_id,
-        reason=f"/skip @{target_username} by {describe_user(message.from_user)}",
-    )
+    turn_state = game_service.set_next_starter(session, target.telegram_user_id, reason="/skip")
     timeout_module.cancel_idle_autostart(context.job_queue)
     timeout_module.schedule_turn_timers(context.job_queue, turn_state)
     return target_username

@@ -53,4 +53,4 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
     ]
     await bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
     await bot.set_my_commands(group_commands, scope=BotCommandScopeChat(chat_id=group_chat_id))
-    logger.info("Command menu refreshed (lang={})", lang)
+    logger.info("command menu refreshed (lang={language})", language=lang)

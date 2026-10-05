@@ -16,7 +16,6 @@ from loguru import logger
 from telegram import InputMediaPhoto, Message, Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.keyboards import stop_confirm_keyboard
 from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
@@ -97,10 +96,9 @@ def _parse_single_stage(args: list[str]) -> dict[PixelStage, tuple[int, int]] | 
 
 async def _reply_usage(message: Message, lang: str, command: str, args: list[str]) -> None:
     logger.info(
-        "Admin {} sent invalid /{} args {!r} — replied with usage",
-        describe_user(message.from_user),
-        command,
-        args,
+        "sent invalid /{command} args {args!r} — replied with usage",
+        command=command,
+        args=args,
     )
     await message.reply_text(i18n.t(_USAGE_KEYS[command], lang))
 
@@ -118,7 +116,7 @@ async def _admin_dm(
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
     if not await _is_admin(context, user.id):
-        logger.warning("Non-admin {} tried /{}", describe_user(user), command)
+        logger.warning("non-admin tried /{command}", command=command)
         await message.reply_text(i18n.t("commands.admins_only", lang))
         return None
     return message, lang
@@ -132,7 +130,7 @@ async def stageconfig_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     with session_scope(context.bot_data["session_factory"]) as session:
         config = stage_config.get_stage_configs(session)
 
-    logger.info("Admin {} viewed /stageconfig", describe_user(message.from_user))
+    logger.info("viewed /stageconfig")
     await message.reply_text(_render_table(lang, config), parse_mode="HTML")
 
 
@@ -178,10 +176,9 @@ async def _apply_stage_changes(
         running = game_service.active_or_setup_game(session)
         if running is not None:
             logger.warning(
-                "Admin {}'s stage config edit blocked — game {} is {}",
-                describe_user(message.from_user),
-                running.id,
-                running.status,
+                "stage config edit blocked — a game is {status}",
+                status=running.status,
+                game_id=running.id,
             )
             await message.reply_text(
                 i18n.t("stageconfig.game_running", lang),
@@ -198,9 +195,8 @@ async def _apply_stage_changes(
         config = stage_config.get_stage_configs(session)
 
     logger.info(
-        "Admin {} changed stage config: {}",
-        describe_user(message.from_user),
-        ", ".join(
+        "changed stage config: {changes}",
+        changes=", ".join(
             f"{game_service.stage_label(stage)} width={width} limit={limit}"
             for stage, (width, limit) in changes.items()
         ),
@@ -222,7 +218,9 @@ async def _send_preview(
         media = []
         for index, image_path in enumerate(_EXAMPLE_IMAGES):
             if not image_path.exists():
-                logger.warning("stageconfig preview: missing example image {}", image_path)
+                logger.warning(
+                    "stageconfig preview: missing example image {path}", path=str(image_path)
+                )
                 continue
             pixelated = pixelate(image_path.read_bytes(), width, DEFAULT_ALGORITHM)
             caption = (

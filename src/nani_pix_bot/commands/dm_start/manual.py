@@ -14,7 +14,6 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     send_screenshot_picker_prompt,
     stage_screenshot_picker,
 )
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
@@ -27,21 +26,13 @@ async def _manual_title_step(message, context: ContextTypes.DEFAULT_TYPE, lang: 
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
-            logger.warning(
-                "{} typed a manual title with no SETUP game left — ignoring", describe_user(user)
-            )
+            logger.warning("typed a manual title with no SETUP game left — ignoring")
             return
         if title:
             setup_game.title_english = title
-            logger.info(
-                "Game {}: {} entered manual title {!r}", setup_game.id, describe_user(user), title
-            )
+            logger.info("entered manual title {title!r}", title=title, game_id=setup_game.id)
         else:
-            logger.info(
-                "Game {}: {} sent a blank manual title — asking again",
-                setup_game.id,
-                describe_user(user),
-            )
+            logger.info("sent a blank manual title — asking again", game_id=setup_game.id)
 
     reply_key = "dm_start.ask_synonyms" if title else "dm_start.ask_manual_title"
     await message.reply_text(i18n.t(reply_key, lang))
@@ -59,26 +50,18 @@ async def _manual_synonyms_step(
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         title = setup_game.title_english if setup_game is not None else None
         if setup_game is None or title is None:
-            logger.warning(
-                "{} typed manual synonyms with no SETUP game (or no title) left — ignoring",
-                describe_user(user),
-            )
+            logger.warning("typed manual synonyms with no SETUP game (or no title) left — ignoring")
             return
         if not synonyms:
-            logger.info(
-                "Game {}: {} sent no usable synonym — asking again",
-                setup_game.id,
-                describe_user(user),
-            )
+            logger.info("sent no usable synonym — asking again", game_id=setup_game.id)
             await message.reply_text(i18n.t("dm_start.synonyms_required", lang))
             return
         game_service.stage_manual_entry(setup_game, title=title, synonyms=synonyms)
         logger.info(
-            "Game {}: {} entered synonyms {!r} for manual title {!r}",
-            setup_game.id,
-            describe_user(user),
-            synonyms,
-            title,
+            "entered synonyms {synonyms!r} for manual title {title!r}",
+            synonyms=synonyms,
+            title=title,
+            game_id=setup_game.id,
         )
         has_image = setup_game.original_image is not None
         if has_image:

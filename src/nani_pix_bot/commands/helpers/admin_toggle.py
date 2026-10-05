@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
@@ -56,17 +55,16 @@ def make_admin_toggle_command(
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
             if not await is_group_admin(context.bot, group_chat_id, user.id):
-                logger.warning("Non-admin {} tried /{}", describe_user(user), config.command_name)
+                logger.warning("non-admin tried /{command}", command=config.command_name)
                 await message.reply_text(i18n.t("commands.admins_only", lang))
                 return
 
         args = context.args or []
         if len(args) != 1 or args[0].lower() not in ("on", "off"):
             logger.info(
-                "Admin {} sent /{} with bad args {!r} — replied with usage",
-                describe_user(user),
-                config.command_name,
-                args,
+                "sent /{command} with bad args {args!r} — replied with usage",
+                command=config.command_name,
+                args=args,
             )
             await message.reply_text(i18n.t(config.usage_key, lang))
             return
@@ -74,9 +72,7 @@ def make_admin_toggle_command(
 
         with session_scope(session_factory) as session:
             config.setter(session, enabled)
-        logger.info(
-            "Admin {} ran /{} {}", describe_user(user), config.command_name, args[0].lower()
-        )
+        logger.info("ran /{command} {state}", command=config.command_name, state=args[0].lower())
 
         await message.reply_text(
             i18n.t(config.enabled_key, lang) if enabled else i18n.t(config.disabled_key, lang)

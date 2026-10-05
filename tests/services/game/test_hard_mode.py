@@ -257,7 +257,7 @@ def test_record_hard_mode_guess_logs_a_wrong_guess_at_info(
 
     assert (
         "INFO",
-        f"Game {game.id}: 2 (@bob) guessed 'naruto' — wrong at hard-mode turn 1/2 (1/1)",
+        "guessed 'naruto' — wrong at hard-mode turn 1/2 (1/1)",
     ) in records
 
 
@@ -272,5 +272,5 @@ def test_record_hard_mode_guess_logs_a_correct_guess_at_info(
 
     assert (
         "INFO",
-        f"Game {game.id}: 2 (@bob) guessed 'frieren' — CORRECT at hard-mode turn 2/2",
+        "guessed 'frieren' — CORRECT at hard-mode turn 2/2",
     ) in records

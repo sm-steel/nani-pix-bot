@@ -21,6 +21,14 @@ class LedgerEntry:
     game_id: int | None = None
     reverses_id: int | None = None
 
+    def log_fields(self) -> dict[str, object]:
+        """`reason`, plus `game_id` when set: without one the log context's
+        game stands, rather than being overridden with None."""
+        fields: dict[str, object] = {"reason": self.reason.value}
+        if self.game_id is not None:
+            fields["game_id"] = self.game_id
+        return fields
+
 
 @dataclass(frozen=True)
 class Party:
@@ -72,16 +80,14 @@ def transfer(
         msg = f"can't transfer between the same party ({source.type}, {source.player_id})"
         raise ValueError(msg)
     if source.player is not None and source.player.currency < amount:
-        # Local import: players imports this module at its top.
-        from nani_pix_bot.services.players import describe_person
-
+        # Every player-side source is the paying player's own command (a
+        # clue, /sharpen, /bounty, /tip), so the log context names them.
         logger.warning(
-            "{}{} can't afford {} 💠 ({}): balance {}",
-            "" if entry.game_id is None else f"Game {entry.game_id}: ",
-            describe_person(source.player.telegram_user_id, username=source.player.username),
-            amount,
-            entry.reason,
-            source.player.currency,
+            "can't afford {amount} 💠 ({reason}): balance {balance}",
+            amount=amount,
+            balance=source.player.currency,
+            payer_id=source.player.telegram_user_id,
+            **entry.log_fields(),
         )
         raise InsufficientCurrencyError(source.player.currency, amount)
     if source.player is not None:
@@ -100,14 +106,13 @@ def transfer(
     )
     session.add(row)
     logger.debug(
-        "Transfer {} 💠: {} {} -> {} {} ({}, game {})",
-        amount,
-        source.type,
-        source.player_id,
-        target.type,
-        target.player_id,
-        entry.reason,
-        entry.game_id,
+        "transfer {amount} 💠: {from_type} {from_id} -> {to_type} {to_id} ({reason})",
+        amount=amount,
+        from_type=source.type.value,
+        from_id=source.player_id,
+        to_type=target.type.value,
+        to_id=target.player_id,
+        **entry.log_fields(),
     )
     return row
 
