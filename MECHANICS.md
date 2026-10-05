@@ -550,8 +550,8 @@ A game ends in a win one of two ways:
 On a win, the bot:
 1. Reveals the original (un-pixelated) screenshot together with the
    anime's title, naming the winner by name in the caption.
-2. Sets `status → WON`, records `winner_id`, and increments that player's
-   `players.wins`.
+2. Sets `status → WON`, records `winner_id` and `ended_at`, and increments
+   that player's `players.wins`.
 3. Cancels the game's pending 2-day timeout job, and its inactivity
    nudge/auto-advance timers.
 4. Sets `turn_state.next_starter_id` to the winner — it's their turn to
@@ -576,7 +576,7 @@ A game ends unsolved one of two ways, handled identically:
 - **Timeout**: see below.
 
 Either way, the bot reveals the original screenshot with the anime's
-title, sets `status → UNSOLVED`, and performs the same `original_image`
+title, sets `status → UNSOLVED` (stamping `ended_at`), and performs the same `original_image`
 cleanup described in "Winning" above. `turn_state.next_starter_id` is left
 untouched — an unsolved game doesn't hand anyone a forced turn. If it was
 already `null` (open to anyone), it stays that way; if someone was
@@ -697,7 +697,10 @@ needs a live session to move the group's pin.
 
 Usable only by whoever `turn_state.next_starter_id` currently names, and
 only while no game is `SETUP`/`ACTIVE` (it governs who may *start* the
-next game, not anything mid-game):
+next game, not anything mid-game). While the turn is open to anyone
+(`next_starter_id` is `null` — after an unsolved/timeout ending, a bare
+`/skip`, a turn expiry, or `/stop`), it names nobody, so `/skip` is refused
+for everyone: there's no turn to hand off.
 
 - `/skip` (no argument) sets `next_starter_id` to `null` — the turn opens
   up, and anyone can DM the bot a screenshot to start the next game.

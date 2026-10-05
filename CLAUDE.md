@@ -90,7 +90,20 @@ uv run pytest            # test
 uv run ruff check .      # lint
 uv run ruff format .     # format
 uv run ty check          # type check
+uv run vulture           # dead code
 ```
+
+**[vulture](https://github.com/jendrikseipp/vulture) finds dead code**:
+unused functions, classes, attributes and model columns, which
+`ruff`/`ty`/`qlty` don't look for. `Game.ended_at` sat unwritten in the
+schema from the first migration until issue #239 because nothing checked.
+It's a `uv` dev dependency; `[tool.vulture]` in `pyproject.toml` points it
+at `src/` plus `vulture_whitelist.py`. **The whitelist is an exclusion
+list, so the same rule as below applies**: an entry goes in only when the
+user agrees to it, either as a false positive (code really used, in a way
+vulture can't see) or as something kept on purpose. Everything else it
+reports gets removed or wired up. A column written for the record and
+never read in code (like `ended_at`) still needs that agreement.
 
 Deployment is Docker-only (see `README.md`) — no bare-metal installs on the
 target VPS, including the database.
@@ -152,9 +165,9 @@ be a false positive on inspection (not just inconvenient), say so
 explicitly and get confirmation before touching the config — don't default
 to loosening it.
 
-**All five checks — `ruff check`, `ruff format --check`, `ty check`, `qlty
-smells` (complexity + duplication), `qlty check --filter trufflehog`
-(secret scan) — run as a git pre-commit hook** via
+**All six checks — `ruff check`, `ruff format --check`, `ty check`,
+`vulture` (dead code), `qlty smells` (complexity + duplication), `qlty
+check --filter trufflehog` (secret scan) — run as a git pre-commit hook** via
 [pre-commit](https://pre-commit.com) (`.pre-commit-config.yaml`, installed
 as a `uv` dev dependency — `uv run pre-commit install` sets up the hook
 once per clone). `qlty smells` itself always exits 0 regardless of
@@ -277,9 +290,10 @@ kwargs as top-level keys.
   id: `"won by {winner}", winner=describe_player_id(...), winner_id=...`
   (likewise `target`, `recipient`, `next_starter`, `player`). Never reuse
   `user_id`/`username`/`user_name` for anyone but the triggering user.
-- People read as `id (@username)` via `commands/helpers/actor.py::
-  describe_user` / `services/players.py::describe_player_id`; stages as
-  `stage 2/5` via `services/game/state.py::stage_label`.
+- Other people read as `id (@username)` via `services/players.py::
+  describe_player_id` (or `describe_person` when the username is already
+  in hand); the triggering user needs neither, the context names them.
+  Stages read as `stage 2/5` via `services/game/state.py::stage_label`.
 - Say why: `advance_stage(game, reason=...)`, `force_unsolved(game,
   cause=...)` and `set_next_starter(..., reason=...)` take one for exactly
   this.
@@ -322,8 +336,8 @@ tests/path/to/test_thing.py` while iterating). A change isn't finished if
 any of the four fail — don't leave known ruff/ty findings for later or
 describe work as complete while they're still red.
 
-The first three (not `pytest`) plus `qlty smells` and `qlty check --filter
-trufflehog` also run automatically as a git pre-commit hook (see Tooling
+The first three (not `pytest`) plus `vulture`, `qlty smells` and `qlty
+check --filter trufflehog` also run automatically as a git pre-commit hook (see Tooling
 above) — committing re-verifies them regardless, but running them yourself
 first means the commit doesn't just fail on the first attempt.
 

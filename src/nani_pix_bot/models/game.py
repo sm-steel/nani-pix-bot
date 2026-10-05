@@ -138,6 +138,10 @@ class Game(Base):
     # prompt-turn currency bonus compares it with created_at (services/economy/earning.py).
     turn_received_at: Mapped[datetime | None] = mapped_column(default=None)
     scheduled_end_at: Mapped[datetime | None] = mapped_column(default=None)
+    # When the game reached WON or UNSOLVED — set by services/game/state.py's
+    # _win()/force_unsolved(), which every ending goes through. NULL while
+    # SETUP/ACTIVE, and for games that ended before it was first written
+    # (issue #239). A /stop deletes the row instead.
     ended_at: Mapped[datetime | None] = mapped_column(default=None)
     # created_at + 1h — see services/game/state.py's SETUP_ABANDON_DELAY. Only
     # meaningful while status is SETUP.

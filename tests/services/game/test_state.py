@@ -1334,3 +1334,45 @@ def test_create_setup_game_copies_turn_received_at(session: Session) -> None:
     game = state.create_setup_game(session, starter_id=1)
 
     assert game.turn_received_at == turn_state.turn_received_at
+
+
+def _assert_ended_between(game: Game, before: datetime, after: datetime) -> None:
+    assert game.ended_at is not None
+    # SQLite hands datetimes back naive; every timestamp here is UTC.
+    ended_at = game.ended_at.replace(tzinfo=UTC)
+    assert before <= ended_at <= after
+
+
+def test_win_records_when_the_game_ended(session: Session) -> None:
+    """Issue #239: ended_at sat in the schema from day one and was never
+    written. Every win goes through _win()."""
+    game = _active_game(session)
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+    assert game.ended_at is None
+
+    before = datetime.now(UTC)
+    game_service.force_win(session, game, winner_id=2)
+    session.commit()
+
+    _assert_ended_between(game, before, datetime.now(UTC))
+
+
+def test_force_unsolved_records_when_the_game_ended(session: Session) -> None:
+    game = _active_game(session)
+
+    before = datetime.now(UTC)
+    game_service.force_unsolved(game, cause="test")
+    session.commit()
+
+    _assert_ended_between(game, before, datetime.now(UTC))
+
+
+def test_final_stage_exhaustion_records_when_the_game_ended(session: Session) -> None:
+    game = _active_game(session, stage=PixelStage.STAGE_5, wrong_guess_count=7)
+
+    before = datetime.now(UTC)
+    game_service.advance_stage(game, reason="test")
+    session.commit()
+
+    _assert_ended_between(game, before, datetime.now(UTC))

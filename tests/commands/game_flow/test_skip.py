@@ -168,9 +168,73 @@ async def test_skip_command_bare_schedules_idle_autostart(session_factory) -> No
     assert skip_command_module.timeout_module.IDLE_AUTOSTART_JOB_NAME in names
 
 
+async def test_skip_command_rejects_when_the_turn_is_open(session_factory, log_records) -> None:
+    """MECHANICS.md's "Turn handoff": /skip is usable only by whoever
+    next_starter_id names. An open turn names nobody, so nobody may hand
+    it out (issue #235)."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(Player(telegram_user_id=2, username="friend"))
+        session.add(TurnState(id=1, next_starter_id=None))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@friend"])
+    context = _make_context(session_factory, args=["@friend"])
+
+    await skip_command_module.skip_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_awaited_once()
+    assert "nobody" in update.message.reply_text.await_args.args[0].lower()
+    with session_factory() as session:
+        turn_state = session.get(TurnState, 1)
+        assert turn_state is not None
+        assert turn_state.next_starter_id is None
+    context.job_queue.run_once.assert_not_called()
+    assert any(line.level == "WARNING" and "turn is open" in line.message for line in log_records)
+
+
+async def test_skip_command_rejects_when_no_turn_state_exists_yet(session_factory) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(Player(telegram_user_id=2, username="friend"))
+        session.commit()
+
+    update = _make_update(user_id=1, args=["@friend"])
+    context = _make_context(session_factory, args=["@friend"])
+
+    await skip_command_module.skip_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_awaited_once()
+    with session_factory() as session:
+        assert session.get(TurnState, 1) is None
+
+
+async def test_skip_command_bare_rejects_when_the_turn_is_open(session_factory) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=None))
+        session.commit()
+
+    update = _make_update(user_id=1, args=[])
+    context = _make_context(session_factory, args=[])
+
+    await skip_command_module.skip_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_text.assert_awaited_once()
+    assert "nobody" in update.message.reply_text.await_args.args[0].lower()
+    context.job_queue.run_once.assert_not_called()
+
+
 async def test_skip_command_with_username_hands_off_the_turn(session_factory) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
         session.add(Player(telegram_user_id=2, username="friend"))
         session.commit()
 
@@ -191,6 +255,7 @@ async def test_skip_command_with_username_hands_off_the_turn(session_factory) ->
 async def test_skip_command_with_username_schedules_the_turn_timers(session_factory) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
         session.add(Player(telegram_user_id=2, username="friend"))
         session.commit()
 
@@ -211,6 +276,7 @@ async def test_skip_command_with_username_cancels_any_pending_idle_autostart(
 ) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
         session.add(Player(telegram_user_id=2, username="friend"))
         session.commit()
 
@@ -230,6 +296,7 @@ async def test_skip_passes_the_turn_even_when_the_confirmation_reply_times_out(
 ) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
         session.add(Player(telegram_user_id=2, username="friend"))
         session.commit()
 
@@ -250,6 +317,7 @@ async def test_skip_passes_the_turn_even_when_the_confirmation_reply_times_out(
 async def test_skip_command_rejects_an_unknown_username(session_factory) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
         session.commit()
 
     update = _make_update(user_id=1, args=["@stranger"])
@@ -266,7 +334,9 @@ async def test_skip_command_rejects_an_unknown_username(session_factory) -> None
     # auto-linked by Telegram, so no parse_mode is involved.
     assert "@nani_pix_bot" in text
     with session_factory() as session:
-        assert session.get(TurnState, 1) is None
+        turn_state = session.get(TurnState, 1)
+        assert turn_state is not None
+        assert turn_state.next_starter_id == 1
 
 
 async def test_skip_command_rejects_targeting_the_bot_itself(session_factory) -> None:
@@ -276,6 +346,7 @@ async def test_skip_command_rejects_targeting_the_bot_itself(session_factory) ->
     See MECHANICS.md's "Bot-initiated games"."""
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
         session.add(Player(telegram_user_id=999, username="nani_pix_bot"))
         session.commit()
 
@@ -289,7 +360,9 @@ async def test_skip_command_rejects_targeting_the_bot_itself(session_factory) ->
 
     update.message.reply_text.assert_awaited_once()
     with session_factory() as session:
-        assert session.get(TurnState, 1) is None
+        turn_state = session.get(TurnState, 1)
+        assert turn_state is not None
+        assert turn_state.next_starter_id == 1
 
 
 async def test_skip_command_drops_the_mention_when_the_bot_has_no_handle_yet(
@@ -303,6 +376,7 @@ async def test_skip_command_drops_the_mention_when_the_bot_has_no_handle_yet(
     the same one with a hole in it (#81)."""
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
         session.commit()
 
     update = _make_update(user_id=1, args=["@stranger"])
