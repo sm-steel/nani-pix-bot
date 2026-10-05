@@ -29,7 +29,7 @@ def set_language(session: Session, language: str) -> None:
         settings.language = language
     # DEBUG: the admin command that calls this logs the change at INFO,
     # naming the admin.
-    logger.debug("Bot language set to {}", language)
+    logger.debug("bot language set to {language}", language=language)
 
 
 def get_games_enabled(session: Session) -> bool:
@@ -48,7 +48,7 @@ def set_games_enabled(session: Session, enabled: bool) -> None:
         settings.games_enabled = enabled
     # DEBUG: the admin command that calls this logs the change at INFO,
     # naming the admin.
-    logger.debug("Starting new games {}", "enabled" if enabled else "disabled")
+    logger.debug("starting new games {state}", state="enabled" if enabled else "disabled")
 
 
 DEFAULT_AUTOSTART_ENABLED = False
@@ -70,7 +70,7 @@ def set_autostart_enabled(session: Session, enabled: bool) -> None:
         settings.autostart_enabled = enabled
     # DEBUG: the admin command that calls this logs the change at INFO,
     # naming the admin.
-    logger.debug("Bot-initiated games {}", "enabled" if enabled else "disabled")
+    logger.debug("bot-initiated games {state}", state="enabled" if enabled else "disabled")
 
 
 def get_pinned_message_id(session: Session) -> int | None:
@@ -88,7 +88,7 @@ def set_pinned_message_id(session: Session, message_id: int | None) -> None:
         session.add(settings)
     else:
         settings.pinned_message_id = message_id
-    logger.debug("Pinned message id set to {}", message_id)
+    logger.debug("pinned message id set to {msg_id}", msg_id=message_id)
 
 
 def get_quiet_hours(session: Session) -> QuietHours | None:
@@ -102,8 +102,8 @@ def get_quiet_hours(session: Session) -> QuietHours | None:
     tz = parse_timezone(settings.quiet_timezone or "")
     if tz is None:
         logger.error(
-            "Stored quiet-hours timezone {!r} is invalid — ignoring quiet hours",
-            settings.quiet_timezone,
+            "stored quiet-hours timezone {timezone!r} is invalid — ignoring quiet hours",
+            timezone=settings.quiet_timezone,
         )
         return None
     return QuietHours(start=settings.quiet_start, end=settings.quiet_end, tz=tz)
@@ -119,7 +119,12 @@ def set_quiet_hours(session: Session, qh: QuietHours) -> None:
     settings.quiet_timezone = qh.tz.key
     # DEBUG: the admin command that calls this logs the change at INFO,
     # naming the admin.
-    logger.debug("Quiet hours set to {}-{} {}", qh.start, qh.end, qh.tz.key)
+    logger.debug(
+        "quiet hours set to {start}-{end} {timezone}",
+        start=qh.start,
+        end=qh.end,
+        timezone=qh.tz.key,
+    )
 
 
 def clear_quiet_hours(session: Session) -> None:
@@ -131,4 +136,4 @@ def clear_quiet_hours(session: Session) -> None:
     settings.quiet_timezone = None
     # DEBUG: the admin command that calls this logs the change at INFO,
     # naming the admin.
-    logger.debug("Quiet hours turned off")
+    logger.debug("quiet hours turned off")

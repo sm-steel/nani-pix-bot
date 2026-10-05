@@ -17,6 +17,7 @@ from nani_pix_bot.services.game import autostart as autostart_service
 from nani_pix_bot.services.game.autostart import AnimePick, GatheredPick, ScreenshotPick
 from nani_pix_bot.services.quiet_hours import QuietHours
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from tests.conftest import LogLine
 
 
 def _fake_pick() -> GatheredPick:
@@ -479,7 +480,7 @@ def _seed_overthrow_ready(session_factory) -> None:
 
 
 async def test_maybe_overthrow_logs_a_missed_roll_at_info(
-    session_factory, monkeypatch: pytest.MonkeyPatch, records: list[tuple[str, str]]
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
 ) -> None:
     _seed_overthrow_ready(session_factory)
     context = _make_context(session_factory)
@@ -489,10 +490,13 @@ async def test_maybe_overthrow_logs_a_missed_roll_at_info(
         cast(ContextTypes.DEFAULT_TYPE, context), session_factory, winner_id=1
     )
 
-    assert (
-        "INFO",
-        "Overthrow roll after a game ended: miss (12% chance; turn held by 1 (@frieren))",
-    ) in records
+    [line] = [line for line in log_records if line.message.startswith("overthrow roll")]
+    assert line.level == "INFO"
+    assert line.message == (
+        "overthrow roll after a game ended: miss (12% chance; turn held by 1 (@frieren))"
+    )
+    assert line.extra["holder"] == "1 (@frieren)"
+    assert line.extra["outcome"] == "miss"
 
 
 async def test_maybe_overthrow_logs_a_hit_at_info(
@@ -508,7 +512,7 @@ async def test_maybe_overthrow_logs_a_hit_at_info(
     )
 
     assert any(
-        level == "INFO" and message.startswith("Overthrow roll after a game ended: HIT")
+        level == "INFO" and message.startswith("overthrow roll after a game ended: HIT")
         for level, message in records
     )
 
@@ -530,7 +534,7 @@ async def test_maybe_overthrow_logs_why_the_roll_was_skipped(
         cast(ContextTypes.DEFAULT_TYPE, context), session_factory, winner_id=1
     )
 
-    assert ("INFO", "Overthrow roll skipped after a game ended — quiet hours") in records
+    assert ("INFO", "overthrow roll skipped after a game ended — quiet hours") in records
 
 
 async def test_maybe_overthrow_logs_disabled_autostart_as_the_skip_reason(
@@ -546,4 +550,4 @@ async def test_maybe_overthrow_logs_disabled_autostart_as_the_skip_reason(
         cast(ContextTypes.DEFAULT_TYPE, context), session_factory
     )
 
-    assert ("INFO", "Overthrow roll skipped after a game ended — autostart is disabled") in records
+    assert ("INFO", "overthrow roll skipped after a game ended — autostart is disabled") in records

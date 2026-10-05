@@ -14,6 +14,7 @@ from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import settings
 from nani_pix_bot.services.economy import bounty
+from tests.conftest import LogLine
 
 
 def _active_game(session_factory, **overrides) -> int:
@@ -1567,7 +1568,7 @@ async def test_hard_mode_timeout_refunds_the_pot(session_factory) -> None:
 
 
 async def test_inactivity_advance_job_callback_logs_hard_mode_turn_advance_at_info(
-    session_factory, monkeypatch: pytest.MonkeyPatch, records: list[tuple[str, str]]
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
 ) -> None:
     """The turn 1 -> 2 inactivity advance sets hard_mode_turn directly
     (no advance_stage call), so it has to log the advance itself — at
@@ -1578,14 +1579,15 @@ async def test_inactivity_advance_job_callback_logs_hard_mode_turn_advance_at_in
 
     await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
-    assert (
-        "INFO",
-        f"Game {game_id}: advanced to hard-mode turn 2/2 (no guesses for 6h)",
-    ) in records
+    [line] = [line for line in log_records if "hard-mode turn" in line.message]
+    assert line.level == "INFO"
+    assert line.message == "advanced to hard-mode turn 2/2 (no guesses for 6h)"
+    assert line.extra["game_id"] == game_id
+    assert line.extra["turn"] == 2
 
 
 async def test_inactivity_advance_job_callback_logs_the_stage_advance_once(
-    session_factory, monkeypatch: pytest.MonkeyPatch, records: list[tuple[str, str]]
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
 ) -> None:
     """advance_stage() logs the advance itself; the job must not add a
     second INFO line for the same action."""
@@ -1595,28 +1597,35 @@ async def test_inactivity_advance_job_callback_logs_the_stage_advance_once(
 
     await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
-    advance_lines = [m for level, m in records if level == "INFO" and "advanced to" in m]
-    assert advance_lines == [f"Game {game_id}: advanced to stage 2/5 (no guesses for 6h)"]
+    advance_lines = [
+        line for line in log_records if line.level == "INFO" and "advanced to" in line.message
+    ]
+    assert [line.message for line in advance_lines] == ["advanced to stage 2/5 (no guesses for 6h)"]
+    assert advance_lines[0].extra["game_id"] == game_id
 
 
 def test_clear_image_if_sent_logs_the_cleanup_at_info(
-    session_factory, records: list[tuple[str, str]]
+    session_factory, log_records: list[LogLine]
 ) -> None:
     game_id = _active_game(session_factory, status=GameStatus.UNSOLVED)
 
     timeout_module.clear_image_if_sent(session_factory, game_id, MagicMock())
 
-    assert ("INFO", f"Game {game_id}: screenshot bytes cleared after the reveal") in records
+    [line] = [line for line in log_records if "screenshot bytes" in line.message]
+    assert (line.level, line.message) == ("INFO", "screenshot bytes cleared after the reveal")
+    assert line.extra["game_id"] == game_id
 
 
 def test_clear_image_if_sent_logs_keeping_the_bytes_when_the_reveal_failed(
-    session_factory, records: list[tuple[str, str]]
+    session_factory, log_records: list[LogLine]
 ) -> None:
     game_id = _active_game(session_factory, status=GameStatus.UNSOLVED)
 
     timeout_module.clear_image_if_sent(session_factory, game_id, None)
 
-    assert (
+    [line] = [line for line in log_records if "screenshot bytes" in line.message]
+    assert (line.level, line.message) == (
         "INFO",
-        f"Game {game_id}: reveal not confirmed sent — keeping the screenshot bytes",
-    ) in records
+        "reveal not confirmed sent — keeping the screenshot bytes",
+    )
+    assert line.extra["game_id"] == game_id

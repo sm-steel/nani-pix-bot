@@ -8,7 +8,7 @@ from telegram.error import Forbidden
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs.timers._shared import seconds_until
+from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until
 from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.jobs.timers.retry import retry_on_failure
 from nani_pix_bot.models.player import Player
@@ -42,7 +42,7 @@ def schedule_turn_timers(job_queue: JobQueue | None, turn_state: TurnState) -> N
     next_starter_id = turn_state.next_starter_id
     if turn_state.reminder_at is not None:
         delay = seconds_until(turn_state.reminder_at)
-        logger.debug("Scheduling turn-reminder in {:.0f}s", delay)
+        logger.debug("scheduling turn-reminder in {delay:.0f}s", delay=delay)
         job_queue.run_once(
             turn_reminder_job_callback,
             when=delay,
@@ -51,7 +51,7 @@ def schedule_turn_timers(job_queue: JobQueue | None, turn_state: TurnState) -> N
         )
     if turn_state.expiry_at is not None:
         delay = seconds_until(turn_state.expiry_at)
-        logger.debug("Scheduling turn-expiry in {:.0f}s", delay)
+        logger.debug("scheduling turn-expiry in {delay:.0f}s", delay=delay)
         job_queue.run_once(
             turn_expiry_job_callback,
             when=delay,
@@ -63,12 +63,13 @@ def schedule_turn_timers(job_queue: JobQueue | None, turn_state: TurnState) -> N
 def cancel_turn_timers(job_queue: JobQueue | None) -> None:
     if job_queue is None:
         return
-    logger.debug("Canceling turn-reminder/expiry timers")
+    logger.debug("canceling turn-reminder/expiry timers")
     for name in (TURN_REMINDER_JOB_NAME, TURN_EXPIRY_JOB_NAME):
         for job in job_queue.get_jobs_by_name(name):
             job.schedule_removal()
 
 
+@job_log_scope("player_id")
 @retry_on_failure
 @quiet_hours_deferred
 async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -84,17 +85,18 @@ async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
         lang = settings.get_language(session)
         turn_state = game_service.get_turn_state(session)
         if turn_state is None or turn_state.next_starter_id is None:
-            logger.debug("Turn-reminder fired but no turn is designated — no-op")
+            logger.debug("turn-reminder fired but no turn is designated — no-op")
             return
         if turn_state.next_starter_id != job.data:
             logger.debug(
-                "Turn-reminder fired for stale target {} (currently {}) — no-op",
-                players.describe_player_id(session, cast(int, job.data)),
-                players.describe_player_id(session, turn_state.next_starter_id),
+                "turn-reminder fired for stale target {target} (currently {next_starter}) — no-op",
+                target=players.describe_player_id(session, cast(int, job.data)),
+                next_starter=players.describe_player_id(session, turn_state.next_starter_id),
+                next_starter_id=turn_state.next_starter_id,
             )
             return
         if game_service.active_or_setup_game(session) is not None:
-            logger.debug("Turn-reminder fired but a game is already running — no-op")
+            logger.debug("turn-reminder fired but a game is already running — no-op")
             return
         target_id = turn_state.next_starter_id
         target = session.get(Player, target_id)
@@ -103,9 +105,12 @@ async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
 
     try:
         await context.bot.send_message(chat_id=target_id, text=i18n.t("turn.reminder_dm", lang))
-        logger.info("Turn reminder DM sent to {}", target_text)
+        logger.info("turn reminder DM sent to {player}", player=target_text)
     except Forbidden:
-        logger.warning("Turn reminder DM to {} failed — falling back to group mention", target_text)
+        logger.warning(
+            "turn reminder DM to {player} failed — falling back to group mention",
+            player=target_text,
+        )
         text = (
             i18n.t("turn.reminder_group_fallback", lang, username=username)
             if username
@@ -116,9 +121,10 @@ async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
             message_thread_id=context.bot_data["game_topic_id"],
             text=text,
         )
-        logger.info("Turn reminder posted in the group for {}", target_text)
+        logger.info("turn reminder posted in the group for {player}", player=target_text)
 
 
+@job_log_scope("player_id")
 @retry_on_failure
 @quiet_hours_deferred
 async def turn_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -143,17 +149,18 @@ async def turn_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         lang = settings.get_language(session)
         turn_state = game_service.get_turn_state(session)
         if turn_state is None or turn_state.next_starter_id is None:
-            logger.debug("Turn-expiry fired but no turn is designated — no-op")
+            logger.debug("turn-expiry fired but no turn is designated — no-op")
             return
         if turn_state.next_starter_id != job.data:
             logger.debug(
-                "Turn-expiry fired for stale target {} (currently {}) — no-op",
-                players.describe_player_id(session, cast(int, job.data)),
-                players.describe_player_id(session, turn_state.next_starter_id),
+                "turn-expiry fired for stale target {target} (currently {next_starter}) — no-op",
+                target=players.describe_player_id(session, cast(int, job.data)),
+                next_starter=players.describe_player_id(session, turn_state.next_starter_id),
+                next_starter_id=turn_state.next_starter_id,
             )
             return
         if game_service.active_or_setup_game(session) is not None:
-            logger.debug("Turn-expiry fired but a game is already running — no-op")
+            logger.debug("turn-expiry fired but a game is already running — no-op")
             return
         expired = players.describe_player_id(session, turn_state.next_starter_id)
         turn_state = game_service.set_next_starter(

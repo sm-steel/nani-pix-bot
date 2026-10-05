@@ -12,7 +12,6 @@ from nani_pix_bot.commands.dm_start._shared import (
     _start_new_game,
 )
 from nani_pix_bot.commands.dm_start.screenshots import clear_screenshot_selection
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SetupStep
@@ -72,10 +71,9 @@ async def _replace_staged_photo_if_pending(
         if existing is None or existing.setup_step not in _PHOTO_ACCEPTING_STEPS:
             return False
         logger.info(
-            "Game {}: {} sent a replacement photo at {}",
-            existing.id,
-            describe_user(user),
-            existing.setup_step.value,
+            "sent a replacement photo at {step}",
+            step=existing.setup_step.value,
+            game_id=existing.id,
         )
         # A genuine upload replacing whatever was there before — leave
         # the screenshot sub-flow *before* writing the new bytes, so

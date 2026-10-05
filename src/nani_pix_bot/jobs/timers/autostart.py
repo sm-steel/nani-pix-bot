@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs.timers._shared import seconds_until
+from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until
 from nani_pix_bot.jobs.timers.current_image import post_stage_images
 from nani_pix_bot.jobs.timers.game_timeout import schedule_timeout
 from nani_pix_bot.jobs.timers.inactivity import schedule_inactivity_timers
@@ -72,14 +72,14 @@ def schedule_idle_autostart(job_queue: JobQueue | None, turn_state: TurnState) -
     if turn_state.autostart_deadline_at is None:
         return
     delay = seconds_until(turn_state.autostart_deadline_at)
-    logger.debug("Scheduling idle-autostart in {:.0f}s", delay)
+    logger.debug("scheduling idle-autostart in {delay:.0f}s", delay=delay)
     job_queue.run_once(idle_autostart_job_callback, when=delay, name=IDLE_AUTOSTART_JOB_NAME)
 
 
 def cancel_idle_autostart(job_queue: JobQueue | None) -> None:
     if job_queue is None:
         return
-    logger.debug("Canceling idle-autostart timer")
+    logger.debug("canceling idle-autostart timer")
     for job in job_queue.get_jobs_by_name(IDLE_AUTOSTART_JOB_NAME):
         job.schedule_removal()
 
@@ -96,6 +96,7 @@ def _autostart_gate_reason(session: Session) -> str | None:
     return None
 
 
+@job_log_scope()
 @retry_on_failure
 @quiet_hours_deferred
 async def idle_autostart_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -109,11 +110,11 @@ async def idle_autostart_job_callback(context: ContextTypes.DEFAULT_TYPE) -> Non
     with session_scope(session_factory) as session:
         turn_state = game_service.get_turn_state(session)
         if turn_state is None or turn_state.next_starter_id is not None:
-            logger.info("Idle-autostart fired but the turn is no longer open — not starting")
+            logger.info("idle-autostart fired but the turn is no longer open — not starting")
             return
         gate_reason = _autostart_gate_reason(session)
         if gate_reason is not None:
-            logger.info("Idle-autostart fired but {} — not starting", gate_reason)
+            logger.info("idle-autostart fired but {reason} — not starting", reason=gate_reason)
             return
 
     claim = _AutostartClaim(trigger=AutostartTrigger.IDLE, dethroned_winner_name=None)
@@ -129,7 +130,8 @@ async def idle_autostart_job_callback(context: ContextTypes.DEFAULT_TYPE) -> Non
             session, game_service.AUTOSTART_RETRY_DELAY
         )
         logger.info(
-            "Idle-autostart pick failed — retrying in {}", game_service.AUTOSTART_RETRY_DELAY
+            "idle-autostart pick failed — retrying in {delay}",
+            delay=game_service.AUTOSTART_RETRY_DELAY,
         )
         schedule_idle_autostart(context.job_queue, turn_state)
 
@@ -185,14 +187,14 @@ def _roll_overthrow(session_factory, winner_id: int | None) -> bool:
             gate_reason = "quiet hours"
         holder = _describe_holder(session, winner_id)
     if gate_reason is not None:
-        logger.info("Overthrow roll skipped after a game ended — {}", gate_reason)
+        logger.info("overthrow roll skipped after a game ended — {reason}", reason=gate_reason)
         return False
     hit = autostart_service.roll_overthrow()
     logger.info(
-        "Overthrow roll after a game ended: {} ({:.0%} chance; turn held by {})",
-        "HIT — the bot will try to start the next game" if hit else "miss",
-        autostart_service.OVERTHROW_PROBABILITY,
-        holder,
+        "overthrow roll after a game ended: {outcome} ({chance:.0%} chance; turn held by {holder})",
+        outcome="HIT — the bot will try to start the next game" if hit else "miss",
+        chance=autostart_service.OVERTHROW_PROBABILITY,
+        holder=holder,
     )
     return hit
 
@@ -271,9 +273,10 @@ async def run_bot_autostart(
     pick = await autostart_service.gather_pick(search_client, tmdb_client, tenrai_client)
     if pick is None:
         logger.warning(
-            "Bot autostart ({}) found no usable pick after {} attempt(s) — skipping this firing",
-            claim.trigger.value,
-            autostart_service.AUTOSTART_ATTEMPT_LIMIT,
+            "bot autostart ({trigger}) found no usable pick after {attempts} attempt(s) — "
+            "skipping this firing",
+            trigger=claim.trigger.value,
+            attempts=autostart_service.AUTOSTART_ATTEMPT_LIMIT,
         )
         return False
 
@@ -281,19 +284,19 @@ async def run_bot_autostart(
     with session_scope(session_factory) as session:
         if game_service.active_or_setup_game(session) is not None:
             logger.warning(
-                "Bot autostart ({}) aborted — a game was started in the meantime",
-                claim.trigger.value,
+                "bot autostart ({trigger}) aborted — a game was started in the meantime",
+                trigger=claim.trigger.value,
             )
             return False
         turn_state = game_service.get_turn_state(session)
         actual_next_starter_id = turn_state.next_starter_id if turn_state is not None else None
         if actual_next_starter_id != claim.expected_next_starter_id:
             logger.warning(
-                "Bot autostart ({}) aborted — turn ownership changed in the meantime "
-                "(expected the turn held by {}, now {})",
-                claim.trigger.value,
-                _describe_holder(session, claim.expected_next_starter_id),
-                _describe_holder(session, actual_next_starter_id),
+                "bot autostart ({trigger}) aborted — turn ownership changed in the meantime "
+                "(expected the turn held by {expected_holder}, now {holder})",
+                trigger=claim.trigger.value,
+                expected_holder=_describe_holder(session, claim.expected_next_starter_id),
+                holder=_describe_holder(session, actual_next_starter_id),
             )
             return False
         lang = settings.get_language(session)
@@ -321,11 +324,12 @@ async def run_bot_autostart(
     cancel_turn_timers(context.job_queue)
     cancel_idle_autostart(context.job_queue)
     logger.info(
-        "Game {}: claimed by bot autostart ({}) — anime source={}, screenshot provider={}",
-        game_id,
-        claim.trigger.value,
-        pick.anime.source,
-        pick.screenshot.provider,
+        "claimed by bot autostart ({trigger}) — anime source={source}, "
+        "screenshot provider={provider}",
+        trigger=claim.trigger.value,
+        source=pick.anime.source,
+        provider=pick.screenshot.provider,
+        game_id=game_id,
     )
     await post_stage_images(
         context,

@@ -5,12 +5,14 @@ from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
+from nani_pix_bot import log_context
 from nani_pix_bot.commands import stageconfig as stageconfig_module
 from nani_pix_bot.models.bot_settings import BotSettings
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
+from tests.conftest import LogLine
 
 
 def _make_update(*, user_id: int = 1, chat_type: str = "private") -> MagicMock:
@@ -300,17 +302,22 @@ async def test_setstage_command_blocks_with_translated_message_in_russian(sessio
     )
 
 
-async def test_setstage_command_logs_the_change_once_naming_the_admin(
-    session_factory, records: list[tuple[str, str]]
+async def test_setstage_command_logs_the_change_once_with_the_admin_in_context(
+    session_factory, log_records: list[LogLine]
 ) -> None:
+    """The admin is the update's own user: the log context carries them
+    (log_scope.bind_update in production), so the message doesn't."""
     update = _make_update(user_id=1)
     update.effective_user.username = "admin"
     update.message.from_user = update.effective_user
     context = _make_context(session_factory, admin_ids={1}, args=["3", "100", "2"])
+    log_context.reset(user_id=1, username="admin")
 
     await stageconfig_module.setstage_command(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    info = [message for level, message in records if level == "INFO"]
-    assert info == ["Admin 1 (@admin) changed stage config: stage 3/5 width=100 limit=2"]
+    info = [line for line in log_records if line.level == "INFO"]
+    assert [line.message for line in info] == ["changed stage config: stage 3/5 width=100 limit=2"]
+    assert info[0].extra["user_id"] == 1
+    assert info[0].extra["changes"] == "stage 3/5 width=100 limit=2"

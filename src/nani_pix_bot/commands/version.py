@@ -8,7 +8,6 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, settings, version
 
@@ -37,9 +36,8 @@ async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
     logger.info(
-        "{} sent /version — running {}{}",
-        describe_user(update.effective_user),
-        running_version,
-        "" if notes is not None else " (no release notes found)",
+        "sent /version — running {version}{notes}",
+        version=running_version,
+        notes="" if notes is not None else " (no release notes found)",
     )
     await message.reply_text(text, parse_mode="HTML")

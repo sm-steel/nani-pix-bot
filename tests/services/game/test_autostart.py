@@ -5,6 +5,7 @@ from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.game import autostart
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
+from tests.conftest import LogLine
 
 
 def test_roll_overthrow_is_deterministic_via_the_rng(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -307,19 +308,21 @@ async def test_fetch_screenshot_url_pair_returns_none_with_fewer_than_two_urls(
 
 
 async def test_fetch_screenshot_url_pair_returns_none_and_logs_warning_on_fetch_failure(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
 ) -> None:
     async def failing_screenshots(client, shikimori_id):
         raise RuntimeError("Shikimori screenshot endpoint is down")
 
-    logged: list[tuple] = []
     monkeypatch.setattr("nani_pix_bot.services.search.shikimori.screenshots", failing_screenshots)
-    monkeypatch.setattr(autostart.logger, "warning", lambda *args: logged.append(args))
 
     pair = await autostart._fetch_screenshot_url_pair(_StubAsyncClient(), Provider.SHIKIMORI, 1)
 
     assert pair is None
-    assert logged
+    [line] = [line for line in log_records if line.level == "WARNING"]
+    assert line.message == (
+        "Shikimori screenshot fetch failed: Shikimori screenshot endpoint is down"
+    )
+    assert line.extra["provider"] == "Shikimori"
 
 
 async def test_try_provider_returns_pick_with_distinct_images_when_both_downloads_succeed(

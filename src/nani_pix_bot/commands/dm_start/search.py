@@ -49,7 +49,6 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     source_menu_for,
     stage_screenshot_picker,
 )
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
@@ -103,9 +102,7 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
             lang = settings.get_language(session)
             setup_game = game_service.get_setup_game_for_starter(session, user.id)
             game_id = setup_game.id if setup_game is not None else None
-        logger.info(
-            "Game {}: {} picked identification method 'My MAL List'", game_id, describe_user(user)
-        )
+        logger.info("picked identification method 'My MAL List'", game_id=game_id)
         await handle_mal_method_tap(query, context, lang, user)
         return
 
@@ -114,9 +111,8 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
             logger.warning(
-                "{} picked identification method {} with no SETUP game left — ignoring",
-                describe_user(user),
-                source,
+                "picked identification method {method} with no SETUP game left — ignoring",
+                method=source,
             )
             return
         # A method pick starts a fresh identification — reached again
@@ -130,12 +126,7 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
         # Read inside the session block — the prompt below depends on it,
         # and the row is detached once the block closes.
         has_image = setup_game.original_image is not None
-        logger.info(
-            "Game {}: {} picked identification method {}",
-            setup_game.id,
-            describe_user(user),
-            source,
-        )
+        logger.info("picked identification method {method}", method=source, game_id=setup_game.id)
 
     await query.edit_message_text(
         i18n.t(_search_prompt_key(source=source, has_image=has_image), lang),
@@ -166,16 +157,15 @@ async def _back_to_method_selection(query, context: ContextTypes.DEFAULT_TYPE) -
 
     if setup_step != SetupStep.PICKING_METHOD:
         logger.warning(
-            "Game {}: {} tapped a stale 'different search method' button (setup step {}) — "
+            "tapped a stale 'different search method' button (setup step {step}) — "
             "dropping its buttons",
-            game_id,
-            describe_user(user),
-            setup_step,
+            step=setup_step,
+            game_id=game_id,
         )
         await query.edit_message_reply_markup(reply_markup=None)
         return
 
-    logger.info("Game {}: {} went back to method selection", game_id, describe_user(user))
+    logger.info("went back to method selection", game_id=game_id)
     await query.edit_message_text(
         i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
         reply_markup=_method_keyboard(context, lang),
@@ -214,9 +204,7 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             # ended. Nothing to act on, but it is still a person doing
             # something, so it gets its line.
             logger.info(
-                "{} sent DM text {!r} with no setup in progress — ignoring",
-                describe_user(user),
-                message.text,
+                "sent DM text {text!r} with no setup in progress — ignoring", text=message.text
             )
             return
         typed = _TypedText(
@@ -262,11 +250,10 @@ async def _route_typed_text(
     elif typed.setup_step in (SetupStep.CONFIRMING, SetupStep.AWAITING_PHOTO_CHANGE):
         # Only the preview's buttons (or a replacement photo) matter here.
         logger.info(
-            "Game {}: {} typed {!r} at {} — ignored, this step takes a button or a photo",
-            typed.game_id,
-            describe_user(user),
-            message.text,
-            typed.setup_step.value,
+            "typed {text!r} at {step} — ignored, this step takes a button or a photo",
+            text=message.text,
+            step=typed.setup_step.value,
+            game_id=typed.game_id,
         )
     elif typed.setup_step == SetupStep.PICKING_SCREENSHOT:
         if typed.screenshot_menu is not None:
@@ -285,11 +272,10 @@ async def _route_typed_text(
             await _screenshot_search_step(message, context, lang, typed.screenshot_menu)
         else:
             logger.info(
-                "Game {}: {} typed {!r} while picking a screenshot — ignored, no provider is "
-                "being resolved, so this screen takes a button tap",
-                typed.game_id,
-                describe_user(user),
-                message.text,
+                "typed {text!r} while picking a screenshot — ignored, no provider is being "
+                "resolved, so this screen takes a button tap",
+                text=message.text,
+                game_id=typed.game_id,
             )
     elif typed.source == "manual":
         if typed.awaiting_synonyms:
@@ -314,7 +300,12 @@ async def _search_step(
     outcome, so the starter gets fast feedback without extra message
     clutter."""
     status_message = await message.reply_text(i18n.t("dm_start.searching", lang))
-    logger.debug("Game {}: {} search started for query {!r}", game_id, source, message.text)
+    logger.debug(
+        "{provider} search started for query {query!r}",
+        provider=source,
+        query=message.text,
+        game_id=game_id,
+    )
 
     client = client_for_source(context, source)
     try:
@@ -338,17 +329,21 @@ async def _search_step(
                 client, message.text, anilist.search, lambda rs: anilist_results_keyboard(rs, lang)
             )
     except SEARCH_SERVICE_ERRORS:
-        logger.exception("Game {}: {} search failed for query {!r}", game_id, source, message.text)
+        logger.exception(
+            "{provider} search failed for query {query!r}",
+            provider=source,
+            query=message.text,
+            game_id=game_id,
+        )
         await _reply_service_down(status_message.edit_text, lang, source, context)
         return
 
     logger.info(
-        "Game {}: {} searched {} for {!r} — {} result(s)",
-        game_id,
-        describe_user(message.from_user),
-        source,
-        message.text,
-        len(results),
+        "searched {provider} for {query!r} — {count} result(s)",
+        provider=source,
+        query=message.text,
+        count=len(results),
+        game_id=game_id,
     )
     if not results:
         await status_message.edit_text(
@@ -403,7 +398,7 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
-            await _reject_stale_tap(query, user, lang)
+            await _reject_stale_tap(query, lang)
             return
         # Inside the open write transaction, like every other await in
         # this block — see issue #82, which is filed against exactly
@@ -412,12 +407,11 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer()
         game_service.stage_result(setup_game, result, source=source)
         logger.info(
-            "Game {}: {} picked {!r} ({} {})",
-            setup_game.id,
-            describe_user(user),
-            game_service.display_title(setup_game, "EN"),
-            source,
-            external_id,
+            "picked {title!r} ({provider} {provider_id})",
+            title=game_service.display_title(setup_game, "EN"),
+            provider=source,
+            provider_id=external_id,
+            game_id=setup_game.id,
         )
         has_image = setup_game.original_image is not None
         if has_image:
@@ -454,7 +448,7 @@ async def _resolve_picked_result(
     callback data, the search service erroring, or the id no longer
     existing. `game_id` only labels the log lines."""
     if query.data == SEARCH_RETRY_CALLBACK_DATA:
-        logger.info('Game {}: {} tapped "None of these"', game_id, describe_user(query.from_user))
+        logger.info('tapped "None of these"', game_id=game_id)
         await query.edit_message_text(
             i18n.t("dm_start.retry", lang), reply_markup=back_to_methods_keyboard(lang)
         )
@@ -462,12 +456,7 @@ async def _resolve_picked_result(
 
     parsed = parse_pick_callback_data(query.data)
     if parsed is None:
-        logger.warning(
-            "Game {}: rejected result tap {!r} from {}",
-            game_id,
-            query.data,
-            describe_user(query.from_user),
-        )
+        logger.warning("rejected result tap {data!r}", data=query.data, game_id=game_id)
         return None
     source, external_id = parsed
 
@@ -475,17 +464,21 @@ async def _resolve_picked_result(
     try:
         result = await _get_identification_result(source, client, external_id)
     except SEARCH_SERVICE_ERRORS:
-        logger.exception("Game {}: {} get_by_id failed for id {}", game_id, source, external_id)
+        logger.exception(
+            "{provider} get_by_id failed for id {provider_id}",
+            provider=source,
+            provider_id=external_id,
+            game_id=game_id,
+        )
         await _reply_service_down(query.edit_message_text, lang, source, context)
         return None
 
     if result is None:
         logger.warning(
-            "Game {}: {} picked {} id {}, which is no longer found",
-            game_id,
-            describe_user(query.from_user),
-            source,
-            external_id,
+            "picked {provider} id {provider_id}, which is no longer found",
+            provider=source,
+            provider_id=external_id,
+            game_id=game_id,
         )
         await query.edit_message_text(
             i18n.t("dm_start.not_found_anymore", lang, service=source.display_name)

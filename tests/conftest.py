@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -7,6 +8,7 @@ from loguru import logger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from nani_pix_bot import log_context
 from nani_pix_bot.db import make_session_factory
 from nani_pix_bot.models.base import Base
 from nani_pix_bot.services.quiet_hours import QuietHours
@@ -54,3 +56,36 @@ def records() -> Iterator[list[tuple[str, str]]]:
     )
     yield captured
     logger.remove(sink_id)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_log_context() -> Iterator[None]:
+    """The structured log context (issue #230) is a ContextVar, which
+    would otherwise carry one test's game/user into the next."""
+    log_context.reset()
+    yield
+    log_context.reset()
+
+
+class LogLine(NamedTuple):
+    level: str
+    message: str
+    extra: dict[str, object]
+
+
+@pytest.fixture
+def log_records() -> Iterator[list[LogLine]]:
+    """Every record emitted while the test runs, with its structured
+    fields: the log context (game, user, job) merged in the way
+    logging_config wires it in production, plus the call's kwargs."""
+    captured: list[LogLine] = []
+    logger.configure(patcher=log_context.patcher)
+    sink_id = logger.add(
+        lambda m: captured.append(
+            LogLine(m.record["level"].name, m.record["message"], dict(m.record["extra"]))
+        ),
+        level="DEBUG",
+    )
+    yield captured
+    logger.remove(sink_id)
+    logger.configure(patcher=None)

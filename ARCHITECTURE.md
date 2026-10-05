@@ -139,17 +139,24 @@ jobs/            (Telegram)
   calls into `services/`, formats the reply. No game rules live here.
 - **`commands/helpers/`** — Telegram-aware plumbing shared by more than one
   command file (topic/DM scoping checks, inline-keyboard builders, bot
-  command-menu registration, shared formatting). One exception to the
-  "no handlers here" rule: `player_tracking.py` (see "Handler groups").
+  command-menu registration, shared formatting). Two exceptions to the
+  "no handlers here" rule: `player_tracking.py` and `log_scope.py` (see
+  "Handler groups").
 
 ### Handler groups
 
 Every handler `app.py` registers goes into PTB's default group (`0`)
-except one: `player_tracking.remember_user`, a `TypeHandler(Update, …)`
-in group `-1` (`app._PLAYER_TRACKING_GROUP`). PTB walks groups in order
-and, unless a callback raises `ApplicationHandlerStop`, carries on to the
-next — so this runs first on *every* update and then hands off to the
-normal command handlers.
+except two `TypeHandler(Update, …)` pre-handlers. PTB walks groups in
+order and, unless a callback raises `ApplicationHandlerStop`, carries on
+to the next, so both run on *every* update before the normal command
+handlers:
+- `log_scope.bind_update` in group `-2` (`app._LOG_SCOPE_GROUP`) resets
+  the structured log context (`log_context.py`, #230) to this update's
+  user, chat and thread. It resets rather than adds because PTB handles
+  updates one after another in the same task, so the previous update's
+  game and user would otherwise carry over.
+- `player_tracking.remember_user` in group `-1`
+  (`app._PLAYER_TRACKING_GROUP`), described below.
 
 Its job is to create-or-refresh the update sender's `players` row, which
 is what `/correct @username` and `/skip @username` resolve their typed
@@ -191,8 +198,16 @@ src/nani_pix_bot/
                    # one MariaDB dropped after 8h idle isn't reused (#194)
   logging_config.py  # loguru setup, redirects PTB's stdlib logging into it;
                    # its filter masks every .env secret (Config.secret_values())
-                   # in messages and exception chains, plus anything
-                   # token-shaped (#184)
+                   # in messages, extra fields and exception chains, plus
+                   # anything token-shaped (#184). LOG_FORMAT picks the
+                   # text sink ([game 88 | 2 @bob] prefix) or the JSON
+                   # sink (one flat object per line, #230)
+  log_context.py  # the structured log context (#230): a ContextVar reset
+                   # per update (commands/helpers/log_scope.py) and per
+                   # timer job (jobs/timers/_shared.py's job_log_scope),
+                   # with game_id bound by services/game/state.py's
+                   # lookups; its loguru patcher copies it into every
+                   # record's extra
   heartbeat.py    # wraps bot.get_updates so a liveness file is only
                    # touched after a real successful poll — lets
                    # docker-compose.yml's HEALTHCHECK (+ fleet autoheal)

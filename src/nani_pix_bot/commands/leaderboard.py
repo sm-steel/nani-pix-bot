@@ -4,7 +4,6 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
@@ -33,9 +32,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         lang = settings.get_language(session)
         top = players.top_players(session, limit=LEADERBOARD_SIZE)
 
-    logger.info(
-        "{} requested /leaderboard: {} entries", describe_user(update.effective_user), len(top)
-    )
+    logger.info("requested /leaderboard: {count} entries", count=len(top))
     if not top:
         await message.reply_text(i18n.t("leaderboard.empty", lang))
         return

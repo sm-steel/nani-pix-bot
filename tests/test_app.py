@@ -22,9 +22,10 @@ from nani_pix_bot.commands.dm_start import (
     screenshot_source_callback_handler,
     screenshot_upload_instead_callback_handler,
 )
-from nani_pix_bot.commands.helpers import player_tracking
+from nani_pix_bot.commands.helpers import log_scope, player_tracking
 from nani_pix_bot.config import Config
 from nani_pix_bot.models.enums import Provider
+from tests.conftest import LogLine
 
 _VALID_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"  # noqa: S105 - test fixture, not a real token
 
@@ -202,43 +203,40 @@ def test_build_application_registers_an_error_handler() -> None:
 
 
 async def test_error_handler_logs_network_errors_as_a_warning(
-    monkeypatch: pytest.MonkeyPatch,
+    log_records: list[LogLine],
 ) -> None:
-    warnings = []
-    monkeypatch.setattr(app.logger, "warning", lambda *args: warnings.append(args))
     context = MagicMock()
     context.error = NetworkError("connection reset")
 
     await app._error_handler(cast(object, "some update"), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    assert warnings
+    assert [(line.level, line.message) for line in log_records] == [
+        ("WARNING", "network error talking to Telegram: connection reset")
+    ]
 
 
-async def test_error_handler_logs_a_conflict_as_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_error_handler_logs_a_conflict_as_a_warning(log_records: list[LogLine]) -> None:
     # A 409 Conflict self-heals on its own (see the 2026-09-13 incident) —
     # it's not a bug, so it shouldn't be logged as one.
-    warnings = []
-    monkeypatch.setattr(app.logger, "warning", lambda *args: warnings.append(args))
     context = MagicMock()
     context.error = Conflict("terminated by other getUpdates request")
 
     await app._error_handler(cast(object, "some update"), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    assert warnings
+    assert [line.level for line in log_records] == ["WARNING"]
 
 
 async def test_error_handler_logs_anything_else_as_an_error(
-    monkeypatch: pytest.MonkeyPatch,
+    log_records: list[LogLine],
 ) -> None:
-    errors = []
-    fake_opt = lambda **kwargs: MagicMock(error=lambda *a: errors.append(a))  # noqa: E731
-    monkeypatch.setattr(app.logger, "opt", fake_opt)
     context = MagicMock()
     context.error = ValueError("a real bug")
 
     await app._error_handler(cast(object, "some update"), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    assert errors
+    assert [(line.level, line.message) for line in log_records] == [
+        ("ERROR", "unhandled exception while processing update: some update")
+    ]
 
 
 def test_build_application_registers_player_tracking_before_the_commands() -> None:
@@ -263,6 +261,18 @@ def test_build_application_registers_player_tracking_before_the_commands() -> No
     }
     assert command_groups
     assert min(command_groups) > app._PLAYER_TRACKING_GROUP
+
+
+def test_build_application_resets_the_log_context_before_anything_else() -> None:
+    """Issue #230: every update starts from a fresh log context, so the
+    first handler to run for it must be the one that resets it."""
+    application = app.build_application(_config())
+
+    first_group = min(application.handlers)
+    (handler,) = application.handlers[first_group]
+    assert isinstance(handler, TypeHandler)
+    assert handler.callback is log_scope.bind_update
+    assert first_group < app._PLAYER_TRACKING_GROUP
 
 
 async def test_post_shutdown_closes_all_four_search_clients() -> None:
@@ -311,18 +321,17 @@ def _full_mal_config(**overrides) -> Config:
 
 
 def test_build_application_warns_about_a_partial_mal_config(
-    monkeypatch: pytest.MonkeyPatch,
+    log_records: list[LogLine],
 ) -> None:
     """The four MAL settings are optional together, never individually —
     with only some set, a player could reach a linking flow that cannot
     finish (and spend their one-time MAL authorization code doing it)."""
-    warnings = []
-    monkeypatch.setattr(app.logger, "warning", lambda *args: warnings.append(args))
-
     app.build_application(_full_mal_config(mal_token_encryption_key=None))
 
+    warnings = [line for line in log_records if line.level == "WARNING"]
     assert len(warnings) == 1
-    assert "MAL_TOKEN_ENCRYPTION_KEY" in warnings[0][1]
+    assert "MAL_TOKEN_ENCRYPTION_KEY missing or unusable" in warnings[0].message
+    assert warnings[0].extra["missing"] == "MAL_TOKEN_ENCRYPTION_KEY"
 
 
 def test_build_application_says_nothing_about_mal_when_all_four_are_set(
@@ -338,24 +347,21 @@ def test_build_application_says_nothing_about_mal_when_all_four_are_set(
 
 
 def test_build_application_rejects_a_malformed_mal_encryption_key(
-    monkeypatch: pytest.MonkeyPatch,
+    log_records: list[LogLine],
 ) -> None:
     """token_crypto builds its Fernet lazily inside encrypt()/decrypt(),
     so a bad key used to surface only on a player's first real write —
     after their authorization code was already spent. Checked once at
     boot instead, and linking is disabled rather than left to explode."""
-    errors = []
-    monkeypatch.setattr(app.logger, "error", lambda *args: errors.append(args))
-    monkeypatch.setattr(app.logger, "warning", lambda *args: None)
-
     # Deliberately not a real Fernet key. Bound to a local first so ruff's
     # S106 (hardcoded password in a keyword argument) doesn't fire on a
     # literal passed straight into `mal_token_encryption_key=`.
     malformed = "not-a-key"
     application = app.build_application(_full_mal_config(mal_token_encryption_key=malformed))
 
+    errors = [line for line in log_records if line.level == "ERROR"]
     assert len(errors) == 1
-    assert "MAL_TOKEN_ENCRYPTION_KEY" in errors[0][0]
+    assert "MAL_TOKEN_ENCRYPTION_KEY" in errors[0].message
     # Rejected, not stored — so mal_configured() is False and the "My MAL
     # List" button stays hidden instead of dead-ending a player.
     assert application.bot_data["mal_token_encryption_key"] is None

@@ -67,7 +67,10 @@ async def fetch_release_notes(client: httpx.AsyncClient, version: str) -> str | 
         body = await get_json(_GITHUB_API, client, url, {})
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == HTTPStatus.NOT_FOUND:
-            logger.warning("No GitHub release found for v{} — /version will omit notes", version)
+            logger.warning(
+                "no GitHub release found for v{version} — /version will omit notes",
+                version=version,
+            )
             return None
         raise
     return body.get("body") or None

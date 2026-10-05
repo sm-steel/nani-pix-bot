@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs.timers._shared import seconds_until
+from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until
 from nani_pix_bot.jobs.timers.current_image import (
     clear_image_if_sent,
     post_current_image,
@@ -50,7 +50,7 @@ def schedule_inactivity_timers(job_queue: JobQueue | None, game: Game) -> None:
     cancel_inactivity_timers(job_queue, game.id)
     if game.inactivity_nudge_at is not None:
         delay = seconds_until(game.inactivity_nudge_at)
-        logger.debug("Scheduling inactivity-nudge for game {} in {:.0f}s", game.id, delay)
+        logger.debug("scheduling inactivity-nudge in {delay:.0f}s", delay=delay, game_id=game.id)
         job_queue.run_once(
             inactivity_nudge_job_callback,
             when=delay,
@@ -59,7 +59,7 @@ def schedule_inactivity_timers(job_queue: JobQueue | None, game: Game) -> None:
         )
     if game.inactivity_advance_at is not None:
         delay = seconds_until(game.inactivity_advance_at)
-        logger.debug("Scheduling inactivity-advance for game {} in {:.0f}s", game.id, delay)
+        logger.debug("scheduling inactivity-advance in {delay:.0f}s", delay=delay, game_id=game.id)
         job_queue.run_once(
             inactivity_advance_job_callback,
             when=delay,
@@ -71,12 +71,13 @@ def schedule_inactivity_timers(job_queue: JobQueue | None, game: Game) -> None:
 def cancel_inactivity_timers(job_queue: JobQueue | None, game_id: int) -> None:
     if job_queue is None:
         return
-    logger.debug("Canceling inactivity nudge/advance timers for game {}", game_id)
+    logger.debug("canceling inactivity nudge/advance timers", game_id=game_id)
     for name in (inactivity_nudge_job_name(game_id), inactivity_advance_job_name(game_id)):
         for job in job_queue.get_jobs_by_name(name):
             job.schedule_removal()
 
 
+@job_log_scope("game_id")
 @retry_on_failure
 @quiet_hours_deferred
 async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -104,7 +105,7 @@ async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> N
         lang = settings.get_language(session)
         game = session.get(Game, game_id)
         if game is None or game.status != GameStatus.ACTIVE:
-            logger.debug("Game {}: inactivity nudge fired but it's not ACTIVE — no-op", game_id)
+            logger.debug("inactivity nudge fired but it's not ACTIVE — no-op", game_id=game_id)
             return
         pinned_message_id = settings.get_pinned_message_id(session)
 
@@ -114,7 +115,7 @@ async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> N
             text=i18n.t("guess.inactivity_nudge", lang),
             reply_to_message_id=pinned_message_id,
         )
-        logger.info("Game {}: inactivity nudge posted", game_id)
+        logger.info("inactivity nudge posted", game_id=game_id)
         game_service.clear_inactivity_nudge(game)
 
 
@@ -140,10 +141,10 @@ def _hard_mode_turn_advance(
     game.hard_mode_turn = game_service.HARD_MODE_TURN_COUNT
     game.wrong_guess_count = 0
     logger.info(
-        "Game {}: advanced to hard-mode turn {}/{} (no guesses for 6h)",
-        game.id,
-        game.hard_mode_turn,
-        game_service.HARD_MODE_TURN_COUNT,
+        "advanced to hard-mode turn {turn}/{total} (no guesses for 6h)",
+        turn=game.hard_mode_turn,
+        total=game_service.HARD_MODE_TURN_COUNT,
+        game_id=game.id,
     )
     image_a, image_b = game_service.hard_mode_reveal_images(game)
     width = game_service.hard_mode_turn_width(game)
@@ -218,6 +219,7 @@ async def _post_hard_mode_outcome(
     await maybe_overthrow(context, session_factory)
 
 
+@job_log_scope("game_id")
 @retry_on_failure
 @quiet_hours_deferred
 async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -254,7 +256,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
             or game.status != GameStatus.ACTIVE
             or (not game.hard_mode and game.current_stage is None)
         ):
-            logger.debug("Game {}: inactivity advance fired but it's not ACTIVE — no-op", game_id)
+            logger.debug("inactivity advance fired but it's not ACTIVE — no-op", game_id=game_id)
             return
 
         if game.hard_mode:

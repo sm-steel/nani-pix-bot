@@ -94,9 +94,10 @@ def get_pending_link(session: Session, telegram_user_id: int) -> PendingMalLink 
         return None
     if _is_expired(pending):
         logger.info(
-            "{}'s /linkmal attempt is older than {} — discarding it unused",
-            players.describe_player_id(session, telegram_user_id),
-            MAL_LINK_EXPIRY_DELAY,
+            "{player}'s /linkmal attempt is older than {delay} — discarding it unused",
+            player=players.describe_player_id(session, telegram_user_id),
+            player_id=telegram_user_id,
+            delay=MAL_LINK_EXPIRY_DELAY,
         )
         session.delete(pending)
         return None
@@ -140,7 +141,9 @@ def upsert_credentials(
         )
         session.add(credentials)
         logger.info(
-            "{} linked their MAL account", players.describe_player_id(session, telegram_user_id)
+            "{player} linked their MAL account",
+            player=players.describe_player_id(session, telegram_user_id),
+            player_id=telegram_user_id,
         )
     else:
         credentials.access_token = encrypted_access
@@ -148,8 +151,9 @@ def upsert_credentials(
         credentials.expires_at = data.expires_at
         credentials.mal_username = data.mal_username
         logger.info(
-            "{} re-linked their MAL account (new tokens stored)",
-            players.describe_player_id(session, telegram_user_id),
+            "{player} re-linked their MAL account (new tokens stored)",
+            player=players.describe_player_id(session, telegram_user_id),
+            player_id=telegram_user_id,
         )
 
 
@@ -178,5 +182,7 @@ def delete_credentials(session: Session, telegram_user_id: int) -> None:
         session.delete(credentials)
         # DEBUG: /unlinkmal's handler logs the action itself at INFO.
         logger.debug(
-            "Deleted MAL credentials for {}", players.describe_player_id(session, telegram_user_id)
+            "deleted MAL credentials for {player}",
+            player=players.describe_player_id(session, telegram_user_id),
+            player_id=telegram_user_id,
         )

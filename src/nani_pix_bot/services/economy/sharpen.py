@@ -12,7 +12,6 @@ from nani_pix_bot.models.enums import CurrencyReason, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import players
 from nani_pix_bot.services.economy import config, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
 
@@ -75,11 +74,6 @@ def sharpen(session: Session, game: Game, player: Player, offer: SharpenOffer) -
     except wallet.InsufficientCurrencyError as error:
         raise SharpenRefusedError(SharpenRefusal.INSUFFICIENT) from error
     # check() excluded the last stage, so this can't end the game UNSOLVED.
-    logger.info(
-        "Game {}: {} paid {} to sharpen",
-        game.id,
-        players.describe_player_id(session, player.telegram_user_id),
-        amount,
-    )
+    logger.info("paid {price} 💠 to sharpen", price=amount, game_id=game.id)
     game_service.advance_stage(game, reason="sharpened")
     return amount
