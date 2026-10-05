@@ -238,6 +238,7 @@ def _build_first_turn_post(
         caption = i18n.t(
             "dm_start.hard_mode_game_started_caption_overthrow_open", lang, **caption_kwargs
         )
+    caption += game_service.game_id_line(game.id, lang)
     schedule_timeout(context.job_queue, game)
     schedule_inactivity_timers(context.job_queue, game)
     return _FirstTurnPost(photo_a=pixelated_a, photo_b=pixelated_b, caption=caption)

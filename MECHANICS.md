@@ -117,6 +117,9 @@ to anyone, and posts that to the group — the same class of "stuck DM
 flow" bug issue #11 fixed reactively can no longer linger indefinitely.
 The timer is canceled the moment they confirm.
 
+Every post that announces a game — the setup notice, the first image post, and
+every reveal — ends with `🎲 Game #<id>`, the id admin commands take (issue #248).
+
 When the setup started from an uploaded screenshot, the bot first replies
 with that screenshot pixelated at **stage 1** (the blockiest, with the
 game's current pixelation algorithm) so the starter can judge whether it

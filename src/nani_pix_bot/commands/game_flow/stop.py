@@ -39,6 +39,7 @@ class _StoppedGame:
     exactly-one-of-two-fields dispatch shape as guess.py's
     _Announcement."""
 
+    game_id: int
     title: str
     original_bytes: bytes | None = None
     hard_mode_photos: tuple[bytes, bytes] | None = None
@@ -184,7 +185,10 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
     # actually reaches the group (see post_current_image's docstring).
     timeout_module.schedule_idle_autostart(context.job_queue, turn_state)
     stopped_game = _StoppedGame(
-        title=title, original_bytes=original_bytes, hard_mode_photos=hard_mode_photos
+        game_id=game_id,
+        title=title,
+        original_bytes=original_bytes,
+        hard_mode_photos=hard_mode_photos,
     )
     revealed = await _announce_stop(context, session_factory, stopped_game, lang, reveal)
     logger.info(
@@ -225,7 +229,8 @@ async def _announce_stop(
             context,
             session_factory,
             photos=stopped_game.hard_mode_photos,
-            caption=i18n.t("stop.hard_mode_stopped_reveal_caption", lang, title=stopped_game.title),
+            caption=i18n.t("stop.hard_mode_stopped_reveal_caption", lang, title=stopped_game.title)
+            + game_service.game_id_line(stopped_game.game_id, lang),
         )
         return sent is not None
 
@@ -234,7 +239,8 @@ async def _announce_stop(
             context,
             session_factory,
             photo=stopped_game.original_bytes,
-            caption=i18n.t("stop.stopped_reveal_caption", lang, title=stopped_game.title),
+            caption=i18n.t("stop.stopped_reveal_caption", lang, title=stopped_game.title)
+            + game_service.game_id_line(stopped_game.game_id, lang),
         )
         return sent is not None
 
@@ -242,7 +248,8 @@ async def _announce_stop(
         await context.bot.send_message(
             chat_id=context.bot_data["group_chat_id"],
             message_thread_id=context.bot_data["game_topic_id"],
-            text=i18n.t("stop.confirmed_group_notice", lang),
+            text=i18n.t("stop.confirmed_group_notice", lang)
+            + game_service.game_id_line(stopped_game.game_id, lang),
         )
     except TelegramError as exc:
         logger.warning("failed to send the /stop group notice: {error}", error=exc)

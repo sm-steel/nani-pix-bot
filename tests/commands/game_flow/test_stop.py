@@ -19,6 +19,7 @@ from nani_pix_bot.models.enums import ClueKind, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
+from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.clues import shop
 from nani_pix_bot.services.economy import bounty, config
 from nani_pix_bot.services.economy.config import EconomyKey
@@ -365,6 +366,7 @@ async def test_stop_callback_handler_reveal_posts_the_answer_and_deletes_the_gam
     assert kwargs["message_thread_id"] == 7
     assert kwargs["photo"] == b"file123"
     assert "Frieren: Beyond Journey's End" in kwargs["caption"]
+    assert f"#{game_id}" in kwargs["caption"]
     # The reveal caption already says the turn is open — no second notice.
     context.bot.send_message.assert_not_awaited()
     update.callback_query.edit_message_text.assert_awaited_once()
@@ -459,7 +461,7 @@ async def test_stop_callback_handler_reveal_posts_hard_mode_two_photo_album(
     expected_caption = stop_command_module.i18n.t(
         "stop.hard_mode_stopped_reveal_caption", "en", title="Frieren: Beyond Journey's End"
     )
-    assert media[0].caption == expected_caption
+    assert media[0].caption == expected_caption + game_service.game_id_line(game_id, "en")
     # The reveal caption already says the turn is open — no second notice.
     context.bot.send_message.assert_not_awaited()
     update.callback_query.edit_message_text.assert_awaited_once()

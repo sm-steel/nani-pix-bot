@@ -71,6 +71,7 @@ def _hard_mode_timeout_reveal(game: Game, lang: str, refund_note: str) -> _HardM
     caption = i18n.t(
         "timeout.hard_mode_caption", lang, title=game_service.display_title(game, lang)
     )
+    caption += game_service.game_id_line(game.id, lang)
     caption += refund_note
     return _HardModeTimeoutReveal(photos=photos, caption=caption)
 
@@ -121,6 +122,7 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             original_bytes = game.original_image
             caption = i18n.t("timeout.caption", lang, title=game_service.display_title(game, lang))
+            caption += game_service.game_id_line(game.id, lang)
             caption += refund_note
     # Block closed and committed above — the UNSOLVED ending is durable
     # now regardless of whether the announcement below actually reaches

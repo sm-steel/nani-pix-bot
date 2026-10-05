@@ -111,6 +111,7 @@ def _prepare_correct_reveal(
     if game.hard_mode:
         photos = game_service.hard_mode_reveal_images(game)
         caption = i18n.t("correct.hard_mode_caption", lang, winner=target_username, title=title)
+        caption += game_service.game_id_line(game.id, lang)
         return None, photos, caption
     original_bytes = game.original_image
     if original_bytes is None:
@@ -118,6 +119,7 @@ def _prepare_correct_reveal(
             "game.original_image is None despite _validate_active_game_for_starter's check"
         )
     caption = i18n.t("correct.caption", lang, winner=target_username, title=title)
+    caption += game_service.game_id_line(game.id, lang)
     return original_bytes, None, caption
 
 

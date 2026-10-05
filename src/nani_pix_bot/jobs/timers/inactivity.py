@@ -172,6 +172,7 @@ def _hard_mode_unsolved_reveal(session: Session, game: Game, lang: str) -> _Hard
     caption = i18n.t(
         "guess.hard_mode_unsolved_caption", lang, title=game_service.display_title(game, lang)
     )
+    caption += game_service.game_id_line(game.id, lang)
     caption += bounty.refund_note(session, game.id, lang)
     return _HardModeAnnouncement(photos=photos, caption=caption)
 
@@ -294,6 +295,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
                 unsolved_caption = i18n.t(
                     "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
                 )
+                unsolved_caption += game_service.game_id_line(game_id, lang)
                 unsolved_caption += bounty.refund_note(session, game_id, lang)
             else:
                 target_width = stage_config.get_stage_config(

@@ -415,6 +415,19 @@ async def test_guess_command_won_caption_names_the_winner(session_factory) -> No
     assert "Guesser Name" in kwargs["caption"]
 
 
+async def test_guess_command_won_caption_names_the_game_id(session_factory) -> None:
+    game_id = _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert f"#{game_id}" in kwargs["caption"]
+
+
 async def test_guess_command_won_schedules_the_turn_reminder_and_expiry(session_factory) -> None:
     _active_game(session_factory)
     update = _make_update(user_id=2, args=["frieren"])

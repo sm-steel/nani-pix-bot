@@ -39,6 +39,7 @@ def _prepare_won_announcement(
     caption = i18n.t(
         "guess.won_caption", lang, winner=winner_name, title=game_service.display_title(game, lang)
     )
+    caption += game_service.game_id_line(game.id, lang)
     return Announcement(photo=original_bytes, caption=caption)
 
 
@@ -62,6 +63,7 @@ def _prepare_hard_mode_won_announcement(
         winner=winner_name,
         title=game_service.display_title(game, lang),
     )
+    caption += game_service.game_id_line(game.id, lang)
     return Announcement(photos=photos, caption=caption)
 
 
@@ -115,6 +117,7 @@ def _prepare_hard_mode_unsolved_announcement(
     caption = i18n.t(
         "guess.hard_mode_unsolved_caption", lang, title=game_service.display_title(game, lang)
     )
+    caption += game_service.game_id_line(game.id, lang)
     return Announcement(photos=photos, caption=caption)
 
 
@@ -124,6 +127,7 @@ def _prepare_unsolved_announcement(
     original_bytes = require_original_image(game, "an UNSOLVED outcome")
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
     caption = i18n.t("guess.unsolved_caption", lang, title=game_service.display_title(game, lang))
+    caption += game_service.game_id_line(game.id, lang)
     return Announcement(photo=original_bytes, caption=caption)
 
 
