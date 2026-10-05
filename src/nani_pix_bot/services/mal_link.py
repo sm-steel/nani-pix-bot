@@ -14,6 +14,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.mal_link import MalCredentials, PendingMalLink
+from nani_pix_bot.services import players
 from nani_pix_bot.services.security import token_crypto
 
 # How long a /linkmal attempt stays usable before its pending row is
@@ -93,9 +94,10 @@ def get_pending_link(session: Session, telegram_user_id: int) -> PendingMalLink 
         return None
     if _is_expired(pending):
         logger.info(
-            "Player {}'s /linkmal attempt is older than {} — discarding it unused",
-            telegram_user_id,
-            MAL_LINK_EXPIRY_DELAY,
+            "{player}'s /linkmal attempt is older than {delay} — discarding it unused",
+            player=players.describe_player_id(session, telegram_user_id),
+            player_id=telegram_user_id,
+            delay=MAL_LINK_EXPIRY_DELAY,
         )
         session.delete(pending)
         return None
@@ -138,13 +140,21 @@ def upsert_credentials(
             linked_at=datetime.now(UTC),
         )
         session.add(credentials)
-        logger.info("Player {} linked their MAL account", telegram_user_id)
+        logger.info(
+            "{player} linked their MAL account",
+            player=players.describe_player_id(session, telegram_user_id),
+            player_id=telegram_user_id,
+        )
     else:
         credentials.access_token = encrypted_access
         credentials.refresh_token = encrypted_refresh
         credentials.expires_at = data.expires_at
         credentials.mal_username = data.mal_username
-        logger.info("Player {} re-linked their MAL account", telegram_user_id)
+        logger.info(
+            "{player} re-linked their MAL account (new tokens stored)",
+            player=players.describe_player_id(session, telegram_user_id),
+            player_id=telegram_user_id,
+        )
 
 
 def get_credentials(
@@ -170,4 +180,9 @@ def delete_credentials(session: Session, telegram_user_id: int) -> None:
     credentials = session.get(MalCredentials, telegram_user_id)
     if credentials is not None:
         session.delete(credentials)
-        logger.info("Player {} unlinked their MAL account", telegram_user_id)
+        # DEBUG: /unlinkmal's handler logs the action itself at INFO.
+        logger.debug(
+            "deleted MAL credentials for {player}",
+            player=players.describe_player_id(session, telegram_user_id),
+            player_id=telegram_user_id,
+        )

@@ -18,6 +18,7 @@ from nani_pix_bot.models.enums import ClueKind, CurrencyReason, GameStatus, Prov
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import players
 from nani_pix_bot.services.clues import text
 from nani_pix_bot.services.economy import config, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
@@ -224,15 +225,25 @@ def _refusal(
     return None
 
 
+def _detail(request: PurchaseRequest) -> dict[str, object]:
+    """Log kwargs for a purchase line: the clue's kind, plus which
+    tile/screenshot, both as a field and as `detail`, its text in the message."""
+    fields: dict[str, object] = {"kind": request.kind.value, "detail": ""}
+    if request.kind is ClueKind.TILE:
+        fields.update(detail=f" (tile {request.tile_index})", tile=request.tile_index)
+    elif request.kind is ClueKind.SCREENSHOT:
+        fields.update(detail=f" ({request.screenshot_url})", screenshot_url=request.screenshot_url)
+    return fields
+
+
 def purchase(session: Session, game: Game, buyer: Player, request: PurchaseRequest) -> CluePurchase:
     refusal = _refusal(session, game, buyer, request)
     if refusal is not None:
         logger.warning(
-            "Player {} refused {} in game {}: {}",
-            buyer.telegram_user_id,
-            request.kind,
-            game.id,
-            refusal,
+            "refused the {kind} clue{detail}: {reason}",
+            reason=refusal.value,
+            game_id=game.id,
+            **_detail(request),
         )
         raise ShopRefusedError(refusal)
     cost = price(session, game, buyer, request.kind)
@@ -245,11 +256,10 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
         )
     except wallet.InsufficientCurrencyError as error:
         logger.warning(
-            "Player {} cannot afford {} ({}) in game {}",
-            buyer.telegram_user_id,
-            request.kind,
-            cost,
-            game.id,
+            "cannot afford the {kind} clue{detail} ({price} 💠)",
+            price=cost,
+            game_id=game.id,
+            **_detail(request),
         )
         raise ShopRefusedError(Refusal.INSUFFICIENT) from error
     session.flush()  # charge.id for the purchase's transfer_id
@@ -264,11 +274,11 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
     session.add(bought)
     session.flush()
     logger.info(
-        "Player {} bought {} for {} in game {}",
-        buyer.telegram_user_id,
-        request.kind,
-        cost,
-        game.id,
+        "bought the {kind} clue{detail} for {price} 💠 (purchase {purchase_id})",
+        price=cost,
+        purchase_id=bought.id,
+        game_id=game.id,
+        **_detail(request),
     )
     return bought
 
@@ -291,10 +301,13 @@ def refund(session: Session, purchase_row: CluePurchase) -> None:
     )
     session.delete(purchase_row)
     logger.info(
-        "Refunded purchase {} ({} to player {})",
-        purchase_row.id,
-        charge.amount,
-        buyer.telegram_user_id,
+        "refunded {kind} clue purchase {purchase_id} ({amount} 💠 to {recipient})",
+        kind=ClueKind(purchase_row.kind).value,
+        purchase_id=purchase_row.id,
+        amount=charge.amount,
+        recipient=players.describe_player_id(session, buyer.telegram_user_id),
+        recipient_id=buyer.telegram_user_id,
+        game_id=purchase_row.game_id,
     )
 
 
@@ -305,7 +318,7 @@ def refund_game(session: Session, game_id: int) -> int:
     rows = list(session.scalars(select(CluePurchase).where(CluePurchase.game_id == game_id)))
     for row in rows:
         refund(session, row)
-    logger.info("Refunded {} clue purchases of game {}", len(rows), game_id)
+    logger.info("refunded {count} clue purchase(s)", count=len(rows), game_id=game_id)
     return len(rows)
 
 

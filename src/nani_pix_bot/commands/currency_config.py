@@ -57,7 +57,7 @@ async def currency_config_command(update: Update, context: ContextTypes.DEFAULT_
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
     if not await is_group_admin(context.bot, context.bot_data["group_chat_id"], user.id):
-        logger.warning("Non-admin {} tried /pixelconfig", user.id)
+        logger.warning("non-admin tried /pixelconfig")
         await message.reply_text(i18n.t("commands.admins_only", lang))
         return
 
@@ -65,15 +65,20 @@ async def currency_config_command(update: Update, context: ContextTypes.DEFAULT_
     if not args:
         with session_scope(session_factory) as session:
             amounts = config.get_amounts(session)
+        logger.info("viewed /pixelconfig")
         await message.reply_text(_render(lang, amounts))
         return
 
     resolved = _resolve(args, lang)
     if isinstance(resolved, str):
+        logger.info(
+            "sent invalid /pixelconfig args {args!r} — replied with the error",
+            args=args,
+        )
         await message.reply_text(resolved)
         return
     key, value = resolved
     with session_scope(session_factory) as session:
         config.set_amount(session, key, value)
-    logger.info("Admin {} set currency config {} = {}", user.id, key, value)
+    logger.info("set currency config {key} = {value}", key=key.value, value=value)
     await message.reply_text(i18n.t("currency_config.updated", lang, name=key.value, value=value))

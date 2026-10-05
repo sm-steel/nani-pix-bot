@@ -74,7 +74,9 @@ async def search(
     repeating the same query doesn't re-hit the API each time."""
     data = await rest.get_json(_API, client, f"{TMDB_BASE_URL}/search/tv", {"query": query})
     results = parsing.parse_entries(_API.name, data.get("results") or [], _parse_result)[:limit]
-    logger.debug("TMDB search {!r} returned {} result(s)", query, len(results))
+    logger.debug(
+        "TMDB search {query!r} returned {count} result(s)", query=query, count=len(results)
+    )
     return results
 
 
@@ -129,7 +131,9 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
     show = await rest.get_json(_API, client, f"{TMDB_BASE_URL}/tv/{tmdb_id}", {})
     targets = _episode_targets(show)
     if not targets:
-        logger.debug("TMDB id {} has no season episodes to pull stills from", tmdb_id)
+        logger.debug(
+            "TMDB id {tmdb_id} has no season episodes to pull stills from", tmdb_id=tmdb_id
+        )
         return []
 
     semaphore = asyncio.Semaphore(SCREENSHOT_FETCH_CONCURRENCY)
@@ -175,17 +179,21 @@ async def screenshots(client: httpx.AsyncClient, tmdb_id: int) -> list[str]:
         # something `SEARCH_SERVICE_ERRORS` doesn't match — #75's door,
         # reopened quietly. Flatten here if that day comes.
         logger.warning(
-            "TMDB id {} still fetch abandoned: {} of {} episode request(s) failed: {}",
-            tmdb_id,
-            len(failures.exceptions),
-            len(targets),
-            [repr(failure) for failure in failures.exceptions],
+            "TMDB id {tmdb_id} still fetch abandoned: {failed} of {count} episode request(s) "
+            "failed: {errors}",
+            tmdb_id=tmdb_id,
+            failed=len(failures.exceptions),
+            count=len(targets),
+            errors=[repr(failure) for failure in failures.exceptions],
         )
         raise failures.exceptions[0] from None
 
     urls = [url for url in stills if url is not None]
     logger.debug(
-        "TMDB id {} yielded {} still(s) from {} episode(s)", tmdb_id, len(urls), len(targets)
+        "TMDB id {tmdb_id} yielded {stills} still(s) from {count} episode(s)",
+        tmdb_id=tmdb_id,
+        stills=len(urls),
+        count=len(targets),
     )
     return urls
 
@@ -289,7 +297,7 @@ def _parse_result(raw: dict) -> TMDBResult | None:
     title_english = parsing.optional_str(raw, "name")
     title_native = parsing.optional_str(raw, "original_name")
     if not parsing.has_answer_key((title_english, title_native), []):
-        logger.debug("TMDB id {} has no title in any variant, skipping", tmdb_id)
+        logger.debug("TMDB id {tmdb_id} has no title in any variant, skipping", tmdb_id=tmdb_id)
         return None
     return TMDBResult(
         tmdb_id=tmdb_id,

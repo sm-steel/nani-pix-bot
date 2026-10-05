@@ -140,10 +140,10 @@ async def _post_token_request(
         )
     except httpx.HTTPStatusError as exc:
         logger.warning(
-            "MAL token endpoint rejected the request ({}): {} {}",
-            context,
-            exc.response.status_code,
-            exc.response.text,
+            "MAL token endpoint rejected the request ({request}): {status} {body}",
+            request=context,
+            status=exc.response.status_code,
+            body=exc.response.text,
         )
         return None
 

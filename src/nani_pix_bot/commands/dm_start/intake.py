@@ -70,7 +70,11 @@ async def _replace_staged_photo_if_pending(
         existing = game_service.get_setup_game_for_starter(session, user.id)
         if existing is None or existing.setup_step not in _PHOTO_ACCEPTING_STEPS:
             return False
-        logger.debug("Starter {} sent a replacement photo for game {}", user.id, existing.id)
+        logger.info(
+            "sent a replacement photo at {step}",
+            step=existing.setup_step.value,
+            game_id=existing.id,
+        )
         # A genuine upload replacing whatever was there before — leave
         # the screenshot sub-flow *before* writing the new bytes, so
         # this isn't mistaken for an API-sourced screenshot afterward:

@@ -55,18 +55,24 @@ def make_admin_toggle_command(
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
             if not await is_group_admin(context.bot, group_chat_id, user.id):
-                logger.warning("Non-admin {} tried /{}", user.id, config.command_name)
+                logger.warning("non-admin tried /{command}", command=config.command_name)
                 await message.reply_text(i18n.t("commands.admins_only", lang))
                 return
 
         args = context.args or []
         if len(args) != 1 or args[0].lower() not in ("on", "off"):
+            logger.info(
+                "sent /{command} with bad args {args!r} — replied with usage",
+                command=config.command_name,
+                args=args,
+            )
             await message.reply_text(i18n.t(config.usage_key, lang))
             return
         enabled = args[0].lower() == "on"
 
         with session_scope(session_factory) as session:
             config.setter(session, enabled)
+        logger.info("ran /{command} {state}", command=config.command_name, state=args[0].lower())
 
         await message.reply_text(
             i18n.t(config.enabled_key, lang) if enabled else i18n.t(config.disabled_key, lang)

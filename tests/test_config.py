@@ -23,6 +23,7 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
     monkeypatch.delenv("ADMIN_USER_IDS", raising=False)
     monkeypatch.delenv("LOG_LEVEL", raising=False)
+    monkeypatch.delenv("LOG_FORMAT", raising=False)
     monkeypatch.delenv("TELEGRAM_PROXY_URL", raising=False)
 
 
@@ -37,6 +38,7 @@ def test_load_config_reads_all_required_values(monkeypatch: pytest.MonkeyPatch) 
     assert loaded.database_url == "sqlite:///:memory:"
     assert loaded.admin_user_ids == []
     assert loaded.log_level == "INFO"
+    assert loaded.log_format == "text"
     assert loaded.telegram_proxy_url is None
 
 
@@ -159,3 +161,18 @@ def test_secret_values_skips_unset_and_empty_ones(monkeypatch: pytest.MonkeyPatc
     secrets = config.load_config().secret_values()
 
     assert secrets == ["test-token"]
+
+
+def test_load_config_reads_log_format_case_insensitively(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("LOG_FORMAT", "JSON")
+
+    assert config.load_config().log_format == "json"
+
+
+def test_load_config_rejects_an_unknown_log_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("LOG_FORMAT", "xml")
+
+    with pytest.raises(RuntimeError, match="LOG_FORMAT"):
+        config.load_config()

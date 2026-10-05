@@ -35,5 +35,9 @@ async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             notes=version.render_release_notes_html(notes),
         )
 
-    logger.debug("/version requested, running version {}", running_version)
+    logger.info(
+        "sent /version — running {version}{notes}",
+        version=running_version,
+        notes="" if notes is not None else " (no release notes found)",
+    )
     await message.reply_text(text, parse_mode="HTML")

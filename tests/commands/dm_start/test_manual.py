@@ -12,6 +12,7 @@ from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from tests.conftest import LogLine
 
 
 def _make_context(session_factory, **extra_bot_data) -> MagicMock:
@@ -203,3 +204,24 @@ async def test_manual_entry_second_message_keeps_the_staged_entry_when_the_album
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.setup_step == SetupStep.CONFIRMING
         assert fetched.synonyms == ["Frieren"]
+
+
+async def test_a_blank_manual_title_is_logged_at_info_and_asked_again(
+    session_factory, log_records: list[LogLine]
+) -> None:
+    _create_setup_game(session_factory, starter_id=1, source="manual")
+    update = _make_text_update(user_id=1, text="   ")
+    update.effective_user.username = "alice"
+    context = _make_context(session_factory)
+
+    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    [line] = [
+        r
+        for r in log_records
+        if r.level == "INFO" and r.message == "sent a blank manual title — asking again"
+    ]
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        assert game.title_english is None
+        assert line.extra["game_id"] == game.id

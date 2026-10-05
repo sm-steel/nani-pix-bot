@@ -133,7 +133,7 @@ def cached(
             if entry is not None:
                 cached_at, value = entry
                 if now - cached_at < ttl:
-                    logger.debug("Cache hit for {} {}", func_name, key)
+                    logger.debug("cache hit for {func} {key}", func=func_name, key=key)
                     return value
 
             value = await func(client, *args, **kwargs)

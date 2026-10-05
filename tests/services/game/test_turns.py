@@ -19,7 +19,7 @@ def test_set_next_starter_creates_the_row_if_missing(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.commit()
 
-    game_service.set_next_starter(session, 1)
+    game_service.set_next_starter(session, 1, reason="test")
     session.commit()
 
     turn_state = session.get(TurnState, 1)
@@ -31,7 +31,7 @@ def test_set_next_starter_can_open_the_turn(session: Session) -> None:
     session.add(TurnState(id=1, next_starter_id=1))
     session.commit()
 
-    game_service.set_next_starter(session, None)
+    game_service.set_next_starter(session, None, reason="test")
     session.commit()
 
     turn_state = session.get(TurnState, 1)
@@ -46,7 +46,7 @@ def test_set_next_starter_schedules_reminder_and_expiry_for_a_real_user(
     session.commit()
     before = datetime.now(UTC).replace(tzinfo=None)
 
-    turn_state = game_service.set_next_starter(session, 2)
+    turn_state = game_service.set_next_starter(session, 2, reason="test")
     session.commit()
 
     assert turn_state.next_starter_id == 2
@@ -70,7 +70,7 @@ def test_set_next_starter_clears_reminder_and_expiry_when_opened(session: Sessio
     )
     session.commit()
 
-    turn_state = game_service.set_next_starter(session, None)
+    turn_state = game_service.set_next_starter(session, None, reason="test")
     session.commit()
 
     assert turn_state.next_starter_id is None
@@ -100,7 +100,7 @@ def test_clear_turn_timers_nulls_reminder_and_expiry(session: Session) -> None:
 
 
 def test_set_next_starter_none_sets_turn_opened_and_autostart_deadline(session: Session) -> None:
-    turn_state = turns.set_next_starter(session, None)
+    turn_state = turns.set_next_starter(session, None, reason="test")
 
     assert turn_state.turn_opened_at is not None
     assert turn_state.autostart_deadline_at is not None
@@ -111,9 +111,9 @@ def test_set_next_starter_none_sets_turn_opened_and_autostart_deadline(session: 
 def test_set_next_starter_a_real_user_clears_autostart_columns(session: Session) -> None:
     session.add(Player(telegram_user_id=5))
     session.commit()
-    turns.set_next_starter(session, None)
+    turns.set_next_starter(session, None, reason="test")
 
-    turn_state = turns.set_next_starter(session, 5)
+    turn_state = turns.set_next_starter(session, 5, reason="test")
 
     assert turn_state.turn_opened_at is None
     assert turn_state.autostart_deadline_at is None
@@ -168,7 +168,7 @@ def test_set_next_starter_freezes_turn_deadlines_during_quiet_hours(
     session.commit()
     before = datetime.now(UTC)
 
-    turn_state = game_service.set_next_starter(session, 1)
+    turn_state = game_service.set_next_starter(session, 1, reason="test")
 
     window_end = quiet_hours.window_end_after(quiet_now, before)
     assert turn_state.reminder_at is not None
@@ -183,7 +183,7 @@ def test_opening_the_turn_freezes_the_idle_autostart_deadline_during_quiet_hours
     session.commit()
     before = datetime.now(UTC)
 
-    turn_state = game_service.set_next_starter(session, None)
+    turn_state = game_service.set_next_starter(session, None, reason="test")
 
     window_end = quiet_hours.window_end_after(quiet_now, before)
     assert turn_state.autostart_deadline_at is not None
@@ -195,7 +195,7 @@ def test_set_next_starter_records_turn_received_at(session: Session) -> None:
     session.add(Player(telegram_user_id=5))
     session.flush()
 
-    turn_state = turns.set_next_starter(session, 5)
+    turn_state = turns.set_next_starter(session, 5, reason="test")
 
     assert turn_state.turn_received_at is not None
 
@@ -203,9 +203,9 @@ def test_set_next_starter_records_turn_received_at(session: Session) -> None:
 def test_opening_the_turn_clears_turn_received_at(session: Session) -> None:
     session.add(Player(telegram_user_id=5))
     session.flush()
-    turns.set_next_starter(session, 5)
+    turns.set_next_starter(session, 5, reason="test")
 
-    turn_state = turns.set_next_starter(session, None)
+    turn_state = turns.set_next_starter(session, None, reason="test")
 
     assert turn_state.turn_received_at is None
 
@@ -222,11 +222,11 @@ def test_mark_turn_open_if_unassigned_clears_turn_received_at(session: Session) 
 def test_redesignating_the_same_player_keeps_turn_received_at(session: Session) -> None:
     session.add(Player(telegram_user_id=5))
     session.flush()
-    turn_state = turns.set_next_starter(session, 5)
+    turn_state = turns.set_next_starter(session, 5, reason="test")
     original = datetime.now(UTC) - timedelta(minutes=30)
     turn_state.turn_received_at = original
 
-    turns.set_next_starter(session, 5)
+    turns.set_next_starter(session, 5, reason="test")
 
     assert turn_state.turn_received_at == original
 
@@ -234,10 +234,10 @@ def test_redesignating_the_same_player_keeps_turn_received_at(session: Session) 
 def test_designating_a_different_player_refreshes_turn_received_at(session: Session) -> None:
     session.add_all([Player(telegram_user_id=5), Player(telegram_user_id=6)])
     session.flush()
-    turn_state = turns.set_next_starter(session, 5)
+    turn_state = turns.set_next_starter(session, 5, reason="test")
     turn_state.turn_received_at = datetime.now(UTC) - timedelta(minutes=30)
 
-    turns.set_next_starter(session, 6)
+    turns.set_next_starter(session, 6, reason="test")
 
     assert turn_state.turn_received_at is not None
     assert (datetime.now(UTC) - turn_state.turn_received_at.replace(tzinfo=UTC)) < timedelta(

@@ -62,21 +62,33 @@ def offered_game(
     would. Affordability is left to the caller (`offer.affordable`)."""
     game = shop.active_game_for(session, game_id)
     if game is None:
-        raise ShopRefusedError(Refusal.NO_GAME)
+        raise _refused(game_id, kind, Refusal.NO_GAME)
     buyer = players.get_or_create_player(session, user.id, username=user.username)
     if buyer.telegram_user_id == game.starter_id:
-        raise ShopRefusedError(Refusal.SETTER)
+        raise _refused(game_id, kind, Refusal.SETTER)
     lang = settings.get_language(session)
     offer = next((o for o in shop.offers(session, game, buyer, lang) if o.kind is kind), None)
     if offer is None:
-        raise ShopRefusedError(Refusal.UNAVAILABLE)
+        raise _refused(game_id, kind, Refusal.UNAVAILABLE)
     return game, lang, offer
+
+
+def _refused(game_id: int, kind: ClueKind, refusal: Refusal) -> ShopRefusedError:
+    """Logs a shop button refused before any charge, and returns the error
+    to raise. Refusals at the charge itself are logged by shop.purchase."""
+    logger.warning(
+        "tapped the {kind} clue button — refused: {reason}",
+        kind=kind.value,
+        reason=refusal.value,
+        game_id=game_id,
+    )
+    return ShopRefusedError(refusal)
 
 
 def screenshot_plan(session: Session, user: User, game_id: int) -> ScreenshotPlan:
     game, lang, offer = offered_game(session, user, game_id, ClueKind.SCREENSHOT)
     if not offer.affordable:
-        raise ShopRefusedError(Refusal.INSUFFICIENT)
+        raise _refused(game_id, ClueKind.SCREENSHOT, Refusal.INSUFFICIENT)
     excluded = set(game.shown_screenshot_urls or []) | shop.owned_screenshot_urls(
         session, game.id, user.id
     )
@@ -97,7 +109,9 @@ async def _first_unused_url(
         try:
             urls = await provider.screenshot_module.screenshots(client, provider_id)
         except SEARCH_SERVICE_ERRORS:
-            logger.warning("Extra screenshot: {} lookup failed", provider, exc_info=True)
+            logger.opt(exception=True).warning(
+                "extra screenshot: {provider} lookup failed", provider=provider.value
+            )
             failed = True
             continue
         unused = next((url for url in urls if url not in plan.excluded), None)
@@ -105,7 +119,9 @@ async def _first_unused_url(
             return provider, unused
     if failed:
         raise ScreenshotFetchError("provider lookup failed")
-    logger.info("Extra screenshot: no unused screenshot among {} providers", len(plan.sources))
+    logger.info(
+        "extra screenshot: no unused screenshot among {count} providers", count=len(plan.sources)
+    )
     return None
 
 
@@ -124,12 +140,12 @@ async def fetch_extra_screenshot(
         response = await client_for_source(context, provider).get(url)
         response.raise_for_status()
     except IMAGE_DOWNLOAD_ERRORS:
-        logger.warning("Extra screenshot: download failed", exc_info=True)
+        logger.opt(exception=True).warning("extra screenshot: download failed")
         raise ScreenshotFetchError("download failed") from None
     try:
         pixelated = pixelate_service.pixelate(response.content, plan.width, plan.algorithm)
     except (OSError, ValueError):
-        logger.warning("Extra screenshot: could not pixelate the download", exc_info=True)
+        logger.opt(exception=True).warning("extra screenshot: could not pixelate the download")
         raise ScreenshotFetchError("pixelation failed") from None
     return FetchedScreenshot(url, pixelated)
 
@@ -138,7 +154,7 @@ def render_tile_clue(session: Session, game: Game, tile: int) -> bytes:
     """The pixelated screenshot with the round's `tile` shown unpixelated."""
     original = game.original_image
     if original is None:
-        logger.error("Game {} has no original image for a tile clue", game.id)
+        logger.error("no original image for a tile clue", game_id=game.id)
         raise ShopRefusedError(Refusal.UNAVAILABLE)
     pixelated = pixelate_service.pixelate(
         original, stage_width(session, game), game.pixel_algorithm

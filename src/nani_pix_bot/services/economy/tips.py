@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
 from nani_pix_bot.models.enums import CurrencyReason
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.services import players
 from nani_pix_bot.services.economy import wallet
 
 TIP_MIN = 1
@@ -44,9 +45,9 @@ def tip(session: Session, sender: Player, recipient: Player, amount: int) -> Cur
         raise TipRefusedError(TipRefusal.INSUFFICIENT) from error
     session.flush()
     logger.info(
-        "Player {} tipped player {} {} currency",
-        sender.telegram_user_id,
-        recipient.telegram_user_id,
-        amount,
+        "tipped {recipient} {amount} 💠",
+        recipient=players.describe_player_id(session, recipient.telegram_user_id),
+        recipient_id=recipient.telegram_user_id,
+        amount=amount,
     )
     return row

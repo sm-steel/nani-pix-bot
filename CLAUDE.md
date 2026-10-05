@@ -229,20 +229,69 @@ redirects python-telegram-bot's own stdlib logging into the same sink (the
 standard `InterceptHandler` recipe). Sink level defaults to `INFO`,
 overridable via the `LOG_LEVEL` env var (`.env`).
 
-**Log generously, but pick the right level:**
+**The bar: with `LOG_LEVEL=INFO`, the log alone must tell the whole story
+of every game**, from the DM setup through every guess to the end, plus
+everything the timers did on their own. Filtering on one game id (`grep
+"game 88"` in text mode, `jq 'select(.game_id==88)'` in JSON) should be
+enough to reconstruct game 88. Issue #228 is what missing this bar cost: a real
+game went through three stages and left no trace of any guess, because
+every player action was logged at `DEBUG`, while APScheduler's per-job
+chatter filled `INFO`.
 
 | Level | Use for | Example in this codebase |
 |---|---|---|
-| `DEBUG` | Routine/internal detail, expected outcomes | a wrong `/guess`'s normalized text and match score, stage-threshold not yet reached |
-| `INFO` | A meaningful game event | a game created, a stage advancing, a win, a game going unsolved, a `/skip` |
-| `WARNING` | Recoverable anomaly, rejected action | `/guess` outside the game topic, `/skip` from someone who isn't the designated starter, AniList rate-limit retry |
+| `DEBUG` | Internals only | timer scheduling/cancelling, a timer that fires on an already-resolved game, per-candidate fuzzy-match scores, provider search/cache plumbing, pixelated byte sizes |
+| `INFO` | **Every action a person takes** (command, button tap, DM message that does something, including cancels, "back", and views), and **every automatic action** that changes state, posts something, or deliberately decides not to | each `/guess` with its text and result, a method/result/screenshot pick, a preview button, a stage advance and why, a win, an unsolved ending and its cause, a turn handoff and who triggered it, a payout, an overthrow roll, a quiet-hours deferral |
+| `WARNING` | A rejected or refused action, a stale tap, an unexpected early return | `/guess` from the game's own starter, `/skip` out of turn, a setup button tapped after the setup row is gone, AniList rate-limit retry |
 | `ERROR` | Something is actually broken | AniList search failing after retries, a stage image failing to send |
 
-When adding a new log call, ask "would this be useful in production at
-`LOG_LEVEL=INFO`, or is it something I'd only want while debugging?" — the
-former is `INFO`+, the latter is `DEBUG`. Don't log routine, frequent,
-expected-outcome events at `INFO` — that's what turns `INFO` logs into
-background noise nobody reads.
+**Structured context, not text prefixes (issue #230).** Which game, who
+triggered it, and which update or job a line belongs to travel as
+structured fields, attached centrally by `log_context.py`. Never write them
+into the message by hand:
+- `commands/helpers/log_scope.py::bind_update` (handler group -2) resets the
+  context on every update: `update_id`, `user_id`, `username`, `user_name`,
+  `chat_id`, `chat_type`, `thread_id`.
+- `jobs/timers/_shared.py::job_log_scope(data_key)` resets it for every
+  timer job: `job`, plus `game_id`/`player_id` from `job.data`. Every new
+  timer callback gets it, outermost.
+- `services/game/state.py`'s game lookups (`active_or_setup_game`,
+  `get_setup_game_for_starter`, `create_setup_game`) bind `game_id`.
+- `setup_logging(static=...)` adds `service`, `version`, `group_chat_id`
+  and `game_topic_id` to every record.
+
+`LOG_FORMAT=text` (the default) renders the context as a prefix,
+`… - [game 88 | 2 @bob] guessed 'naruto' — wrong at stage 1/5 (1/2)`.
+`LOG_FORMAT=json` writes one flat object per line for centralized
+collection, with the context, the static fields and the call's own
+kwargs as top-level keys.
+
+**Message conventions:**
+- **No `Game {}:` prefix and no triggering user in the message.** The
+  context carries both. Pass `game_id=` explicitly only when the line is
+  about a game the context may not hold (an explicit kwarg always wins).
+- **Data goes in named placeholders**, which loguru also stores as fields:
+  `logger.info("guessed {guess!r} — wrong at {stage}", guess=text,
+  stage=stage_label(...))`. No positional `{}`.
+- **Other people get a role-named kwarg**, both in the message and as an
+  id: `"won by {winner}", winner=describe_player_id(...), winner_id=...`
+  (likewise `target`, `recipient`, `next_starter`, `player`). Never reuse
+  `user_id`/`username`/`user_name` for anyone but the triggering user.
+- People read as `id (@username)` via `commands/helpers/actor.py::
+  describe_user` / `services/players.py::describe_player_id`; stages as
+  `stage 2/5` via `services/game/state.py::stage_label`.
+- Say why: `advance_stage(game, reason=...)`, `force_unsolved(game,
+  cause=...)` and `set_next_starter(..., reason=...)` take one for exactly
+  this.
+- One action gets one `INFO` line. If a service already logs it, the
+  handler adds nothing, or adds only what the service can't know.
+- Tests assert structured fields through the `log_records` fixture
+  (`tests/conftest.py`), not just rendered text.
+
+Noisy third-party stdlib loggers are pinned to `WARNING` in
+`logging_config.py` (`httpx`: one line per long poll; `apscheduler`: one
+line per job added, removed and run). The timer callbacks log what they
+actually did instead.
 
 **This table sat unapplied for two full rounds of feature work (v1 and
 most of v2)** — by the time issue #23 swept the codebase for it, only 3

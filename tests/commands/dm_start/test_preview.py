@@ -24,6 +24,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX,
     PREVIEW_RESEARCH_CALLBACK_DATA,
 )
+from nani_pix_bot.commands.helpers.log_scope import bind_update
 from nani_pix_bot.models.enums import (
     DEFAULT_ALGORITHM,
     GameStatus,
@@ -38,6 +39,7 @@ from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.search import shikimori
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.settings import stage_config
+from tests.conftest import LogLine
 
 _FRIEREN = AniListResult(
     anilist_id=99,
@@ -102,7 +104,7 @@ def _make_preview_callback_update(
     return update
 
 
-def _staged_setup_game(session_factory, *, starter_id: int = 1, **overrides) -> None:
+def _staged_setup_game(session_factory, *, starter_id: int = 1, **overrides) -> int:
     with session_factory() as session:
         session.add(Player(telegram_user_id=starter_id))
         session.commit()
@@ -115,6 +117,7 @@ def _staged_setup_game(session_factory, *, starter_id: int = 1, **overrides) -> 
         for key, value in overrides.items():
             setattr(game, key, value)
         session.commit()
+        return game.id
 
 
 async def test_preview_confirm_activates_and_posts_to_the_group(
@@ -721,3 +724,44 @@ async def test_confirming_shows_the_bounty_in_the_game_start_caption(
     )
 
     assert "Bounty: 60" in context.bot.send_photo.await_args.kwargs["caption"]
+
+
+async def test_a_preview_tap_with_no_setup_row_logs_a_warning(
+    session_factory, log_records: list[LogLine]
+) -> None:
+    """Issue #228: these taps used to `return` with no trace at all. No
+    game to name, so the update's own log context names the tapper."""
+    update = _make_preview_callback_update(data=PREVIEW_ADD_SYNONYM_CALLBACK_DATA, user_id=7)
+    update.callback_query.from_user.username = "bob"
+    update.effective_user = update.callback_query.from_user
+    context = _make_callback_context(session_factory)  # no SETUP row at all
+    await bind_update(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    [warning] = [line for line in log_records if line.level == "WARNING"]
+    assert warning.extra["data"] == PREVIEW_ADD_SYNONYM_CALLBACK_DATA
+    assert (warning.extra["user_id"], warning.extra["username"]) == (7, "bob")
+    update.callback_query.edit_message_text.assert_not_awaited()
+
+
+async def test_a_preview_button_logs_the_tap_at_info(
+    session_factory, log_records: list[LogLine]
+) -> None:
+    game_id = _staged_setup_game(session_factory, starter_id=1)
+    update = _make_preview_callback_update(data=PREVIEW_ADD_SYNONYM_CALLBACK_DATA, user_id=1)
+    update.callback_query.from_user.username = "alice"
+    context = _make_callback_context(session_factory)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    [line] = [
+        r
+        for r in log_records
+        if r.level == "INFO" and r.message == "tapped Add a synonym on the preview"
+    ]
+    assert line.extra["game_id"] == game_id

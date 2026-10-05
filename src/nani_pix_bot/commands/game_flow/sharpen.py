@@ -93,6 +93,16 @@ def _keyboard(game: Game, requester_id: int, price: int, lang: str) -> InlineKey
     )
 
 
+def _log_prompt(game: Game, price: int) -> None:
+    stage = game.current_stage
+    logger.info(
+        "asked to /sharpen at {stage} — confirm prompt shown ({price} 💠)",
+        stage="?" if stage is None else game_service.stage_label(stage),
+        price=price,
+        game_id=game.id,
+    )
+
+
 async def sharpen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     user = update.effective_user
@@ -114,10 +124,11 @@ async def sharpen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         game = game_service.active_or_setup_game(session)
         refusal = sharpen.check(game, player)
         if refusal is not None:
-            logger.warning("{}'s /sharpen was refused: {}", user.id, refusal.value)
+            logger.warning("/sharpen refused: {reason}", reason=refusal.value)
             reply = i18n.t(f"sharpen.refusal.{refusal.value}", lang)
         elif game is not None:
             price = sharpen.price(session)
+            _log_prompt(game, price)
             reply = i18n.t("sharpen.confirm_prompt", lang, price=price)
             markup = _keyboard(game, user.id, price, lang)
     if markup is None:
@@ -151,13 +162,13 @@ def _apply(context: ContextTypes.DEFAULT_TYPE, user: User, tap: _Tap) -> _Sharpe
         return _Sharpened(lang, replace(announcement, caption=f"{prefix}\n{announcement.caption}"))
 
 
-def _refusal_alert(session_factory, user_id: int, refusal: sharpen.SharpenRefusal) -> str:
+def _refusal_alert(session_factory, user: User, refusal: sharpen.SharpenRefusal) -> str:
     """The alert text for a refused confirm; its transaction already rolled
     back, so the balance is read in a fresh scope."""
-    logger.warning("{}'s sharpen confirm was refused: {}", user_id, refusal.value)
+    logger.warning("sharpen confirm refused: {reason}", reason=refusal.value)
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
-        player = session.get(Player, user_id)
+        player = session.get(Player, user.id)
         balance = player.currency if player is not None else 0
     return i18n.t(f"sharpen.refusal.{refusal.value}", lang, balance=balance)
 
@@ -167,7 +178,7 @@ async def _edit(query: CallbackQuery, text: str) -> None:
         await query.edit_message_text(text)
     except TelegramError as error:
         # e.g. "message is not modified"/already gone — the sharpen itself is done.
-        logger.warning("Could not edit the sharpen confirm message: {}", error)
+        logger.warning("could not edit the sharpen confirm message: {error}", error=error)
 
 
 async def _confirm(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, tap: _Tap) -> None:
@@ -176,7 +187,7 @@ async def _confirm(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, tap
     try:
         done = _apply(context, user, tap)
     except sharpen.SharpenRefusedError as error:
-        await query.answer(_refusal_alert(session_factory, user.id, error.refusal), show_alert=True)
+        await query.answer(_refusal_alert(session_factory, user, error.refusal), show_alert=True)
         return
     # Committed above: the charge and the new stage are durable whatever the sends do.
     await _edit(query, i18n.t("sharpen.done_short", done.lang))
@@ -190,16 +201,23 @@ async def sharpen_callback_handler(update: Update, context: ContextTypes.DEFAULT
         return
     tap = _parse(query.data)
     if tap is None:
-        logger.warning("Malformed sharpen callback data: {!r}", query.data)
+        logger.warning("malformed sharpen callback data: {data!r}", data=query.data)
         await query.answer()
         return
     session_factory = context.bot_data["session_factory"]
     if query.from_user.id != tap.requester_id:
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
+            requester = players.describe_player_id(session, tap.requester_id)
+        logger.warning(
+            "tapped {requester}'s sharpen button — not theirs",
+            requester=requester,
+            requester_id=tap.requester_id,
+        )
         await query.answer(i18n.t("sharpen.not_yours", lang), show_alert=True)
         return
     if tap.game_id is None:
+        logger.info("cancelled their /sharpen")
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
         await _edit(query, i18n.t("sharpen.cancelled", lang))

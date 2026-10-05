@@ -16,6 +16,25 @@ from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.quiet_hours import parse_timezone
 
 
+def describe_person(user_id: int, *, username: str | None = None, name: str | None = None) -> str:
+    """How a person appears in a log line: `5 (@bob)`, else `5 (Bob B)`,
+    else the bare id. One format everywhere so an operator can grep for a
+    player by either id or handle (see CLAUDE.md's "Logging")."""
+    if username:
+        return f"{user_id} (@{username})"
+    if name:
+        return f"{user_id} ({name})"
+    return str(user_id)
+
+
+def describe_player_id(session: Session, telegram_user_id: int) -> str:
+    """describe_person() for a player known only by id, using the stored
+    username if there is one. Cheap: the row is usually already in the
+    session's identity map."""
+    player = session.get(Player, telegram_user_id)
+    return describe_person(telegram_user_id, username=player.username if player else None)
+
+
 def get_or_create_player(
     session: Session, telegram_user_id: int, *, username: str | None = None, grant: bool = True
 ) -> Player:
@@ -36,7 +55,11 @@ def get_or_create_player(
         session.add(player)
         # Flush before the ledger row so its FK target exists.
         session.flush()
-        logger.info("First time seeing player {} (@{})", telegram_user_id, username or "?")
+        logger.info(
+            "first time seeing player {player}",
+            player=describe_person(telegram_user_id, username=username),
+            player_id=telegram_user_id,
+        )
         if grant:
             starting_balance = economy_config.get_amounts(session)[
                 economy_config.EconomyKey.STARTING_BALANCE
@@ -61,7 +84,11 @@ def top_players(session: Session, *, limit: int) -> list[Player]:
     """Players with at least one win, ordered by wins descending."""
     stmt = select(Player).where(Player.wins > 0).order_by(Player.wins.desc()).limit(limit)
     players = list(session.scalars(stmt))
-    logger.debug("Leaderboard query returned {} player(s) (limit {})", len(players), limit)
+    logger.debug(
+        "leaderboard query returned {count} player(s) (limit {limit})",
+        count=len(players),
+        limit=limit,
+    )
     return players
 
 
@@ -77,4 +104,9 @@ def get_timezone(session: Session, telegram_user_id: int) -> ZoneInfo | None:
 def set_timezone(session: Session, telegram_user_id: int, tz: ZoneInfo) -> None:
     player = get_or_create_player(session, telegram_user_id)
     player.timezone = tz.key
-    logger.info("Player {} set timezone to {}", telegram_user_id, tz.key)
+    logger.info(
+        "{player} set their timezone to {timezone}",
+        player=describe_player_id(session, telegram_user_id),
+        player_id=telegram_user_id,
+        timezone=tz.key,
+    )

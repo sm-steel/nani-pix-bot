@@ -109,7 +109,7 @@ async def shop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     else:
         handled = False
     if not handled:
-        logger.warning("Ignoring shop callback {!r}", query.data)
+        logger.warning("ignoring shop callback {data!r}", data=query.data)
         await query.answer()
 
 
@@ -121,7 +121,7 @@ def _language(context: ContextTypes.DEFAULT_TYPE) -> str:
 async def _member_ok(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> bool:
     if await is_group_member(context.bot, context.bot_data["group_chat_id"], tap.user.id):
         return True
-    logger.warning("Shop purchase refused for {}: not a group member", tap.user.id)
+    logger.warning("shop purchase refused: not a group member")
     await tap.query.answer(i18n.t("dm_start.not_a_member", _language(context)), show_alert=True)
     return False
 
@@ -153,10 +153,10 @@ def _require_fresh(session: Session, tap: _BuyTap) -> None:
     owned = len(shop.owned_screenshot_urls(session, tap.game_id, tap.user.id))
     if owned != tap.screenshot_count:
         logger.warning(
-            "Stale screenshot button for {}: menu saw {}, owns {}",
-            tap.user.id,
-            tap.screenshot_count,
-            owned,
+            "stale screenshot button: menu saw {menu_count}, owns {count}",
+            menu_count=tap.screenshot_count,
+            count=owned,
+            game_id=tap.game_id,
         )
         raise ShopRefusedError(Refusal.NO_GAME)  # answered with shop.stale
 
@@ -170,6 +170,11 @@ def _charge(
     buyer = players.get_or_create_player(session, tap.user.id, username=tap.user.username)
     game = shop.active_game_for(session, tap.game_id)
     if game is None:
+        logger.warning(
+            "tapped a {kind} clue button, but the round is over",
+            kind=tap.kind.value,
+            game_id=tap.game_id,
+        )
         raise ShopRefusedError(Refusal.NO_GAME)
     amount = shop.price(session, game, buyer, request.kind)
     return game, shop.purchase(session, game, buyer, request), amount
@@ -216,33 +221,50 @@ async def _fail_delivery(
 async def _announce(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, lang: str) -> None:
     """Post the topic notice, then answer the tap — in that order, so a
     callback that timed out (BadRequest on the answer) skips nothing."""
-    await post_bought_notice(context, tap.user.full_name, tap.kind, lang)
+    await post_bought_notice(context, tap.game_id, tap.user.full_name, tap.kind, lang)
     try:
         await tap.query.answer()
     except BadRequest:
-        logger.warning("Could not answer shop callback from {}", tap.user.id, exc_info=True)
+        logger.opt(exception=True).warning("could not answer the shop callback")
 
 
 async def _deliver(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, bought: _Bought) -> None:
     """After the commit: DM the clue (refunding if that fails), then the
     shape follow-up and the topic notice."""
     markup = share_keyboard(bought.purchase_id, bought.lang)
-    if not await deliver_text_clue(context, tap.user.id, bought.message, markup):
+    if not await deliver_text_clue(context, tap.user, bought.message, markup):
         await _fail_delivery(context, tap, bought)
         return
+    _log_delivered(tap, bought.purchase_id)
     if bought.followup is not None:
-        await deliver_text_clue(context, tap.user.id, bought.followup)
+        await deliver_text_clue(context, tap.user, bought.followup)
     await _announce(context, tap, bought.lang)
+
+
+def _log_delivered(tap: _BuyTap, purchase_id: int) -> None:
+    logger.info(
+        "DM'd the {kind} clue (purchase {purchase_id})",
+        kind=tap.kind.value,
+        purchase_id=purchase_id,
+        game_id=tap.game_id,
+    )
 
 
 def _refund(session_factory, purchase_id: int) -> None:
     with session_scope(session_factory) as session:
         row = session.get(CluePurchase, purchase_id)
         if row is None:
-            logger.error("Cannot refund purchase {}: row is gone", purchase_id)
+            logger.error(
+                "cannot refund purchase {purchase_id}: row is gone", purchase_id=purchase_id
+            )
             return
+        game_id = row.game_id
         shop.refund(session, row)
-    logger.error("Clue delivery failed; refunded purchase {}", purchase_id)
+    logger.error(
+        "clue delivery failed; refunded purchase {purchase_id}",
+        purchase_id=purchase_id,
+        game_id=game_id,
+    )
 
 
 async def _find_screenshot(
@@ -307,6 +329,7 @@ async def _tile_button(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> None
 
 async def _open_tile_grid(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, lang: str) -> None:
     """No charge: just show the 8x8 grid to pick the round's tile."""
+    logger.info("opened the tile grid to pick the round's tile", game_id=tap.game_id)
     try:
         await context.bot.send_message(
             chat_id=tap.user.id,
@@ -314,7 +337,7 @@ async def _open_tile_grid(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, lang
             reply_markup=tile_keyboard(tap.game_id),
         )
     except TelegramError:
-        logger.exception("Could not DM the tile grid to {}", tap.user.id)
+        logger.exception("could not DM the tile grid", game_id=tap.game_id)
     await tap.query.answer()
 
 
@@ -358,7 +381,7 @@ async def _send_image(
     remember its file_id for the share flow."""
     file_id = await deliver_image_clue(
         context,
-        tap.user.id,
+        tap.user,
         bought.photo,
         i18n.t(bought.caption_key, bought.lang),
         share_keyboard(bought.purchase_id, bought.lang),
@@ -366,6 +389,7 @@ async def _send_image(
     if file_id is None:
         await _fail_delivery(context, tap, bought)
         return False
+    _log_delivered(tap, bought.purchase_id)
     with session_scope(context.bot_data["session_factory"]) as session:
         row = session.get(CluePurchase, bought.purchase_id)
         if row is not None:
@@ -380,6 +404,6 @@ async def _clear_grid(tap: _BuyTap) -> None:
         await tap.query.edit_message_reply_markup(reply_markup=None)
     except BadRequest as error:
         if "not modified" not in str(error).lower():
-            logger.warning("Could not clear the tile grid: {}", error)
+            logger.warning("could not clear the tile grid: {error}", error=error)
     except TelegramError:
-        logger.warning("Could not clear the tile grid", exc_info=True)
+        logger.opt(exception=True).warning("could not clear the tile grid")

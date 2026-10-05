@@ -125,3 +125,20 @@ def test_get_or_create_player_without_grant_starts_at_zero_with_no_ledger_row(
     assert player is not None
     assert player.currency == 0
     assert session.query(CurrencyTransfer).count() == 0
+
+
+def test_describe_person_prefers_the_username() -> None:
+    assert players.describe_person(5, username="bob", name="Bob B") == "5 (@bob)"
+
+
+def test_describe_person_falls_back_to_the_name_then_the_bare_id() -> None:
+    assert players.describe_person(5, name="Bob B") == "5 (Bob B)"
+    assert players.describe_person(5) == "5"
+
+
+def test_describe_player_id_reads_the_stored_username(session: Session) -> None:
+    session.add(Player(telegram_user_id=7, username="carol"))
+    session.commit()
+
+    assert players.describe_player_id(session, 7) == "7 (@carol)"
+    assert players.describe_player_id(session, 8) == "8"

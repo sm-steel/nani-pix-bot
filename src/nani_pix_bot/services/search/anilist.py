@@ -81,7 +81,9 @@ async def search(
     data = await graphql.request(_API, client, query=_SEARCH_QUERY, variables=variables)
     page = graphql.require_object(_API, data.get("Page"), label="Page", variables=variables)
     results = parsing.parse_entries(_API_NAME, page.get("media") or [], _parse_result)
-    logger.debug("AniList search {!r} returned {} result(s)", query, len(results))
+    logger.debug(
+        "AniList search {query!r} returned {count} result(s)", query=query, count=len(results)
+    )
     return results
 
 
@@ -97,7 +99,7 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
     data = await graphql.request(_API, client, query=_BY_ID_QUERY, variables={"id": anilist_id})
     media = data.get("Media")
     if media is None:
-        logger.debug("AniList id {} no longer found", anilist_id)
+        logger.debug("AniList id {anilist_id} no longer found", anilist_id=anilist_id)
         return None
     # `Media` sits in the same nested position `Page` does, but it is the
     # entry itself rather than a container of them, so it deliberately
@@ -140,7 +142,8 @@ def _parse_result(raw: dict) -> AniListResult | None:
     synonyms = parsing.optional_str_list(raw, "synonyms")
     if not parsing.has_answer_key((title_romaji, title_english, title_native), synonyms):
         logger.debug(
-            "AniList id {} has no title in any variant and no synonyms, skipping", anilist_id
+            "AniList id {anilist_id} has no title in any variant and no synonyms, skipping",
+            anilist_id=anilist_id,
         )
         return None
     start_date = raw.get("startDate") or {}

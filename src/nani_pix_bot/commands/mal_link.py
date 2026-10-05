@@ -34,9 +34,7 @@ async def linkmal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # bot with no MAL_TOKEN_ENCRYPTION_KEY, where storing the tokens
         # then blew up — with their single-use code already spent.
         if not mal_configured(context.bot_data):
-            logger.warning(
-                "Player {} ran /linkmal but MAL account linking isn't configured", user.id
-            )
+            logger.warning("ran /linkmal but MAL account linking isn't configured")
             await update.message.reply_text(i18n.t("mal_link.not_configured", lang))
             return
 
@@ -50,7 +48,7 @@ async def linkmal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
     schedule_mal_link_expiry(context.job_queue, user.id)
-    logger.info("Player {} started a /linkmal attempt", user.id)
+    logger.info("started a /linkmal attempt")
     await update.message.reply_text(i18n.t("mal_link.authorize_prompt", lang, url=authorize_url))
 
 
@@ -70,5 +68,5 @@ async def unlinkmal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # authorization code and answered with a rejection.
         mal_link.delete_pending_link(session, user.id)
 
-    logger.info("Player {} ran /unlinkmal", user.id)
+    logger.info("ran /unlinkmal — MAL link and any pending attempt removed")
     await update.message.reply_text(i18n.t("mal_link.unlinked", lang))

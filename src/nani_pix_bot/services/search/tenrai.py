@@ -97,7 +97,9 @@ async def search(
     params = {"q": query, "limit": limit, "sfw": "true"}
     data = await rest.get_json(_API, client, TENRAI_BASE_URL, params)
     results = parsing.parse_entries(_API.name, data.get("data") or [], _parse_result)
-    logger.debug("Tenrai search {!r} returned {} result(s)", query, len(results))
+    logger.debug(
+        "Tenrai search {query!r} returned {count} result(s)", query=query, count=len(results)
+    )
     return results
 
 
@@ -152,10 +154,10 @@ async def random_anime(client: httpx.AsyncClient) -> TenraiResult | None:
         return None
     if result.members is None or result.members < RANDOM_PICK_MIN_MEMBERS:
         logger.debug(
-            "Tenrai id {} has only {} members (below floor {}), rejecting",
-            result.tenrai_id,
-            result.members,
-            RANDOM_PICK_MIN_MEMBERS,
+            "Tenrai id {tenrai_id} has only {members} members (below floor {floor}), rejecting",
+            tenrai_id=result.tenrai_id,
+            members=result.members,
+            floor=RANDOM_PICK_MIN_MEMBERS,
         )
         return None
     return result
@@ -173,7 +175,11 @@ async def screenshots(client: httpx.AsyncClient, tenrai_id: int) -> list[str]:
     data = await rest.get_json(_API, client, f"{TENRAI_BASE_URL}/{tenrai_id}/pictures", {})
     pictures = data.get("data") or []
     urls = parsing.parse_entries(_API.name, pictures, _picture_url)[:SCREENSHOT_FETCH_LIMIT]
-    logger.debug("Tenrai id {} has {} picture(s) available", tenrai_id, len(pictures))
+    logger.debug(
+        "Tenrai id {tenrai_id} has {count} picture(s) available",
+        tenrai_id=tenrai_id,
+        count=len(pictures),
+    )
     return urls
 
 
@@ -253,7 +259,8 @@ def _parse_result(raw: dict) -> TenraiResult | None:
     synonyms = parsing.optional_str_list(raw, "title_synonyms")
     if not parsing.has_answer_key((title_romaji, title_english, title_native), synonyms):
         logger.debug(
-            "Tenrai id {} has no title in any variant and no synonyms, skipping", tenrai_id
+            "Tenrai id {tenrai_id} has no title in any variant and no synonyms, skipping",
+            tenrai_id=tenrai_id,
         )
         return None
     members = None if raw.get("members") is None else parsing.require_int(raw, "members")

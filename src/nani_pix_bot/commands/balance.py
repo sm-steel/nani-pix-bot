@@ -26,5 +26,5 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
         amount = wallet.balance(session, user.id)
-    logger.debug("/balance for {}: {}", user.id, amount)
+    logger.info("checked /balance: {balance} 💠", balance=amount)
     await message.reply_text(i18n.t("economy.balance", lang, amount=amount))

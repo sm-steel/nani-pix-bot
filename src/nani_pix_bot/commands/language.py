@@ -34,10 +34,11 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         if not await is_group_admin(context.bot, group_chat_id, user.id):
-            logger.warning("Non-admin {} tried /language", user.id)
+            logger.warning("non-admin tried /language")
             await message.reply_text(i18n.t("language.not_admin", lang))
             return
 
+    logger.info("opened the /language picker (current {language})", language=lang)
     await message.reply_text(i18n.t("language.prompt", lang), reply_markup=_keyboard())
 
 
@@ -56,9 +57,10 @@ async def language_callback_handler(update: Update, context: ContextTypes.DEFAUL
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         if not await is_group_admin(context.bot, group_chat_id, user.id):
-            logger.warning("Non-admin {} tapped a /language button", user.id)
+            logger.warning("non-admin tapped a /language button")
             return
         settings.set_language(session, new_lang)
+    logger.info("set the bot language to {language}", language=new_lang)
 
     await refresh_command_menu(context.bot, group_chat_id=group_chat_id, lang=new_lang)
     await query.edit_message_text(i18n.t("language.set", new_lang))

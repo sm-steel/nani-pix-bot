@@ -4,6 +4,7 @@ steps (`CONFIRMING`/`AWAITING_SYNONYM`/`AWAITING_PHOTO_CHANGE`) are
 dispatched from here too, since they all arrive as the same kind of DM
 text message — see `search_text_handler`."""
 
+from dataclasses import dataclass
 from typing import Literal
 
 import httpx
@@ -43,6 +44,7 @@ from nani_pix_bot.commands.dm_start.manual import _manual_synonyms_step, _manual
 from nani_pix_bot.commands.dm_start.preview import _add_synonym_step
 from nani_pix_bot.commands.dm_start.screenshot_gallery import _screenshot_search_step
 from nani_pix_bot.commands.dm_start.screenshots import (
+    SourceMenu,
     send_screenshot_picker_prompt,
     source_menu_for,
     stage_screenshot_picker,
@@ -98,7 +100,9 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
         # commands/dm_start/mal_browse.py.
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
-        logger.debug("Starter {}: MAL list method tapped", user.id)
+            setup_game = game_service.get_setup_game_for_starter(session, user.id)
+            game_id = setup_game.id if setup_game is not None else None
+        logger.info("picked identification method 'My MAL List'", game_id=game_id)
         await handle_mal_method_tap(query, context, lang, user)
         return
 
@@ -106,6 +110,10 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
+            logger.warning(
+                "picked identification method {method} with no SETUP game left — ignoring",
+                method=source,
+            )
             return
         # A method pick starts a fresh identification — reached again
         # after the preview's "Re-search", where the previous pick is
@@ -118,7 +126,7 @@ async def method_pick_callback_handler(update: Update, context: ContextTypes.DEF
         # Read inside the session block — the prompt below depends on it,
         # and the row is detached once the block closes.
         has_image = setup_game.original_image is not None
-        logger.debug("Game {}: starter picked identification method {!r}", setup_game.id, source)
+        logger.info("picked identification method {method}", method=source, game_id=setup_game.id)
 
     await query.edit_message_text(
         i18n.t(_search_prompt_key(source=source, has_image=has_image), lang),
@@ -145,17 +153,19 @@ async def _back_to_method_selection(query, context: ContextTypes.DEFAULT_TYPE) -
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         setup_step = setup_game.setup_step if setup_game is not None else None
+        game_id = setup_game.id if setup_game is not None else None
 
     if setup_step != SetupStep.PICKING_METHOD:
-        logger.debug(
-            "Starter {}: ignoring a stale 'different search method' tap (setup step {})",
-            user.id,
-            setup_step,
+        logger.warning(
+            "tapped a stale 'different search method' button (setup step {step}) — "
+            "dropping its buttons",
+            step=setup_step,
+            game_id=game_id,
         )
         await query.edit_message_reply_markup(reply_markup=None)
         return
 
-    logger.debug("Starter {}: back to method selection", user.id)
+    logger.info("went back to method selection", game_id=game_id)
     await query.edit_message_text(
         i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
         reply_markup=_method_keyboard(context, lang),
@@ -189,30 +199,64 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
+            # Any DM text from someone with no setup open lands here —
+            # chatting at the bot, or a reply to a setup that has since
+            # ended. Nothing to act on, but it is still a person doing
+            # something, so it gets its line.
+            logger.info(
+                "sent DM text {text!r} with no setup in progress — ignoring", text=message.text
+            )
             return
-        setup_step = setup_game.setup_step
-        source = setup_game.source
-        awaiting_synonyms = setup_game.title_english is not None
-        # The picker column, never the image one: "which provider is
-        # being resolved" is exactly the question routing a typed
-        # message asks, and screenshot_source answers a different one
-        # ("what backs the stored image") — see models/game.py.
-        picker_provider = setup_game.screenshot_picker_provider
-        # Captured while the game is live: _screenshot_search_step runs
-        # after this block closes and needs the source menu to fall back
-        # onto if the provider is down or finds nothing.
-        screenshot_menu = (
-            source_menu_for(setup_game, _stored_provider(picker_provider))
-            if picker_provider is not None
-            else None
+        typed = _TypedText(
+            game_id=setup_game.id,
+            setup_step=setup_game.setup_step,
+            source=setup_game.source,
+            awaiting_synonyms=setup_game.title_english is not None,
+            # The picker column, never the image one: "which provider is
+            # being resolved" is exactly the question routing a typed
+            # message asks, and screenshot_source answers a different one
+            # ("what backs the stored image") — see models/game.py.
+            # Captured while the game is live: _screenshot_search_step
+            # runs after this block closes and needs the source menu to
+            # fall back onto if the provider is down or finds nothing.
+            screenshot_menu=(
+                source_menu_for(setup_game, _stored_provider(setup_game.screenshot_picker_provider))
+                if setup_game.screenshot_picker_provider is not None
+                else None
+            ),
         )
 
-    if setup_step == SetupStep.AWAITING_SYNONYM:
+    await _route_typed_text(message, context, lang, user, typed)
+
+
+@dataclass(frozen=True)
+class _TypedText:
+    """What `search_text_handler` read off the setup row to decide where a
+    typed DM goes, captured while its session was still open."""
+
+    game_id: int
+    setup_step: SetupStep
+    source: str
+    awaiting_synonyms: bool
+    screenshot_menu: SourceMenu | None
+
+
+async def _route_typed_text(
+    message, context: ContextTypes.DEFAULT_TYPE, lang: str, user, typed: _TypedText
+) -> None:
+    """Sends a typed DM to whichever step of the setup it answers."""
+    if typed.setup_step == SetupStep.AWAITING_SYNONYM:
         await _add_synonym_step(message, context, lang, user)
-    elif setup_step in (SetupStep.CONFIRMING, SetupStep.AWAITING_PHOTO_CHANGE):
-        pass  # only the preview's buttons (or a replacement photo) matter here
-    elif setup_step == SetupStep.PICKING_SCREENSHOT:
-        if screenshot_menu is not None:
+    elif typed.setup_step in (SetupStep.CONFIRMING, SetupStep.AWAITING_PHOTO_CHANGE):
+        # Only the preview's buttons (or a replacement photo) matter here.
+        logger.info(
+            "typed {text!r} at {step} — ignored, this step takes a button or a photo",
+            text=message.text,
+            step=typed.setup_step.value,
+            game_id=typed.game_id,
+        )
+    elif typed.setup_step == SetupStep.PICKING_SCREENSHOT:
+        if typed.screenshot_menu is not None:
             # A screenshot provider is being resolved — ticket 8's
             # cross-provider "Search again" correction, the fallback
             # state after an auto-search found nothing or a provider
@@ -225,15 +269,16 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             # this step — the source-selection keyboard, or a
             # same-provider gallery, neither of which offers a search —
             # expects a button tap, not text.
-            await _screenshot_search_step(message, context, lang, screenshot_menu)
+            await _screenshot_search_step(message, context, lang, typed.screenshot_menu)
         else:
-            logger.debug(
-                "Starter {}: ignoring text during PICKING_SCREENSHOT — no provider is being "
-                "resolved, so this screen expects a button tap",
-                user.id,
+            logger.info(
+                "typed {text!r} while picking a screenshot — ignored, no provider is being "
+                "resolved, so this screen takes a button tap",
+                text=message.text,
+                game_id=typed.game_id,
             )
-    elif source == "manual":
-        if awaiting_synonyms:
+    elif typed.source == "manual":
+        if typed.awaiting_synonyms:
             await _manual_synonyms_step(message, context, lang, user)
         else:
             await _manual_title_step(message, context, lang, user)
@@ -242,11 +287,11 @@ async def search_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         # this is where the column's bare string becomes a real member
         # (see `_stored_provider`) — `_search_step` names it on two
         # screens via `.display_name`.
-        await _search_step(message, context, lang, _stored_provider(source))
+        await _search_step(message, context, lang, _stored_provider(typed.source), typed.game_id)
 
 
 async def _search_step(
-    message, context: ContextTypes.DEFAULT_TYPE, lang: str, source: Provider
+    message, context: ContextTypes.DEFAULT_TYPE, lang: str, source: Provider, game_id: int
 ) -> None:
     """An AniList/Shikimori search query: search and show a results
     keyboard, or fail back to the method-selection keyboard. Sends a
@@ -255,7 +300,12 @@ async def _search_step(
     outcome, so the starter gets fast feedback without extra message
     clutter."""
     status_message = await message.reply_text(i18n.t("dm_start.searching", lang))
-    logger.debug("{} search started for query {!r}", source, message.text)
+    logger.debug(
+        "{provider} search started for query {query!r}",
+        provider=source,
+        query=message.text,
+        game_id=game_id,
+    )
 
     client = client_for_source(context, source)
     try:
@@ -279,11 +329,22 @@ async def _search_step(
                 client, message.text, anilist.search, lambda rs: anilist_results_keyboard(rs, lang)
             )
     except SEARCH_SERVICE_ERRORS:
-        logger.exception("{} search failed for query {!r}", source, message.text)
+        logger.exception(
+            "{provider} search failed for query {query!r}",
+            provider=source,
+            query=message.text,
+            game_id=game_id,
+        )
         await _reply_service_down(status_message.edit_text, lang, source, context)
         return
 
-    logger.debug("{} search for {!r} returned {} results", source, message.text, len(results))
+    logger.info(
+        "searched {provider} for {query!r} — {count} result(s)",
+        provider=source,
+        query=message.text,
+        count=len(results),
+        game_id=game_id,
+    )
     if not results:
         await status_message.edit_text(
             i18n.t("dm_start.no_results", lang, service=source.display_name),
@@ -314,6 +375,10 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
+        # For the log lines only — the row is re-read below once the
+        # round-trip is done, since it can vanish meanwhile.
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        game_id = setup_game.id if setup_game is not None else None
 
     # Deliberately not acknowledged yet: _resolve_picked_result runs a
     # provider round-trip, and the SETUP row can vanish while it's in
@@ -324,7 +389,7 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     # `query.edit_message_text` instead of `query.answer`, so the bare
     # answer just below still lands as this handler's one acknowledgement
     # for those paths.
-    resolved = await _resolve_picked_result(query, context, lang)
+    resolved = await _resolve_picked_result(query, context, lang, game_id)
     if resolved is None:
         await query.answer()
         return
@@ -333,7 +398,7 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
-            await _reject_stale_tap(query, user.id, lang)
+            await _reject_stale_tap(query, lang)
             return
         # Inside the open write transaction, like every other await in
         # this block — see issue #82, which is filed against exactly
@@ -341,7 +406,13 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         # not a new pattern.
         await query.answer()
         game_service.stage_result(setup_game, result, source=source)
-        logger.debug("Game {}: staged {} result {}", setup_game.id, source, external_id)
+        logger.info(
+            "picked {title!r} ({provider} {provider_id})",
+            title=game_service.display_title(setup_game, "EN"),
+            provider=source,
+            provider_id=external_id,
+            game_id=setup_game.id,
+        )
         has_image = setup_game.original_image is not None
         if has_image:
             # Traditional photo-first entry — image already in hand.
@@ -369,14 +440,15 @@ async def _get_identification_result(
 
 
 async def _resolve_picked_result(
-    query, context: ContextTypes.DEFAULT_TYPE, lang: str
+    query, context: ContextTypes.DEFAULT_TYPE, lang: str, game_id: int | None
 ) -> tuple[Provider, int, AniListResult | ShikimoriResult | TenraiResult | TMDBResult] | None:
     """Handles the "none of these" retry tap and resolves a valid pick to
     its (source, external_id, result) triple. Replies and returns None
     for every already-handled outcome: retry tapped, unparseable
     callback data, the search service erroring, or the id no longer
-    existing."""
+    existing. `game_id` only labels the log lines."""
     if query.data == SEARCH_RETRY_CALLBACK_DATA:
+        logger.info('tapped "None of these"', game_id=game_id)
         await query.edit_message_text(
             i18n.t("dm_start.retry", lang), reply_markup=back_to_methods_keyboard(lang)
         )
@@ -384,6 +456,7 @@ async def _resolve_picked_result(
 
     parsed = parse_pick_callback_data(query.data)
     if parsed is None:
+        logger.warning("rejected result tap {data!r}", data=query.data, game_id=game_id)
         return None
     source, external_id = parsed
 
@@ -391,12 +464,22 @@ async def _resolve_picked_result(
     try:
         result = await _get_identification_result(source, client, external_id)
     except SEARCH_SERVICE_ERRORS:
-        logger.exception("{} get_by_id failed for id {}", source, external_id)
+        logger.exception(
+            "{provider} get_by_id failed for id {provider_id}",
+            provider=source,
+            provider_id=external_id,
+            game_id=game_id,
+        )
         await _reply_service_down(query.edit_message_text, lang, source, context)
         return None
 
     if result is None:
-        logger.warning("{} id {} picked but no longer found", source, external_id)
+        logger.warning(
+            "picked {provider} id {provider_id}, which is no longer found",
+            provider=source,
+            provider_id=external_id,
+            game_id=game_id,
+        )
         await query.edit_message_text(
             i18n.t("dm_start.not_found_anymore", lang, service=source.display_name)
         )

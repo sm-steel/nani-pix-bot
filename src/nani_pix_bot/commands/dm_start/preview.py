@@ -123,17 +123,18 @@ async def _add_synonym_step(message, context: ContextTypes.DEFAULT_TYPE, lang: s
     button: appends it (or several, comma/newline-separated) and
     re-shows the preview."""
     extra = [s.strip() for s in _SYNONYM_SPLIT_RE.split(message.text) if s.strip()]
-    if not extra:
-        await message.reply_text(i18n.t("dm_start.synonyms_required", lang))
-        return
-
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
+            logger.warning("typed an extra synonym with no SETUP game left — ignoring")
+            return
+        if not extra:
+            logger.info("sent no usable synonym — asking again", game_id=setup_game.id)
+            await message.reply_text(i18n.t("dm_start.synonyms_required", lang))
             return
         setup_game.synonyms = [*(setup_game.synonyms or []), *extra]
-        logger.debug("Game {}: appended {} extra synonym(s)", setup_game.id, len(extra))
+        logger.info("added synonym(s) {synonyms!r}", synonyms=extra, game_id=setup_game.id)
         album = _stage_preview(session, setup_game, lang)
     # Block closed and committed above — see _post_preview_album's
     # docstring for why the send has to happen after.
@@ -166,6 +167,10 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
+            logger.warning(
+                "tapped preview button {data!r} with no SETUP game left — ignoring",
+                data=query.data,
+            )
             return
 
         if query.data == PREVIEW_CHANGE_IMAGE_CALLBACK_DATA:
@@ -225,8 +230,11 @@ async def _handle_confirm_tap(
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
+            logger.warning("tapped Confirm with no SETUP game left — ignoring")
             return None
-        logger.debug("Game {}: confirmed from preview", setup_game.id)
+        # DEBUG, not INFO: activate_game logs the start itself, naming the
+        # starter and the answer, and this tap is that same action.
+        logger.debug("confirmed from preview", game_id=setup_game.id)
         first_stage_post = _activate_and_stage_first_post(
             session, context, setup_game, lang, user.full_name
         )
@@ -245,7 +253,7 @@ async def _preview_change_image(query, game: Game, lang: str) -> None:
     screenshot instead offers a choice — upload one after all, or pick
     a different screenshot from the same provider — via
     _preview_change_image_upload/_preview_change_image_pick_screenshot."""
-    logger.debug("Game {}: change-image requested from preview", game.id)
+    logger.info("tapped Change image on the preview", game_id=game.id)
     if game.screenshot_source is not None:
         await query.edit_message_text(
             text=i18n.t("dm_start.pick_new_image_source_prompt", lang),
@@ -257,7 +265,7 @@ async def _preview_change_image(query, game: Game, lang: str) -> None:
 
 
 async def _preview_change_image_upload(query, game: Game, lang: str) -> None:
-    logger.debug("Game {}: upload-a-new-photo requested from preview", game.id)
+    logger.info("chose to upload a new photo from the preview", game_id=game.id)
     game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
     await query.edit_message_text(text=i18n.t("dm_start.ask_new_photo", lang))
 
@@ -280,8 +288,9 @@ async def _handle_change_image_pick_screenshot_tap(
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
+            logger.warning("tapped Pick a different screenshot with no SETUP game left — ignoring")
             return
-        logger.debug("Game {}: pick-a-different-screenshot requested from preview", setup_game.id)
+        logger.info("chose to pick a different screenshot from the preview", game_id=setup_game.id)
         # resume_screenshot_gallery owns the setup_step transition itself
         # and returns either a plain reply key or a ScreenshotFailure —
         # the latter puts the starter back on the source menu rather
@@ -306,7 +315,7 @@ async def _handle_change_image_pick_screenshot_tap(
         # starter reads "Where should I get a screenshot from?" with
         # nothing to tap (MECHANICS.md's "When a provider fails").
         logger.warning(
-            "Game {}: stale pick-a-screenshot tap, re-offering the source menu", setup_game.id
+            "stale pick-a-screenshot tap, re-offering the source menu", game_id=setup_game.id
         )
         await reply_with_source_menu(
             query.edit_message_text, source_menu_for(setup_game, None), lang, outcome
@@ -318,7 +327,7 @@ async def _handle_change_image_pick_screenshot_tap(
 async def _preview_research(
     query, game: Game, lang: str, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    logger.debug("Game {}: re-search requested from preview", game.id)
+    logger.info("tapped Re-search title on the preview", game_id=game.id)
     # An API-sourced screenshot is cleared here (see
     # clear_screenshot_selection's docstring) since re-searching might
     # pick a different anime entirely — a genuine upload is left alone,
@@ -332,7 +341,7 @@ async def _preview_research(
 
 
 async def _preview_add_synonym(query, game: Game, lang: str) -> None:
-    logger.debug("Game {}: add-synonym requested from preview", game.id)
+    logger.info("tapped Add a synonym on the preview", game_id=game.id)
     game.setup_step = SetupStep.AWAITING_SYNONYM
     await query.edit_message_text(text=i18n.t("dm_start.ask_extra_synonym", lang))
 
@@ -359,7 +368,7 @@ def _algorithm_options(lang: str) -> str:
 
 
 async def _preview_pixel_algorithm(query, game: Game, lang: str) -> None:
-    logger.debug("Game {}: pixelation submenu opened from preview", game.id)
+    logger.info("opened the pixelation submenu", game_id=game.id)
     await query.edit_message_text(
         text=i18n.t(
             "dm_start.pixel_algorithm_prompt",
@@ -374,7 +383,7 @@ async def _preview_pixel_algorithm(query, game: Game, lang: str) -> None:
 async def _preview_pixel_algorithm_back(query, game: Game, lang: str) -> None:
     """Leave the submenu without changing anything — back to the same
     prompt and buttons the album's follow-up message started with."""
-    logger.debug("Game {}: pixelation submenu dismissed", game.id)
+    logger.info("closed the pixelation submenu without changing it", game_id=game.id)
     await query.edit_message_text(
         text=i18n.t("dm_start.preview_confirm_prompt", lang),
         reply_markup=preview_keyboard(lang, game.pixel_algorithm),
@@ -400,16 +409,24 @@ async def _handle_pixel_algorithm_pick_tap(
     except ValueError:
         # Callback data is client-supplied; this branch matches on prefix
         # only (see keyboards.py's trust-boundary note).
-        logger.warning("Ignoring unknown pixelation algorithm {!r} from user {}", value, user.id)
+        logger.warning("ignoring unknown pixelation algorithm {value!r}", value=value)
         return
 
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
+            logger.warning(
+                "picked pixelation algorithm {algorithm} with no SETUP game left — ignoring",
+                algorithm=algorithm.value,
+            )
             return
         setup_game.pixel_algorithm = algorithm
-        logger.info("Game {}: pixelation algorithm set to {}", setup_game.id, algorithm.value)
+        logger.info(
+            "set the pixelation algorithm to {algorithm}",
+            algorithm=algorithm.value,
+            game_id=setup_game.id,
+        )
         album = _stage_preview(session, setup_game, lang)
     # Block closed and committed above — see _post_preview_album's
     # docstring for why the sends have to happen after.
@@ -435,13 +452,13 @@ def _bounty_menu(session, game: Game, lang: str) -> tuple[str, InlineKeyboardMar
 
 
 async def _preview_bounty(query, session, game: Game, lang: str) -> None:
-    logger.debug("Game {}: bounty submenu opened from preview", game.id)
+    logger.info("opened the bounty submenu", game_id=game.id)
     text, markup = _bounty_menu(session, game, lang)
     await query.edit_message_text(text=text, reply_markup=markup)
 
 
 async def _preview_bounty_back(query, game: Game, lang: str) -> None:
-    logger.debug("Game {}: bounty submenu dismissed", game.id)
+    logger.info("closed the bounty submenu", game_id=game.id)
     await query.edit_message_text(
         text=i18n.t("dm_start.preview_confirm_prompt", lang),
         reply_markup=preview_keyboard(lang, game.pixel_algorithm),
@@ -458,7 +475,7 @@ async def _handle_bounty_pick_tap(session_factory, query, user) -> None:
         amount = None
     if amount not in BOUNTY_PRESETS:
         # Callback data is client-supplied (see keyboards.py's trust-boundary note).
-        logger.warning("Ignoring bounty amount {!r} from user {}", query.data, user.id)
+        logger.warning("ignoring bounty amount {data!r}", data=query.data)
         await query.answer()
         return
 
@@ -470,14 +487,14 @@ async def _handle_bounty_pick_tap(session_factory, query, user) -> None:
             setup_game = game_service.get_setup_game_for_starter(session, user.id)
             player = session.get(Player, user.id)
             if setup_game is None or player is None:
-                await _reject_stale_tap(query, user.id, lang)
+                await _reject_stale_tap(query, lang)
                 return
             bounty.contribute(session, setup_game, player, amount)
             shown = _bounty_menu(session, setup_game, lang)
     except bounty.BountyRefusedError as error:
         refusal = error.refusal
     if refusal is not None:
-        await _alert_bounty_refusal(session_factory, query, user.id, refusal)
+        await _alert_bounty_refusal(session_factory, query, user, refusal)
         return
     if shown is None:
         raise RuntimeError("bounty pick finished with neither a refusal nor a menu")
@@ -486,12 +503,12 @@ async def _handle_bounty_pick_tap(session_factory, query, user) -> None:
 
 
 async def _alert_bounty_refusal(
-    session_factory, query, user_id: int, refusal: bounty.BountyRefusal
+    session_factory, query, user, refusal: bounty.BountyRefusal
 ) -> None:
-    logger.warning("{}'s preview bounty was refused: {}", user_id, refusal.value)
+    logger.warning("preview bounty was refused: {reason}", reason=refusal.value)
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
-        balance = wallet.balance(session, user_id)
+        balance = wallet.balance(session, user.id)
     await query.answer(
         i18n.t(f"bounty.refusal.{refusal.value}", lang, minimum=bounty.BOUNTY_MIN, balance=balance),
         show_alert=True,

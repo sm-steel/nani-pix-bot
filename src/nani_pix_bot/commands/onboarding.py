@@ -19,14 +19,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     if context.args == ["shop"]:
-        logger.debug("/start shop deep link from {}", user.id)
+        logger.info("opened the shop via the /start deep link")
         await open_shop(message, context, user)
         return
 
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
-    logger.debug("/start sent to {}", user.id)
+    logger.info("sent /start")
     await message.reply_text(i18n.t("onboarding.start", lang))
 
 
@@ -41,6 +41,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         lang = settings.get_language(session)
 
     if is_private_chat(update):
+        logger.info("sent /help in DM")
         await message.reply_text(i18n.t("onboarding.help", lang))
         return
 
@@ -51,8 +52,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     try:
         await context.bot.send_message(chat_id=user.id, text=i18n.t("onboarding.help", lang))
+        logger.info("sent /help in the game topic — help sent by DM")
     except Forbidden:
-        logger.warning("Couldn't DM /help to {} — they haven't started the bot", user.id)
+        logger.warning("couldn't DM /help — they haven't started the bot")
         # bot_data["bot_username"] is written by app.py's _post_init, so it
         # is absent until the first getMe answers (and in tests). The old
         # "" default put a dangling "@" in the middle of the sentence,

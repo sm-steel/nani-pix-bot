@@ -61,7 +61,7 @@ def is_match(guess: str, candidates: Sequence[str | None]) -> bool:
     normalized."""
     normalized_guess = normalize(guess)
     if not normalized_guess:
-        logger.debug("Guess {!r} normalized to empty string — no match possible", guess)
+        logger.debug("guess {guess!r} normalized to empty string — no match possible", guess=guess)
         return False
 
     best_candidate: str | None = None
@@ -73,7 +73,10 @@ def is_match(guess: str, candidates: Sequence[str | None]) -> bool:
         normalized_candidate = normalize(candidate)
         score = fuzz.ratio(normalized_guess, normalized_candidate)
         logger.debug(
-            "  vs {!r} (normalized {!r}): score {:.1f}", candidate, normalized_candidate, score
+            "  vs {candidate!r} (normalized {normalized!r}): score {score:.1f}",
+            candidate=candidate,
+            normalized=normalized_candidate,
+            score=score,
         )
         if score > best_score:
             best_score = score
@@ -83,16 +86,17 @@ def is_match(guess: str, candidates: Sequence[str | None]) -> bool:
     matched = best_score >= MATCH_THRESHOLD
     margin = best_score - MATCH_THRESHOLD
     logger.debug(
-        "Guess {!r} (normalized {!r}) best matched {!r} (normalized {!r}): "
-        "score {:.1f}, threshold {:.1f}, {} by {:.1f} -> {}",
-        guess,
-        normalized_guess,
-        best_candidate,
-        best_normalized,
-        best_score,
-        MATCH_THRESHOLD,
-        "cleared" if matched else "short",
-        abs(margin),
-        "MATCH" if matched else "NO MATCH",
+        "guess {guess!r} (normalized {normalized!r}) best matched {candidate!r}"
+        " (normalized {candidate_normalized!r}): score {score:.1f}, threshold {threshold:.1f},"
+        " {verdict} by {margin:.1f} -> {result}",
+        guess=guess,
+        normalized=normalized_guess,
+        candidate=best_candidate,
+        candidate_normalized=best_normalized,
+        score=best_score,
+        threshold=MATCH_THRESHOLD,
+        verdict="cleared" if matched else "short",
+        margin=abs(margin),
+        result="MATCH" if matched else "NO MATCH",
     )
     return matched

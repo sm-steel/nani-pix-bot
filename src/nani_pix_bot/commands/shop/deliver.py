@@ -5,7 +5,7 @@ import html
 from collections.abc import Callable
 
 from loguru import logger
-from telegram import InlineKeyboardMarkup
+from telegram import InlineKeyboardMarkup, User
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
@@ -59,7 +59,7 @@ def text_clue_message(game: Game, kind: ClueKind, owned: set[ClueKind], lang: st
     holds: a shape message fills in the letters they also bought."""
     titles = game_service.clue_titles(game, lang)
     if not titles:
-        logger.error("Game {} has no title for a {} clue", game.id, kind)
+        logger.error("no title for a {kind} clue", kind=kind.value, game_id=game.id)
         return i18n.t("shop.stale", lang)
     if kind is ClueKind.TITLE_SHAPE:
         body = _shape_entries(titles, owned, lang)
@@ -71,7 +71,7 @@ def text_clue_message(game: Game, kind: ClueKind, owned: set[ClueKind], lang: st
 
 async def deliver_text_clue(
     context: ContextTypes.DEFAULT_TYPE,
-    user_id: int,
+    user: User,
     message: str,
     reply_markup: InlineKeyboardMarkup | None = None,
 ) -> bool:
@@ -79,17 +79,17 @@ async def deliver_text_clue(
     can refund."""
     try:
         await context.bot.send_message(
-            chat_id=user_id, text=message, parse_mode="HTML", reply_markup=reply_markup
+            chat_id=user.id, text=message, parse_mode="HTML", reply_markup=reply_markup
         )
     except TelegramError:
-        logger.exception("Could not DM a clue to {}", user_id)
+        logger.exception("could not DM a text clue")
         return False
     return True
 
 
 async def deliver_image_clue(
     context: ContextTypes.DEFAULT_TYPE,
-    user_id: int,
+    user: User,
     photo: bytes,
     caption: str,
     reply_markup: InlineKeyboardMarkup,
@@ -98,16 +98,16 @@ async def deliver_image_clue(
     None (logged) if Telegram refused it, so the caller can refund."""
     try:
         message = await context.bot.send_photo(
-            chat_id=user_id, photo=photo, caption=caption, reply_markup=reply_markup
+            chat_id=user.id, photo=photo, caption=caption, reply_markup=reply_markup
         )
     except TelegramError:
-        logger.exception("Could not DM an image clue to {}", user_id)
+        logger.exception("could not DM an image clue")
         return None
     return message.photo[-1].file_id
 
 
 async def post_bought_notice(
-    context: ContextTypes.DEFAULT_TYPE, buyer_name: str, kind: ClueKind, lang: str
+    context: ContextTypes.DEFAULT_TYPE, game_id: int, buyer_name: str, kind: ClueKind, lang: str
 ) -> None:
     """Tell the game topic that someone bought a clue (not what it says)."""
     notice = i18n.t(
@@ -123,7 +123,13 @@ async def post_bought_notice(
             text=notice,
         )
     except TelegramError:
-        logger.warning("Could not post the clue-bought notice for {}", kind, exc_info=True)
+        logger.opt(exception=True).warning(
+            "could not post the {kind} clue-bought notice", kind=kind.value, game_id=game_id
+        )
+        return
+    logger.info(
+        "posted the {kind} clue-bought notice to the group", kind=kind.value, game_id=game_id
+    )
 
 
 async def share_clue(context: ContextTypes.DEFAULT_TYPE, text: str, file_id: str | None) -> bool:
@@ -140,6 +146,6 @@ async def share_clue(context: ContextTypes.DEFAULT_TYPE, text: str, file_id: str
         else:
             await context.bot.send_photo(photo=file_id, caption=text, parse_mode="HTML", **target)
     except TelegramError:
-        logger.exception("Could not share a clue to the game topic")
+        logger.exception("could not share a clue to the game topic")
         return False
     return True

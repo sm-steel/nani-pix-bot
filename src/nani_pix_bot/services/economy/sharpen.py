@@ -74,6 +74,6 @@ def sharpen(session: Session, game: Game, player: Player, offer: SharpenOffer) -
     except wallet.InsufficientCurrencyError as error:
         raise SharpenRefusedError(SharpenRefusal.INSUFFICIENT) from error
     # check() excluded the last stage, so this can't end the game UNSOLVED.
-    game_service.advance_stage(game)
-    logger.info("Player {} paid {} to sharpen game {}", player.telegram_user_id, amount, game.id)
+    logger.info("paid {price} 💠 to sharpen", price=amount, game_id=game.id)
+    game_service.advance_stage(game, reason="sharpened")
     return amount

@@ -134,7 +134,7 @@ def client_for_source(context: ContextTypes.DEFAULT_TYPE, source: Provider) -> h
     return cast(httpx.AsyncClient, context.bot_data[key])
 
 
-async def _reject_stale_tap(query: CallbackQuery, user_id: int, lang: str) -> None:
+async def _reject_stale_tap(query: CallbackQuery, lang: str) -> None:
     """The one thing every screen of the screenshot sub-flow says when a
     button is tapped and there is no SETUP game left to act on: the row
     was resolved (confirmed, stopped) or the setup-abandon timer deleted
@@ -170,10 +170,9 @@ async def _reject_stale_tap(query: CallbackQuery, user_id: int, lang: str) -> No
     the last one went stale, and it was a line-number comment that
     caused this exact bug."""
     logger.opt(depth=1).warning(
-        "Starter {} tapped {!r} with no SETUP game left — already resolved, or the "
+        "tapped {data!r} with no SETUP game left — already resolved, or the "
         "setup-abandon timer deleted the row",
-        user_id,
-        query.data,
+        data=query.data,
     )
     await query.answer(i18n.t("dm_start.setup_gone", lang), show_alert=True)
 
@@ -311,13 +310,6 @@ async def _resume_setup(message, game: Game, lang: str, context: ContextTypes.DE
         # can't say (your setup is still open, and /stop abandons it)
         # goes above it.
         text = f"{i18n.t('dm_start.setup_already_open', lang)}\n\n{text}"
-    logger.warning(
-        "Starter {} asked for a new game while their own setup (game {}) is still at {} — "
-        "re-showing that step instead of refusing them the turn",
-        game.starter_id,
-        game.id,
-        game.setup_step.value,
-    )
     await message.reply_text(text, reply_markup=keyboard)
 
 
@@ -367,14 +359,14 @@ async def _start_new_game(
     if not await is_group_member(context.bot, group_chat_id, user.id):
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
-        logger.warning("Non-member {} tried to start a game via DM", user.id)
+        logger.warning("non-member tried to start a game via DM")
         await message.reply_text(i18n.t("dm_start.not_a_member", lang))
         return
 
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         if not settings.get_games_enabled(session):
-            logger.warning("{} tried to start a game while games are disabled", user.id)
+            logger.warning("tried to start a game while games are disabled")
             await message.reply_text(i18n.t("dm_start.games_disabled", lang))
             return
         players.get_or_create_player(session, user.id, username=user.username)
@@ -383,10 +375,16 @@ async def _start_new_game(
         # all, the caller's own included (see _resume_setup).
         own_setup = game_service.get_setup_game_for_starter(session, user.id)
         if own_setup is not None:
+            logger.warning(
+                "asked for a new game while their own setup is still at {step} — "
+                "re-showing that step instead of refusing them the turn",
+                step=own_setup.setup_step.value,
+                game_id=own_setup.id,
+            )
             await _resume_setup(message, own_setup, lang, context)
             return
         if not game_service.can_start(session, user.id):
-            logger.warning("{} tried to start a game out of turn", user.id)
+            logger.warning("tried to start a game out of turn")
             await message.reply_text(i18n.t("dm_start.not_your_turn", lang))
             return
         new_game = game_service.create_setup_game(
@@ -396,10 +394,11 @@ async def _start_new_game(
         # started it — the setup-abandon timer takes over from here.
         game_service.clear_turn_timers(session)
         game_service.clear_autostart(session)
-        first_stage_width = stage_config.get_stage_config(
-            session, game_service.STAGE_ORDER[0]
-        ).target_width
-        algorithm = new_game.pixel_algorithm
+        first_stage = _FirstStagePreview(
+            game_id=new_game.id,
+            width=stage_config.get_stage_config(session, game_service.STAGE_ORDER[0]).target_width,
+            algorithm=new_game.pixel_algorithm,
+        )
 
     timeout_module.cancel_turn_timers(context.job_queue)
     timeout_module.cancel_idle_autostart(context.job_queue)
@@ -409,17 +408,28 @@ async def _start_new_game(
         message_thread_id=context.bot_data["game_topic_id"],
         text=i18n.t("dm_start.setup_started_group_notice", lang, starter=user.full_name),
     )
+    logger.info("announced the setup in the group topic", game_id=new_game.id)
 
     if image_bytes is not None:
-        await _send_first_stage_preview(message, image_bytes, first_stage_width, algorithm, lang)
+        await _send_first_stage_preview(message, image_bytes, first_stage, lang)
     await message.reply_text(
         i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
         reply_markup=_method_keyboard(context, lang),
     )
 
 
+@dataclass(frozen=True)
+class _FirstStagePreview:
+    """What `_send_first_stage_preview` needs from the new game, read
+    while `_start_new_game`'s session was still open."""
+
+    game_id: int
+    width: int
+    algorithm: PixelAlgorithm
+
+
 async def _send_first_stage_preview(
-    message, image_bytes: bytes, width: int, algorithm: PixelAlgorithm, lang: str
+    message, image_bytes: bytes, preview: _FirstStagePreview, lang: str
 ) -> None:
     """The just-uploaded screenshot at stage 1 (the blockiest), sent
     before the method selection so the starter can judge whether it
@@ -434,11 +444,11 @@ async def _send_first_stage_preview(
     not expected in practice) or a failed send is logged and skipped,
     and the method selection is sent regardless."""
     try:
-        pixelated = pixelate_service.pixelate(image_bytes, width, algorithm)
+        pixelated = pixelate_service.pixelate(image_bytes, preview.width, preview.algorithm)
     except OSError:
-        logger.warning(
-            "Couldn't pixelate the uploaded screenshot for the stage-1 preview — skipping it",
-            exc_info=True,
+        logger.opt(exception=True).warning(
+            "couldn't pixelate the uploaded screenshot for the stage-1 preview — skipping it",
+            game_id=preview.game_id,
         )
         return
     try:
@@ -446,9 +456,16 @@ async def _send_first_stage_preview(
             photo=pixelated, caption=i18n.t("dm_start.first_stage_preview", lang)
         )
     except TelegramError:
-        logger.warning("Failed to send the stage-1 preview — skipping it", exc_info=True)
+        logger.opt(exception=True).warning(
+            "failed to send the stage-1 preview — skipping it", game_id=preview.game_id
+        )
         return
-    logger.debug("Sent the stage-1 preview (width {}, {})", width, algorithm)
+    logger.info(
+        "sent the stage-1 preview (width {width}, {algorithm})",
+        width=preview.width,
+        algorithm=preview.algorithm.value,
+        game_id=preview.game_id,
+    )
 
 
 @dataclass(frozen=True)
@@ -507,7 +524,13 @@ def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum:
         for stage, stage_caption in zip(game_service.STAGE_ORDER, captions, strict=True)
     ]
     game.setup_step = SetupStep.CONFIRMING
-    logger.debug("Game {}: showing {}-stage confirmation preview album", game.id, len(media))
+    logger.info(
+        "showing the {count}-stage confirmation preview for {title!r} (also accepted: {answers})",
+        count=len(media),
+        title=title,
+        answers=answers,
+        game_id=game.id,
+    )
     return _PreviewAlbum(starter_id=game.starter_id, media=media, algorithm=game.pixel_algorithm)
 
 

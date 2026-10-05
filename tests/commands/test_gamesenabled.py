@@ -5,8 +5,10 @@ from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
+from nani_pix_bot import log_context
 from nani_pix_bot.commands import gamesenabled as gamesenabled_module
 from nani_pix_bot.models.bot_settings import BotSettings
+from tests.conftest import LogLine
 
 
 def _make_update(*, user_id: int = 1, chat_type: str = "private") -> MagicMock:
@@ -129,3 +131,40 @@ async def test_setgamesenabled_on_enables_games(session_factory) -> None:
         fetched = session.get(BotSettings, 1)
         assert fetched is not None
         assert fetched.games_enabled is True
+
+
+async def test_setgamesenabled_logs_the_change_once_with_the_admin_in_context(
+    session_factory, log_records: list[LogLine]
+) -> None:
+    """The admin is the update's own user: the log context carries them
+    (log_scope.bind_update in production), so the message doesn't."""
+    update = _make_update(user_id=1)
+    update.effective_user.username = "admin"
+    context = _make_context(session_factory, admin_ids={1}, args=["off"])
+    log_context.reset(user_id=1, username="admin")
+
+    await gamesenabled_module.setgamesenabled_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    info = [line for line in log_records if line.level == "INFO"]
+    assert [line.message for line in info] == ["ran /setgamesenabled off"]
+    assert info[0].extra["user_id"] == 1
+    assert info[0].extra["command"] == "setgamesenabled"
+
+
+async def test_setgamesenabled_logs_a_usage_error_at_info(
+    session_factory, records: list[tuple[str, str]]
+) -> None:
+    update = _make_update(user_id=1)
+    update.effective_user.username = "admin"
+    context = _make_context(session_factory, admin_ids={1}, args=["maybe"])
+
+    await gamesenabled_module.setgamesenabled_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert (
+        "INFO",
+        "sent /setgamesenabled with bad args ['maybe'] — replied with usage",
+    ) in records

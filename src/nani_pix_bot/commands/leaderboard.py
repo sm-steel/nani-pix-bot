@@ -32,7 +32,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         lang = settings.get_language(session)
         top = players.top_players(session, limit=LEADERBOARD_SIZE)
 
-    logger.debug("/leaderboard requested, {} entries", len(top))
+    logger.info("requested /leaderboard: {count} entries", count=len(top))
     if not top:
         await message.reply_text(i18n.t("leaderboard.empty", lang))
         return

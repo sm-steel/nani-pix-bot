@@ -37,7 +37,7 @@ async def open_shop(message: Message, context: ContextTypes.DEFAULT_TYPE, user: 
     if not await is_group_member(context.bot, context.bot_data["group_chat_id"], user.id):
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
-        logger.warning("Shop refused for {}: not a group member", user.id)
+        logger.warning("shop refused: not a group member")
         await message.reply_text(i18n.t("dm_start.not_a_member", lang))
         return
 
@@ -46,14 +46,16 @@ async def open_shop(message: Message, context: ContextTypes.DEFAULT_TYPE, user: 
         buyer = players.get_or_create_player(session, user.id, username=user.username)
         game = game_service.active_or_setup_game(session)
         if game is None or game.status != GameStatus.ACTIVE:
-            logger.debug("Shop opened by {} with no active game", user.id)
+            logger.info("opened the shop with no active game")
             text, markup = i18n.t("shop.no_game", lang), None
         elif game.starter_id == user.id:
-            logger.debug("Shop opened by {}, the setter of game {}", user.id, game.id)
+            logger.info("the setter opened the shop", game_id=game.id)
             text, markup = i18n.t("shop.setter", lang), None
         else:
             text, markup = render_shop(session, game, buyer, lang)
-            logger.debug("Shop opened by {} for game {}", user.id, game.id)
+            logger.info(
+                "opened the shop (balance {balance} 💠)", balance=buyer.currency, game_id=game.id
+            )
     await message.reply_text(text, reply_markup=markup)
 
 

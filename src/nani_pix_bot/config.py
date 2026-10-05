@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
+from nani_pix_bot.logging_config import LOG_FORMATS, LogFormat
+
 load_dotenv()
 
 
@@ -39,6 +41,9 @@ class Config:
     # them), but they're in the bot's env too (compose `env_file: .env`),
     # so they're secrets the logging filter must know about.
     mariadb_passwords: tuple[str, ...] = ()
+    # text for a terminal or `docker logs`; json for centralized collection
+    # (issue #230, see logging_config.py).
+    log_format: LogFormat = "text"
 
     def secret_values(self) -> list[str]:
         """Every configured secret, by exact value — what logging_config's
@@ -57,6 +62,15 @@ class Config:
         return [value for value in candidates if value]
 
 
+def _log_format() -> LogFormat:
+    raw = os.environ.get("LOG_FORMAT", "text").strip().lower()
+    for fmt in LOG_FORMATS:
+        if raw == fmt:
+            return fmt
+    msg = f"LOG_FORMAT must be one of {', '.join(LOG_FORMATS)}, got {raw!r}"
+    raise RuntimeError(msg)
+
+
 def load_config() -> Config:
     admin_ids_raw = os.environ.get("ADMIN_USER_IDS", "")
     admin_user_ids = [int(chunk) for chunk in admin_ids_raw.split(",") if chunk.strip()]
@@ -66,6 +80,7 @@ def load_config() -> Config:
         game_topic_id=int(_require("GAME_TOPIC_ID")),
         admin_user_ids=admin_user_ids,
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
+        log_format=_log_format(),
         telegram_proxy_url=os.environ.get("TELEGRAM_PROXY_URL") or None,
         # Optional, unlike every other required field above — a fresh
         # clone with no TMDB key can still run everything except the

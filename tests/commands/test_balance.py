@@ -61,3 +61,18 @@ async def test_balance_ignored_in_other_topics(session_factory) -> None:
     )
 
     update.message.reply_text.assert_not_awaited()
+
+
+async def test_balance_is_logged_at_info(session_factory, log_records) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1, currency=123))
+        session.commit()
+    update = _make_update(chat_type=ChatType.PRIVATE, thread_id=None)
+    update.effective_user.username = "bob"
+
+    await balance_module.balance_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory))
+    )
+
+    (line,) = [r for r in log_records if r.message == "checked /balance: 123 💠"]
+    assert (line.level, line.extra["balance"]) == ("INFO", 123)

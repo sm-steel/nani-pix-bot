@@ -76,6 +76,9 @@ class SourceMenu:
     # screenshot_source was cleared meanwhile. Nothing gets flagged and
     # the message carries no {service}.
     provider: Provider | None
+    # Which game the menu is for — only so the log lines it leads to
+    # can name it. None where a caller has no game to hand.
+    game_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -124,7 +127,9 @@ async def _fetch_screenshots_or_fallback(
     accept a photo"."""
     if provider_id is None:
         logger.warning(
-            "Game {}: no {} id on file for a screenshot fetch (stale button?)", game.id, provider
+            "no {provider} id on file for a screenshot fetch (stale button?)",
+            provider=provider,
+            game_id=game.id,
         )
         return ScreenshotFailure("dm_start.no_screenshots_available", provider)
 
@@ -133,12 +138,20 @@ async def _fetch_screenshots_or_fallback(
         urls = await _fetch_screenshots(provider, client, provider_id)
     except SEARCH_SERVICE_ERRORS:
         logger.exception(
-            "Game {}: fetching {} screenshots failed for id {}", game.id, provider, provider_id
+            "fetching {provider} screenshots failed for id {provider_id}",
+            provider=provider,
+            provider_id=provider_id,
+            game_id=game.id,
         )
         return ScreenshotFailure("dm_start.screenshot_service_down", provider)
 
     if not urls:
-        logger.info("Game {}: {} has no screenshots for id {}", game.id, provider, provider_id)
+        logger.info(
+            "{provider} has no screenshots for id {provider_id}",
+            provider=provider,
+            provider_id=provider_id,
+            game_id=game.id,
+        )
         return ScreenshotFailure("dm_start.no_screenshots_available", provider)
 
     return urls
@@ -185,7 +198,11 @@ class GalleryTarget:
 
 
 def source_menu_for(game: Game, provider: Provider | None) -> SourceMenu:
-    return SourceMenu(providers=game_service.screenshot_capable_providers(game), provider=provider)
+    return SourceMenu(
+        providers=game_service.screenshot_capable_providers(game),
+        provider=provider,
+        game_id=game.id,
+    )
 
 
 @dataclass(frozen=True)
@@ -252,7 +269,12 @@ async def reply_with_source_menu(send, menu: SourceMenu, lang: str, key: str) ->
     the `{service}` strings — except when there is no provider to blame
     (see SourceMenu.provider), where `key` must be a placeholder-free
     one, since i18n.t's `.format` raises on a missing kwarg."""
-    logger.debug("Screenshot flow: falling back to the source menu with {!r}", key)
+    logger.info(
+        "back on the screenshot source menu with {key!r} (flagged: {flagged})",
+        key=key,
+        flagged=menu.provider,
+        game_id=menu.game_id,
+    )
     service = {"service": menu.provider.display_name} if menu.provider else {}
     await send(
         i18n.t(key, lang, **service),
@@ -365,8 +387,8 @@ async def resume_screenshot_gallery(
     stored = game.screenshot_source
     if stored is None:
         logger.warning(
-            "Game {}: resume_screenshot_gallery called with no screenshot_source (stale button)",
-            game.id,
+            "resume_screenshot_gallery called with no screenshot_source (stale button)",
+            game_id=game.id,
         )
         # No provider to name or flag — just re-offer the plain menu.
         return NO_SOURCE_PROMPT_KEY
@@ -412,12 +434,13 @@ async def screenshot_upload_instead_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
-            await _reject_stale_tap(query, user.id, lang)
+            await _reject_stale_tap(query, lang)
             return
         # Acknowledged here rather than above the lookup: a query id can
         # only be answered once, and the stale branch needs that answer
         # to carry its alert (see _reject_stale_tap).
         await query.answer()
+        logger.info('tapped "Upload my own instead"', game_id=game.id)
         game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
         await query.edit_message_text(i18n.t("dm_start.ask_new_photo", lang))
 
@@ -441,7 +464,7 @@ async def screenshot_source_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
-            await _reject_stale_tap(query, user.id, lang)
+            await _reject_stale_tap(query, lang)
             return
         # One answer per query id, so this waits until the stale branch
         # above has had its chance at it (see _reject_stale_tap). Still
@@ -458,8 +481,13 @@ async def screenshot_source_callback_handler(
             # keyboards.py already logged what was wrong with the payload
             # itself; this says which screen it was aimed at and which
             # game it would have moved, neither of which it can see.
-            logger.warning("Game {}: rejected screenshot-source tap {!r}", game.id, query.data)
+            logger.warning(
+                "rejected screenshot-source tap {data!r}", data=query.data, game_id=game.id
+            )
             return
+        logger.info(
+            "picked {provider} as the screenshot source", provider=provider, game_id=game.id
+        )
         # The picker column is written by whichever screen this ends on,
         # not here: _resolve_screenshot_source sets it for the gallery it
         # shows, and stage_fallback sets it for a failure screen. Note
@@ -503,7 +531,13 @@ async def _resolve_screenshot_source(
     if isinstance(result, ScreenshotFailure):
         return result
 
-    logger.debug("Game {}: fetched {} {} screenshot(s)", game.id, len(result), provider)
+    logger.info(
+        "showing the {provider} gallery ({count} screenshot(s), cross-provider: {cross_provider})",
+        provider=provider,
+        count=len(result),
+        cross_provider=cross_provider,
+        game_id=game.id,
+    )
     # A cross-provider gallery carries "Wrong anime? Search again", so a
     # typed correction still has to reach this provider's search. A
     # same-provider one has nothing left to resolve — the id came from
@@ -568,20 +602,30 @@ async def _resolve_cross_provider_id(
         results = await _search_provider(provider, client, query_text)
     except SEARCH_SERVICE_ERRORS:
         logger.exception(
-            "Game {}: {} cross-provider screenshot search failed for {!r}",
-            game.id,
-            provider,
-            query_text,
+            "{provider} cross-provider screenshot search failed for {query!r}",
+            provider=provider,
+            query=query_text,
+            game_id=game.id,
         )
         return None
 
     if not results:
-        logger.info("Game {}: no {} cross-provider match for {!r}", game.id, provider, query_text)
+        logger.info(
+            "no {provider} cross-provider match for {query!r}",
+            provider=provider,
+            query=query_text,
+            game_id=game.id,
+        )
         return None
 
     game_service.set_screenshot_provider_id(game, results[0])
     provider_id = _provider_id(game, provider)
-    logger.info("Game {}: cross-provider resolved {} -> id {}", game.id, provider, provider_id)
+    logger.info(
+        "cross-provider resolved {provider} -> id {provider_id}",
+        provider=provider,
+        provider_id=provider_id,
+        game_id=game.id,
+    )
     return provider_id
 
 
@@ -614,10 +658,10 @@ async def _show_gallery_page(
         # keyboard with it. A bare notice is safe only because nothing
         # reaches it; anything that starts to must fall back instead.
         logger.warning(
-            "Game gallery: {} page at offset {} is past the end of {} url(s)",
-            target.provider,
-            target.offset,
-            len(urls),
+            "{provider} gallery page at offset {offset} is past the end of {count} url(s)",
+            provider=target.provider,
+            offset=target.offset,
+            count=len(urls),
         )
         await context.bot.send_message(
             chat_id=target.chat_id,
@@ -658,10 +702,10 @@ async def _show_gallery_page(
         )
     except TelegramError:
         logger.exception(
-            "Telegram refused the {} gallery page at offset {} ({} url(s))",
-            target.provider,
-            target.offset,
-            len(urls),
+            "Telegram refused the {provider} gallery page at offset {offset} ({count} url(s))",
+            provider=target.provider,
+            offset=target.offset,
+            count=len(urls),
         )
         return ScreenshotFailure("dm_start.screenshot_service_down", target.provider)
 

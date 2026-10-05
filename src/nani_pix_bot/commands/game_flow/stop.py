@@ -64,16 +64,22 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         lang = settings.get_language(session)
         game = game_service.active_or_setup_game(session)
         if game is None:
+            logger.info("sent /stop with no game running")
             await message.reply_text(i18n.t("stop.no_game", lang))
             return
 
         if not await _may_stop(context, group_chat_id, user.id, game):
-            logger.warning("{} tried /stop without permission on game {}", user.id, game.id)
+            logger.warning("tried /stop without permission", game_id=game.id)
             await message.reply_text(i18n.t("stop.not_allowed", lang))
             return
 
         title = game_service.display_title(game, lang)
         can_reveal = game_service.has_answer_to_reveal(game)
+        logger.info(
+            "sent /stop — confirm prompt shown (reveal {reveal})",
+            reveal="offered" if can_reveal else "not offered",
+            game_id=game.id,
+        )
 
     await message.reply_text(
         i18n.t("stop.confirm_prompt", lang, title=title),
@@ -96,6 +102,7 @@ async def stop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     if query.data == STOP_CANCEL_CALLBACK_DATA:
+        logger.info("cancelled /stop")
         await _handle_cancel(query, context)
     elif query.data in (STOP_CONFIRM_CALLBACK_DATA, STOP_REVEAL_CALLBACK_DATA):
         reveal = query.data == STOP_REVEAL_CALLBACK_DATA
@@ -138,13 +145,12 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
 
         game = game_service.active_or_setup_game(session)
         if game is None:
+            logger.info("confirmed /stop, but no game is running any more")
             await query.edit_message_text(i18n.t("stop.no_game", lang))
             return
 
         if game.starter_id != user.id and not is_admin:
-            logger.warning(
-                "{} tried to confirm /stop without permission on game {}", user.id, game.id
-            )
+            logger.warning("tried to confirm /stop without permission", game_id=game.id)
             return
 
         game_id = game.id
@@ -162,7 +168,7 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
             original_bytes = game.original_image if can_reveal_now else None
             hard_mode_photos = None
         if reveal and not can_reveal_now:
-            logger.warning("Game {}: reveal requested but no image is stored", game_id)
+            logger.warning("reveal requested but no image is stored", game_id=game_id)
         if was_active:
             timeout_module.cancel_timeout(context.job_queue, game_id)
             timeout_module.cancel_inactivity_timers(context.job_queue, game_id)
@@ -172,7 +178,7 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
         shop_service.refund_game(session, game_id)
         bounty.refund_pot(session, game_id)
         session.delete(game)
-        turn_state = game_service.set_next_starter(session, None)
+        turn_state = game_service.set_next_starter(session, None, reason=f"game {game_id} stopped")
     # Block closed and committed above — the row deletion and turn-open
     # are durable now regardless of whether the announcement below
     # actually reaches the group (see post_current_image's docstring).
@@ -182,11 +188,10 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
     )
     revealed = await _announce_stop(context, session_factory, stopped_game, lang, reveal)
     logger.info(
-        "Game {} stopped by {} (was {}, answer {})",
-        game_id,
-        user.id,
-        "ACTIVE" if was_active else "SETUP",
-        "revealed" if revealed else "not revealed",
+        "stopped (was {was}, answer {answer})",
+        was="ACTIVE" if was_active else "SETUP",
+        answer="revealed" if revealed else "not revealed",
+        game_id=game_id,
     )
     await query.edit_message_text(
         i18n.t("stop.confirmed_revealed" if revealed else "stop.confirmed", lang)
@@ -240,5 +245,5 @@ async def _announce_stop(
             text=i18n.t("stop.confirmed_group_notice", lang),
         )
     except TelegramError as exc:
-        logger.warning("Failed to send the /stop group notice: {}", exc)
+        logger.warning("failed to send the /stop group notice: {error}", error=exc)
     return False
