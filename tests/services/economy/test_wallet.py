@@ -7,6 +7,7 @@ from nani_pix_bot.models.enums import CurrencyParty, CurrencyReason, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.economy.wallet import Party
+from tests.services.economy.ledger import ledger_balance
 
 
 def _player(session: Session, user_id: int = 1, currency: int = 0) -> Player:
@@ -209,6 +210,6 @@ def test_cached_balance_always_equals_ledger_balance(session: Session) -> None:
     session.flush()
 
     for player in (alice, bob):
-        assert player.currency == wallet.ledger_balance(session, player.telegram_user_id)
+        assert player.currency == ledger_balance(session, player.telegram_user_id)
     assert (alice.currency, bob.currency) == (23, 36)
-    assert wallet.ledger_balance(session, 404) == 0
+    assert ledger_balance(session, 404) == 0
