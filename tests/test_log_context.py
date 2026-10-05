@@ -57,14 +57,14 @@ def test_an_explicit_kwarg_wins_over_the_context(extras) -> None:
     assert captured[-1]["game_id"] == 4
 
 
-def test_bind_game_records_id_and_status(extras) -> None:
+def test_bind_game_records_the_id(extras) -> None:
     captured, log = extras
     game = Game(id=88, starter_id=1, status=GameStatus.ACTIVE)
 
     log_context.bind_game(game)
     log.info("x")
 
-    assert captured[-1] == {"game_id": 88, "game_status": "active"}
+    assert captured[-1] == {"game_id": 88}
 
 
 def test_bind_game_ignores_none(extras) -> None:

@@ -33,9 +33,6 @@ class _GameLike(Protocol):
     @property
     def id(self) -> int: ...
 
-    @property
-    def status(self) -> object: ...
-
 
 def reset(**fields: object) -> None:
     """Start a new unit of work: replace the whole context, so nothing from
@@ -50,11 +47,11 @@ def bind(**fields: object) -> None:
 
 def bind_game(game: _GameLike | None) -> None:
     """Attach the game this unit of work is about; a no-op for None (a
-    lookup that found nothing)."""
+    lookup that found nothing). Only the id: a status captured here would
+    go stale the moment the same update activates or ends the game."""
     if game is None:
         return
-    status = getattr(game.status, "value", game.status)
-    bind(game_id=game.id, game_status=status)
+    bind(game_id=game.id)
 
 
 def current() -> dict[str, object]:

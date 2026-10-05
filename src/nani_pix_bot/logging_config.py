@@ -51,6 +51,9 @@ class _InterceptHandler(logging.Handler):
 # list (issue #184).
 _BOT_TOKEN_RE = re.compile(r"\d+:[A-Za-z0-9_-]{35}")
 _MASK = "***"
+# extra-field values JSON can carry as they are; every other value is
+# turned into its masked str() by the secret filter.
+_PLAIN_TYPES = (str, int, float, bool, type(None))
 
 
 def _mask(text: str, secrets: Sequence[str]) -> str:
@@ -114,7 +117,13 @@ def _secret_filter(secrets: Iterable[str]) -> Callable[["Record"], bool]:
         record["message"] = _mask(record["message"], ordered)
         extra = record["extra"]
         for key, value in extra.items():
-            if isinstance(value, str):
+            if not isinstance(value, _PLAIN_TYPES):
+                # Anything else (an exception passed as `error=exc`, an
+                # enum, a URL object) is rendered with str() by both
+                # sinks, so mask that rendering instead of letting
+                # json.dumps(default=str) write it out unmasked.
+                extra[key] = _mask(str(value), ordered)
+            elif isinstance(value, str):
                 extra[key] = _mask(value, ordered)
         exception = record["exception"]
         if exception is not None and exception.value is not None:

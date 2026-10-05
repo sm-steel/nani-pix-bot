@@ -240,3 +240,17 @@ def test_stdlib_records_get_the_context_too(capsys) -> None:
     assert line["message"] == "PTB says hi"
     assert line["update_id"] == 7
     assert line["game_id"] == 88
+
+
+def test_non_string_extra_values_are_masked_too(capsys) -> None:
+    """An exception passed as a field (`error=exc`) is rendered by
+    json.dumps(default=str) — it must not slip past the filter."""
+    setup_logging("INFO", KNOWN, fmt="json")
+
+    error = ConnectionError(f"POST https://api.telegram.org/bot{FAKE_BOT_CREDENTIAL}/getMe")
+    logger.warning("poll failed: {error}", error=error, attempt=2, ok=False, nothing=None)
+
+    (line,) = _json_lines(capsys.readouterr().err)
+    assert FAKE_BOT_CREDENTIAL not in json.dumps(line)
+    assert line["error"] == "POST https://api.telegram.org/bot***/getMe"
+    assert (line["attempt"], line["ok"], line["nothing"]) == (2, False, None)
