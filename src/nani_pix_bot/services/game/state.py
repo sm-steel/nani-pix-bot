@@ -4,7 +4,7 @@ bookkeeping (a related but distinct concern) lives in turns.py."""
 
 import enum
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import NamedTuple
 
 from loguru import logger
@@ -591,6 +591,7 @@ def force_win(session: Session, game: Game, *, winner_id: int) -> None:
 def _win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> None:
     game.status = GameStatus.WON
     game.winner_id = winner_id
+    game.ended_at = datetime.now(UTC)
 
     winner = players.get_or_create_player(session, winner_id)
     winner.wins += award
@@ -617,6 +618,7 @@ def force_unsolved(game: Game, *, cause: str) -> None:
     path and by the timeout job callback. See MECHANICS.md's "Ending
     unsolved" section. `cause` is for the log."""
     game.status = GameStatus.UNSOLVED
+    game.ended_at = datetime.now(UTC)
     logger.info("ended UNSOLVED ({cause})", cause=cause, game_id=game.id)
 
 
