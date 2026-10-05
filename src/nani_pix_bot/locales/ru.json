@@ -229,6 +229,7 @@
   "economy.balance": "Ваш баланс: {amount} 💠",
   "commands.balance": "Показать баланс пикселей",
   "commands.pixelconfig": "Награды и цены в пикселях (админы)",
+  "commands.refund": "Вернуть игроку покупку подсказки (админы)",
   "currency_config.header": "💠 Награды и цены в пикселях (ключ — значение — что это):",
   "currency_config.price_min": "Цены — минимум 1 💠.",
   "currency_config.usage": "Использование:\n/pixelconfig — показать все значения\n/pixelconfig <ключ> <значение> — изменить одно (целое число ≥ 0)",

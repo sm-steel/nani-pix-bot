@@ -35,6 +35,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("setgamesenabled", i18n.t("commands.setgamesenabled", lang)),
         BotCommand("setautostart", i18n.t("commands.setautostart", lang)),
         BotCommand("pixelconfig", i18n.t("commands.pixelconfig", lang)),
+        BotCommand("refund", i18n.t("commands.refund", lang)),
         BotCommand("timezone", i18n.t("commands.timezone", lang)),
         BotCommand("quiethours", i18n.t("commands.quiethours", lang)),
         BotCommand("version", i18n.t("commands.version", lang)),

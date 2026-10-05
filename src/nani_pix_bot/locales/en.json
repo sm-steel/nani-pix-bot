@@ -229,6 +229,7 @@
   "economy.balance": "Your balance: {amount} 💠",
   "commands.balance": "Show your pixel balance",
   "commands.pixelconfig": "View/tune pixel rewards and prices (admins)",
+  "commands.refund": "Refund a player's clue purchase (admins)",
   "currency_config.header": "💠 Pixel rewards and prices (key — value — what it is):",
   "currency_config.price_min": "Prices must be at least 1 💠.",
   "currency_config.usage": "Usage:\n/pixelconfig — show all values\n/pixelconfig <key> <value> — set one (a whole number ≥ 0)",
