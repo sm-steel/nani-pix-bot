@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import matching
-from nani_pix_bot.services.game import state
+from nani_pix_bot.services.game import guesses, state
 from nani_pix_bot.services.game.state import GuessOutcome
 
 # Fixed: hard mode always plays exactly two turns against the same
@@ -90,7 +90,15 @@ def record_hard_mode_guess(
     STAGE_ORDER/stage_config."""
     game.total_guess_count += 1
 
-    if matching.is_match(guess_text, state.match_candidates(game)):
+    correct = matching.is_match(guess_text, state.match_candidates(game))
+    guesses.log_guess(
+        session,
+        game,
+        guesses.GuessRecord(
+            player_id=guesser_id, text=guess_text, stage=_current_turn(game), correct=correct
+        ),
+    )
+    if correct:
         logger.info(
             "guessed {guess!r} — CORRECT at {stage}",
             guess=guess_text,

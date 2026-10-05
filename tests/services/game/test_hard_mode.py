@@ -1,8 +1,10 @@
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.game import hard_mode
@@ -274,3 +276,15 @@ def test_record_hard_mode_guess_logs_a_correct_guess_at_info(
         "INFO",
         "guessed 'frieren' — CORRECT at hard-mode turn 2/2",
     ) in records
+
+
+def test_hard_mode_guess_is_logged_with_its_turn(session: Session) -> None:
+    game = _hard_mode_game(session, turn=1)
+    session.add(Player(telegram_user_id=2))
+    session.flush()
+    hard_mode.record_hard_mode_guess(session, game, guesser_id=2, guess_text="Frieren")
+    row = session.scalars(
+        select(GameGuess).where(GameGuess.game_id == game.id).order_by(GameGuess.id.desc())
+    ).first()
+    assert row is not None
+    assert (row.stage, row.correct) == (1, True)

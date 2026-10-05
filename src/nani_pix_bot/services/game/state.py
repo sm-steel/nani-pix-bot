@@ -15,7 +15,7 @@ from nani_pix_bot import log_context
 from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import i18n, matching, players
-from nani_pix_bot.services.game import turns
+from nani_pix_bot.services.game import guesses, turns
 from nani_pix_bot.services.game.clock import deadline_after
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
@@ -463,7 +463,18 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
 
     # The guesser is the update's own user (the /guess handler is the only
     # caller), so the log context already names them; see log_context.py.
-    if matching.is_match(guess_text, match_candidates(game)):
+    correct = matching.is_match(guess_text, match_candidates(game))
+    guesses.log_guess(
+        session,
+        game,
+        guesses.GuessRecord(
+            player_id=guesser_id,
+            text=guess_text,
+            stage=STAGE_ORDER.index(game.current_stage) + 1,
+            correct=correct,
+        ),
+    )
+    if correct:
         logger.info(
             "guessed {guess!r} — CORRECT at {stage}", guess=guess_text, stage=stage, game_id=game.id
         )

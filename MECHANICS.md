@@ -396,6 +396,8 @@ row for the rest of that round:
    which title/synonym it matched, or by how much it cleared the
    threshold.
 
+Every guess is recorded (`game_guesses`) with the stage it was made at.
+
 A **wrong** guess isn't silent: the bot replies in-topic with how many
 more wrong guesses remain before the next pixelation stage, and which
 stage the game is currently on (e.g. "3 guesses left before the next
