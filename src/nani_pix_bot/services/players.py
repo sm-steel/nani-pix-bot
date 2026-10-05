@@ -96,4 +96,6 @@ def get_timezone(session: Session, telegram_user_id: int) -> ZoneInfo | None:
 def set_timezone(session: Session, telegram_user_id: int, tz: ZoneInfo) -> None:
     player = get_or_create_player(session, telegram_user_id)
     player.timezone = tz.key
-    logger.info("Player {} set timezone to {}", telegram_user_id, tz.key)
+    logger.info(
+        "{} set their timezone to {}", describe_player_id(session, telegram_user_id), tz.key
+    )

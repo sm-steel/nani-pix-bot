@@ -1564,3 +1564,59 @@ async def test_hard_mode_timeout_refunds_the_pot(session_factory) -> None:
     media = context.bot.send_media_group.call_args.kwargs["media"]
     assert "70" in media[0].caption
     _assert_refunded(session_factory, game_id, (2, 3))
+
+
+async def test_inactivity_advance_job_callback_logs_hard_mode_turn_advance_at_info(
+    session_factory, monkeypatch: pytest.MonkeyPatch, records: list[tuple[str, str]]
+) -> None:
+    """The turn 1 -> 2 inactivity advance sets hard_mode_turn directly
+    (no advance_stage call), so it has to log the advance itself — at
+    INFO, so the game flow reads end to end at LOG_LEVEL=INFO (#228)."""
+    monkeypatch.setattr("nani_pix_bot.services.pixelate.pixelate", lambda *_: b"pixelated")
+    game_id = _hard_mode_active_game(session_factory)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert (
+        "INFO",
+        f"Game {game_id}: advanced to hard-mode turn 2/2 (no guesses for 6h)",
+    ) in records
+
+
+async def test_inactivity_advance_job_callback_logs_the_stage_advance_once(
+    session_factory, monkeypatch: pytest.MonkeyPatch, records: list[tuple[str, str]]
+) -> None:
+    """advance_stage() logs the advance itself; the job must not add a
+    second INFO line for the same action."""
+    monkeypatch.setattr("nani_pix_bot.services.pixelate.pixelate", lambda *_: b"pixelated")
+    game_id = _active_game(session_factory)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    advance_lines = [m for level, m in records if level == "INFO" and "advanced to" in m]
+    assert advance_lines == [f"Game {game_id}: advanced to stage 2/5 (no guesses for 6h)"]
+
+
+def test_clear_image_if_sent_logs_the_cleanup_at_info(
+    session_factory, records: list[tuple[str, str]]
+) -> None:
+    game_id = _active_game(session_factory, status=GameStatus.UNSOLVED)
+
+    timeout_module.clear_image_if_sent(session_factory, game_id, MagicMock())
+
+    assert ("INFO", f"Game {game_id}: screenshot bytes cleared after the reveal") in records
+
+
+def test_clear_image_if_sent_logs_keeping_the_bytes_when_the_reveal_failed(
+    session_factory, records: list[tuple[str, str]]
+) -> None:
+    game_id = _active_game(session_factory, status=GameStatus.UNSOLVED)
+
+    timeout_module.clear_image_if_sent(session_factory, game_id, None)
+
+    assert (
+        "INFO",
+        f"Game {game_id}: reveal not confirmed sent — keeping the screenshot bytes",
+    ) in records

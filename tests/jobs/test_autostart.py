@@ -468,3 +468,82 @@ async def test_maybe_overthrow_skips_the_roll_during_quiet_hours(
 
     roll.assert_not_called()
     run.assert_not_awaited()
+
+
+def _seed_overthrow_ready(session_factory) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1, username="frieren"))
+        session.add(TurnState(id=1, next_starter_id=1))
+        session.add(BotSettings(id=1, games_enabled=True, autostart_enabled=True))
+        session.commit()
+
+
+async def test_maybe_overthrow_logs_a_missed_roll_at_info(
+    session_factory, monkeypatch: pytest.MonkeyPatch, records: list[tuple[str, str]]
+) -> None:
+    _seed_overthrow_ready(session_factory)
+    context = _make_context(session_factory)
+    monkeypatch.setattr(autostart_service, "roll_overthrow", lambda: False)
+
+    await autostart_timers.maybe_overthrow(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, winner_id=1
+    )
+
+    assert (
+        "INFO",
+        "Overthrow roll after a game ended: miss (12% chance; turn held by 1 (@frieren))",
+    ) in records
+
+
+async def test_maybe_overthrow_logs_a_hit_at_info(
+    session_factory, monkeypatch: pytest.MonkeyPatch, records: list[tuple[str, str]]
+) -> None:
+    _seed_overthrow_ready(session_factory)
+    context = _make_context(session_factory)
+    monkeypatch.setattr(autostart_service, "roll_overthrow", lambda: True)
+    monkeypatch.setattr(autostart_timers, "run_bot_autostart", AsyncMock(return_value=True))
+
+    await autostart_timers.maybe_overthrow(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, winner_id=1
+    )
+
+    assert any(
+        level == "INFO" and message.startswith("Overthrow roll after a game ended: HIT")
+        for level, message in records
+    )
+
+
+async def test_maybe_overthrow_logs_why_the_roll_was_skipped(
+    session_factory,
+    quiet_now: QuietHours,
+    monkeypatch: pytest.MonkeyPatch,
+    records: list[tuple[str, str]],
+) -> None:
+    _seed_overthrow_ready(session_factory)
+    with session_factory() as session:
+        settings.set_quiet_hours(session, quiet_now)
+        session.commit()
+    context = _make_context(session_factory)
+    monkeypatch.setattr(autostart_service, "roll_overthrow", MagicMock(return_value=True))
+
+    await autostart_timers.maybe_overthrow(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, winner_id=1
+    )
+
+    assert ("INFO", "Overthrow roll skipped after a game ended — quiet hours") in records
+
+
+async def test_maybe_overthrow_logs_disabled_autostart_as_the_skip_reason(
+    session_factory, monkeypatch: pytest.MonkeyPatch, records: list[tuple[str, str]]
+) -> None:
+    with session_factory() as session:
+        session.add(BotSettings(id=1, games_enabled=True, autostart_enabled=False))
+        session.commit()
+    context = _make_context(session_factory)
+    monkeypatch.setattr(autostart_service, "roll_overthrow", MagicMock(return_value=True))
+
+    await autostart_timers.maybe_overthrow(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory
+    )
+
+    assert ("INFO", "Overthrow roll skipped after a game ended — autostart is disabled") in records

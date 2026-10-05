@@ -27,7 +27,9 @@ def set_language(session: Session, language: str) -> None:
         session.add(settings)
     else:
         settings.language = language
-    logger.info("Bot language set to {}", language)
+    # DEBUG: the admin command that calls this logs the change at INFO,
+    # naming the admin.
+    logger.debug("Bot language set to {}", language)
 
 
 def get_games_enabled(session: Session) -> bool:
@@ -44,7 +46,9 @@ def set_games_enabled(session: Session, enabled: bool) -> None:
         session.add(settings)
     else:
         settings.games_enabled = enabled
-    logger.info("Starting new games {}", "enabled" if enabled else "disabled")
+    # DEBUG: the admin command that calls this logs the change at INFO,
+    # naming the admin.
+    logger.debug("Starting new games {}", "enabled" if enabled else "disabled")
 
 
 DEFAULT_AUTOSTART_ENABLED = False
@@ -64,7 +68,9 @@ def set_autostart_enabled(session: Session, enabled: bool) -> None:
         session.add(settings)
     else:
         settings.autostart_enabled = enabled
-    logger.info("Bot-initiated games {}", "enabled" if enabled else "disabled")
+    # DEBUG: the admin command that calls this logs the change at INFO,
+    # naming the admin.
+    logger.debug("Bot-initiated games {}", "enabled" if enabled else "disabled")
 
 
 def get_pinned_message_id(session: Session) -> int | None:
@@ -111,7 +117,9 @@ def set_quiet_hours(session: Session, qh: QuietHours) -> None:
     settings.quiet_start = qh.start
     settings.quiet_end = qh.end
     settings.quiet_timezone = qh.tz.key
-    logger.info("Quiet hours set to {}-{} {}", qh.start, qh.end, qh.tz.key)
+    # DEBUG: the admin command that calls this logs the change at INFO,
+    # naming the admin.
+    logger.debug("Quiet hours set to {}-{} {}", qh.start, qh.end, qh.tz.key)
 
 
 def clear_quiet_hours(session: Session) -> None:
@@ -121,4 +129,6 @@ def clear_quiet_hours(session: Session) -> None:
     settings.quiet_start = None
     settings.quiet_end = None
     settings.quiet_timezone = None
-    logger.info("Quiet hours turned off")
+    # DEBUG: the admin command that calls this logs the change at INFO,
+    # naming the admin.
+    logger.debug("Quiet hours turned off")

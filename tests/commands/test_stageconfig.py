@@ -298,3 +298,19 @@ async def test_setstage_command_blocks_with_translated_message_in_russian(sessio
     assert (
         reply_text == "Сейчас идёт игра — сначала остановите её, чтобы изменить настройки этапов."
     )
+
+
+async def test_setstage_command_logs_the_change_once_naming_the_admin(
+    session_factory, records: list[tuple[str, str]]
+) -> None:
+    update = _make_update(user_id=1)
+    update.effective_user.username = "admin"
+    update.message.from_user = update.effective_user
+    context = _make_context(session_factory, admin_ids={1}, args=["3", "100", "2"])
+
+    await stageconfig_module.setstage_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    info = [message for level, message in records if level == "INFO"]
+    assert info == ["Admin 1 (@admin) changed stage config: stage 3/5 width=100 limit=2"]

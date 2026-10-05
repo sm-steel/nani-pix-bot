@@ -24,7 +24,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.services import matching
+from nani_pix_bot.services import matching, players
 from nani_pix_bot.services.game import state
 from nani_pix_bot.services.game.state import GuessOutcome
 
@@ -84,30 +84,31 @@ def record_hard_mode_guess(
     STAGE_ORDER/stage_config."""
     game.total_guess_count += 1
 
-    candidates = state.match_candidates(game)
-    matched = matching.is_match(guess_text, candidates)
-    logger.debug(
-        "Game {} (hard mode, turn {}): guesser {} guessed {!r} against {} candidates -> {}",
-        game.id,
-        game.hard_mode_turn,
-        guesser_id,
-        guess_text,
-        len(candidates),
-        "match" if matched else "no match",
-    )
-    if matched:
+    guesser = players.describe_player_id(session, guesser_id)
+    if matching.is_match(guess_text, state.match_candidates(game)):
+        logger.info(
+            "Game {}: {} guessed {!r} — CORRECT at hard-mode turn {}/{}",
+            game.id,
+            guesser,
+            guess_text,
+            game.hard_mode_turn,
+            HARD_MODE_TURN_COUNT,
+        )
         state._win(session, game, winner_id=guesser_id, award=HARD_MODE_WIN_AWARD)
         return GuessOutcome.WON
 
     game.wrong_guess_count += 1
+    logger.info(
+        "Game {}: {} guessed {!r} — wrong at hard-mode turn {}/{} ({}/{})",
+        game.id,
+        guesser,
+        guess_text,
+        game.hard_mode_turn,
+        HARD_MODE_TURN_COUNT,
+        game.wrong_guess_count,
+        HARD_MODE_WRONG_GUESS_LIMIT,
+    )
     if game.wrong_guess_count < HARD_MODE_WRONG_GUESS_LIMIT:
-        logger.debug(
-            "Game {}: wrong guess {}/{} on hard-mode turn {}",
-            game.id,
-            game.wrong_guess_count,
-            HARD_MODE_WRONG_GUESS_LIMIT,
-            game.hard_mode_turn,
-        )
         return GuessOutcome.WRONG
 
     game.wrong_guess_count = 0

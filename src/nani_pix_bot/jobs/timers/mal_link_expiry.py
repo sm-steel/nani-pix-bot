@@ -17,7 +17,7 @@ from loguru import logger
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.services import mal_link
+from nani_pix_bot.services import mal_link, players
 
 # Re-exported from services/mal_link.py (where it lives so the read-side
 # TTL check can use it too, without services/ importing jobs/) — the
@@ -35,7 +35,9 @@ def schedule_mal_link_expiry(job_queue: JobQueue | None, telegram_user_id: int) 
     if job_queue is None:
         return
     logger.debug(
-        "Scheduling MAL link expiry for player {} in {}", telegram_user_id, MAL_LINK_EXPIRY_DELAY
+        "Scheduling MAL link expiry job {} in {}",
+        mal_link_expiry_job_name(telegram_user_id),
+        MAL_LINK_EXPIRY_DELAY,
     )
     job_queue.run_once(
         mal_link_expiry_job_callback,
@@ -58,11 +60,9 @@ async def mal_link_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> No
 
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
+        player = players.describe_player_id(session, telegram_user_id)
         if mal_link.get_pending_link(session, telegram_user_id) is None:
-            logger.debug(
-                "MAL link expiry fired for player {} but it's already resolved",
-                telegram_user_id,
-            )
+            logger.debug("MAL link expiry fired for {} but it's already resolved", player)
             return
-        logger.info("Player {}'s /linkmal attempt expired after 10min unused", telegram_user_id)
+        logger.info("{}'s /linkmal attempt expired after 10min unused", player)
         mal_link.delete_pending_link(session, telegram_user_id)

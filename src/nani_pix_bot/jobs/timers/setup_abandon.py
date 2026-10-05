@@ -60,7 +60,7 @@ async def setup_abandon_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
         lang = settings.get_language(session)
         game = session.get(Game, game_id)
         if game is None or game.status != GameStatus.SETUP:
-            logger.debug("Setup-abandon fired for game {} but it's already resolved", game_id)
+            logger.debug("Game {}: setup-abandon fired but it's already resolved — no-op", game_id)
             return
         starter = players.describe_player_id(session, game.starter_id)
         logger.info("Game {}: setup by {} abandoned after 1h — deleting it", game_id, starter)
