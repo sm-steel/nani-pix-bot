@@ -881,3 +881,125 @@ async def test_search_text_handler_offers_a_way_back_when_nothing_is_found(
     assert call is not None
     markup = call.kwargs["reply_markup"]
     assert _only_button_data(markup) == [METHOD_BACK_CALLBACK_DATA]
+
+
+# --- INFO-level game-flow logging (issue #228) -------------------------
+#
+# At LOG_LEVEL=INFO the log alone has to tell the story of a setup: who
+# picked what, searched for what, and which buttons they tapped. These
+# pin the level and the wording that makes `grep "Game N"` work.
+
+
+def _info_lines(records: list[tuple[str, str]]) -> list[str]:
+    return [message for level, message in records if level == "INFO"]
+
+
+async def test_method_pick_logs_the_starter_and_method_at_info(
+    session_factory, records: list[tuple[str, str]]
+) -> None:
+    _create_setup_game(session_factory, starter_id=1)
+    update = _make_method_callback_update(data=SHIKIMORI_METHOD_CALLBACK_DATA, user_id=1)
+    update.callback_query.from_user.username = "alice"
+    context = _make_context(session_factory)
+
+    await search.method_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert any(
+        line.startswith("Game ") and "1 (@alice) picked identification method shikimori" in line
+        for line in _info_lines(records)
+    )
+
+
+async def test_method_pick_with_no_setup_row_logs_a_warning(
+    session_factory, records: list[tuple[str, str]]
+) -> None:
+    """Used to be a bare `return` — the tap did nothing and said nothing."""
+    update = _make_method_callback_update(data=ANILIST_METHOD_CALLBACK_DATA, user_id=7)
+    update.callback_query.from_user.username = "bob"
+    context = _make_context(session_factory)  # no SETUP row at all
+
+    await search.method_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    warnings = [message for level, message in records if level == "WARNING"]
+    assert any("7 (@bob)" in line and "anilist" in line for line in warnings)
+
+
+async def test_a_search_logs_its_query_and_result_count_at_info_even_when_empty(
+    session_factory, monkeypatch: pytest.MonkeyPatch, records: list[tuple[str, str]]
+) -> None:
+    _create_setup_game(session_factory, starter_id=1)
+    monkeypatch.setattr(search.anilist, "search", AsyncMock(return_value=[]))
+    update = _make_text_update(user_id=1, text="frieren")
+    update.message.from_user.id = 1
+    update.message.from_user.username = "alice"
+    status_message = MagicMock()
+    status_message.edit_text = AsyncMock()
+    update.message.reply_text = AsyncMock(return_value=status_message)
+    context = _make_context(session_factory, search_client=MagicMock())
+
+    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert any(
+        line.startswith("Game ")
+        and "1 (@alice) searched anilist for 'frieren' — 0 result(s)" in line
+        for line in _info_lines(records)
+    )
+
+
+async def test_a_result_pick_logs_the_picked_title_and_provider_id_at_info(
+    session_factory, monkeypatch: pytest.MonkeyPatch, records: list[tuple[str, str]]
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(search.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
+    _create_setup_game(session_factory, starter_id=1)
+    update = _make_callback_update(data="anilist_pick:99", user_id=1)
+    update.callback_query.from_user.username = "alice"
+    context = _make_callback_context(session_factory)
+
+    await search.pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert any(
+        line.startswith("Game ")
+        and '1 (@alice) picked "Frieren: Beyond Journey\'s End" (anilist 99)' in line
+        for line in _info_lines(records)
+    )
+
+
+async def test_none_of_these_logs_at_info(session_factory, records: list[tuple[str, str]]) -> None:
+    _create_setup_game(session_factory, starter_id=1)
+    update = _make_callback_update(data=SEARCH_RETRY_CALLBACK_DATA, user_id=1)
+    update.callback_query.from_user.username = "alice"
+    context = _make_callback_context(session_factory)
+
+    await search.pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert any(
+        line.startswith("Game ") and '1 (@alice) tapped "None of these"' in line
+        for line in _info_lines(records)
+    )
+
+
+async def test_text_typed_on_the_preview_is_logged_as_ignored_at_info(
+    session_factory, records: list[tuple[str, str]]
+) -> None:
+    _create_setup_game(session_factory, starter_id=1)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.setup_step = SetupStep.CONFIRMING
+        session.commit()
+    update = _make_text_update(user_id=1, text="hello?")
+    update.effective_user.username = "alice"
+    context = _make_context(session_factory)
+
+    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert any("1 (@alice) typed 'hello?' at confirming" in line for line in _info_lines(records))
+    update.message.reply_text.assert_not_awaited()

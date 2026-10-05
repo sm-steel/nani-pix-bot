@@ -721,3 +721,42 @@ async def test_confirming_shows_the_bounty_in_the_game_start_caption(
     )
 
     assert "Bounty: 60" in context.bot.send_photo.await_args.kwargs["caption"]
+
+
+async def test_a_preview_tap_with_no_setup_row_logs_a_warning(
+    session_factory, records: list[tuple[str, str]]
+) -> None:
+    """Issue #228: these taps used to `return` with no trace at all."""
+    update = _make_preview_callback_update(data=PREVIEW_ADD_SYNONYM_CALLBACK_DATA, user_id=7)
+    update.callback_query.from_user.username = "bob"
+    context = _make_callback_context(session_factory)  # no SETUP row at all
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    warnings = [message for level, message in records if level == "WARNING"]
+    assert any(
+        "7 (@bob)" in line and PREVIEW_ADD_SYNONYM_CALLBACK_DATA in line for line in warnings
+    )
+    update.callback_query.edit_message_text.assert_not_awaited()
+
+
+async def test_a_preview_button_logs_the_tap_at_info(
+    session_factory, records: list[tuple[str, str]]
+) -> None:
+    _staged_setup_game(session_factory, starter_id=1)
+    update = _make_preview_callback_update(data=PREVIEW_ADD_SYNONYM_CALLBACK_DATA, user_id=1)
+    update.callback_query.from_user.username = "alice"
+    context = _make_callback_context(session_factory)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert any(
+        level == "INFO"
+        and message.startswith("Game ")
+        and "1 (@alice) tapped Add a synonym" in message
+        for level, message in records
+    )

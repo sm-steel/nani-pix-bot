@@ -203,3 +203,21 @@ async def test_manual_entry_second_message_keeps_the_staged_entry_when_the_album
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.setup_step == SetupStep.CONFIRMING
         assert fetched.synonyms == ["Frieren"]
+
+
+async def test_a_blank_manual_title_is_logged_at_info_and_asked_again(
+    session_factory, records: list[tuple[str, str]]
+) -> None:
+    _create_setup_game(session_factory, starter_id=1, source="manual")
+    update = _make_text_update(user_id=1, text="   ")
+    update.effective_user.username = "alice"
+    context = _make_context(session_factory)
+
+    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert any(
+        level == "INFO" and "1 (@alice) sent a blank manual title" in message
+        for level, message in records
+    )
+    with session_factory() as session:
+        assert session.query(Game).filter_by(starter_id=1).one().title_english is None
