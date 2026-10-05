@@ -69,6 +69,7 @@
   "dm_start.screenshot_gone": "That screenshot isn't in the list anymore — pick another one above.",
   "dm_start.setup_abandoned": "⌛ Setup timed out without finishing — it's open to anyone now! DM me a screenshot to begin, or send /newgame to pick one instead.",
 
+  "game.id_line": "🎲 Game #{id}",
   "guess.usage": "Usage: /guess <anime title>",
   "guess.no_game": "No game is currently running. DM me a screenshot to start one, or send /newgame to pick one instead!",
   "guess.starter_cannot_guess": "You started this round — you already know the answer, so you can't guess on it!",

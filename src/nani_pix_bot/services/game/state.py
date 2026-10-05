@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot import log_context
 from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.services import matching, players
+from nani_pix_bot.services import i18n, matching, players
 from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.game.clock import deadline_after
 from nani_pix_bot.services.search.anilist import AniListResult
@@ -144,6 +144,13 @@ def display_title_field(game: Game, lang: str) -> tuple[TitleField, str] | None:
     """display_title() plus which field it came from; None if the game
     has no title at all."""
     return prioritized_title_field(_variants(game), lang=lang)
+
+
+def game_id_line(game_id: int, lang: str) -> str:
+    """The `🎲 Game #<id>` line every game post ends with (issue #248), so an
+    admin can name the game in /setwinner or /refund. Leading newline: callers
+    just append it."""
+    return "\n" + i18n.t("game.id_line", lang, id=game_id)
 
 
 def clue_titles(game: Game, lang: str) -> list[tuple[TitleField, str]]:

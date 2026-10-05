@@ -1376,3 +1376,8 @@ def test_final_stage_exhaustion_records_when_the_game_ended(session: Session) ->
     session.commit()
 
     _assert_ended_between(game, before, datetime.now(UTC))
+
+
+@pytest.mark.parametrize(("lang", "expected"), [("en", "\n🎲 Game #42"), ("ru", "\n🎲 Игра #42")])
+def test_game_id_line(lang: str, expected: str) -> None:
+    assert game_service.game_id_line(42, lang) == expected
