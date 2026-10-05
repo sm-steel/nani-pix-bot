@@ -1066,6 +1066,10 @@ under the player's name.
   price by accident.
 - If a round is stopped (`/stop`) its clue purchases are refunded in
   full, since they die with the round.
+- An admin can refund any single clue purchase with `/refund @user` (DM): a
+  paginated list of the player's purchases, newest first; the refund is the
+  same reversal as a failed delivery, and the player gets a DM saying so
+  (issue #249).
 
 ### Public spends
 

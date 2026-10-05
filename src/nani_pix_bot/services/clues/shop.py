@@ -283,9 +283,36 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
     return bought
 
 
-def refund(session: Session, purchase_row: CluePurchase) -> None:
-    """Undo a purchase whose clue could not be delivered: pay the charge
-    back (house -> player, naming it via reverses_id) and drop the row."""
+@dataclass(frozen=True)
+class RefundableItem:
+    """One un-refunded clue purchase, as the admin /refund picker lists it."""
+
+    purchase_id: int
+    game_id: int
+    kind: ClueKind
+    amount: int
+    created_at: datetime
+
+
+def refundable_purchases(session: Session, player_id: int) -> list[RefundableItem]:
+    """Every clue purchase `player_id` still holds, newest first. A refunded
+    purchase's row is deleted (refund()), so whatever is here is refundable."""
+    stmt = (
+        select(CluePurchase, CurrencyTransfer.amount)
+        .join(CurrencyTransfer, CurrencyTransfer.id == CluePurchase.transfer_id)
+        .where(CluePurchase.player_id == player_id)
+        .order_by(CluePurchase.created_at.desc(), CluePurchase.id.desc())
+    )
+    return [
+        RefundableItem(row.id, row.game_id, ClueKind(row.kind), amount, row.created_at)
+        for row, amount in session.execute(stmt)
+    ]
+
+
+def refund(session: Session, purchase_row: CluePurchase) -> int:
+    """Undo a purchase — a clue that could not be delivered, or an admin
+    /refund: pay the charge back (house -> player, naming it via
+    reverses_id) and drop the row. Returns the refunded amount."""
     charge = session.get(CurrencyTransfer, purchase_row.transfer_id)
     buyer = session.get(Player, purchase_row.player_id)
     if charge is None or buyer is None:
@@ -309,6 +336,7 @@ def refund(session: Session, purchase_row: CluePurchase) -> None:
         recipient_id=buyer.telegram_user_id,
         game_id=purchase_row.game_id,
     )
+    return charge.amount
 
 
 def refund_game(session: Session, game_id: int) -> int:

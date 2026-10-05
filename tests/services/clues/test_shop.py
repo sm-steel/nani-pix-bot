@@ -367,3 +367,32 @@ def test_ru_clue_titles_drop_english_equal_to_romaji(session: Session) -> None:
         "russian",
         "romaji",
     ]
+
+
+def _buy(session: Session, game: Game, buyer: Player, kind: ClueKind) -> CluePurchase:
+    return shop.purchase(session, game, buyer, shop.PurchaseRequest(kind))
+
+
+def test_refundable_purchases_lists_newest_first_with_amounts(session: Session) -> None:
+    game, buyer = _setup(session)
+    first = _buy(session, game, buyer, ClueKind.LAST_LETTER)
+    second = _buy(session, game, buyer, ClueKind.FIRST_LETTER)
+
+    items = shop.refundable_purchases(session, BUYER)
+
+    assert [i.purchase_id for i in items] == [second.id, first.id]
+    assert [i.amount for i in items] == [100, 60]
+    assert all(i.game_id == game.id for i in items)
+
+
+def test_refund_returns_the_amount_and_drops_the_purchase(session: Session) -> None:
+    game, buyer = _setup(session)
+    bought = _buy(session, game, buyer, ClueKind.LAST_LETTER)
+
+    assert shop.refund(session, bought) == 60
+    session.flush()
+
+    assert shop.refundable_purchases(session, BUYER) == []
+    assert buyer.currency == START
+    # opening balance was seeded directly, so the ledger nets to zero
+    assert ledger_balance(session, BUYER) == 0

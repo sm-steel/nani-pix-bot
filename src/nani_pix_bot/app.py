@@ -35,6 +35,7 @@ from nani_pix_bot.commands import (
     mal_link,
     onboarding,
     quiet_hours,
+    refund,
     setautostart,
     shop,
     stageconfig,
@@ -279,6 +280,9 @@ def build_application(config: Config) -> Application:
     application.add_handler(
         CallbackQueryHandler(game_flow.stop_callback_handler, pattern=r"^stop:")
     )
+    application.add_handler(
+        CallbackQueryHandler(refund.refund_callback_handler, pattern=r"^refund:")
+    )
     application.add_handler(CallbackQueryHandler(shop.shop_callback_handler, pattern=r"^shop:"))
     application.add_handler(
         CallbackQueryHandler(game_flow.sharpen_callback_handler, pattern=r"^sharpen:")
@@ -294,6 +298,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("shop", shop.shop_command))
     application.add_handler(CommandHandler("tip", tip.tip_command))
     application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))
+    application.add_handler(CommandHandler("refund", refund.refund_command))
     application.add_handler(CommandHandler("language", language.language_command))
     application.add_handler(CommandHandler("linkmal", mal_link.linkmal_command))
     application.add_handler(CommandHandler("unlinkmal", mal_link.unlinkmal_command))
