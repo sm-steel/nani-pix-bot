@@ -11,6 +11,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from nani_pix_bot import log_context
 from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import matching, players
@@ -219,11 +220,20 @@ def screenshot_capable_providers(game: Game) -> list[Provider]:
     return candidates
 
 
+def _bound(game: Game | None) -> Game | None:
+    """Attach a looked-up game to the structured log context (issue #230):
+    the lookups here are how nearly every handler finds its game, so
+    binding at this one spot gives every later line of the update its
+    `game_id` without each caller doing it."""
+    log_context.bind_game(game)
+    return game
+
+
 def active_or_setup_game(session: Session) -> Game | None:
     """The one game currently SETUP or ACTIVE, if any — there's never more
     than one (enforced here, not by a DB constraint; see ARCHITECTURE.md)."""
     stmt = select(Game).where(Game.status.in_([GameStatus.SETUP, GameStatus.ACTIVE]))
-    return session.scalars(stmt).first()
+    return _bound(session.scalars(stmt).first())
 
 
 def active_games(session: Session) -> list[Game]:
@@ -247,7 +257,7 @@ def get_setup_game_for_starter(session: Session, starter_id: int) -> Game | None
     in-memory user_data) means the DM setup flow survives a bot restart —
     see the incident that prompted this in issue #11."""
     stmt = select(Game).where(Game.status == GameStatus.SETUP, Game.starter_id == starter_id)
-    return session.scalars(stmt).first()
+    return _bound(session.scalars(stmt).first())
 
 
 def can_start(session: Session, user_id: int) -> bool:
@@ -282,6 +292,7 @@ def create_setup_game(
     )
     session.add(game)
     session.flush()  # populate game.id for the caller without a full commit
+    log_context.bind_game(game)
     if entry is None:
         entry = "DM photo" if original_image is not None else "/newgame"
     logger.info(

@@ -7,6 +7,7 @@ from loguru import logger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from nani_pix_bot import log_context
 from nani_pix_bot.db import make_session_factory
 from nani_pix_bot.models.base import Base
 from nani_pix_bot.services.quiet_hours import QuietHours
@@ -54,3 +55,12 @@ def records() -> Iterator[list[tuple[str, str]]]:
     )
     yield captured
     logger.remove(sink_id)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_log_context() -> Iterator[None]:
+    """The structured log context (issue #230) is a ContextVar, which
+    would otherwise carry one test's game/user into the next."""
+    log_context.reset()
+    yield
+    log_context.reset()

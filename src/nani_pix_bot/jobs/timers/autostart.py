@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs.timers._shared import seconds_until
+from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until
 from nani_pix_bot.jobs.timers.current_image import post_stage_images
 from nani_pix_bot.jobs.timers.game_timeout import schedule_timeout
 from nani_pix_bot.jobs.timers.inactivity import schedule_inactivity_timers
@@ -96,6 +96,7 @@ def _autostart_gate_reason(session: Session) -> str | None:
     return None
 
 
+@job_log_scope()
 @retry_on_failure
 @quiet_hours_deferred
 async def idle_autostart_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:

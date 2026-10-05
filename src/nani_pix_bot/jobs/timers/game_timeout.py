@@ -8,7 +8,7 @@ from loguru import logger
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs.timers._shared import seconds_until_timeout
+from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until_timeout
 from nani_pix_bot.jobs.timers.current_image import (
     clear_image_if_sent,
     post_current_image,
@@ -75,6 +75,7 @@ def _hard_mode_timeout_reveal(game: Game, lang: str, refund_note: str) -> _HardM
     return _HardModeTimeoutReveal(photos=photos, caption=caption)
 
 
+@job_log_scope("game_id")
 @retry_on_failure
 @quiet_hours_deferred
 async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:

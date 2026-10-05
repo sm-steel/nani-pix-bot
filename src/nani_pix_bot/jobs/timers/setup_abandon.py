@@ -5,7 +5,7 @@ from loguru import logger
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs.timers._shared import seconds_until
+from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until
 from nani_pix_bot.jobs.timers.autostart import schedule_idle_autostart
 from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.jobs.timers.retry import retry_on_failure
@@ -43,6 +43,7 @@ def cancel_setup_abandon(job_queue: JobQueue | None, game_id: int) -> None:
         job.schedule_removal()
 
 
+@job_log_scope("game_id")
 @retry_on_failure
 @quiet_hours_deferred
 async def setup_abandon_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:

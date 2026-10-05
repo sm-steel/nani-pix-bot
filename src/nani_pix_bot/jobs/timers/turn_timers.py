@@ -8,7 +8,7 @@ from telegram.error import Forbidden
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs.timers._shared import seconds_until
+from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until
 from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.jobs.timers.retry import retry_on_failure
 from nani_pix_bot.models.player import Player
@@ -69,6 +69,7 @@ def cancel_turn_timers(job_queue: JobQueue | None) -> None:
             job.schedule_removal()
 
 
+@job_log_scope("player_id")
 @retry_on_failure
 @quiet_hours_deferred
 async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -119,6 +120,7 @@ async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
         logger.info("Turn reminder posted in the group for {}", target_text)
 
 
+@job_log_scope("player_id")
 @retry_on_failure
 @quiet_hours_deferred
 async def turn_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:

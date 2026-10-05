@@ -17,6 +17,7 @@ from loguru import logger
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.jobs.timers._shared import job_log_scope
 from nani_pix_bot.services import mal_link, players
 
 # Re-exported from services/mal_link.py (where it lives so the read-side
@@ -47,6 +48,7 @@ def schedule_mal_link_expiry(job_queue: JobQueue | None, telegram_user_id: int) 
     )
 
 
+@job_log_scope("player_id")
 async def mal_link_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fires 10min after a /linkmal attempt starts. If the player never
     came back with a code, the pending_mal_link row is still there —

@@ -45,7 +45,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
     SEARCH_RETRY_CALLBACK_DATA,
 )
-from nani_pix_bot.commands.helpers import player_tracking
+from nani_pix_bot.commands.helpers import log_scope, player_tracking
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
@@ -55,6 +55,7 @@ from nani_pix_bot.jobs.timers import rearm_pending_timeouts
 from nani_pix_bot.logging_config import setup_logging
 from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services import settings
+from nani_pix_bot.services.version import installed_version
 
 # python-telegram-bot's ApplicationBuilder defaults this to 1 (general
 # Bot-API requests default to 256) — a single connection that fails
@@ -69,6 +70,7 @@ GET_UPDATES_CONNECTION_POOL_SIZE = 4
 # Everything else registers into PTB's default group (0). Named rather
 # than literal so tests can assert "before the commands" instead of
 # hard-coding -1 in two places.
+_LOG_SCOPE_GROUP = -2
 _PLAYER_TRACKING_GROUP = -1
 
 # Which identification-search pick prefixes route to
@@ -194,7 +196,11 @@ def build_application(config: Config) -> Application:
     application.bot_data["group_chat_id"] = config.group_chat_id
     application.bot_data["game_topic_id"] = config.game_topic_id
 
-    # The only handler outside the default group. -1 runs it before every
+    # Earliest of all: every update starts with a fresh structured log
+    # context (issue #230), so even remember_user's lines carry its user.
+    application.add_handler(TypeHandler(Update, log_scope.bind_update), group=_LOG_SCOPE_GROUP)
+
+    # Outside the default group too. -1 runs it before every
     # command handler below (PTB walks groups in order and carries on to
     # the next one unless a callback raises ApplicationHandlerStop, which
     # this one never does), so a user is recorded from the very update
@@ -352,7 +358,17 @@ async def _post_shutdown(application: Application) -> None:
 
 def main() -> None:
     config = load_config()
-    setup_logging(config.log_level, config.secret_values())
+    setup_logging(
+        config.log_level,
+        config.secret_values(),
+        fmt=config.log_format,
+        static={
+            "service": "nani-pix-bot",
+            "version": installed_version(),
+            "group_chat_id": config.group_chat_id,
+            "game_topic_id": config.game_topic_id,
+        },
+    )
     application = build_application(config)
     heartbeat.install(application)
     application.run_polling()

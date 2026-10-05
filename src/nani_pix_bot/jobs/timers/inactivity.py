@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs.timers._shared import seconds_until
+from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until
 from nani_pix_bot.jobs.timers.current_image import (
     clear_image_if_sent,
     post_current_image,
@@ -77,6 +77,7 @@ def cancel_inactivity_timers(job_queue: JobQueue | None, game_id: int) -> None:
             job.schedule_removal()
 
 
+@job_log_scope("game_id")
 @retry_on_failure
 @quiet_hours_deferred
 async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -218,6 +219,7 @@ async def _post_hard_mode_outcome(
     await maybe_overthrow(context, session_factory)
 
 
+@job_log_scope("game_id")
 @retry_on_failure
 @quiet_hours_deferred
 async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:

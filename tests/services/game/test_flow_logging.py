@@ -4,6 +4,7 @@ log alone. Each state change leaves one INFO line that starts with
 
 from sqlalchemy.orm import Session
 
+from nani_pix_bot import log_context
 from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -117,3 +118,28 @@ def test_activation_names_starter_and_answer(session: Session, records) -> None:
         f"Game {game.id}: ACTIVE — started by 1 (@setter), source=shikimori, "
         "answer 'Sousou no Frieren'"
     ) in _info(records)
+
+
+def test_game_lookups_bind_the_game_into_the_log_context(session: Session) -> None:
+    """Issue #230: whichever handler or job finds the game, its id rides
+    along on every later line of that update or job."""
+    game = _active_game(session)
+    log_context.reset()
+
+    assert game_service.active_or_setup_game(session) is game
+    assert log_context.current() == {"game_id": game.id, "game_status": "active"}
+
+
+def test_a_lookup_that_finds_nothing_binds_nothing(session: Session) -> None:
+    _active_game(session)
+    log_context.reset()
+
+    assert game_service.get_setup_game_for_starter(session, 1) is None
+    assert log_context.current() == {}
+
+
+def test_creating_a_game_binds_it(session: Session) -> None:
+    log_context.reset()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"img")
+
+    assert log_context.current() == {"game_id": game.id, "game_status": "setup"}

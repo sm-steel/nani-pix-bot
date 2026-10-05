@@ -1,3 +1,4 @@
+import json
 import logging
 import sys
 from collections.abc import Iterator
@@ -6,6 +7,7 @@ import pytest
 from loguru import logger
 from telegram.error import NetworkError
 
+from nani_pix_bot import log_context
 from nani_pix_bot.logging_config import setup_logging
 
 # Shaped like a real bot token (<bot id>:<35 chars>), but not one.
@@ -28,6 +30,8 @@ def _restore_logging() -> Iterator[None]:
     logging.root.setLevel(root_level)
     logging.getLogger("httpx").setLevel(logging.NOTSET)
     logging.getLogger("apscheduler").setLevel(logging.NOTSET)
+    logger.configure(patcher=None, extra={})
+    log_context.reset()
 
 
 def test_known_secrets_are_masked_in_messages(capsys) -> None:
@@ -150,3 +154,89 @@ def test_apscheduler_job_chatter_is_silenced() -> None:
     setup_logging("INFO")
 
     assert logging.getLogger("apscheduler").getEffectiveLevel() == logging.WARNING
+
+
+def _json_lines(err: str) -> list[dict]:
+    return [json.loads(line) for line in err.splitlines() if line.strip()]
+
+
+def test_text_mode_prefixes_game_and_triggering_user(capsys) -> None:
+    """Issue #230: context lives in fields; text mode renders it."""
+    setup_logging("INFO")
+    log_context.reset(user_id=2, username="bob", game_id=88)
+
+    logger.info("guessed {text!r}", text="naruto")
+
+    assert "- [game 88 | 2 @bob] guessed 'naruto'" in capsys.readouterr().err
+
+
+def test_text_mode_names_the_job_and_omits_an_empty_prefix(capsys) -> None:
+    setup_logging("INFO")
+    log_context.reset(job="inactivity-nudge-88", game_id=88)
+    logger.info("nudge posted")
+    log_context.reset()
+    logger.info("started")
+
+    err = capsys.readouterr().err
+    assert "- [game 88 | job inactivity-nudge-88] nudge posted" in err
+    assert "- started" in err
+
+
+def test_text_mode_falls_back_to_the_full_name(capsys) -> None:
+    setup_logging("INFO")
+    log_context.reset(user_id=2, user_name="Bob B")
+
+    logger.info("x")
+
+    assert "- [2 Bob B] x" in capsys.readouterr().err
+
+
+def test_json_mode_flattens_context_kwargs_and_static_fields(capsys) -> None:
+    setup_logging("INFO", fmt="json", static={"group_chat_id": -100})
+    log_context.reset(user_id=2, username="bob", game_id=88)
+
+    logger.info("guessed {text!r} — 💠 Фрирен", text="naruto")
+
+    (line,) = _json_lines(capsys.readouterr().err)
+    assert line["message"] == "guessed 'naruto' — 💠 Фрирен"
+    assert line["level"] == "INFO"
+    assert line["game_id"] == 88
+    assert line["user_id"] == 2
+    assert line["text"] == "naruto"
+    assert line["group_chat_id"] == -100
+    assert {"ts", "logger", "function", "line"} <= line.keys()
+    assert "exception" not in line
+
+
+def test_json_mode_includes_a_masked_traceback(capsys) -> None:
+    setup_logging("INFO", KNOWN, fmt="json")
+
+    try:
+        raise ValueError(DB_PW)
+    except ValueError:
+        logger.exception("boom")
+
+    (line,) = _json_lines(capsys.readouterr().err)
+    assert "ValueError: ***" in line["exception"]
+    assert DB_PW not in json.dumps(line)
+
+
+def test_secrets_are_masked_inside_extra_fields(capsys) -> None:
+    setup_logging("INFO", KNOWN, fmt="json")
+
+    logger.info("fetched {url}", url=f"http://p:{PROXY_PW}@proxy")
+
+    (line,) = _json_lines(capsys.readouterr().err)
+    assert line["url"] == "http://p:***@proxy"
+
+
+def test_stdlib_records_get_the_context_too(capsys) -> None:
+    setup_logging("INFO", fmt="json")
+    log_context.reset(update_id=7, game_id=88)
+
+    logging.getLogger("telegram.ext").warning("PTB says hi")
+
+    (line,) = _json_lines(capsys.readouterr().err)
+    assert line["message"] == "PTB says hi"
+    assert line["update_id"] == 7
+    assert line["game_id"] == 88

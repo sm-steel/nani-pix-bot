@@ -22,7 +22,7 @@ from nani_pix_bot.commands.dm_start import (
     screenshot_source_callback_handler,
     screenshot_upload_instead_callback_handler,
 )
-from nani_pix_bot.commands.helpers import player_tracking
+from nani_pix_bot.commands.helpers import log_scope, player_tracking
 from nani_pix_bot.config import Config
 from nani_pix_bot.models.enums import Provider
 
@@ -263,6 +263,18 @@ def test_build_application_registers_player_tracking_before_the_commands() -> No
     }
     assert command_groups
     assert min(command_groups) > app._PLAYER_TRACKING_GROUP
+
+
+def test_build_application_resets_the_log_context_before_anything_else() -> None:
+    """Issue #230: every update starts from a fresh log context, so the
+    first handler to run for it must be the one that resets it."""
+    application = app.build_application(_config())
+
+    first_group = min(application.handlers)
+    (handler,) = application.handlers[first_group]
+    assert isinstance(handler, TypeHandler)
+    assert handler.callback is log_scope.bind_update
+    assert first_group < app._PLAYER_TRACKING_GROUP
 
 
 async def test_post_shutdown_closes_all_four_search_clients() -> None:
