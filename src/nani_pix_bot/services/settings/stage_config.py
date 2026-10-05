@@ -63,8 +63,9 @@ def set_stage_config(
     # DEBUG: the admin command that calls this logs the change at INFO,
     # naming the admin.
     logger.debug(
-        "Stage {} config set to target_width={} wrong_guess_limit={}",
-        stage,
-        target_width,
-        wrong_guess_limit,
+        "stage {stage} config set to target_width={target_width} "
+        "wrong_guess_limit={wrong_guess_limit}",
+        stage=stage,
+        target_width=target_width,
+        wrong_guess_limit=wrong_guess_limit,
     )

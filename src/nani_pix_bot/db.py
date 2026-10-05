@@ -37,7 +37,7 @@ def session_scope(session_factory: sessionmaker[Session]) -> Iterator[Session]:
         yield session
         session.commit()
     except Exception:
-        logger.opt(exception=True).warning("Rolling back session due to an exception")
+        logger.opt(exception=True).warning("rolling back session due to an exception")
         session.rollback()
         raise
     finally:

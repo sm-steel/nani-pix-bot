@@ -1,6 +1,7 @@
 """Issue #228: at LOG_LEVEL=INFO a whole game must be readable from the
-log alone. Each state change leaves one INFO line that starts with
-`Game {id}:` and names who acted, so `grep "Game 88"` recovers the game."""
+log alone, so each state change leaves one INFO line. Issue #230: who and
+which game travel as structured fields (the call's kwargs plus the log
+context), not as text baked into the message."""
 
 from sqlalchemy.orm import Session
 
@@ -10,10 +11,13 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
 from nani_pix_bot.services import game as game_service
+from tests.conftest import LogLine
 
 
-def _info(records: list[tuple[str, str]]) -> list[str]:
-    return [message for level, message in records if level == "INFO"]
+def _info(log_records: list[LogLine], message: str) -> LogLine:
+    """The one INFO line with exactly this message."""
+    (line,) = [r for r in log_records if r.level == "INFO" and r.message == message]
+    return line
 
 
 def _active_game(session: Session, *, stage: PixelStage = PixelStage.STAGE_1) -> Game:
@@ -41,58 +45,62 @@ def test_stage_label_is_human_readable() -> None:
     assert game_service.stage_label(PixelStage.STAGE_2) == "stage 2/5"
 
 
-def test_wrong_guess_logs_guesser_text_and_count_at_info(session: Session, records) -> None:
+def test_wrong_guess_logs_text_stage_and_count_as_fields(session: Session, log_records) -> None:
     game = _active_game(session)
 
     game_service.record_guess(session, game, guesser_id=2, guess_text="naruto")
 
-    assert f"Game {game.id}: 2 (@bob) guessed 'naruto' — wrong at stage 1/5 (1/2)" in _info(records)
+    line = _info(log_records, "guessed 'naruto' — wrong at stage 1/5 (1/2)")
+    assert line.extra["game_id"] == game.id
+    assert line.extra["guess"] == "naruto"
+    assert (line.extra["wrong"], line.extra["limit"]) == (1, 2)
 
 
-def test_stage_advance_logs_the_new_stage_and_reason(session: Session, records) -> None:
+def test_stage_advance_logs_the_new_stage_and_reason(session: Session, log_records) -> None:
     game = _active_game(session)
     game.wrong_guess_count = 1
 
     game_service.record_guess(session, game, guesser_id=2, guess_text="naruto")
 
-    assert f"Game {game.id}: advanced to stage 2/5 (wrong-guess limit reached)" in _info(records)
+    line = _info(log_records, "advanced to stage 2/5 (wrong-guess limit reached)")
+    assert line.extra["game_id"] == game.id
 
 
-def test_correct_guess_and_win_are_logged_at_info(session: Session, records) -> None:
+def test_correct_guess_and_win_are_logged_at_info(session: Session, log_records) -> None:
     game = _active_game(session, stage=PixelStage.STAGE_3)
 
     game_service.record_guess(session, game, guesser_id=2, guess_text="frieren")
 
-    info = _info(records)
-    assert f"Game {game.id}: 2 (@bob) guessed 'frieren' — CORRECT at stage 3/5" in info
-    assert f"Game {game.id}: won by 2 (@bob) at stage 3/5" in info
+    assert (
+        _info(log_records, "guessed 'frieren' — CORRECT at stage 3/5").extra["game_id"] == game.id
+    )
+    won = _info(log_records, "won by 2 (@bob) at stage 3/5")
+    assert won.extra["winner_id"] == 2
 
 
-def test_unsolved_logs_its_cause(session: Session, records) -> None:
+def test_unsolved_logs_its_cause(session: Session, log_records) -> None:
     game = _active_game(session, stage=PixelStage.STAGE_5)
     game.wrong_guess_count = 1
 
     game_service.record_guess(session, game, guesser_id=2, guess_text="naruto")
 
-    assert (
-        f"Game {game.id}: ended UNSOLVED (final stage exhausted — wrong-guess limit reached)"
-        in _info(records)
-    )
+    line = _info(log_records, "ended UNSOLVED (final stage exhausted — wrong-guess limit reached)")
+    assert line.extra["game_id"] == game.id
 
 
-def test_turn_change_names_the_reason(session: Session, records) -> None:
+def test_turn_change_names_the_next_starter_and_reason(session: Session, log_records) -> None:
     session.add(Player(telegram_user_id=2, username="bob"))
     session.commit()
 
-    game_service.set_next_starter(session, 2, reason="/skip by 1 (@setter)")
+    game_service.set_next_starter(session, 2, reason="/skip")
     game_service.set_next_starter(session, None, reason="turn expired")
 
-    info = _info(records)
-    assert "Turn designated to 2 (@bob) — /skip by 1 (@setter)" in info
-    assert "Turn opened to anyone — turn expired" in info
+    line = _info(log_records, "turn designated to 2 (@bob) — /skip")
+    assert line.extra["next_starter_id"] == 2
+    _info(log_records, "turn opened to anyone — turn expired")
 
 
-def test_game_creation_says_how_it_was_started(session: Session, records) -> None:
+def test_game_creation_says_how_it_was_started(session: Session, log_records) -> None:
     session.add(Player(telegram_user_id=1, username="setter"))
     session.commit()
 
@@ -100,12 +108,15 @@ def test_game_creation_says_how_it_was_started(session: Session, records) -> Non
     photo.status = GameStatus.WON
     bare = game_service.create_setup_game(session, starter_id=1)
 
-    info = _info(records)
-    assert f"Game {photo.id}: created (SETUP) by 1 (@setter) via DM photo" in info
-    assert f"Game {bare.id}: created (SETUP) by 1 (@setter) via /newgame" in info
+    by_photo = _info(log_records, "created (SETUP) by 1 (@setter) via DM photo")
+    assert (by_photo.extra["game_id"], by_photo.extra["starter_id"]) == (photo.id, 1)
+    assert (
+        _info(log_records, "created (SETUP) by 1 (@setter) via /newgame").extra["game_id"]
+        == bare.id
+    )
 
 
-def test_activation_names_starter_and_answer(session: Session, records) -> None:
+def test_activation_names_starter_and_answer(session: Session, log_records) -> None:
     session.add(Player(telegram_user_id=1, username="setter"))
     session.commit()
     game = game_service.create_setup_game(session, starter_id=1, original_image=b"img")
@@ -114,10 +125,24 @@ def test_activation_names_starter_and_answer(session: Session, records) -> None:
 
     game_service.activate_game(session, game)
 
-    assert (
-        f"Game {game.id}: ACTIVE — started by 1 (@setter), source=shikimori, "
-        "answer 'Sousou no Frieren'"
-    ) in _info(records)
+    line = _info(
+        log_records,
+        "ACTIVE — started by 1 (@setter), source=shikimori, answer 'Sousou no Frieren', "
+        "hard_mode=False",
+    )
+    assert line.extra["answer"] == "Sousou no Frieren"
+
+
+def test_lines_pick_up_the_update_context(session: Session, log_records) -> None:
+    """The guesser isn't named in the message: the update's log context
+    already carries them (commands/helpers/log_scope.py)."""
+    game = _active_game(session)
+    log_context.reset(user_id=2, username="bob")
+
+    game_service.record_guess(session, game, guesser_id=2, guess_text="naruto")
+
+    line = _info(log_records, "guessed 'naruto' — wrong at stage 1/5 (1/2)")
+    assert (line.extra["user_id"], line.extra["username"]) == (2, "bob")
 
 
 def test_game_lookups_bind_the_game_into_the_log_context(session: Session) -> None:
@@ -127,7 +152,7 @@ def test_game_lookups_bind_the_game_into_the_log_context(session: Session) -> No
     log_context.reset()
 
     assert game_service.active_or_setup_game(session) is game
-    assert log_context.current() == {"game_id": game.id, "game_status": "active"}
+    assert log_context.current() == {"game_id": game.id}
 
 
 def test_a_lookup_that_finds_nothing_binds_nothing(session: Session) -> None:
@@ -142,4 +167,4 @@ def test_creating_a_game_binds_it(session: Session) -> None:
     log_context.reset()
     game = game_service.create_setup_game(session, starter_id=1, original_image=b"img")
 
-    assert log_context.current() == {"game_id": game.id, "game_status": "setup"}
+    assert log_context.current() == {"game_id": game.id}

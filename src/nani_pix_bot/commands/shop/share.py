@@ -9,7 +9,6 @@ from telegram import CallbackQuery, User
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.shop.deliver import share_clue, text_clue_message
 from nani_pix_bot.commands.shop.keyboards import SHOP_SHARE_PREFIX
 from nani_pix_bot.db import session_scope
@@ -48,29 +47,31 @@ def _prepare_share(session_factory, user: User, purchase_id: int) -> _SharePost:
         row = session.get(CluePurchase, purchase_id)
         if row is None or row.player_id != user.id:
             logger.warning(
-                "Share of purchase {} refused for {}: not theirs", purchase_id, describe_user(user)
+                "share of purchase {purchase_id} refused: not theirs", purchase_id=purchase_id
             )
             raise _ShareRefusedError(i18n.t("shop.share_not_yours", lang))
         game = shop.active_game_for(session, row.game_id)
         if game is None:
             logger.info(
-                "Game {}: {} tried to share purchase {} after the round ended",
-                row.game_id,
-                describe_user(user),
-                purchase_id,
+                "tried to share purchase {purchase_id} after the round ended",
+                purchase_id=purchase_id,
+                game_id=row.game_id,
             )
             raise _ShareRefusedError(i18n.t("shop.stale", lang))
         kind = ClueKind(row.kind)
         is_image = kind not in TEXT_KINDS
         if is_image and row.telegram_file_id is None:
-            logger.error("Purchase {} has no stored file_id to share", purchase_id)
+            logger.error(
+                "purchase {purchase_id} has no stored file_id to share",
+                purchase_id=purchase_id,
+                game_id=game.id,
+            )
             raise _ShareRefusedError(i18n.t("shop.share_failed", lang))
         if not shop.mark_shared(row):
             logger.info(
-                "Game {}: {} tried to share purchase {} again — already shared",
-                game.id,
-                describe_user(user),
-                purchase_id,
+                "tried to share purchase {purchase_id} again — already shared",
+                purchase_id=purchase_id,
+                game_id=game.id,
             )
             raise _ShareRefusedError(i18n.t("shop.already_shared", lang))
         header = i18n.t("shop.shared", lang, name=html.escape(user.full_name))
@@ -102,21 +103,22 @@ async def _share(
         return
     if not await share_clue(context, post.text, post.file_id):
         logger.warning(
-            "Game {}: sharing purchase {} failed — marked unshared again", post.game_id, purchase_id
+            "sharing purchase {purchase_id} failed — marked unshared again",
+            purchase_id=purchase_id,
+            game_id=post.game_id,
         )
         _unshare(session_factory, purchase_id)
         await query.answer(i18n.t("shop.share_failed", post.lang), show_alert=True)
         return
     logger.info(
-        "Game {}: {} shared clue purchase {} with the group",
-        post.game_id,
-        describe_user(user),
-        purchase_id,
+        "shared clue purchase {purchase_id} with the group",
+        purchase_id=purchase_id,
+        game_id=post.game_id,
     )
     try:
         await query.edit_message_reply_markup(reply_markup=None)
     except TelegramError:
-        logger.warning("Could not remove the share button", exc_info=True)
+        logger.opt(exception=True).warning("could not remove the share button")
     await query.answer(i18n.t("shop.shared_ok", post.lang))
 
 

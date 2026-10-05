@@ -286,7 +286,9 @@ def _validated_index(raw: str, *, data: str) -> int | None:
     non-ASCII digits (`"٢"`) still convert cleanly."""
     if raw.isdecimal():
         return int(raw)
-    logger.warning("Rejected callback payload {!r}: {!r} is not an index", data, raw)
+    logger.warning(
+        "rejected callback payload {data!r}: {raw!r} is not an index", data=data, raw=raw
+    )
     return None
 
 
@@ -587,11 +589,15 @@ def _validated_provider(raw: str, *, data: str) -> Provider | None:
     try:
         provider = Provider(raw)
     except ValueError:
-        logger.warning("Rejected callback payload {!r}: {!r} is not a provider", data, raw)
+        logger.warning(
+            "rejected callback payload {data!r}: {raw!r} is not a provider", data=data, raw=raw
+        )
         return None
     if provider not in game_service.SCREENSHOT_CAPABLE_PROVIDERS:
         logger.warning(
-            "Rejected callback payload {!r}: {!r} has no screenshots to offer", data, raw
+            "rejected callback payload {data!r}: {raw!r} has no screenshots to offer",
+            data=data,
+            raw=raw,
         )
         return None
     return provider

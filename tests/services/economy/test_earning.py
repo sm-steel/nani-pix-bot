@@ -7,8 +7,15 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services.economy import bounty, config, earning
 from nani_pix_bot.services.economy.config import EconomyKey
+from tests.conftest import LogLine
 
 STARTER, ALICE, BOB = 1, 2, 3
+
+
+def _info(log_records: list[LogLine], message: str) -> LogLine:
+    """The one INFO line with exactly this message."""
+    (line,) = [r for r in log_records if r.level == "INFO" and r.message == message]
+    return line
 
 
 def _setup(session: Session, **game_overrides) -> Game:
@@ -180,7 +187,7 @@ def test_award_win_pays_the_bounty(session: Session) -> None:
     assert _currency(session, ALICE) == earned.win + 70
 
 
-def test_wrong_guess_payout_is_logged_at_info(session: Session, records) -> None:
+def test_wrong_guess_payout_is_logged_at_info(session: Session, log_records) -> None:
     game = _setup(session)
     alice = session.get(Player, ALICE)
     assert alice is not None
@@ -189,20 +196,27 @@ def test_wrong_guess_payout_is_logged_at_info(session: Session, records) -> None
 
     _guess(session, game, ALICE)
 
-    assert (
-        "INFO",
-        f"Game {game.id}: guess pays 2 💠 to {ALICE} (@alice)"
-        " (first-guess bonus 0 💠, wrong-guess reward 2 💠)",
-    ) in records
+    line = _info(log_records, "guess pays 2 💠 (first-guess bonus 0 💠, wrong-guess reward 2 💠)")
+    assert (line.extra["game_id"], line.extra["amount"], line.extra["wrong"]) == (game.id, 2, 2)
 
 
-def test_first_guess_payout_names_both_parts(session: Session, records) -> None:
+def test_first_guess_payout_names_both_parts(session: Session, log_records) -> None:
     game = _setup(session)
 
     _guess(session, game, ALICE)
 
-    assert (
-        "INFO",
-        f"Game {game.id}: guess pays 7 💠 to {ALICE}"
-        " (first-guess bonus 5 💠, wrong-guess reward 2 💠)",
-    ) in records
+    line = _info(log_records, "guess pays 7 💠 (first-guess bonus 5 💠, wrong-guess reward 2 💠)")
+    assert (line.extra["first"], line.extra["wrong"]) == (5, 2)
+    assert line.extra["game_id"] == game.id
+
+
+def test_win_payout_names_winner_and_setter(session: Session, log_records) -> None:
+    game = _setup(session)
+
+    earned = earning.award_win(session, game, winner_id=ALICE)
+
+    (line,) = [r for r in log_records if r.level == "INFO" and r.message.startswith("win pays")]
+    assert (line.extra["winner_id"], line.extra["setter_id"]) == (ALICE, STARTER)
+    assert (line.extra["win"], line.extra["setter_pay"]) == (earned.win, earned.setter)
+    assert line.extra["game_id"] == game.id
+    assert "user_id" not in line.extra

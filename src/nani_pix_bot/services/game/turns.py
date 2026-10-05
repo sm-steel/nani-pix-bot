@@ -65,7 +65,7 @@ def set_next_starter(session: Session, user_id: int | None, *, reason: str) -> T
         turn_state.reminder_at = None
         turn_state.expiry_at = None
         _mark_turn_opened(session, turn_state)
-        logger.info("Turn opened to anyone — {}", reason)
+        logger.info("turn opened to anyone — {reason}", reason=reason)
     else:
         turn_state.reminder_at = deadline_after(session, TURN_REMINDER_DELAY)
         turn_state.expiry_at = deadline_after(session, TURN_EXPIRY_DELAY)
@@ -74,7 +74,10 @@ def set_next_starter(session: Session, user_id: int | None, *, reason: str) -> T
         if previous_starter_id != user_id:
             turn_state.turn_received_at = datetime.now(UTC)
         logger.info(
-            "Turn designated to {} — {}", players.describe_player_id(session, user_id), reason
+            "turn designated to {next_starter} — {reason}",
+            next_starter=players.describe_player_id(session, user_id),
+            next_starter_id=user_id,
+            reason=reason,
         )
     return turn_state
 
@@ -91,7 +94,7 @@ def mark_turn_open_if_unassigned(session: Session) -> TurnState:
     turn_state = get_or_create_turn_state(session)
     if turn_state.next_starter_id is None:
         _mark_turn_opened(session, turn_state)
-        logger.info("Turn stays open to anyone; idle-autostart backstop armed")
+        logger.info("turn stays open to anyone; idle-autostart backstop armed")
     return turn_state
 
 

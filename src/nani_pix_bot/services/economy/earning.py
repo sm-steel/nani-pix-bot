@@ -43,7 +43,7 @@ def _player(session: Session, user_id: int) -> Player:
 def _pay(session: Session, player: Player, amount: int, reason: CurrencyReason, game: Game) -> int:
     """Credit only a positive amount — an admin may set any amount to 0."""
     if amount <= 0:
-        logger.debug("Game {}: {} is 0 💠, nothing credited", game.id, reason)
+        logger.debug("{reason} is 0 💠, nothing credited", reason=reason.value, game_id=game.id)
         return 0
     wallet.credit(session, player, amount, wallet.LedgerEntry(reason, game_id=game.id))
     return amount
@@ -84,14 +84,17 @@ def award_win(session: Session, game: Game, *, winner_id: int) -> Earnings:
         setter = _pay(session, starter, amounts[EconomyKey.SETTER], CurrencyReason.SETTER, game)
     pot = bounty.pay_out(session, game, winner)
     logger.info(
-        "Game {}: win pays {} 💠 to {} (stage {}), {} 💠 to setter {}, {} 💠 bounty",
-        game.id,
-        win,
-        players.describe_player_id(session, winner_id),
-        stage,
-        setter,
-        players.describe_player_id(session, game.starter_id),
-        pot,
+        "win pays {win} 💠 to {winner} (stage {stage}), {setter_pay} 💠 to setter {setter},"
+        " {bounty} 💠 bounty",
+        win=win,
+        winner=players.describe_player_id(session, winner_id),
+        winner_id=winner_id,
+        stage=stage,
+        setter_pay=setter,
+        setter=players.describe_player_id(session, game.starter_id),
+        setter_id=game.starter_id,
+        bounty=pot,
+        game_id=game.id,
     )
     return Earnings(win=win, setter=setter, bounty=pot)
 
@@ -119,13 +122,14 @@ def award_guess(session: Session, game: Game, *, guesser_id: int, won: bool) -> 
             game,
         )
     if first or wrong:
+        # The guesser is the update's own user (only /guess pays this), so
+        # the log context already names them.
         logger.info(
-            "Game {}: guess pays {} 💠 to {} (first-guess bonus {} 💠, wrong-guess reward {} 💠)",
-            game.id,
-            first + wrong,
-            players.describe_player_id(session, guesser_id),
-            first,
-            wrong,
+            "guess pays {amount} 💠 (first-guess bonus {first} 💠, wrong-guess reward {wrong} 💠)",
+            amount=first + wrong,
+            first=first,
+            wrong=wrong,
+            game_id=game.id,
         )
     if not won:
         return Earnings(guess=first + wrong)
@@ -139,17 +143,14 @@ def award_prompt_start(session: Session, game: Game) -> int:
     if not rewards.is_prompt_start(
         created_at=game.created_at, turn_received_at=game.turn_received_at
     ):
-        logger.debug("Game {}: not a prompt start, no bonus", game.id)
+        logger.debug("not a prompt start, no bonus", game_id=game.id)
         return 0
     amount = config.get_amounts(session)[EconomyKey.PROMPT_TURN]
     paid = _pay(
         session, _player(session, game.starter_id), amount, CurrencyReason.PROMPT_TURN, game
     )
     if paid > 0:
-        logger.info(
-            "Game {}: prompt-turn bonus {} 💠 to starter {}",
-            game.id,
-            paid,
-            players.describe_player_id(session, game.starter_id),
-        )
+        # Only the starter's own preview confirm pays this, so the log
+        # context already names them.
+        logger.info("prompt-turn bonus {amount} 💠 to the starter", amount=paid, game_id=game.id)
     return paid

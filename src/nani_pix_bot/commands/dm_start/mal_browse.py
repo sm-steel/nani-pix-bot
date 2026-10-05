@@ -54,7 +54,6 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     send_screenshot_picker_prompt,
     stage_screenshot_picker,
 )
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import seconds_until
 from nani_pix_bot.jobs.timers.mal_link_expiry import schedule_mal_link_expiry
@@ -138,9 +137,8 @@ async def _current_access_token(context: ContextTypes.DEFAULT_TYPE, user: User) 
         # "unlinked, please link again" — which is exactly this, and
         # which is why the branch lives here and not in the service.
         logger.warning(
-            "{}: stored MAL tokens no longer decrypt with the configured "
-            "encryption key — treating them as unlinked",
-            describe_user(user),
+            "stored MAL tokens no longer decrypt with the configured "
+            "encryption key — treating them as unlinked"
         )
         return None
     if credentials is None:
@@ -150,16 +148,14 @@ async def _current_access_token(context: ContextTypes.DEFAULT_TYPE, user: User) 
     if seconds_until(credentials.expires_at) > 0:
         return credentials.access_token
 
-    logger.info("{}: MAL access token expired, refreshing", describe_user(user))
+    logger.info("MAL access token expired, refreshing")
     tokens = await mal_user.refresh_tokens(
         context.bot_data["mal_client"],
         _oauth_app(context),
         refresh_token=credentials.refresh_token,
     )
     if tokens is None:
-        logger.warning(
-            "{}: MAL refused the refresh token — treating them as unlinked", describe_user(user)
-        )
+        logger.warning("MAL refused the refresh token — treating them as unlinked")
         return None
     _store_tokens(context, telegram_user_id, tokens, mal_username=credentials.mal_username)
     return tokens.access_token
@@ -206,10 +202,9 @@ async def _fetch_mal_list_page(
         limit=MAL_LIST_PAGE_SIZE,
     )
     logger.info(
-        "{} is viewing their MAL list at offset {} — {} entr(ies)",
-        describe_user(request.user),
-        offset,
-        len(list_page.entries),
+        "is viewing their MAL list at offset {offset} — {count} entr(ies)",
+        offset=offset,
+        count=len(list_page.entries),
     )
     if not list_page.entries:
         # An empty list has no entries to build buttons from, so
@@ -219,9 +214,8 @@ async def _fetch_mal_list_page(
         # back the picker it names, the same way _reply_service_unavailable
         # does on the failure path.
         logger.info(
-            "{}'s MAL list came back empty at offset {} — offering the method picker",
-            describe_user(request.user),
-            offset,
+            "MAL list came back empty at offset {offset} — offering the method picker",
+            offset=offset,
         )
         return i18n.t("dm_start.mal_list_empty", request.lang), _method_keyboard(
             context, request.lang
@@ -262,9 +256,7 @@ async def _show_mal_list_page(
     try:
         page = await _fetch_mal_list_page(context, request)
     except SEARCH_SERVICE_ERRORS:
-        logger.exception(
-            "MAL list fetch failed for {} at offset {}", describe_user(request.user), request.offset
-        )
+        logger.exception("MAL list fetch failed at offset {offset}", offset=request.offset)
         # Not _reply_service_down: that one is Provider-typed and would
         # have to blame Tenrai for MyAnimeList's outage.
         await _reply_service_unavailable(request.send, request.lang, MAL_SERVICE_NAME, context)
@@ -299,7 +291,7 @@ async def _start_linking(send, context: ContextTypes.DEFAULT_TYPE, lang: str, us
         )
 
     schedule_mal_link_expiry(context.job_queue, user.id)
-    logger.info("{} started MAL linking from the method picker", describe_user(user))
+    logger.info("started MAL linking from the method picker")
     await send(i18n.t("mal_link.authorize_prompt_for_list", lang, url=authorize_url))
 
 
@@ -334,10 +326,7 @@ async def _handle_mal_code_paste(
         if pending is None:
             # Shouldn't happen — search_text_handler already checked —
             # so an unexpected early return, which gets its WARNING.
-            logger.warning(
-                "{} pasted a MAL code but the pending link is gone — ignoring",
-                describe_user(user),
-            )
+            logger.warning("pasted a MAL code but the pending link is gone — ignoring")
             return
         code_verifier = pending.code_verifier
 
@@ -350,7 +339,7 @@ async def _handle_mal_code_paste(
     if tokens is None:
         # The pending row deliberately stays: a mistyped or stale paste
         # should be retryable without another /linkmal round-trip.
-        logger.warning("{}: MAL rejected the pasted authorization code", describe_user(user))
+        logger.warning("MAL rejected the pasted authorization code")
         await message.reply_text(i18n.t("mal_link.code_rejected", lang))
         return
 
@@ -368,7 +357,7 @@ async def _handle_mal_code_paste(
         should_open_browser = (
             setup_game is not None and setup_game.setup_step == SetupStep.PICKING_METHOD
         )
-    logger.info("{} finished linking their MAL account", describe_user(user))
+    logger.info("finished linking their MAL account")
 
     # A False here can only mean the credentials written moments ago
     # vanished (a /unlinkmal racing this), so the plain confirmation
@@ -395,11 +384,7 @@ async def mal_list_page_callback_handler(
     if user is None:
         return
     if offset is None:
-        logger.warning(
-            "Rejected MAL list page tap {!r} from {} — not a valid offset",
-            query.data,
-            describe_user(user),
-        )
+        logger.warning("rejected MAL list page tap {data!r} — not a valid offset", data=query.data)
         return
 
     session_factory = context.bot_data["session_factory"]
@@ -408,7 +393,7 @@ async def mal_list_page_callback_handler(
 
     request = _ListPageRequest(send=query.edit_message_text, user=user, offset=offset, lang=lang)
     if not await _show_mal_list_page(context, request):
-        logger.warning("{} paged a MAL list they're no longer linked to", describe_user(user))
+        logger.warning("paged a MAL list they're no longer linked to")
         await query.edit_message_text(i18n.t("mal_link.not_linked_anymore", lang))
 
 
@@ -429,11 +414,7 @@ async def mal_list_pick_callback_handler(
     mal_id = parse_mal_list_pick_callback_data(query.data)
     user = query.from_user
     if mal_id is None or user is None:
-        logger.warning(
-            "Rejected MAL list pick {!r} from {} — not a valid id",
-            query.data,
-            describe_user(user),
-        )
+        logger.warning("rejected MAL list pick {data!r} — not a valid id", data=query.data)
         await query.answer()
         return
 
@@ -453,11 +434,10 @@ async def mal_list_pick_callback_handler(
         if setup_game is not None:
             game_service.stage_result(setup_game, result, source=Provider.TENRAI)
             logger.info(
-                "Game {}: {} picked {!r} from their MAL list (tenrai {})",
-                setup_game.id,
-                describe_user(user),
-                game_service.display_title(setup_game, "EN"),
-                mal_id,
+                "picked {title!r} from their MAL list (tenrai {mal_id})",
+                title=game_service.display_title(setup_game, "EN"),
+                mal_id=mal_id,
+                game_id=setup_game.id,
             )
             if setup_game.original_image is not None:
                 # Photo-first entry: the starter uploaded a screenshot and
@@ -477,7 +457,7 @@ async def mal_list_pick_callback_handler(
     # for why. `message_key` is None only on the stale-row path, where
     # nothing was staged at all.
     if message_key is None:
-        await _reject_stale_tap(query, user, lang)
+        await _reject_stale_tap(query, lang)
         return
     await query.answer()
     if album is not None:
@@ -507,9 +487,7 @@ async def _resolve_picked_mal_entry(
         result = await tenrai.get_by_id(client, mal_id)
     except SEARCH_SERVICE_ERRORS:
         logger.exception(
-            "Tenrai get_by_id failed for MAL list entry {} picked by {}",
-            mal_id,
-            describe_user(query.from_user),
+            "Tenrai get_by_id failed for picked MAL list entry {mal_id}", mal_id=mal_id
         )
         await query.answer()
         await _reply_service_down(query.edit_message_text, lang, Provider.TENRAI, context)
@@ -517,9 +495,7 @@ async def _resolve_picked_mal_entry(
 
     if result is None:
         logger.warning(
-            "{} picked MAL list entry {}, which the catalogue no longer has",
-            describe_user(query.from_user),
-            mal_id,
+            "picked MAL list entry {mal_id}, which the catalogue no longer has", mal_id=mal_id
         )
         await query.answer()
         # With a keyboard: this edit replaces the list keyboard, and the

@@ -28,16 +28,15 @@ def _schedule_retry(context: ContextTypes.DEFAULT_TYPE) -> None:
     attempt = retries.get(job.name or "", 0) + 1
     if attempt > TIMER_MAX_RETRIES:
         retries.pop(job.name or "", None)
-        logger.error("Timer job {} failed {} retries — giving up", job.name, TIMER_MAX_RETRIES)
+        logger.error("timer job failed {retries} retries — giving up", retries=TIMER_MAX_RETRIES)
         return
     retries[job.name or ""] = attempt
     job_queue.run_once(job.callback, when=TIMER_RETRY_DELAY, name=job.name, data=job.data)
     logger.error(
-        "Timer job {} failed — retry {}/{} in {}",
-        job.name,
-        attempt,
-        TIMER_MAX_RETRIES,
-        TIMER_RETRY_DELAY,
+        "timer job failed — retry {attempt}/{retries} in {delay}",
+        attempt=attempt,
+        retries=TIMER_MAX_RETRIES,
+        delay=TIMER_RETRY_DELAY,
     )
 
 

@@ -75,11 +75,10 @@ def contribute(session: Session, game: Game, player: Player, amount: int) -> Cur
         raise BountyRefusedError(BountyRefusal.INSUFFICIENT) from error
     session.flush()
     logger.info(
-        "Game {}: {} added {} 💠 to the bounty (pot now {} 💠)",
-        game.id,
-        players.describe_player_id(session, player.telegram_user_id),
-        amount,
-        pot_balance(session, game.id),
+        "added {amount} 💠 to the bounty (pot now {pot} 💠)",
+        amount=amount,
+        pot=pot_balance(session, game.id),
+        game_id=game.id,
     )
     return row
 
@@ -97,10 +96,11 @@ def pay_out(session: Session, game: Game, winner: Player) -> int:
         wallet.LedgerEntry(CurrencyReason.BOUNTY_WIN, game_id=game.id),
     )
     logger.info(
-        "Game {}: bounty of {} 💠 paid to winner {}",
-        game.id,
-        amount,
-        players.describe_player_id(session, winner.telegram_user_id),
+        "bounty of {amount} 💠 paid to winner {winner}",
+        amount=amount,
+        winner=players.describe_player_id(session, winner.telegram_user_id),
+        winner_id=winner.telegram_user_id,
+        game_id=game.id,
     )
     return amount
 
@@ -135,10 +135,11 @@ def refund_pot(session: Session, game_id: int) -> int:
         )
         total += contribution.amount
         logger.info(
-            "Game {}: refunded {} 💠 bounty contribution to {}",
-            game_id,
-            contribution.amount,
-            players.describe_player_id(session, contributor.telegram_user_id),
+            "refunded {amount} 💠 bounty contribution to {contributor}",
+            amount=contribution.amount,
+            contributor=players.describe_player_id(session, contributor.telegram_user_id),
+            contributor_id=contributor.telegram_user_id,
+            game_id=game_id,
         )
     return total
 

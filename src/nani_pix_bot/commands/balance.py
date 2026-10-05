@@ -4,7 +4,6 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, settings
@@ -27,5 +26,5 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
         amount = wallet.balance(session, user.id)
-    logger.info("{} checked /balance: {} 💠", describe_user(user), amount)
+    logger.info("checked /balance: {balance} 💠", balance=amount)
     await message.reply_text(i18n.t("economy.balance", lang, amount=amount))

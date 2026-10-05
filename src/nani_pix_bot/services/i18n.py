@@ -48,13 +48,17 @@ def t(key: str, lang: str, **kwargs: Any) -> str:
     if template is None:
         if lang != DEFAULT_LANGUAGE:
             logger.warning(
-                "Missing i18n key {!r} for lang={!r}, falling back to {!r}",
-                key,
-                lang,
-                DEFAULT_LANGUAGE,
+                "missing i18n key {key!r} for lang={language!r}, falling back to {fallback!r}",
+                key=key,
+                language=lang,
+                fallback=DEFAULT_LANGUAGE,
             )
             return t(key, DEFAULT_LANGUAGE, **kwargs)
-        logger.error("Missing i18n key {!r} in default language {!r}", key, DEFAULT_LANGUAGE)
+        logger.error(
+            "missing i18n key {key!r} in default language {language!r}",
+            key=key,
+            language=DEFAULT_LANGUAGE,
+        )
         return key
     pool = [template, *_load_variations(lang).get(key, [])]
     return secrets.choice(pool).format(**kwargs)

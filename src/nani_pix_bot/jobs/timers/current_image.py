@@ -72,12 +72,18 @@ async def _post_photo(
             reply_markup=reply_markup,
         )
     except TelegramError as exc:
-        logger.warning("Failed to post the current image to chat {}: {}", chat_id, exc)
+        logger.warning(
+            "failed to post the current image to chat {group_chat_id}: {error}",
+            group_chat_id=chat_id,
+            error=exc,
+        )
         return None
 
     pinned = await _pin(context, session_factory, message.message_id)
     logger.info(
-        "Image posted to the group{} (msg {})", " and pinned" if pinned else "", message.message_id
+        "image posted to the group{pinned} (msg {msg_id})",
+        pinned=" and pinned" if pinned else "",
+        msg_id=message.message_id,
     )
     return message
 
@@ -96,7 +102,10 @@ async def _pin(
                 await context.bot.unpin_chat_message(chat_id=chat_id, message_id=previous_pinned_id)
             except TelegramError as exc:
                 logger.warning(
-                    "Failed to unpin message {} in chat {}: {}", previous_pinned_id, chat_id, exc
+                    "failed to unpin msg {msg_id} in chat {group_chat_id}: {error}",
+                    msg_id=previous_pinned_id,
+                    group_chat_id=chat_id,
+                    error=exc,
                 )
 
         try:
@@ -105,7 +114,12 @@ async def _pin(
             )
             settings.set_pinned_message_id(session, message_id)
         except TelegramError as exc:
-            logger.warning("Failed to pin message {} in chat {}: {}", message_id, chat_id, exc)
+            logger.warning(
+                "failed to pin msg {msg_id} in chat {group_chat_id}: {error}",
+                msg_id=message_id,
+                group_chat_id=chat_id,
+                error=exc,
+            )
             return False
     return True
 
@@ -197,18 +211,25 @@ async def _post_album(
             ],
         )
     except TelegramError as exc:
-        logger.warning("Failed to post the current images to chat {}: {}", chat_id, exc)
+        logger.warning(
+            "failed to post the current images to chat {group_chat_id}: {error}",
+            group_chat_id=chat_id,
+            error=exc,
+        )
         return None
 
     if not result:
-        logger.warning("send_media_group returned an empty result for chat {}", chat_id)
+        logger.warning(
+            "send_media_group returned an empty result for chat {group_chat_id}",
+            group_chat_id=chat_id,
+        )
         return None
 
     pinned = await _pin(context, session_factory, result[0].message_id)
     logger.info(
-        "Image pair posted to the group{} (msgs {})",
-        " and pinned" if pinned else "",
-        ", ".join(str(message.message_id) for message in result),
+        "image pair posted to the group{pinned} (msgs {msg_ids})",
+        pinned=" and pinned" if pinned else "",
+        msg_ids=", ".join(str(message.message_id) for message in result),
     )
     return tuple(result)
 
@@ -247,15 +268,15 @@ def clear_image_if_sent(
     here, never inspected for its internal shape, so both callers share
     this one function untouched."""
     if sent is None:
-        logger.info("Game {}: reveal not confirmed sent — keeping the screenshot bytes", game_id)
+        logger.info("reveal not confirmed sent — keeping the screenshot bytes", game_id=game_id)
         return
     with session_scope(session_factory) as session:
         game = session.get(Game, game_id)
         if game is None:
-            logger.debug("Game {}: row already gone — no screenshot bytes to clear", game_id)
+            logger.debug("row already gone — no screenshot bytes to clear", game_id=game_id)
             return
         if game.hard_mode:
             game_service.clear_hard_mode_images(game)
         else:
             game_service.clear_original_screenshot(game)
-        logger.info("Game {}: screenshot bytes cleared after the reveal", game_id)
+        logger.info("screenshot bytes cleared after the reveal", game_id=game_id)

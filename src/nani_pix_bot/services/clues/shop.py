@@ -225,25 +225,25 @@ def _refusal(
     return None
 
 
-def _detail(request: PurchaseRequest) -> str:
-    """The part of a purchase log line that says which tile/screenshot."""
+def _detail(request: PurchaseRequest) -> dict[str, object]:
+    """Log kwargs for a purchase line: the clue's kind, plus which
+    tile/screenshot, both as a field and as `detail`, its text in the message."""
+    fields: dict[str, object] = {"kind": request.kind.value, "detail": ""}
     if request.kind is ClueKind.TILE:
-        return f" (tile {request.tile_index})"
-    if request.kind is ClueKind.SCREENSHOT:
-        return f" ({request.screenshot_url})"
-    return ""
+        fields.update(detail=f" (tile {request.tile_index})", tile=request.tile_index)
+    elif request.kind is ClueKind.SCREENSHOT:
+        fields.update(detail=f" ({request.screenshot_url})", screenshot_url=request.screenshot_url)
+    return fields
 
 
 def purchase(session: Session, game: Game, buyer: Player, request: PurchaseRequest) -> CluePurchase:
     refusal = _refusal(session, game, buyer, request)
     if refusal is not None:
         logger.warning(
-            "Game {}: {} refused {} clue{}: {}",
-            game.id,
-            players.describe_player_id(session, buyer.telegram_user_id),
-            request.kind,
-            _detail(request),
-            refusal,
+            "refused the {kind} clue{detail}: {reason}",
+            reason=refusal.value,
+            game_id=game.id,
+            **_detail(request),
         )
         raise ShopRefusedError(refusal)
     cost = price(session, game, buyer, request.kind)
@@ -256,12 +256,10 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
         )
     except wallet.InsufficientCurrencyError as error:
         logger.warning(
-            "Game {}: {} cannot afford {} clue{} ({} 💠)",
-            game.id,
-            players.describe_player_id(session, buyer.telegram_user_id),
-            request.kind,
-            _detail(request),
-            cost,
+            "cannot afford the {kind} clue{detail} ({price} 💠)",
+            price=cost,
+            game_id=game.id,
+            **_detail(request),
         )
         raise ShopRefusedError(Refusal.INSUFFICIENT) from error
     session.flush()  # charge.id for the purchase's transfer_id
@@ -276,13 +274,11 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
     session.add(bought)
     session.flush()
     logger.info(
-        "Game {}: {} bought {} clue{} for {} 💠 (purchase {})",
-        game.id,
-        players.describe_player_id(session, buyer.telegram_user_id),
-        request.kind,
-        _detail(request),
-        cost,
-        bought.id,
+        "bought the {kind} clue{detail} for {price} 💠 (purchase {purchase_id})",
+        price=cost,
+        purchase_id=bought.id,
+        game_id=game.id,
+        **_detail(request),
     )
     return bought
 
@@ -305,12 +301,13 @@ def refund(session: Session, purchase_row: CluePurchase) -> None:
     )
     session.delete(purchase_row)
     logger.info(
-        "Game {}: refunded {} clue purchase {} ({} 💠 to {})",
-        purchase_row.game_id,
-        purchase_row.kind,
-        purchase_row.id,
-        charge.amount,
-        players.describe_player_id(session, buyer.telegram_user_id),
+        "refunded {kind} clue purchase {purchase_id} ({amount} 💠 to {recipient})",
+        kind=ClueKind(purchase_row.kind).value,
+        purchase_id=purchase_row.id,
+        amount=charge.amount,
+        recipient=players.describe_player_id(session, buyer.telegram_user_id),
+        recipient_id=buyer.telegram_user_id,
+        game_id=purchase_row.game_id,
     )
 
 
@@ -321,7 +318,7 @@ def refund_game(session: Session, game_id: int) -> int:
     rows = list(session.scalars(select(CluePurchase).where(CluePurchase.game_id == game_id)))
     for row in rows:
         refund(session, row)
-    logger.info("Game {}: refunded {} clue purchase(s)", game_id, len(rows))
+    logger.info("refunded {count} clue purchase(s)", count=len(rows), game_id=game_id)
     return len(rows)
 
 

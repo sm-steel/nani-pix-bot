@@ -605,7 +605,7 @@ async def test_stop_refunds_pot(session_factory) -> None:
             assert player.currency == 100
 
 
-async def test_stop_cancel_is_logged_at_info(session_factory, records) -> None:
+async def test_stop_cancel_is_logged_at_info(session_factory, log_records) -> None:
     _active_game(session_factory, starter_id=1)
     update = _make_callback_update(data=STOP_CANCEL_CALLBACK_DATA, user_id=1)
     update.callback_query.from_user.username = "bob"
@@ -614,10 +614,10 @@ async def test_stop_cancel_is_logged_at_info(session_factory, records) -> None:
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory))
     )
 
-    assert ("INFO", "1 (@bob) cancelled /stop") in records
+    assert ("INFO", "cancelled /stop") in [(r.level, r.message) for r in log_records]
 
 
-async def test_stop_prompt_and_stop_are_logged_at_info(session_factory, records) -> None:
+async def test_stop_prompt_and_stop_are_logged_at_info(session_factory, log_records) -> None:
     game_id = _active_game(session_factory, starter_id=1)
     update = _make_update(user_id=1)
     update.effective_user.username = "bob"
@@ -632,6 +632,13 @@ async def test_stop_prompt_and_stop_are_logged_at_info(session_factory, records)
         cast(Update, callback), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    infos = [message for level, message in records if level == "INFO"]
-    assert any(m.startswith(f"Game {game_id}: 1 (@bob) sent /stop — confirm prompt") for m in infos)
-    assert f"Game {game_id}: stopped by 1 (@bob) (was ACTIVE, answer not revealed)" in infos
+    infos = [r for r in log_records if r.level == "INFO"]
+    (prompt,) = [r for r in infos if r.message.startswith("sent /stop — confirm prompt shown")]
+    assert prompt.extra["game_id"] == game_id
+    assert prompt.extra["reveal"] in ("offered", "not offered")
+    (stopped,) = [r for r in infos if r.message == "stopped (was ACTIVE, answer not revealed)"]
+    assert (stopped.extra["game_id"], stopped.extra["was"], stopped.extra["answer"]) == (
+        game_id,
+        "ACTIVE",
+        "not revealed",
+    )

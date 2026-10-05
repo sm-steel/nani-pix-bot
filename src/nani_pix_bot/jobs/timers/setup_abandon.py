@@ -26,7 +26,7 @@ def schedule_setup_abandon(job_queue: JobQueue | None, game: Game) -> None:
     if job_queue is None:
         return
     delay = seconds_until(game.setup_deadline)
-    logger.debug("Scheduling setup-abandon for game {} in {:.0f}s", game.id, delay)
+    logger.debug("scheduling setup-abandon in {delay:.0f}s", delay=delay, game_id=game.id)
     job_queue.run_once(
         setup_abandon_job_callback,
         when=delay,
@@ -38,7 +38,7 @@ def schedule_setup_abandon(job_queue: JobQueue | None, game: Game) -> None:
 def cancel_setup_abandon(job_queue: JobQueue | None, game_id: int) -> None:
     if job_queue is None:
         return
-    logger.debug("Canceling setup-abandon timer for game {}", game_id)
+    logger.debug("canceling setup-abandon timer", game_id=game_id)
     for job in job_queue.get_jobs_by_name(setup_abandon_job_name(game_id)):
         job.schedule_removal()
 
@@ -61,10 +61,14 @@ async def setup_abandon_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
         lang = settings.get_language(session)
         game = session.get(Game, game_id)
         if game is None or game.status != GameStatus.SETUP:
-            logger.debug("Game {}: setup-abandon fired but it's already resolved — no-op", game_id)
+            logger.debug("setup-abandon fired but it's already resolved — no-op", game_id=game_id)
             return
-        starter = players.describe_player_id(session, game.starter_id)
-        logger.info("Game {}: setup by {} abandoned after 1h — deleting it", game_id, starter)
+        logger.info(
+            "setup by {starter} abandoned after 1h — deleting it",
+            starter=players.describe_player_id(session, game.starter_id),
+            starter_id=game.starter_id,
+            game_id=game_id,
+        )
         bounty.refund_pot(session, game.id)
         session.delete(game)
         turn_state = game_service.set_next_starter(

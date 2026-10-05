@@ -123,10 +123,10 @@ def _warn_about_partial_mal_config(bot_data: Mapping[str, Any]) -> None:
     if not missing or len(missing) == len(MAL_BOT_DATA_KEYS):
         return
     logger.warning(
-        "MAL account linking is only partly configured — {} missing or unusable, so "
+        "MAL account linking is only partly configured — {missing} missing or unusable, so "
         'the "My MAL List" identification method stays hidden and /linkmal will say '
         "it isn't configured (see .env.example)",
-        ", ".join(missing),
+        missing=", ".join(missing),
     )
 
 
@@ -323,9 +323,11 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
     here is an actual bug and gets a full traceback at ERROR."""
     error = context.error
     if isinstance(error, NetworkError | Conflict):
-        logger.warning("Network error talking to Telegram: {}", error)
+        logger.warning("network error talking to Telegram: {error}", error=error)
         return
-    logger.opt(exception=error).error("Unhandled exception while processing update: {}", update)
+    logger.opt(exception=error).error(
+        "unhandled exception while processing update: {update}", update=update
+    )
 
 
 async def _post_init(application: Application) -> None:
@@ -334,7 +336,7 @@ async def _post_init(application: Application) -> None:
 
     me = await application.bot.get_me()
     application.bot_data["bot_username"] = me.username
-    logger.info("Logged in as @{}", me.username)
+    logger.info("logged in as @{bot_username}", bot_username=me.username)
 
     with db.session_scope(session_factory) as session:
         lang = settings.get_language(session)
@@ -353,7 +355,7 @@ async def _post_shutdown(application: Application) -> None:
         client = application.bot_data.get(key)
         if client is not None:
             await client.aclose()
-    logger.debug("Closed the search HTTP clients")
+    logger.debug("closed the search HTTP clients")
 
 
 def main() -> None:

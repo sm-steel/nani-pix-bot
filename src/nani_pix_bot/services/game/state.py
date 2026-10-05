@@ -296,10 +296,11 @@ def create_setup_game(
     if entry is None:
         entry = "DM photo" if original_image is not None else "/newgame"
     logger.info(
-        "Game {}: created (SETUP) by {} via {}",
-        game.id,
-        players.describe_player_id(session, starter_id),
-        entry,
+        "created (SETUP) by {starter} via {entry}",
+        starter=players.describe_player_id(session, starter_id),
+        starter_id=starter_id,
+        entry=entry,
+        game_id=game.id,
     )
     return game
 
@@ -378,7 +379,7 @@ def clear_identification(game: Game) -> None:
     not touched — that's `commands/dm_start/screenshots.py`'s
     `clear_screenshot_selection`, which the preview's "Re-search" runs
     before any of this can happen."""
-    logger.debug("Game {}: clearing previous identification (source={})", game.id, game.source)
+    logger.debug("clearing previous identification (source={source})", source=game.source)
     game.title_romaji = None
     game.title_english = None
     game.title_native = None
@@ -416,12 +417,13 @@ def activate_game(session: Session, game: Game) -> None:
     turn_state = turns.get_or_create_turn_state(session)
     turn_state.next_starter_id = None
     logger.info(
-        "Game {}: ACTIVE — started by {}, source={}, answer {!r}{}",
-        game.id,
-        players.describe_player_id(session, game.starter_id),
-        game.source,
-        display_title(game, "EN"),
-        " (hard mode)" if game.hard_mode else "",
+        "ACTIVE — started by {starter}, source={source}, answer {answer!r}, hard_mode={hard_mode}",
+        starter=players.describe_player_id(session, game.starter_id),
+        starter_id=game.starter_id,
+        source=game.source,
+        answer=display_title(game, "EN"),
+        hard_mode=game.hard_mode,
+        game_id=game.id,
     )
 
 
@@ -452,22 +454,24 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
     stage = stage_label(game.current_stage)
     game.total_guess_count += 1
 
-    guesser = players.describe_player_id(session, guesser_id)
+    # The guesser is the update's own user (the /guess handler is the only
+    # caller), so the log context already names them; see log_context.py.
     if matching.is_match(guess_text, match_candidates(game)):
-        logger.info("Game {}: {} guessed {!r} — CORRECT at {}", game.id, guesser, guess_text, stage)
+        logger.info(
+            "guessed {guess!r} — CORRECT at {stage}", guess=guess_text, stage=stage, game_id=game.id
+        )
         _win(session, game, winner_id=guesser_id)
         return GuessOutcome.WON
 
     game.wrong_guess_count += 1
     limit = stage_config.get_stage_config(session, game.current_stage).wrong_guess_limit
     logger.info(
-        "Game {}: {} guessed {!r} — wrong at {} ({}/{})",
-        game.id,
-        guesser,
-        guess_text,
-        stage,
-        game.wrong_guess_count,
-        limit,
+        "guessed {guess!r} — wrong at {stage} ({wrong}/{limit})",
+        guess=guess_text,
+        stage=stage,
+        wrong=game.wrong_guess_count,
+        limit=limit,
+        game_id=game.id,
     )
     if game.wrong_guess_count < limit:
         return GuessOutcome.WRONG
@@ -536,7 +540,12 @@ def advance_stage(game: Game, *, reason: str) -> GuessOutcome:
 
     next_stage = STAGE_ORDER[next_index]
     game.current_stage = next_stage
-    logger.info("Game {}: advanced to {} ({})", game.id, stage_label(next_stage), reason)
+    logger.info(
+        "advanced to {stage} ({reason})",
+        stage=stage_label(next_stage),
+        reason=reason,
+        game_id=game.id,
+    )
     return GuessOutcome.STAGE_ADVANCED
 
 
@@ -593,7 +602,13 @@ def _win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> Non
         where = stage_label(game.current_stage)
     else:
         where = "unknown stage"
-    logger.info("Game {}: won by {} at {}", game.id, winner_text, where)
+    logger.info(
+        "won by {winner} at {stage}",
+        winner=winner_text,
+        winner_id=winner_id,
+        stage=where,
+        game_id=game.id,
+    )
     turns.set_next_starter(session, winner_id, reason=f"won game {game.id}")
 
 
@@ -602,7 +617,7 @@ def force_unsolved(game: Game, *, cause: str) -> None:
     path and by the timeout job callback. See MECHANICS.md's "Ending
     unsolved" section. `cause` is for the log."""
     game.status = GameStatus.UNSOLVED
-    logger.info("Game {}: ended UNSOLVED ({})", game.id, cause)
+    logger.info("ended UNSOLVED ({cause})", cause=cause, game_id=game.id)
 
 
 def has_answer_to_reveal(game: Game) -> bool:

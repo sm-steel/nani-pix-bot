@@ -6,7 +6,6 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.earnings import earnings_suffix
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
@@ -36,7 +35,7 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not context.args:
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
-        logger.info("{} sent /correct with no target — replied with usage", describe_user(user))
+        logger.info("sent /correct with no target — replied with usage")
         await message.reply_text(i18n.t("correct.usage", lang))
         return
     target_username = context.args[0].lstrip("@")
@@ -50,19 +49,17 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if target is None:
             return
         if target.telegram_user_id == game.starter_id:
-            logger.warning(
-                "Game {}: starter {} tried to /correct themselves", game.id, describe_user(user)
-            )
+            logger.warning("starter tried to /correct themselves", game_id=game.id)
             await message.reply_text(i18n.t("correct.cannot_target_self", lang))
             return
         game_id = game.id
         original_bytes, photos, caption = _prepare_correct_reveal(game, target_username, lang)
 
         logger.info(
-            "Game {}: starter {} used /correct to award the win to {}",
-            game.id,
-            describe_user(user),
-            players.describe_player_id(session, target.telegram_user_id),
+            "starter used /correct to award the win to {target}",
+            target=players.describe_player_id(session, target.telegram_user_id),
+            target_id=target.telegram_user_id,
+            game_id=game.id,
         )
         game_service.force_win(session, game, winner_id=target.telegram_user_id)
         earnings = earning.award_win(session, game, winner_id=target.telegram_user_id)
@@ -131,24 +128,20 @@ async def _validate_active_game_for_starter(session, message, user, lang: str) -
     first failure."""
     game = game_service.active_or_setup_game(session)
     if game is None or game.status != GameStatus.ACTIVE:
-        logger.warning("{} ran /correct with no ACTIVE game running", describe_user(user))
+        logger.warning("ran /correct with no ACTIVE game running")
         await message.reply_text(i18n.t("correct.no_game", lang))
         return None
     if game.starter_id != user.id:
-        logger.warning("Game {}: non-starter {} tried /correct", game.id, describe_user(user))
+        logger.warning("non-starter tried /correct", game_id=game.id)
         await message.reply_text(i18n.t("correct.not_starter", lang))
         return None
     if game.total_guess_count == 0:
-        logger.warning("Game {}: {} tried /correct before any guess", game.id, describe_user(user))
+        logger.warning("tried /correct before any guess", game_id=game.id)
         await message.reply_text(i18n.t("correct.no_guesses_yet", lang))
         return None
     if not game.hard_mode and game.original_image is None:
         # Shouldn't happen for an ACTIVE game — defensive guard.
-        logger.warning(
-            "Game {}: ACTIVE with no original image — ignored {}'s /correct",
-            game.id,
-            describe_user(user),
-        )
+        logger.warning("ACTIVE with no original image — ignored /correct", game_id=game.id)
         return None
     return game
 
@@ -165,9 +158,8 @@ async def _resolve_target_player(
     target = players.find_player_by_username(session, target_username)
     if target is None:
         logger.warning(
-            "{} tried /correct on unknown username {!r}",
-            describe_user(message.from_user),
-            target_username,
+            "tried /correct on unknown username {target_username!r}",
+            target_username=target_username,
         )
         # bot_data["bot_username"] is written by app.py's _post_init, so
         # it is absent until the first getMe answers (and in tests). The
@@ -188,9 +180,8 @@ async def _resolve_target_player(
         # username, the player genuinely exists, so a dedicated reply
         # rather than reusing correct.unknown_username.
         logger.warning(
-            "{} tried /correct on the bot itself (@{})",
-            describe_user(message.from_user),
-            target_username,
+            "tried /correct on the bot itself (@{target_username})",
+            target_username=target_username,
         )
         await message.reply_text(i18n.t("correct.cannot_target_bot", lang))
         return None

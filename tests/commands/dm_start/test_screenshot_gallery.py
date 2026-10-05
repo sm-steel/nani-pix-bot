@@ -13,6 +13,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start import preview, screenshot_gallery, search
 from nani_pix_bot.commands.dm_start.keyboards import SCREENSHOT_UPLOAD_CALLBACK_DATA
 from nani_pix_bot.commands.dm_start.screenshots import SourceMenu
+from nani_pix_bot.commands.helpers.log_scope import bind_update
 from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -22,6 +23,7 @@ from nani_pix_bot.services.search import shikimori, tenrai, tmdb
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
+from tests.conftest import LogLine
 
 _FRIEREN_TMDB = TMDBResult(
     tmdb_id=209867,
@@ -288,23 +290,28 @@ async def test_screenshot_gallery_callback_handler_pick_is_a_noop_for_a_stale_in
     assert any("#6" in line and "1 url(s)" in line for line in warnings)
 
 
-async def test_a_tap_after_the_setup_row_is_gone_leaves_a_warning(session_factory) -> None:
+async def test_a_tap_after_the_setup_row_is_gone_leaves_a_warning(
+    session_factory, log_records: list[LogLine]
+) -> None:
     """The trigger behind most of this sub-flow's silent returns: the
     setup-abandon timer deleted the row an hour in, and every button on
     every screen it left behind is still tappable. The starter sees
     nothing happen, and production used to see nothing either, so
     diagnosing a report of it meant guessing. CLAUDE.md's table calls a
     rejected action a WARNING; there is no game row left to name, so the
-    line names the starter and the payload."""
+    line names the payload and the update's log context names the starter."""
     context = _make_context(session_factory)  # no game row at all
+    update = _make_callback_update(data="screenshot_pick:shikimori:0")
+    update.effective_user = update.callback_query.from_user
+    await bind_update(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    with _captured_warnings() as warnings:
-        await screenshot_gallery.screenshot_gallery_callback_handler(
-            cast(Update, _make_callback_update(data="screenshot_pick:shikimori:0")),
-            cast(ContextTypes.DEFAULT_TYPE, context),
-        )
+    await screenshot_gallery.screenshot_gallery_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
 
-    assert any("screenshot_pick:shikimori:0" in line and "1" in line for line in warnings)
+    [warning] = [line for line in log_records if line.level == "WARNING"]
+    assert "screenshot_pick:shikimori:0" in warning.message
+    assert warning.extra["user_id"] == 1
 
 
 async def test_screenshot_gallery_callback_handler_pick_falls_back_when_the_download_fails(

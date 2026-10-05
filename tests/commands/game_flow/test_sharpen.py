@@ -16,6 +16,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.economy import config
 from nani_pix_bot.services.economy.config import EconomyKey
+from tests.conftest import LogLine
 
 STARTER, ALICE, BOB = 1, 2, 3
 PRICE = config.DEFAULT_AMOUNTS[EconomyKey.SHARPEN]
@@ -325,40 +326,52 @@ async def test_malformed_data_is_answered_silently(session_factory, data: str) -
     assert _state(session_factory) == (PixelStage.STAGE_1, START, 0)
 
 
-async def test_sharpen_prompt_is_logged_at_info(session_factory, records) -> None:
+def _line(log_records: list[LogLine], level: str, message: str) -> LogLine:
+    """The one record at `level` with exactly this message."""
+    (line,) = [r for r in log_records if r.level == level and r.message == message]
+    return line
+
+
+async def test_sharpen_prompt_is_logged_at_info(session_factory, log_records) -> None:
     game_id = _seed(session_factory)
 
     await _command(session_factory)
 
-    assert (
-        "INFO",
-        f"Game {game_id}: {ALICE} (@alice) asked to /sharpen at stage 1/5"
-        f" — confirm prompt shown ({PRICE} 💠)",
-    ) in records
+    line = _line(
+        log_records, "INFO", f"asked to /sharpen at stage 1/5 — confirm prompt shown ({PRICE} 💠)"
+    )
+    assert (line.extra["game_id"], line.extra["stage"], line.extra["price"]) == (
+        game_id,
+        "stage 1/5",
+        PRICE,
+    )
 
 
-async def test_sharpen_cancel_is_logged_at_info(session_factory, records) -> None:
+async def test_sharpen_cancel_is_logged_at_info(session_factory, log_records) -> None:
     _seed(session_factory)
 
     await _callback(session_factory, f"sharpen:no:{ALICE}")
 
-    assert ("INFO", f"{ALICE} (@alice) cancelled their /sharpen") in records
+    _line(log_records, "INFO", "cancelled their /sharpen")
 
 
-async def test_sharpen_tap_by_someone_else_is_logged_as_a_warning(session_factory, records) -> None:
+async def test_sharpen_tap_by_someone_else_is_logged_as_a_warning(
+    session_factory, log_records
+) -> None:
     game_id = _seed(session_factory)
 
     await _callback(session_factory, _confirm_data(game_id, user_id=BOB), user_id=ALICE)
 
-    assert ("WARNING", f"{ALICE} (@alice) tapped {BOB}'s sharpen button — not theirs") in records
+    line = _line(log_records, "WARNING", f"tapped {BOB}'s sharpen button — not theirs")
+    assert line.extra["requester_id"] == BOB
 
 
-async def test_sharpen_logs_the_posted_stage(session_factory, records) -> None:
+async def test_sharpen_logs_the_posted_stage(session_factory, log_records) -> None:
     game_id = _seed(session_factory)
 
     await _callback(session_factory, _confirm_data(game_id))
 
-    assert any(
-        level == "INFO" and message.startswith(f"Game {game_id}: posted stage 2/5 image")
-        for level, message in records
-    )
+    (line,) = [r for r in log_records if r.message.startswith("posted stage 2/5 image")]
+    assert line.level == "INFO"
+    assert (line.extra["game_id"], line.extra["stage"]) == (game_id, "stage 2/5")
+    assert isinstance(line.extra["width"], int)

@@ -102,23 +102,24 @@ async def gather_pick(
         anime = await _pick_random_anime(search_client, tenrai_client)
         if anime is None:
             logger.warning(
-                "Bot autostart pick attempt {}/{}: no random anime available",
-                attempt,
-                AUTOSTART_ATTEMPT_LIMIT,
+                "bot autostart pick attempt {attempt}/{attempts}: no random anime available",
+                attempt=attempt,
+                attempts=AUTOSTART_ATTEMPT_LIMIT,
             )
             continue
         screenshot = await _pick_screenshot(clients, anime)
         if screenshot is None:
             logger.warning(
-                "Bot autostart pick attempt {}/{}: no screenshot found for {!r}",
-                attempt,
-                AUTOSTART_ATTEMPT_LIMIT,
-                anime.result,
+                "bot autostart pick attempt {attempt}/{attempts}: no screenshot for {anime!r}",
+                attempt=attempt,
+                attempts=AUTOSTART_ATTEMPT_LIMIT,
+                anime=anime.result,
             )
             continue
         return GatheredPick(anime=anime, screenshot=screenshot)
     logger.error(
-        "Bot autostart: exhausted {} attempt(s) with no usable pick", AUTOSTART_ATTEMPT_LIMIT
+        "bot autostart: exhausted {attempts} attempt(s) with no usable pick",
+        attempts=AUTOSTART_ATTEMPT_LIMIT,
     )
     return None
 
@@ -143,7 +144,9 @@ async def _pick_random_anime(
     try:
         shikimori_result = await shikimori.random_anime(search_client)
     except _AUTOSTART_SERVICE_ERRORS as exc:
-        logger.warning("Shikimori random-anime pick failed, falling back to Tenrai: {}", exc)
+        logger.warning(
+            "Shikimori random-anime pick failed, falling back to Tenrai: {error}", error=exc
+        )
         shikimori_result = None
     if shikimori_result is not None:
         return AnimePick(result=shikimori_result, source=Provider.SHIKIMORI)
@@ -151,15 +154,15 @@ async def _pick_random_anime(
     try:
         tenrai_result = await tenrai.random_anime(tenrai_client)
     except _AUTOSTART_SERVICE_ERRORS as exc:
-        logger.warning("Tenrai random-anime pick failed: {}", exc)
+        logger.warning("Tenrai random-anime pick failed: {error}", error=exc)
         return None
     if tenrai_result is None:
         return None
     if _is_explicit(tenrai_result):
         logger.warning(
-            "Tenrai random-anime pick {} is explicit-rated ({!r}), rejecting",
-            tenrai_result.tenrai_id,
-            tenrai_result.rating,
+            "Tenrai random-anime pick {tenrai_id} is explicit-rated ({rating!r}), rejecting",
+            tenrai_id=tenrai_result.tenrai_id,
+            rating=tenrai_result.rating,
         )
         return None
     return AnimePick(result=tenrai_result, source=Provider.TENRAI)
@@ -191,7 +194,11 @@ async def _cross_search_id(client: httpx.AsyncClient, provider: Provider, title:
     try:
         results = await provider.search_module.search(client, title)
     except _AUTOSTART_SERVICE_ERRORS as exc:
-        logger.warning("{} cross-search for a screenshot failed: {}", provider.display_name, exc)
+        logger.warning(
+            "{provider} cross-search for a screenshot failed: {error}",
+            provider=provider.display_name,
+            error=exc,
+        )
         return None
     if not results:
         return None
@@ -242,7 +249,9 @@ async def _fetch_screenshot_url_pair(
     try:
         urls = await provider.screenshot_module.screenshots(client, provider_id)
     except _AUTOSTART_SERVICE_ERRORS as exc:
-        logger.warning("{} screenshot fetch failed: {}", provider.display_name, exc)
+        logger.warning(
+            "{provider} screenshot fetch failed: {error}", provider=provider.display_name, error=exc
+        )
         return None
     if len(urls) < 2:
         return None
@@ -273,7 +282,12 @@ async def _try_provider(
         image_bytes_a = await _download_screenshot(client, url_a)
         image_bytes_b = await _download_screenshot(client, url_b)
     except _AUTOSTART_SERVICE_ERRORS as exc:
-        logger.warning("Downloading screenshot pair ({!r}, {!r}) failed: {}", url_a, url_b, exc)
+        logger.warning(
+            "downloading screenshot pair ({url_a!r}, {url_b!r}) failed: {error}",
+            url_a=url_a,
+            url_b=url_b,
+            error=exc,
+        )
         return None
     return ScreenshotPick(
         provider=provider,

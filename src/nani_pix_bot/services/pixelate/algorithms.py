@@ -39,9 +39,9 @@ def pixelate(image_bytes: bytes, target_width: int, algorithm: PixelAlgorithm) -
     wrong thing instead of failing the type check."""
     result = ALGORITHMS[algorithm](image_bytes, target_width)
     logger.debug(
-        "Pixelated image to target width {} with {} -> {} bytes",
-        target_width,
-        algorithm.value,
-        len(result),
+        "pixelated image to target width {target_width} with {algorithm} -> {size} bytes",
+        target_width=target_width,
+        algorithm=algorithm.value,
+        size=len(result),
     )
     return result

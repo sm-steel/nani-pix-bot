@@ -102,17 +102,24 @@ def parse_entry(api_name: str, entry: Any, parse: Callable[[Any], _T | None]) ->
     parser = getattr(parse, "__name__", repr(parse))
     if not isinstance(entry, dict):
         logger.warning(
-            "{} sent a {} where an entry object belongs, skipping it in {}: {!r}",
-            api_name,
-            type(entry).__name__,
-            parser,
-            entry,
+            "{api} sent a {entry_type} where an entry object belongs, skipping it in {parser}: "
+            "{entry!r}",
+            api=api_name,
+            entry_type=type(entry).__name__,
+            parser=parser,
+            entry=entry,
         )
         return None
     try:
         return parse(entry)
     except _MALFORMED_ENTRY_ERRORS as exc:
-        logger.warning("{} sent an entry {} can't read ({!r}): {!r}", api_name, parser, exc, entry)
+        logger.warning(
+            "{api} sent an entry {parser} can't read ({error!r}): {entry!r}",
+            api=api_name,
+            parser=parser,
+            error=exc,
+            entry=entry,
+        )
         return None
 
 
