@@ -124,6 +124,11 @@ docker compose up -d
 docker compose logs -f bot
 ```
 
+Shipping logs to a central collector (Loki, Vector, a Docker log driver)?
+Set `LOG_FORMAT=json` in `.env`. Each line becomes one JSON object, with
+the game id, the triggering user, the chat/topic and the bot version as
+fields, so you can filter on `game_id` instead of parsing text.
+
 Or use a pre-built image instead of building locally: in
 `docker-compose.yml`, replace the `bot` service's `build: .` with
 `image: ghcr.io/sm-steel/nani-pix-bot:X.Y.Z` (see this repo's
