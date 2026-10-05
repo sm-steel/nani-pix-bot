@@ -86,3 +86,19 @@ def test_rank_by_similarity_ranks_an_item_with_no_titles_last() -> None:
     ranked = rank_by_similarity("K-On", page, lambda entry: entry)
 
     assert ranked == [("K-On!", None), (None, None)]
+
+
+def test_is_match_names_the_guess_on_every_per_candidate_line(log_records) -> None:
+    """Each "vs" line says what was compared against the candidate, so it
+    reads on its own when filtered or interleaved (issue #237)."""
+    is_match("Mai Otome Zwei", ["Mai-Otome 0: S.ifr", "Mai-Otome Zero"])
+
+    per_candidate = [
+        line for line in log_records if " vs " in line.message and "threshold" not in line.extra
+    ]
+    assert len(per_candidate) == 2
+    for line in per_candidate:
+        assert line.message.startswith("'Mai Otome Zwei' (normalized 'mai otome zwei') vs ")
+        assert line.extra["guess"] == "Mai Otome Zwei"
+        assert line.extra["normalized"] == "mai otome zwei"
+        assert line.extra["candidate_normalized"] in {"maiotome 0 sifr", "maiotome zero"}

@@ -73,9 +73,12 @@ def is_match(guess: str, candidates: Sequence[str | None]) -> bool:
         normalized_candidate = normalize(candidate)
         score = fuzz.ratio(normalized_guess, normalized_candidate)
         logger.debug(
-            "  vs {candidate!r} (normalized {normalized!r}): score {score:.1f}",
+            "{guess!r} (normalized {normalized!r}) vs {candidate!r}"
+            " (normalized {candidate_normalized!r}): score {score:.1f}",
+            guess=guess,
+            normalized=normalized_guess,
             candidate=candidate,
-            normalized=normalized_candidate,
+            candidate_normalized=normalized_candidate,
             score=score,
         )
         if score > best_score:
