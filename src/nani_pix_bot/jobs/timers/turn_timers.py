@@ -12,7 +12,7 @@ from nani_pix_bot.jobs.timers.retry import retry_on_failure
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services import i18n, players, settings
 
 # Singleton names — there's never more than one "pending turn" at a
 # time, unlike the per-game timeout/setup-abandon jobs.
@@ -151,10 +151,11 @@ async def turn_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         if game_service.active_or_setup_game(session) is not None:
             logger.debug("Turn-expiry fired but a game is already running — no-op")
             return
-        expired_id = turn_state.next_starter_id
-        turn_state = game_service.set_next_starter(session, None)
+        expired = players.describe_player_id(session, turn_state.next_starter_id)
+        turn_state = game_service.set_next_starter(
+            session, None, reason=f"{expired}'s turn expired after 12h"
+        )
 
-    logger.info("Turn for {} expired after 12h — opening to anyone", expired_id)
     cancel_turn_timers(context.job_queue)
     schedule_idle_autostart(context.job_queue, turn_state)
     await context.bot.send_message(

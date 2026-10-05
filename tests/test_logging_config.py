@@ -27,6 +27,7 @@ def _restore_logging() -> Iterator[None]:
     logging.root.handlers = root_handlers
     logging.root.setLevel(root_level)
     logging.getLogger("httpx").setLevel(logging.NOTSET)
+    logging.getLogger("apscheduler").setLevel(logging.NOTSET)
 
 
 def test_known_secrets_are_masked_in_messages(capsys) -> None:
@@ -141,3 +142,11 @@ def test_telegram_errors_rendered_from_their_message_attribute_are_masked(capsys
     err = capsys.readouterr().err
     assert "NetworkError" in err
     assert PROXY_PW not in err
+
+
+def test_apscheduler_job_chatter_is_silenced() -> None:
+    """Issue #228: APScheduler's per-job "Added/Removed/Running job"
+    INFO lines drowned out every game event at LOG_LEVEL=INFO."""
+    setup_logging("INFO")
+
+    assert logging.getLogger("apscheduler").getEffectiveLevel() == logging.WARNING

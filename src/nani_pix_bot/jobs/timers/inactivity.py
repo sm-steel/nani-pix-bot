@@ -161,7 +161,7 @@ def _hard_mode_unsolved_reveal(session: Session, game: Game, lang: str) -> _Hard
     unpixelated via post_current_images, same as the normal path's
     single unpixelated original_image reveal."""
     photos = game_service.hard_mode_reveal_images(game)
-    game_service.force_unsolved(game)
+    game_service.force_unsolved(game, cause="final hard-mode turn ended by inactivity")
     caption = i18n.t(
         "guess.hard_mode_unsolved_caption", lang, title=game_service.display_title(game, lang)
     )
@@ -185,7 +185,6 @@ def _hard_mode_inactivity_outcome(
 
     announcement = _hard_mode_unsolved_reveal(session, game, lang)
     game_service.mark_turn_open_if_unassigned(session)
-    logger.info("Game {} auto-ended unsolved after repeated inactivity (hard mode)", game.id)
     return game_service.GuessOutcome.UNSOLVED, announcement
 
 
@@ -282,10 +281,9 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
                 logger.error(msg)
                 raise RuntimeError(msg)
 
-            outcome = game_service.advance_stage(game)
+            outcome = game_service.advance_stage(game, reason="no guesses for 6h")
             if outcome is game_service.GuessOutcome.UNSOLVED:
                 game_service.mark_turn_open_if_unassigned(session)
-                logger.info("Game {} auto-ended unsolved after repeated inactivity", game_id)
                 original_bytes = game.original_image
                 unsolved_caption = i18n.t(
                     "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)

@@ -51,6 +51,12 @@ INACTIVITY_NUDGE_DELAY = timedelta(hours=3)
 INACTIVITY_ADVANCE_DELAY = timedelta(hours=6)
 
 
+def stage_label(stage: PixelStage) -> str:
+    """`stage 2/5` — how a stage reads in log lines, rather than the
+    `PixelStage.STAGE_2` enum repr."""
+    return f"stage {STAGE_ORDER.index(stage) + 1}/{len(STAGE_ORDER)}"
+
+
 class GuessOutcome(enum.Enum):
     """What a /guess attempt did to the game — tells the command layer
     which reply/image to send. Not persisted."""
@@ -254,12 +260,18 @@ def can_start(session: Session, user_id: int) -> bool:
 
 
 def create_setup_game(
-    session: Session, *, starter_id: int, original_image: bytes | None = None
+    session: Session,
+    *,
+    starter_id: int,
+    original_image: bytes | None = None,
+    entry: str | None = None,
 ) -> Game:
     """`original_image` is optional — the traditional photo-first entry
     point always has bytes in hand immediately; the screenshot-less
     /newgame entry point creates the row before any image exists yet
-    (it's filled in once a screenshot is picked, later in the flow)."""
+    (it's filled in once a screenshot is picked, later in the flow).
+    `entry` names how the game was started, for the log; it defaults to
+    whichever of those two the image implies."""
     turn_state = turns.get_turn_state(session)
     game = Game(
         starter_id=starter_id,
@@ -270,7 +282,14 @@ def create_setup_game(
     )
     session.add(game)
     session.flush()  # populate game.id for the caller without a full commit
-    logger.info("Game {} created (SETUP) by starter {}", game.id, starter_id)
+    if entry is None:
+        entry = "DM photo" if original_image is not None else "/newgame"
+    logger.info(
+        "Game {}: created (SETUP) by {} via {}",
+        game.id,
+        players.describe_player_id(session, starter_id),
+        entry,
+    )
     return game
 
 
@@ -385,7 +404,14 @@ def activate_game(session: Session, game: Game) -> None:
 
     turn_state = turns.get_or_create_turn_state(session)
     turn_state.next_starter_id = None
-    logger.info("Game {} activated (source={})", game.id, game.source)
+    logger.info(
+        "Game {}: ACTIVE — started by {}, source={}, answer {!r}{}",
+        game.id,
+        players.describe_player_id(session, game.starter_id),
+        game.source,
+        display_title(game, "EN"),
+        " (hard mode)" if game.hard_mode else "",
+    )
 
 
 def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: str) -> GuessOutcome:
@@ -412,35 +438,30 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
         logger.warning(msg)
         raise ValueError(msg)
 
+    stage = stage_label(game.current_stage)
     game.total_guess_count += 1
 
-    candidates = match_candidates(game)
-    matched = matching.is_match(guess_text, candidates)
-    logger.debug(
-        "Game {}: guesser {} guessed {!r} against {} candidates -> {}",
-        game.id,
-        guesser_id,
-        guess_text,
-        len(candidates),
-        "match" if matched else "no match",
-    )
-    if matched:
+    guesser = players.describe_player_id(session, guesser_id)
+    if matching.is_match(guess_text, match_candidates(game)):
+        logger.info("Game {}: {} guessed {!r} — CORRECT at {}", game.id, guesser, guess_text, stage)
         _win(session, game, winner_id=guesser_id)
         return GuessOutcome.WON
 
     game.wrong_guess_count += 1
     limit = stage_config.get_stage_config(session, game.current_stage).wrong_guess_limit
+    logger.info(
+        "Game {}: {} guessed {!r} — wrong at {} ({}/{})",
+        game.id,
+        guesser,
+        guess_text,
+        stage,
+        game.wrong_guess_count,
+        limit,
+    )
     if game.wrong_guess_count < limit:
-        logger.debug(
-            "Game {}: wrong guess {}/{} at stage {}",
-            game.id,
-            game.wrong_guess_count,
-            limit,
-            game.current_stage,
-        )
         return GuessOutcome.WRONG
 
-    outcome = advance_stage(game)
+    outcome = advance_stage(game, reason="wrong-guess limit reached")
     if outcome is GuessOutcome.UNSOLVED:
         turns.mark_turn_open_if_unassigned(session)
     return outcome
@@ -474,14 +495,15 @@ def clear_inactivity_nudge(game: Game) -> None:
     game.inactivity_nudge_at = None
 
 
-def advance_stage(game: Game) -> GuessOutcome:
+def advance_stage(game: Game, *, reason: str) -> GuessOutcome:
     """Move `game` to the next PixelStage, or end it UNSOLVED if it was
     already on the last one — the shared landing spot for both a
     guess-driven stage exhaustion (record_guess, above) and the
     inactivity-driven auto-advance (jobs/timers.py's
     inactivity_advance_job_callback), so the two paths can never drift
     apart. Resets wrong_guess_count same as the guess-driven path did
-    inline before this was extracted."""
+    inline before this was extracted. `reason` says what triggered the
+    advance, for the log."""
     # Every caller only invokes this on an ACTIVE game with a stage
     # already set (record_guess checks this itself; the inactivity job
     # callback re-checks status == ACTIVE before calling in). This used
@@ -498,11 +520,12 @@ def advance_stage(game: Game) -> GuessOutcome:
     game.wrong_guess_count = 0
     next_index = STAGE_ORDER.index(game.current_stage) + 1
     if next_index >= len(STAGE_ORDER):
-        force_unsolved(game)
+        force_unsolved(game, cause=f"final stage exhausted — {reason}")
         return GuessOutcome.UNSOLVED
 
-    game.current_stage = STAGE_ORDER[next_index]
-    logger.info("Game {} advanced to stage {}", game.id, game.current_stage)
+    next_stage = STAGE_ORDER[next_index]
+    game.current_stage = next_stage
+    logger.info("Game {}: advanced to {} ({})", game.id, stage_label(next_stage), reason)
     return GuessOutcome.STAGE_ADVANCED
 
 
@@ -552,16 +575,23 @@ def _win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> Non
     winner = players.get_or_create_player(session, winner_id)
     winner.wins += award
 
-    turns.set_next_starter(session, winner_id)
-    logger.info("Game {} won by player {}", game.id, winner_id)
+    winner_text = players.describe_player_id(session, winner_id)
+    if game.hard_mode:
+        where = f"hard-mode turn {game.hard_mode_turn}"
+    elif game.current_stage is not None:
+        where = stage_label(game.current_stage)
+    else:
+        where = "unknown stage"
+    logger.info("Game {}: won by {} at {}", game.id, winner_text, where)
+    turns.set_next_starter(session, winner_id, reason=f"won game {game.id}")
 
 
-def force_unsolved(game: Game) -> None:
+def force_unsolved(game: Game, *, cause: str) -> None:
     """Ends a game unsolved — used both by record_guess's stage-exhaustion
     path and by the timeout job callback. See MECHANICS.md's "Ending
-    unsolved" section."""
+    unsolved" section. `cause` is for the log."""
     game.status = GameStatus.UNSOLVED
-    logger.info("Game {} ended unsolved", game.id)
+    logger.info("Game {}: ended UNSOLVED ({})", game.id, cause)
 
 
 def has_answer_to_reveal(game: Game) -> bool:

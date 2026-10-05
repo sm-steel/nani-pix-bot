@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -42,7 +43,7 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         turn_state: TurnState | None = None
         if not context.args:
-            turn_state = _open_turn(context, session)
+            turn_state = _open_turn(context, session, actor=describe_user(user))
             reply_key, reply_kwargs = "skip.opened", {}
         else:
             target_username = await _pass_turn(message, context, session, lang, context.args[0])
@@ -61,8 +62,8 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         logger.warning("Failed to send the /skip confirmation: {}", exc)
 
 
-def _open_turn(context: ContextTypes.DEFAULT_TYPE, session) -> TurnState:
-    turn_state = game_service.set_next_starter(session, None)
+def _open_turn(context: ContextTypes.DEFAULT_TYPE, session, *, actor: str) -> TurnState:
+    turn_state = game_service.set_next_starter(session, None, reason=f"/skip by {actor}")
     timeout_module.cancel_turn_timers(context.job_queue)
     return turn_state
 
@@ -99,7 +100,11 @@ async def _pass_turn(
         await message.reply_text(i18n.t("skip.cannot_target_bot", lang))
         return None
 
-    turn_state = game_service.set_next_starter(session, target.telegram_user_id)
+    turn_state = game_service.set_next_starter(
+        session,
+        target.telegram_user_id,
+        reason=f"/skip @{target_username} by {describe_user(message.from_user)}",
+    )
     timeout_module.cancel_idle_autostart(context.job_queue)
     timeout_module.schedule_turn_timers(context.job_queue, turn_state)
     return target_username

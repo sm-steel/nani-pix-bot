@@ -10,6 +10,7 @@ from telegram import Update
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.keyboards import (
     STOP_CANCEL_CALLBACK_DATA,
     STOP_CONFIRM_CALLBACK_DATA,
@@ -172,7 +173,9 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
         shop_service.refund_game(session, game_id)
         bounty.refund_pot(session, game_id)
         session.delete(game)
-        turn_state = game_service.set_next_starter(session, None)
+        turn_state = game_service.set_next_starter(
+            session, None, reason=f"game {game_id} stopped by {describe_user(user)}"
+        )
     # Block closed and committed above — the row deletion and turn-open
     # are durable now regardless of whether the announcement below
     # actually reaches the group (see post_current_image's docstring).

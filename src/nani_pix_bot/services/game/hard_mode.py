@@ -114,10 +114,15 @@ def record_hard_mode_guess(
     turn = _current_turn(game)
     if turn < HARD_MODE_TURN_COUNT:
         game.hard_mode_turn = turn + 1
-        logger.info("Game {} advanced to hard-mode turn {}", game.id, game.hard_mode_turn)
+        logger.info(
+            "Game {}: advanced to hard-mode turn {}/{} (wrong-guess limit reached)",
+            game.id,
+            game.hard_mode_turn,
+            HARD_MODE_TURN_COUNT,
+        )
         return GuessOutcome.TURN_ADVANCED
 
-    state.force_unsolved(game)
+    state.force_unsolved(game, cause="final hard-mode turn exhausted — wrong-guess limit reached")
     return GuessOutcome.UNSOLVED
 
 

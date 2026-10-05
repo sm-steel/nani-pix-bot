@@ -116,3 +116,7 @@ def setup_logging(level: str = "INFO", secrets: Iterable[str] = ()) -> None:
     # httpx logs one INFO line per HTTP request — every getUpdates long
     # poll, around the clock — which is routine noise, not a game event.
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    # APScheduler (behind PTB's JobQueue) logs every job added, removed,
+    # run and finished at INFO. Those lines drowned out every game event
+    # (issue #228). The timer callbacks log what they actually did.
+    logging.getLogger("apscheduler").setLevel(logging.WARNING)

@@ -16,6 +16,25 @@ from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.quiet_hours import parse_timezone
 
 
+def describe_person(user_id: int, *, username: str | None = None, name: str | None = None) -> str:
+    """How a person appears in a log line: `5 (@bob)`, else `5 (Bob B)`,
+    else the bare id. One format everywhere so an operator can grep for a
+    player by either id or handle (see CLAUDE.md's "Logging")."""
+    if username:
+        return f"{user_id} (@{username})"
+    if name:
+        return f"{user_id} ({name})"
+    return str(user_id)
+
+
+def describe_player_id(session: Session, telegram_user_id: int) -> str:
+    """describe_person() for a player known only by id, using the stored
+    username if there is one. Cheap: the row is usually already in the
+    session's identity map."""
+    player = session.get(Player, telegram_user_id)
+    return describe_person(telegram_user_id, username=player.username if player else None)
+
+
 def get_or_create_player(
     session: Session, telegram_user_id: int, *, username: str | None = None, grant: bool = True
 ) -> Player:
