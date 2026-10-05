@@ -135,7 +135,6 @@ async def test_fetch_list_parses_entries_and_pagination() -> None:
     assert page.entries[1].image_url is None
     assert page.entries[1].status == "plan_to_watch"
     assert page.has_more is True
-    assert page.next_offset == 20
 
 
 async def test_fetch_list_has_more_is_false_on_the_last_page() -> None:

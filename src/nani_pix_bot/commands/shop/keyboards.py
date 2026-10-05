@@ -7,9 +7,9 @@ from nani_pix_bot.services import i18n
 from nani_pix_bot.services.clues.shop import TILE_GRID, Offer
 
 SHOP_PREFIX = "shop:"
-SHOP_BUY_PREFIX = "shop:buy:"
-SHOP_TILE_PREFIX = "shop:tile:"
-SHOP_SHARE_PREFIX = "shop:share:"
+SHOP_BUY_PREFIX = f"{SHOP_PREFIX}buy:"
+SHOP_TILE_PREFIX = f"{SHOP_PREFIX}tile:"
+SHOP_SHARE_PREFIX = f"{SHOP_PREFIX}share:"
 
 
 def _offer_label(offer: Offer, lang: str) -> str:

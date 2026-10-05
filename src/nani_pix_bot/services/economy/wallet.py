@@ -138,15 +138,3 @@ def game_total(session: Session, *, player_id: int, game_id: int, reason: Curren
         CurrencyTransfer.reason == reason,
     )
     return int(session.scalar(stmt) or 0)
-
-
-def ledger_balance(session: Session, player_id: int) -> int:
-    """Audit counterpart of the cached `players.currency`: transfers in minus out."""
-    received = select(func.coalesce(func.sum(CurrencyTransfer.amount), 0)).where(
-        CurrencyTransfer.to_type == CurrencyParty.PLAYER, CurrencyTransfer.to_player_id == player_id
-    )
-    sent = select(func.coalesce(func.sum(CurrencyTransfer.amount), 0)).where(
-        CurrencyTransfer.from_type == CurrencyParty.PLAYER,
-        CurrencyTransfer.from_player_id == player_id,
-    )
-    return int(session.scalar(received) or 0) - int(session.scalar(sent) or 0)

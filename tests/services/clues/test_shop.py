@@ -6,8 +6,9 @@ from nani_pix_bot.models.enums import ClueKind, GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.clues import shop
-from nani_pix_bot.services.economy import config, wallet
+from nani_pix_bot.services.economy import config
 from nani_pix_bot.services.economy.config import EconomyKey
+from tests.services.economy.ledger import ledger_balance
 
 STARTER, BUYER = 1, 2
 START = 1000
@@ -237,7 +238,7 @@ def test_refund_restores_balance_links_the_charge_and_drops_the_purchase(
     assert refund_row.amount == PRICES[EconomyKey.CLUE_TITLE_SHAPE]
     assert session.query(CluePurchase).count() == 0
     # opening 100 was seeded directly, not via the ledger
-    assert buyer.currency == wallet.ledger_balance(session, BUYER) + START
+    assert buyer.currency == ledger_balance(session, BUYER) + START
 
 
 def test_active_game_for_rejects_a_different_or_finished_game(session: Session) -> None:

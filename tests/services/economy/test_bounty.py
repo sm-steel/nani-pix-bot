@@ -5,6 +5,7 @@ from nani_pix_bot.models import CurrencyTransfer, Player
 from nani_pix_bot.models.enums import CurrencyReason, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services.economy import bounty, wallet
+from tests.services.economy.ledger import ledger_balance
 
 STARTER, ALICE, BOB = 1, 2, 3
 
@@ -82,7 +83,7 @@ def test_payout_includes_winners_own_contribution(session: Session) -> None:
     assert bounty.pay_out(session, game, p[ALICE]) == 40
     session.flush()
     assert p[ALICE].currency == 100
-    assert wallet.ledger_balance(session, ALICE) == 0  # -40 in, +40 out
+    assert ledger_balance(session, ALICE) == 0  # -40 in, +40 out
 
 
 def test_payout_of_empty_pot_moves_nothing(session: Session) -> None:
@@ -133,7 +134,7 @@ def _seed_ledgered(session: Session, *, status=GameStatus.ACTIVE) -> tuple[Game,
 
 def _assert_cache_matches_ledger(session: Session, players: dict[int, Player]) -> None:
     for user_id, player in players.items():
-        assert player.currency == wallet.ledger_balance(session, user_id)
+        assert player.currency == ledger_balance(session, user_id)
 
 
 def test_cached_balances_match_the_ledger_after_contribute_and_refund(session: Session) -> None:

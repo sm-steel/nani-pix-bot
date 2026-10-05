@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models import CurrencyTransfer, Player
 from nani_pix_bot.models.enums import CurrencyParty, CurrencyReason
 from nani_pix_bot.services.economy import tips, wallet
+from tests.services.economy.ledger import ledger_balance
 
 ALICE, BOB = 1, 2
 
@@ -39,7 +40,7 @@ def test_tip_moves_currency_as_one_player_to_player_row(session: Session) -> Non
     assert row.reason == CurrencyReason.TIP
     assert len(_tip_rows(session)) == 1
     for player in (alice, bob):
-        assert player.currency == wallet.ledger_balance(session, player.telegram_user_id)
+        assert player.currency == ledger_balance(session, player.telegram_user_id)
 
 
 @pytest.mark.parametrize(
