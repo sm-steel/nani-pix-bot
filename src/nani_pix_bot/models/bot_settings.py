@@ -36,6 +36,10 @@ class BotSettings(Base):
     # been possible), bot-initiated games are new behavior an admin
     # should opt into.
     autostart_enabled: Mapped[bool] = mapped_column(default=False)
+    # Letters a wrong guess must share (as whole words) with a title before
+    # the bot reveals them in place — see services/matching.py's
+    # partial_match and /partialmatch. 0 turns it off.
+    partial_match_min_letters: Mapped[int] = mapped_column(default=4)
     # Quiet hours (see services/quiet_hours.py, /quiethours): local
     # wall-clock start/end plus the IANA zone they were entered in. All
     # three NULL = off (the default). Stored as wall-clock + zone, not as

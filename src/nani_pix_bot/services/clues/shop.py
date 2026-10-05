@@ -22,6 +22,7 @@ from nani_pix_bot.services import players
 from nani_pix_bot.services.clues import text
 from nani_pix_bot.services.economy import config, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
+from nani_pix_bot.services.game import guesses
 
 MAX_EXTRA_SCREENSHOTS = 3
 TILE_GRID = 8
@@ -53,6 +54,7 @@ class Refusal(enum.StrEnum):
     ALREADY_OWNED = "already_owned"
     UNAVAILABLE = "unavailable"
     INSUFFICIENT = "insufficient"
+    REVEALED = "revealed"  # a partial match already made the title's shape public
 
 
 class ShopRefusedError(Exception):
@@ -154,6 +156,8 @@ def _has_screenshot_provider(game: Game) -> bool:
 def _available(session: Session, game: Game, buyer: Player, kind: ClueKind, lang: str) -> bool:
     if kind in _LETTER_KINDS:
         return any(text.first_char(title) for _, title in game_service.clue_titles(game, lang))
+    if kind is ClueKind.TITLE_SHAPE and guesses.has_partial_reveal(session, game.id):
+        return False
     if kind in TEXT_KINDS:
         return game_service.display_title_field(game, lang) is not None
     if kind is ClueKind.SCREENSHOT:
@@ -207,6 +211,21 @@ def _malformed(session: Session, game: Game, request: PurchaseRequest) -> bool:
     return False
 
 
+def _not_sellable(
+    session: Session, game: Game, buyer: Player, request: PurchaseRequest
+) -> Refusal | None:
+    """Why this clue can't be sold in this round, if it can't."""
+    if request.kind is ClueKind.TITLE_SHAPE and guesses.has_partial_reveal(session, game.id):
+        return Refusal.REVEALED
+    # The purchase doesn't know the group language, so a clue is sellable
+    # if it would be offered in any supported one.
+    if _malformed(session, game, request) or not any(
+        _available(session, game, buyer, request.kind, lang) for lang in ("en", "ru")
+    ):
+        return Refusal.UNAVAILABLE
+    return None
+
+
 def _refusal(
     session: Session, game: Game, buyer: Player, request: PurchaseRequest
 ) -> Refusal | None:
@@ -216,13 +235,7 @@ def _refusal(
         return Refusal.SETTER
     if _already_owned(session, game, buyer, request):
         return Refusal.ALREADY_OWNED
-    # The purchase doesn't know the group language, so a clue is sellable
-    # if it would be offered in any supported one.
-    if _malformed(session, game, request) or not any(
-        _available(session, game, buyer, request.kind, lang) for lang in ("en", "ru")
-    ):
-        return Refusal.UNAVAILABLE
-    return None
+    return _not_sellable(session, game, buyer, request)
 
 
 def _detail(request: PurchaseRequest) -> dict[str, object]:

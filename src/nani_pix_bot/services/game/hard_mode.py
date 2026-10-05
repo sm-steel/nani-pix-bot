@@ -91,11 +91,18 @@ def record_hard_mode_guess(
     game.total_guess_count += 1
 
     correct = matching.is_match(guess_text, state.match_candidates(game))
+    reveal = None if correct else state.partial_reveal_text(session, game, guess_text)
+    if reveal is not None:
+        logger.info("partial match revealed {reveal!r}", reveal=reveal, game_id=game.id)
     guesses.log_guess(
         session,
         game,
         guesses.GuessRecord(
-            player_id=guesser_id, text=guess_text, stage=_current_turn(game), correct=correct
+            player_id=guesser_id,
+            text=guess_text,
+            stage=_current_turn(game),
+            correct=correct,
+            partial_reveal=reveal,
         ),
     )
     if correct:

@@ -409,6 +409,27 @@ guess always produces the same verdict for the life of a game — matching
 never depends on AniList/Shikimori/Tenrai/TMDB being reachable, rate
 limits, or anything else external, at guess time.
 
+### Partial matches
+
+A wrong guess can still be partly right. When it shares **whole words**
+with one of the round's titles/synonyms, the bot shows that title with
+only the matched words spelled out and every other word masked, e.g.
+`🔎 Partly right: _ _ _ _ _ _   _ _   Frieren`:
+
+- Only guess words of at least 3 letters count (`of`, `no`, `to` never
+  reveal anything), and the matched words must add up to at least the
+  `/partialmatch` threshold in letters (default 4; `0` turns it off).
+  The title with the most matched letters wins.
+- At least one word of the title always stays hidden: a guess containing
+  every word would reveal the answer, so it reveals nothing.
+- It is still a wrong guess — it counts toward the stage's limit like any
+  other. The reveal appears in the wrong-guess reply, or in the caption of
+  the stage post when that guess advanced the stage. It is stored with the
+  guess in `game_guesses`.
+- Once any partial reveal fires in a round, the title-shape clue stops
+  being sold for that round (the shape is public); clues already bought
+  stay.
+
 ## Pixelation stages
 
 **Status: Implemented.**

@@ -40,3 +40,10 @@ def test_title_shape_handles_cyrillic_and_spaceless_titles() -> None:
 def test_word_lengths_count_letters_and_digits_only() -> None:
     assert text.word_lengths("Steins;Gate 0") == [10, 1]
     assert text.word_lengths("86: Eighty-Six") == [2, 9]
+
+
+def test_words_shape_shows_only_the_given_words() -> None:
+    assert text.words_shape("Buddy Complex: Into the", {0, 1}) == (
+        "Buddy   Complex:   _ _ _ _   _ _ _"
+    )
+    assert text.words_shape("K-On! Movie", {1}) == "_ - _ _ !   Movie"

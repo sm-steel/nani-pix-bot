@@ -15,13 +15,14 @@ from nani_pix_bot import log_context
 from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import i18n, matching, players
+from nani_pix_bot.services.clues import text as clue_text
 from nani_pix_bot.services.game import guesses, turns
 from nani_pix_bot.services.game.clock import deadline_after
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
-from nani_pix_bot.services.settings import stage_config
+from nani_pix_bot.services.settings import bot_settings, stage_config
 
 # Blockiest to clearest — see MECHANICS.md's "Pixelation stages" table.
 # Fixed: the 5 PixelStage members and their order never change, only
@@ -434,6 +435,18 @@ def activate_game(session: Session, game: Game) -> None:
     )
 
 
+def partial_reveal_text(session: Session, game: Game, guess_text: str) -> str | None:
+    """The masked title a wrong guess partly matched (issue #250), or None."""
+    match = matching.partial_match(
+        guess_text,
+        match_candidates(game),
+        min_letters=bot_settings.get_partial_match_min_letters(session),
+    )
+    if match is None:
+        return None
+    return clue_text.words_shape(match.candidate, match.word_indices)
+
+
 def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: str) -> GuessOutcome:
     """Apply one /guess attempt to an ACTIVE game — see MECHANICS.md's
     "Guess matching" and "Pixelation stages" sections."""
@@ -464,6 +477,9 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
     # The guesser is the update's own user (the /guess handler is the only
     # caller), so the log context already names them; see log_context.py.
     correct = matching.is_match(guess_text, match_candidates(game))
+    reveal = None if correct else partial_reveal_text(session, game, guess_text)
+    if reveal is not None:
+        logger.info("partial match revealed {reveal!r}", reveal=reveal, game_id=game.id)
     guesses.log_guess(
         session,
         game,
@@ -472,6 +488,7 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
             text=guess_text,
             stage=STAGE_ORDER.index(game.current_stage) + 1,
             correct=correct,
+            partial_reveal=reveal,
         ),
     )
     if correct:

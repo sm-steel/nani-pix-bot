@@ -12,7 +12,7 @@ from nani_pix_bot.models.stage_config import StageConfig
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import quiet_hours, settings
-from nani_pix_bot.services.game import state, turns
+from nani_pix_bot.services.game import guesses, state, turns
 from nani_pix_bot.services.quiet_hours import QuietHours
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
@@ -1394,3 +1394,14 @@ def test_record_guess_logs_each_guess(session: Session) -> None:
     ).first()
     assert row is not None
     assert (row.player_id, row.text, row.stage, row.correct) == (2, "definitely wrong", 1, False)
+
+
+def test_wrong_guess_stores_its_partial_reveal(session: Session) -> None:
+    game = _active_game(session)
+    game.title_romaji = "Sousou no Frieren"
+    game.title_english = None
+    game.synonyms = []
+    game_service.record_guess(session, game, guesser_id=2, guess_text="frieren something")
+    latest = guesses.latest(session, game.id)
+    assert latest is not None
+    assert latest.partial_reveal == "_ _ _ _ _ _   _ _   Frieren"

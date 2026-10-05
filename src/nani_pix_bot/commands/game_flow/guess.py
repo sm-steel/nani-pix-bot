@@ -25,6 +25,18 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.economy import bounty, earning
+from nani_pix_bot.services.game import guesses
+
+# Outcomes whose post reveals the title anyway.
+_NO_PARTIAL_REVEAL = frozenset({game_service.GuessOutcome.WON, game_service.GuessOutcome.UNSOLVED})
+
+
+def _partial_reveal_line(session, game: Game, lang: str) -> str:
+    """The masked-title line a partly-right wrong guess earns (issue #250)."""
+    row = guesses.latest(session, game.id)
+    if row is None or row.partial_reveal is None:
+        return ""
+    return "\n" + i18n.t("guess.partial_reveal", lang, reveal=row.partial_reveal)
 
 
 def _prepare_won_announcement(
@@ -276,6 +288,8 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             session, game, guesser_id=user.id, won=outcome is game_service.GuessOutcome.WON
         )
         suffix = earnings_suffix(session, game, earnings, lang, player_name=user.full_name)
+        if outcome not in _NO_PARTIAL_REVEAL:
+            suffix = _partial_reveal_line(session, game, lang) + suffix
         if outcome is game_service.GuessOutcome.UNSOLVED:
             suffix += bounty.refund_note(session, game.id, lang)
         if outcome is game_service.GuessOutcome.WON:

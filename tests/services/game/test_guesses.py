@@ -49,3 +49,34 @@ def test_long_guess_is_truncated(session: Session) -> None:
         session, game, guesses.GuessRecord(player_id=2, text="x" * 1000, stage=1, correct=False)
     )
     assert len(row.text) == GUESS_TEXT_LENGTH
+
+
+def test_latest_is_the_newest_row_or_none(session: Session) -> None:
+    game = _game(session)
+    assert guesses.latest(session, game.id) is None
+
+    for text in ("a", "b"):
+        guesses.log_guess(
+            session, game, guesses.GuessRecord(player_id=2, text=text, stage=1, correct=False)
+        )
+
+    latest = guesses.latest(session, game.id)
+    assert latest is not None
+    assert latest.text == "b"
+
+
+def test_has_partial_reveal_only_when_a_row_carries_one(session: Session) -> None:
+    game = _game(session)
+    assert guesses.has_partial_reveal(session, game.id) is False
+
+    guesses.log_guess(
+        session, game, guesses.GuessRecord(player_id=2, text="a", stage=1, correct=False)
+    )
+    assert guesses.has_partial_reveal(session, game.id) is False
+
+    guesses.log_guess(
+        session,
+        game,
+        guesses.GuessRecord(player_id=2, text="b", stage=1, correct=False, partial_reveal="_ _"),
+    )
+    assert guesses.has_partial_reveal(session, game.id) is True

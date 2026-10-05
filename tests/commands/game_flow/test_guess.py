@@ -936,3 +936,23 @@ async def test_every_unsolved_path_refunds_the_pot_last_stage_wrong_guess(sessio
         assert fetched.status == GameStatus.UNSOLVED
         assert (_currency_of(session, 3), _currency_of(session, 4)) == (100, 100)
         assert bounty.pot_balance(session, game_id) == 0
+
+
+async def test_wrong_guess_reply_shows_the_partial_reveal(session_factory) -> None:
+    _active_game(
+        session_factory,
+        current_stage=PixelStage.STAGE_3,
+        title_romaji="Sousou no Frieren",
+        title_english=None,
+        synonyms=[],
+    )
+    _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=3)
+    update = _make_update(user_id=2)
+    context = _make_context(session_factory, args=["frieren", "maybe"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    reply = update.message.reply_text.await_args.args[0]
+    assert "🔎 Partly right: _ _ _ _ _ _   _ _   Frieren" in reply

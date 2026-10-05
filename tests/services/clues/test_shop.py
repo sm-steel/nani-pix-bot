@@ -8,6 +8,7 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.clues import shop
 from nani_pix_bot.services.economy import config
 from nani_pix_bot.services.economy.config import EconomyKey
+from nani_pix_bot.services.game import guesses
 from tests.services.economy.ledger import ledger_balance
 
 STARTER, BUYER = 1, 2
@@ -396,3 +397,21 @@ def test_refund_returns_the_amount_and_drops_the_purchase(session: Session) -> N
     assert buyer.currency == START
     # opening balance was seeded directly, so the ledger nets to zero
     assert ledger_balance(session, BUYER) == 0
+
+
+def test_title_shape_is_withdrawn_after_a_partial_reveal(session: Session) -> None:
+    game, buyer = _setup(session)
+    assert ClueKind.TITLE_SHAPE in {o.kind for o in shop.offers(session, game, buyer, "en")}
+    guesses.log_guess(
+        session,
+        game,
+        guesses.GuessRecord(
+            player_id=BUYER, text="x", stage=1, correct=False, partial_reveal="_ _"
+        ),
+    )
+
+    assert ClueKind.TITLE_SHAPE not in {o.kind for o in shop.offers(session, game, buyer, "en")}
+    with pytest.raises(shop.ShopRefusedError) as refused:
+        shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TITLE_SHAPE))
+    assert refused.value.refusal is shop.Refusal.REVEALED
+    assert buyer.currency == START
