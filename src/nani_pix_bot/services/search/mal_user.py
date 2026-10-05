@@ -207,7 +207,6 @@ class MalAnimeListEntry:
 class MalAnimeListPage:
     entries: list[MalAnimeListEntry]
     has_more: bool
-    next_offset: int
 
 
 async def fetch_list(
@@ -250,4 +249,4 @@ async def fetch_list(
         )
 
     has_more = bool(body.get("paging", {}).get("next"))
-    return MalAnimeListPage(entries=entries, has_more=has_more, next_offset=offset + limit)
+    return MalAnimeListPage(entries=entries, has_more=has_more)
