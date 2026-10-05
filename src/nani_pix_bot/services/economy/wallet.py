@@ -72,9 +72,13 @@ def transfer(
         msg = f"can't transfer between the same party ({source.type}, {source.player_id})"
         raise ValueError(msg)
     if source.player is not None and source.player.currency < amount:
+        # Local import: players imports this module at its top.
+        from nani_pix_bot.services.players import describe_person
+
         logger.warning(
-            "Player {} can't afford {} 💠 ({}): balance {}",
-            source.player_id,
+            "{}{} can't afford {} 💠 ({}): balance {}",
+            "" if entry.game_id is None else f"Game {entry.game_id}: ",
+            describe_person(source.player.telegram_user_id, username=source.player.username),
             amount,
             entry.reason,
             source.player.currency,

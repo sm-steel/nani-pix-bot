@@ -323,3 +323,42 @@ async def test_malformed_data_is_answered_silently(session_factory, data: str) -
     update.callback_query.edit_message_text.assert_not_awaited()
     context.bot.send_photo.assert_not_awaited()
     assert _state(session_factory) == (PixelStage.STAGE_1, START, 0)
+
+
+async def test_sharpen_prompt_is_logged_at_info(session_factory, records) -> None:
+    game_id = _seed(session_factory)
+
+    await _command(session_factory)
+
+    assert (
+        "INFO",
+        f"Game {game_id}: {ALICE} (@alice) asked to /sharpen at stage 1/5"
+        f" — confirm prompt shown ({PRICE} 💠)",
+    ) in records
+
+
+async def test_sharpen_cancel_is_logged_at_info(session_factory, records) -> None:
+    _seed(session_factory)
+
+    await _callback(session_factory, f"sharpen:no:{ALICE}")
+
+    assert ("INFO", f"{ALICE} (@alice) cancelled their /sharpen") in records
+
+
+async def test_sharpen_tap_by_someone_else_is_logged_as_a_warning(session_factory, records) -> None:
+    game_id = _seed(session_factory)
+
+    await _callback(session_factory, _confirm_data(game_id, user_id=BOB), user_id=ALICE)
+
+    assert ("WARNING", f"{ALICE} (@alice) tapped {BOB}'s sharpen button — not theirs") in records
+
+
+async def test_sharpen_logs_the_posted_stage(session_factory, records) -> None:
+    game_id = _seed(session_factory)
+
+    await _callback(session_factory, _confirm_data(game_id))
+
+    assert any(
+        level == "INFO" and message.startswith(f"Game {game_id}: posted stage 2/5 image")
+        for level, message in records
+    )

@@ -12,6 +12,7 @@ from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
@@ -36,6 +37,7 @@ class _AdminDm:
 
     message: Message
     user_id: int
+    actor: str  # describe_user() of the admin, for log lines
     lang: str
 
 
@@ -60,10 +62,10 @@ async def _admin_dm(
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
     if not await is_group_admin(context.bot, context.bot_data["group_chat_id"], user.id):
-        logger.warning("Non-admin {} tried /{}", user.id, command)
+        logger.warning("Non-admin {} tried /{}", describe_user(user), command)
         await message.reply_text(i18n.t("commands.admins_only", lang))
         return None
-    return _AdminDm(message=message, user_id=user.id, lang=lang)
+    return _AdminDm(message=message, user_id=user.id, actor=describe_user(user), lang=lang)
 
 
 def _describe(key: str, qh: QuietHours, lang: str) -> str:
@@ -99,12 +101,17 @@ async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             if current is not None
             else i18n.t("timezone.unset", dm.lang)
         )
+        logger.info(
+            "Admin {} viewed /timezone (current {})",
+            dm.actor,
+            current.key if current is not None else "unset",
+        )
         await dm.message.reply_text(text, reply_markup=_timezone_keyboard())
         return
 
     tz = quiet_hours.parse_timezone(args[0])
     if tz is None:
-        logger.warning("Admin {} sent unknown timezone {!r}", dm.user_id, args[0])
+        logger.warning("Admin {} sent unknown timezone {!r}", dm.actor, args[0])
         await dm.message.reply_text(i18n.t("timezone.invalid", dm.lang, tz=args[0]))
         return
     with session_scope(session_factory) as session:
@@ -119,7 +126,7 @@ async def timezone_callback_handler(update: Update, context: ContextTypes.DEFAUL
     await query.answer()
     user_id = query.from_user.id
     if not await is_group_admin(context.bot, context.bot_data["group_chat_id"], user_id):
-        logger.warning("Non-admin {} tapped a /timezone button", user_id)
+        logger.warning("Non-admin {} tapped a /timezone button", describe_user(query.from_user))
         return
     tz = quiet_hours.parse_timezone(query.data.removeprefix(SET_TIMEZONE_PREFIX))
     if tz is None:
@@ -146,12 +153,18 @@ async def quiethours_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if current is not None
             else i18n.t("quiethours.off", dm.lang)
         )
+        logger.info(
+            "Admin {} viewed /quiethours (currently {})",
+            dm.actor,
+            "off" if current is None else f"{current.start}-{current.end} {current.tz.key}",
+        )
         await dm.message.reply_text(text)
         return
 
     if len(args) == 1 and args[0].lower() == "off":
         with session_scope(session_factory) as session:
             settings.clear_quiet_hours(session)
+        logger.info("Admin {} turned quiet hours off", dm.actor)
         await dm.message.reply_text(i18n.t("quiethours.cleared", dm.lang))
         return
 
@@ -162,17 +175,17 @@ async def _set_quiet_hours(dm: _AdminDm, session_factory, args: list[str]) -> No
     start = quiet_hours.parse_hhmm(args[0]) if len(args) == 2 else None
     end = quiet_hours.parse_hhmm(args[1]) if len(args) == 2 else None
     if start is None or end is None:
-        logger.warning("Admin {} sent invalid /quiethours args {!r}", dm.user_id, args)
+        logger.warning("Admin {} sent invalid /quiethours args {!r}", dm.actor, args)
         await dm.message.reply_text(i18n.t("quiethours.usage", dm.lang))
         return
     if start == end:
-        logger.warning("Admin {} sent /quiethours with start == end", dm.user_id)
+        logger.warning("Admin {} sent /quiethours with start == end", dm.actor)
         await dm.message.reply_text(i18n.t("quiethours.same_times", dm.lang))
         return
     with session_scope(session_factory) as session:
         tz = players.get_timezone(session, dm.user_id)
     if tz is None:
-        logger.info("Admin {} has no timezone yet — prompting before /quiethours", dm.user_id)
+        logger.info("Admin {} has no timezone yet — prompting before /quiethours", dm.actor)
         await dm.message.reply_text(
             i18n.t("quiethours.need_timezone", dm.lang, start=args[0]),
             reply_markup=_timezone_keyboard(),
@@ -181,4 +194,5 @@ async def _set_quiet_hours(dm: _AdminDm, session_factory, args: list[str]) -> No
     qh = QuietHours(start=start, end=end, tz=tz)
     with session_scope(session_factory) as session:
         settings.set_quiet_hours(session, qh)
+    logger.info("Admin {} set quiet hours to {}-{} {}", dm.actor, qh.start, qh.end, qh.tz.key)
     await dm.message.reply_text(_describe("quiethours.set", qh, dm.lang))

@@ -2,9 +2,10 @@
 topic. See services/economy/tips.py for the rules."""
 
 from loguru import logger
-from telegram import Update
+from telegram import Update, User
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
@@ -50,16 +51,18 @@ async def tip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
             if parsed is None:
-                logger.warning("{} sent a malformed /tip: {!r}", user.id, context.args)
+                logger.warning("{} sent a malformed /tip: {!r}", describe_user(user), context.args)
                 reply = i18n.t("tip.usage", lang)
             else:
                 username, amount = parsed
                 recipient = players.find_player_by_username(session, username)
                 if recipient is None:
-                    logger.warning("{} tried /tip to unknown username {!r}", user.id, username)
+                    logger.warning(
+                        "{} tried /tip to unknown username {!r}", describe_user(user), username
+                    )
                     reply = _unknown_user_reply(context, username, lang)
                 elif recipient.telegram_user_id == context.bot.id:
-                    logger.warning("{} tried to /tip the bot", user.id)
+                    logger.warning("{} tried to /tip the bot", describe_user(user))
                     reply = i18n.t("tip.cannot_tip_bot", lang)
                 else:
                     sender = players.get_or_create_player(session, user.id, username=user.username)
@@ -74,16 +77,16 @@ async def tip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except tips.TipRefusedError as error:
         refusal = error.refusal
     if refusal is not None:
-        reply = _refusal_reply(session_factory, user.id, refusal)
+        reply = _refusal_reply(session_factory, user, refusal)
     await message.reply_text(reply)
 
 
-def _refusal_reply(session_factory, user_id: int, refusal: tips.TipRefusal) -> str:
+def _refusal_reply(session_factory, user: User, refusal: tips.TipRefusal) -> str:
     """The reply for a refused tip; its transaction already rolled back, so
     the balance is read in a fresh scope."""
-    logger.warning("{}'s /tip was refused: {}", user_id, refusal.value)
+    logger.warning("{}'s /tip was refused: {}", describe_user(user), refusal.value)
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
-        player = session.get(Player, user_id)
+        player = session.get(Player, user.id)
         balance = player.currency if player is not None else 0
     return i18n.t(f"tip.refusal.{refusal.value}", lang, minimum=tips.TIP_MIN, balance=balance)

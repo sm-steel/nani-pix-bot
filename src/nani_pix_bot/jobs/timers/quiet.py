@@ -33,7 +33,7 @@ def defer_if_quiet(context: ContextTypes.DEFAULT_TYPE) -> bool:
         return False
     resume_at = quiet_hours.window_end_after(qh, now)
     job_queue.run_once(job.callback, when=resume_at, name=job.name, data=job.data)
-    logger.debug("Quiet hours — deferred job {} until {}", job.name, resume_at.isoformat())
+    logger.info("Quiet hours — deferred job {} until {}", job.name, resume_at.isoformat())
     return True
 
 

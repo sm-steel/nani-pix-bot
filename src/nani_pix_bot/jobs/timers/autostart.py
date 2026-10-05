@@ -84,12 +84,16 @@ def cancel_idle_autostart(job_queue: JobQueue | None) -> None:
         job.schedule_removal()
 
 
-def _autostart_gated(session: Session) -> bool:
+def _autostart_gate_reason(session: Session) -> str | None:
+    """Why the bot must not start a game itself right now, or None if
+    nothing stops it — the reason goes into the caller's log line."""
     if not settings.get_games_enabled(session):
-        return True
+        return "new games are disabled"
     if not settings.get_autostart_enabled(session):
-        return True
-    return game_service.active_or_setup_game(session) is not None
+        return "autostart is disabled"
+    if game_service.active_or_setup_game(session) is not None:
+        return "a game is already running"
+    return None
 
 
 @retry_on_failure
@@ -105,18 +109,11 @@ async def idle_autostart_job_callback(context: ContextTypes.DEFAULT_TYPE) -> Non
     with session_scope(session_factory) as session:
         turn_state = game_service.get_turn_state(session)
         if turn_state is None or turn_state.next_starter_id is not None:
-            logger.debug("Idle-autostart fired but the turn is no longer open — no-op")
+            logger.info("Idle-autostart fired but the turn is no longer open — not starting")
             return
-        if game_service.active_or_setup_game(session) is not None:
-            logger.debug("Idle-autostart fired but a game is already running — no-op")
-            return
-        # _autostart_gated() re-runs this same active_or_setup_game() query
-        # as its last check — harmless (a cheap read within the same open
-        # session, not a second round-trip worth caching) and kept this way
-        # so _autostart_gated() stays a single self-contained gate reused
-        # by maybe_overthrow() too, rather than special-cased per caller.
-        if _autostart_gated(session):
-            logger.debug("Idle-autostart fired but autostart is disabled — no-op")
+        gate_reason = _autostart_gate_reason(session)
+        if gate_reason is not None:
+            logger.info("Idle-autostart fired but {} — not starting", gate_reason)
             return
 
     claim = _AutostartClaim(trigger=AutostartTrigger.IDLE, dethroned_winner_name=None)
@@ -152,18 +149,8 @@ async def maybe_overthrow(
     — only the next-turn privilege moves). On a miss, a disabled gate,
     or a failed pick, falls through to (re)arming the 24h idle-autostart
     backstop from whatever the normal outcome already committed."""
-    logger.debug(
-        "Rolling overthrow after a game ended (dethronable winner={})",
-        winner_id if winner_id is not None else "none — turn was already open",
-    )
-    with session_scope(session_factory) as session:
-        gated = _autostart_gated(session)
-        quiet = quiet_hours.is_quiet(settings.get_quiet_hours(session), datetime.now(UTC))
-    if quiet:
-        logger.debug("Quiet hours — skipping the overthrow roll")
-
     claimed = False
-    if not gated and not quiet and autostart_service.roll_overthrow():
+    if _roll_overthrow(session_factory, winner_id):
         claim = _AutostartClaim(
             trigger=AutostartTrigger.OVERTHROW,
             dethroned_winner_name=winner_name,
@@ -177,6 +164,37 @@ async def maybe_overthrow(
         turn_state = game_service.get_turn_state(session)
         if turn_state is not None:
             schedule_idle_autostart(context.job_queue, turn_state)
+
+
+def _describe_holder(session: Session, next_starter_id: int | None) -> str:
+    """Who holds the turn, for a log line — `nobody (turn open)` for None."""
+    if next_starter_id is None:
+        return "nobody (turn open)"
+    return players.describe_player_id(session, next_starter_id)
+
+
+def _roll_overthrow(session_factory, winner_id: int | None) -> bool:
+    """maybe_overthrow's gate checks plus the roll itself, logging the
+    outcome either way — a skipped or missed roll is as much a part of
+    the game's story at INFO as a hit."""
+    with session_scope(session_factory) as session:
+        gate_reason = _autostart_gate_reason(session)
+        if gate_reason is None and quiet_hours.is_quiet(
+            settings.get_quiet_hours(session), datetime.now(UTC)
+        ):
+            gate_reason = "quiet hours"
+        holder = _describe_holder(session, winner_id)
+    if gate_reason is not None:
+        logger.info("Overthrow roll skipped after a game ended — {}", gate_reason)
+        return False
+    hit = autostart_service.roll_overthrow()
+    logger.info(
+        "Overthrow roll after a game ended: {} ({:.0%} chance; turn held by {})",
+        "HIT — the bot will try to start the next game" if hit else "miss",
+        autostart_service.OVERTHROW_PROBABILITY,
+        holder,
+    )
+    return hit
 
 
 def _build_first_turn_post(
@@ -272,17 +290,19 @@ async def run_bot_autostart(
         if actual_next_starter_id != claim.expected_next_starter_id:
             logger.warning(
                 "Bot autostart ({}) aborted — turn ownership changed in the meantime "
-                "(expected next_starter_id={}, now {})",
+                "(expected the turn held by {}, now {})",
                 claim.trigger.value,
-                claim.expected_next_starter_id,
-                actual_next_starter_id,
+                _describe_holder(session, claim.expected_next_starter_id),
+                _describe_holder(session, actual_next_starter_id),
             )
             return False
         lang = settings.get_language(session)
         players.get_or_create_player(
             session, bot_id, username=context.bot_data.get("bot_username"), grant=False
         )
-        game = game_service.create_setup_game(session, starter_id=bot_id)
+        game = game_service.create_setup_game(
+            session, starter_id=bot_id, entry=f"bot autostart ({claim.trigger.value})"
+        )
         game_service.stage_result(game, pick.anime.result, source=pick.anime.source)
         # Every autostart pick is hard mode now — no `if` needed.
         # original_image stays None; the screenshot pair lives in
@@ -301,9 +321,9 @@ async def run_bot_autostart(
     cancel_turn_timers(context.job_queue)
     cancel_idle_autostart(context.job_queue)
     logger.info(
-        "Bot autostart ({}) claimed game {} — anime source={}, screenshot provider={}",
-        claim.trigger.value,
+        "Game {}: claimed by bot autostart ({}) — anime source={}, screenshot provider={}",
         game_id,
+        claim.trigger.value,
         pick.anime.source,
         pick.screenshot.provider,
     )

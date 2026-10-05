@@ -108,11 +108,10 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
             or game.status != GameStatus.ACTIVE
             or (game.original_image is None and not game_service.has_hard_mode_reveal_images(game))
         ):
-            logger.debug("Timeout fired for game {} but it's already resolved — no-op", game_id)
+            logger.debug("Game {}: timeout fired but it's already resolved — no-op", game_id)
             return
 
-        logger.info("Game {} timed out after 2 days — ending unsolved", game_id)
-        game_service.force_unsolved(game)
+        game_service.force_unsolved(game, cause="2-day timeout")
         refund_note = bounty.refund_note(session, game_id, lang)
         game_service.mark_turn_open_if_unassigned(session)
         cancel_inactivity_timers(context.job_queue, game.id)

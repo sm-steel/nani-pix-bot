@@ -178,3 +178,31 @@ def test_award_win_pays_the_bounty(session: Session) -> None:
     assert earned.player_total == earned.win
     assert bounty.pot_balance(session, game.id) == 0
     assert _currency(session, ALICE) == earned.win + 70
+
+
+def test_wrong_guess_payout_is_logged_at_info(session: Session, records) -> None:
+    game = _setup(session)
+    alice = session.get(Player, ALICE)
+    assert alice is not None
+    alice.username = "alice"
+    _guess(session, game, ALICE)
+
+    _guess(session, game, ALICE)
+
+    assert (
+        "INFO",
+        f"Game {game.id}: guess pays 2 💠 to {ALICE} (@alice)"
+        " (first-guess bonus 0 💠, wrong-guess reward 2 💠)",
+    ) in records
+
+
+def test_first_guess_payout_names_both_parts(session: Session, records) -> None:
+    game = _setup(session)
+
+    _guess(session, game, ALICE)
+
+    assert (
+        "INFO",
+        f"Game {game.id}: guess pays 7 💠 to {ALICE}"
+        " (first-guess bonus 5 💠, wrong-guess reward 2 💠)",
+    ) in records

@@ -9,12 +9,14 @@ would pull the rug out from under whoever's playing — with a "stop the
 game" button offered right there, reusing /stop's own confirm keyboard
 and handler (no new callback wiring needed)."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 from loguru import logger
 from telegram import InputMediaPhoto, Message, Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.keyboards import stop_confirm_keyboard
 from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
@@ -31,6 +33,10 @@ from nani_pix_bot.services.settings import stage_config
 # run from the repo root.
 _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 _EXAMPLE_IMAGES = [_ASSETS_DIR / "example1.jpg", _ASSETS_DIR / "example2.png"]
+_USAGE_KEYS = {
+    "setstage": "stageconfig.setstage_usage",
+    "setstageconfig": "stageconfig.setstageconfig_usage",
+}
 
 
 async def _is_admin(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
@@ -63,83 +69,99 @@ def _parse_pair(arg: str) -> tuple[int, int] | None:
     return width, limit
 
 
-async def stageconfig_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.message
-    user = update.effective_user
-    if not is_private_chat(update) or message is None or user is None:
-        return
-
-    session_factory = context.bot_data["session_factory"]
-    with session_scope(session_factory) as session:
-        lang = settings.get_language(session)
-        if not await _is_admin(context, user.id):
-            logger.warning("Non-admin {} tried /stageconfig", user.id)
-            await message.reply_text(i18n.t("commands.admins_only", lang))
-            return
-        config = stage_config.get_stage_configs(session)
-
-    await message.reply_text(_render_table(lang, config), parse_mode="HTML")
-
-
-async def setstageconfig_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.message
-    user = update.effective_user
-    if not is_private_chat(update) or message is None or user is None:
-        return
-
-    session_factory = context.bot_data["session_factory"]
-    with session_scope(session_factory) as session:
-        lang = settings.get_language(session)
-        if not await _is_admin(context, user.id):
-            logger.warning("Non-admin {} tried /setstageconfig", user.id)
-            await message.reply_text(i18n.t("commands.admins_only", lang))
-            return
-
-    args = context.args or []
+def _parse_all_stages(args: list[str]) -> dict[PixelStage, tuple[int, int]] | None:
+    """/setstageconfig's `w:l` pair per stage, or None if any is malformed."""
     if len(args) != len(PixelStage):
-        await message.reply_text(i18n.t("stageconfig.setstageconfig_usage", lang))
-        return
-
+        return None
     changes: dict[PixelStage, tuple[int, int]] = {}
     for stage, arg in zip(PixelStage, args, strict=True):
         parsed = _parse_pair(arg)
         if parsed is None:
-            await message.reply_text(i18n.t("stageconfig.setstageconfig_usage", lang))
-            return
+            return None
         changes[stage] = parsed
+    return changes
 
-    await _apply_stage_changes(message, context, lang, changes)
 
-
-async def setstage_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.message
-    user = update.effective_user
-    if not is_private_chat(update) or message is None or user is None:
-        return
-
-    session_factory = context.bot_data["session_factory"]
-    with session_scope(session_factory) as session:
-        lang = settings.get_language(session)
-        if not await _is_admin(context, user.id):
-            logger.warning("Non-admin {} tried /setstage", user.id)
-            await message.reply_text(i18n.t("commands.admins_only", lang))
-            return
-
-    args = context.args or []
+def _parse_single_stage(args: list[str]) -> dict[PixelStage, tuple[int, int]] | None:
+    """/setstage's `<stage> <width> <limit>`, or None if malformed."""
     if len(args) != 3:
-        await message.reply_text(i18n.t("stageconfig.setstage_usage", lang))
-        return
+        return None
     try:
         stage_number, width, limit = int(args[0]), int(args[1]), int(args[2])
     except ValueError:
-        await message.reply_text(i18n.t("stageconfig.setstage_usage", lang))
-        return
+        return None
     if not (1 <= stage_number <= len(game_service.STAGE_ORDER)) or width <= 0 or limit <= 0:
-        await message.reply_text(i18n.t("stageconfig.setstage_usage", lang))
-        return
+        return None
+    return {game_service.STAGE_ORDER[stage_number - 1]: (width, limit)}
 
-    stage = game_service.STAGE_ORDER[stage_number - 1]
-    await _apply_stage_changes(message, context, lang, {stage: (width, limit)})
+
+async def _reply_usage(message: Message, lang: str, command: str, args: list[str]) -> None:
+    logger.info(
+        "Admin {} sent invalid /{} args {!r} — replied with usage",
+        describe_user(message.from_user),
+        command,
+        args,
+    )
+    await message.reply_text(i18n.t(_USAGE_KEYS[command], lang))
+
+
+async def _admin_dm(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, command: str
+) -> tuple[Message, str] | None:
+    """Shared DM + admin gate for all three commands: the message and
+    bot language once it has passed, None after replying "admins only"
+    (or silently, outside a DM)."""
+    message = update.message
+    user = update.effective_user
+    if not is_private_chat(update) or message is None or user is None:
+        return None
+    with session_scope(context.bot_data["session_factory"]) as session:
+        lang = settings.get_language(session)
+    if not await _is_admin(context, user.id):
+        logger.warning("Non-admin {} tried /{}", describe_user(user), command)
+        await message.reply_text(i18n.t("commands.admins_only", lang))
+        return None
+    return message, lang
+
+
+async def stageconfig_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    gate = await _admin_dm(update, context, "stageconfig")
+    if gate is None:
+        return
+    message, lang = gate
+    with session_scope(context.bot_data["session_factory"]) as session:
+        config = stage_config.get_stage_configs(session)
+
+    logger.info("Admin {} viewed /stageconfig", describe_user(message.from_user))
+    await message.reply_text(_render_table(lang, config), parse_mode="HTML")
+
+
+_StageParser = Callable[[list[str]], dict[PixelStage, tuple[int, int]] | None]
+
+
+async def _set_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, command: str, parse: _StageParser
+) -> None:
+    """Shared body of /setstageconfig and /setstage — they differ only in
+    how their arguments parse into per-stage changes."""
+    gate = await _admin_dm(update, context, command)
+    if gate is None:
+        return
+    message, lang = gate
+    args = context.args or []
+    changes = parse(args)
+    if changes is None:
+        await _reply_usage(message, lang, command, args)
+        return
+    await _apply_stage_changes(message, context, lang, changes)
+
+
+async def setstageconfig_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _set_command(update, context, "setstageconfig", _parse_all_stages)
+
+
+async def setstage_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _set_command(update, context, "setstage", _parse_single_stage)
 
 
 async def _apply_stage_changes(
@@ -155,7 +177,12 @@ async def _apply_stage_changes(
     with session_scope(session_factory) as session:
         running = game_service.active_or_setup_game(session)
         if running is not None:
-            logger.warning("Stage config edit blocked — game {} is {}", running.id, running.status)
+            logger.warning(
+                "Admin {}'s stage config edit blocked — game {} is {}",
+                describe_user(message.from_user),
+                running.id,
+                running.status,
+            )
             await message.reply_text(
                 i18n.t("stageconfig.game_running", lang),
                 reply_markup=stop_confirm_keyboard(
@@ -170,6 +197,14 @@ async def _apply_stage_changes(
             )
         config = stage_config.get_stage_configs(session)
 
+    logger.info(
+        "Admin {} changed stage config: {}",
+        describe_user(message.from_user),
+        ", ".join(
+            f"{game_service.stage_label(stage)} width={width} limit={limit}"
+            for stage, (width, limit) in changes.items()
+        ),
+    )
     await message.reply_text(_render_table(lang, config), parse_mode="HTML")
     await _send_preview(message, context, lang, changes)
 

@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
+from loguru import logger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -37,3 +38,19 @@ def quiet_now() -> QuietHours:
     start = (now - timedelta(hours=1)).time().replace(second=0, microsecond=0)
     end = (now + timedelta(hours=2)).time().replace(second=0, microsecond=0)
     return QuietHours(start=start, end=end, tz=ZoneInfo("UTC"))
+
+
+@pytest.fixture
+def records() -> Iterator[list[tuple[str, str]]]:
+    """Every log record emitted while the test runs, as (level, message).
+
+    Shared suite-wide: a skip or a game action only helps an operator if
+    it leaves a trace at the right level, so tests check both the level
+    and the wording (see CLAUDE.md's "Logging")."""
+    captured: list[tuple[str, str]] = []
+    sink_id = logger.add(
+        lambda message: captured.append((message.record["level"].name, message.record["message"])),
+        level="DEBUG",
+    )
+    yield captured
+    logger.remove(sink_id)

@@ -104,17 +104,17 @@ async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> N
         lang = settings.get_language(session)
         game = session.get(Game, game_id)
         if game is None or game.status != GameStatus.ACTIVE:
-            logger.debug("Inactivity nudge fired for game {} but it's not ACTIVE — no-op", game_id)
+            logger.debug("Game {}: inactivity nudge fired but it's not ACTIVE — no-op", game_id)
             return
         pinned_message_id = settings.get_pinned_message_id(session)
 
-        logger.info("Game {} nudged after inactivity", game_id)
         await context.bot.send_message(
             chat_id=context.bot_data["group_chat_id"],
             message_thread_id=context.bot_data["game_topic_id"],
             text=i18n.t("guess.inactivity_nudge", lang),
             reply_to_message_id=pinned_message_id,
         )
+        logger.info("Game {}: inactivity nudge posted", game_id)
         game_service.clear_inactivity_nudge(game)
 
 
@@ -139,6 +139,12 @@ def _hard_mode_turn_advance(
     stage-advance path does below."""
     game.hard_mode_turn = game_service.HARD_MODE_TURN_COUNT
     game.wrong_guess_count = 0
+    logger.info(
+        "Game {}: advanced to hard-mode turn {}/{} (no guesses for 6h)",
+        game.id,
+        game.hard_mode_turn,
+        game_service.HARD_MODE_TURN_COUNT,
+    )
     image_a, image_b = game_service.hard_mode_reveal_images(game)
     width = game_service.hard_mode_turn_width(game)
     pixelated_a = pixelate_service.pixelate(image_a, width, game.pixel_algorithm)
@@ -161,7 +167,7 @@ def _hard_mode_unsolved_reveal(session: Session, game: Game, lang: str) -> _Hard
     unpixelated via post_current_images, same as the normal path's
     single unpixelated original_image reveal."""
     photos = game_service.hard_mode_reveal_images(game)
-    game_service.force_unsolved(game)
+    game_service.force_unsolved(game, cause="final hard-mode turn ended by inactivity")
     caption = i18n.t(
         "guess.hard_mode_unsolved_caption", lang, title=game_service.display_title(game, lang)
     )
@@ -185,7 +191,6 @@ def _hard_mode_inactivity_outcome(
 
     announcement = _hard_mode_unsolved_reveal(session, game, lang)
     game_service.mark_turn_open_if_unassigned(session)
-    logger.info("Game {} auto-ended unsolved after repeated inactivity (hard mode)", game.id)
     return game_service.GuessOutcome.UNSOLVED, announcement
 
 
@@ -249,9 +254,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
             or game.status != GameStatus.ACTIVE
             or (not game.hard_mode and game.current_stage is None)
         ):
-            logger.debug(
-                "Inactivity advance fired for game {} but it's not ACTIVE — no-op", game_id
-            )
+            logger.debug("Game {}: inactivity advance fired but it's not ACTIVE — no-op", game_id)
             return
 
         if game.hard_mode:
@@ -282,21 +285,15 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
                 logger.error(msg)
                 raise RuntimeError(msg)
 
-            outcome = game_service.advance_stage(game)
+            outcome = game_service.advance_stage(game, reason="no guesses for 6h")
             if outcome is game_service.GuessOutcome.UNSOLVED:
                 game_service.mark_turn_open_if_unassigned(session)
-                logger.info("Game {} auto-ended unsolved after repeated inactivity", game_id)
                 original_bytes = game.original_image
                 unsolved_caption = i18n.t(
                     "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
                 )
                 unsolved_caption += bounty.refund_note(session, game_id, lang)
             else:
-                logger.info(
-                    "Game {} auto-advanced to stage {} after inactivity",
-                    game_id,
-                    game.current_stage,
-                )
                 target_width = stage_config.get_stage_config(
                     session, game.current_stage
                 ).target_width

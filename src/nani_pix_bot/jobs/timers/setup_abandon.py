@@ -12,7 +12,7 @@ from nani_pix_bot.jobs.timers.retry import retry_on_failure
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.economy import bounty
 
 
@@ -60,12 +60,15 @@ async def setup_abandon_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
         lang = settings.get_language(session)
         game = session.get(Game, game_id)
         if game is None or game.status != GameStatus.SETUP:
-            logger.debug("Setup-abandon fired for game {} but it's already resolved", game_id)
+            logger.debug("Game {}: setup-abandon fired but it's already resolved — no-op", game_id)
             return
-        logger.info("Game {} setup abandoned after 1h — deleting and opening the turn", game_id)
+        starter = players.describe_player_id(session, game.starter_id)
+        logger.info("Game {}: setup by {} abandoned after 1h — deleting it", game_id, starter)
         bounty.refund_pot(session, game.id)
         session.delete(game)
-        turn_state = game_service.set_next_starter(session, None)
+        turn_state = game_service.set_next_starter(
+            session, None, reason=f"game {game_id} setup abandoned"
+        )
 
     schedule_idle_autostart(context.job_queue, turn_state)
     await context.bot.send_message(

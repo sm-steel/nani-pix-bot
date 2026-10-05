@@ -9,6 +9,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.turn_state import TurnState
+from nani_pix_bot.services import players
 from nani_pix_bot.services.game.clock import deadline_after
 
 TURN_STATE_ID = 1
@@ -43,7 +44,7 @@ def get_or_create_turn_state(session: Session) -> TurnState:
     return turn_state
 
 
-def set_next_starter(session: Session, user_id: int | None) -> TurnState:
+def set_next_starter(session: Session, user_id: int | None, *, reason: str) -> TurnState:
     """Implements /skip and winning — see MECHANICS.md's "Turn handoff"
     section. `None` opens the turn to anyone, cancels the win-turn
     reminder/expiry timers, and arms the 24h idle-autostart backstop
@@ -55,7 +56,8 @@ def set_next_starter(session: Session, user_id: int | None) -> TurnState:
     Telegram-agnostic). `turn_received_at` (prompt-turn currency bonus) is
     set when the turn is handed to a *different* specific player and
     cleared when opened to anyone; re-designating the same player keeps
-    the original timestamp."""
+    the original timestamp. `reason` says what handed the turn over
+    (a win, /skip, an expiry), for the log."""
     turn_state = get_or_create_turn_state(session)
     previous_starter_id = turn_state.next_starter_id
     turn_state.next_starter_id = user_id
@@ -63,7 +65,7 @@ def set_next_starter(session: Session, user_id: int | None) -> TurnState:
         turn_state.reminder_at = None
         turn_state.expiry_at = None
         _mark_turn_opened(session, turn_state)
-        logger.info("Turn opened — anyone may start the next game")
+        logger.info("Turn opened to anyone — {}", reason)
     else:
         turn_state.reminder_at = deadline_after(session, TURN_REMINDER_DELAY)
         turn_state.expiry_at = deadline_after(session, TURN_EXPIRY_DELAY)
@@ -71,7 +73,9 @@ def set_next_starter(session: Session, user_id: int | None) -> TurnState:
         turn_state.autostart_deadline_at = None
         if previous_starter_id != user_id:
             turn_state.turn_received_at = datetime.now(UTC)
-        logger.info("Turn designated to player {}", user_id)
+        logger.info(
+            "Turn designated to {} — {}", players.describe_player_id(session, user_id), reason
+        )
     return turn_state
 
 
@@ -87,7 +91,7 @@ def mark_turn_open_if_unassigned(session: Session) -> TurnState:
     turn_state = get_or_create_turn_state(session)
     if turn_state.next_starter_id is None:
         _mark_turn_opened(session, turn_state)
-        logger.debug("Idle-autostart backstop armed — turn was already open")
+        logger.info("Turn stays open to anyone; idle-autostart backstop armed")
     return turn_state
 
 

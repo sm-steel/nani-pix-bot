@@ -14,6 +14,7 @@ from nani_pix_bot.commands.game_flow.stage_post import (
     send_announcement,
     with_suffix,
 )
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.earnings import earnings_suffix
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
@@ -91,7 +92,14 @@ def _prepare_turn_advanced_announcement(
         remaining=progress.remaining,
         limit=progress.limit,
     )
-    return Announcement(photos=(pixelated_a, pixelated_b), caption=caption, is_stage_post=True)
+    return Announcement(
+        photos=(pixelated_a, pixelated_b),
+        caption=caption,
+        is_stage_post=True,
+        posted_log=(
+            f"Game {game.id}: posted hard-mode turn {progress.number}/{progress.total} images"
+        ),
+    )
 
 
 def _prepare_hard_mode_unsolved_announcement(
@@ -239,6 +247,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not guess_text:
         with session_scope(session_factory) as session:
             lang = settings.get_language(session)
+        logger.info("{} sent an empty /guess — replied with usage", describe_user(user))
         await message.reply_text(i18n.t("guess.usage", lang))
         return
 
@@ -256,7 +265,6 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             raise RuntimeError("game.current_stage is None despite _validate_guess's check")
 
         players.get_or_create_player(session, user.id, username=user.username)
-        logger.debug("{} guessed {!r} on game {}", user.id, guess_text, game.id)
         outcome = game_service.record_guess(
             session, game, guesser_id=user.id, guess_text=guess_text
         )
@@ -322,7 +330,7 @@ async def _validate_guess(session, message, user, lang: str) -> Game | None:
     it) would defeat the point of deferring it in the first place."""
     game = game_service.active_or_setup_game(session)
     if game is None or game.status != GameStatus.ACTIVE:
-        logger.warning("{} guessed with no ACTIVE game running", user.id)
+        logger.warning("{} guessed with no ACTIVE game running", describe_user(user))
         await message.reply_text(i18n.t("guess.no_game", lang))
         return None
     if not game.hard_mode and game.current_stage is None:
@@ -331,9 +339,16 @@ async def _validate_guess(session, message, user, lang: str) -> Game | None:
         # current_stage is None for its whole life (it uses
         # hard_mode_turn instead — see models/game.py), so it's exempt
         # from this defensive guard.
+        logger.warning(
+            "Game {}: ACTIVE with no current stage — ignored {}'s guess",
+            game.id,
+            describe_user(user),
+        )
         return None
     if user.id == game.starter_id:
-        logger.warning("Starter {} tried to guess on their own game {}", user.id, game.id)
+        logger.warning(
+            "Game {}: starter {} tried to guess on their own game", game.id, describe_user(user)
+        )
         await message.reply_text(i18n.t("guess.starter_cannot_guess", lang))
         return None
     return game

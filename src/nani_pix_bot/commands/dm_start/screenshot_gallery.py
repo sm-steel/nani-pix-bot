@@ -50,6 +50,7 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     source_menu_for,
     stage_fallback,
 )
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.services import game as game_service
@@ -96,6 +97,8 @@ class _FreshRead:
     user_id: int
     context: ContextTypes.DEFAULT_TYPE
     lang: str
+    # The tapping starter as log lines name them (`describe_user`).
+    actor: str
 
 
 def _fresh_game_or_warn(session, fresh: _FreshRead, log_msg: str, *log_args: object):
@@ -179,7 +182,7 @@ async def screenshot_search_again_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
-            await _reject_stale_tap(query, user.id, lang)
+            await _reject_stale_tap(query, user, lang)
             return
         provider = parse_screenshot_search_again_callback_data(query.data)
         if provider is None:
@@ -197,7 +200,12 @@ async def screenshot_search_again_callback_handler(
         # Built while the game is still live — the keyboard below is
         # sent after this block closes.
         providers = source_menu_for(game, None).providers
-        logger.debug("Game {}: re-searching {} screenshots by hand", game.id, provider)
+        logger.info(
+            'Game {}: {} tapped "Search again" for {} screenshots',
+            game.id,
+            describe_user(user),
+            provider,
+        )
 
     # Both awaits below used to sit inside the block above, alongside the
     # writes — holding the write transaction open across a Telegram
@@ -236,7 +244,12 @@ async def _screenshot_search_step(
         # search is always for a specific provider
         raise RuntimeError("menu.provider is None in _screenshot_search_step")
     status_message = await message.reply_text(i18n.t("dm_start.searching", lang))
-    logger.debug("{} screenshot cross-search started for query {!r}", provider, message.text)
+    logger.debug(
+        "Game {}: {} screenshot cross-search started for query {!r}",
+        menu.game_id,
+        provider,
+        message.text,
+    )
 
     client = client_for_source(context, provider)
     pick_prefix = f"{SCREENSHOT_SEARCH_PICK_PREFIX}{provider}:"
@@ -268,14 +281,21 @@ async def _screenshot_search_step(
                 lambda rs: tmdb_results_keyboard(rs, lang, pick_prefix=pick_prefix),
             )
     except SEARCH_SERVICE_ERRORS:
-        logger.exception("{} screenshot cross-search failed for query {!r}", provider, message.text)
+        logger.exception(
+            "Game {}: {} screenshot cross-search failed for query {!r}",
+            menu.game_id,
+            provider,
+            message.text,
+        )
         await reply_with_source_menu(
             status_message.edit_text, menu, lang, "dm_start.screenshot_service_down"
         )
         return
 
-    logger.debug(
-        "{} screenshot cross-search for {!r} returned {} result(s)",
+    logger.info(
+        "Game {}: {} searched {} screenshots for {!r} — {} result(s)",
+        menu.game_id,
+        describe_user(message.from_user),
         provider,
         message.text,
         len(results),
@@ -308,7 +328,7 @@ async def screenshot_search_pick_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
-            await _reject_stale_tap(query, user.id, lang)
+            await _reject_stale_tap(query, user, lang)
             return
         # Built here, where the game is loaded anyway, so the failure
         # paths below can re-show the source menu without a second
@@ -342,12 +362,17 @@ async def screenshot_search_pick_callback_handler(
             # logger.warning call itself, which is one line inside the
             # helper and identical for every site. Drop that opt() and
             # this pair goes back to being byte-identical.
-            await _reject_stale_tap(query, user.id, lang)
+            await _reject_stale_tap(query, user, lang)
             return
         await query.answer()
         game_service.set_screenshot_provider_id(game, result)
-        logger.debug(
-            "Game {}: cross-provider search resolved {} -> id {}", game.id, provider, external_id
+        logger.info(
+            "Game {}: {} picked {!r} ({} {}) to take screenshots from",
+            game.id,
+            describe_user(user),
+            result.title_english or result.title_romaji,
+            provider,
+            external_id,
         )
         # `game` is read only (never written) past this point — the block
         # closes right here, committing the id write above, before the
@@ -364,7 +389,10 @@ async def screenshot_search_pick_callback_handler(
     outcome = await _show_search_pick_gallery(context, game, provider, external_id, lang)
     if isinstance(outcome, ScreenshotFailure):
         await _reply_search_pick_fallback(
-            query, _FreshRead(session_factory, user.id, context, lang), game, outcome
+            query,
+            _FreshRead(session_factory, user.id, context, lang, describe_user(user)),
+            game,
+            outcome,
         )
     else:
         await query.edit_message_text(i18n.t(outcome, lang))
@@ -436,7 +464,7 @@ async def _resolve_screenshot_search_pick(
         # Nothing to reply with: `menu` has no provider yet (the pick is
         # where one would have come from), so there is no failure screen
         # to draw that wouldn't have to invent one.
-        logger.warning("Rejected cross-search pick {!r}", query.data)
+        logger.warning("Game {}: rejected cross-search pick {!r}", menu.game_id, query.data)
         return None
     provider, external_id = parsed
     menu = replace(menu, provider=provider)
@@ -445,14 +473,22 @@ async def _resolve_screenshot_search_pick(
     try:
         result = await _get_provider_by_id(provider, client, external_id)
     except SEARCH_SERVICE_ERRORS:
-        logger.exception("{} get_by_id failed for id {}", provider, external_id)
+        logger.exception(
+            "Game {}: {} get_by_id failed for id {}", menu.game_id, provider, external_id
+        )
         await reply_with_source_menu(
             query.edit_message_text, menu, lang, "dm_start.screenshot_service_down"
         )
         return None
 
     if result is None:
-        logger.warning("{} id {} picked but no longer found", provider, external_id)
+        logger.warning(
+            "Game {}: {} picked {} id {}, which is no longer found",
+            menu.game_id,
+            describe_user(query.from_user),
+            provider,
+            external_id,
+        )
         await reply_with_source_menu(
             query.edit_message_text, menu, lang, "dm_start.not_found_anymore"
         )
@@ -499,10 +535,10 @@ async def screenshot_gallery_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
-            await _reject_stale_tap(query, user.id, lang)
+            await _reject_stale_tap(query, user, lang)
             return
 
-    fresh = _FreshRead(session_factory, user.id, context, lang)
+    fresh = _FreshRead(session_factory, user.id, context, lang, describe_user(user))
     outcome = await _dispatch_gallery_action(
         context, fresh, game, query.data, TapReply(lang, query.answer)
     )
@@ -664,11 +700,13 @@ async def _handle_more_screenshots(
     if fallback is not None:
         return fallback
 
-    logger.debug(
-        "Game {}: showing {} gallery page at offset {} ({} url(s) total)",
+    logger.info(
+        "Game {}: {} paged the {} gallery to screenshots {}-{} of {}",
         game.id,
+        fresh.actor,
         provider,
-        offset,
+        offset + 1,
+        offset + shown,
         len(result),
     )
     return i18n.t(
@@ -784,7 +822,13 @@ async def _handle_screenshot_pick(
             fresh_game.shown_screenshot_urls = [urls[index]]
             fresh_game.screenshot_source = provider
             fresh_game.screenshot_picker_provider = None
-            logger.debug("Game {}: picked {} screenshot #{}", fresh_game.id, provider, index + 1)
+            logger.info(
+                "Game {}: {} picked {} screenshot #{}",
+                fresh_game.id,
+                fresh.actor,
+                provider,
+                index + 1,
+            )
 
             album = _stage_preview(session, fresh_game, tap.lang)
     if album is None:

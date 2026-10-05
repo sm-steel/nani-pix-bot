@@ -940,7 +940,7 @@ def test_has_answer_to_reveal_is_false_once_the_image_is_cleared(session: Sessio
     breath — so "the image is gone" and "the round is over" are one
     state, and the status half alone answers for both."""
     game = _active_game(session)
-    game_service.force_unsolved(game)
+    game_service.force_unsolved(game, cause="test")
     game_service.clear_original_screenshot(game)
 
     assert game_service.has_answer_to_reveal(game) is False
@@ -988,7 +988,7 @@ def test_force_win_sets_winner_and_hands_over_the_turn(session: Session) -> None
 def test_force_unsolved_sets_the_status(session: Session) -> None:
     game = _active_game(session)
 
-    game_service.force_unsolved(game)
+    game_service.force_unsolved(game, cause="test")
     session.commit()
 
     assert game.status == GameStatus.UNSOLVED
@@ -1119,7 +1119,7 @@ def test_advance_stage_moves_to_the_next_stage_and_resets_wrong_guess_count(
 ) -> None:
     game = _active_game(session, stage=PixelStage.STAGE_2, wrong_guess_count=3)
 
-    outcome = game_service.advance_stage(game)
+    outcome = game_service.advance_stage(game, reason="test")
 
     assert outcome is game_service.GuessOutcome.STAGE_ADVANCED
     assert game.current_stage == PixelStage.STAGE_3
@@ -1130,7 +1130,7 @@ def test_advance_stage_moves_to_the_next_stage_and_resets_wrong_guess_count(
 def test_advance_stage_ends_unsolved_when_already_on_the_final_stage(session: Session) -> None:
     game = _active_game(session, stage=PixelStage.STAGE_5, wrong_guess_count=7)
 
-    outcome = game_service.advance_stage(game)
+    outcome = game_service.advance_stage(game, reason="test")
 
     assert outcome is game_service.GuessOutcome.UNSOLVED
     assert game.status == GameStatus.UNSOLVED
@@ -1149,7 +1149,7 @@ def test_advance_stage_raises_runtime_error_when_current_stage_is_none(
     game.current_stage = None
 
     with pytest.raises(RuntimeError, match="no current_stage"):
-        game_service.advance_stage(game)
+        game_service.advance_stage(game, reason="test")
 
 
 def test_record_guess_dispatches_to_hard_mode_without_raising_for_missing_stage(
@@ -1329,7 +1329,7 @@ def test_activate_game_freezes_the_timeout_during_quiet_hours(
 def test_create_setup_game_copies_turn_received_at(session: Session) -> None:
     session.add(Player(telegram_user_id=1))
     session.flush()
-    turn_state = turns.set_next_starter(session, 1)
+    turn_state = turns.set_next_starter(session, 1, reason="test")
 
     game = state.create_setup_game(session, starter_id=1)
 

@@ -14,6 +14,7 @@ from nani_pix_bot.models.enums import CurrencyReason
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import players
 from nani_pix_bot.services.economy import bounty, config, rewards, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
 from nani_pix_bot.services.game.hard_mode import HARD_MODE_WIN_AWARD
@@ -83,11 +84,13 @@ def award_win(session: Session, game: Game, *, winner_id: int) -> Earnings:
         setter = _pay(session, starter, amounts[EconomyKey.SETTER], CurrencyReason.SETTER, game)
     pot = bounty.pay_out(session, game, winner)
     logger.info(
-        "Game {}: win pays {} 💠 to {}, {} 💠 to setter, {} 💠 bounty",
+        "Game {}: win pays {} 💠 to {} (stage {}), {} 💠 to setter {}, {} 💠 bounty",
         game.id,
         win,
-        winner_id,
+        players.describe_player_id(session, winner_id),
+        stage,
         setter,
+        players.describe_player_id(session, game.starter_id),
         pot,
     )
     return Earnings(win=win, setter=setter, bounty=pot)
@@ -96,27 +99,38 @@ def award_win(session: Session, game: Game, *, winner_id: int) -> Earnings:
 def award_guess(session: Session, game: Game, *, guesser_id: int, won: bool) -> Earnings:
     amounts = config.get_amounts(session)
     guesser = _player(session, guesser_id)
-    guess = 0
+    first = 0
     # record_guess has already counted this guess, so the game's first
     # guess is exactly the one that brought the count to 1.
     if game.total_guess_count == 1:
-        guess += _pay(
+        first = _pay(
             session, guesser, amounts[EconomyKey.FIRST_GUESS], CurrencyReason.FIRST_GUESS, game
         )
+    wrong = 0
     if not won:
         earned = wallet.game_total(
             session, player_id=guesser_id, game_id=game.id, reason=CurrencyReason.WRONG_GUESS
         )
-        guess += _pay(
+        wrong = _pay(
             session,
             guesser,
             rewards.wrong_guess_reward(amounts, earned_this_game=earned),
             CurrencyReason.WRONG_GUESS,
             game,
         )
-        return Earnings(guess=guess)
+    if first or wrong:
+        logger.info(
+            "Game {}: guess pays {} 💠 to {} (first-guess bonus {} 💠, wrong-guess reward {} 💠)",
+            game.id,
+            first + wrong,
+            players.describe_player_id(session, guesser_id),
+            first,
+            wrong,
+        )
+    if not won:
+        return Earnings(guess=first + wrong)
     win = award_win(session, game, winner_id=guesser_id)
-    return Earnings(guess=guess, win=win.win, setter=win.setter, bounty=win.bounty)
+    return Earnings(guess=first, win=win.win, setter=win.setter, bounty=win.bounty)
 
 
 def award_prompt_start(session: Session, game: Game) -> int:
@@ -133,6 +147,9 @@ def award_prompt_start(session: Session, game: Game) -> int:
     )
     if paid > 0:
         logger.info(
-            "Game {}: prompt-turn bonus {} 💠 to starter {}", game.id, paid, game.starter_id
+            "Game {}: prompt-turn bonus {} 💠 to starter {}",
+            game.id,
+            paid,
+            players.describe_player_id(session, game.starter_id),
         )
     return paid

@@ -14,6 +14,7 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     send_screenshot_picker_prompt,
     stage_screenshot_picker,
 )
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
@@ -22,19 +23,28 @@ from nani_pix_bot.services import i18n
 async def _manual_title_step(message, context: ContextTypes.DEFAULT_TYPE, lang: str, user) -> None:
     """The first manual-entry text message: the anime's title."""
     title = message.text.strip()
-    if not title:
-        await message.reply_text(i18n.t("dm_start.ask_manual_title", lang))
-        return
-
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
+            logger.warning(
+                "{} typed a manual title with no SETUP game left — ignoring", describe_user(user)
+            )
             return
-        setup_game.title_english = title
-        logger.debug("Game {}: manual title set to {!r}", setup_game.id, title)
+        if title:
+            setup_game.title_english = title
+            logger.info(
+                "Game {}: {} entered manual title {!r}", setup_game.id, describe_user(user), title
+            )
+        else:
+            logger.info(
+                "Game {}: {} sent a blank manual title — asking again",
+                setup_game.id,
+                describe_user(user),
+            )
 
-    await message.reply_text(i18n.t("dm_start.ask_synonyms", lang))
+    reply_key = "dm_start.ask_synonyms" if title else "dm_start.ask_manual_title"
+    await message.reply_text(i18n.t(reply_key, lang))
 
 
 async def _manual_synonyms_step(
@@ -44,18 +54,32 @@ async def _manual_synonyms_step(
     success, stages the entry and shows the confirmation preview — same
     as an AniList/Shikimori pick."""
     synonyms = [s.strip() for s in _SYNONYM_SPLIT_RE.split(message.text) if s.strip()]
-    if not synonyms:
-        await message.reply_text(i18n.t("dm_start.synonyms_required", lang))
-        return
-
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         title = setup_game.title_english if setup_game is not None else None
         if setup_game is None or title is None:
+            logger.warning(
+                "{} typed manual synonyms with no SETUP game (or no title) left — ignoring",
+                describe_user(user),
+            )
+            return
+        if not synonyms:
+            logger.info(
+                "Game {}: {} sent no usable synonym — asking again",
+                setup_game.id,
+                describe_user(user),
+            )
+            await message.reply_text(i18n.t("dm_start.synonyms_required", lang))
             return
         game_service.stage_manual_entry(setup_game, title=title, synonyms=synonyms)
-        logger.debug("Game {}: manual entry staged with {} synonyms", setup_game.id, len(synonyms))
+        logger.info(
+            "Game {}: {} entered synonyms {!r} for manual title {!r}",
+            setup_game.id,
+            describe_user(user),
+            synonyms,
+            title,
+        )
         has_image = setup_game.original_image is not None
         if has_image:
             # Traditional photo-first entry — image already in hand.

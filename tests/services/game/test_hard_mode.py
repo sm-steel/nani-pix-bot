@@ -244,3 +244,33 @@ def test_hard_mode_turn_width_for_turn_2(session: Session) -> None:
     game = _hard_mode_game(session, turn=2)
 
     assert game_service.hard_mode_turn_width(game) == hard_mode.HARD_MODE_TURN_WIDTHS[2]
+
+
+def test_record_hard_mode_guess_logs_a_wrong_guess_at_info(
+    session: Session, records: list[tuple[str, str]]
+) -> None:
+    game = _hard_mode_game(session, turn=1)
+    session.add(Player(telegram_user_id=2, username="bob"))
+    session.commit()
+
+    game_service.record_hard_mode_guess(session, game, guesser_id=2, guess_text="naruto")
+
+    assert (
+        "INFO",
+        f"Game {game.id}: 2 (@bob) guessed 'naruto' — wrong at hard-mode turn 1/2 (1/1)",
+    ) in records
+
+
+def test_record_hard_mode_guess_logs_a_correct_guess_at_info(
+    session: Session, records: list[tuple[str, str]]
+) -> None:
+    game = _hard_mode_game(session, turn=2)
+    session.add(Player(telegram_user_id=2, username="bob"))
+    session.commit()
+
+    game_service.record_hard_mode_guess(session, game, guesser_id=2, guess_text="frieren")
+
+    assert (
+        "INFO",
+        f"Game {game.id}: 2 (@bob) guessed 'frieren' — CORRECT at hard-mode turn 2/2",
+    ) in records

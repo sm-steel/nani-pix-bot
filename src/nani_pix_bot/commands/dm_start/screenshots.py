@@ -39,6 +39,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     screenshot_gallery_keyboard,
     screenshot_source_keyboard,
 )
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.models.game import Game
@@ -76,6 +77,9 @@ class SourceMenu:
     # screenshot_source was cleared meanwhile. Nothing gets flagged and
     # the message carries no {service}.
     provider: Provider | None
+    # Which game the menu is for — only so the log lines it leads to
+    # can name it. None where a caller has no game to hand.
+    game_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -185,7 +189,11 @@ class GalleryTarget:
 
 
 def source_menu_for(game: Game, provider: Provider | None) -> SourceMenu:
-    return SourceMenu(providers=game_service.screenshot_capable_providers(game), provider=provider)
+    return SourceMenu(
+        providers=game_service.screenshot_capable_providers(game),
+        provider=provider,
+        game_id=game.id,
+    )
 
 
 @dataclass(frozen=True)
@@ -252,7 +260,12 @@ async def reply_with_source_menu(send, menu: SourceMenu, lang: str, key: str) ->
     the `{service}` strings — except when there is no provider to blame
     (see SourceMenu.provider), where `key` must be a placeholder-free
     one, since i18n.t's `.format` raises on a missing kwarg."""
-    logger.debug("Screenshot flow: falling back to the source menu with {!r}", key)
+    logger.info(
+        "Game {}: back on the screenshot source menu with {!r}{}",
+        menu.game_id,
+        key,
+        f" ({menu.provider} flagged)" if menu.provider else "",
+    )
     service = {"service": menu.provider.display_name} if menu.provider else {}
     await send(
         i18n.t(key, lang, **service),
@@ -412,12 +425,13 @@ async def screenshot_upload_instead_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
-            await _reject_stale_tap(query, user.id, lang)
+            await _reject_stale_tap(query, user, lang)
             return
         # Acknowledged here rather than above the lookup: a query id can
         # only be answered once, and the stale branch needs that answer
         # to carry its alert (see _reject_stale_tap).
         await query.answer()
+        logger.info('Game {}: {} tapped "Upload my own instead"', game.id, describe_user(user))
         game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
         await query.edit_message_text(i18n.t("dm_start.ask_new_photo", lang))
 
@@ -441,7 +455,7 @@ async def screenshot_source_callback_handler(
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, user.id)
         if game is None:
-            await _reject_stale_tap(query, user.id, lang)
+            await _reject_stale_tap(query, user, lang)
             return
         # One answer per query id, so this waits until the stale branch
         # above has had its chance at it (see _reject_stale_tap). Still
@@ -460,6 +474,9 @@ async def screenshot_source_callback_handler(
             # game it would have moved, neither of which it can see.
             logger.warning("Game {}: rejected screenshot-source tap {!r}", game.id, query.data)
             return
+        logger.info(
+            "Game {}: {} picked {} as the screenshot source", game.id, describe_user(user), provider
+        )
         # The picker column is written by whichever screen this ends on,
         # not here: _resolve_screenshot_source sets it for the gallery it
         # shows, and stage_fallback sets it for a failure screen. Note
@@ -503,7 +520,13 @@ async def _resolve_screenshot_source(
     if isinstance(result, ScreenshotFailure):
         return result
 
-    logger.debug("Game {}: fetched {} {} screenshot(s)", game.id, len(result), provider)
+    logger.info(
+        "Game {}: showing the {} gallery ({} screenshot(s), {})",
+        game.id,
+        provider,
+        len(result),
+        "cross-provider" if cross_provider else "same provider",
+    )
     # A cross-provider gallery carries "Wrong anime? Search again", so a
     # typed correction still has to reach this provider's search. A
     # same-provider one has nothing left to resolve — the id came from

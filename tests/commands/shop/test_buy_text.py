@@ -228,3 +228,37 @@ async def test_shape_has_a_block_per_title_with_bought_letters_filled(session_fa
     assert "<code>Ф _ _ _ _ _</code> (6)" in text
     assert "<code>S _ _ _ _ _   _ _   _ _ _ _ _ _ _</code> (6, 2, 7)" in text
     assert "<code>F _ _ _ _ _ _</code> (7)" in text
+
+
+async def test_successful_purchase_logs_delivery_and_notice_at_info(
+    session_factory, records
+) -> None:
+    """Issue #228: the purchase line is logged when the 💠 is charged; the
+    DM and the topic notice that follow need their own trace."""
+    game_id = seed_game(session_factory)
+    set_currency(session_factory, 2, RICH)
+    context = make_context(session_factory)
+
+    await tap(context, make_query(f"shop:buy:{game_id}:first_letter"))
+
+    info = [message for level, message in records if level == "INFO"]
+    assert any(
+        m.startswith(f"Game {game_id}: DM'd the first_letter clue (purchase ")
+        and m.endswith("to 2 (@user2)")
+        for m in info
+    )
+    assert f"Game {game_id}: posted the first_letter clue-bought notice to the group" in info
+
+
+async def test_notice_failure_is_logged_with_its_game(session_factory, records) -> None:
+    game_id = seed_game(session_factory)
+    set_currency(session_factory, 2, RICH)
+    context = make_context(session_factory)
+    context.bot.send_message = AsyncMock(side_effect=[MagicMock(), TimedOut()])
+
+    await tap(context, make_query(f"shop:buy:{game_id}:first_letter"))
+
+    assert (
+        "WARNING",
+        f"Game {game_id}: could not post the first_letter clue-bought notice",
+    ) in records

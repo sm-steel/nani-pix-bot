@@ -129,3 +129,35 @@ async def test_setgamesenabled_on_enables_games(session_factory) -> None:
         fetched = session.get(BotSettings, 1)
         assert fetched is not None
         assert fetched.games_enabled is True
+
+
+async def test_setgamesenabled_logs_the_change_once_naming_the_admin(
+    session_factory, records: list[tuple[str, str]]
+) -> None:
+    update = _make_update(user_id=1)
+    update.effective_user.username = "admin"
+    context = _make_context(session_factory, admin_ids={1}, args=["off"])
+
+    await gamesenabled_module.setgamesenabled_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    info = [message for level, message in records if level == "INFO"]
+    assert info == ["Admin 1 (@admin) ran /setgamesenabled off"]
+
+
+async def test_setgamesenabled_logs_a_usage_error_at_info(
+    session_factory, records: list[tuple[str, str]]
+) -> None:
+    update = _make_update(user_id=1)
+    update.effective_user.username = "admin"
+    context = _make_context(session_factory, admin_ids={1}, args=["maybe"])
+
+    await gamesenabled_module.setgamesenabled_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert (
+        "INFO",
+        "Admin 1 (@admin) sent /setgamesenabled with bad args ['maybe'] — replied with usage",
+    ) in records

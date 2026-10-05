@@ -6,6 +6,7 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
@@ -57,7 +58,7 @@ async def currency_config_command(update: Update, context: ContextTypes.DEFAULT_
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
     if not await is_group_admin(context.bot, context.bot_data["group_chat_id"], user.id):
-        logger.warning("Non-admin {} tried /pixelconfig", user.id)
+        logger.warning("Non-admin {} tried /pixelconfig", describe_user(user))
         await message.reply_text(i18n.t("commands.admins_only", lang))
         return
 
@@ -65,15 +66,21 @@ async def currency_config_command(update: Update, context: ContextTypes.DEFAULT_
     if not args:
         with session_scope(session_factory) as session:
             amounts = config.get_amounts(session)
+        logger.info("Admin {} viewed /pixelconfig", describe_user(user))
         await message.reply_text(_render(lang, amounts))
         return
 
     resolved = _resolve(args, lang)
     if isinstance(resolved, str):
+        logger.info(
+            "Admin {} sent invalid /pixelconfig args {!r} — replied with the error",
+            describe_user(user),
+            args,
+        )
         await message.reply_text(resolved)
         return
     key, value = resolved
     with session_scope(session_factory) as session:
         config.set_amount(session, key, value)
-    logger.info("Admin {} set currency config {} = {}", user.id, key, value)
+    logger.info("Admin {} set currency config {} = {}", describe_user(user), key.value, value)
     await message.reply_text(i18n.t("currency_config.updated", lang, name=key.value, value=value))

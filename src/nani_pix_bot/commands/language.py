@@ -5,6 +5,7 @@ from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.actor import describe_user
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
@@ -34,10 +35,11 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         if not await is_group_admin(context.bot, group_chat_id, user.id):
-            logger.warning("Non-admin {} tried /language", user.id)
+            logger.warning("Non-admin {} tried /language", describe_user(user))
             await message.reply_text(i18n.t("language.not_admin", lang))
             return
 
+    logger.info("{} opened the /language picker (current {})", describe_user(user), lang)
     await message.reply_text(i18n.t("language.prompt", lang), reply_markup=_keyboard())
 
 
@@ -56,9 +58,10 @@ async def language_callback_handler(update: Update, context: ContextTypes.DEFAUL
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         if not await is_group_admin(context.bot, group_chat_id, user.id):
-            logger.warning("Non-admin {} tapped a /language button", user.id)
+            logger.warning("Non-admin {} tapped a /language button", describe_user(user))
             return
         settings.set_language(session, new_lang)
+    logger.info("Admin {} set the bot language to {}", describe_user(user), new_lang)
 
     await refresh_command_menu(context.bot, group_chat_id=group_chat_id, lang=new_lang)
     await query.edit_message_text(i18n.t("language.set", new_lang))
