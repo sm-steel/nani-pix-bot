@@ -277,9 +277,10 @@ kwargs as top-level keys.
   id: `"won by {winner}", winner=describe_player_id(...), winner_id=...`
   (likewise `target`, `recipient`, `next_starter`, `player`). Never reuse
   `user_id`/`username`/`user_name` for anyone but the triggering user.
-- People read as `id (@username)` via `commands/helpers/actor.py::
-  describe_user` / `services/players.py::describe_player_id`; stages as
-  `stage 2/5` via `services/game/state.py::stage_label`.
+- Other people read as `id (@username)` via `services/players.py::
+  describe_player_id` (or `describe_person` when the username is already
+  in hand); the triggering user needs neither, the context names them.
+  Stages read as `stage 2/5` via `services/game/state.py::stage_label`.
 - Say why: `advance_stage(game, reason=...)`, `force_unsolved(game,
   cause=...)` and `set_next_starter(..., reason=...)` take one for exactly
   this.
