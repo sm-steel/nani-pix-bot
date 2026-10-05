@@ -229,20 +229,41 @@ redirects python-telegram-bot's own stdlib logging into the same sink (the
 standard `InterceptHandler` recipe). Sink level defaults to `INFO`,
 overridable via the `LOG_LEVEL` env var (`.env`).
 
-**Log generously, but pick the right level:**
+**The bar: with `LOG_LEVEL=INFO`, the log alone must tell the whole story
+of every game**, from the DM setup through every guess to the end, plus
+everything the timers did on their own. `grep "Game 88"` should be enough
+to reconstruct game 88. Issue #228 is what missing this bar cost: a real
+game went through three stages and left no trace of any guess, because
+every player action was logged at `DEBUG`, while APScheduler's per-job
+chatter filled `INFO`.
 
 | Level | Use for | Example in this codebase |
 |---|---|---|
-| `DEBUG` | Routine/internal detail, expected outcomes | a wrong `/guess`'s normalized text and match score, stage-threshold not yet reached |
-| `INFO` | A meaningful game event | a game created, a stage advancing, a win, a game going unsolved, a `/skip` |
-| `WARNING` | Recoverable anomaly, rejected action | `/guess` outside the game topic, `/skip` from someone who isn't the designated starter, AniList rate-limit retry |
+| `DEBUG` | Internals only | timer scheduling/cancelling, a timer that fires on an already-resolved game, per-candidate fuzzy-match scores, provider search/cache plumbing, pixelated byte sizes |
+| `INFO` | **Every action a person takes** (command, button tap, DM message that does something, including cancels, "back", and views), and **every automatic action** that changes state, posts something, or deliberately decides not to | each `/guess` with its text and result, a method/result/screenshot pick, a preview button, a stage advance and why, a win, an unsolved ending and its cause, a turn handoff and who triggered it, a payout, an overthrow roll, a quiet-hours deferral |
+| `WARNING` | A rejected or refused action, a stale tap, an unexpected early return | `/guess` from the game's own starter, `/skip` out of turn, a setup button tapped after the setup row is gone, AniList rate-limit retry |
 | `ERROR` | Something is actually broken | AniList search failing after retries, a stage image failing to send |
 
-When adding a new log call, ask "would this be useful in production at
-`LOG_LEVEL=INFO`, or is it something I'd only want while debugging?" — the
-former is `INFO`+, the latter is `DEBUG`. Don't log routine, frequent,
-expected-outcome events at `INFO` — that's what turns `INFO` logs into
-background noise nobody reads.
+**Message format:**
+- Every game-scoped line starts with `Game {id}: `, so one grep shows the
+  whole game.
+- People appear as `id (@username)` (else `id (Full Name)`), never as a
+  bare id: `commands/helpers/actor.py::describe_user(user)` in handlers,
+  and `services/players.py::describe_player_id(session, id)` in services
+  and jobs.
+- Stages appear as `stage 2/5` (`services/game/state.py::stage_label`),
+  not as the `PixelStage.STAGE_2` repr.
+- Say what and why: the typed text (`{!r}`), the picked title, the amount,
+  and the cause (e.g. `advance_stage(game, reason=...)`,
+  `force_unsolved(game, cause=...)`, `set_next_starter(..., reason=...)`
+  take one for exactly this).
+- One action gets one `INFO` line. If a service already logs it, the
+  handler adds nothing, or adds only what the service can't know.
+
+Noisy third-party stdlib loggers are pinned to `WARNING` in
+`logging_config.py` (`httpx`: one line per long poll; `apscheduler`: one
+line per job added, removed and run). The timer callbacks log what they
+actually did instead.
 
 **This table sat unapplied for two full rounds of feature work (v1 and
 most of v2)** — by the time issue #23 swept the codebase for it, only 3
