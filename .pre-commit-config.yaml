@@ -33,6 +33,16 @@ repos:
         pass_filenames: false
         always_run: true
 
+      # Dead code ruff/ty don't catch: unused functions, classes,
+      # attributes and columns. Paths and the whitelist come from
+      # [tool.vulture] in pyproject.toml (issue #240).
+      - id: vulture
+        name: vulture (dead code)
+        entry: uv run vulture
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: qlty-smells
         name: qlty smells (complexity + duplication)
         entry: uv run python scripts/qlty_smells_gate.py
