@@ -956,3 +956,16 @@ async def test_wrong_guess_reply_shows_the_partial_reveal(session_factory) -> No
 
     reply = update.message.reply_text.await_args.args[0]
     assert "🔎 Partly right: _ _ _ _ _ _   _ _   Frieren" in reply
+
+
+async def test_won_caption_has_no_partial_reveal_line(session_factory) -> None:
+    _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert "Partly right" not in kwargs["caption"]

@@ -148,3 +148,10 @@ def test_cyrillic_and_punctuation() -> None:
 def test_most_letters_wins_across_candidates() -> None:
     match = partial_match("tomorrow skies", ["Buddy Complex", *TITLES], min_letters=4)
     assert match == PartialMatch(TITLES[1], (4, 6))
+
+
+def test_letter_free_tokens_do_not_count_as_hidden_words() -> None:
+    # All real words guessed (but not fuzzy-matching): the lone "-" must not
+    # count as a word that stays hidden.
+    title = "Kono Subarashii - Sekai"
+    assert partial_match("sekai kono subarashii", [title], min_letters=4) is None

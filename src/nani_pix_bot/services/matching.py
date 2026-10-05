@@ -144,7 +144,7 @@ def partial_match(
             continue
         words = candidate.split()
         indices = tuple(i for i, word in enumerate(words) if normalize(word) in guess_words)
-        if not indices or len(indices) == len(words):
+        if not indices or len(indices) == sum(1 for w in words if _letters(w) > 0):
             continue
         letters = sum(_letters(words[i]) for i in indices)
         if letters > best_letters:
