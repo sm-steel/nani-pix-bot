@@ -697,7 +697,10 @@ needs a live session to move the group's pin.
 
 Usable only by whoever `turn_state.next_starter_id` currently names, and
 only while no game is `SETUP`/`ACTIVE` (it governs who may *start* the
-next game, not anything mid-game):
+next game, not anything mid-game). While the turn is open to anyone
+(`next_starter_id` is `null` — after an unsolved/timeout ending, a bare
+`/skip`, a turn expiry, or `/stop`), it names nobody, so `/skip` is refused
+for everyone: there's no turn to hand off.
 
 - `/skip` (no argument) sets `next_starter_id` to `null` — the turn opens
   up, and anyone can DM the bot a screenshot to start the next game.

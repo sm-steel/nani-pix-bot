@@ -28,20 +28,9 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
-        if game_service.active_or_setup_game(session) is not None:
-            logger.warning("tried /skip while a game is running")
-            await message.reply_text(i18n.t("skip.game_running", lang))
-            return
-
-        turn_state_check = game_service.get_turn_state(session)
-        current = turn_state_check.next_starter_id if turn_state_check is not None else None
-        if current is not None and current != user.id:
-            logger.warning(
-                "tried /skip out of turn (designated: {next_starter})",
-                next_starter=players.describe_player_id(session, current),
-                next_starter_id=current,
-            )
-            await message.reply_text(i18n.t("skip.not_your_turn", lang))
+        refusal_key = _refusal_key(session, user.id)
+        if refusal_key is not None:
+            await message.reply_text(i18n.t(refusal_key, lang))
             return
 
         turn_state: TurnState | None = None
@@ -63,6 +52,30 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await message.reply_text(i18n.t(reply_key, lang, **reply_kwargs))
     except TelegramError as exc:
         logger.warning("failed to send the /skip confirmation: {error}", error=exc)
+
+
+def _refusal_key(session, user_id: int) -> str | None:
+    """Why `user_id` may not /skip right now, as the reply's locale key —
+    or None if they may. Only the designated starter may /skip, and only
+    between games (MECHANICS.md's "Turn handoff"). Logs the refusal."""
+    if game_service.active_or_setup_game(session) is not None:
+        logger.warning("tried /skip while a game is running")
+        return "skip.game_running"
+    turn_state = game_service.get_turn_state(session)
+    current = turn_state.next_starter_id if turn_state is not None else None
+    if current is None:
+        # An open turn names nobody, so there's nothing to hand off — not
+        # a free-for-all where anyone may designate a starter (issue #235).
+        logger.warning("tried /skip while the turn is open to anyone")
+        return "skip.turn_open"
+    if current != user_id:
+        logger.warning(
+            "tried /skip out of turn (designated: {next_starter})",
+            next_starter=players.describe_player_id(session, current),
+            next_starter_id=current,
+        )
+        return "skip.not_your_turn"
+    return None
 
 
 def _open_turn(context: ContextTypes.DEFAULT_TYPE, session) -> TurnState:
