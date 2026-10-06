@@ -168,7 +168,6 @@ def _hard_mode_unsolved_reveal(session: Session, game: Game, lang: str) -> _Hard
     unpixelated via post_current_images, same as the normal path's
     single unpixelated original_image reveal."""
     photos = game_service.hard_mode_reveal_images(game)
-    game_service.force_unsolved(game, cause="final hard-mode turn ended by inactivity")
     caption = i18n.t(
         "guess.hard_mode_unsolved_caption", lang, title=game_service.display_title(game, lang)
     )
@@ -179,7 +178,7 @@ def _hard_mode_unsolved_reveal(session: Session, game: Game, lang: str) -> _Hard
 
 def _hard_mode_inactivity_outcome(
     session: Session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
-) -> tuple[game_service.GuessOutcome, _HardModeAnnouncement]:
+) -> tuple[game_service.GuessOutcome, _HardModeAnnouncement | None]:
     """Dispatches a hard-mode game's inactivity-advance between the
     turn 1->2 advance and the turn-2-exhausted UNSOLVED ending — the
     hard-mode analogue of the direct game_service.advance_stage(game)
@@ -191,6 +190,14 @@ def _hard_mode_inactivity_outcome(
             _hard_mode_turn_advance(session, context, game, lang),
         )
 
+    outcome = game_service.end_hard_mode_without_winner(
+        session, game, cause="final hard-mode turn ended by inactivity"
+    )
+    if outcome is game_service.GuessOutcome.VOTE_OPENED:
+        from nani_pix_bot.jobs.timers.vote import schedule_vote_close  # sibling; avoids a cycle
+
+        schedule_vote_close(context.job_queue, game)
+        return outcome, None
     announcement = _hard_mode_unsolved_reveal(session, game, lang)
     game_service.mark_turn_open_if_unassigned(session)
     return game_service.GuessOutcome.UNSOLVED, announcement
@@ -249,6 +256,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
 
     session_factory = context.bot_data["session_factory"]
     hard_mode_announcement: _HardModeAnnouncement | None = None
+    hard_mode_outcome: game_service.GuessOutcome | None = None
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         game = session.get(Game, game_id)
@@ -264,6 +272,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
             outcome, hard_mode_announcement = _hard_mode_inactivity_outcome(
                 session, context, game, lang
             )
+            hard_mode_outcome = outcome
         else:
             if game.current_stage is None:
                 # Restores the type narrowing the guard above lost for ty
@@ -317,6 +326,12 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
     # UNSOLVED ending) is durable now regardless of whether the
     # announcement below actually reaches the group (see
     # post_current_image's docstring).
+    if hard_mode_outcome is game_service.GuessOutcome.VOTE_OPENED:
+        from nani_pix_bot.jobs.timers.vote import post_vote_ballot
+
+        await post_vote_ballot(context, session_factory, game_id)
+        return
+
     if hard_mode_announcement is not None:
         await _post_hard_mode_outcome(
             context, session_factory, game_id, outcome, hard_mode_announcement

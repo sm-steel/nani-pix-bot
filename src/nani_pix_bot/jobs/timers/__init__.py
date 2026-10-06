@@ -145,6 +145,9 @@ async def rearm_pending_timeouts(job_queue: JobQueue | None, session_factory) ->
         setups = game_service.setup_games(session)
         for game in setups:
             schedule_setup_abandon(job_queue, game)
+        voting = game_service.voting_games(session)
+        for game in voting:
+            schedule_vote_close(job_queue, game)
         turn_state = game_service.get_turn_state(session)
         turn_timers = 0
         idle_autostart = False
@@ -155,9 +158,10 @@ async def rearm_pending_timeouts(job_queue: JobQueue | None, session_factory) ->
             idle_autostart = turn_state.autostart_deadline_at is not None
     logger.info(
         "re-armed on startup: {timeouts} game timeout(s), {setups} setup-abandon timer(s), "
-        "{turn_timers} turn timer(s), idle-autostart {idle_autostart}",
+        "{votes} vote close timer(s), {turn_timers} turn timer(s), idle-autostart {idle_autostart}",
         timeouts=len(active),
         setups=len(setups),
+        votes=len(voting),
         turn_timers=turn_timers,
         idle_autostart="armed" if idle_autostart else "not armed",
     )

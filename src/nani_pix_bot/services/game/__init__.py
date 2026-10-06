@@ -65,6 +65,7 @@ from nani_pix_bot.services.game.state import (
     stage_manual_entry,
     stage_progress,
     stage_result,
+    voting_games,
 )
 from nani_pix_bot.services.game.turns import (
     AUTOSTART_RETRY_DELAY,
@@ -159,4 +160,5 @@ __all__ = [
     "stage_progress",
     "stage_result",
     "vote_counts",
+    "voting_games",
 ]

@@ -255,6 +255,13 @@ def active_games(session: Session) -> list[Game]:
     return list(session.scalars(stmt))
 
 
+def voting_games(session: Session) -> list[Game]:
+    """Every VOTING game - normally at most one, scanned without that
+    assumption for startup vote-close timer re-arming."""
+    stmt = select(Game).where(Game.status == GameStatus.VOTING)
+    return list(session.scalars(stmt))
+
+
 def setup_games(session: Session) -> list[Game]:
     """Every SETUP game — normally at most one (see active_or_setup_game),
     but this scans without that assumption for startup setup-abandon

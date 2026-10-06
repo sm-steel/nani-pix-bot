@@ -1,10 +1,11 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.jobs import timers
 from nani_pix_bot.jobs.timers import vote as vote_module
 from nani_pix_bot.models import GameVote
 from nani_pix_bot.models.enums import GameStatus
@@ -164,3 +165,18 @@ def test_schedule_vote_close_names_the_job_after_the_game(session_factory) -> No
         assert game is not None
         vote_module.schedule_vote_close(queue, game)
     assert queue.run_once.call_args.kwargs["name"] == f"vote-close-{game_id}"
+
+
+async def test_rearm_schedules_an_open_vote_even_if_overdue(session_factory) -> None:
+    game_id = _voting_game(
+        session_factory, votes={}, deadline=datetime.now(UTC) - timedelta(minutes=5)
+    )
+    job_queue = MagicMock()
+    job_queue.get_jobs_by_name.return_value = []
+
+    await timers.rearm_pending_timeouts(job_queue, session_factory)
+
+    call = next(
+        c for c in job_queue.run_once.call_args_list if c.kwargs["name"] == f"vote-close-{game_id}"
+    )
+    assert call.kwargs["when"] == 0  # seconds_until clamps an overdue deadline to now
