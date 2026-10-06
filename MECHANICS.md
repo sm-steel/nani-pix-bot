@@ -1163,7 +1163,12 @@ under the player's name.
 - An admin can refund any single clue purchase with `/refund @user` (DM): a
   paginated list of the player's purchases, newest first; the refund is the
   same reversal as a failed delivery, and the player gets a DM saying so
-  (issue #249).
+  (issue #249). If the round already paid that player HARD MODE cashback,
+  the refund keeps back this purchase's share of it (the cashback not yet
+  kept back by earlier refunds, pro rata over their remaining clue spend
+  in that round), so cashback plus refund comes to exactly what the clue
+  cost. The list and the confirm prompt show that net amount and name the
+  deduction.
 
 ### Public spends
 

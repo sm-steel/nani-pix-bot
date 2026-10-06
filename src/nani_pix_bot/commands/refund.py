@@ -175,6 +175,8 @@ async def _show_confirm(
             kind=_kind(item.kind, lang),
             game_id=item.game_id,
         )
+        if item.cashback_deducted:
+            text += i18n.t("refund.cashback_deducted", lang, deducted=item.cashback_deducted)
     markup = InlineKeyboardMarkup(
         [
             [

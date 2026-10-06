@@ -363,6 +363,7 @@
   "refund.prev": "◀",
   "refund.next": "▶",
   "refund.confirm_prompt": "Refund {amount} 💠 to @{username} for their {kind} clue in game #{game_id}?",
+  "refund.cashback_deducted": " ({deducted} 💠 of cashback already paid for this round is kept back.)",
   "refund.confirm": "✅ Refund",
   "refund.cancel": "Cancel",
   "refund.canceled": "Refund canceled.",

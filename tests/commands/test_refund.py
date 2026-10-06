@@ -16,13 +16,14 @@ from tests.services.economy.ledger import ledger_balance
 ADMIN, BUYER, GROUP = 1, 2, 555
 
 
-def _seed(session_factory, *, purchases: int = 1) -> list[int]:
-    """BUYER (@buyer) bought `purchases` last-letter clues in game 1, each 60 💠."""
+def _seed(session_factory, *, purchases: int = 1, cashback: int = 0) -> list[int]:
+    """BUYER (@buyer) bought `purchases` last-letter clues in game 1, each 60 💠,
+    and got `cashback` 💠 of HARD MODE cashback for them."""
     with session_factory() as session:
         session.add_all(
             [
                 Player(telegram_user_id=9),
-                Player(telegram_user_id=BUYER, username="buyer", currency=0),
+                Player(telegram_user_id=BUYER, username="buyer", currency=cashback),
             ]
         )
         session.flush()
@@ -60,6 +61,17 @@ def _seed(session_factory, *, purchases: int = 1) -> list[int]:
                 reason=CurrencyReason.GRANT,
             )
         )
+        if cashback:
+            session.add(
+                CurrencyTransfer(
+                    from_type=CurrencyParty.HOUSE,
+                    to_type=CurrencyParty.PLAYER,
+                    to_player_id=BUYER,
+                    amount=cashback,
+                    reason=CurrencyReason.CASHBACK,
+                    game_id=1,
+                )
+            )
         session.commit()
         return ids
 
@@ -178,4 +190,45 @@ async def test_select_of_refunded_purchase_is_stale(monkeypatch, session_factory
     update, _ = await _tap(monkeypatch, session_factory, f"refund:s:{purchase_id}")
     assert update.callback_query.edit_message_text.await_args.args[0] == i18n.t(
         "refund.stale", "en"
+    )
+
+
+async def test_after_cashback_lists_confirms_and_refunds_the_net_amount(
+    monkeypatch, session_factory
+) -> None:
+    [purchase_id] = _seed(session_factory, cashback=30)
+    update, _ = await _command(monkeypatch, session_factory, ["@buyer"])
+    item = update.message.reply_text.await_args.kwargs["reply_markup"].inline_keyboard[0][0]
+    assert "#1 · last letter · 30 💠" in item.text
+
+    update, _ = await _tap(monkeypatch, session_factory, f"refund:s:{purchase_id}")
+    prompt = update.callback_query.edit_message_text.await_args.args[0]
+    assert prompt.startswith(
+        i18n.t(
+            "refund.confirm_prompt",
+            "en",
+            amount=30,
+            username="buyer",
+            kind="last letter",
+            game_id=1,
+        )
+    )
+    assert i18n.t("refund.cashback_deducted", "en", deducted=30) in prompt
+
+    update, context = await _tap(monkeypatch, session_factory, f"refund:y:{purchase_id}")
+    with session_factory() as session:
+        assert session.get(Player, BUYER).currency == 60  # whole: 30 back + 30 refund
+        assert ledger_balance(session, BUYER) == 60
+    assert context.bot.send_message.await_args.kwargs["text"] == i18n.t(
+        "refund.player_dm", "en", amount=30, kind="last letter", game_id=1
+    )
+
+
+async def test_confirm_prompt_without_cashback_mentions_no_deduction(
+    monkeypatch, session_factory
+) -> None:
+    [purchase_id] = _seed(session_factory)
+    update, _ = await _tap(monkeypatch, session_factory, f"refund:s:{purchase_id}")
+    assert update.callback_query.edit_message_text.await_args.args[0] == i18n.t(
+        "refund.confirm_prompt", "en", amount=60, username="buyer", kind="last letter", game_id=1
     )

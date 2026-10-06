@@ -363,6 +363,7 @@
   "refund.prev": "◀",
   "refund.next": "▶",
   "refund.confirm_prompt": "Вернуть {amount} 💠 игроку @{username} за подсказку «{kind}» в игре #{game_id}?",
+  "refund.cashback_deducted": " ({deducted} 💠 уже выплаченного кешбэка за этот раунд удерживаются.)",
   "refund.confirm": "✅ Вернуть",
   "refund.cancel": "Отмена",
   "refund.canceled": "Возврат отменён.",

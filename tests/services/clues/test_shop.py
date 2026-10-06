@@ -6,7 +6,7 @@ from nani_pix_bot.models.enums import ClueKind, GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.clues import shop
-from nani_pix_bot.services.economy import config
+from nani_pix_bot.services.economy import config, earning
 from nani_pix_bot.services.economy.config import EconomyKey
 from nani_pix_bot.services.game import guesses
 from tests.services.economy.ledger import ledger_balance
@@ -436,3 +436,67 @@ def test_discount_never_goes_below_one(session: Session) -> None:
 def test_normal_games_ignore_the_column(session: Session) -> None:
     game, buyer = _setup(session, hard_mode_clue_discount=80)
     assert shop.price(session, game, buyer, ClueKind.LAST_LETTER) == 60
+
+
+def _hard_game_with_cashback(
+    session: Session, kinds: list[ClueKind], *, percent: int = 50
+) -> tuple[Game, Player, list[CluePurchase]]:
+    """A HARD MODE game where BUYER bought `kinds`, then the round ended
+    unsolved and paid them cashback."""
+    game, buyer = _setup(session, hard_mode=True, hard_mode_turn=1, current_stage=None)
+    bought = [_buy(session, game, buyer, kind) for kind in kinds]
+    config.set_amount(session, EconomyKey.CLUE_CASHBACK_PERCENT, percent)
+    earning.award_cashback(session, game)
+    session.flush()
+    return game, buyer, bought
+
+
+def test_refund_after_cashback_deducts_the_cashback_already_paid(session: Session) -> None:
+    _, buyer, (bought,) = _hard_game_with_cashback(session, [ClueKind.LAST_LETTER])  # 60, back 30
+
+    (item,) = shop.refundable_purchases(session, BUYER)
+    assert (item.amount, item.cashback_deducted) == (30, 30)
+    assert shop.refund(session, bought) == 30
+    session.flush()
+
+    assert buyer.currency == START  # cashback + refund == the charge, exactly
+    assert ledger_balance(session, BUYER) + START == buyer.currency
+
+
+def test_refunding_every_purchase_after_cashback_deducts_it_exactly_once(
+    session: Session,
+) -> None:
+    # 60 + 100 spent, 33% back = 52. Pro-rata shares: 52 * 100 // 160 = 32,
+    # then the remaining 20 on the last charge.
+    _, buyer, (small, big) = _hard_game_with_cashback(
+        session, [ClueKind.LAST_LETTER, ClueKind.FIRST_LETTER], percent=33
+    )
+
+    assert shop.refund(session, big) == 68
+    session.flush()
+    assert shop.refund(session, small) == 40
+    session.flush()
+
+    assert buyer.currency == START
+    assert ledger_balance(session, BUYER) + START == buyer.currency
+
+
+def test_refund_after_full_cashback_moves_nothing_but_drops_the_purchase(
+    session: Session,
+) -> None:
+    _, buyer, (bought,) = _hard_game_with_cashback(session, [ClueKind.LAST_LETTER], percent=100)
+
+    assert shop.refund(session, bought) == 0
+    session.flush()
+
+    assert shop.refundable_purchases(session, BUYER) == []
+    assert buyer.currency == START
+    assert ledger_balance(session, BUYER) + START == buyer.currency
+
+
+def test_refund_without_cashback_deducts_nothing(session: Session) -> None:
+    game, buyer = _setup(session)
+    _buy(session, game, buyer, ClueKind.LAST_LETTER)
+
+    (item,) = shop.refundable_purchases(session, BUYER)
+    assert (item.amount, item.cashback_deducted) == (60, 0)
