@@ -125,10 +125,20 @@ def price(session: Session, game: Game, buyer: Player, kind: ClueKind) -> int:
     amounts = config.get_amounts(session)
     if kind is ClueKind.SCREENSHOT:
         already = _screenshot_count(session, game, buyer)
-        return (
+        base = (
             amounts[EconomyKey.CLUE_SCREENSHOT] + amounts[EconomyKey.CLUE_SCREENSHOT_STEP] * already
         )
-    return amounts[_PRICE_KEYS[kind]]
+    else:
+        base = amounts[_PRICE_KEYS[kind]]
+    return _discounted(game, base)
+
+
+def _discounted(game: Game, base: int) -> int:
+    """HARD MODE's clue sale (issue #254) — rounded down, never below 1 💠."""
+    percent = game.hard_mode_clue_discount if game.hard_mode else 0
+    if percent <= 0:
+        return base
+    return max(1, base * (100 - percent) // 100)
 
 
 def clue_screenshot_providers(game: Game) -> list[Provider]:

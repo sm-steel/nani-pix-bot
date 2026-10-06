@@ -60,6 +60,8 @@ def _expected_first_turn_caption(key: str, **kwargs) -> str:
         limit=game_service.HARD_MODE_WRONG_GUESS_LIMIT,
         **kwargs,
     )
+    # No hard-mode history in these tests, so the first sale is 20%.
+    caption += "\n" + i18n.t("hard_mode.discount_line", "en", percent=20)
     caption += game_service.game_id_line(_FIRST_GAME_ID, "en")
     # The first post is a stage post, so it ends with the clue-shop link.
     return f"{caption}\n🛒 https://t.me/nani_pix_bot?start=shop"
@@ -400,6 +402,7 @@ async def test_run_bot_autostart_creates_a_hard_mode_game_and_posts_both_images(
         "dm_start.hard_mode_game_started_caption_idle"
     )
     assert f"#{_FIRST_GAME_ID}" in media[0].caption
+    assert "\u221220%" in media[0].caption
     assert media[1].caption is None
 
     with session_factory() as session:
@@ -409,6 +412,7 @@ async def test_run_bot_autostart_creates_a_hard_mode_game_and_posts_both_images(
         assert game.hard_mode_image_b == b"y"
         assert game.shown_screenshot_urls == ["https://x/a.jpg", "https://x/b.jpg"]
         assert game.original_image is None
+        assert game.hard_mode_clue_discount == 20
 
 
 async def test_run_bot_autostart_uses_the_overthrow_open_caption_when_no_winner_was_dethroned(

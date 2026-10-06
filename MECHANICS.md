@@ -936,6 +936,12 @@ HARD MODE replaces stages with **turns**:
   `stage_config` table, which a HARD MODE game never consults.
 - A correct guess awards **+2 wins** (`HARD_MODE_WIN_AWARD`) instead of
   the normal +1.
+- **Clue sale:** clues in the shop are discounted. The discount starts at
+  20% and grows by 20 points after each consecutive HARD MODE round that
+  ended unsolved, capped at 80%; a solved round (by guess, vote or
+  `/setwinner`) resets it to 20%. It is fixed when the round starts
+  (`Game.hard_mode_clue_discount`) and announced in the round's first post
+  and in the shop. Prices round down, with a minimum of 1 💠.
 
 Everything else about a HARD MODE game is unchanged from a normal one:
 guess matching, the 2-day timeout, the inactivity nudge/auto-advance

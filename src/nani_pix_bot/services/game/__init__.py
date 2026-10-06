@@ -23,6 +23,7 @@ from nani_pix_bot.services.game.hard_mode import (
     hard_mode_turn_progress,
     hard_mode_turn_width,
     has_hard_mode_reveal_images,
+    next_clue_discount,
     record_hard_mode_guess,
 )
 from nani_pix_bot.services.game.refinish import RefinishRefusal, refinish, refinish_refusal
@@ -148,6 +149,7 @@ __all__ = [
     "has_hard_mode_reveal_images",
     "mark_turn_open_if_unassigned",
     "match_candidates",
+    "next_clue_discount",
     "prioritized_title",
     "prioritized_title_field",
     "record_guess",

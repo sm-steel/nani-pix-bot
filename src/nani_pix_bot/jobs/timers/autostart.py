@@ -238,6 +238,10 @@ def _build_first_turn_post(
         caption = i18n.t(
             "dm_start.hard_mode_game_started_caption_overthrow_open", lang, **caption_kwargs
         )
+    if game.hard_mode_clue_discount:
+        caption += "\n" + i18n.t(
+            "hard_mode.discount_line", lang, percent=game.hard_mode_clue_discount
+        )
     caption += game_service.game_id_line(game.id, lang)
     schedule_timeout(context.job_queue, game)
     schedule_inactivity_timers(context.job_queue, game)
@@ -312,6 +316,12 @@ async def run_bot_autostart(
         # original_image stays None; the screenshot pair lives in
         # hard_mode_image_a/_b instead.
         game.hard_mode = True
+        game.hard_mode_clue_discount = game_service.next_clue_discount(session)
+        logger.info(
+            "HARD MODE clue discount frozen at {percent}%",
+            percent=game.hard_mode_clue_discount,
+            game_id=game.id,
+        )
         game.hard_mode_image_a = pick.screenshot.image_bytes_a
         game.hard_mode_image_b = pick.screenshot.image_bytes_b
         game.shown_screenshot_urls = [pick.screenshot.url_a, pick.screenshot.url_b]

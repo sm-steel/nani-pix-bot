@@ -415,3 +415,24 @@ def test_title_shape_is_withdrawn_after_a_partial_reveal(session: Session) -> No
         shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TITLE_SHAPE))
     assert refused.value.refusal is shop.Refusal.REVEALED
     assert buyer.currency == START
+
+
+def test_hard_mode_discount_applies_to_prices(session: Session) -> None:
+    game, buyer = _setup(
+        session, hard_mode=True, hard_mode_turn=1, current_stage=None, hard_mode_clue_discount=40
+    )
+    assert shop.price(session, game, buyer, ClueKind.SCREENSHOT) == 90  # 150 * 0.6
+    assert shop.price(session, game, buyer, ClueKind.LAST_LETTER) == 36
+
+
+def test_discount_never_goes_below_one(session: Session) -> None:
+    config.set_amount(session, EconomyKey.CLUE_LAST_LETTER, 1)
+    game, buyer = _setup(
+        session, hard_mode=True, hard_mode_turn=1, current_stage=None, hard_mode_clue_discount=80
+    )
+    assert shop.price(session, game, buyer, ClueKind.LAST_LETTER) == 1
+
+
+def test_normal_games_ignore_the_column(session: Session) -> None:
+    game, buyer = _setup(session, hard_mode_clue_discount=80)
+    assert shop.price(session, game, buyer, ClueKind.LAST_LETTER) == 60
