@@ -38,6 +38,7 @@ from nani_pix_bot.commands import (
     quiet_hours,
     refund,
     setautostart,
+    setwinner,
     shop,
     stageconfig,
     tip,
@@ -304,6 +305,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))
     application.add_handler(CommandHandler("partialmatch", partialmatch.partialmatch_command))
     application.add_handler(CommandHandler("refund", refund.refund_command))
+    application.add_handler(CommandHandler("setwinner", setwinner.setwinner_command))
     application.add_handler(CommandHandler("language", language.language_command))
     application.add_handler(CommandHandler("linkmal", mal_link.linkmal_command))
     application.add_handler(CommandHandler("unlinkmal", mal_link.unlinkmal_command))

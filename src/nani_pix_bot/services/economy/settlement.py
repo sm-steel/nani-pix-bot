@@ -18,3 +18,9 @@ def settle_unsolved(session: Session, game: Game, lang: str) -> str:
 def settle_vote_win(session: Session, game: Game, winner_id: int) -> Earnings:
     """The regular win payout for a winner decided by a vote or an admin."""
     return earning.award_win(session, game, winner_id=winner_id)
+
+
+def settle_refinish(session: Session, game: Game, winner_id: int) -> Earnings:
+    """An admin re-finish's payout: the normal win reward. The pot was already
+    refunded when the game ended, so there is no bounty to pay."""
+    return earning.award_win(session, game, winner_id=winner_id)

@@ -101,6 +101,7 @@ def test_build_application_registers_every_command() -> None:
         "pixelconfig",
         "partialmatch",
         "refund",
+        "setwinner",
     }
 
 

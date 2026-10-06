@@ -25,6 +25,7 @@ from nani_pix_bot.services.game.hard_mode import (
     has_hard_mode_reveal_images,
     record_hard_mode_guess,
 )
+from nani_pix_bot.services.game.refinish import RefinishRefusal, refinish, refinish_refusal
 from nani_pix_bot.services.game.state import (
     INACTIVITY_ADVANCE_DELAY,
     INACTIVITY_NUDGE_DELAY,
@@ -110,6 +111,7 @@ __all__ = [
     "VOTE_MIN_VOTES",
     "GuessOutcome",
     "HardModeTurnProgress",
+    "RefinishRefusal",
     "StageProgress",
     "TitleField",
     "TitleVariants",
@@ -150,6 +152,8 @@ __all__ = [
     "prioritized_title_field",
     "record_guess",
     "record_hard_mode_guess",
+    "refinish",
+    "refinish_refusal",
     "reset_inactivity_clock",
     "screenshot_capable_providers",
     "set_next_starter",

@@ -827,17 +827,18 @@ human-started one — HARD MODE (see below) — for the pixelation/turn
 structure itself**, but everything else — guess matching, the 2-day
 timeout, the inactivity clock, turn handoff on a win — applies exactly as
 it does to a normal game. The one deliberate permission gap is the same
-either way: **`/correct` has no recourse on a bot-started game.**
-`/correct`'s starter-only check (`user.id == game.starter_id`)
-means only the game's starter may force a win, and for a bot-started
-game the starter *is* the bot — no human can ever satisfy that check.
-This is an accepted, deliberate limitation, not a bug: extending
-`/correct` with a second "admin can `/correct` a bot-started game" path
-would be new permission surface with its own risk, for a case `/stop`
-already has a (blunter) answer to. If a bot-started game's title has a
-legitimate answer the fuzzy matcher won't accept, an admin's `/stop`
-(with reveal) is the only recourse — it ends the round and reveals the
-title, but awards nobody the win, unlike a genuine `/correct`.
+either way: **`/correct` has no direct use on a bot-started game.**
+`/correct` is still starter-only and `ACTIVE`-only
+(`user.id == game.starter_id`), and for a bot-started game the starter
+*is* the bot — no human can ever satisfy that check. A game that ended
+wrongly has two remedies instead: the HARD MODE vote (see below), and an
+admin's `/setwinner <game id> @user` (DM only). `/setwinner` re-finishes
+an `UNSOLVED` game as a normal win — the usual win reward and a text
+announcement in the game topic, but no change to whose turn it is and no
+bounty (the pot was already refunded when the game ended). On a game
+still in the `VOTING` state it closes the vote right there, with that
+winner. An admin's `/stop` (with reveal) still just ends a round and
+reveals the title, awarding nobody the win.
 
 The bot's own `/stop`-ability needs no special-casing either: once the
 bot has started its first game, it has a real `players` row like any
@@ -939,10 +940,11 @@ HARD MODE replaces stages with **turns**:
 Everything else about a HARD MODE game is unchanged from a normal one:
 guess matching, the 2-day timeout, the inactivity nudge/auto-advance
 clock, `/stop`, and turn handoff on a win all apply exactly as described
-above. The one exception is **`/correct`, which is not currently usable
-on a HARD MODE game** — see "Bot-initiated games" above for why (its
-starter-only check can never be satisfied by a human, since the starter
-of a bot-autostarted game is the bot itself).
+above. The one exception is **`/correct`, which is not usable on a HARD
+MODE game** (its starter-only check can never be satisfied by a human,
+since the starter of a bot-autostarted game is the bot itself); the vote
+and an admin's `/setwinner` are the remedies — see "Bot-initiated games"
+above.
 
 ## HARD MODE vote
 

@@ -46,3 +46,17 @@ def test_settle_vote_win_pays_the_hard_mode_win_reward(session: Session) -> None
     expected = config.get_amounts(session)[EconomyKey.WIN_STAGE_2] * 2
     assert earnings.win == expected
     assert winner.currency == start + expected
+
+
+def test_settle_refinish_pays_the_normal_win_reward_and_no_bounty(session: Session) -> None:
+    game = _game(session, turn=2)
+    winner = session.get(Player, 2)
+    assert winner is not None
+    start = winner.currency
+
+    earnings = settlement.settle_refinish(session, game, 2)
+
+    expected = config.get_amounts(session)[EconomyKey.WIN_STAGE_2] * 2
+    assert earnings.win == expected
+    assert earnings.bounty == 0
+    assert winner.currency == start + expected
