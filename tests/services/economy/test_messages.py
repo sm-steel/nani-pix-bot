@@ -1,10 +1,10 @@
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.commands.helpers.earnings import earnings_suffix
 from nani_pix_bot.models import Player
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services.economy.earning import Earnings
+from nani_pix_bot.services.economy.messages import earnings_suffix
 
 
 def _game(session: Session, *, setter_username: str | None = "setter") -> Game:
@@ -58,3 +58,12 @@ def test_no_bounty_line_when_the_pot_was_empty(session: Session) -> None:
     suffix = earnings_suffix(session, _game(session), Earnings(win=25), "en", player_name="Ann")
 
     assert "bounty" not in suffix
+
+
+def test_suffix_has_a_compensation_line(session: Session) -> None:
+    suffix = earnings_suffix(
+        session, _game(session), Earnings(win=25, compensation=30), "en", player_name="Ann"
+    )
+
+    assert "+30" in suffix.splitlines()[-1]
+    assert "Ann" in suffix.splitlines()[-1]

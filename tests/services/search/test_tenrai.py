@@ -641,6 +641,7 @@ _MEMBERS_ENTRY = {
     "title_japanese": "葬送のフリーレン",
     "title_synonyms": ["Frieren at the Funeral"],
     "members": 10000,
+    "type": "TV",
 }
 
 
@@ -662,6 +663,7 @@ async def test_random_anime_hits_the_random_endpoint_and_parses_the_result() -> 
         title_native="葬送のフリーレン",
         synonyms=["Frieren at the Funeral"],
         members=10000,
+        kind="TV",
     )
 
 
@@ -868,3 +870,27 @@ async def test_search_parses_a_missing_members_field_as_none() -> None:
         results = await tenrai.search(client, "frieren")
 
     assert results[0].members is None
+
+
+def _random_client(**overrides: object) -> httpx.AsyncClient:
+    entry = {**_MEMBERS_ENTRY, **overrides}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entry})
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+@pytest.mark.parametrize("kind", ["TV", "Movie"])
+async def test_random_anime_keeps_tv_and_movie(kind: str) -> None:
+    async with _random_client(type=kind) as client:
+        result = await tenrai.random_anime(client)
+
+    assert result is not None
+    assert result.kind == kind
+
+
+@pytest.mark.parametrize("kind", ["Special", "OVA", "ONA", "Music", "TV Special", None])
+async def test_random_anime_rejects_other_types(kind: str | None) -> None:
+    async with _random_client(type=kind) as client:
+        assert await tenrai.random_anime(client) is None

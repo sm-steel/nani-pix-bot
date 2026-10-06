@@ -11,6 +11,7 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.economy import bounty
 
 
@@ -415,6 +416,19 @@ async def test_guess_command_won_caption_names_the_winner(session_factory) -> No
     assert "Guesser Name" in kwargs["caption"]
 
 
+async def test_guess_command_won_caption_names_the_game_id(session_factory) -> None:
+    game_id = _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert f"#{game_id}" in kwargs["caption"]
+
+
 async def test_guess_command_won_schedules_the_turn_reminder_and_expiry(session_factory) -> None:
     _active_game(session_factory)
     update = _make_update(user_id=2, args=["frieren"])
@@ -679,34 +693,39 @@ async def test_guess_command_hard_mode_turn_advanced_posts_album_at_turn_two_wid
         assert fetched.wrong_guess_count == 0
 
 
-async def test_guess_command_hard_mode_unsolved_reveals_two_photo_album(
-    session_factory,
-) -> None:
+async def test_final_hard_mode_miss_opens_a_vote_instead_of_ending(session_factory) -> None:
     game_id = _active_hard_mode_game(session_factory, hard_mode_turn=2)
-    update = _make_update(user_id=2, args=["attack", "on", "titan"])
-    context = _make_context(session_factory, args=["attack", "on", "titan"])
+    update = _make_update(user_id=2)
+    context = _make_context(session_factory, args=["wrong"])
+    context.bot.send_message = AsyncMock(return_value=MagicMock(message_id=1234))
+    scheduled = _capture_scheduled_tasks(context)
 
     await guess_command_module.guess_command(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    context.bot.send_media_group.assert_awaited_once()
-    context.bot.send_photo.assert_not_awaited()
-    _, kwargs = context.bot.send_media_group.await_args
-    media = kwargs["media"]
-    assert media[0].media.input_file_content == b"image-a-bytes"
-    assert media[1].media.input_file_content == b"image-b-bytes"
-    expected_caption = guess_command_module.i18n.t(
-        "guess.hard_mode_unsolved_caption", "en", title="Frieren: Beyond Journey's End"
-    )
-    assert media[0].caption.startswith(expected_caption)  # plus currency-earnings lines
-
     with session_factory() as session:
-        fetched = session.get(Game, game_id)
-        assert fetched is not None
-        assert fetched.status == GameStatus.UNSOLVED
-        assert fetched.hard_mode_image_a is None
-        assert fetched.hard_mode_image_b is None
+        game = session.get(Game, game_id)
+        assert game is not None
+        assert game.status is GameStatus.VOTING
+        assert game.vote_message_id == 1234
+        assert game.hard_mode_image_a is not None  # kept until the vote closes
+    context.bot.send_media_group.assert_awaited_once()
+    assert scheduled == []  # no overthrow while the vote is open
+    names = [c.kwargs["name"] for c in context.job_queue.run_once.call_args_list]
+    assert f"vote-close-{game_id}" in names
+
+
+async def test_guess_during_a_vote_is_refused(session_factory) -> None:
+    _active_hard_mode_game(session_factory, status=GameStatus.VOTING)
+    update = _make_update(user_id=2)
+    context = _make_context(session_factory, args=["x"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert update.message.reply_text.await_args.args[0] == i18n.t("guess.vote_in_progress", "en")
 
 
 async def test_guess_command_hard_mode_wrong_feedback_uses_turn_progress(
@@ -923,3 +942,36 @@ async def test_every_unsolved_path_refunds_the_pot_last_stage_wrong_guess(sessio
         assert fetched.status == GameStatus.UNSOLVED
         assert (_currency_of(session, 3), _currency_of(session, 4)) == (100, 100)
         assert bounty.pot_balance(session, game_id) == 0
+
+
+async def test_wrong_guess_reply_shows_the_partial_reveal(session_factory) -> None:
+    _active_game(
+        session_factory,
+        current_stage=PixelStage.STAGE_3,
+        title_romaji="Sousou no Frieren",
+        title_english=None,
+        synonyms=[],
+    )
+    _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=3)
+    update = _make_update(user_id=2)
+    context = _make_context(session_factory, args=["frieren", "maybe"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    reply = update.message.reply_text.await_args.args[0]
+    assert "🔎 Partly right: _ _ _ _ _ _   _ _   Frieren" in reply
+
+
+async def test_won_caption_has_no_partial_reveal_line(session_factory) -> None:
+    _active_game(session_factory)
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert "Partly right" not in kwargs["caption"]

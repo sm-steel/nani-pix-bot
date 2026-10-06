@@ -51,6 +51,7 @@ def set_games_enabled(session: Session, enabled: bool) -> None:
     logger.debug("starting new games {state}", state="enabled" if enabled else "disabled")
 
 
+DEFAULT_PARTIAL_MATCH_MIN_LETTERS = 4
 DEFAULT_AUTOSTART_ENABLED = False
 
 
@@ -71,6 +72,26 @@ def set_autostart_enabled(session: Session, enabled: bool) -> None:
     # DEBUG: the admin command that calls this logs the change at INFO,
     # naming the admin.
     logger.debug("bot-initiated games {state}", state="enabled" if enabled else "disabled")
+
+
+def get_partial_match_min_letters(session: Session) -> int:
+    settings = session.get(BotSettings, SETTINGS_ID)
+    if settings is None:
+        return DEFAULT_PARTIAL_MATCH_MIN_LETTERS
+    return settings.partial_match_min_letters
+
+
+def set_partial_match_min_letters(session: Session, value: int) -> None:
+    if value < 0:
+        msg = f"partial_match_min_letters cannot be negative: {value}"
+        raise ValueError(msg)
+    settings = session.get(BotSettings, SETTINGS_ID)
+    if settings is None:
+        session.add(BotSettings(id=SETTINGS_ID, partial_match_min_letters=value))
+    else:
+        settings.partial_match_min_letters = value
+    # DEBUG: /partialmatch logs the change at INFO, naming the admin.
+    logger.debug("partial-match minimum set to {value}", value=value)
 
 
 def get_pinned_message_id(session: Session) -> int | None:

@@ -1,4 +1,10 @@
-from nani_pix_bot.services.matching import is_match, normalize, rank_by_similarity
+from nani_pix_bot.services.matching import (
+    PartialMatch,
+    is_match,
+    normalize,
+    partial_match,
+    rank_by_similarity,
+)
 
 _TITLES = ["Sousou no Frieren", "Frieren: Beyond Journey's End"]
 _SYNONYMS = ["Frieren", "Frieren at the Funeral"]
@@ -102,3 +108,57 @@ def test_is_match_names_the_guess_on_every_per_candidate_line(log_records) -> No
         assert line.extra["guess"] == "Mai Otome Zwei"
         assert line.extra["normalized"] == "mai otome zwei"
         assert line.extra["candidate_normalized"] in {"maiotome 0 sifr", "maiotome zero"}
+
+
+TITLES = ["Buddy Complex: Kanketsu-hen", "Buddy Complex: Into the Skies of Tomorrow"]
+
+
+def test_partial_match_picks_the_matched_words() -> None:
+    assert partial_match("buddy complex", TITLES, min_letters=4) == PartialMatch(TITLES[0], (0, 1))
+
+
+def test_partial_match_needs_min_letters() -> None:
+    assert partial_match("the", ["The Skies of Tomorrow"], min_letters=4) is None
+    assert partial_match("skies", ["The Skies of Tomorrow"], min_letters=4) == PartialMatch(
+        "The Skies of Tomorrow", (1,)
+    )
+
+
+def test_short_guess_words_are_ignored() -> None:
+    assert partial_match("of no", ["Shingeki no Kyojin of Titans"], min_letters=1) is None
+
+
+def test_off_when_min_letters_is_zero() -> None:
+    assert partial_match("buddy complex", TITLES, min_letters=0) is None
+
+
+def test_every_word_matched_reveals_nothing() -> None:
+    # A wrong guess containing the whole title must not reveal it.
+    assert partial_match("complex buddy", ["Buddy Complex"], min_letters=4) is None
+
+
+def test_cyrillic_and_punctuation() -> None:
+    title = "Дружеский комплекс: Последняя глава"
+    assert partial_match("дружеский", [title], min_letters=4) == PartialMatch(title, (0,))
+    assert partial_match("complex!!", ["Buddy Complex: Final"], min_letters=4) == PartialMatch(
+        "Buddy Complex: Final", (1,)
+    )
+
+
+def test_most_letters_wins_across_candidates() -> None:
+    match = partial_match("tomorrow skies", ["Buddy Complex", *TITLES], min_letters=4)
+    assert match == PartialMatch(TITLES[1], (4, 6))
+
+
+def test_letter_free_tokens_do_not_count_as_hidden_words() -> None:
+    # All real words guessed (but not fuzzy-matching): the lone "-" must not
+    # count as a word that stays hidden.
+    title = "Kono Subarashii - Sekai"
+    assert partial_match("sekai kono subarashii", [title], min_letters=4) is None
+
+
+def test_short_particles_in_the_guess_still_cover_their_title_words() -> None:
+    # "on"/"no" are too short to be revealed, but a guess containing them
+    # plus every other word still names the whole title.
+    assert partial_match("titan on attack", ["Attack on Titan"], min_letters=4) is None
+    assert partial_match("no kyojin shingeki", ["Shingeki no Kyojin"], min_letters=4) is None

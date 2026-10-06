@@ -132,6 +132,9 @@ async def test_photo_handler_notifies_the_group_that_setup_started(session_facto
     _, kwargs = context.bot.send_message.await_args
     assert kwargs["chat_id"] == 555
     assert "Starter Name" in kwargs["text"]
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+    assert f"#{game.id}" in kwargs["text"]
 
 
 async def test_photo_handler_schedules_the_setup_abandon_timer(session_factory) -> None:

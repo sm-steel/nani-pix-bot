@@ -8,8 +8,10 @@ far) is read back from the DB."""
 from dataclasses import dataclass
 
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from nani_pix_bot.models.currency_transfer import CurrencyTransfer
 from nani_pix_bot.models.enums import CurrencyReason
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -26,6 +28,7 @@ class Earnings:
     win: int = 0  # to the winner
     setter: int = 0  # to the game's starter
     bounty: int = 0  # the pot, to the winner — its own line, not part of player_total
+    compensation: int = 0  # a vote/admin-decided winner's bonus — its own line too
 
     @property
     def player_total(self) -> int:
@@ -153,4 +156,69 @@ def award_prompt_start(session: Session, game: Game) -> int:
         # Only the starter's own preview confirm pays this, so the log
         # context already names them.
         logger.info("prompt-turn bonus {amount} 💠 to the starter", amount=paid, game_id=game.id)
+    return paid
+
+
+def clue_spend(session: Session, game_id: int) -> dict[int, int]:
+    """What each player still has spent on clues in a game: their clue charges
+    minus any that were refunded (refunds name the charge via reverses_id)."""
+    refunded = select(CurrencyTransfer.reverses_id).where(CurrencyTransfer.reverses_id.is_not(None))
+    stmt = select(CurrencyTransfer.from_player_id, CurrencyTransfer.amount).where(
+        CurrencyTransfer.game_id == game_id,
+        CurrencyTransfer.reason == CurrencyReason.CLUE_PURCHASE,
+        CurrencyTransfer.id.not_in(refunded),
+    )
+    spend: dict[int, int] = {}
+    for player_id, amount in session.execute(stmt):
+        spend[player_id] = spend.get(player_id, 0) + amount
+    return spend
+
+
+def award_cashback(session: Session, game: Game) -> int:
+    """HARD MODE ended unsolved (issue #255): every clue buyer gets
+    clue_cashback_percent of their net clue spend back. Kept even if an admin
+    later names them the winner. Never paid twice for the same game."""
+    if not game.hard_mode:
+        return 0
+    percent = config.get_amounts(session)[EconomyKey.CLUE_CASHBACK_PERCENT]
+    total = 0
+    for player_id, spent in clue_spend(session, game.id).items():
+        already = wallet.game_total(
+            session, player_id=player_id, game_id=game.id, reason=CurrencyReason.CASHBACK
+        )
+        if already:
+            continue
+        paid = _pay(
+            session,
+            _player(session, player_id),
+            spent * percent // 100,
+            CurrencyReason.CASHBACK,
+            game,
+        )
+        if paid:
+            logger.info(
+                "cashback {amount} 💠 to {recipient} ({percent}% of {spent} 💠 on clues)",
+                amount=paid,
+                recipient=players.describe_player_id(session, player_id),
+                recipient_id=player_id,
+                percent=percent,
+                spent=spent,
+                game_id=game.id,
+            )
+        total += paid
+    return total
+
+
+def award_compensation(session: Session, game: Game, *, winner_id: int) -> int:
+    """The bonus for a winner decided by a vote or an admin (issue #255)."""
+    amount = config.get_amounts(session)[EconomyKey.DISPUTED_WIN_BONUS]
+    paid = _pay(session, _player(session, winner_id), amount, CurrencyReason.COMPENSATION, game)
+    if paid:
+        logger.info(
+            "compensation {amount} 💠 to {winner}",
+            amount=paid,
+            winner=players.describe_player_id(session, winner_id),
+            winner_id=winner_id,
+            game_id=game.id,
+        )
     return paid

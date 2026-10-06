@@ -70,3 +70,13 @@ def test_set_amount_still_accepts_zero_for_rewards(session: Session) -> None:
 def test_set_amount_rejects_zero_sharpen_price(session: Session) -> None:
     with pytest.raises(ValueError, match="at least 1"):
         config.set_amount(session, EconomyKey.SHARPEN, 0)
+
+
+def test_percent_key_defaults_and_cap(session: Session) -> None:
+    amounts = config.get_amounts(session)
+    assert amounts[EconomyKey.CLUE_CASHBACK_PERCENT] == 50
+    assert amounts[EconomyKey.DISPUTED_WIN_BONUS] == 30
+
+    config.set_amount(session, EconomyKey.CLUE_CASHBACK_PERCENT, 100)
+    with pytest.raises(ValueError, match="at most 100"):
+        config.set_amount(session, EconomyKey.CLUE_CASHBACK_PERCENT, 101)

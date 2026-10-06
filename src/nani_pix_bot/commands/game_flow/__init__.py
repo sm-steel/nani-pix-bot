@@ -11,6 +11,7 @@ from nani_pix_bot.commands.game_flow.guess import guess_command
 from nani_pix_bot.commands.game_flow.sharpen import sharpen_callback_handler, sharpen_command
 from nani_pix_bot.commands.game_flow.skip import skip_command
 from nani_pix_bot.commands.game_flow.stop import stop_callback_handler, stop_command
+from nani_pix_bot.commands.game_flow.vote import vote_callback_handler
 
 __all__ = [
     "bounty_command",
@@ -21,4 +22,5 @@ __all__ = [
     "skip_command",
     "stop_callback_handler",
     "stop_command",
+    "vote_callback_handler",
 ]

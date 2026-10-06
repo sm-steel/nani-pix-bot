@@ -19,9 +19,11 @@ from nani_pix_bot.models.enums import ClueKind, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
+from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.clues import shop
 from nani_pix_bot.services.economy import bounty, config
 from nani_pix_bot.services.economy.config import EconomyKey
+from tests.services.economy.ledger import ledger_balance
 
 
 def _make_update(
@@ -365,6 +367,7 @@ async def test_stop_callback_handler_reveal_posts_the_answer_and_deletes_the_gam
     assert kwargs["message_thread_id"] == 7
     assert kwargs["photo"] == b"file123"
     assert "Frieren: Beyond Journey's End" in kwargs["caption"]
+    assert f"#{game_id}" in kwargs["caption"]
     # The reveal caption already says the turn is open — no second notice.
     context.bot.send_message.assert_not_awaited()
     update.callback_query.edit_message_text.assert_awaited_once()
@@ -459,7 +462,7 @@ async def test_stop_callback_handler_reveal_posts_hard_mode_two_photo_album(
     expected_caption = stop_command_module.i18n.t(
         "stop.hard_mode_stopped_reveal_caption", "en", title="Frieren: Beyond Journey's End"
     )
-    assert media[0].caption == expected_caption
+    assert media[0].caption == expected_caption + game_service.game_id_line(game_id, "en")
     # The reveal caption already says the turn is open — no second notice.
     context.bot.send_message.assert_not_awaited()
     update.callback_query.edit_message_text.assert_awaited_once()
@@ -603,6 +606,39 @@ async def test_stop_refunds_pot(session_factory) -> None:
             player = session.get(Player, user_id)
             assert player is not None
             assert player.currency == 100
+
+
+async def test_stop_confirm_on_a_voting_game_refunds_and_cancels_the_vote_close(
+    session_factory,
+) -> None:
+    game_id = _active_hard_mode_game(session_factory, starter_id=1)
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        player = Player(telegram_user_id=2, currency=100)
+        session.add(player)
+        session.flush()
+        bounty.contribute(session, game, player, 30)
+        game.status = GameStatus.VOTING
+        session.commit()
+    update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+    job = MagicMock()
+    context.job_queue.get_jobs_by_name.side_effect = lambda name: (
+        [job] if name == stop_command_module.timeout_module.vote_close_job_name(game_id) else []
+    )
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    job.schedule_removal.assert_called_once()
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
+        refunded = session.get(Player, 2)
+        assert refunded is not None
+        assert refunded.currency == 100
+        assert ledger_balance(session, 2) == 0
 
 
 async def test_stop_cancel_is_logged_at_info(session_factory, log_records) -> None:

@@ -162,12 +162,20 @@ class Game(Base):
     # than a new enum — no admin config, no third value.
     hard_mode: Mapped[bool] = mapped_column(default=False)
     hard_mode_turn: Mapped[int | None] = mapped_column(default=None)
+    # HARD MODE clue discount in percent (issue #254), frozen when the bot
+    # starts the game so the number announced in its first post never shifts.
+    # 0 for normal games.
+    hard_mode_clue_discount: Mapped[int] = mapped_column(default=0)
     hard_mode_image_a: Mapped[bytes | None] = mapped_column(
         LargeBinary(length=IMAGE_COLUMN_LENGTH), deferred=True, default=None
     )
     hard_mode_image_b: Mapped[bytes | None] = mapped_column(
         LargeBinary(length=IMAGE_COLUMN_LENGTH), deferred=True, default=None
     )
+    # Only meaningful while status is VOTING (issue #252): when the vote
+    # closes (jobs/timers/vote.py), and the ballot message to edit.
+    vote_deadline_at: Mapped[datetime | None] = mapped_column(default=None)
+    vote_message_id: Mapped[int | None] = mapped_column(default=None)
 
     starter: Mapped[Player] = relationship(foreign_keys=[starter_id])
     winner: Mapped[Player | None] = relationship(foreign_keys=[winner_id])

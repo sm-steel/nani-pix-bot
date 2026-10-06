@@ -107,6 +107,7 @@ def _activate_and_stage_first_post(
         remaining=first_stage_settings.wrong_guess_limit,
         limit=first_stage_settings.wrong_guess_limit,
     )
+    caption += game_service.game_id_line(game.id, lang)
     game_service.activate_game(session, game)
     prompt_bonus = earning.award_prompt_start(session, game)
     if prompt_bonus:

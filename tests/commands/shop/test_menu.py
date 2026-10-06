@@ -172,3 +172,19 @@ async def test_start_without_args_still_sends_onboarding(session_factory) -> Non
 
     update.message.reply_text.assert_awaited_once()
     assert "reply_markup" not in update.message.reply_text.await_args.kwargs
+
+
+async def test_menu_shows_the_hard_mode_discount(session_factory) -> None:
+    game_id = _seed_game(session_factory)
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        game.hard_mode = True
+        game.hard_mode_turn = 1
+        game.hard_mode_clue_discount = 60
+        session.commit()
+    _set_currency(session_factory, 2, 100)
+
+    call = await _run(_make_update(), _make_context(session_factory))
+
+    assert "\u221260%" in call.args[0]

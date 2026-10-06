@@ -1,17 +1,18 @@
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import quiet_hours, settings
-from nani_pix_bot.services.game import state, turns
+from nani_pix_bot.services.game import guesses, state, turns
 from nani_pix_bot.services.quiet_hours import QuietHours
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
@@ -1376,3 +1377,63 @@ def test_final_stage_exhaustion_records_when_the_game_ended(session: Session) ->
     session.commit()
 
     _assert_ended_between(game, before, datetime.now(UTC))
+
+
+@pytest.mark.parametrize(("lang", "expected"), [("en", "\n🎲 Game #42"), ("ru", "\n🎲 Игра #42")])
+def test_game_id_line(lang: str, expected: str) -> None:
+    assert game_service.game_id_line(42, lang) == expected
+
+
+def test_record_guess_logs_each_guess(session: Session) -> None:
+    game = _active_game(session)
+    session.add(Player(telegram_user_id=2))
+    session.flush()
+    game_service.record_guess(session, game, guesser_id=2, guess_text="definitely wrong")
+    row = session.scalars(
+        select(GameGuess).where(GameGuess.game_id == game.id).order_by(GameGuess.id.desc())
+    ).first()
+    assert row is not None
+    assert (row.player_id, row.text, row.stage, row.correct) == (2, "definitely wrong", 1, False)
+
+
+def test_wrong_guess_stores_its_partial_reveal(session: Session) -> None:
+    game = _active_game(session)
+    game.title_romaji = "Sousou no Frieren"
+    game.title_english = None
+    game.synonyms = []
+    game_service.record_guess(session, game, guesser_id=2, guess_text="frieren something")
+    latest = guesses.latest(session, game.id)
+    assert latest is not None
+    assert latest.partial_reveal == "_ _ _ _ _ _   _ _   Frieren"
+
+
+def test_a_voting_game_blocks_starting_a_new_one(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.flush()
+    session.add(Game(starter_id=1, status=GameStatus.VOTING, hard_mode=True))
+    session.flush()
+    assert game_service.active_or_setup_game(session) is not None
+    assert not game_service.can_start(session, 5)
+
+
+def test_win_without_hand_turn_leaves_the_next_starter_alone(session: Session) -> None:
+    game = _active_game(session)
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+
+    state._record_win(session, game, winner_id=2)
+
+    turn_state = game_service.get_turn_state(session)
+    assert turn_state is None or turn_state.next_starter_id != 2
+
+
+def test_win_keeps_an_already_set_ended_at(session: Session) -> None:
+    game = _active_game(session)
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+    earlier = datetime(2020, 1, 1, tzinfo=UTC)
+    game.ended_at = earlier
+
+    state._win(session, game, winner_id=2)
+
+    assert game.ended_at == earlier

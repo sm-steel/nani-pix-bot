@@ -17,11 +17,12 @@ from nani_pix_bot.jobs.timers.current_image import (
 from nani_pix_bot.jobs.timers.inactivity import cancel_inactivity_timers
 from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.jobs.timers.retry import retry_on_failure
+from nani_pix_bot.jobs.timers.vote import post_vote_ballot, schedule_vote_close
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.economy import bounty
+from nani_pix_bot.services.economy import settlement
 
 
 def timeout_job_name(game_id: int) -> str:
@@ -71,6 +72,7 @@ def _hard_mode_timeout_reveal(game: Game, lang: str, refund_note: str) -> _HardM
     caption = i18n.t(
         "timeout.hard_mode_caption", lang, title=game_service.display_title(game, lang)
     )
+    caption += game_service.game_id_line(game.id, lang)
     caption += refund_note
     return _HardModeTimeoutReveal(photos=photos, caption=caption)
 
@@ -101,6 +103,7 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
 
     session_factory = context.bot_data["session_factory"]
     hard_mode_reveal: _HardModeTimeoutReveal | None = None
+    vote_opened = False
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         game = session.get(Game, game_id)
@@ -112,19 +115,32 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.debug("timeout fired but it's already resolved — no-op", game_id=game_id)
             return
 
-        game_service.force_unsolved(game, cause="2-day timeout")
-        refund_note = bounty.refund_note(session, game_id, lang)
-        game_service.mark_turn_open_if_unassigned(session)
         cancel_inactivity_timers(context.job_queue, game.id)
         if game.hard_mode:
-            hard_mode_reveal = _hard_mode_timeout_reveal(game, lang, refund_note)
+            outcome = game_service.end_hard_mode_without_winner(
+                session, game, cause="2-day timeout"
+            )
+            if outcome is game_service.GuessOutcome.VOTE_OPENED:
+                schedule_vote_close(context.job_queue, game)
+                vote_opened = True
+            else:
+                refund_note = settlement.settle_unsolved(session, game, lang)
+                game_service.mark_turn_open_if_unassigned(session)
+                hard_mode_reveal = _hard_mode_timeout_reveal(game, lang, refund_note)
         else:
+            game_service.force_unsolved(game, cause="2-day timeout")
+            refund_note = settlement.settle_unsolved(session, game, lang)
+            game_service.mark_turn_open_if_unassigned(session)
             original_bytes = game.original_image
             caption = i18n.t("timeout.caption", lang, title=game_service.display_title(game, lang))
+            caption += game_service.game_id_line(game.id, lang)
             caption += refund_note
     # Block closed and committed above — the UNSOLVED ending is durable
     # now regardless of whether the announcement below actually reaches
     # the group (see post_current_image's docstring).
+    if vote_opened:
+        await post_vote_ballot(context, session_factory, game_id)
+        return
     if hard_mode_reveal is not None:
         sent = await post_current_images(
             context,

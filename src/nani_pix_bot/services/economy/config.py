@@ -32,6 +32,8 @@ class EconomyKey(enum.StrEnum):
     CLUE_SCREENSHOT_STEP = "clue_screenshot_step"
     CLUE_TILE = "clue_tile"
     SHARPEN = "sharpen"
+    CLUE_CASHBACK_PERCENT = "clue_cashback_percent"
+    DISPUTED_WIN_BONUS = "disputed_win_bonus"
 
 
 DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
@@ -54,6 +56,8 @@ DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
         EconomyKey.CLUE_SCREENSHOT_STEP: 75,
         EconomyKey.CLUE_TILE: 100,
         EconomyKey.SHARPEN: 250,
+        EconomyKey.CLUE_CASHBACK_PERCENT: 50,
+        EconomyKey.DISPUTED_WIN_BONUS: 30,
     }
 )
 
@@ -69,6 +73,11 @@ PRICE_KEYS: frozenset[EconomyKey] = frozenset(
         EconomyKey.SHARPEN,
     }
 )
+
+PERCENT_MAX = 100
+
+# Percentages: capped at 100.
+PERCENT_KEYS: frozenset[EconomyKey] = frozenset({EconomyKey.CLUE_CASHBACK_PERCENT})
 
 # Index i is the win reward for stage number i + 1.
 WIN_STAGE_KEYS: tuple[EconomyKey, ...] = (
@@ -93,6 +102,9 @@ def set_amount(session: Session, key: EconomyKey, value: int) -> None:
         raise ValueError(msg)
     if key in PRICE_KEYS and value < 1:
         msg = f"Price for {key} must be at least 1: {value}"
+        raise ValueError(msg)
+    if key in PERCENT_KEYS and value > PERCENT_MAX:
+        msg = f"Percentage for {key} must be at most {PERCENT_MAX}: {value}"
         raise ValueError(msg)
     row = session.get(CurrencyConfig, key.value)
     if row is None:

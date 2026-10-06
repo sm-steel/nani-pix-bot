@@ -1092,3 +1092,19 @@ async def test_search_and_get_by_id_queries_dont_include_stats() -> None:
     # Verify that the query constants don't include statusesStats
     assert "statusesStats" not in shikimori._SEARCH_QUERY
     assert "statusesStats" not in shikimori._DETAIL_QUERY
+
+
+async def test_random_anime_asks_for_tv_and_movie_kinds_only() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json=_animes_payload([]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await shikimori.random_anime(client) is None
+
+    assert "kind: $kind" in captured["json"]["query"]
+    assert "$kind: AnimeKindString" in captured["json"]["query"]
+    assert captured["json"]["variables"]["kind"] == "tv,movie"
+    assert shikimori.RANDOM_PICK_KINDS == ("tv", "movie")

@@ -99,6 +99,9 @@ def test_build_application_registers_every_command() -> None:
         "shop",
         "tip",
         "pixelconfig",
+        "partialmatch",
+        "refund",
+        "setwinner",
     }
 
 

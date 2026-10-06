@@ -14,6 +14,7 @@ from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import settings
 from nani_pix_bot.services.economy import bounty
+from nani_pix_bot.services.game import guesses
 from tests.conftest import LogLine
 
 
@@ -233,7 +234,6 @@ async def test_timeout_job_callback_is_a_noop_for_normal_game_with_no_original_i
     await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
     context.bot.send_photo.assert_not_awaited()
-    context.bot.send_media_group.assert_not_awaited()
 
 
 async def test_rearm_pending_timeouts_schedules_every_active_game(session_factory) -> None:
@@ -1014,7 +1014,6 @@ async def test_inactivity_advance_job_callback_is_a_noop_for_hard_mode_game_if_n
     await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
     context.bot.send_photo.assert_not_awaited()
-    context.bot.send_media_group.assert_not_awaited()
 
 
 def _make_post_image_context(session_factory) -> MagicMock:
@@ -1629,3 +1628,88 @@ def test_clear_image_if_sent_logs_keeping_the_bytes_when_the_reveal_failed(
         "reveal not confirmed sent — keeping the screenshot bytes",
     )
     assert line.extra["game_id"] == game_id
+
+
+def _seed_guesser(session_factory, game_id: int) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2))
+        session.flush()
+        game = session.get(Game, game_id)
+        assert game is not None
+        guesses.log_guess(
+            session, game, guesses.GuessRecord(player_id=2, text="nope", stage=2, correct=False)
+        )
+        session.commit()
+
+
+def _vote_context(session_factory, *, game_id: int) -> MagicMock:
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+    context.bot.send_message = AsyncMock(return_value=MagicMock(message_id=77))
+    return context
+
+
+def _status(session_factory, game_id: int) -> GameStatus:
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        return game.status
+
+
+async def test_hard_mode_inactivity_on_turn_two_with_a_guesser_opens_a_vote(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _hard_mode_active_game(session_factory, hard_mode_turn=2)
+    _seed_guesser(session_factory, game_id)
+    context = _vote_context(session_factory, game_id=game_id)
+    overthrow = AsyncMock()
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.autostart.maybe_overthrow", overthrow)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert _status(session_factory, game_id) is GameStatus.VOTING
+    context.bot.send_message.assert_awaited()
+    overthrow.assert_not_awaited()
+    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
+    assert timeout_module.vote_close_job_name(game_id) in names
+
+
+async def test_hard_mode_inactivity_on_turn_two_without_guessers_reveals_unsolved(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _hard_mode_active_game(session_factory, hard_mode_turn=2)
+    context = _vote_context(session_factory, game_id=game_id)
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.autostart.maybe_overthrow", AsyncMock())
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert _status(session_factory, game_id) is GameStatus.UNSOLVED
+    context.bot.send_media_group.assert_awaited_once()
+
+
+async def test_hard_mode_timeout_with_a_guesser_opens_a_vote(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _hard_mode_active_game(session_factory)
+    _seed_guesser(session_factory, game_id)
+    context = _vote_context(session_factory, game_id=game_id)
+    overthrow = AsyncMock()
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.autostart.maybe_overthrow", overthrow)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert _status(session_factory, game_id) is GameStatus.VOTING
+    context.bot.send_message.assert_awaited()
+    overthrow.assert_not_awaited()
+
+
+async def test_hard_mode_timeout_without_a_guesser_reveals_unsolved(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _hard_mode_active_game(session_factory)
+    context = _vote_context(session_factory, game_id=game_id)
+    monkeypatch.setattr("nani_pix_bot.jobs.timers.autostart.maybe_overthrow", AsyncMock())
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert _status(session_factory, game_id) is GameStatus.UNSOLVED
+    context.bot.send_media_group.assert_awaited_once()

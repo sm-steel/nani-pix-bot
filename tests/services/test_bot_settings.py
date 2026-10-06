@@ -1,6 +1,7 @@
 from datetime import time
 from zoneinfo import ZoneInfo
 
+import pytest
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.bot_settings import BotSettings
@@ -174,3 +175,22 @@ def test_get_quiet_hours_ignores_an_invalid_stored_timezone(session: Session) ->
     )
     session.commit()
     assert settings.get_quiet_hours(session) is None
+
+
+def test_partial_match_min_letters_defaults_to_four(session: Session) -> None:
+    assert settings.get_partial_match_min_letters(session) == 4
+    session.add(BotSettings(id=1))
+    session.flush()
+    assert settings.get_partial_match_min_letters(session) == 4
+
+
+def test_set_partial_match_min_letters_stores_zero(session: Session) -> None:
+    settings.set_partial_match_min_letters(session, 0)
+    session.flush()
+
+    assert settings.get_partial_match_min_letters(session) == 0
+
+
+def test_set_partial_match_min_letters_rejects_negative(session: Session) -> None:
+    with pytest.raises(ValueError, match="negative"):
+        settings.set_partial_match_min_letters(session, -1)
