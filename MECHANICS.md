@@ -75,8 +75,9 @@ stateDiagram-v2
     ACTIVE --> WON: /guess matches,\nor starter's /correct
     ACTIVE --> UNSOLVED: stage 5's configured limit reached\n(stage exhaustion),\nor 6h of inactivity on stage 5,\nor 2-day timeout fires
     ACTIVE --> VOTING: hard mode only: no correct guess\n(turns exhausted, inactivity or timeout)\nbut at least one guesser\n(15 min vote-close timer starts)
-    VOTING --> WON: unique plurality of 3+ votes
+    VOTING --> WON: unique plurality of 3+ votes,\nor admin /setwinner
     VOTING --> UNSOLVED: no winner when the vote closes
+    UNSOLVED --> WON: admin /setwinner\n(turn left where it is)
     ACTIVE --> [*]: /stop confirmed\n(row deleted, turn opens)
     VOTING --> [*]: /stop confirmed\n(row deleted, refunds, turn opens)
 
@@ -87,6 +88,8 @@ stateDiagram-v2
 `[*]` here means "no `Game` row exists" — every arrow into it either
 deletes the row (`/stop`, setup-abandon) or the row reaches a terminal
 `status` (`WON`/`UNSOLVED`) and simply stops being the "current" game.
+The one way out of `UNSOLVED` is an admin's `/setwinner`, which re-finishes
+it as `WON` (see "Bot-initiated games").
 `SETUP`'s five inner states are `Game.setup_step`; `VOTING` is hard mode only (see "HARD MODE vote"). `ACTIVE`'s five inner
 states are `Game.current_stage` (`PixelStage`).
 
