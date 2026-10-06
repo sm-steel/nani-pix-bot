@@ -68,6 +68,7 @@ class GuessOutcome(enum.Enum):
     STAGE_ADVANCED = "stage_advanced"
     TURN_ADVANCED = "turn_advanced"
     UNSOLVED = "unsolved"
+    VOTE_OPENED = "vote_opened"
 
 
 @dataclass(frozen=True)
@@ -238,9 +239,12 @@ def _bound(game: Game | None) -> Game | None:
 
 
 def active_or_setup_game(session: Session) -> Game | None:
-    """The one game currently SETUP or ACTIVE, if any — there's never more
-    than one (enforced here, not by a DB constraint; see ARCHITECTURE.md)."""
-    stmt = select(Game).where(Game.status.in_([GameStatus.SETUP, GameStatus.ACTIVE]))
+    """The one game currently SETUP, ACTIVE or VOTING (an open hard-mode vote
+    still holds the round — issue #252), if any; there's never more than one
+    (enforced here, not by a DB constraint; see ARCHITECTURE.md)."""
+    stmt = select(Game).where(
+        Game.status.in_([GameStatus.SETUP, GameStatus.ACTIVE, GameStatus.VOTING])
+    )
     return _bound(session.scalars(stmt).first())
 
 
@@ -624,9 +628,21 @@ def force_win(session: Session, game: Game, *, winner_id: int) -> None:
 
 
 def _win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> None:
+    """A win: record it (see _record_win) and hand the turn to the winner."""
+    _record_win(session, game, winner_id=winner_id, award=award)
+    turns.set_next_starter(session, winner_id, reason=f"won game {game.id}")
+
+
+def _record_win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> None:
+    """The win itself — status, winner, ended_at, wins counter — without
+    touching whose turn it is next (a re-finish that keeps the turn uses
+    this directly)."""
     game.status = GameStatus.WON
     game.winner_id = winner_id
-    game.ended_at = datetime.now(UTC)
+    # An admin re-finish (services/game/refinish.py) keeps the original
+    # ending time, so the hard-mode discount streak's order doesn't move.
+    if game.ended_at is None:
+        game.ended_at = datetime.now(UTC)
 
     winner = players.get_or_create_player(session, winner_id)
     winner.wins += award
@@ -645,7 +661,6 @@ def _win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> Non
         stage=where,
         game_id=game.id,
     )
-    turns.set_next_starter(session, winner_id, reason=f"won game {game.id}")
 
 
 def force_unsolved(game: Game, *, cause: str) -> None:

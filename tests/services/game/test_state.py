@@ -1405,3 +1405,35 @@ def test_wrong_guess_stores_its_partial_reveal(session: Session) -> None:
     latest = guesses.latest(session, game.id)
     assert latest is not None
     assert latest.partial_reveal == "_ _ _ _ _ _   _ _   Frieren"
+
+
+def test_a_voting_game_blocks_starting_a_new_one(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.flush()
+    session.add(Game(starter_id=1, status=GameStatus.VOTING, hard_mode=True))
+    session.flush()
+    assert game_service.active_or_setup_game(session) is not None
+    assert not game_service.can_start(session, 5)
+
+
+def test_win_without_hand_turn_leaves_the_next_starter_alone(session: Session) -> None:
+    game = _active_game(session)
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+
+    state._record_win(session, game, winner_id=2)
+
+    turn_state = game_service.get_turn_state(session)
+    assert turn_state is None or turn_state.next_starter_id != 2
+
+
+def test_win_keeps_an_already_set_ended_at(session: Session) -> None:
+    game = _active_game(session)
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+    earlier = datetime(2020, 1, 1, tzinfo=UTC)
+    game.ended_at = earlier
+
+    state._win(session, game, winner_id=2)
+
+    assert game.ended_at == earlier

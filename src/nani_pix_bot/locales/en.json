@@ -357,5 +357,14 @@
   "clue_kind.last_letter": "last letter",
   "clue_kind.title_shape": "title shape",
   "clue_kind.screenshot": "extra screenshot",
-  "clue_kind.tile": "tile"
+  "clue_kind.tile": "tile",
+  "guess.vote_in_progress": "🗳 Nobody got this one, so it's up to the group: vote on who was actually right in the poll above.",
+  "vote.reveal_caption": "🗳 Nobody survived HARD MODE this time. It was {title}.",
+  "vote.ballot": "🗳 Was anyone actually right? Vote for the guess that really counts — you can't vote for yourself. Closes in {minutes} min; a winner needs at least {min_votes} votes and no tie. Votes so far: {total}.",
+  "vote.counted": "✅ Vote counted.",
+  "vote.refused.self": "You can't vote for yourself.",
+  "vote.refused.closed": "This vote is already closed.",
+  "vote.refused.not_candidate": "That player isn't on this ballot.",
+  "vote.won": "🎉 The group decided: {winner} was right! It was {title} — that's a HARD MODE win (+2 to the score). Your turn to start the next game!",
+  "vote.no_winner": "🗳 The vote didn't pick anyone, so this one stays unsolved. It was {title}."
 }

@@ -282,6 +282,9 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(game_flow.stop_callback_handler, pattern=r"^stop:")
     )
     application.add_handler(
+        CallbackQueryHandler(game_flow.vote_callback_handler, pattern=r"^vote:")
+    )
+    application.add_handler(
         CallbackQueryHandler(refund.refund_callback_handler, pattern=r"^refund:")
     )
     application.add_handler(CallbackQueryHandler(shop.shop_callback_handler, pattern=r"^shop:"))

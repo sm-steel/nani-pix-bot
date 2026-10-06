@@ -168,6 +168,10 @@ class Game(Base):
     hard_mode_image_b: Mapped[bytes | None] = mapped_column(
         LargeBinary(length=IMAGE_COLUMN_LENGTH), deferred=True, default=None
     )
+    # Only meaningful while status is VOTING (issue #252): when the vote
+    # closes (jobs/timers/vote.py), and the ballot message to edit.
+    vote_deadline_at: Mapped[datetime | None] = mapped_column(default=None)
+    vote_message_id: Mapped[int | None] = mapped_column(default=None)
 
     starter: Mapped[Player] = relationship(foreign_keys=[starter_id])
     winner: Mapped[Player | None] = relationship(foreign_keys=[winner_id])

@@ -55,3 +55,22 @@ def has_partial_reveal(session: Session, game_id: int) -> bool:
         ).first()
         is not None
     )
+
+
+def guess_texts(session: Session, game_id: int) -> dict[int, list[str]]:
+    """Each guesser's guesses, oldest first; the dict is in first-guess order."""
+    texts: dict[int, list[str]] = {}
+    rows = session.execute(
+        select(GameGuess.player_id, GameGuess.text)
+        .where(GameGuess.game_id == game_id)
+        .order_by(GameGuess.id)
+    )
+    for player_id, text in rows:
+        texts.setdefault(player_id, []).append(text)
+    return texts
+
+
+def guessers(session: Session, game_id: int) -> list[int]:
+    """Everyone who guessed in the game, in first-guess order — the people a
+    hard-mode vote can name."""
+    return list(guess_texts(session, game_id))

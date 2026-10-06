@@ -21,7 +21,7 @@ from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.economy import bounty
+from nani_pix_bot.services.economy import settlement
 
 
 def timeout_job_name(game_id: int) -> str:
@@ -114,7 +114,7 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
             return
 
         game_service.force_unsolved(game, cause="2-day timeout")
-        refund_note = bounty.refund_note(session, game_id, lang)
+        refund_note = settlement.settle_unsolved(session, game, lang)
         game_service.mark_turn_open_if_unassigned(session)
         cancel_inactivity_timers(context.job_queue, game.id)
         if game.hard_mode:

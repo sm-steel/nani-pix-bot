@@ -139,8 +139,12 @@ def record_hard_mode_guess(
         )
         return GuessOutcome.TURN_ADVANCED
 
-    state.force_unsolved(game, cause="final hard-mode turn exhausted — wrong-guess limit reached")
-    return GuessOutcome.UNSOLVED
+    # Local import — vote.py imports this module at module level (see its docstring).
+    from nani_pix_bot.services.game import vote
+
+    return vote.end_hard_mode_without_winner(
+        session, game, cause="final hard-mode turn exhausted — wrong-guess limit reached"
+    )
 
 
 def hard_mode_turn_progress(game: Game) -> HardModeTurnProgress:

@@ -1,10 +1,10 @@
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.commands.helpers.earnings import earnings_suffix
 from nani_pix_bot.models import Player
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services.economy.earning import Earnings
+from nani_pix_bot.services.economy.messages import earnings_suffix
 
 
 def _game(session: Session, *, setter_username: str | None = "setter") -> Game:

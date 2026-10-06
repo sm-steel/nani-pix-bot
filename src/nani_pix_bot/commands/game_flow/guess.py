@@ -15,7 +15,6 @@ from nani_pix_bot.commands.game_flow.stage_post import (
     send_announcement,
     with_suffix,
 )
-from nani_pix_bot.commands.helpers.earnings import earnings_suffix
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -24,11 +23,18 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
-from nani_pix_bot.services.economy import bounty, earning
+from nani_pix_bot.services.economy import earning, settlement
+from nani_pix_bot.services.economy.messages import earnings_suffix
 from nani_pix_bot.services.game import guesses
 
 # Outcomes whose post reveals the title anyway.
-_NO_PARTIAL_REVEAL = frozenset({game_service.GuessOutcome.WON, game_service.GuessOutcome.UNSOLVED})
+_NO_PARTIAL_REVEAL = frozenset(
+    {
+        game_service.GuessOutcome.WON,
+        game_service.GuessOutcome.UNSOLVED,
+        game_service.GuessOutcome.VOTE_OPENED,
+    }
+)
 
 
 def _partial_reveal_line(session, game: Game, lang: str) -> str:
@@ -116,23 +122,6 @@ def _prepare_turn_advanced_announcement(
     )
 
 
-def _prepare_hard_mode_unsolved_announcement(
-    context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
-) -> Announcement:
-    """The hard-mode analogue of _prepare_unsolved_announcement — reveals
-    the stored screenshot pair via post_current_images instead of a
-    single post_current_image call. Doesn't need a hard-mode analogue of
-    require_original_image: hard_mode_reveal_images already raises a
-    RuntimeError itself if either image is missing."""
-    photos = game_service.hard_mode_reveal_images(game)
-    timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
-    caption = i18n.t(
-        "guess.hard_mode_unsolved_caption", lang, title=game_service.display_title(game, lang)
-    )
-    caption += game_service.game_id_line(game.id, lang)
-    return Announcement(photos=photos, caption=caption)
-
-
 def _prepare_unsolved_announcement(
     context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
 ) -> Announcement:
@@ -141,6 +130,14 @@ def _prepare_unsolved_announcement(
     caption = i18n.t("guess.unsolved_caption", lang, title=game_service.display_title(game, lang))
     caption += game_service.game_id_line(game.id, lang)
     return Announcement(photo=original_bytes, caption=caption)
+
+
+def _prepare_vote_opened(context: ContextTypes.DEFAULT_TYPE, game: Game) -> None:
+    """VOTE_OPENED: the round isn't over — stop its game clocks and start
+    the vote's own. The ballot is posted after commit (guess_command)."""
+    timeout_module.cancel_timeout(context.job_queue, game.id)
+    timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
+    timeout_module.schedule_vote_close(context.job_queue, game)
 
 
 def _prepare_won_announcement_dispatch(
@@ -155,16 +152,6 @@ def _prepare_won_announcement_dispatch(
     if game.hard_mode:
         return _prepare_hard_mode_won_announcement(session, context, game, lang, winner_name)
     return _prepare_won_announcement(session, context, game, lang, winner_name)
-
-
-def _prepare_unsolved_announcement_dispatch(
-    context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
-) -> Announcement:
-    """The UNSOLVED analogue of _prepare_won_announcement_dispatch —
-    same hard-mode/normal-mode picking, same reason for existing."""
-    if game.hard_mode:
-        return _prepare_hard_mode_unsolved_announcement(context, game, lang)
-    return _prepare_unsolved_announcement(context, game, lang)
 
 
 def _prepare_wrong_feedback(
@@ -219,8 +206,12 @@ def _dispatch_non_won_outcome(
         return prepare_stage_advanced_announcement(session, context, game, lang), False, None
     if outcome is game_service.GuessOutcome.TURN_ADVANCED:
         return _prepare_turn_advanced_announcement(session, context, game, lang), False, None
-    # The only outcome left is GuessOutcome.UNSOLVED.
-    return _prepare_unsolved_announcement_dispatch(context, game, lang), True, None
+    if outcome is game_service.GuessOutcome.VOTE_OPENED:
+        _prepare_vote_opened(context, game)
+        return None, False, None
+    # The only outcome left is GuessOutcome.UNSOLVED (normal mode only: a
+    # final hard-mode miss always has a guesser, so it opens a vote instead).
+    return _prepare_unsolved_announcement(context, game, lang), True, None
 
 
 @dataclass(frozen=True)
@@ -290,37 +281,39 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         suffix = earnings_suffix(session, game, earnings, lang, player_name=user.full_name)
         if outcome not in _NO_PARTIAL_REVEAL:
             suffix = _partial_reveal_line(session, game, lang) + suffix
-        if outcome is game_service.GuessOutcome.UNSOLVED:
-            suffix += bounty.refund_note(session, game.id, lang)
         if outcome is game_service.GuessOutcome.WON:
             announcement = _prepare_won_announcement_dispatch(
                 session, context, game, lang, user.full_name
             )
             result = _GuessResult(game.id, None, with_suffix(announcement, suffix), True)
         else:
-            announcement, needs_cleanup_after_send, wrong_reply_text = _dispatch_non_won_outcome(
-                session, context, game, lang, outcome
-            )
-            result = _GuessResult(
-                game.id,
-                None if wrong_reply_text is None else wrong_reply_text + suffix,
-                with_suffix(announcement, suffix),
-                needs_cleanup_after_send,
-            )
+            result = _non_won_result(session, context, game, outcome, suffix)
     # Block closed and committed above — the outcome (and the currency it
     # paid) is durable now regardless of whether the reply/announcement
     # below actually reaches the group (see post_current_image's docstring).
     await _send_guess_result(message, context, session_factory, result)
+    await _after_guess(update, context, outcome, result.game_id)
 
-    # Fire-and-forget: maybe_overthrow() can run gather_pick()'s several
-    # real HTTP round-trips (up to AUTOSTART_ATTEMPT_LIMIT attempts, each
-    # against 30s-timeout clients). app.py never enables
-    # concurrent_updates, so PTB processes updates one at a time —
-    # awaiting this inline would block every other DM/group command
-    # bot-wide for however long a hanging provider takes. `update=update`
-    # lets PTB's error handler attribute any exception to this update,
-    # same as it would for an awaited call.
-    if outcome is game_service.GuessOutcome.WON:
+
+async def _after_guess(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, outcome, game_id: int
+) -> None:
+    """What follows the committed reply: the vote's ballot, or the
+    fire-and-forget overthrow roll.
+
+    maybe_overthrow() can run gather_pick()'s several real HTTP round-trips
+    (up to AUTOSTART_ATTEMPT_LIMIT attempts, each against 30s-timeout
+    clients). app.py never enables concurrent_updates, so PTB processes
+    updates one at a time — awaiting it inline would block every other
+    DM/group command bot-wide for however long a hanging provider takes.
+    `update=update` lets PTB's error handler attribute any exception to
+    this update, same as it would for an awaited call. No overthrow while a
+    vote is open: the round isn't over."""
+    session_factory = context.bot_data["session_factory"]
+    user = update.effective_user
+    if outcome is game_service.GuessOutcome.VOTE_OPENED:
+        await timeout_module.post_vote_ballot(context, session_factory, game_id)
+    elif outcome is game_service.GuessOutcome.WON and user is not None:
         context.application.create_task(
             timeout_module.maybe_overthrow(
                 context, session_factory, winner_id=user.id, winner_name=user.full_name
@@ -331,6 +324,28 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         context.application.create_task(
             timeout_module.maybe_overthrow(context, session_factory), update=update
         )
+
+
+def _non_won_result(
+    session, context: ContextTypes.DEFAULT_TYPE, game: Game, outcome, suffix: str
+) -> _GuessResult:
+    """The reply/announcement for every outcome but WON. A vote opening has
+    no announcement yet (the ballot follows the commit), so its reply is the
+    earnings alone; an unsolved ending also refunds the pot."""
+    lang = settings.get_language(session)
+    if outcome is game_service.GuessOutcome.UNSOLVED:
+        suffix += settlement.settle_unsolved(session, game, lang)
+    announcement, needs_cleanup_after_send, wrong_reply_text = _dispatch_non_won_outcome(
+        session, context, game, lang, outcome
+    )
+    if outcome is game_service.GuessOutcome.VOTE_OPENED:
+        return _GuessResult(game.id, suffix.lstrip(chr(10)) or None, None, False)
+    return _GuessResult(
+        game.id,
+        None if wrong_reply_text is None else wrong_reply_text + suffix,
+        with_suffix(announcement, suffix),
+        needs_cleanup_after_send,
+    )
 
 
 async def _validate_guess(session, message, user, lang: str) -> Game | None:
@@ -347,6 +362,10 @@ async def _validate_guess(session, message, user, lang: str) -> Game | None:
     on every /guess (most of which are a WRONG outcome that never reads
     it) would defeat the point of deferring it in the first place."""
     game = game_service.active_or_setup_game(session)
+    if game is not None and game.status == GameStatus.VOTING:
+        logger.warning("guessed while the hard-mode vote is open")
+        await message.reply_text(i18n.t("guess.vote_in_progress", lang))
+        return None
     if game is None or game.status != GameStatus.ACTIVE:
         logger.warning("guessed with no ACTIVE game running")
         await message.reply_text(i18n.t("guess.no_game", lang))

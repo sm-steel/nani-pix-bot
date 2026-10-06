@@ -12,6 +12,7 @@ from nani_pix_bot.models.enums import GameStatus as GameStatus
 from nani_pix_bot.models.enums import PixelStage as PixelStage
 from nani_pix_bot.models.game import Game as Game
 from nani_pix_bot.models.game_guess import GameGuess as GameGuess
+from nani_pix_bot.models.game_vote import GameVote as GameVote
 from nani_pix_bot.models.mal_link import MalCredentials as MalCredentials
 from nani_pix_bot.models.mal_link import PendingMalLink as PendingMalLink
 from nani_pix_bot.models.player import Player as Player

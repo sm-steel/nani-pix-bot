@@ -74,6 +74,17 @@ from nani_pix_bot.jobs.timers.turn_timers import (
     turn_expiry_job_callback,
     turn_reminder_job_callback,
 )
+from nani_pix_bot.jobs.timers.vote import (
+    VoteFinal,
+    ballot_markup,
+    ballot_text,
+    cancel_vote_close,
+    finalize_vote,
+    post_vote_ballot,
+    schedule_vote_close,
+    vote_close_job_callback,
+    vote_close_job_name,
+)
 from nani_pix_bot.services import game as game_service
 
 __all__ = [
@@ -81,12 +92,17 @@ __all__ = [
     "TURN_EXPIRY_JOB_NAME",
     "TURN_REMINDER_JOB_NAME",
     "AutostartTrigger",
+    "VoteFinal",
+    "ballot_markup",
+    "ballot_text",
     "cancel_idle_autostart",
     "cancel_inactivity_timers",
     "cancel_setup_abandon",
     "cancel_timeout",
     "cancel_turn_timers",
+    "cancel_vote_close",
     "clear_image_if_sent",
+    "finalize_vote",
     "idle_autostart_job_callback",
     "inactivity_advance_job_callback",
     "inactivity_advance_job_name",
@@ -97,6 +113,7 @@ __all__ = [
     "post_current_images",
     "post_stage_image",
     "post_stage_images",
+    "post_vote_ballot",
     "rearm_pending_timeouts",
     "run_bot_autostart",
     "schedule_idle_autostart",
@@ -104,6 +121,7 @@ __all__ = [
     "schedule_setup_abandon",
     "schedule_timeout",
     "schedule_turn_timers",
+    "schedule_vote_close",
     "seconds_until",
     "seconds_until_timeout",
     "setup_abandon_job_callback",
@@ -113,6 +131,8 @@ __all__ = [
     "timeout_job_name",
     "turn_expiry_job_callback",
     "turn_reminder_job_callback",
+    "vote_close_job_callback",
+    "vote_close_job_name",
 ]
 
 

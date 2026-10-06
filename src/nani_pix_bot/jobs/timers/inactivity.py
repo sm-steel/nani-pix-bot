@@ -24,7 +24,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services import pixelate as pixelate_service
-from nani_pix_bot.services.economy import bounty
+from nani_pix_bot.services.economy import settlement
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -173,7 +173,7 @@ def _hard_mode_unsolved_reveal(session: Session, game: Game, lang: str) -> _Hard
         "guess.hard_mode_unsolved_caption", lang, title=game_service.display_title(game, lang)
     )
     caption += game_service.game_id_line(game.id, lang)
-    caption += bounty.refund_note(session, game.id, lang)
+    caption += settlement.settle_unsolved(session, game, lang)
     return _HardModeAnnouncement(photos=photos, caption=caption)
 
 
@@ -296,7 +296,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
                     "guess.unsolved_caption", lang, title=game_service.display_title(game, lang)
                 )
                 unsolved_caption += game_service.game_id_line(game_id, lang)
-                unsolved_caption += bounty.refund_note(session, game_id, lang)
+                unsolved_caption += settlement.settle_unsolved(session, game, lang)
             else:
                 target_width = stage_config.get_stage_config(
                     session, game.current_stage

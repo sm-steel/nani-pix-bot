@@ -80,3 +80,16 @@ def test_has_partial_reveal_only_when_a_row_carries_one(session: Session) -> Non
         guesses.GuessRecord(player_id=2, text="b", stage=1, correct=False, partial_reveal="_ _"),
     )
     assert guesses.has_partial_reveal(session, game.id) is True
+
+
+def test_guess_texts_and_guessers_follow_first_guess_order(session: Session) -> None:
+    game = _game(session)
+    for player_id, text in ((3, "x"), (1, "y"), (3, "z")):
+        guesses.log_guess(
+            session,
+            game,
+            guesses.GuessRecord(player_id=player_id, text=text, stage=1, correct=False),
+        )
+    assert guesses.guess_texts(session, game.id) == {3: ["x", "z"], 1: ["y"]}
+    assert guesses.guessers(session, game.id) == [3, 1]
+    assert guesses.guessers(session, game.id + 1) == []

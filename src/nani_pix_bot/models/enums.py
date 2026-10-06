@@ -197,6 +197,7 @@ class GameStatus(enum.Enum):
     ACTIVE = "active"  # posted to the group, guessing open
     WON = "won"  # a /guess matched, or /correct forced it (terminal)
     UNSOLVED = "unsolved"  # stage exhaustion or 2-day timeout (terminal)
+    VOTING = "voting"  # HARD MODE ended with no correct guess; the group votes (issue #252)
 
 
 class PixelStage(enum.Enum):

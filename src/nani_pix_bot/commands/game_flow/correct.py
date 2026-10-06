@@ -6,7 +6,6 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.helpers.earnings import earnings_suffix
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -16,6 +15,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.economy import earning
+from nani_pix_bot.services.economy.messages import earnings_suffix
 
 
 async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
