@@ -3,6 +3,7 @@ from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.jobs import timers
@@ -215,3 +216,14 @@ async def test_a_vote_closed_by_setwinner_says_an_admin_decided(
     text = context.bot.send_message.await_args.kwargs["text"]
     assert text.startswith(i18n.t("vote.admin_won", "en", winner=str(B), title=title))
     assert not text.startswith(i18n.t("vote.won", "en", winner=str(B), title=title))
+
+
+async def test_a_failed_result_post_logs_an_error(session_factory, log_records) -> None:
+    game_id = _voting_game(session_factory, votes={3: A, 4: A, 5: A})
+    context = _job_context(session_factory, game_id)
+    context.bot.send_message = AsyncMock(side_effect=TelegramError("boom"))
+
+    await vote_module.finalize_vote(context, session_factory, game_id)
+
+    failed = [r for r in log_records if r.message.startswith("failed to post the vote result")]
+    assert [r.level for r in failed] == ["ERROR"]

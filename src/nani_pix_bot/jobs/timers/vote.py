@@ -199,7 +199,7 @@ async def _send_topic_text(context: ContextTypes.DEFAULT_TYPE, text: str) -> Mes
             text=text,
         )
     except TelegramError as exc:
-        logger.warning("failed to post the vote result: {error}", error=exc)
+        logger.error("failed to post the vote result: {error}", error=exc)
         return None
 
 
