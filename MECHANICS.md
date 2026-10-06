@@ -27,6 +27,7 @@ just what's currently built.
 | Pixels 💠 — earning, `/balance`, `/pixelconfig` | Implemented |
 | Clue shop (`/shop`) — spend 💠 on private clues | Implemented |
 | Public spends — bounty (`/bounty`), `/tip`, `/sharpen` | Implemented |
+| HARD MODE vote when nobody guessed right (15 min, unique plurality of 3+ votes) | Implemented |
 | Quiet hours (`/quiethours`, `/timezone`) — automatic posts held, clocks frozen | Implemented |
 
 ## Game lifecycle
@@ -73,7 +74,11 @@ stateDiagram-v2
 
     ACTIVE --> WON: /guess matches,\nor starter's /correct
     ACTIVE --> UNSOLVED: stage 5's configured limit reached\n(stage exhaustion),\nor 6h of inactivity on stage 5,\nor 2-day timeout fires
+    ACTIVE --> VOTING: hard mode only: no correct guess\n(turns exhausted, inactivity or timeout)\nbut at least one guesser\n(15 min vote-close timer starts)
+    VOTING --> WON: unique plurality of 3+ votes
+    VOTING --> UNSOLVED: no winner when the vote closes
     ACTIVE --> [*]: /stop confirmed\n(row deleted, turn opens)
+    VOTING --> [*]: /stop confirmed\n(row deleted, refunds, turn opens)
 
     WON --> [*]: turn assigned to winner\n(15min reminder / 12h expiry timers)
     UNSOLVED --> [*]: turn state left unchanged
@@ -82,7 +87,7 @@ stateDiagram-v2
 `[*]` here means "no `Game` row exists" — every arrow into it either
 deletes the row (`/stop`, setup-abandon) or the row reaches a terminal
 `status` (`WON`/`UNSOLVED`) and simply stops being the "current" game.
-`SETUP`'s five inner states are `Game.setup_step`; `ACTIVE`'s five inner
+`SETUP`'s five inner states are `Game.setup_step`; `VOTING` is hard mode only (see "HARD MODE vote"). `ACTIVE`'s five inner
 states are `Game.current_stage` (`PixelStage`).
 
 ## Starting a game
@@ -667,7 +672,7 @@ During quiet hours both clocks are frozen and their posts are held back — see 
 
 **Status: Implemented.**
 
-Manually aborts whatever game is currently `SETUP` or `ACTIVE`, usable
+Manually aborts whatever game is currently `SETUP`, `ACTIVE` or `VOTING`, usable
 by that game's own starter, or by any group admin/owner (for any game,
 not just their own) — checked via the same `is_group_admin` helper
 `/language` uses. **DM only** — sent privately to the bot like `/start`/
@@ -698,8 +703,11 @@ There are **two** ways to say yes:
 
 On either confirmation, the bot:
 1. Cancels whatever timer(s) were pending for that game — its 2-day
-   timeout and inactivity nudge/auto-advance pair if `ACTIVE`, or its
-   1-hour setup-abandon timer if still `SETUP`.
+   timeout and inactivity nudge/auto-advance pair if `ACTIVE`, its
+   15-minute vote-close timer if `VOTING`, or its 1-hour setup-abandon
+   timer if still `SETUP`. A `VOTING` game is refunded (clue purchases
+   and the bounty pot) exactly like an `ACTIVE` one, and its votes are
+   dropped with the row.
 2. Announces the outcome in the group topic — a plain "anyone can start a
    new game" notice, or, on the reveal path, the **original un-pixelated
    screenshot captioned with the title**, posted through the same
@@ -935,6 +943,48 @@ above. The one exception is **`/correct`, which is not currently usable
 on a HARD MODE game** — see "Bot-initiated games" above for why (its
 starter-only check can never be satisfied by a human, since the starter
 of a bot-autostarted game is the bot itself).
+
+## HARD MODE vote
+
+**Status: Implemented.**
+
+A HARD MODE round that ends with no correct guess doesn't always just
+end unsolved: when someone did guess, the group gets to vote on whether
+one of the guessers was actually right (fuzzy matching and the 1-guess
+budget are strict, and a miss can still be the right anime under another
+name).
+
+- **Trigger:** any hard-mode ending with no correct guess — turn 2
+  exhausted, the 6h inactivity advance on turn 2, or the 2-day timeout —
+  and **at least one guesser**. With no guessers there is nobody to vote
+  for, and the round ends unsolved, exactly as before.
+- **Held while voting:** `status → VOTING`. No new game can start
+  (`/newgame`, a DM'd screenshot and the autostart timers all treat it
+  as a running game), there is no overthrow roll and no turn handoff
+  yet, the bounty pot stays held, and both screenshots are kept. The
+  bot posts the answer with the two screenshots, then the ballot.
+- **Ballot:** one button per guesser, listing each guesser's guesses.
+  Any group member votes once, can change their vote by tapping another
+  button, and cannot vote for themselves. Only guessers are candidates.
+- **Close:** 15 minutes after the vote opened (`VOTE_DURATION`),
+  computed through `deadline_after`, so quiet hours push it back like
+  every other automatic deadline. The deadline is stored
+  (`games.vote_deadline_at`) and re-armed on a restart; an already-overdue
+  one closes right away.
+- **Rule:** a candidate wins with a **unique plurality of at least 3
+  votes** (`VOTE_MIN_VOTES`). A tie for the top spot, or fewer than 3
+  votes, is no winner.
+- **Outcomes:** a winner gets a normal hard-mode win — +2 wins, the
+  regular 💠 payout including the bounty pot — and the next-game turn,
+  after which the overthrow roll runs as after any win. With no winner
+  the round gets the unsolved settlement (pot refunded) and the turn is
+  opened if nobody was designated, then the overthrow roll runs.
+  The ballot's buttons are removed on close. A close that fires on a
+  game that is no longer `VOTING` does nothing.
+- **While a vote is open:** `/guess` is answered with a "vote in
+  progress" reply and changes nothing. `/stop` works as usual (see
+  "Stopping a game"): it cancels the vote-close timer, refunds, and
+  deletes the round.
 
 ## Leaderboard
 

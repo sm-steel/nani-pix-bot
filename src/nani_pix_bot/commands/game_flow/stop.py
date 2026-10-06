@@ -1,5 +1,5 @@
 """The /stop command — DM only. Lets the game's own starter, or any group
-admin, abort a SETUP or ACTIVE game after a confirmation; the outcome is
+admin, abort a SETUP, ACTIVE or VOTING game after a confirmation; the outcome is
 still announced in the group topic, optionally revealing what the round's
 answer was. See MECHANICS.md's "Stopping a game" section."""
 
@@ -155,7 +155,7 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
             return
 
         game_id = game.id
-        was_active = game.status == GameStatus.ACTIVE
+        was = game.status.name
         title = game_service.display_title(game, lang)
         # Forces the deferred original_image/hard_mode_image_a/_b columns
         # now, while the row is still live — _announce_stop runs after
@@ -170,7 +170,9 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
             hard_mode_photos = None
         if reveal and not can_reveal_now:
             logger.warning("reveal requested but no image is stored", game_id=game_id)
-        if was_active:
+        if game.status == GameStatus.VOTING:
+            timeout_module.cancel_vote_close(context.job_queue, game_id)
+        elif game.status == GameStatus.ACTIVE:
             timeout_module.cancel_timeout(context.job_queue, game_id)
             timeout_module.cancel_inactivity_timers(context.job_queue, game_id)
         else:
@@ -193,7 +195,7 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
     revealed = await _announce_stop(context, session_factory, stopped_game, lang, reveal)
     logger.info(
         "stopped (was {was}, answer {answer})",
-        was="ACTIVE" if was_active else "SETUP",
+        was=was,
         answer="revealed" if revealed else "not revealed",
         game_id=game_id,
     )
