@@ -13,6 +13,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.economy import bounty
 from tests.services.economy.ledger import ledger_balance
 
@@ -180,3 +181,37 @@ async def test_rearm_schedules_an_open_vote_even_if_overdue(session_factory) -> 
         c for c in job_queue.run_once.call_args_list if c.kwargs["name"] == f"vote-close-{game_id}"
     )
     assert call.kwargs["when"] == 0  # seconds_until clamps an overdue deadline to now
+
+
+def _title(session_factory, game_id: int) -> str:
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        return game_service.display_title(game, "en")
+
+
+async def test_a_vote_won_by_the_group_says_the_group_decided(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _voting_game(session_factory, votes={3: A, 4: A, 5: A})
+    context = _job_context(session_factory, game_id)
+    title = _title(session_factory, game_id)
+
+    await vote_module.finalize_vote(context, session_factory, game_id)
+
+    text = context.bot.send_message.await_args.kwargs["text"]
+    assert text.startswith(i18n.t("vote.won", "en", winner=str(A), title=title))
+
+
+async def test_a_vote_closed_by_setwinner_says_an_admin_decided(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _voting_game(session_factory, votes={})
+    context = _job_context(session_factory, game_id)
+    title = _title(session_factory, game_id)
+
+    await vote_module.finalize_vote(context, session_factory, game_id, forced_winner_id=B)
+
+    text = context.bot.send_message.await_args.kwargs["text"]
+    assert text.startswith(i18n.t("vote.admin_won", "en", winner=str(B), title=title))
+    assert not text.startswith(i18n.t("vote.won", "en", winner=str(B), title=title))

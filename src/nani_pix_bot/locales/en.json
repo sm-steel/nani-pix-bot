@@ -383,5 +383,6 @@
   "vote.refused.closed": "This vote is already closed.",
   "vote.refused.not_candidate": "That player isn't on this ballot.",
   "vote.won": "🎉 The group decided: {winner} was right! It was {title} — that's a HARD MODE win (+2 to the score). Your turn to start the next game!",
+  "vote.admin_won": "🛠 An admin closed the vote: {winner} was right! It was {title} — that's a HARD MODE win (+2 to the score). Your turn to start the next game!",
   "vote.no_winner": "🗳 The vote didn't pick anyone, so this one stays unsolved. It was {title}."
 }
