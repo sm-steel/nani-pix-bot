@@ -44,6 +44,8 @@ def _resolve(args: list[str], lang: str) -> tuple[EconomyKey, int] | str:
         return i18n.t("currency_config.unknown_key", lang, name=raw_key)
     if key in config.PRICE_KEYS and value < 1:
         return i18n.t("currency_config.price_min", lang)
+    if key in config.PERCENT_KEYS and value > config.PERCENT_MAX:
+        return i18n.t("currency_config.percent_max", lang)
     return key, value
 
 

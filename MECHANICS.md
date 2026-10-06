@@ -1025,6 +1025,8 @@ one-time backfill is run.
 | Setter bonus (win at stage 2-4 only) | 15 | the game's starter |
 | Prompt turn | 10 | the starter |
 | Bounty (the pot, if any) | whatever players put in | the winner, all of it, including their own contribution; see "Public spends" |
+| Cashback (`cashback`; HARD MODE only) | 50% of their net clue spend (`clue_cashback_percent`) | each clue buyer, when the round finally ends unsolved |
+| Compensation (`compensation`) | 30 (`disputed_win_bonus`) | a winner chosen by the group vote or an admin's `/setwinner`, on top of the normal win |
 
 ### Rules
 
@@ -1045,6 +1047,15 @@ one-time backfill is run.
   the same player does not restart the hour.
 - A starter can't `/correct` themselves: awarding the win to the game's own
   starter is rejected, so `/correct` can't be used to farm 💠.
+- **Cashback:** only for HARD MODE rounds. When the round finally ends
+  unsolved (after the vote, or with no vote at all), every clue buyer gets
+  `clue_cashback_percent` (default 50%) of their net clue spend back
+  (charges minus refunded ones; a discounted charge counts at what was
+  actually paid). It is paid once per game and kept even if an admin later
+  names that player the winner.
+- **Compensation:** a winner decided by the group vote or an admin's
+  `/setwinner` also gets `disputed_win_bonus` (default 30 💠) on top of the
+  normal win reward.
 - The bot's guess and win replies and the game-start message show what was
   just earned.
 

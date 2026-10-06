@@ -103,7 +103,9 @@ async def test_unsolved_game_is_refinished_and_announced(monkeypatch, session_fa
         assert game is not None
         assert game.status is GameStatus.WON
         assert game.winner_id == WINNER
-    assert _currency(session_factory, WINNER) == START + 2 * DEFAULT_AMOUNTS[EconomyKey.WIN_STAGE_2]
+    win = 2 * DEFAULT_AMOUNTS[EconomyKey.WIN_STAGE_2]
+    bonus = DEFAULT_AMOUNTS[EconomyKey.DISPUTED_WIN_BONUS]
+    assert _currency(session_factory, WINNER) == START + win + bonus
     sent = context.bot.send_message.await_args.kwargs
     assert f"#{game_id}" in sent["text"]
     assert sent["chat_id"] == 555

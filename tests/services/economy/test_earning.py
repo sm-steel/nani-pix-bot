@@ -2,12 +2,14 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models import CurrencyTransfer, Player
-from nani_pix_bot.models.enums import GameStatus, PixelStage
+from nani_pix_bot.models import CluePurchase, CurrencyTransfer, Player
+from nani_pix_bot.models.enums import ClueKind, CurrencyReason, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.services.economy import bounty, config, earning
+from nani_pix_bot.services.clues import shop
+from nani_pix_bot.services.economy import bounty, config, earning, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
 from tests.conftest import LogLine
+from tests.services.economy.ledger import ledger_balance
 
 STARTER, ALICE, BOB = 1, 2, 3
 
@@ -220,3 +222,89 @@ def test_win_payout_names_winner_and_setter(session: Session, log_records) -> No
     assert (line.extra["win"], line.extra["setter_pay"]) == (earned.win, earned.setter)
     assert line.extra["game_id"] == game.id
     assert "user_id" not in line.extra
+
+
+def _hard_mode_game_with_purchases(
+    session: Session, spends: list[int], *, hard_mode: bool = True
+) -> tuple[Game, Player]:
+    """A game where ALICE was charged each amount as a clue purchase."""
+    game = _setup(session, hard_mode=hard_mode, hard_mode_turn=1 if hard_mode else None)
+    buyer = session.get(Player, ALICE)
+    assert buyer is not None
+    buyer.currency = sum(spends) + 100
+    session.add(
+        CurrencyTransfer(
+            from_type="house",
+            to_type="player",
+            to_player_id=ALICE,
+            amount=sum(spends) + 100,
+            reason=CurrencyReason.GRANT,
+        )
+    )
+    session.flush()
+    for amount in spends:
+        wallet.debit(
+            session,
+            buyer,
+            amount,
+            wallet.LedgerEntry(CurrencyReason.CLUE_PURCHASE, game_id=game.id),
+        )
+    return game, buyer
+
+
+def test_cashback_pays_half_of_net_clue_spend_once(session: Session) -> None:
+    game, buyer = _hard_mode_game_with_purchases(session, spends=[150, 225])
+    before = buyer.currency
+
+    assert earning.award_cashback(session, game) == 187  # (150 + 225) * 50 // 100
+    assert earning.award_cashback(session, game) == 0  # never twice
+
+    assert buyer.currency == before + 187
+    assert ledger_balance(session, ALICE) == buyer.currency
+
+
+def test_cashback_skips_refunded_purchases(session: Session) -> None:
+    game, buyer = _hard_mode_game_with_purchases(session, spends=[150, 225])
+    charges = list(
+        session.query(CurrencyTransfer)
+        .filter_by(reason=CurrencyReason.CLUE_PURCHASE)
+        .order_by(CurrencyTransfer.id)
+    )
+    purchases = [
+        CluePurchase(
+            game_id=game.id, player_id=ALICE, kind=ClueKind.FIRST_LETTER, transfer_id=charge.id
+        )
+        for charge in charges
+    ]
+    session.add_all(purchases)
+    session.flush()
+
+    shop.refund(session, purchases[0])
+
+    second = session.get(CurrencyTransfer, purchases[1].transfer_id)
+    assert second is not None
+    assert earning.clue_spend(session, game.id) == {ALICE: second.amount}
+    assert ledger_balance(session, ALICE) == buyer.currency
+
+
+def test_no_cashback_for_normal_games(session: Session) -> None:
+    game, buyer = _hard_mode_game_with_purchases(session, spends=[100], hard_mode=False)
+    before = buyer.currency
+
+    assert earning.award_cashback(session, game) == 0
+    assert buyer.currency == before
+
+
+def test_cashback_follows_the_configured_percent(session: Session) -> None:
+    game, _ = _hard_mode_game_with_purchases(session, spends=[100])
+    config.set_amount(session, EconomyKey.CLUE_CASHBACK_PERCENT, 0)
+
+    assert earning.award_cashback(session, game) == 0
+
+
+def test_award_compensation_pays_the_bonus(session: Session) -> None:
+    game = _setup(session)
+
+    assert earning.award_compensation(session, game, winner_id=BOB) == 30
+    assert _currency(session, BOB) == 30
+    assert ledger_balance(session, BOB) == _currency(session, BOB)

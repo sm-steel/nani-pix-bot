@@ -308,6 +308,8 @@ class CurrencyReason(enum.StrEnum):
     BOUNTY_WIN = "bounty_win"
     TIP = "tip"
     SHARPEN = "sharpen"
+    CASHBACK = "cashback"
+    COMPENSATION = "compensation"
 
 
 class CurrencyParty(enum.StrEnum):

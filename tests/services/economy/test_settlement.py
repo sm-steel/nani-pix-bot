@@ -1,10 +1,10 @@
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.enums import CurrencyReason, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n
-from nani_pix_bot.services.economy import bounty, config, settlement
+from nani_pix_bot.services.economy import bounty, config, settlement, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
 
 
@@ -35,28 +35,44 @@ def test_settle_unsolved_with_an_empty_pot_adds_nothing(session: Session) -> Non
     assert settlement.settle_unsolved(session, _game(session), "en") == ""
 
 
-def test_settle_vote_win_pays_the_hard_mode_win_reward(session: Session) -> None:
+def test_settle_disputed_win_pays_the_hard_mode_win_plus_compensation(session: Session) -> None:
     game = _game(session, turn=2)
     winner = session.get(Player, 2)
     assert winner is not None
     start = winner.currency
 
-    earnings = settlement.settle_vote_win(session, game, 2)
+    earnings = settlement.settle_disputed_win(session, game, 2)
 
-    expected = config.get_amounts(session)[EconomyKey.WIN_STAGE_2] * 2
-    assert earnings.win == expected
-    assert winner.currency == start + expected
+    win = config.get_amounts(session)[EconomyKey.WIN_STAGE_2] * 2
+    assert earnings.win == win
+    assert earnings.compensation == 30
+    assert winner.currency == start + win + 30
 
 
-def test_settle_refinish_pays_the_normal_win_reward_and_no_bounty(session: Session) -> None:
+def test_settle_unsolved_pays_cashback_and_says_so(session: Session) -> None:
+    game = _game(session)
+    buyer = session.get(Player, 2)
+    assert buyer is not None
+    wallet.debit(
+        session, buyer, 80, wallet.LedgerEntry(CurrencyReason.CLUE_PURCHASE, game_id=game.id)
+    )
+
+    note = settlement.settle_unsolved(session, game, "en")
+
+    assert i18n.t("economy.cashback", "en", amount=40) in note
+    assert buyer.currency == 100 - 80 + 40
+
+
+def test_refinish_after_cashback_keeps_the_cashback(session: Session) -> None:
     game = _game(session, turn=2)
-    winner = session.get(Player, 2)
-    assert winner is not None
-    start = winner.currency
+    buyer = session.get(Player, 2)
+    assert buyer is not None
+    wallet.debit(
+        session, buyer, 80, wallet.LedgerEntry(CurrencyReason.CLUE_PURCHASE, game_id=game.id)
+    )
+    settlement.settle_unsolved(session, game, "en")
 
-    earnings = settlement.settle_refinish(session, game, 2)
+    earnings = settlement.settle_disputed_win(session, game, 2)
 
-    expected = config.get_amounts(session)[EconomyKey.WIN_STAGE_2] * 2
-    assert earnings.win == expected
-    assert earnings.bounty == 0
-    assert winner.currency == start + expected
+    win = config.get_amounts(session)[EconomyKey.WIN_STAGE_2] * 2
+    assert buyer.currency == 100 - 80 + 40 + win + earnings.compensation

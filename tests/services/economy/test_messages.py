@@ -58,3 +58,12 @@ def test_no_bounty_line_when_the_pot_was_empty(session: Session) -> None:
     suffix = earnings_suffix(session, _game(session), Earnings(win=25), "en", player_name="Ann")
 
     assert "bounty" not in suffix
+
+
+def test_suffix_has_a_compensation_line(session: Session) -> None:
+    suffix = earnings_suffix(
+        session, _game(session), Earnings(win=25, compensation=30), "en", player_name="Ann"
+    )
+
+    assert "+30" in suffix.splitlines()[-1]
+    assert "Ann" in suffix.splitlines()[-1]

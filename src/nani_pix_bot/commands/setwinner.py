@@ -138,7 +138,7 @@ def _resolve_and_apply(
 def _refinish(session: Session, game: Game, target: Player, winner: str, lang: str) -> str:
     """Re-finish an UNSOLVED game and return the group announcement."""
     game_service.refinish(session, game, winner_id=target.telegram_user_id)
-    earnings = settlement.settle_refinish(session, game, target.telegram_user_id)
+    earnings = settlement.settle_disputed_win(session, game, target.telegram_user_id)
     text = i18n.t(
         "setwinner.announcement",
         lang,

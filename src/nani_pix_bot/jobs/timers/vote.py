@@ -143,7 +143,7 @@ def _settle(session: Session, context, game: Game, lang: str, forced_winner_id: 
         game_service.mark_turn_open_if_unassigned(session)
         return VoteFinal(None, None), text
     winner_name = _handle(session, winner_id)
-    earnings = settlement.settle_vote_win(session, game, winner_id)
+    earnings = settlement.settle_disputed_win(session, game, winner_id)
     text = i18n.t("vote.won", lang, winner=winner_name, title=title)
     text += messages.earnings_suffix(session, game, earnings, lang, player_name=winner_name)
     turn_state = game_service.get_turn_state(session)

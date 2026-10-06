@@ -83,3 +83,12 @@ async def test_zero_clue_price_is_refused(monkeypatch, session_factory) -> None:
 
     assert update.message.reply_text.await_args.args[0] == i18n.t("currency_config.price_min", "en")
     assert _stored(session_factory) == dict(DEFAULT_AMOUNTS)
+
+
+async def test_percent_over_100_is_refused(monkeypatch, session_factory) -> None:
+    update = await _run(monkeypatch, session_factory, ["clue_cashback_percent", "150"])
+
+    assert update.message.reply_text.await_args.args[0] == i18n.t(
+        "currency_config.percent_max", "en"
+    )
+    assert _stored(session_factory) == dict(DEFAULT_AMOUNTS)
