@@ -124,6 +124,13 @@ def _letters(word: str) -> int:
     return sum(char.isalnum() for char in word)
 
 
+def _fully_named(title: str, guess_tokens: set[str]) -> bool:
+    """Whether the guess contains every letter-bearing word of `title`,
+    short particles included — revealing any of it would then give the
+    whole title away."""
+    return all(normalize(word) in guess_tokens for word in title.split() if _letters(word) > 0)
+
+
 def partial_match(
     guess: str, candidates: Sequence[str | None], *, min_letters: int
 ) -> PartialMatch | None:
@@ -134,17 +141,18 @@ def partial_match(
     "Partial matches"."""
     if min_letters <= 0:
         return None
-    guess_words = {w for w in normalize(guess).split() if _letters(w) >= PARTIAL_MIN_WORD_LETTERS}
+    all_tokens = set(normalize(guess).split())
+    guess_words = {w for w in all_tokens if _letters(w) >= PARTIAL_MIN_WORD_LETTERS}
     if not guess_words:
         return None
     best: PartialMatch | None = None
     best_letters = 0
     for candidate in candidates:
-        if not candidate:
+        if not candidate or _fully_named(candidate, all_tokens):
             continue
         words = candidate.split()
         indices = tuple(i for i, word in enumerate(words) if normalize(word) in guess_words)
-        if not indices or len(indices) == sum(1 for w in words if _letters(w) > 0):
+        if not indices:
             continue
         letters = sum(_letters(words[i]) for i in indices)
         if letters > best_letters:

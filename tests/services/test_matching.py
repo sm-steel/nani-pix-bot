@@ -155,3 +155,10 @@ def test_letter_free_tokens_do_not_count_as_hidden_words() -> None:
     # count as a word that stays hidden.
     title = "Kono Subarashii - Sekai"
     assert partial_match("sekai kono subarashii", [title], min_letters=4) is None
+
+
+def test_short_particles_in_the_guess_still_cover_their_title_words() -> None:
+    # "on"/"no" are too short to be revealed, but a guess containing them
+    # plus every other word still names the whole title.
+    assert partial_match("titan on attack", ["Attack on Titan"], min_letters=4) is None
+    assert partial_match("no kyojin shingeki", ["Shingeki no Kyojin"], min_letters=4) is None

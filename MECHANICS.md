@@ -426,7 +426,9 @@ only the matched words spelled out and every other word masked, e.g.
   `/partialmatch` threshold in letters (default 4; `0` turns it off).
   The title with the most matched letters wins.
 - At least one word of the title always stays hidden: a guess containing
-  every word would reveal the answer, so it reveals nothing.
+  every word would reveal the answer, so it reveals nothing. Short words
+  count here: `titan on attack` names all of "Attack on Titan", so it
+  reveals nothing even though `on` itself is never spelled out.
 - It is still a wrong guess — it counts toward the stage's limit like any
   other. The reveal appears in the wrong-guess reply, or in the caption of
   the stage post when that guess advanced the stage. It is stored with the
