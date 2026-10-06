@@ -983,7 +983,9 @@ name).
   computed through `deadline_after`, so quiet hours push it back like
   every other automatic deadline. The deadline is stored
   (`games.vote_deadline_at`) and re-armed on a restart; an already-overdue
-  one closes right away.
+  one closes right away. If the restart came after the vote opened but
+  before its ballot was posted (no `games.vote_message_id`) and the vote
+  is still open, the answer and ballot are posted again on startup.
 - **Rule:** a candidate wins with a **unique plurality of at least 3
   votes** (`VOTE_MIN_VOTES`). A tie for the top spot, or fewer than 3
   votes, is no winner.

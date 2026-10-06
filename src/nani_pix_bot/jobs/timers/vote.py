@@ -1,5 +1,6 @@
 """The hard-mode vote's Telegram side (issue #252): the ballot post, its
-15-minute close timer (re-armed on startup), and the closing tail. A win
+15-minute close timer (re-armed on startup, which also re-posts a ballot
+a restart kept from going out), and the closing tail. A win
 pays out and hands over the turn; no winner settles the game as unsolved
 and opens the turn. Either way the reveal cleanup follows. The rules live
 in services/game/vote.py."""
@@ -44,6 +45,25 @@ def schedule_vote_close(job_queue: JobQueue | None, game: Game) -> None:
     logger.debug("scheduling vote close in {delay:.0f}s", delay=delay, game_id=game.id)
     job_queue.run_once(
         vote_close_job_callback, when=delay, name=vote_close_job_name(game.id), data=game.id
+    )
+
+
+def ballot_repost_job_name(game_id: int) -> str:
+    return f"vote-ballot-{game_id}"
+
+
+def rearm_vote(job_queue: JobQueue | None, game: Game) -> None:
+    """On startup: re-arm the close timer, and re-post the ballot if a
+    restart came between opening the vote and posting it (no
+    vote_message_id) while there is still time to vote."""
+    schedule_vote_close(job_queue, game)
+    if job_queue is None or game.vote_message_id is not None:
+        return
+    if seconds_until(game.vote_deadline_at) <= 0:
+        return
+    logger.info("re-posting the ballot for an open vote", game_id=game.id)
+    job_queue.run_once(
+        ballot_repost_job_callback, when=0, name=ballot_repost_job_name(game.id), data=game.id
     )
 
 
@@ -201,6 +221,17 @@ async def _send_topic_text(context: ContextTypes.DEFAULT_TYPE, text: str) -> Mes
     except TelegramError as exc:
         logger.error("failed to post the vote result: {error}", error=exc)
         return None
+
+
+@job_log_scope("game_id")
+@retry_on_failure
+@quiet_hours_deferred
+async def ballot_repost_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Scheduled by rearm_vote: post the ballot a restart kept from going out."""
+    job = context.job
+    if job is None:
+        return
+    await post_vote_ballot(context, context.bot_data["session_factory"], cast(int, job.data))
 
 
 @job_log_scope("game_id")

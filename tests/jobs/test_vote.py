@@ -227,3 +227,49 @@ async def test_a_failed_result_post_logs_an_error(session_factory, log_records) 
 
     failed = [r for r in log_records if r.message.startswith("failed to post the vote result")]
     assert [r.level for r in failed] == ["ERROR"]
+
+
+def _set_ballot(session_factory, game_id: int, message_id: int | None) -> None:
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        game.vote_message_id = message_id
+        session.commit()
+
+
+async def _rearmed_job_names(session_factory) -> list[str]:
+    job_queue = MagicMock()
+    job_queue.get_jobs_by_name.return_value = []
+    await timers.rearm_pending_timeouts(job_queue, session_factory)
+    return [c.kwargs["name"] for c in job_queue.run_once.call_args_list]
+
+
+@pytest.mark.parametrize(
+    ("message_id", "minutes_left", "reposted"),
+    [(None, 5, True), (42, 5, False), (None, -5, False)],
+)
+async def test_rearm_reposts_a_ballot_that_never_went_out(
+    session_factory, message_id, minutes_left, reposted
+) -> None:
+    deadline = datetime.now(UTC) + timedelta(minutes=minutes_left)
+    game_id = _voting_game(session_factory, votes={}, deadline=deadline)
+    _set_ballot(session_factory, game_id, message_id)
+
+    names = await _rearmed_job_names(session_factory)
+
+    assert (f"vote-ballot-{game_id}" in names) is reposted
+    assert f"vote-close-{game_id}" in names
+
+
+async def test_ballot_repost_job_posts_the_ballot(session_factory) -> None:
+    game_id = _voting_game(
+        session_factory, votes={}, deadline=datetime.now(UTC) + timedelta(minutes=5)
+    )
+    context = _job_context(session_factory, game_id)
+
+    await vote_module.ballot_repost_job_callback(context)
+
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        assert game.vote_message_id == 77

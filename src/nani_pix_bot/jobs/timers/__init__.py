@@ -77,10 +77,12 @@ from nani_pix_bot.jobs.timers.turn_timers import (
 from nani_pix_bot.jobs.timers.vote import (
     VoteFinal,
     ballot_markup,
+    ballot_repost_job_callback,
     ballot_text,
     cancel_vote_close,
     finalize_vote,
     post_vote_ballot,
+    rearm_vote,
     schedule_vote_close,
     vote_close_job_callback,
     vote_close_job_name,
@@ -94,6 +96,7 @@ __all__ = [
     "AutostartTrigger",
     "VoteFinal",
     "ballot_markup",
+    "ballot_repost_job_callback",
     "ballot_text",
     "cancel_idle_autostart",
     "cancel_inactivity_timers",
@@ -115,6 +118,7 @@ __all__ = [
     "post_stage_images",
     "post_vote_ballot",
     "rearm_pending_timeouts",
+    "rearm_vote",
     "run_bot_autostart",
     "schedule_idle_autostart",
     "schedule_inactivity_timers",
@@ -147,7 +151,7 @@ async def rearm_pending_timeouts(job_queue: JobQueue | None, session_factory) ->
             schedule_setup_abandon(job_queue, game)
         voting = game_service.voting_games(session)
         for game in voting:
-            schedule_vote_close(job_queue, game)
+            rearm_vote(job_queue, game)
         turn_state = game_service.get_turn_state(session)
         turn_timers = 0
         idle_autostart = False
