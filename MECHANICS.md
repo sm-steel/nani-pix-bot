@@ -94,7 +94,7 @@ states are `Game.current_stage` (`PixelStage`).
 
 **Status: Implemented.**
 
-A game can only start if no other game is currently `SETUP` or `ACTIVE`.
+A game can only start if no other game is currently `SETUP`, `ACTIVE` or `VOTING`.
 The player allowed to start is whoever `turn_state.next_starter_id` names —
 or **anyone**, if it's `null`. They must also currently be a member of the
 configured group — the DM entry point is reachable by anyone who finds the
@@ -730,7 +730,7 @@ needs a live session to move the group's pin.
 **Status: Implemented.**
 
 Usable only by whoever `turn_state.next_starter_id` currently names, and
-only while no game is `SETUP`/`ACTIVE` (it governs who may *start* the
+only while no game is `SETUP`/`ACTIVE`/`VOTING` (it governs who may *start* the
 next game, not anything mid-game). While the turn is open to anyone
 (`next_starter_id` is `null` — after an unsolved/timeout ending, a bare
 `/skip`, a turn expiry, or `/stop`), it names nobody, so `/skip` is refused
@@ -767,7 +767,7 @@ During quiet hours both timers are frozen and the reminder DM / expiry post are 
 Two ways the bot can start a game itself instead of waiting for a human —
 both gated behind `autostart_enabled` (`/setautostart on|off`, DM-only,
 admin-gated, default **off**), checked *in addition to* `games_enabled`,
-and both no-ops while a game is already `SETUP`/`ACTIVE`.
+and both no-ops while a game is already `SETUP`/`ACTIVE`/`VOTING`.
 
 - **Idle auto-start (24h backstop)**: whenever the turn becomes open to
   anyone with no game running — a bare `/skip`, or the "leave
