@@ -406,7 +406,8 @@ async def _start_new_game(
     await context.bot.send_message(
         chat_id=group_chat_id,
         message_thread_id=context.bot_data["game_topic_id"],
-        text=i18n.t("dm_start.setup_started_group_notice", lang, starter=user.full_name),
+        text=i18n.t("dm_start.setup_started_group_notice", lang, starter=user.full_name)
+        + game_service.game_id_line(new_game.id, lang),
     )
     logger.info("announced the setup in the group topic", game_id=new_game.id)
 

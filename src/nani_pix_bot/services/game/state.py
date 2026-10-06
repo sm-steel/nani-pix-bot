@@ -14,14 +14,15 @@ from sqlalchemy.orm import Session
 from nani_pix_bot import log_context
 from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.services import matching, players
-from nani_pix_bot.services.game import turns
+from nani_pix_bot.services import i18n, matching, players
+from nani_pix_bot.services.clues import text as clue_text
+from nani_pix_bot.services.game import guesses, turns
 from nani_pix_bot.services.game.clock import deadline_after
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
-from nani_pix_bot.services.settings import stage_config
+from nani_pix_bot.services.settings import bot_settings, stage_config
 
 # Blockiest to clearest — see MECHANICS.md's "Pixelation stages" table.
 # Fixed: the 5 PixelStage members and their order never change, only
@@ -67,6 +68,7 @@ class GuessOutcome(enum.Enum):
     STAGE_ADVANCED = "stage_advanced"
     TURN_ADVANCED = "turn_advanced"
     UNSOLVED = "unsolved"
+    VOTE_OPENED = "vote_opened"
 
 
 @dataclass(frozen=True)
@@ -144,6 +146,13 @@ def display_title_field(game: Game, lang: str) -> tuple[TitleField, str] | None:
     """display_title() plus which field it came from; None if the game
     has no title at all."""
     return prioritized_title_field(_variants(game), lang=lang)
+
+
+def game_id_line(game_id: int, lang: str) -> str:
+    """The `🎲 Game #<id>` line every game post ends with (issue #248), so an
+    admin can name the game in /setwinner or /refund. Leading newline: callers
+    just append it."""
+    return "\n" + i18n.t("game.id_line", lang, id=game_id)
 
 
 def clue_titles(game: Game, lang: str) -> list[tuple[TitleField, str]]:
@@ -230,9 +239,12 @@ def _bound(game: Game | None) -> Game | None:
 
 
 def active_or_setup_game(session: Session) -> Game | None:
-    """The one game currently SETUP or ACTIVE, if any — there's never more
-    than one (enforced here, not by a DB constraint; see ARCHITECTURE.md)."""
-    stmt = select(Game).where(Game.status.in_([GameStatus.SETUP, GameStatus.ACTIVE]))
+    """The one game currently SETUP, ACTIVE or VOTING (an open hard-mode vote
+    still holds the round — issue #252), if any; there's never more than one
+    (enforced here, not by a DB constraint; see ARCHITECTURE.md)."""
+    stmt = select(Game).where(
+        Game.status.in_([GameStatus.SETUP, GameStatus.ACTIVE, GameStatus.VOTING])
+    )
     return _bound(session.scalars(stmt).first())
 
 
@@ -240,6 +252,13 @@ def active_games(session: Session) -> list[Game]:
     """Every ACTIVE game — normally at most one (see active_or_setup_game),
     but this scans without that assumption for startup timeout re-arming."""
     stmt = select(Game).where(Game.status == GameStatus.ACTIVE)
+    return list(session.scalars(stmt))
+
+
+def voting_games(session: Session) -> list[Game]:
+    """Every VOTING game - normally at most one, scanned without that
+    assumption for startup vote-close timer re-arming."""
+    stmt = select(Game).where(Game.status == GameStatus.VOTING)
     return list(session.scalars(stmt))
 
 
@@ -427,6 +446,18 @@ def activate_game(session: Session, game: Game) -> None:
     )
 
 
+def partial_reveal_text(session: Session, game: Game, guess_text: str) -> str | None:
+    """The masked title a wrong guess partly matched (issue #250), or None."""
+    match = matching.partial_match(
+        guess_text,
+        match_candidates(game),
+        min_letters=bot_settings.get_partial_match_min_letters(session),
+    )
+    if match is None:
+        return None
+    return clue_text.words_shape(match.candidate, match.word_indices)
+
+
 def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: str) -> GuessOutcome:
     """Apply one /guess attempt to an ACTIVE game — see MECHANICS.md's
     "Guess matching" and "Pixelation stages" sections."""
@@ -456,7 +487,22 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
 
     # The guesser is the update's own user (the /guess handler is the only
     # caller), so the log context already names them; see log_context.py.
-    if matching.is_match(guess_text, match_candidates(game)):
+    correct = matching.is_match(guess_text, match_candidates(game))
+    reveal = None if correct else partial_reveal_text(session, game, guess_text)
+    if reveal is not None:
+        logger.info("partial match revealed {reveal!r}", reveal=reveal, game_id=game.id)
+    guesses.log_guess(
+        session,
+        game,
+        guesses.GuessRecord(
+            player_id=guesser_id,
+            text=guess_text,
+            stage=STAGE_ORDER.index(game.current_stage) + 1,
+            correct=correct,
+            partial_reveal=reveal,
+        ),
+    )
+    if correct:
         logger.info(
             "guessed {guess!r} — CORRECT at {stage}", guess=guess_text, stage=stage, game_id=game.id
         )
@@ -589,9 +635,21 @@ def force_win(session: Session, game: Game, *, winner_id: int) -> None:
 
 
 def _win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> None:
+    """A win: record it (see _record_win) and hand the turn to the winner."""
+    _record_win(session, game, winner_id=winner_id, award=award)
+    turns.set_next_starter(session, winner_id, reason=f"won game {game.id}")
+
+
+def _record_win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> None:
+    """The win itself — status, winner, ended_at, wins counter — without
+    touching whose turn it is next (a re-finish that keeps the turn uses
+    this directly)."""
     game.status = GameStatus.WON
     game.winner_id = winner_id
-    game.ended_at = datetime.now(UTC)
+    # An admin re-finish (services/game/refinish.py) keeps the original
+    # ending time, so the hard-mode discount streak's order doesn't move.
+    if game.ended_at is None:
+        game.ended_at = datetime.now(UTC)
 
     winner = players.get_or_create_player(session, winner_id)
     winner.wins += award
@@ -610,7 +668,6 @@ def _win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> Non
         stage=where,
         game_id=game.id,
     )
-    turns.set_next_starter(session, winner_id, reason=f"won game {game.id}")
 
 
 def force_unsolved(game: Game, *, cause: str) -> None:

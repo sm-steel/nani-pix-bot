@@ -6,6 +6,7 @@ no network call ever happens per guess."""
 import re
 import string
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from typing import TypeVar
 
 from loguru import logger
@@ -103,3 +104,59 @@ def is_match(guess: str, candidates: Sequence[str | None]) -> bool:
         result="MATCH" if matched else "NO MATCH",
     )
     return matched
+
+
+# A guess word shorter than this never counts toward a partial match —
+# keeps "of"/"no"/"to" from revealing anything (issue #250).
+PARTIAL_MIN_WORD_LETTERS = 3
+
+
+@dataclass(frozen=True)
+class PartialMatch:
+    """Which candidate a wrong guess partly matched, and which of its
+    whitespace-separated words (by index) the guess contained."""
+
+    candidate: str
+    word_indices: tuple[int, ...]
+
+
+def _letters(word: str) -> int:
+    return sum(char.isalnum() for char in word)
+
+
+def _fully_named(title: str, guess_tokens: set[str]) -> bool:
+    """Whether the guess contains every letter-bearing word of `title`,
+    short particles included — revealing any of it would then give the
+    whole title away."""
+    return all(normalize(word) in guess_tokens for word in title.split() if _letters(word) > 0)
+
+
+def partial_match(
+    guess: str, candidates: Sequence[str | None], *, min_letters: int
+) -> PartialMatch | None:
+    """The candidate a wrong guess shares the most whole words with, by
+    letter count, if that's at least `min_letters` and at least one of its
+    words stays hidden — a guess containing every word would reveal the
+    answer. `min_letters <= 0` turns this off. See MECHANICS.md's
+    "Partial matches"."""
+    if min_letters <= 0:
+        return None
+    all_tokens = set(normalize(guess).split())
+    guess_words = {w for w in all_tokens if _letters(w) >= PARTIAL_MIN_WORD_LETTERS}
+    if not guess_words:
+        return None
+    best: PartialMatch | None = None
+    best_letters = 0
+    for candidate in candidates:
+        if not candidate or _fully_named(candidate, all_tokens):
+            continue
+        words = candidate.split()
+        indices = tuple(i for i, word in enumerate(words) if normalize(word) in guess_words)
+        if not indices:
+            continue
+        letters = sum(_letters(words[i]) for i in indices)
+        if letters > best_letters:
+            best, best_letters = PartialMatch(candidate, indices), letters
+    if best is None or best_letters < min_letters:
+        return None
+    return best

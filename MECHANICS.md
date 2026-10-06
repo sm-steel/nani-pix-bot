@@ -27,6 +27,7 @@ just what's currently built.
 | Pixels 💠 — earning, `/balance`, `/pixelconfig` | Implemented |
 | Clue shop (`/shop`) — spend 💠 on private clues | Implemented |
 | Public spends — bounty (`/bounty`), `/tip`, `/sharpen` | Implemented |
+| HARD MODE vote when nobody guessed right (15 min, unique plurality of 3+ votes) | Implemented |
 | Quiet hours (`/quiethours`, `/timezone`) — automatic posts held, clocks frozen | Implemented |
 
 ## Game lifecycle
@@ -73,7 +74,12 @@ stateDiagram-v2
 
     ACTIVE --> WON: /guess matches,\nor starter's /correct
     ACTIVE --> UNSOLVED: stage 5's configured limit reached\n(stage exhaustion),\nor 6h of inactivity on stage 5,\nor 2-day timeout fires
+    ACTIVE --> VOTING: hard mode only: no correct guess\n(turns exhausted, inactivity or timeout)\nbut at least one guesser\n(15 min vote-close timer starts)
+    VOTING --> WON: unique plurality of 3+ votes,\nor admin /setwinner
+    VOTING --> UNSOLVED: no winner when the vote closes
+    UNSOLVED --> WON: admin /setwinner\n(turn left where it is)
     ACTIVE --> [*]: /stop confirmed\n(row deleted, turn opens)
+    VOTING --> [*]: /stop confirmed\n(row deleted, refunds, turn opens)
 
     WON --> [*]: turn assigned to winner\n(15min reminder / 12h expiry timers)
     UNSOLVED --> [*]: turn state left unchanged
@@ -82,14 +88,16 @@ stateDiagram-v2
 `[*]` here means "no `Game` row exists" — every arrow into it either
 deletes the row (`/stop`, setup-abandon) or the row reaches a terminal
 `status` (`WON`/`UNSOLVED`) and simply stops being the "current" game.
-`SETUP`'s five inner states are `Game.setup_step`; `ACTIVE`'s five inner
+The one way out of `UNSOLVED` is an admin's `/setwinner`, which re-finishes
+it as `WON` (see "Bot-initiated games").
+`SETUP`'s five inner states are `Game.setup_step`; `VOTING` is hard mode only (see "HARD MODE vote"). `ACTIVE`'s five inner
 states are `Game.current_stage` (`PixelStage`).
 
 ## Starting a game
 
 **Status: Implemented.**
 
-A game can only start if no other game is currently `SETUP` or `ACTIVE`.
+A game can only start if no other game is currently `SETUP`, `ACTIVE` or `VOTING`.
 The player allowed to start is whoever `turn_state.next_starter_id` names —
 or **anyone**, if it's `null`. They must also currently be a member of the
 configured group — the DM entry point is reachable by anyone who finds the
@@ -116,6 +124,9 @@ within that hour, the bot deletes the orphaned `SETUP` row, opens the turn
 to anyone, and posts that to the group — the same class of "stuck DM
 flow" bug issue #11 fixed reactively can no longer linger indefinitely.
 The timer is canceled the moment they confirm.
+
+Every post that announces a game — the setup notice, the first image post, and
+every reveal — ends with `🎲 Game #<id>`, the id admin commands take (issue #248).
 
 When the setup started from an uploaded screenshot, the bot first replies
 with that screenshot pixelated at **stage 1** (the blockiest, with the
@@ -393,6 +404,8 @@ row for the rest of that round:
    which title/synonym it matched, or by how much it cleared the
    threshold.
 
+Every guess is recorded (`game_guesses`) with the stage it was made at.
+
 A **wrong** guess isn't silent: the bot replies in-topic with how many
 more wrong guesses remain before the next pixelation stage, and which
 stage the game is currently on (e.g. "3 guesses left before the next
@@ -403,6 +416,29 @@ Because everything the matcher needs is cached at setup time, the same
 guess always produces the same verdict for the life of a game — matching
 never depends on AniList/Shikimori/Tenrai/TMDB being reachable, rate
 limits, or anything else external, at guess time.
+
+### Partial matches
+
+A wrong guess can still be partly right. When it shares **whole words**
+with one of the round's titles/synonyms, the bot shows that title with
+only the matched words spelled out and every other word masked, e.g.
+`🔎 Partly right: _ _ _ _ _ _   _ _   Frieren`:
+
+- Only guess words of at least 3 letters count (`of`, `no`, `to` never
+  reveal anything), and the matched words must add up to at least the
+  `/partialmatch` threshold in letters (default 4; `0` turns it off).
+  The title with the most matched letters wins.
+- At least one word of the title always stays hidden: a guess containing
+  every word would reveal the answer, so it reveals nothing. Short words
+  count here: `titan on attack` names all of "Attack on Titan", so it
+  reveals nothing even though `on` itself is never spelled out.
+- It is still a wrong guess — it counts toward the stage's limit like any
+  other. The reveal appears in the wrong-guess reply, or in the caption of
+  the stage post when that guess advanced the stage. It is stored with the
+  guess in `game_guesses`.
+- Once any partial reveal fires in a round, the title-shape clue stops
+  being sold for that round (the shape is public); clues already bought
+  stay.
 
 ## Pixelation stages
 
@@ -641,7 +677,7 @@ During quiet hours both clocks are frozen and their posts are held back — see 
 
 **Status: Implemented.**
 
-Manually aborts whatever game is currently `SETUP` or `ACTIVE`, usable
+Manually aborts whatever game is currently `SETUP`, `ACTIVE` or `VOTING`, usable
 by that game's own starter, or by any group admin/owner (for any game,
 not just their own) — checked via the same `is_group_admin` helper
 `/language` uses. **DM only** — sent privately to the bot like `/start`/
@@ -672,8 +708,11 @@ There are **two** ways to say yes:
 
 On either confirmation, the bot:
 1. Cancels whatever timer(s) were pending for that game — its 2-day
-   timeout and inactivity nudge/auto-advance pair if `ACTIVE`, or its
-   1-hour setup-abandon timer if still `SETUP`.
+   timeout and inactivity nudge/auto-advance pair if `ACTIVE`, its
+   15-minute vote-close timer if `VOTING`, or its 1-hour setup-abandon
+   timer if still `SETUP`. A `VOTING` game is refunded (clue purchases
+   and the bounty pot) exactly like an `ACTIVE` one, and its votes are
+   dropped with the row.
 2. Announces the outcome in the group topic — a plain "anyone can start a
    new game" notice, or, on the reveal path, the **original un-pixelated
    screenshot captioned with the title**, posted through the same
@@ -696,7 +735,7 @@ needs a live session to move the group's pin.
 **Status: Implemented.**
 
 Usable only by whoever `turn_state.next_starter_id` currently names, and
-only while no game is `SETUP`/`ACTIVE` (it governs who may *start* the
+only while no game is `SETUP`/`ACTIVE`/`VOTING` (it governs who may *start* the
 next game, not anything mid-game). While the turn is open to anyone
 (`next_starter_id` is `null` — after an unsolved/timeout ending, a bare
 `/skip`, a turn expiry, or `/stop`), it names nobody, so `/skip` is refused
@@ -733,7 +772,7 @@ During quiet hours both timers are frozen and the reminder DM / expiry post are 
 Two ways the bot can start a game itself instead of waiting for a human —
 both gated behind `autostart_enabled` (`/setautostart on|off`, DM-only,
 admin-gated, default **off**), checked *in addition to* `games_enabled`,
-and both no-ops while a game is already `SETUP`/`ACTIVE`.
+and both no-ops while a game is already `SETUP`/`ACTIVE`/`VOTING`.
 
 - **Idle auto-start (24h backstop)**: whenever the turn becomes open to
   anyone with no game running — a bare `/skip`, or the "leave
@@ -766,7 +805,9 @@ and both no-ops while a game is already `SETUP`/`ACTIVE`.
 **Picking a random anime + screenshot pair** (`services/game/autostart.py`,
 framework-agnostic, no DB writes until a full pick is in hand): a random
 Shikimori anime (`order: random`, `censored: true` — excludes hentai/
-yaoi/yuri), falling back to Tenrai's `/random/anime` on any failure or
+yaoi/yuri — and restricted to TV series and movies (`kind: tv,movie`) —
+specials, OVAs, ONAs and recaps often reuse their parent's footage, so
+their screenshots read as the parent show, issue #247), falling back to Tenrai's `/random/anime` on any failure or
 empty result — Tenrai's request already asks for `sfw=true`, and
 `services/game/autostart.py` also rejects an explicit-rated (`Rx`) pick
 as a backstop, the same rejection Jikan's fallback already had. What's
@@ -774,7 +815,8 @@ new to Tenrai's fallback since the migration off Jikan is its own
 popularity floor (`tenrai.py`'s `RANDOM_PICK_MIN_MEMBERS`, mirroring
 `shikimori.py`'s own `RANDOM_PICK_MIN_WATCHED` floor on the pick above)
 — closing issue #165: Jikan's old fallback had no such floor, so it
-could surface an anime almost nobody had actually watched — then a
+could surface an anime almost nobody had actually watched. The Tenrai
+fallback applies the same TV/movie rule to its `type` field. Then a
 screenshot **pair** for it — two distinct screenshots
 from the same provider, since HARD MODE (see below) always needs a
 genuine pair and never the same screenshot twice — via the same
@@ -790,17 +832,18 @@ human-started one — HARD MODE (see below) — for the pixelation/turn
 structure itself**, but everything else — guess matching, the 2-day
 timeout, the inactivity clock, turn handoff on a win — applies exactly as
 it does to a normal game. The one deliberate permission gap is the same
-either way: **`/correct` has no recourse on a bot-started game.**
-`/correct`'s starter-only check (`user.id == game.starter_id`)
-means only the game's starter may force a win, and for a bot-started
-game the starter *is* the bot — no human can ever satisfy that check.
-This is an accepted, deliberate limitation, not a bug: extending
-`/correct` with a second "admin can `/correct` a bot-started game" path
-would be new permission surface with its own risk, for a case `/stop`
-already has a (blunter) answer to. If a bot-started game's title has a
-legitimate answer the fuzzy matcher won't accept, an admin's `/stop`
-(with reveal) is the only recourse — it ends the round and reveals the
-title, but awards nobody the win, unlike a genuine `/correct`.
+either way: **`/correct` has no direct use on a bot-started game.**
+`/correct` is still starter-only and `ACTIVE`-only
+(`user.id == game.starter_id`), and for a bot-started game the starter
+*is* the bot — no human can ever satisfy that check. A game that ended
+wrongly has two remedies instead: the HARD MODE vote (see below), and an
+admin's `/setwinner <game id> @user` (DM only). `/setwinner` re-finishes
+an `UNSOLVED` game as a normal win — the usual win reward and a text
+announcement in the game topic, but no change to whose turn it is and no
+bounty (the pot was already refunded when the game ended). On a game
+still in the `VOTING` state it closes the vote right there, with that
+winner. An admin's `/stop` (with reveal) still just ends a round and
+reveals the title, awarding nobody the win.
 
 The bot's own `/stop`-ability needs no special-casing either: once the
 bot has started its first game, it has a real `players` row like any
@@ -898,14 +941,65 @@ HARD MODE replaces stages with **turns**:
   `stage_config` table, which a HARD MODE game never consults.
 - A correct guess awards **+2 wins** (`HARD_MODE_WIN_AWARD`) instead of
   the normal +1.
+- **Clue sale:** clues in the shop are discounted. The discount starts at
+  20% and grows by 20 points after each consecutive HARD MODE round that
+  ended unsolved, capped at 80%; a solved round (by guess, vote or
+  `/setwinner`) resets it to 20%. It is fixed when the round starts
+  (`Game.hard_mode_clue_discount`) and announced in the round's first post
+  and in the shop. Prices round down, with a minimum of 1 💠.
 
 Everything else about a HARD MODE game is unchanged from a normal one:
 guess matching, the 2-day timeout, the inactivity nudge/auto-advance
 clock, `/stop`, and turn handoff on a win all apply exactly as described
-above. The one exception is **`/correct`, which is not currently usable
-on a HARD MODE game** — see "Bot-initiated games" above for why (its
-starter-only check can never be satisfied by a human, since the starter
-of a bot-autostarted game is the bot itself).
+above. The one exception is **`/correct`, which is not usable on a HARD
+MODE game** (its starter-only check can never be satisfied by a human,
+since the starter of a bot-autostarted game is the bot itself); the vote
+and an admin's `/setwinner` are the remedies — see "Bot-initiated games"
+above.
+
+## HARD MODE vote
+
+**Status: Implemented.**
+
+A HARD MODE round that ends with no correct guess doesn't always just
+end unsolved: when someone did guess, the group gets to vote on whether
+one of the guessers was actually right (fuzzy matching and the 1-guess
+budget are strict, and a miss can still be the right anime under another
+name).
+
+- **Trigger:** any hard-mode ending with no correct guess — turn 2
+  exhausted, the 6h inactivity advance on turn 2, or the 2-day timeout —
+  and **at least one guesser**. With no guessers there is nobody to vote
+  for, and the round ends unsolved, exactly as before.
+- **Held while voting:** `status → VOTING`. No new game can start
+  (`/newgame`, a DM'd screenshot and the autostart timers all treat it
+  as a running game), there is no overthrow roll and no turn handoff
+  yet, the bounty pot stays held, and both screenshots are kept. The
+  bot posts the answer with the two screenshots, then the ballot.
+- **Ballot:** one button per guesser, listing each guesser's guesses.
+  Any group member votes once, can change their vote by tapping another
+  button, and cannot vote for themselves. Only guessers are candidates.
+- **Close:** 15 minutes after the vote opened (`VOTE_DURATION`),
+  computed through `deadline_after`, so quiet hours push it back like
+  every other automatic deadline. The deadline is stored
+  (`games.vote_deadline_at`) and re-armed on a restart; an already-overdue
+  one closes right away. If the restart came after the vote opened but
+  before its ballot was posted (no `games.vote_message_id`) and the vote
+  is still open, the answer and ballot are posted again on startup.
+- **Rule:** a candidate wins with a **unique plurality of at least 3
+  votes** (`VOTE_MIN_VOTES`). A tie for the top spot, or fewer than 3
+  votes, is no winner.
+- **Outcomes:** a winner gets a normal hard-mode win — +2 wins, the
+  regular 💠 payout including the bounty pot — and the next-game turn,
+  after which the overthrow roll runs as after any win. With no winner
+  the round gets the unsolved settlement (pot refunded) and the turn is
+  opened if nobody was designated, then the overthrow roll runs.
+  The ballot's buttons are removed on close. A close that fires on a
+  game that is no longer `VOTING` does nothing.
+- **While a vote is open:** `/guess` is answered with a "vote in
+  progress" reply and changes nothing. `/stop` works as usual (see
+  "Stopping a game"): it cancels the vote-close timer, refunds, and
+  deletes the round.
 
 ## Leaderboard
 
@@ -938,6 +1032,8 @@ one-time backfill is run.
 | Setter bonus (win at stage 2-4 only) | 15 | the game's starter |
 | Prompt turn | 10 | the starter |
 | Bounty (the pot, if any) | whatever players put in | the winner, all of it, including their own contribution; see "Public spends" |
+| Cashback (`cashback`; HARD MODE only) | 50% of their net clue spend (`clue_cashback_percent`) | each clue buyer, when the round finally ends unsolved |
+| Compensation (`compensation`) | 30 (`disputed_win_bonus`) | a winner chosen by the group vote or an admin's `/setwinner`, on top of the normal win |
 
 ### Rules
 
@@ -958,6 +1054,15 @@ one-time backfill is run.
   the same player does not restart the hour.
 - A starter can't `/correct` themselves: awarding the win to the game's own
   starter is rejected, so `/correct` can't be used to farm 💠.
+- **Cashback:** only for HARD MODE rounds. When the round finally ends
+  unsolved (after the vote, or with no vote at all), every clue buyer gets
+  `clue_cashback_percent` (default 50%) of their net clue spend back
+  (charges minus refunded ones; a discounted charge counts at what was
+  actually paid). It is paid once per game and kept even if an admin later
+  names that player the winner.
+- **Compensation:** a winner decided by the group vote or an admin's
+  `/setwinner` also gets `disputed_win_bonus` (default 30 💠) on top of the
+  normal win reward.
 - The bot's guess and win replies and the game-start message show what was
   just earned.
 
@@ -1060,6 +1165,15 @@ under the player's name.
   price by accident.
 - If a round is stopped (`/stop`) its clue purchases are refunded in
   full, since they die with the round.
+- An admin can refund any single clue purchase with `/refund @user` (DM): a
+  paginated list of the player's purchases, newest first; the refund is the
+  same reversal as a failed delivery, and the player gets a DM saying so
+  (issue #249). If the round already paid that player HARD MODE cashback,
+  the refund keeps back this purchase's share of it (the cashback not yet
+  kept back by earlier refunds, pro rata over their remaining clue spend
+  in that round), so cashback plus refund comes to exactly what the clue
+  cost. The list and the confirm prompt show that net amount and name the
+  deduction.
 
 ### Public spends
 

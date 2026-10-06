@@ -1,5 +1,5 @@
 """The /stop command — DM only. Lets the game's own starter, or any group
-admin, abort a SETUP or ACTIVE game after a confirmation; the outcome is
+admin, abort a SETUP, ACTIVE or VOTING game after a confirmation; the outcome is
 still announced in the group topic, optionally revealing what the round's
 answer was. See MECHANICS.md's "Stopping a game" section."""
 
@@ -39,6 +39,7 @@ class _StoppedGame:
     exactly-one-of-two-fields dispatch shape as guess.py's
     _Announcement."""
 
+    game_id: int
     title: str
     original_bytes: bytes | None = None
     hard_mode_photos: tuple[bytes, bytes] | None = None
@@ -154,7 +155,7 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
             return
 
         game_id = game.id
-        was_active = game.status == GameStatus.ACTIVE
+        was = game.status.name
         title = game_service.display_title(game, lang)
         # Forces the deferred original_image/hard_mode_image_a/_b columns
         # now, while the row is still live — _announce_stop runs after
@@ -169,7 +170,9 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
             hard_mode_photos = None
         if reveal and not can_reveal_now:
             logger.warning("reveal requested but no image is stored", game_id=game_id)
-        if was_active:
+        if game.status == GameStatus.VOTING:
+            timeout_module.cancel_vote_close(context.job_queue, game_id)
+        elif game.status == GameStatus.ACTIVE:
             timeout_module.cancel_timeout(context.job_queue, game_id)
             timeout_module.cancel_inactivity_timers(context.job_queue, game_id)
         else:
@@ -184,12 +187,15 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
     # actually reaches the group (see post_current_image's docstring).
     timeout_module.schedule_idle_autostart(context.job_queue, turn_state)
     stopped_game = _StoppedGame(
-        title=title, original_bytes=original_bytes, hard_mode_photos=hard_mode_photos
+        game_id=game_id,
+        title=title,
+        original_bytes=original_bytes,
+        hard_mode_photos=hard_mode_photos,
     )
     revealed = await _announce_stop(context, session_factory, stopped_game, lang, reveal)
     logger.info(
         "stopped (was {was}, answer {answer})",
-        was="ACTIVE" if was_active else "SETUP",
+        was=was,
         answer="revealed" if revealed else "not revealed",
         game_id=game_id,
     )
@@ -225,7 +231,8 @@ async def _announce_stop(
             context,
             session_factory,
             photos=stopped_game.hard_mode_photos,
-            caption=i18n.t("stop.hard_mode_stopped_reveal_caption", lang, title=stopped_game.title),
+            caption=i18n.t("stop.hard_mode_stopped_reveal_caption", lang, title=stopped_game.title)
+            + game_service.game_id_line(stopped_game.game_id, lang),
         )
         return sent is not None
 
@@ -234,7 +241,8 @@ async def _announce_stop(
             context,
             session_factory,
             photo=stopped_game.original_bytes,
-            caption=i18n.t("stop.stopped_reveal_caption", lang, title=stopped_game.title),
+            caption=i18n.t("stop.stopped_reveal_caption", lang, title=stopped_game.title)
+            + game_service.game_id_line(stopped_game.game_id, lang),
         )
         return sent is not None
 
@@ -242,7 +250,8 @@ async def _announce_stop(
         await context.bot.send_message(
             chat_id=context.bot_data["group_chat_id"],
             message_thread_id=context.bot_data["game_topic_id"],
-            text=i18n.t("stop.confirmed_group_notice", lang),
+            text=i18n.t("stop.confirmed_group_notice", lang)
+            + game_service.game_id_line(stopped_game.game_id, lang),
         )
     except TelegramError as exc:
         logger.warning("failed to send the /stop group notice: {error}", error=exc)

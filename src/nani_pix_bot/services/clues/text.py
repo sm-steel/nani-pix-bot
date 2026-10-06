@@ -3,6 +3,8 @@
 count) are what's hidden; spaces separate words; other punctuation is
 shown as-is, since it carries no letter information."""
 
+from collections.abc import Collection
+
 MASK = "_"
 WORD_GAP = "   "
 
@@ -51,3 +53,15 @@ def word_lengths(title: str) -> list[int]:
         for word in title.split()
         if any(char.isalnum() for char in word)
     ]
+
+
+def words_shape(title: str, shown: Collection[int]) -> str:
+    """The partial-match reveal (issue #250): words at the `shown` indices
+    (whitespace-split) as-is, every other word masked like title_shape."""
+    rendered = []
+    for index, word in enumerate(title.split()):
+        if index in shown:
+            rendered.append(word)
+        else:
+            rendered.append(" ".join(char if not char.isalnum() else MASK for char in word))
+    return WORD_GAP.join(rendered)

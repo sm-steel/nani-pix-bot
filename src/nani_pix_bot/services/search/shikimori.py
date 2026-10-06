@@ -73,6 +73,12 @@ RANDOM_PICK_MIN_SCORE = 7
 # happens to be high from a handful of raters. Tune here if it feels
 # wrong in practice.
 RANDOM_PICK_MIN_WATCHED = 500
+# Only these Shikimori `kind`s may be a random pick (issue #247): a special,
+# OVA, ONA or recap often reuses its parent show's footage, so its
+# screenshots look like the parent and a guess of the parent's title is
+# judged wrong. Live-verified 2026-10-06 that `animes(kind: "tv,movie")`
+# accepts a comma-separated list and returns only those kinds.
+RANDOM_PICK_KINDS: tuple[str, ...] = ("tv", "movie")
 
 # Shikimori asks API consumers to identify themselves with a descriptive
 # User-Agent rather than a Referer (unlike AniList) — see the project's
@@ -120,8 +126,8 @@ query ($ids: String) {
 """
 
 _RANDOM_QUERY = """
-query ($minScore: Int) {
-  animes(order: random, limit: 1, score: $minScore, censored: true) {
+query ($minScore: Int, $kind: AnimeKindString) {
+  animes(order: random, limit: 1, score: $minScore, censored: true, kind: $kind) {
     id
     name
     russian
@@ -222,7 +228,8 @@ async def random_anime(client: httpx.AsyncClient) -> ShikimoriResult | None:
     `ranked_random`), filtered to `score >= RANDOM_PICK_MIN_SCORE` and
     `censored: true` (excludes hentai/yaoi/yuri) since this feeds a
     shared group topic — see services/game/autostart.py, the sole
-    caller. Reuses the full-detail query shape (title/english/russian/
+    caller. Also restricted to `RANDOM_PICK_KINDS` (tv, movie) server-side.
+    Reuses the full-detail query shape (title/english/russian/
     synonyms) directly, unlike search()'s light query, since there's no
     picker to show — this is the only pick that will ever be shown.
 
@@ -244,7 +251,7 @@ async def random_anime(client: httpx.AsyncClient) -> ShikimoriResult | None:
     https://github.com/sm-steel/nani-pix-bot/issues/165.
 
     Deliberately NOT `@cache.cached()` — see test_random_anime_is_not_cached_across_calls."""
-    variables = {"minScore": RANDOM_PICK_MIN_SCORE}
+    variables = {"minScore": RANDOM_PICK_MIN_SCORE, "kind": ",".join(RANDOM_PICK_KINDS)}
     data = await graphql.request(_API, client, query=_RANDOM_QUERY, variables=variables)
     entry = _single_anime(data)
     if entry is None:

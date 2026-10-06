@@ -24,6 +24,8 @@ def render_shop(
     """The shop menu text and keyboard for `buyer` in `game`. With nothing
     left to buy there is no keyboard, just the balance line plus a note."""
     text = i18n.t("shop.menu", lang, balance=buyer.currency)
+    if game.hard_mode and game.hard_mode_clue_discount:
+        text += "\n" + i18n.t("shop.hard_mode_discount", lang, percent=game.hard_mode_clue_discount)
     offers = shop.offers(session, game, buyer, lang)
     if not offers:
         return f"{text}\n{i18n.t('shop.nothing_left', lang)}", None

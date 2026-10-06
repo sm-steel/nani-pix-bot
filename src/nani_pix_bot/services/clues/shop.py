@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from loguru import logger
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, aliased
 
 from nani_pix_bot.models.clue_purchase import CluePurchase
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
@@ -20,8 +20,9 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import players
 from nani_pix_bot.services.clues import text
-from nani_pix_bot.services.economy import config, wallet
+from nani_pix_bot.services.economy import config, earning, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
+from nani_pix_bot.services.game import guesses
 
 MAX_EXTRA_SCREENSHOTS = 3
 TILE_GRID = 8
@@ -53,6 +54,7 @@ class Refusal(enum.StrEnum):
     ALREADY_OWNED = "already_owned"
     UNAVAILABLE = "unavailable"
     INSUFFICIENT = "insufficient"
+    REVEALED = "revealed"  # a partial match already made the title's shape public
 
 
 class ShopRefusedError(Exception):
@@ -123,10 +125,20 @@ def price(session: Session, game: Game, buyer: Player, kind: ClueKind) -> int:
     amounts = config.get_amounts(session)
     if kind is ClueKind.SCREENSHOT:
         already = _screenshot_count(session, game, buyer)
-        return (
+        base = (
             amounts[EconomyKey.CLUE_SCREENSHOT] + amounts[EconomyKey.CLUE_SCREENSHOT_STEP] * already
         )
-    return amounts[_PRICE_KEYS[kind]]
+    else:
+        base = amounts[_PRICE_KEYS[kind]]
+    return _discounted(game, base)
+
+
+def _discounted(game: Game, base: int) -> int:
+    """HARD MODE's clue sale (issue #254) — rounded down, never below 1 💠."""
+    percent = game.hard_mode_clue_discount if game.hard_mode else 0
+    if percent <= 0:
+        return base
+    return max(1, base * (100 - percent) // 100)
 
 
 def clue_screenshot_providers(game: Game) -> list[Provider]:
@@ -154,6 +166,8 @@ def _has_screenshot_provider(game: Game) -> bool:
 def _available(session: Session, game: Game, buyer: Player, kind: ClueKind, lang: str) -> bool:
     if kind in _LETTER_KINDS:
         return any(text.first_char(title) for _, title in game_service.clue_titles(game, lang))
+    if kind is ClueKind.TITLE_SHAPE and guesses.has_partial_reveal(session, game.id):
+        return False
     if kind in TEXT_KINDS:
         return game_service.display_title_field(game, lang) is not None
     if kind is ClueKind.SCREENSHOT:
@@ -207,6 +221,21 @@ def _malformed(session: Session, game: Game, request: PurchaseRequest) -> bool:
     return False
 
 
+def _not_sellable(
+    session: Session, game: Game, buyer: Player, request: PurchaseRequest
+) -> Refusal | None:
+    """Why this clue can't be sold in this round, if it can't."""
+    if request.kind is ClueKind.TITLE_SHAPE and guesses.has_partial_reveal(session, game.id):
+        return Refusal.REVEALED
+    # The purchase doesn't know the group language, so a clue is sellable
+    # if it would be offered in any supported one.
+    if _malformed(session, game, request) or not any(
+        _available(session, game, buyer, request.kind, lang) for lang in ("en", "ru")
+    ):
+        return Refusal.UNAVAILABLE
+    return None
+
+
 def _refusal(
     session: Session, game: Game, buyer: Player, request: PurchaseRequest
 ) -> Refusal | None:
@@ -216,13 +245,7 @@ def _refusal(
         return Refusal.SETTER
     if _already_owned(session, game, buyer, request):
         return Refusal.ALREADY_OWNED
-    # The purchase doesn't know the group language, so a clue is sellable
-    # if it would be offered in any supported one.
-    if _malformed(session, game, request) or not any(
-        _available(session, game, buyer, request.kind, lang) for lang in ("en", "ru")
-    ):
-        return Refusal.UNAVAILABLE
-    return None
+    return _not_sellable(session, game, buyer, request)
 
 
 def _detail(request: PurchaseRequest) -> dict[str, object]:
@@ -283,32 +306,107 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
     return bought
 
 
-def refund(session: Session, purchase_row: CluePurchase) -> None:
-    """Undo a purchase whose clue could not be delivered: pay the charge
-    back (house -> player, naming it via reverses_id) and drop the row."""
+@dataclass(frozen=True)
+class RefundableItem:
+    """One un-refunded clue purchase, as the admin /refund picker lists it."""
+
+    purchase_id: int
+    game_id: int
+    kind: ClueKind
+    amount: int  # what the refund pays: the charge minus cashback_deducted
+    created_at: datetime
+    cashback_deducted: int = 0
+
+
+def refundable_purchases(session: Session, player_id: int) -> list[RefundableItem]:
+    """Every clue purchase `player_id` still holds, newest first. A refunded
+    purchase's row is deleted (refund()), so whatever is here is refundable."""
+    stmt = (
+        select(CluePurchase, CurrencyTransfer.amount)
+        .join(CurrencyTransfer, CurrencyTransfer.id == CluePurchase.transfer_id)
+        .where(CluePurchase.player_id == player_id)
+        .order_by(CluePurchase.created_at.desc(), CluePurchase.id.desc())
+    )
+    items = []
+    for row, charged in session.execute(stmt):
+        share = cashback_share(session, row.game_id, player_id, charged)
+        items.append(
+            RefundableItem(
+                row.id, row.game_id, ClueKind(row.kind), charged - share, row.created_at, share
+            )
+        )
+    return items
+
+
+def _cashback_already_deducted(session: Session, game_id: int, player_id: int) -> int:
+    """How much of the game's cashback earlier refunds already kept back:
+    each REFUND row paid its charge minus that deduction."""
+    charge = aliased(CurrencyTransfer)
+    stmt = (
+        select(func.coalesce(func.sum(charge.amount - CurrencyTransfer.amount), 0))
+        .select_from(CurrencyTransfer)
+        .join(charge, charge.id == CurrencyTransfer.reverses_id)
+        .where(
+            CurrencyTransfer.reason == CurrencyReason.REFUND,
+            CurrencyTransfer.game_id == game_id,
+            CurrencyTransfer.to_player_id == player_id,
+        )
+    )
+    return int(session.scalar(stmt) or 0)
+
+
+def cashback_share(session: Session, game_id: int, player_id: int, charged: int) -> int:
+    """The part of a still-held `charged` clue charge that the game's
+    HARD MODE cashback already paid back, so a refund keeps it back: the
+    cashback not yet deducted, pro rata over the player's remaining clue
+    spend (this charge included). Refunding every purchase deducts the
+    cashback exactly once. 0 for a game that paid no cashback."""
+    cashback = wallet.game_total(
+        session, player_id=player_id, game_id=game_id, reason=CurrencyReason.CASHBACK
+    )
+    if not cashback:
+        return 0
+    remaining = cashback - _cashback_already_deducted(session, game_id, player_id)
+    spent = earning.clue_spend(session, game_id).get(player_id, 0)
+    if remaining <= 0 or spent <= 0:
+        return 0
+    return min(charged, remaining * charged // spent)
+
+
+def refund(session: Session, purchase_row: CluePurchase) -> int:
+    """Undo a purchase — a clue that could not be delivered, or an admin
+    /refund: pay the charge back (house -> player, naming it via
+    reverses_id) less any cashback already paid on it (cashback_share), and
+    drop the row. Returns the refunded amount."""
     charge = session.get(CurrencyTransfer, purchase_row.transfer_id)
     buyer = session.get(Player, purchase_row.player_id)
     if charge is None or buyer is None:
         msg = f"refund of purchase {purchase_row.id}: missing charge or buyer"
         raise ValueError(msg)
-    wallet.credit(
-        session,
-        buyer,
-        charge.amount,
-        wallet.LedgerEntry(
-            CurrencyReason.REFUND, game_id=purchase_row.game_id, reverses_id=charge.id
-        ),
-    )
+    share = cashback_share(session, purchase_row.game_id, buyer.telegram_user_id, charge.amount)
+    amount = charge.amount - share
+    if amount > 0:
+        wallet.credit(
+            session,
+            buyer,
+            amount,
+            wallet.LedgerEntry(
+                CurrencyReason.REFUND, game_id=purchase_row.game_id, reverses_id=charge.id
+            ),
+        )
     session.delete(purchase_row)
     logger.info(
-        "refunded {kind} clue purchase {purchase_id} ({amount} 💠 to {recipient})",
+        "refunded {kind} clue purchase {purchase_id} ({amount} 💠 to {recipient},"
+        " {cashback_deducted} 💠 cashback kept back)",
         kind=ClueKind(purchase_row.kind).value,
         purchase_id=purchase_row.id,
-        amount=charge.amount,
+        amount=amount,
+        cashback_deducted=share,
         recipient=players.describe_player_id(session, buyer.telegram_user_id),
         recipient_id=buyer.telegram_user_id,
         game_id=purchase_row.game_id,
     )
+    return amount
 
 
 def refund_game(session: Session, game_id: int) -> int:

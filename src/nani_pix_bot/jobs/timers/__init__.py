@@ -74,6 +74,19 @@ from nani_pix_bot.jobs.timers.turn_timers import (
     turn_expiry_job_callback,
     turn_reminder_job_callback,
 )
+from nani_pix_bot.jobs.timers.vote import (
+    VoteFinal,
+    ballot_markup,
+    ballot_repost_job_callback,
+    ballot_text,
+    cancel_vote_close,
+    finalize_vote,
+    post_vote_ballot,
+    rearm_vote,
+    schedule_vote_close,
+    vote_close_job_callback,
+    vote_close_job_name,
+)
 from nani_pix_bot.services import game as game_service
 
 __all__ = [
@@ -81,12 +94,18 @@ __all__ = [
     "TURN_EXPIRY_JOB_NAME",
     "TURN_REMINDER_JOB_NAME",
     "AutostartTrigger",
+    "VoteFinal",
+    "ballot_markup",
+    "ballot_repost_job_callback",
+    "ballot_text",
     "cancel_idle_autostart",
     "cancel_inactivity_timers",
     "cancel_setup_abandon",
     "cancel_timeout",
     "cancel_turn_timers",
+    "cancel_vote_close",
     "clear_image_if_sent",
+    "finalize_vote",
     "idle_autostart_job_callback",
     "inactivity_advance_job_callback",
     "inactivity_advance_job_name",
@@ -97,13 +116,16 @@ __all__ = [
     "post_current_images",
     "post_stage_image",
     "post_stage_images",
+    "post_vote_ballot",
     "rearm_pending_timeouts",
+    "rearm_vote",
     "run_bot_autostart",
     "schedule_idle_autostart",
     "schedule_inactivity_timers",
     "schedule_setup_abandon",
     "schedule_timeout",
     "schedule_turn_timers",
+    "schedule_vote_close",
     "seconds_until",
     "seconds_until_timeout",
     "setup_abandon_job_callback",
@@ -113,6 +135,8 @@ __all__ = [
     "timeout_job_name",
     "turn_expiry_job_callback",
     "turn_reminder_job_callback",
+    "vote_close_job_callback",
+    "vote_close_job_name",
 ]
 
 
@@ -125,6 +149,9 @@ async def rearm_pending_timeouts(job_queue: JobQueue | None, session_factory) ->
         setups = game_service.setup_games(session)
         for game in setups:
             schedule_setup_abandon(job_queue, game)
+        voting = game_service.voting_games(session)
+        for game in voting:
+            rearm_vote(job_queue, game)
         turn_state = game_service.get_turn_state(session)
         turn_timers = 0
         idle_autostart = False
@@ -135,9 +162,10 @@ async def rearm_pending_timeouts(job_queue: JobQueue | None, session_factory) ->
             idle_autostart = turn_state.autostart_deadline_at is not None
     logger.info(
         "re-armed on startup: {timeouts} game timeout(s), {setups} setup-abandon timer(s), "
-        "{turn_timers} turn timer(s), idle-autostart {idle_autostart}",
+        "{votes} vote close timer(s), {turn_timers} turn timer(s), idle-autostart {idle_autostart}",
         timeouts=len(active),
         setups=len(setups),
+        votes=len(voting),
         turn_timers=turn_timers,
         idle_autostart="armed" if idle_autostart else "not armed",
     )

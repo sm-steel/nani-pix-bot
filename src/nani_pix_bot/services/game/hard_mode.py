@@ -21,13 +21,25 @@ half of this precedent."""
 from typing import NamedTuple
 
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import matching
-from nani_pix_bot.services.game import state
+from nani_pix_bot.services.game import guesses, state
 from nani_pix_bot.services.game.state import GuessOutcome
 
+# HARD MODE clue discount (issue #254): each consecutive failed hard-mode game
+# raises the next one's discount by a step, up to the cap; a solved one
+# (by guess, vote or admin re-finish) resets it to the start.
+HARD_MODE_DISCOUNT_START = 20
+HARD_MODE_DISCOUNT_STEP = 20
+HARD_MODE_DISCOUNT_MAX = 80
+# Enough recent games to reach the cap; older ones can't change the answer.
+_STREAK_LOOKBACK = (
+    HARD_MODE_DISCOUNT_MAX - HARD_MODE_DISCOUNT_START
+) // HARD_MODE_DISCOUNT_STEP + 1
 # Fixed: hard mode always plays exactly two turns against the same
 # screenshot pair — no admin config, no third value (see Game.hard_mode_turn's
 # docstring in models/game.py).
@@ -90,7 +102,22 @@ def record_hard_mode_guess(
     STAGE_ORDER/stage_config."""
     game.total_guess_count += 1
 
-    if matching.is_match(guess_text, state.match_candidates(game)):
+    correct = matching.is_match(guess_text, state.match_candidates(game))
+    reveal = None if correct else state.partial_reveal_text(session, game, guess_text)
+    if reveal is not None:
+        logger.info("partial match revealed {reveal!r}", reveal=reveal, game_id=game.id)
+    guesses.log_guess(
+        session,
+        game,
+        guesses.GuessRecord(
+            player_id=guesser_id,
+            text=guess_text,
+            stage=_current_turn(game),
+            correct=correct,
+            partial_reveal=reveal,
+        ),
+    )
+    if correct:
         logger.info(
             "guessed {guess!r} — CORRECT at {stage}",
             guess=guess_text,
@@ -124,8 +151,12 @@ def record_hard_mode_guess(
         )
         return GuessOutcome.TURN_ADVANCED
 
-    state.force_unsolved(game, cause="final hard-mode turn exhausted — wrong-guess limit reached")
-    return GuessOutcome.UNSOLVED
+    # Local import — vote.py imports this module at module level (see its docstring).
+    from nani_pix_bot.services.game import vote
+
+    return vote.end_hard_mode_without_winner(
+        session, game, cause="final hard-mode turn exhausted — wrong-guess limit reached"
+    )
 
 
 def hard_mode_turn_progress(game: Game) -> HardModeTurnProgress:
@@ -166,3 +197,32 @@ def hard_mode_turn_width(game: Game) -> int:
     """The target_width to pixelate at for `game`'s current hard-mode
     turn — see HARD_MODE_TURN_WIDTHS."""
     return HARD_MODE_TURN_WIDTHS[_current_turn(game)]
+
+
+def discount_for_streak(streak: int) -> int:
+    return min(HARD_MODE_DISCOUNT_START + HARD_MODE_DISCOUNT_STEP * streak, HARD_MODE_DISCOUNT_MAX)
+
+
+def failed_hard_mode_streak(session: Session) -> int:
+    """How many of the most recent ended hard-mode games, in a row, ended
+    UNSOLVED. Games with no ended_at (pre-#239) are ignored."""
+    stmt = (
+        select(Game.status)
+        .where(
+            Game.hard_mode.is_(True),
+            Game.status.in_([GameStatus.WON, GameStatus.UNSOLVED]),
+            Game.ended_at.is_not(None),
+        )
+        .order_by(Game.ended_at.desc(), Game.id.desc())
+        .limit(_STREAK_LOOKBACK)
+    )
+    streak = 0
+    for status in session.scalars(stmt):
+        if status != GameStatus.UNSOLVED:
+            break
+        streak += 1
+    return streak
+
+
+def next_clue_discount(session: Session) -> int:
+    return discount_for_streak(failed_hard_mode_streak(session))

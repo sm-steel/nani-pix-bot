@@ -1,8 +1,12 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.game import hard_mode
@@ -83,7 +87,7 @@ def test_record_hard_mode_guess_correct_on_turn_2_wins_with_double_award(session
     assert winner.wins == 2
 
 
-def test_record_hard_mode_guess_wrong_on_turn_2_ends_unsolved(session: Session) -> None:
+def test_record_hard_mode_guess_wrong_on_turn_2_opens_a_vote(session: Session) -> None:
     game = _hard_mode_game(session, turn=2)
 
     outcome = game_service.record_hard_mode_guess(
@@ -91,23 +95,29 @@ def test_record_hard_mode_guess_wrong_on_turn_2_ends_unsolved(session: Session) 
     )
     session.commit()
 
-    assert outcome is game_service.GuessOutcome.UNSOLVED
-    assert game.status == GameStatus.UNSOLVED
+    assert outcome is game_service.GuessOutcome.VOTE_OPENED
+    assert game.status == GameStatus.VOTING
 
 
-def test_record_guess_dispatches_mark_turn_open_on_hard_mode_unsolved(session: Session) -> None:
-    # Confirms record_guess's dispatch guard (not record_hard_mode_guess
-    # directly) invokes turns.mark_turn_open_if_unassigned on the same
-    # UNSOLVED path record_guess's normal-mode tests already assert this
-    # for — see test_state.py's test_record_guess_unsolved_arms_the_idle_autostart_backstop.
+def test_final_turn_wrong_guess_opens_a_vote(session: Session) -> None:
+    game = _hard_mode_game(session, turn=2)
+    session.add(Player(telegram_user_id=2))
+    session.flush()
+    outcome = hard_mode.record_hard_mode_guess(session, game, guesser_id=2, guess_text="nope")
+    assert outcome is game_service.GuessOutcome.VOTE_OPENED
+    assert game.status is GameStatus.VOTING
+
+
+def test_record_guess_leaves_the_turn_alone_when_a_hard_mode_vote_opens(session: Session) -> None:
+    # VOTE_OPENED is not UNSOLVED: the vote still holds the round, so
+    # record_guess must not arm the idle-autostart backstop for it.
     game = _hard_mode_game(session, turn=2)
 
     outcome = game_service.record_guess(session, game, guesser_id=2, guess_text="wrong answer")
 
-    assert outcome is game_service.GuessOutcome.UNSOLVED
+    assert outcome is game_service.GuessOutcome.VOTE_OPENED
     turn_state = game_service.get_turn_state(session)
-    assert turn_state is not None
-    assert turn_state.autostart_deadline_at is not None
+    assert turn_state is None or turn_state.autostart_deadline_at is None
 
 
 def test_record_hard_mode_guess_wrong_branch_is_reachable_with_a_higher_limit(
@@ -274,3 +284,52 @@ def test_record_hard_mode_guess_logs_a_correct_guess_at_info(
         "INFO",
         "guessed 'frieren' — CORRECT at hard-mode turn 2/2",
     ) in records
+
+
+def test_hard_mode_guess_is_logged_with_its_turn(session: Session) -> None:
+    game = _hard_mode_game(session, turn=1)
+    session.add(Player(telegram_user_id=2))
+    session.flush()
+    hard_mode.record_hard_mode_guess(session, game, guesser_id=2, guess_text="Frieren")
+    row = session.scalars(
+        select(GameGuess).where(GameGuess.game_id == game.id).order_by(GameGuess.id.desc())
+    ).first()
+    assert row is not None
+    assert (row.stage, row.correct) == (1, True)
+
+
+@pytest.mark.parametrize(("streak", "percent"), [(0, 20), (1, 40), (2, 60), (3, 80), (9, 80)])
+def test_discount_for_streak(streak: int, percent: int) -> None:
+    assert hard_mode.discount_for_streak(streak) == percent
+
+
+def _ended(
+    session: Session, status: GameStatus, minutes_ago: int, *, hard: bool = True, ended: bool = True
+) -> None:
+    session.add(
+        Game(
+            starter_id=1,
+            status=status,
+            hard_mode=hard,
+            ended_at=datetime.now(UTC) - timedelta(minutes=minutes_ago) if ended else None,
+        )
+    )
+    session.flush()
+
+
+def test_streak_counts_consecutive_unsolved_hard_mode_games_newest_first(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.flush()
+    _ended(session, GameStatus.UNSOLVED, 50)
+    _ended(session, GameStatus.WON, 40)
+    _ended(session, GameStatus.UNSOLVED, 30)
+    _ended(session, GameStatus.UNSOLVED, 20, hard=False)  # normal games don't count
+    _ended(session, GameStatus.UNSOLVED, 10)
+    _ended(session, GameStatus.UNSOLVED, 5, ended=False)  # legacy rows with no ended_at are ignored
+
+    assert hard_mode.failed_hard_mode_streak(session) == 2
+    assert hard_mode.next_clue_discount(session) == 60
+
+
+def test_no_history_starts_at_twenty(session: Session) -> None:
+    assert hard_mode.next_clue_discount(session) == 20
