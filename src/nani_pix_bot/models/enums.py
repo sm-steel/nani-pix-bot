@@ -329,3 +329,29 @@ class ClueKind(enum.StrEnum):
     TITLE_SHAPE = "title_shape"
     SCREENSHOT = "screenshot"
     TILE = "tile"
+
+
+class EventType(enum.StrEnum):
+    """What an `event_log` row records (services/events.py). Stored as a plain
+    string, like CurrencyReason: the set grows with every consumer."""
+
+    GAME_ACTIVATED = "game_activated"
+    GUESS = "guess"
+    GAME_WON = "game_won"
+    GAME_UNSOLVED = "game_unsolved"
+    STAGE_ADVANCED = "stage_advanced"
+    VOTE_COUNTED = "vote_counted"
+    OVERTHROWN = "overthrown"
+    CURRENCY_MOVED = "currency_moved"
+    CLUE_PURCHASED = "clue_purchased"
+    CLUE_REFUNDED = "clue_refunded"
+    BOUNTY_SETTLED = "bounty_settled"
+
+
+class WinMethod(enum.StrEnum):
+    """How a game was won, recorded on its `game_won` event."""
+
+    GUESS = "guess"
+    CORRECT = "correct"
+    VOTE = "vote"
+    SETWINNER = "setwinner"

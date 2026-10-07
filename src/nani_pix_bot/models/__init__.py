@@ -8,8 +8,10 @@ from nani_pix_bot.models.currency_config import CurrencyConfig as CurrencyConfig
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer as CurrencyTransfer
 from nani_pix_bot.models.enums import CurrencyParty as CurrencyParty
 from nani_pix_bot.models.enums import CurrencyReason as CurrencyReason
+from nani_pix_bot.models.enums import EventType as EventType
 from nani_pix_bot.models.enums import GameStatus as GameStatus
 from nani_pix_bot.models.enums import PixelStage as PixelStage
+from nani_pix_bot.models.event_log import EventLog as EventLog
 from nani_pix_bot.models.game import Game as Game
 from nani_pix_bot.models.game_guess import GameGuess as GameGuess
 from nani_pix_bot.models.game_vote import GameVote as GameVote

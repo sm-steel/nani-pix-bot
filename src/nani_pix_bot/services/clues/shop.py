@@ -14,11 +14,11 @@ from sqlalchemy.orm import Session, aliased
 
 from nani_pix_bot.models.clue_purchase import CluePurchase
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
-from nani_pix_bot.models.enums import ClueKind, CurrencyReason, GameStatus, Provider
+from nani_pix_bot.models.enums import ClueKind, CurrencyReason, EventType, GameStatus, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.services import events, players
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import players
 from nani_pix_bot.services.clues import text
 from nani_pix_bot.services.economy import config, earning, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
@@ -303,6 +303,12 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
         game_id=game.id,
         **_detail(request),
     )
+    events.emit(
+        session,
+        EventType.CLUE_PURCHASED,
+        events.Involved(actor_id=buyer.telegram_user_id, game_id=game.id),
+        kind=request.kind.value,
+    )
     return bought
 
 
@@ -405,6 +411,12 @@ def refund(session: Session, purchase_row: CluePurchase) -> int:
         recipient=players.describe_player_id(session, buyer.telegram_user_id),
         recipient_id=buyer.telegram_user_id,
         game_id=purchase_row.game_id,
+    )
+    events.emit(
+        session,
+        EventType.CLUE_REFUNDED,
+        events.Involved(actor_id=buyer.telegram_user_id, game_id=purchase_row.game_id),
+        kind=ClueKind(purchase_row.kind).value,
     )
     return amount
 

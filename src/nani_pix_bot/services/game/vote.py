@@ -15,10 +15,10 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.enums import EventType, GameStatus, WinMethod
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_vote import GameVote
-from nani_pix_bot.services import players
+from nani_pix_bot.services import events, players
 from nani_pix_bot.services.game import guesses, state
 from nani_pix_bot.services.game.clock import deadline_after
 from nani_pix_bot.services.game.hard_mode import HARD_MODE_WIN_AWARD
@@ -74,6 +74,18 @@ def vote_counts(session: Session, game_id: int) -> dict[int, int]:
     return counts
 
 
+def _log_votes(session: Session, game: Game, winner_id: int | None) -> None:
+    """One `vote_counted` event per ballot cast, flagged by whether its
+    candidate won the vote."""
+    for vote in session.scalars(select(GameVote).where(GameVote.game_id == game.id)):
+        events.emit(
+            session,
+            EventType.VOTE_COUNTED,
+            events.Involved(actor_id=vote.voter_id, subject_id=vote.candidate_id, game_id=game.id),
+            won=winner_id is not None and vote.candidate_id == winner_id,
+        )
+
+
 def _refusal(
     session: Session, game: Game, *, voter_id: int, candidate_id: int
 ) -> VoteRefusal | None:
@@ -120,6 +132,7 @@ def close_vote(session: Session, game: Game, *, forced_winner_id: int | None = N
     hard-mode win, else the game ends UNSOLVED. Returns the winner id."""
     counts = vote_counts(session, game.id)
     winner_id = forced_winner_id if forced_winner_id is not None else decide_winner(counts)
+    _log_votes(session, game, winner_id)
     if winner_id is None:
         state.force_unsolved(game, cause=f"vote closed with no winner (votes {counts})")
         return None
@@ -135,5 +148,7 @@ def close_vote(session: Session, game: Game, *, forced_winner_id: int | None = N
         how=how,
         game_id=game.id,
     )
-    state._win(session, game, winner_id=winner_id, award=HARD_MODE_WIN_AWARD)
+    method = WinMethod.SETWINNER if forced_winner_id is not None else WinMethod.VOTE
+    terms = state.WinTerms(award=HARD_MODE_WIN_AWARD, how=method)
+    state._win(session, game, winner_id=winner_id, terms=terms)
     return winner_id

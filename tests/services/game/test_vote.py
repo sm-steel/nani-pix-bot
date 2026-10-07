@@ -1,10 +1,12 @@
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models import Player
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.enums import EventType, GameStatus
+from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.game import guesses, vote
@@ -114,3 +116,22 @@ def test_forced_winner_skips_the_tally(session: Session) -> None:
     vote.end_hard_mode_without_winner(session, game, cause="t")
     assert vote.close_vote(session, game, forced_winner_id=B) == B
     assert game.winner_id == B
+
+
+def test_closing_a_vote_logs_one_event_per_ballot(session: Session) -> None:
+    game = _hard_game(session)
+    vote.end_hard_mode_without_winner(session, game, cause="t")
+    for voter in (B, C, D):
+        vote.cast_vote(session, game, voter_id=voter, candidate_id=A)
+    vote.cast_vote(session, game, voter_id=A, candidate_id=B)
+
+    vote.close_vote(session, game)
+
+    stmt = select(EventLog).where(EventLog.event_type == EventType.VOTE_COUNTED)
+    rows = list(session.scalars(stmt.order_by(EventLog.id)))
+    assert sorted((r.actor_id, r.subject_id, r.data["won"]) for r in rows) == [
+        (A, B, False),
+        (B, A, True),
+        (C, A, True),
+        (D, A, True),
+    ]

@@ -56,6 +56,16 @@ def normalize(text: str) -> str:
     return " ".join(stripped.split())
 
 
+def best_score(guess: str, candidates: Sequence[str | None]) -> float:
+    """The best fuzz ratio `guess` reaches against any candidate (0 when the
+    guess normalizes to nothing) — recorded on every wrong guess so a near
+    miss can be told apart from a wild one."""
+    normalized_guess = normalize(guess)
+    if not normalized_guess:
+        return 0.0
+    return max((fuzz.ratio(normalized_guess, normalize(c)) for c in candidates if c), default=0.0)
+
+
 def is_match(guess: str, candidates: Sequence[str | None]) -> bool:
     """True if `guess` fuzzy-matches any of `candidates` (a game's cached
     title variants + synonyms) above MATCH_THRESHOLD, once both sides are
