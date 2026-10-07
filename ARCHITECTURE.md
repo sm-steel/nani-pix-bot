@@ -299,6 +299,17 @@ src/nani_pix_bot/
                    #               can't import commands/)
     tip.py        # /tip @user <amount> — topic or DM
     leaderboard.py  # /leaderboard (wins and 💠 balance)
+                   # (wins as 👑, the chosen title in «» after the name)
+    achievements/  # /achievements — group summary + top (__init__.py),
+                   # the DM browser with tabs/pages (browser.py), compare
+                   # (compare.py), the status -> rich-message markdown
+                   # (render.py, every non-syntax string through
+                   # md_escape) and the shared helpers/deep link/callback
+                   # parsing (common.py). Callback data is
+                   # ach:<view>:<owner>:<filter>:<page>[:<other>], parsed
+                   # defensively; ids in callbacks and deep links are
+                   # capped at 2**63-1
+    title.py      # /title — DM-only picker over the titles you earned
     balance.py    # /balance — the caller's 💠 balance, DM or game topic
     currency_config.py  # /pixelconfig — DM-only, admin-gated view/edit of
                    # the currency amounts (services/economy/config.py);
@@ -461,6 +472,18 @@ src/nani_pix_bot/
                    #                      read (and deletes what it finds
                    #                      expired). This job is cleanup,
                    #                      not the guarantee
+    announcements.py  # the announcement outbox drain: a repeating 20s
+                   # job, id order, nothing during quiet hours (rows wait),
+                   # cards with the text as caption, albums for 3-10 rows
+                   # of one event (chunked at 10, rendered bytes reused),
+                   # avatars cached per drain, a drain stops at the first
+                   # failed send, a row is given up after 3 attempts
+    periods.py    # the period boundary job: a one-shot run_once at the
+                   # next boundary that closes what ended (catching up
+                   # after downtime) and re-arms itself; the first start
+                   # only arms the running periods
+    avatars.py    # a player's current profile photo (None on any miss ->
+                   # the card draws initials)
   services/       # the actual game logic — framework-agnostic, no
                    # python-telegram-bot imports in this package
     search/       # anime identification + screenshot fetching, called
@@ -637,6 +660,26 @@ src/nani_pix_bot/
                    # session-parameter style — callers own the
                    # session_scope(...)/commit, these functions just
                    # mutate
+    events.py     # the event log's write side: emit() appends an
+                   # event_log row in the caller's transaction, then calls
+                   # achievements.on_event
+    achievements/ # the achievement engine, no Telegram — see
+                   # "Achievements" below. definitions.py (what a
+                   # Definition is + tier math), catalogue.py (all 33,
+                   # in display order), ladders.py / conditions.py (pure
+                   # progress functions over a History), history.py (the
+                   # event_log-backed History), engine.py (on_event:
+                   # grants, rewards, outbox rows), rewards.py (rarity ->
+                   # 💠/points), titles.py, names.py (localized
+                   # name/description), status.py (the view model behind
+                   # /achievements, plus the top), periods.py (period
+                   # math, scoring, freezing a closed period),
+                   # podium.py (a finished period as lines/a card),
+                   # outbox.py (queue/list/settle)
+    cards/        # Pillow image cards, no Telegram: render.py (unlock and
+                   # podium cards), icons.py (the drawn diamond, trophy and
+                   # star), backgrounds.py (optional per-slot anime
+                   # backgrounds)
     economy/      # the currency economy (shown as 💠 pixels) — see MECHANICS.md's "Pixels".
                    # __init__.py deliberately re-exports nothing (import
                    # submodules directly): players.py imports
@@ -732,11 +775,18 @@ src/nani_pix_bot/
                    #               token columns), PendingMalLink (one
                    #               row per live /linkmal attempt's PKCE
                    #               state) — see services/mal_link.py
+    event_log.py  # EventLog (append-only domain events)
+    achievement.py  # AchievementGrant, AchievementClaim
+    announcement.py  # AnnouncementOutbox
+    period.py     # PeriodResult, PeriodState
     enums.py      # GameStatus, PixelStage, SetupStep, PixelReason, and Provider — the
                    # latter also exposes pick_prefix/id_attr_name/
                    # screenshot_module/search_module as properties, the
                    # single source of truth for what used to be four
                    # hand-maintained Provider-keyed dicts (issue #114)
+assets/          # fonts/ (bundled Noto Sans, OFL) and backgrounds/
+                   # <unlock/rarity | podium/period>/n.png, optional card
+                   # backgrounds (prompts: docs/card-backgrounds.md)
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout
 scripts/          # one-off / operational scripts, if any turn out to be needed
@@ -934,6 +984,90 @@ erDiagram
 | `clue_purchases` | v8 | One clue a player bought in one game (`kind` is a `ClueKind` stored as a plain string: first/last letter, title shape, screenshot, tile). `game_id` is a real FK with `ON DELETE CASCADE`, so a game deletion drops its purchases (the ledger rows stay); `/stop` refunds them first via `shop.refund_game`, and setup-abandon only deletes `SETUP` games, which cannot have any; `player_id` FKs `players`. `tile_index` (0-63, row-major on the 8x8 grid) is set for a tile (one per game: the first tile purchase's index, via `shop.round_tile`, is the round's tile and every later buyer's row repeats it; one tile per player) and `screenshot_url` for an extra screenshot, so *what* was bought lives here and never in the ledger. `telegram_file_id` is the delivered image's file_id, kept so sharing re-posts it without re-rendering; `shared_at` is set once when the player shares it with the group (free, once per clue). `transfer_id` (FK, unique) is the `currency_transfers` charge that paid for it; a failed delivery is refunded through a `reverses_id` ledger row and the purchase row is deleted. Written only via `services/clues/shop.py`. |
 | `game_votes` | v9 | One current vote in a hard-mode vote (#252): `game_id` (real FK, `ON DELETE CASCADE`), `voter_id`, `candidate_id` (both FK `players`). Unique on (`game_id`, `voter_id`): changing a vote updates the row in place. Candidates are every player with a `game_guesses` row for the game, and nobody can vote for themselves (`services/game/vote.py`). |
 | `game_guesses` | v9 | Every /guess: game, player, text, stage/turn, correct, partial reveal. `game_id` is a real FK with `ON DELETE CASCADE`, so it cascades with its game; `player_id` FKs `players`. `stage` is the PixelStage number (1-5) or the hard-mode turn (1-2); `text` is truncated to 255 characters. Written only via `services/game/guesses.py::log_guess`, from `state.record_guess` and `hard_mode.record_hard_mode_guess`. |
+| `event_log` | v10 | Append-only domain events, the data source for achievements and deliberately not achievement-specific. `event_type` is an `EventType` stored as a plain string (a new type needs no migration), `actor_id`/`subject_id` are plain bigints (no FK) and `game_id` a plain int with **no** FK like `currency_transfers.game_id`, so rows outlive a `/stop`ped game. `data` is type-specific JSON. Indexed on `(event_type, actor_id)`, `(event_type, subject_id)`, `game_id` and `occurred_at`. It starts empty on deploy, which is the no-backfill rule. Written only through `services/events.py::emit`. |
+| `achievement_grants` | v10 | One achievement tier a player unlocked: `key`, `tier`, `rarity`, `reward`, `points`, the ledger `transfer_id` and `granted_at`. Unique on (`player_id`, `key`, `tier`, `period_key`). `period_key` is `NOT NULL DEFAULT ''` (`''` = not a period grant) because MariaDB treats NULLs as distinct in a unique index, which would let a champion tier be granted twice. |
+| `achievement_claims` | v10 | The single holder of a group-unique tier (Pioneer, Milestone Keeper N). The primary key (`key`, `tier`) is what makes a second holder impossible. There is no timestamp: the grant row has it. |
+| `announcement_outbox` | v10 | A group post owed but not yet sent (`kind` `unlock`/`period_summary`, JSON `payload`), written in the same transaction as what it announces. `batch_id` (the causing event) groups unlocks into one album, `attempts` counts failed sends (given up at 3), `posted_at` is NULL until delivered. Posted in id order by `jobs/announcements.py`. |
+| `period_results` | v10 | One place on a closed period's podium (`period_type`, `period_key`, `rank`, `player_id`, `score`, `wins`), frozen when the period closed. Unique on (`period_type`, `period_key`, `rank`). |
+| `period_state` | v10 | One row per period type (`period_type` PK): `next_end`, the UTC end of the next period to close. Created at the first start with the running period, so nothing before the deploy is scored; a late start catches up from it. |
+| `players` additions | v10 | `title_key` (the title chosen with `/title`) and `first_name` (kept current by `remember_user`, shown when there is no @username). |
+| `games` addition | v10 | `activated_at`: when the game went live (`created_at` is when setup started), used by `win_facts.seconds` (activation to the game's end). |
+
+### Achievements
+
+Rules are in `MECHANICS.md`'s "Achievements"; this is how they run.
+
+```mermaid
+flowchart LR
+    Hooks["Choke points\n(_record_win, log_guess,\nwallet.transfer, …)"] -->|emit| Log[("event_log")]
+    Hooks --> Engine["achievements.on_event"]
+    Engine -->|reads| Log
+    Engine --> Grants[("achievement_grants")]
+    Engine -->|wallet.credit ACHIEVEMENT| Ledger[("currency_transfers")]
+    Engine --> Outbox[("announcement_outbox")]
+    PeriodJob["period boundary job"] --> Engine
+    Outbox --> Drain["outbox drain job"] --> Topic["Game topic"]
+```
+
+**Flow.** The function that already owns a state change calls
+`events.emit(...)` inside its own transaction: the `event_log` row, any
+grants, the 💠 reward and the outbox row all commit or roll back together.
+`emit` then calls `achievements.on_event`, which re-evaluates only the
+definitions triggered by that event type, for the players involved. Progress
+is never stored: ladders and sets are computed from `event_log` at
+evaluation time by pure functions over a `History`. For each newly crossed
+tier the engine inserts the `achievement_grants` row (plus the
+`achievement_claims` row for a group-unique one), credits the reward through
+`wallet.credit(reason=CurrencyReason.ACHIEVEMENT)` and queues an
+`announcement_outbox` row. It re-reads the tiers a player holds before each
+grant, so a cascade (a reward that unlocks Pixel Magnate, which pays again)
+terminates and never grants a tier twice. Reversals (refund, cashback, any
+row with `reverses_id`) never trigger anything. The `jobs/announcements.py`
+drain then posts the outbox rows after commit, in id order, and the period
+boundary job (`jobs/periods.py`) feeds champions into the same engine and
+outbox, so a podium and its champion's unlock keep their order.
+
+**Event hooks.** `game_activated` (`state.activate_game`, which sets
+`Game.activated_at`), `guess` (`guesses.log_guess`), `game_won`
+(`state._record_win`, every win path including refinish, taking
+`terms: WinTerms(award, how)`; `win_facts.seconds` runs from activation to
+the game's end), `game_unsolved` (`state.force_unsolved`), `stage_advanced`,
+`vote_counted`, `overthrown` (`autostart.maybe_overthrow`, the write is
+guarded), `currency_moved` (`wallet.transfer`, so one hook covers every 💠
+movement), `clue_purchased`/`clue_refunded` and `bounty_settled`.
+
+**Delivery.** Outbox rows are posted at least once: a crash between the send
+and `mark_posted` re-posts that row. A row that fails to render is marked
+failed, a drain stops at the first failed send (so order holds) and a row is
+given up after 3 attempts with an ERROR. Quiet hours make rows wait. The
+drain is a repeating 20s job started in `_post_init`, so there is nothing to
+re-arm per row.
+
+**Periods.** `PeriodState.next_end` drives a one-shot boundary job that
+closes every period that ended (oldest first, so downtime across several
+boundaries, DST included, is caught up exactly once) and re-arms for the
+next. The first start only arms the periods running at that moment.
+
+**Rich messages.** `/achievements` and its browser use Bot API 10.3 rich
+messages (`sendRichMessage`, `editMessageText` with a `rich_message`). PTB
+22.8 speaks Bot API 10.0, so `commands/helpers/rich.py` sends them as raw
+calls through `bot.do_api_request` until PTB supports them. On `BadRequest`
+or `InvalidToken` it falls back to the same text sent plain (un-escaped),
+with an ERROR, so a view never silently vanishes.
+
+**Cards.** `services/cards/` draws the unlock and podium cards with Pillow,
+using the bundled Noto Sans (Latin and Cyrillic, no emoji), a drawn diamond
+for 💠, trophy for achievement points and star for the champion score, an
+anti-aliased avatar badge (solid inner ring, a conic sweep-gradient outer
+ring in a per-rarity palette, a glow), initials (letters only) when there is
+no avatar, and an optional anime background per slot that is picked
+deterministically by player and placed under a dark overlay.
+
+**Testing.** Evaluating achievements on every emitted event would change
+balances in the ~500 existing economy tests, so an autouse fixture in
+`tests/conftest.py` switches evaluation off by default. A test or module
+marked `@pytest.mark.achievements` (registered in `pyproject.toml`) switches
+it back on.
 
 ## Game flow, topics, and commands
 
