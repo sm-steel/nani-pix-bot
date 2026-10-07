@@ -90,3 +90,8 @@ async def achievements_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await _post_top(message, context)
         return
     await _post_summary(message, context, user.id, args)
+
+
+# Importing compare registers the "c" action in browser.ACTIONS; it can't be imported
+# from browser.py (compare imports browser).
+import nani_pix_bot.commands.achievements.compare  # noqa: E402, F401

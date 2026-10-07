@@ -510,5 +510,11 @@
   "achievements.top.header": "🏆 Топ достижений",
   "achievements.top.player": "Игрок",
   "achievements.top.points": "Очки",
-  "achievements.top.empty": "Пока ни у кого нет достижений."
+  "achievements.top.empty": "Пока ни у кого нет достижений.",
+  "achievements.compare.header": "Вы и",
+  "achievements.compare.column": "Достижение",
+  "achievements.compare.you": "Вы",
+  "achievements.compare.all": "Все",
+  "achievements.compare.theirs": "Есть только у него",
+  "achievements.compare.mine": "Есть только у вас"
 }

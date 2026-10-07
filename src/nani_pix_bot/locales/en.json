@@ -510,5 +510,11 @@
   "achievements.top.header": "🏆 Achievements top",
   "achievements.top.player": "Player",
   "achievements.top.points": "Pts",
-  "achievements.top.empty": "Nobody has an achievement yet."
+  "achievements.top.empty": "Nobody has an achievement yet.",
+  "achievements.compare.header": "You vs",
+  "achievements.compare.column": "Achievement",
+  "achievements.compare.you": "You",
+  "achievements.compare.all": "All",
+  "achievements.compare.theirs": "Only they have",
+  "achievements.compare.mine": "Only you have"
 }

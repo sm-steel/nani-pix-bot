@@ -217,3 +217,25 @@ def points_of(session: Session, player_id: int) -> int:
         AchievementGrant.player_id == player_id
     )
     return int(session.scalar(stmt) or 0)
+
+
+class CompareFilter(enum.StrEnum):
+    ALL = "a"
+    THEIRS = "t"  # they have it, I don't
+    MINE = "m"  # I have it, they don't
+
+
+def _has(item: Status) -> bool:
+    return item.state is State.EARNED
+
+
+def compare(
+    mine: list[Status], theirs: list[Status], filt: CompareFilter
+) -> list[tuple[Status, Status]]:
+    """Both lists come from build(), so both are in catalogue order."""
+    pairs = list(zip(mine, theirs, strict=True))
+    if filt is CompareFilter.THEIRS:
+        return [(m, t) for m, t in pairs if _has(t) and not _has(m)]
+    if filt is CompareFilter.MINE:
+        return [(m, t) for m, t in pairs if _has(m) and not _has(t)]
+    return pairs

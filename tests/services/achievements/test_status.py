@@ -125,3 +125,26 @@ def test_top_ranks_by_points_then_whoever_got_there_first(session: Session) -> N
     assert status.rank_of(session, ME) == 2
     assert status.points_of(session, ME) == 8
     assert status.ranked_count(session) == 2
+
+
+def test_compare_filters_by_who_has_what() -> None:
+    clutch, first_try, so_close = (catalogue.get(k) for k in ("clutch", "first_try", "so_close"))
+    mine = [
+        status.Status(clutch, State.EARNED, tier=1),
+        status.Status(first_try, State.UNTOUCHED),
+        status.Status(so_close, State.HIDDEN),
+    ]
+    theirs = [
+        status.Status(clutch, State.UNTOUCHED),
+        status.Status(first_try, State.EARNED, tier=1),
+        status.Status(so_close, State.HIDDEN),
+    ]
+    cf = status.CompareFilter
+
+    assert [m.defn.key for m, _ in status.compare(mine, theirs, cf.ALL)] == [
+        "clutch",
+        "first_try",
+        "so_close",
+    ]
+    assert [m.defn.key for m, _ in status.compare(mine, theirs, cf.THEIRS)] == ["first_try"]
+    assert [m.defn.key for m, _ in status.compare(mine, theirs, cf.MINE)] == ["clutch"]
