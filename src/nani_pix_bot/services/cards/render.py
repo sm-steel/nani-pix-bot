@@ -4,6 +4,7 @@ emoji — Pillow can't reliably render colour glyphs — so rarity is a colour
 and a drawn medal, and 💠 a drawn diamond."""
 
 import hashlib
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -12,7 +13,7 @@ from io import BytesIO
 from pathlib import Path
 from types import MappingProxyType
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from nani_pix_bot.models.enums import Rarity
 
@@ -31,7 +32,7 @@ RARITY_COLORS: Mapping[Rarity, tuple[int, int, int]] = MappingProxyType(
         Rarity.PLATINUM: (110, 225, 235),
     }
 )
-_PLACES = (RARITY_COLORS[Rarity.GOLD], RARITY_COLORS[Rarity.SILVER], RARITY_COLORS[Rarity.BRONZE])
+_PLACES = tuple(RARITY_COLORS[r] for r in (Rarity.GOLD, Rarity.SILVER, Rarity.BRONZE))
 _MARGIN = 64
 _AVATAR = 300
 # The avatar badge: photo, solid inner ring, gradient outer ring, soft glow.
@@ -42,8 +43,23 @@ _GLOW_BLUR = 12
 _GLOW_ALPHA = 0.55
 _GLOW_PAD = 3 * _GLOW_BLUR  # room for the blur so the glow isn't clipped
 _SS = 4  # supersampling factor: the badge is drawn big, then shrunk with LANCZOS
-_TINT = 0.45  # outer ring, top-left: this far toward white
-_SHADE = 0.35  # outer ring, bottom-right: this far toward black
+_SWEEP_STEPS = 720  # wedges per revolution when drawing the sweep gradient
+_GLINTS = (225.0, 45.0)  # outer-ring highlights, in PIL angles (top-left, bottom-right)
+_GLINT_WIDTH = 24.0  # degrees either side of a glint's centre
+_GLINT_STRENGTH = 0.8
+_GLINT_COLOR = (252, 252, 255)
+# Outer-ring sweep palettes: related to the rarity colour, clearly different from it.
+# Each is interpolated around the full circle and wraps back to its first stop.
+_SWEEP: Mapping[Rarity, tuple[tuple[int, int, int], ...]] = MappingProxyType(
+    {
+        Rarity.BRONZE: ((0x8E, 0x3B, 0x24), (0xF2, 0xA9, 0x7A), (0xC9, 0x87, 0x7A)),
+        Rarity.SILVER: ((0x6F, 0x86, 0xA8), (0xB9, 0xB2, 0xE0), (0xEE, 0xF1, 0xF8)),
+        Rarity.GOLD: ((0xE0, 0x84, 0x1A), (0xFF, 0xE9, 0xA8), (0xF5, 0xC4, 0x51)),
+        Rarity.PLATINUM: ((0x8C, 0x6B, 0xE8), (0xE8, 0xFB, 0xFF), (0x2F, 0xBF, 0xC4)),
+    }
+)
+# Podium places wear the matching rarity's ring: #1 gold, #2 silver, #3 bronze.
+_PLACE_RARITIES = (Rarity.GOLD, Rarity.SILVER, Rarity.BRONZE)
 _NAME_SIZES = (64, 54, 46, 40)
 # Background veil opacities in the card's base colour (spec: readable white text).
 _UNLOCK_SHADE = (0.45, 0.88)  # left (behind the avatar) -> right (text area)
@@ -170,16 +186,45 @@ def avatar_disc(avatar: bytes | None, name: str, seed: int, size: int) -> Image.
     return disc
 
 
-def _mix(color: tuple[int, int, int], target: int, amount: float) -> tuple[int, int, int]:
-    r, g, b = (round(c + (target - c) * amount) for c in color)
-    return (r, g, b)
+def _blend(a: tuple[int, ...], b: tuple[int, ...], t: float) -> tuple[int, int, int]:
+    r, g, bl = (round(x + (y - x) * t) for x, y in zip(a, b, strict=True))
+    return (r, g, bl)
 
 
-def _diagonal(size: int) -> Image.Image:
-    """An L ramp from 0 at the top-left corner to 255 at the bottom-right."""
-    vertical = Image.linear_gradient("L").resize((size, size), Image.Resampling.BICUBIC)
-    horizontal = vertical.rotate(90)
-    return ImageChops.add(vertical, horizontal, scale=2)
+def _sweep_color(palette: tuple[tuple[int, int, int], ...], angle: float) -> tuple[int, int, int]:
+    """The ring colour at `angle` degrees: the palette's stops, smoothly
+    interpolated around the circle, plus a soft white glint at each _GLINTS."""
+    position = (angle % 360) / 360 * len(palette)
+    index = int(position)
+    t = position - index
+    color = _blend(palette[index], palette[(index + 1) % len(palette)], t * t * (3 - 2 * t))
+    for glint in _GLINTS:
+        distance = abs((angle - glint + 180) % 360 - 180)
+        weight = max(0.0, 1 - distance / _GLINT_WIDTH)
+        color = _blend(color, _GLINT_COLOR, _GLINT_STRENGTH * weight * weight * (3 - 2 * weight))
+    return color
+
+
+def _sweep(
+    size: int, inner: float, outer: float, palette: tuple[tuple[int, int, int], ...]
+) -> Image.Image:
+    """A conic gradient over the ring between `inner` and `outer`, drawn as thin
+    overlapping quads (the annulus mask trims the slack)."""
+    image = Image.new("RGB", (size, size))
+    draw = ImageDraw.Draw(image)
+    centre = size / 2
+    near, far = inner - 2, outer + 2
+    step = 360 / _SWEEP_STEPS
+    for i in range(_SWEEP_STEPS):
+        start = i * step
+        rays = [math.radians(start), math.radians(start + step * 1.5)]
+        quad = [
+            (centre + r * math.cos(a), centre + r * math.sin(a)) for r in (near, far) for a in rays
+        ]
+        draw.polygon(
+            [quad[0], quad[1], quad[3], quad[2]], fill=_sweep_color(palette, start + step / 2)
+        )
+    return image
 
 
 def _disc_mask(size: int, centre: float, radius: float) -> Image.Image:
@@ -197,9 +242,10 @@ def _glow(size: int, radius: float, color: tuple[int, int, int]) -> Image.Image:
     return layer
 
 
-def _badge(face: Image.Image, color: tuple[int, int, int]) -> Image.Image:
+def _badge(face: Image.Image, color: tuple[int, int, int], rarity: Rarity) -> Image.Image:
     """The avatar badge, centred in a transparent square with room for its glow.
-    `face` is the avatar disc drawn at _SS times its final size; everything is
+    `color` (rarity or place) sets the inner ring and glow; `rarity` picks the outer
+    ring's sweep palette. `face` is the avatar disc drawn at _SS times its final size; everything is
     drawn at that scale and shrunk once, so no edge is aliased."""
     face_radius = face.width / 2
     inner = face_radius + _INNER_RING * _SS
@@ -209,11 +255,7 @@ def _badge(face: Image.Image, color: tuple[int, int, int]) -> Image.Image:
     badge = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     annulus = _disc_mask(big, centre, outer)
     annulus.paste(0, mask=_disc_mask(big, centre, inner))
-    light, dark = _mix(color, 255, _TINT), _mix(color, 0, _SHADE)
-    gradient = Image.composite(
-        Image.new("RGB", (big, big), dark), Image.new("RGB", (big, big), light), _diagonal(big)
-    )
-    badge.paste(gradient, (0, 0), annulus)
+    badge.paste(_sweep(big, inner, outer, _SWEEP[rarity]), (0, 0), annulus)
     badge.paste(Image.new("RGB", (big, big), color), (0, 0), _disc_mask(big, centre, inner))
     corner = round(centre - face_radius)
     badge.paste(face, (corner, corner), face)
@@ -316,7 +358,7 @@ def render_unlock_card(
     draw = ImageDraw.Draw(image)
     color = RARITY_COLORS[card.rarity]
     draw.rectangle((0, 0, _WIDTH - 1, _HEIGHT - 1), outline=color, width=10)
-    badge = _badge(avatar_disc(avatar, card.handle, card.seed, _AVATAR * _SS), color)
+    badge = _badge(avatar_disc(avatar, card.handle, card.seed, _AVATAR * _SS), color, card.rarity)
     radius = _AVATAR // 2 + _RING_TOTAL
     _paste_badge(image, badge, (_MARGIN + radius, _HEIGHT // 2))
     x = 2 * _MARGIN + 2 * radius
@@ -337,7 +379,7 @@ def _podium_entry(image: Image.Image, entry: PodiumEntry, slot: tuple[int, int, 
     draw = ImageDraw.Draw(image)
     face = avatar_disc(entry.avatar, entry.name, entry.seed, size * _SS)
     centre_y = 300 + (0 if index == 0 else 30)
-    _paste_badge(image, _badge(face, _PLACES[index]), (centre_x, centre_y))
+    _paste_badge(image, _badge(face, _PLACES[index], _PLACE_RARITIES[index]), (centre_x, centre_y))
     text_y = centre_y + size // 2 + _RING_TOTAL + 40
     name_font = _font(36 if index == 0 else 30, bold=True)
     name = _fit(draw, entry.name, name_font, 280)

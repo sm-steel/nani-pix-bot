@@ -1,3 +1,4 @@
+import colorsys
 import math
 from io import BytesIO
 from typing import Any, cast
@@ -148,9 +149,9 @@ def _pixel(image: Image.Image, xy: tuple[int, int]) -> tuple[int, ...]:
     return cast(tuple[int, ...], image.getpixel(xy))
 
 
-def _badge(size: int = 100, color=(240, 190, 40)) -> Image.Image:
+def _badge(size: int = 100, rarity: Rarity = Rarity.GOLD) -> Image.Image:
     face = cards.avatar_disc(_red_avatar(), "@a", 1, size * render._SS)
-    return render._badge(face, color)
+    return render._badge(face, render.RARITY_COLORS[rarity], rarity)
 
 
 def _ring_radius(size: int) -> float:
@@ -183,11 +184,37 @@ def test_the_glow_brightens_just_outside_the_outer_ring() -> None:
     assert _pixel(on_flat, (0, 0)) == render._BACKGROUND  # the glow fades out before the edge
 
 
-def test_the_outer_ring_is_lighter_top_left_and_darker_bottom_right() -> None:
-    size = 100
-    badge = _badge(size).convert("RGB")
-    centre, ring = badge.width // 2, size / 2 + render._INNER_RING + render._OUTER_RING / 2
-    offset = round(ring / math.sqrt(2))
-    top_left = _pixel(badge, (centre - offset, centre - offset))
-    bottom_right = _pixel(badge, (centre + offset, centre + offset))
-    assert sum(top_left) > sum(bottom_right)
+def _outer_ring_samples(badge: Image.Image, size: int) -> list[tuple[int, ...]]:
+    centre = badge.width / 2
+    radius = size / 2 + render._INNER_RING + render._OUTER_RING / 2
+    rgb = badge.convert("RGB")
+    points = []
+    for step in range(12):
+        angle = math.radians(step * 30 + 7)
+        points.append(
+            (round(centre + radius * math.cos(angle)), round(centre + radius * math.sin(angle)))
+        )
+    return [_pixel(rgb, point) for point in points]
+
+
+def _distance(a: tuple[int, ...], b: tuple[int, ...]) -> int:
+    return max(abs(x - y) for x, y in zip(a, b, strict=True))
+
+
+def test_the_outer_ring_sweeps_through_colours_unlike_the_inner_ring() -> None:
+    for rarity in Rarity:
+        badge = _badge(100, rarity)
+        inner = render.RARITY_COLORS[rarity]
+        samples = _outer_ring_samples(badge, 100)
+        assert len(set(samples)) >= 8  # it varies around the circle
+        assert all(_distance(s, inner) > 12 for s in samples)  # and never matches the inner ring
+
+
+def test_the_outer_ring_has_a_different_average_hue_than_the_inner_ring() -> None:
+    for rarity in Rarity:
+        samples = _outer_ring_samples(_badge(100, rarity), 100)
+        mean = tuple(sum(channel) / len(samples) / 255 for channel in zip(*samples, strict=True))
+        inner = tuple(c / 255 for c in render.RARITY_COLORS[rarity])
+        ring_hue, inner_hue = colorsys.rgb_to_hsv(*mean)[0], colorsys.rgb_to_hsv(*inner)[0]
+        gap = abs(ring_hue - inner_hue)
+        assert min(gap, 1 - gap) > 0.01, rarity
