@@ -8,6 +8,8 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import announcements
+from nani_pix_bot.models.achievement import AchievementGrant
+from nani_pix_bot.models.enums import Rarity
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import settings
 from nani_pix_bot.services.achievements import engine, outbox
@@ -87,3 +89,39 @@ async def test_a_failing_post_gives_up_after_three_attempts(session_factory, rec
 
     assert context.bot.send_message.await_count == outbox.MAX_ATTEMPTS
     assert any(level == "ERROR" and "giving up" in message for level, message in records)
+
+
+async def test_an_unrenderable_row_does_not_block_the_queue(session_factory, records) -> None:
+    with session_scope(session_factory) as session:
+        session.add(Player(telegram_user_id=1, username="alice"))
+        session.flush()
+        bad = AchievementGrant(
+            player_id=1, key="no_such_achievement", tier=1, rarity=Rarity.BRONZE, reward=0, points=1
+        )
+        session.add(bad)
+        session.flush()
+        outbox.enqueue_unlock(session, bad.id, None)
+        engine.grant(session, engine.GrantRequest(1, "kingmaker"))
+    context = _context(session_factory)
+
+    for _ in range(outbox.MAX_ATTEMPTS):
+        await _drain(context)
+
+    context.bot.send_message.assert_awaited_once()
+    assert "Kingmaker" in context.bot.send_message.await_args.kwargs["text"]
+    with session_scope(session_factory) as session:
+        assert outbox.pending(session, 10) == []
+    assert any(level == "ERROR" and "could not be rendered" in m for level, m in records)
+
+
+async def test_a_failed_send_stops_the_drain_and_spares_later_rows(session_factory) -> None:
+    _grant(session_factory, "pioneer")  # queues pioneer, then pixel_magnate
+    context = _context(session_factory)
+    context.bot.send_message.side_effect = TelegramError("boom")
+
+    await _drain(context)
+
+    context.bot.send_message.assert_awaited_once()
+    with session_scope(session_factory) as session:
+        first, second = outbox.pending(session, 10)
+        assert (first.attempts, second.attempts) == (1, 0)

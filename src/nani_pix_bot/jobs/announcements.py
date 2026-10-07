@@ -2,7 +2,8 @@
 repeating job, id order, nothing during quiet hours (rows simply wait), a
 row that keeps failing is given up after outbox.MAX_ATTEMPTS. Durable rows
 are why this needs no restart re-arming beyond starting the job in
-app.py's _post_init (plan clarification 3)."""
+app.py's _post_init (plan clarification 3). Delivery is at-least-once: a
+crash between the send and mark_posted re-posts that row."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -62,6 +63,20 @@ def schedule_outbox_drain(job_queue: JobQueue | None) -> None:
     )
 
 
+def _render(session: Session, row: AnnouncementOutbox, lang: str) -> Post | None:
+    """One row's post, or None when it can't be rendered. Such a row is
+    marked failed on its own, so it can't block the rows behind it."""
+    try:
+        text = RENDERERS[OutboxKind(row.kind)](session, row, lang)
+    except (KeyError, ValueError) as exc:
+        logger.error(
+            "announcement {outbox_id} could not be rendered: {error!r}", outbox_id=row.id, error=exc
+        )
+        outbox.mark_failed(session, [row.id])
+        return None
+    return Post((row.id,), text or "")
+
+
 def _collect(session_factory: sessionmaker[Session]) -> list[Post]:
     with session_scope(session_factory) as session:
         if quiet_hours.is_quiet(settings.get_quiet_hours(session), datetime.now(UTC)):
@@ -70,8 +85,9 @@ def _collect(session_factory: sessionmaker[Session]) -> list[Post]:
         lang = settings.get_language(session)
         posts = []
         for row in outbox.pending(session, OUTBOX_BATCH):
-            text = RENDERERS[OutboxKind(row.kind)](session, row, lang)
-            posts.append(Post((row.id,), text or ""))
+            post = _render(session, row, lang)
+            if post is not None:
+                posts.append(post)
         return posts
 
 
@@ -104,3 +120,7 @@ async def drain_outbox(context: ContextTypes.DEFAULT_TYPE) -> None:
                 outbox.mark_posted(session, post.row_ids)
             else:
                 outbox.mark_failed(session, post.row_ids)
+        if not sent:
+            # Stop here: the rest stay pending, untouched and in order, so a
+            # short outage neither burns their attempts nor reorders them.
+            return

@@ -2,7 +2,16 @@ from nani_pix_bot.services.achievements import catalogue, names
 
 
 def test_roman() -> None:
-    assert [names.roman(n) for n in (1, 4, 6, 9, 14)] == ["I", "IV", "VI", "IX", "XIV"]
+    assert [names.roman(n) for n in (1, 4, 6, 9, 14, 40, 90, 149)] == [
+        "I",
+        "IV",
+        "VI",
+        "IX",
+        "XIV",
+        "XL",
+        "XC",
+        "CXLIX",
+    ]
 
 
 def test_multi_tier_names_carry_their_tier_one_shots_dont() -> None:

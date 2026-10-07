@@ -4,7 +4,17 @@ description (with its threshold), and the title it confers."""
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.achievements.definitions import Definition, Kind, threshold
 
-_ROMAN = ((10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"))
+_ROMAN = (
+    (100, "C"),
+    (90, "XC"),
+    (50, "L"),
+    (40, "XL"),
+    (10, "X"),
+    (9, "IX"),
+    (5, "V"),
+    (4, "IV"),
+    (1, "I"),
+)
 
 
 def roman(n: int) -> str:
