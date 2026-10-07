@@ -160,10 +160,9 @@ async def open_browser(
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
         markdown, markup = browse_view(session, request, lang)
+        target = players.describe_player_id(session, request.owner_id)
     logger.info(
-        "opened the achievements browser for {target}",
-        target=request.owner_id,
-        target_id=request.owner_id,
+        "opened the achievements browser for {target}", target=target, target_id=request.owner_id
     )
     await send_rich(context.bot, RichTarget(message.chat_id), markdown, markup)
 

@@ -12,6 +12,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.achievements import engine
 from nani_pix_bot.services.achievements.status import View
+from tests.conftest import LogLine
 
 pytestmark = pytest.mark.achievements
 
@@ -183,3 +184,18 @@ async def test_a_non_members_tap_is_refused(session_factory, records) -> None:
     refusal = i18n.t("dm_start.not_a_member", "en")
     update.callback_query.answer.assert_awaited_once_with(refusal, show_alert=True)
     assert any(level == "WARNING" and "not a group member" in m for level, m in records)
+
+
+async def test_opening_logs_the_owner_by_name_and_id(
+    session_factory, log_records: list[LogLine]
+) -> None:
+    _seed(session_factory)
+    message = MagicMock()
+    message.chat_id = 1
+
+    with patch.object(browser, "send_rich", new=AsyncMock()):
+        await browser.open_browser(message, _context(session_factory), browser.Browse(1, 2))
+
+    (line,) = [r for r in log_records if "opened the achievements browser" in r.message]
+    assert line.level == "INFO"
+    assert (line.extra["target"], line.extra["target_id"]) == ("2 (@bob)", 2)
