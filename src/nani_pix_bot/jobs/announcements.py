@@ -12,10 +12,10 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from itertools import groupby
 from typing import TypedDict
 
 from loguru import logger
-from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from telegram import InputMediaPhoto
 from telegram.error import TelegramError
@@ -27,12 +27,10 @@ from nani_pix_bot.jobs.timers._shared import job_log_scope
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.announcement import AnnouncementOutbox
 from nani_pix_bot.models.enums import OutboxKind, Rarity
-from nani_pix_bot.models.period import PeriodResult
 from nani_pix_bot.services import i18n, players, quiet_hours, settings
-from nani_pix_bot.services.achievements import catalogue, names, outbox
+from nani_pix_bot.services.achievements import catalogue, names, outbox, podium
 from nani_pix_bot.services.cards import (
     PodiumCard,
-    PodiumEntry,
     UnlockCard,
     load_background,
     podium_slot,
@@ -46,7 +44,6 @@ OUTBOX_POLL_SECONDS = 20
 OUTBOX_BATCH = 20
 ALBUM_MIN = 3
 ALBUM_MAX = 10  # Telegram's album size limit
-_MEDALS = ("🥇", "🥈", "🥉")
 
 
 class _Where(TypedDict):
@@ -110,52 +107,15 @@ def _unlock_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post |
     )
 
 
-def _results(session: Session, ptype: str, key: str) -> list[PeriodResult]:
-    stmt = (
-        select(PeriodResult)
-        .where(PeriodResult.period_type == ptype, PeriodResult.period_key == key)
-        .order_by(PeriodResult.rank)
-    )
-    return list(session.scalars(stmt))
-
-
-def _podium_lines(session: Session, results: list[PeriodResult], lang: str) -> list[str]:
-    return [
-        i18n.t(
-            "period.summary.row",
-            lang,
-            medal=_MEDALS[r.rank - 1],
-            player=players.display_name(session, r.player_id),
-            score=r.score,
-            wins=r.wins,
-        )
-        for r in results
-    ]
-
-
-def _podium_card(
-    session: Session, results: list[PeriodResult], title: str, lang: str
-) -> PodiumCard:
-    entries = tuple(
-        PodiumEntry(
-            players.display_name(session, r.player_id),
-            i18n.t("card.score", lang, score=r.score, wins=r.wins),
-            r.player_id,
-        )
-        for r in results
-    )
-    return PodiumCard(title, entries)
-
-
 def _period_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post | None:
     ptype, key = row.payload["period_type"], row.payload["period_key"]
-    results = _results(session, ptype, key)
+    results = podium.results(session, ptype, key)
     if not results:
         return None
     label = names.period_label(key, lang)
     header = i18n.t(f"period.summary.{ptype}", lang, period=label)
-    text = "\n".join([header, *_podium_lines(session, results, lang)])
-    card = _podium_card(session, results, i18n.t(f"card.podium.{ptype}", lang, period=label), lang)
+    text = "\n".join([header, *podium.lines(session, results, lang)])
+    card = podium.card(session, results, i18n.t(f"card.podium.{ptype}", lang, period=label), lang)
     return Post(
         (row.id,),
         text,
@@ -207,25 +167,26 @@ def _collect(session_factory: sessionmaker[Session]) -> list[Post]:
         return posts
 
 
+def _event_key(post: Post) -> object:
+    """Posts of one event share a key; one without an event is its own."""
+    return post.batch_id if post.batch_id is not None else ("row", post.row_ids)
+
+
+def _albums(group: list[Post]) -> list[list[Post]]:
+    """One event's posts in chunks of at most ALBUM_MAX; a chunk under
+    ALBUM_MIN is not an album, so its posts go out one by one."""
+    chunks = [group[i : i + ALBUM_MAX] for i in range(0, len(group), ALBUM_MAX)]
+    return [
+        piece
+        for chunk in chunks
+        for piece in ([chunk] if len(chunk) >= ALBUM_MIN else [[post] for post in chunk])
+    ]
+
+
 def _batches(posts: list[Post]) -> list[list[Post]]:
     """Consecutive posts from the same event, as one album when there are
     ALBUM_MIN or more of them; everything else one by one, in id order."""
-    groups: list[list[Post]] = []
-    for post in posts:
-        same = groups and post.batch_id is not None and groups[-1][-1].batch_id == post.batch_id
-        if same:
-            groups[-1].append(post)
-        else:
-            groups.append([post])
-    batches: list[list[Post]] = []
-    for group in groups:
-        for start in range(0, len(group), ALBUM_MAX):
-            chunk = group[start : start + ALBUM_MAX]
-            if len(chunk) >= ALBUM_MIN:
-                batches.append(chunk)
-            else:
-                batches.extend([post] for post in chunk)
-    return batches
+    return [piece for _, group in groupby(posts, _event_key) for piece in _albums(list(group))]
 
 
 def _draw(post: Post, faces: list[bytes | None]) -> bytes:
@@ -242,10 +203,25 @@ def _draw(post: Post, faces: list[bytes | None]) -> bytes:
     raise ValueError("post has no card")
 
 
-async def _image(context: ContextTypes.DEFAULT_TYPE, post: Post) -> bytes | None:
+AvatarCache = dict[int, bytes | None]
+
+
+async def _faces(
+    context: ContextTypes.DEFAULT_TYPE, post: Post, cache: AvatarCache
+) -> list[bytes | None]:
+    """The post's avatars; each player is fetched once per drain, not once per card."""
+    for user_id in post.avatar_ids:
+        if user_id not in cache:
+            cache[user_id] = await fetch_avatar(context.bot, user_id)
+    return [cache[user_id] for user_id in post.avatar_ids]
+
+
+async def _image(
+    context: ContextTypes.DEFAULT_TYPE, post: Post, cache: AvatarCache
+) -> bytes | None:
     if post.card is None:
         return None
-    faces = [await fetch_avatar(context.bot, uid) for uid in post.avatar_ids]
+    faces = await _faces(context, post, cache)
     try:
         return await asyncio.to_thread(_draw, post, faces)
     except (OSError, ValueError) as exc:
@@ -264,56 +240,88 @@ def _where(context: ContextTypes.DEFAULT_TYPE) -> _Where:
     }
 
 
-async def _send_one(context: ContextTypes.DEFAULT_TYPE, post: Post) -> None:
+async def _send_one(context: ContextTypes.DEFAULT_TYPE, post: Post, image: bytes | None) -> None:
+    """A photo with the caption, or the text alone when there's no card."""
     if not post.text:
         return
-    image = await _image(context, post)
     if image is None:
         await context.bot.send_message(text=post.text, **_where(context))
     else:
         await context.bot.send_photo(photo=image, caption=post.text, **_where(context))
 
 
-async def _send_album(context: ContextTypes.DEFAULT_TYPE, group: list[Post]) -> None:
-    images = [await _image(context, post) for post in group]
-    if any(image is None for image in images):
-        for post in group:
-            await _send_one(context, post)
-        return
+def _row_ids(group: list[Post]) -> list[int]:
+    return [i for post in group for i in post.row_ids]
+
+
+async def _send_album(
+    context: ContextTypes.DEFAULT_TYPE, group: list[Post], images: list[bytes]
+) -> None:
     media = [
-        InputMediaPhoto(image, caption=post.text)
-        for image, post in zip(images, group, strict=True)
-        if image is not None
+        InputMediaPhoto(image, caption=post.text) for image, post in zip(images, group, strict=True)
     ]
     await context.bot.send_media_group(media=media, **_where(context))
 
 
-async def _send(context: ContextTypes.DEFAULT_TYPE, group: list[Post]) -> bool:
-    ids = tuple(i for post in group for i in post.row_ids)
+async def _send_each(
+    context: ContextTypes.DEFAULT_TYPE, group: list[Post], images: list[bytes | None]
+) -> tuple[list[int], list[int]]:
+    """One message per post, reusing the bytes already rendered (a card that
+    failed to draw goes out as text). A failure stops here: the posts before
+    it stay posted, it and the rest are reported failed."""
+    for done, (post, image) in enumerate(zip(group, images, strict=True)):
+        try:
+            await _send_one(context, post, image)
+        except TelegramError as exc:
+            logger.error(
+                "failed to post announcement {outbox_ids}: {error}",
+                outbox_ids=post.row_ids,
+                error=exc,
+            )
+            return _row_ids(group[:done]), _row_ids(group[done:])
+    return _row_ids(group), []
+
+
+async def _send(
+    context: ContextTypes.DEFAULT_TYPE, group: list[Post], cache: AvatarCache
+) -> tuple[list[int], list[int]]:
+    """Post a group; returns (posted row ids, failed row ids). A group of
+    ALBUM_MIN or more goes out as one album if every card drew, otherwise
+    post by post from the images already rendered; nothing is drawn twice."""
+    ids = _row_ids(group)
     if all(not post.text for post in group):
         logger.warning("announcement {outbox_ids} had nothing left to say", outbox_ids=ids)
-        return True
-    try:
-        await (_send_album(context, group) if len(group) > 1 else _send_one(context, group[0]))
-    except TelegramError as exc:
-        logger.error("failed to post announcement {outbox_ids}: {error}", outbox_ids=ids, error=exc)
-        return False
-    logger.info("posted announcement {outbox_ids}", outbox_ids=ids)
-    return True
+        return ids, []
+    images = [await _image(context, post, cache) for post in group]
+    rendered = [image for image in images if image is not None]
+    if len(group) > 1 and len(rendered) == len(group):
+        try:
+            await _send_album(context, group, rendered)
+        except TelegramError as exc:
+            logger.error(
+                "failed to post announcement {outbox_ids}: {error}", outbox_ids=ids, error=exc
+            )
+            return [], ids
+        posted, failed = ids, []
+    else:
+        posted, failed = await _send_each(context, group, images)
+    if posted:
+        logger.info("posted announcement {outbox_ids}", outbox_ids=posted)
+    return posted, failed
 
 
 @job_log_scope()
 async def drain_outbox(context: ContextTypes.DEFAULT_TYPE) -> None:
     session_factory = context.bot_data["session_factory"]
+    cache: AvatarCache = {}
     for group in _batches(_collect(session_factory)):
-        sent = await _send(context, group)
-        ids = [i for post in group for i in post.row_ids]
+        posted, failed = await _send(context, group, cache)
         with session_scope(session_factory) as session:
-            if sent:
-                outbox.mark_posted(session, ids)
-            else:
-                outbox.mark_failed(session, ids)
-        if not sent:
+            if posted:
+                outbox.mark_posted(session, posted)
+            if failed:
+                outbox.mark_failed(session, failed)
+        if failed:
             # Stop here: the rest stay pending, untouched and in order, so a
             # short outage neither burns their attempts nor reorders them.
             return
