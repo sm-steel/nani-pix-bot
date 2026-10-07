@@ -186,7 +186,9 @@ async def test_three_unlocks_from_one_event_post_as_one_album(session_factory) -
 
     context.bot.send_media_group.assert_awaited_once()
     media = context.bot.send_media_group.await_args.kwargs["media"]
-    assert len(media) >= 3
+    assert len(media) == 3
+    for item, title in zip(media, ("Kingmaker", "Clutch", "First Try"), strict=True):
+        assert f"«{title}»" in item.caption
     context.bot.send_photo.assert_not_awaited()
 
 
@@ -225,3 +227,126 @@ async def test_backgrounds_are_loaded_per_slot_seeded_by_the_player(
     await _drain(context)
 
     assert loader.call_args.args == ("unlock/bronze", 1)
+
+
+def _post(row_id: int, batch_id: int | None) -> announcements.Post:
+    return announcements.Post((row_id,), f"post {row_id}", batch_id=batch_id)
+
+
+def _shape(batches: list[list[announcements.Post]]) -> list[list[int]]:
+    return [[i for post in batch for i in post.row_ids] for batch in batches]
+
+
+def test_batches_group_consecutive_posts_of_the_same_event() -> None:
+    posts = [_post(1, 7), _post(2, 7), _post(3, 7)]
+    assert _shape(announcements._batches(posts)) == [[1, 2, 3]]
+
+
+def test_batches_under_the_album_minimum_go_out_singly() -> None:
+    posts = [_post(1, 7), _post(2, 7)]
+    assert _shape(announcements._batches(posts)) == [[1], [2]]
+
+
+def test_batches_never_group_posts_without_a_batch_id() -> None:
+    posts = [_post(1, None), _post(2, None), _post(3, None)]
+    assert _shape(announcements._batches(posts)) == [[1], [2], [3]]
+
+
+def test_batches_split_eleven_into_an_album_of_ten_and_a_single() -> None:
+    posts = [_post(i, 7) for i in range(1, 12)]
+    assert _shape(announcements._batches(posts)) == [list(range(1, 11)), [11]]
+
+
+def test_batches_keep_id_order_across_singles_and_albums() -> None:
+    posts = [
+        _post(1, None),
+        _post(2, 7),
+        _post(3, 7),
+        _post(4, 7),
+        _post(5, 8),
+        _post(6, None),
+        _post(7, 9),
+        _post(8, 9),
+        _post(9, 9),
+    ]
+    assert _shape(announcements._batches(posts)) == [[1], [2, 3, 4], [5], [6], [7, 8, 9]]
+
+
+def _album_then_single(session_factory: sessionmaker[Session]) -> None:
+    with session_scope(session_factory) as session:
+        session.add_all([Player(telegram_user_id=1, username="alice"), Player(telegram_user_id=2)])
+        session.flush()
+        for key in ("kingmaker", "clutch", "first_try"):
+            engine.grant(session, engine.GrantRequest(1, key), batch_id=99)
+        engine.grant(session, engine.GrantRequest(2, "kingmaker"))
+
+
+async def test_a_failed_album_fails_every_row_and_spares_later_rows(session_factory) -> None:
+    _album_then_single(session_factory)
+    context = _context(session_factory)
+    context.bot.send_media_group.side_effect = TelegramError("boom")
+
+    await _drain(context)
+
+    context.bot.send_media_group.assert_awaited_once()
+    context.bot.send_photo.assert_not_awaited()
+    with session_scope(session_factory) as session:
+        attempts = [row.attempts for row in outbox.pending(session, 10)]
+    assert attempts == [1, 1, 1, 0]
+
+
+async def test_an_album_with_one_undrawable_card_reuses_what_was_drawn(
+    session_factory, monkeypatch
+) -> None:
+    _album_then_single(session_factory)
+    real = announcements.render_unlock_card
+    calls = []
+
+    def flaky(card, avatar, background=None):
+        calls.append(card.name)
+        if card.name == "Clutch":
+            raise ValueError("bad")
+        return real(card, avatar, background)
+
+    monkeypatch.setattr(announcements, "render_unlock_card", flaky)
+    context = _context(session_factory)
+
+    await _drain(context)
+
+    assert calls == ["Kingmaker", "Clutch", "First Try", "Kingmaker"]  # nothing drawn twice
+    context.bot.send_media_group.assert_not_awaited()
+    captions = [c.kwargs["caption"] for c in context.bot.send_photo.await_args_list]
+    assert ["«Kingmaker»" in captions[0], "«First Try»" in captions[1]] == [True, True]
+    assert len(captions) == 3  # the two good album cards and the later single
+    assert "«Clutch»" in context.bot.send_message.await_args.kwargs["text"]
+    with session_scope(session_factory) as session:
+        assert outbox.pending(session, 10) == []
+
+
+async def test_a_failure_midway_through_the_fallback_keeps_what_was_posted(
+    session_factory, monkeypatch
+) -> None:
+    _album_then_single(session_factory)
+    draw = MagicMock(side_effect=[b"a", ValueError("bad"), b"c", b"d"])
+    monkeypatch.setattr(announcements, "_draw", draw)
+    context = _context(session_factory)
+    context.bot.send_photo.side_effect = [None, TelegramError("boom")]
+
+    await _drain(context)
+
+    context.bot.send_message.assert_awaited_once()  # the undrawable card, as text
+    assert context.bot.send_photo.await_count == 2
+    with session_scope(session_factory) as session:
+        remaining = [(row.id, row.attempts) for row in outbox.pending(session, 10)]
+    assert remaining == [(3, 1), (4, 0)]  # first two were posted; the third failed
+
+
+async def test_an_avatar_is_fetched_once_per_player_per_drain(session_factory, monkeypatch) -> None:
+    _album_then_single(session_factory)
+    fetch = AsyncMock(return_value=None)
+    monkeypatch.setattr(announcements, "fetch_avatar", fetch)
+    context = _context(session_factory)
+
+    await _drain(context)
+
+    assert sorted(call.args[1] for call in fetch.await_args_list) == [1, 2]
