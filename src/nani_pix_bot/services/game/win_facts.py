@@ -25,13 +25,13 @@ def stage_number(game: Game) -> int:
     return 0 if game.current_stage is None else _STAGES.index(game.current_stage) + 1
 
 
-def _seconds_live(game: Game, now: datetime) -> float | None:
+def _seconds_live(game: Game, ended: datetime) -> float | None:
     if game.activated_at is None:
         return None
     activated = game.activated_at
     if activated.tzinfo is None:
         activated = activated.replace(tzinfo=UTC)
-    return (now - activated).total_seconds()
+    return (ended - activated).total_seconds()
 
 
 def _on_last_slot(session: Session, game: Game) -> bool:
@@ -60,7 +60,7 @@ def win_facts(session: Session, game: Game, winner_id: int, how: WinMethod) -> d
         "hard_mode": game.hard_mode,
         "how": how.value,
         "pot": bounty.pot_balance(session, game.id),
-        "seconds": _seconds_live(game, now),
+        "seconds": _seconds_live(game, ended),
         "last_slot": _on_last_slot(session, game),
         "distinct_guessers": len(guesses.guessers(session, game.id)),
         "winner_wrong": _wrong_guesses(session, game.id, winner_id),

@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -137,3 +139,18 @@ def test_refinish_logs_a_setwinner_win(session: Session) -> None:
 
     (won,) = _events(session, EventType.GAME_WON)
     assert won.data["how"] == WinMethod.SETWINNER
+
+
+def test_a_refinish_measures_seconds_to_the_original_ending(session: Session) -> None:
+    started = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    game = _game(
+        session,
+        status=GameStatus.UNSOLVED,
+        activated_at=started,
+        ended_at=started + timedelta(seconds=30),
+    )
+
+    game_service.refinish(session, game, winner_id=ALICE)
+
+    (won,) = _events(session, EventType.GAME_WON)
+    assert won.data["seconds"] == 30

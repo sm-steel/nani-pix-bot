@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.jobs.timers import autostart as autostart_timers
@@ -287,6 +288,46 @@ async def test_a_claimed_overthrow_logs_the_dethroned_winner(
 
     (row,) = _overthrown_events(session_factory)
     assert row.actor_id == 1
+
+
+async def test_a_failed_overthrow_event_write_is_logged_and_does_not_abort(
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
+) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
+        session.add(BotSettings(id=1, games_enabled=True, autostart_enabled=True))
+        session.commit()
+    context = _make_context(session_factory)
+    monkeypatch.setattr(autostart_service, "roll_overthrow", lambda: True)
+    monkeypatch.setattr(
+        "nani_pix_bot.services.pixelate.pixelate",
+        lambda image_bytes, target_width, algorithm: b"pixelated",
+    )
+
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+        return _fake_pick()
+
+    real_emit = autostart_timers.events.emit
+
+    def failing_emit(session, event_type, *args, **kwargs):
+        if event_type == EventType.OVERTHROWN:
+            raise SQLAlchemyError("db down")
+        return real_emit(session, event_type, *args, **kwargs)
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+    monkeypatch.setattr(autostart_timers.events, "emit", failing_emit)
+
+    await autostart_timers.maybe_overthrow(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        winner_id=1,
+        winner_name="frieren",
+    )
+
+    [line] = [r for r in log_records if r.message.startswith("couldn't record the overthrow of")]
+    assert line.level == "ERROR"
+    assert line.extra["player"] == 1
 
 
 async def test_a_missed_overthrow_roll_logs_no_event(

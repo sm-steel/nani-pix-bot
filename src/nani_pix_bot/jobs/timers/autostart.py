@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from loguru import logger
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from telegram.ext import ContextTypes, JobQueue
 
@@ -173,8 +174,16 @@ async def maybe_overthrow(
 
 def _record_overthrow(session_factory, winner_id: int) -> None:
     """The dethroned winner's `overthrown` event, in its own transaction."""
-    with session_scope(session_factory) as session:
-        events.emit(session, EventType.OVERTHROWN, events.Involved(actor_id=winner_id))
+    try:
+        with session_scope(session_factory) as session:
+            events.emit(session, EventType.OVERTHROWN, events.Involved(actor_id=winner_id))
+    except SQLAlchemyError as error:
+        # The game is already claimed; a lost event must not abort the flow.
+        logger.error(
+            "couldn't record the overthrow of {player}: {error}",
+            player=winner_id,
+            error=error,
+        )
 
 
 def _describe_holder(session: Session, next_starter_id: int | None) -> str:
