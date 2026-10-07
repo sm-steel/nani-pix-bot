@@ -26,6 +26,8 @@ class EventLog(Base):
     __table_args__ = (
         Index("ix_event_log_type_actor", "event_type", "actor_id"),
         Index("ix_event_log_type_subject", "event_type", "subject_id"),
+        # A streak's "did anyone play in this gap?" range probe.
+        Index("ix_event_log_type_occurred", "event_type", "occurred_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

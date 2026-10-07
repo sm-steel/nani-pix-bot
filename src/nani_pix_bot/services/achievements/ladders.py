@@ -3,7 +3,7 @@ player's History and returns an int; reversals never count (spec §2).
 Pure: no DB, no clock."""
 
 from collections.abc import Iterable
-from datetime import date
+from datetime import date, timedelta
 
 from nani_pix_bot.models.enums import CurrencyReason, EventType
 from nani_pix_bot.services.achievements.definitions import History
@@ -16,6 +16,7 @@ _BOUNTY_WIN = CurrencyReason.BOUNTY_WIN.value
 _PROMPT_TURN = CurrencyReason.PROMPT_TURN.value
 _ACTIVE = (E.GUESS, E.CLUE_PURCHASED, E.VOTE_COUNTED, E.GAME_ACTIVATED)
 _STUMP_GUESSERS = 3
+_DAY = timedelta(days=1)
 
 
 def _games(events: Iterable[LoggedEvent]) -> int:
@@ -60,27 +61,28 @@ def tipped(history: History) -> int:
     return sum(_amounts(_money(history, incoming=False), frozenset({_TIP})))
 
 
-def _is_activity(event: LoggedEvent) -> bool:
-    # A bot-started (HARD MODE) game is no one's hosting.
-    return not (event.event_type is E.GAME_ACTIVATED and event.data.get("hard_mode"))
-
-
-def _days(history: History, events: Iterable[LoggedEvent]) -> set[date]:
-    return {e.occurred_at.astimezone(history.tz).date() for e in events if _is_activity(e)}
-
-
 def active_days(history: History) -> int:
-    return len(_days(history, history.mine(*_ACTIVE)))
+    return len(history.my_days(*_ACTIVE))
+
+
+def _continues(history: History, before: date, day: date) -> bool:
+    """Is `day` the next *game day* after `before` (no day anyone played
+    in between — plan clarification 1)?"""
+    if day - before == _DAY:
+        return True
+    return not history.group_active_between(_ACTIVE, before + _DAY, day - _DAY)
 
 
 def longest_streak(history: History) -> int:
-    """Longest run of consecutive *game days* (days anyone played — plan
-    clarification 1) on every one of which this player played."""
-    mine = _days(history, history.mine(*_ACTIVE))
+    """Longest run of consecutive game days on every one of which this
+    player played. Every day I played is a game day, so a run only needs
+    the group's history in the gaps between my days."""
     best = run = 0
-    for day in sorted(_days(history, history.group(*_ACTIVE))):
-        run = run + 1 if day in mine else 0
+    before: date | None = None
+    for day in sorted(history.my_days(*_ACTIVE)):
+        run = run + 1 if before is not None and _continues(history, before, day) else 1
         best = max(best, run)
+        before = day
     return best
 
 

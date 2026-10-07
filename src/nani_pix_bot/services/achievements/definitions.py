@@ -5,6 +5,7 @@ only grants live in the DB."""
 import enum
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
@@ -31,6 +32,17 @@ class History(Protocol):
     def about_me(self, *types: EventType) -> list[LoggedEvent]: ...
 
     def group(self, *types: EventType) -> list[LoggedEvent]: ...
+
+    # Local dates (in `tz`) of my events of these types — a bot-started
+    # (HARD MODE) activation left out, as it is no one's hosting. Narrower
+    # than mine(): only timestamps are read.
+    def my_days(self, *types: EventType) -> set[date]: ...
+
+    # Whether anyone did any of `types` on a local day from `first` to
+    # `last` (inclusive), with the same HARD MODE exclusion.
+    def group_active_between(
+        self, types: tuple[EventType, ...], first: date, last: date
+    ) -> bool: ...
 
 
 ProgressFn = Callable[[History], int]

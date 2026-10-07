@@ -1,7 +1,7 @@
 """An in-memory History for testing progress functions without a DB."""
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from itertools import count
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -40,3 +40,16 @@ class FakeHistory:
 
     def group(self, *types: EventType) -> list[LoggedEvent]:
         return self._of(types)
+
+    def _days(self, events: list[LoggedEvent]) -> set[date]:
+        return {
+            e.occurred_at.astimezone(self.tz).date()
+            for e in events
+            if not (e.event_type is EventType.GAME_ACTIVATED and e.data.get("hard_mode"))
+        }
+
+    def my_days(self, *types: EventType) -> set[date]:
+        return self._days(self.mine(*types))
+
+    def group_active_between(self, types: tuple[EventType, ...], first: date, last: date) -> bool:
+        return any(first <= day <= last for day in self._days(self.group(*types)))

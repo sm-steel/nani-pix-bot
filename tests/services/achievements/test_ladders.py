@@ -167,3 +167,15 @@ def test_eagle_eye_and_hard_mode_hero() -> None:
 def test_ballots_counts_distinct_votes() -> None:
     history = h(ev(E.VOTE_COUNTED, ME, OTHER, game=1, won=True))
     assert ladders.ballots(history) == 1
+
+
+def test_unbroken_ignores_a_day_with_only_a_bot_started_game() -> None:
+    bot_day = ev(
+        E.GAME_ACTIVATED,
+        OTHER,
+        game=9,
+        at=datetime(2026, 10, 2, 12, tzinfo=UTC),
+        hard_mode=True,
+        source="tenrai",
+    )
+    assert ladders.longest_streak(h(_act(1), bot_day, _act(3))) == 2

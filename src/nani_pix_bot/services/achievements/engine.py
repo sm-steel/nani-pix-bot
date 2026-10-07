@@ -152,8 +152,7 @@ def on_event(session: Session, event: LoggedEvent) -> list[AchievementGrant]:
         return []
     tz = settings.get_group_timezone(session)
     granted: list[AchievementGrant] = []
-    for player_id in _involved(session, event):
-        history = DbHistory(session, player_id, tz)
+    for history in DbHistory.for_players(session, _involved(session, event), tz):
         for defn in triggered:
             granted += _evaluate(session, defn, history, event)
     return granted
