@@ -12,7 +12,7 @@ from typing import Any
 
 from loguru import logger
 from telegram import Bot, InlineKeyboardMarkup, Message
-from telegram.error import BadRequest
+from telegram.error import BadRequest, InvalidToken
 
 # ASCII punctuation markdown can give meaning to; a backslash makes each literal.
 _SPECIAL = re.compile(r"([\\`*_~|=\[\](){}#>!+\-.])")
@@ -21,6 +21,14 @@ _SPECIAL = re.compile(r"([\\`*_~|=\[\](){}#>!+\-.])")
 def md_escape(text: str) -> str:
     """For anything that isn't ours to format: player names, titles, input."""
     return _SPECIAL.sub(r"\\\1", text)
+
+
+_ESCAPED = re.compile(r"\\" + _SPECIAL.pattern)
+
+
+def _unescape(markdown: str) -> str:
+    """Undo md_escape for the plain-text fallback (markdown syntax stays)."""
+    return _ESCAPED.sub(r"\1", markdown)
 
 
 @dataclass(frozen=True)
@@ -51,11 +59,11 @@ async def send_rich(
         return await bot.do_api_request(
             "sendRichMessage", api_kwargs=_payload(target, markdown, markup), return_type=Message
         )
-    except BadRequest as exc:
+    except (BadRequest, InvalidToken) as exc:  # a server without the method answers 404
         logger.error("rich message rejected ({error}) — sending it as plain text", error=exc)
         return await bot.send_message(
             chat_id=target.chat_id,
             message_thread_id=target.thread_id,
-            text=markdown,
+            text=_unescape(markdown),
             reply_markup=markup,
         )

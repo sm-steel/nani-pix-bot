@@ -103,10 +103,6 @@ def page(session: Session, header: str, items: Sequence[Status], lang: str) -> s
     return "\n".join(lines)
 
 
-def _newest(item: Status) -> float:
-    return -item.granted_at.timestamp() if item.granted_at else 0.0
-
-
 def header_line(session: Session, owner_id: int, items: Sequence[Status], lang: str) -> str:
     earned = sum(1 for s in items if s.state is State.EARNED)
     rank = status.rank_of(session, owner_id)
@@ -126,7 +122,7 @@ def summary(session: Session, owner_id: int, lang: str, now: datetime) -> str:
         "## 🏅 " + md_escape(players.display_name(session, owner_id)),
         header_line(session, owner_id, items, lang),
     ]
-    latest = sorted((s for s in items if s.state is State.EARNED), key=_newest)[:_LATEST]
+    latest = status.newest_first(s for s in items if s.state is State.EARNED)[:_LATEST]
     if latest:
         labels = ", ".join(names.title(s.defn, s.tier, s.period_key, lang) for s in latest)
         lines.append(_t("achievements.summary.latest", lang, names=labels))

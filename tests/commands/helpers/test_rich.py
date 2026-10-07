@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message
-from telegram.error import BadRequest
+from telegram.error import BadRequest, InvalidToken
 
 from nani_pix_bot.commands.helpers import rich
 
@@ -40,3 +40,13 @@ async def test_a_rejected_rich_message_falls_back_to_plain_text(records) -> None
     bot.send_message.assert_awaited_once()
     assert bot.send_message.await_args_list[0].kwargs["text"] == "# hi"
     assert any(level == "ERROR" for level, _ in records)
+
+
+async def test_a_404_for_the_unknown_method_also_falls_back_and_unescapes_names() -> None:
+    bot = MagicMock()
+    bot.do_api_request = AsyncMock(side_effect=InvalidToken("Not Found"))
+    bot.send_message = AsyncMock()
+
+    await rich.send_rich(bot, rich.RichTarget(555), "# hi @b" + rich.md_escape("_") + "ob")
+
+    assert bot.send_message.await_args_list[0].kwargs["text"] == "# hi @b_ob"

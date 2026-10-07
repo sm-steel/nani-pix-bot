@@ -152,14 +152,15 @@ _SECTIONS: Mapping[View, tuple[tuple[State, ...], ...]] = MappingProxyType(
 )
 
 
+def newest_first(items: Iterable[Status]) -> list[Status]:
+    """Latest grant first; ties (and ungranted items) keep their order."""
+    return sorted(items, key=lambda s: (s.granted_at is not None, s.granted_at), reverse=True)
+
+
 def _sort_key(item: Status) -> float:
-    """Newest first among earned, closest to done among partial; everything
-    else keeps catalogue order (the sort is stable)."""
-    if item.state is State.EARNED and item.granted_at is not None:
-        return -item.granted_at.timestamp()
-    if item.state is State.PARTIAL:
-        return -item.fraction
-    return 0.0
+    """Closest to done among partial; everything else keeps catalogue order
+    (the sort is stable). Earned sections go through newest_first instead."""
+    return -item.fraction if item.state is State.PARTIAL else 0.0
 
 
 def sections(items: Iterable[Status], view: View) -> list[tuple[State, list[Status]]]:
@@ -167,6 +168,8 @@ def sections(items: Iterable[Status], view: View) -> list[tuple[State, list[Stat
     out: list[tuple[State, list[Status]]] = []
     for states in _SECTIONS[view]:
         members = sorted((s for s in pool if s.state in states), key=_sort_key)
+        if states == (State.EARNED,):
+            members = newest_first(members)
         if members:
             out.append((states[0], members))
     return out
