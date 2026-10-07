@@ -25,6 +25,9 @@ CHAMPION_KEYS: Mapping[PeriodType, str] = MappingProxyType(
         PeriodType.YEAR: "champion_year",
     }
 )
+PERIOD_OF_CHAMPION: Mapping[str, PeriodType] = MappingProxyType(
+    {key: ptype for ptype, key in CHAMPION_KEYS.items()}
+)
 TOP_SIZE = 3
 # Index = stage - 1 (normal) or turn - 1 (HARD MODE).
 _WIN_POINTS = (5, 4, 3, 2, 1)
@@ -123,6 +126,13 @@ def standings(session: Session, period: Period) -> list[Standing]:
         .order_by(EventLog.id)
     )
     return score([to_event(row) for row in session.scalars(stmt)], period)
+
+
+def rank_of(session: Session, period: Period, player_id: int) -> int | None:
+    for rank, standing in enumerate(standings(session, period), start=1):
+        if standing.player_id == player_id:
+            return rank
+    return None
 
 
 def finalize(session: Session, period: Period) -> list[Standing]:

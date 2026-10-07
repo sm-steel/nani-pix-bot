@@ -137,3 +137,9 @@ def test_finalize_records_the_top_and_grants_the_champion_after_the_summary(
 def test_finalizing_an_empty_period_records_and_grants_nothing(session: Session) -> None:
     assert periods.finalize(session, OCT) == []
     assert outbox.pending(session, 10) == []
+
+
+def test_rank_of_follows_the_standings_and_champion_keys_map_back(session: Session) -> None:
+    period = periods.period_at(PeriodType.WEEK, datetime(2026, 10, 7, tzinfo=UTC), ZoneInfo("UTC"))
+    assert periods.rank_of(session, period, 1) is None
+    assert periods.PERIOD_OF_CHAMPION["champion_month"] is PeriodType.MONTH

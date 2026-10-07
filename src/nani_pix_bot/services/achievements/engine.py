@@ -16,7 +16,6 @@ from nani_pix_bot.services.achievements.definitions import (
     Kind,
     exact_tier,
     grants_title,
-    next_threshold,
     rarity_of,
     reached,
 )
@@ -90,12 +89,8 @@ def grant(
         points=row.points,
         period=request.period_key or None,
         batch_id=batch_id,
-        # hidden/next_threshold/granted_at/grants_title: read by status.py/titles.py
-        # (later tasks), which drop them from here.
-        hidden=defn.hidden,
+        # grants_title: read by titles.py (a later task), which drops it from here.
         grants_title=grants_title(defn, request.tier),
-        next_threshold=next_threshold(defn, request.tier),
-        granted_at=row.granted_at.isoformat(),
     )
     outbox.enqueue_unlock(session, row.id, batch_id)
     _pay(session, row)
