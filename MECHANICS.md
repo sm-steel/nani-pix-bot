@@ -1024,6 +1024,15 @@ design is in `ARCHITECTURE.md`'s "Achievements".
 Icons in texts: 💠 currency, 🏆 achievement points, 🌟 champion period
 score, 👑 wins (on `/leaderboard`).
 
+**Every win message shows the 🌟 it earned**, after the 💠 lines:
+`+5 🌟 → week 14 (#1 ⬆2) · month 31 (#2 =) · year 31 (#2 🆕)`. Each part is
+the winner's new total and rank in that running period; `⬆N` is the places
+gained, `=` no change, `🆕` a first score there. A period the game's
+`ended_at` falls outside (an admin `/setwinner` re-finish long after it
+closed) is left out, and with none left there is no line. A normal
+(non-HARD MODE) win adds `Host @name +1 🌟` for the host. The same lines
+close a vote win, an admin-named win, `/correct` and a re-finish.
+
 ### Since launch
 
 Only events logged after this release count. `event_log` starts empty and

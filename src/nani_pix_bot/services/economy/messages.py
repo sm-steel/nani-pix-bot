@@ -1,12 +1,14 @@
 """Renders a services/economy Earnings value into the extra lines a
-/guess reply or a game caption gets — "" when nothing was earned, so
-callers can always just append it."""
+/guess reply or a game caption gets — the 💠 lines, then the 🌟 champion
+score a win just added — "" when there is nothing, so callers can always
+just append it."""
 
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.achievements.win_lines import win_lines
 from nani_pix_bot.services.economy.earning import Earnings
 
 
@@ -38,4 +40,5 @@ def earnings_suffix(
         lines.append(
             i18n.t("economy.compensation", lang, name=player_name, amount=earnings.compensation)
         )
+    lines.extend(win_lines(session, game.id, lang))
     return "".join(f"\n{line}" for line in lines)

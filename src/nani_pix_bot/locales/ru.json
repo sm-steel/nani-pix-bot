@@ -540,5 +540,15 @@
   "card.score": "{score} · побед: {wins}",
   "card.podium.week": "Чемпионы недели {period}",
   "card.podium.month": "Чемпионы: {period}",
-  "card.podium.year": "Чемпионы {period} года"
+  "card.podium.year": "Чемпионы {period} года",
+  "champion.win.gain": "+{gain} 🌟 → {parts}",
+  "champion.win.part": "{period} {score} (#{rank} {marker})",
+  "champion.win.join": " · ",
+  "champion.win.up": "⬆{places}",
+  "champion.win.same": "=",
+  "champion.win.new": "🆕",
+  "champion.win.period.week": "неделя",
+  "champion.win.period.month": "месяц",
+  "champion.win.period.year": "год",
+  "champion.win.host": "Ведущий {host} +{gain} 🌟"
 }

@@ -540,5 +540,15 @@
   "card.score": "{score} · {wins} wins",
   "card.podium.week": "Champions of week {period}",
   "card.podium.month": "Champions of {period}",
-  "card.podium.year": "Champions of {period}"
+  "card.podium.year": "Champions of {period}",
+  "champion.win.gain": "+{gain} 🌟 → {parts}",
+  "champion.win.part": "{period} {score} (#{rank} {marker})",
+  "champion.win.join": " · ",
+  "champion.win.up": "⬆{places}",
+  "champion.win.same": "=",
+  "champion.win.new": "🆕",
+  "champion.win.period.week": "week",
+  "champion.win.period.month": "month",
+  "champion.win.period.year": "year",
+  "champion.win.host": "Host {host} +{gain} 🌟"
 }

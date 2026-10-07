@@ -115,7 +115,7 @@ def _naive(at: datetime) -> datetime:
     return at.astimezone(UTC).replace(tzinfo=None)
 
 
-def standings(session: Session, period: Period) -> list[Standing]:
+def _won_events(session: Session, period: Period) -> list[LoggedEvent]:
     # Since the period's start, without an upper bound: a /setwinner re-finish
     # logs later but keeps the original ended_at (plan clarification 2).
     stmt = (
@@ -125,14 +125,75 @@ def standings(session: Session, period: Period) -> list[Standing]:
         )
         .order_by(EventLog.id)
     )
-    return score([to_event(row) for row in session.scalars(stmt)], period)
+    return [to_event(row) for row in session.scalars(stmt)]
 
 
-def rank_of(session: Session, period: Period, player_id: int) -> int | None:
-    for rank, standing in enumerate(standings(session, period), start=1):
+def standings(session: Session, period: Period) -> list[Standing]:
+    return score(_won_events(session, period), period)
+
+
+@dataclass(frozen=True)
+class PeriodGain:
+    """What one win did to the winner's running total in one period."""
+
+    period: Period
+    player_id: int
+    gain: int
+    score: int
+    rank_before: int | None  # None: no score in this period before the win
+    rank_after: int
+
+
+def win_event(session: Session, game_id: int) -> LoggedEvent | None:
+    """The game's latest game_won event (a re-finish logs a second one)."""
+    stmt = (
+        select(EventLog)
+        .where(EventLog.event_type == EventType.GAME_WON, EventLog.game_id == game_id)
+        .order_by(EventLog.id.desc())
+        .limit(1)
+    )
+    row = session.scalars(stmt).first()
+    return to_event(row) if row is not None else None
+
+
+def _rank(board: list[Standing], player_id: int) -> int | None:
+    for rank, standing in enumerate(board, start=1):
         if standing.player_id == player_id:
             return rank
     return None
+
+
+def _gain_in(session: Session, period: Period, won: LoggedEvent) -> PeriodGain | None:
+    if won.actor_id is None or not period.start <= _ended(won) < period.end:
+        return None
+    events = _won_events(session, period)
+    after = score(events, period)
+    rank_after = _rank(after, won.actor_id)
+    if rank_after is None:
+        return None
+    before = score([e for e in events if e.game_id != won.game_id], period)
+    return PeriodGain(
+        period=period,
+        player_id=won.actor_id,
+        gain=_win_points(won),
+        score=after[rank_after - 1].score,
+        rank_before=_rank(before, won.actor_id),
+        rank_after=rank_after,
+    )
+
+
+def win_gains(session: Session, game_id: int, now: datetime, tz: ZoneInfo) -> list[PeriodGain]:
+    """The winner's gain in each running period (week, month, year) that the
+    game's ended_at falls in; a re-finish long after a period closed skips it."""
+    won = win_event(session, game_id)
+    if won is None:
+        return []
+    found = (_gain_in(session, period_at(ptype, now, tz), won) for ptype in PeriodType)
+    return [gain for gain in found if gain is not None]
+
+
+def rank_of(session: Session, period: Period, player_id: int) -> int | None:
+    return _rank(standings(session, period), player_id)
 
 
 def finalize(session: Session, period: Period) -> list[Standing]:
