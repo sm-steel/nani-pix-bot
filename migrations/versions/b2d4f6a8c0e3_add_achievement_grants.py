@@ -44,7 +44,6 @@ def upgrade() -> None:
         sa.Column(
             "player_id", sa.BigInteger(), sa.ForeignKey("players.telegram_user_id"), nullable=False
         ),
-        sa.Column("claimed_at", sa.DateTime(), nullable=False),
     )
 
 

@@ -46,7 +46,16 @@ def _pay(session: Session, row: AchievementGrant) -> None:
     """Runs after the grant row exists, so a reward that cascades into
     another unlock (Pixel Magnate) is recorded — and announced — after it."""
     player = session.get(Player, row.player_id)
-    if row.reward <= 0 or player is None:
+    if row.reward <= 0:
+        return
+    if player is None:
+        logger.warning(
+            "{achievement} tier {tier} reward of {reward} 💠 not paid: no player row",
+            achievement=row.key,
+            tier=row.tier,
+            reward=row.reward,
+            player_id=row.player_id,
+        )
         return
     entry = wallet.LedgerEntry(CurrencyReason.ACHIEVEMENT)
     transfer = wallet.credit(session, player, row.reward, entry)
@@ -81,8 +90,10 @@ def grant(
         points=row.points,
         period=request.period_key or None,
         batch_id=batch_id,
+        # hidden/next_threshold/granted_at/grants_title: read by status.py/titles.py
+        # (later tasks), which drop them from here.
         hidden=defn.hidden,
-        title=grants_title(defn, request.tier),
+        grants_title=grants_title(defn, request.tier),
         next_threshold=next_threshold(defn, request.tier),
         granted_at=row.granted_at.isoformat(),
     )
@@ -94,11 +105,10 @@ def _claim(session: Session, key: str, tier: int, player_id: int) -> bool:
     taken = session.get(AchievementClaim, (key, tier))
     if taken is not None:
         logger.debug(
-            "{key} tier {tier} was already claimed by {holder_id} at {claimed_at}",
+            "{key} tier {tier} was already claimed by {holder_id}",
             key=key,
             tier=tier,
             holder_id=taken.player_id,
-            claimed_at=taken.claimed_at.isoformat(),
         )
         return False
     session.add(AchievementClaim(key=key, tier=tier, player_id=player_id))
@@ -122,13 +132,15 @@ def _evaluate(
 ) -> list[AchievementGrant]:
     if defn.kind is Kind.GROUP_UNIQUE:
         return _evaluate_group_unique(session, defn, history, event)
-    held = held_tiers(session, history.player_id, defn.key)
     top = reached(defn, defn.progress(history))
-    return [
-        grant(session, GrantRequest(history.player_id, defn.key, tier), batch_id=event.id)
-        for tier in range(1, top + 1)
-        if tier not in held
-    ]
+    granted: list[AchievementGrant] = []
+    for tier in range(1, top + 1):
+        # Re-read every time: paying a reward re-enters the engine through
+        # the emitted currency_moved and may already have granted this tier.
+        if tier not in held_tiers(session, history.player_id, defn.key):
+            request = GrantRequest(history.player_id, defn.key, tier)
+            granted.append(grant(session, request, batch_id=event.id))
+    return granted
 
 
 def _ignored(event: LoggedEvent) -> bool:

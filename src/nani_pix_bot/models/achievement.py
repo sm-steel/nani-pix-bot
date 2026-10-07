@@ -50,4 +50,3 @@ class AchievementClaim(Base):
     key: Mapped[str] = mapped_column(String(KEY_LENGTH), primary_key=True)
     tier: Mapped[int] = mapped_column(primary_key=True)
     player_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("players.telegram_user_id"))
-    claimed_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))

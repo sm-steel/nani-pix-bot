@@ -147,3 +147,39 @@ def test_a_zero_reward_is_granted_without_a_transfer(session: Session) -> None:
     row = engine.grant(session, engine.GrantRequest(ME, "kingmaker"))
 
     assert (row.reward, row.transfer_id) == (0, None)
+
+
+def _moved(session: Session, reason: str, *, reversal: bool) -> events.LoggedEvent:
+    involved = events.Involved(actor_id=ME, subject_id=OTHER)
+    return events.emit(
+        session, EventType.CURRENCY_MOVED, involved, amount=1, reason=reason, reversal=reversal
+    )
+
+
+@pytest.mark.parametrize("reason", ["refund", "cashback", "tip"])
+def test_on_event_ignores_every_kind_of_reversal(
+    session: Session, monkeypatch: pytest.MonkeyPatch, reason: str
+) -> None:
+    _players(session)
+    monkeypatch.setattr(events, "_dispatch", lambda _session, _event: None)
+
+    reversal = _moved(session, reason, reversal=True)
+
+    # Penny Pincher counts any 1 💠 tip the actor sent, reversal or not, so only
+    # the reversal guard keeps this empty.
+    assert engine.on_event(session, reversal) == []
+    assert engine.on_event(session, _moved(session, "tip", reversal=False)) != []
+
+
+def test_a_reward_cascade_crossing_two_tiers_grants_each_once(session: Session) -> None:
+    from nani_pix_bot.services.economy import config
+
+    _players(session)
+    config.set_amount(session, config.EconomyKey.ACHIEVEMENT_BRONZE, 600)
+    wallet.credit(session, _player(session, ME), 499, wallet.LedgerEntry(CurrencyReason.GRANT))
+
+    _win(session, ME, 1)
+
+    tiers = _grants(session)["pixel_magnate"]
+    assert len(tiers) == len(set(tiers))
+    assert {1, 2} <= set(tiers)
