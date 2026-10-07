@@ -1,5 +1,6 @@
 """/achievements (spec §5). In the game topic: a one-message summary with a
-Browse-in-DM link, or `/achievements top`. Browsing is in DM (browser.py)."""
+Browse-in-DM link, or `/achievements top`. Browsing is in DM (browser.py),
+where `/achievements top` opens the Top view."""
 
 from datetime import UTC, datetime
 
@@ -51,6 +52,9 @@ async def _open_dm(message: Message, context: ContextTypes.DEFAULT_TYPE, viewer_
         await message.reply_text(refusal)
         return
     args = context.args or []
+    if args[:1] == ["top"]:
+        await browser.open_top(message, context)
+        return
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
         owner_id = resolve_owner(session, viewer_id, args)

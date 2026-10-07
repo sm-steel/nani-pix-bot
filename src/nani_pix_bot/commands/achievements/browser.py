@@ -168,6 +168,15 @@ async def open_browser(
     await send_rich(context.bot, RichTarget(message.chat_id), markdown, markup)
 
 
+async def open_top(message: Message, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """`/achievements top` in DM: the same Top view the browser's button opens."""
+    with session_scope(context.bot_data["session_factory"]) as session:
+        lang = settings.get_language(session)
+        markdown, markup = top_view(session, 0, lang)
+    logger.info("opened the achievements top in DM")
+    await send_rich(context.bot, RichTarget(message.chat_id), markdown, markup)
+
+
 def _valid_tap(query: CallbackQuery) -> tuple[str, list] | None:
     parsed = parse(query.data or "")
     if (

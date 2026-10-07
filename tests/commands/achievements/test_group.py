@@ -145,3 +145,28 @@ async def test_in_dm_a_non_member_is_refused_and_no_browser_opens(
     reply = update.message.reply_text.await_args_list[0].args[0]
     assert reply == i18n.t("dm_start.not_a_member", "en")
     assert any(r.level == "WARNING" and "not a group member" in r.message for r in log_records)
+
+
+async def test_in_dm_top_opens_the_top_view(session_factory) -> None:
+    with session_scope(session_factory) as session:
+        session.add(Player(telegram_user_id=1, username="alice"))
+        session.flush()
+        engine.grant(session, engine.GrantRequest(1, "clutch"))
+    update = _update()
+    update.effective_chat.type = "private"
+    update.message.chat_id = 1
+
+    with (
+        patch.object(achievements.browser, "open_browser", new=AsyncMock()) as opened,
+        patch.object(achievements.browser, "send_rich", new=AsyncMock()) as sent,
+    ):
+        await achievements.achievements_command(
+            cast(Update, update),
+            cast(ContextTypes.DEFAULT_TYPE, _context(session_factory, ["top"])),
+        )
+
+    opened.assert_not_awaited()
+    update.message.reply_text.assert_not_awaited()  # not "unknown player top"
+    _bot, target, markdown, _markup = sent.await_args_list[0].args
+    assert target.chat_id == 1
+    assert "| 1 | @alice | 1 | 8 |" in markdown
