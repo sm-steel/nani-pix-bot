@@ -372,3 +372,12 @@ class OutboxKind(enum.StrEnum):
     """What an announcement_outbox row will post. Stored as a plain string."""
 
     UNLOCK = "unlock"
+    PERIOD_SUMMARY = "period_summary"
+
+
+class PeriodType(enum.StrEnum):
+    """A champion period (services/achievements/periods.py). Plain string."""
+
+    WEEK = "week"
+    MONTH = "month"
+    YEAR = "year"

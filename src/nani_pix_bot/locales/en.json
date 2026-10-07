@@ -481,5 +481,9 @@
   "achievement.month.9": "September",
   "achievement.month.10": "October",
   "achievement.month.11": "November",
-  "achievement.month.12": "December"
+  "achievement.month.12": "December",
+  "period.summary.week": "🏆 Week {period} — top players",
+  "period.summary.month": "🏆 {period} — top players",
+  "period.summary.year": "🏆 {period} — top players of the year",
+  "period.summary.row": "{medal} {player} — {score} pts ({wins} wins)"
 }

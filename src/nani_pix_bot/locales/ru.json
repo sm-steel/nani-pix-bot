@@ -481,5 +481,9 @@
   "achievement.month.9": "сентябрь",
   "achievement.month.10": "октябрь",
   "achievement.month.11": "ноябрь",
-  "achievement.month.12": "декабрь"
+  "achievement.month.12": "декабрь",
+  "period.summary.week": "🏆 Неделя {period} — лучшие игроки",
+  "period.summary.month": "🏆 {period} — лучшие игроки",
+  "period.summary.year": "🏆 {period} — лучшие игроки года",
+  "period.summary.row": "{medal} {player} — {score} очк. (побед: {wins})"
 }

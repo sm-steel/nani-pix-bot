@@ -125,3 +125,41 @@ async def test_a_failed_send_stops_the_drain_and_spares_later_rows(session_facto
     with session_scope(session_factory) as session:
         first, second = outbox.pending(session, 10)
         assert (first.attempts, second.attempts) == (1, 0)
+
+
+async def test_a_period_summary_lists_the_podium(session_factory) -> None:
+    from nani_pix_bot.models.enums import PeriodType
+    from nani_pix_bot.models.period import PeriodResult
+
+    with session_scope(session_factory) as session:
+        session.add_all([Player(telegram_user_id=1, username="alice"), Player(telegram_user_id=2)])
+        session.flush()
+        session.add_all(
+            [
+                PeriodResult(
+                    period_type=PeriodType.MONTH,
+                    period_key="2026-10",
+                    rank=1,
+                    player_id=1,
+                    score=14,
+                    wins=3,
+                ),
+                PeriodResult(
+                    period_type=PeriodType.MONTH,
+                    period_key="2026-10",
+                    rank=2,
+                    player_id=2,
+                    score=9,
+                    wins=2,
+                ),
+            ]
+        )
+        outbox.enqueue_period_summary(session, "month", "2026-10")
+    context = _context(session_factory)
+
+    await _drain(context)
+
+    text = context.bot.send_message.await_args.kwargs["text"]
+    assert "October 2026" in text
+    assert "🥇 @alice — 14" in text
+    assert "🥈 2 — 9" in text

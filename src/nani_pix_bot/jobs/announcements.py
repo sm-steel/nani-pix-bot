@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes, JobQueue
@@ -19,6 +20,7 @@ from nani_pix_bot.jobs.timers._shared import job_log_scope
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.announcement import AnnouncementOutbox
 from nani_pix_bot.models.enums import OutboxKind
+from nani_pix_bot.models.period import PeriodResult
 from nani_pix_bot.services import i18n, players, quiet_hours, settings
 from nani_pix_bot.services.achievements import catalogue, names, outbox
 
@@ -50,8 +52,37 @@ def _unlock_text(session: Session, row: AnnouncementOutbox, lang: str) -> str | 
     )
 
 
+_MEDALS = ("🥇", "🥈", "🥉")
+
+
+def _period_text(session: Session, row: AnnouncementOutbox, lang: str) -> str | None:
+    ptype, key = row.payload["period_type"], row.payload["period_key"]
+    stmt = (
+        select(PeriodResult)
+        .where(PeriodResult.period_type == ptype, PeriodResult.period_key == key)
+        .order_by(PeriodResult.rank)
+    )
+    results = list(session.scalars(stmt))
+    if not results:
+        return None
+    header = i18n.t(f"period.summary.{ptype}", lang, period=names.period_label(key, lang))
+    lines = [
+        i18n.t(
+            "period.summary.row",
+            lang,
+            medal=_MEDALS[r.rank - 1],
+            player=players.display_name(session, r.player_id),
+            score=r.score,
+            wins=r.wins,
+        )
+        for r in results
+    ]
+    return "\n".join([header, *lines])
+
+
 RENDERERS: dict[OutboxKind, Callable[[Session, AnnouncementOutbox, str], str | None]] = {
     OutboxKind.UNLOCK: _unlock_text,
+    OutboxKind.PERIOD_SUMMARY: _period_text,
 }
 
 

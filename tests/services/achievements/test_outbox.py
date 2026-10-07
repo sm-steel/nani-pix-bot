@@ -43,3 +43,12 @@ def test_posted_and_given_up_rows_leave_pending(session: Session) -> None:
         outbox.mark_failed(session, [second.id])
 
     assert outbox.pending(session, 10) == []
+
+
+def test_a_period_summary_is_queued_with_its_period(session: Session) -> None:
+    row = outbox.enqueue_period_summary(session, "week", "2026-W41")
+
+    (queued,) = outbox.pending(session, 10)
+    assert queued.id == row.id
+    assert queued.kind == OutboxKind.PERIOD_SUMMARY
+    assert queued.payload == {"period_type": "week", "period_key": "2026-W41"}

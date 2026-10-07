@@ -27,6 +27,13 @@ def enqueue_unlock(session: Session, grant_id: int, batch_id: int | None) -> Ann
     return _add(session, row)
 
 
+def enqueue_period_summary(
+    session: Session, period_type: str, period_key: str
+) -> AnnouncementOutbox:
+    payload = {"period_type": period_type, "period_key": period_key}
+    return _add(session, AnnouncementOutbox(kind=OutboxKind.PERIOD_SUMMARY, payload=payload))
+
+
 def pending(session: Session, limit: int) -> list[AnnouncementOutbox]:
     stmt = (
         select(AnnouncementOutbox)
