@@ -3,7 +3,7 @@ to the winner's week, month and year totals, and the host's +1. Scoring is
 periods.py's; this only words it."""
 
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -48,11 +48,11 @@ def _host_line(session: Session, game_id: int, lang: str) -> str:
     return i18n.t("champion.win.host", lang, host=host, gain=periods.HOST_POINTS)
 
 
-def win_lines(session: Session, game_id: int, lang: str) -> list[str]:
+def win_lines(session: Session, game_id: int, lang: str, now: datetime) -> list[str]:
     """The lines for a game that has just been won; [] for any other game,
-    and for a win that fell in none of the running periods."""
+    and for a win that fell in none of the periods running at `now`."""
     tz = settings.get_group_timezone(session)
-    gains = periods.win_gains(session, game_id, datetime.now(UTC), tz)
+    gains = periods.win_gains(session, game_id, now, tz)
     if not gains:
         return []
     lines = [gain_line(gains, lang), _host_line(session, game_id, lang)]

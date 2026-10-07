@@ -111,20 +111,20 @@ def test_this_games_own_event_is_excluded_from_the_before_side(session: Session)
 def test_the_host_line_names_the_host(session: Session) -> None:
     _win(session, 1, A, host=B)
 
-    assert win_lines.win_lines(session, 1, "en")[1] == "Host @p2 +1 🌟"
+    assert win_lines.win_lines(session, 1, "en", NOW)[1] == "Host @p2 +1 🌟"
 
 
 def test_a_hard_mode_win_has_no_host_line(session: Session) -> None:
     _win(session, 1, A, hard_mode=True)
 
-    lines = win_lines.win_lines(session, 1, "en")
+    lines = win_lines.win_lines(session, 1, "en", NOW)
 
     assert len(lines) == 1
     assert lines[0].startswith("+6 🌟")
 
 
 def test_a_win_with_no_running_period_has_no_lines(session: Session) -> None:
-    assert win_lines.win_lines(session, 5, "en") == []
+    assert win_lines.win_lines(session, 5, "en", NOW) == []
 
 
 def _gain(ptype: PeriodType, score: int, ranks: tuple[int | None, int]) -> PeriodGain:
