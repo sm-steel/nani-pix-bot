@@ -16,7 +16,7 @@ from types import MappingProxyType
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from nani_pix_bot.models.enums import Rarity
-from nani_pix_bot.services.cards.icons import star, trophy
+from nani_pix_bot.services.cards.icons import diamond, medal, star, trophy
 
 FONT_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "fonts"
 CARD_SIZE = (1200, 630)
@@ -273,21 +273,6 @@ def _paste_badge(image: Image.Image, badge: Image.Image, centre: tuple[int, int]
     image.paste(badge, (centre[0] - half, centre[1] - half), badge)
 
 
-def _diamond(draw: ImageDraw.ImageDraw, center: tuple[float, float], radius: int) -> None:
-    x, y = center
-    draw.polygon(
-        [(x, y - radius), (x + radius, y), (x, y + radius), (x - radius, y)], fill=_CURRENCY
-    )
-
-
-def _medal(
-    draw: ImageDraw.ImageDraw, center: tuple[float, float], color: tuple[int, int, int]
-) -> None:
-    x, y = center
-    draw.ellipse((x - 18, y - 18, x + 18, y + 18), fill=color)
-    draw.ellipse((x - 11, y - 11, x + 11, y + 11), outline=_BACKGROUND, width=3)
-
-
 def _cover(background: bytes, size: tuple[int, int]) -> Image.Image | None:
     """Scale to fill and centre-crop; None if the bytes aren't an image."""
     try:
@@ -347,10 +332,12 @@ def _unlock_footer(
     draw.text((x, y), _fit(draw, card.handle, handle_font, width), font=handle_font, fill=_TEXT)
     y += 62
     label_font = _font(32)
-    _medal(draw, (x + 18, y + 22), color)
+    badge = medal(36, color, _BACKGROUND)
+    image.paste(badge, (x, y + 4), badge)
     draw.text((x + 48, y), card.rarity_label, font=label_font, fill=_TEXT)
     reward_x = x + 48 + draw.textlength(card.rarity_label, font=label_font) + 40
-    _diamond(draw, (reward_x + 16, y + 22), 16)
+    gem = diamond(32, _CURRENCY)
+    image.paste(gem, (round(reward_x), y + 6), gem)
     bold = _font(32, bold=True)
     reward = f"+{card.reward}"
     draw.text((reward_x + 44, y), reward, font=bold, fill=_TEXT)

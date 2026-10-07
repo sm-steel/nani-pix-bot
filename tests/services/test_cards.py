@@ -265,3 +265,34 @@ def test_the_podium_draws_a_star_before_each_score(monkeypatch) -> None:
     box = _difference_box(with_icon, without)
     assert box is not None
     assert box[1] > 400  # all three stars sit in the score line under the avatars
+
+
+def _has_blend(image: Image.Image, a: tuple[int, ...], b: tuple[int, ...]) -> bool:
+    """Whether any pixel lies strictly between colours `a` and `b` on the channel
+    where they differ most: a blended edge pixel, not either flat colour."""
+    channel = max(range(3), key=lambda c: abs(a[c] - b[c]))
+    low, high = sorted((a[channel], b[channel]))
+    histogram = image.convert("RGB").getchannel(channel).histogram()
+    return any(histogram[v] for v in range(low + 1, high))
+
+
+def test_the_footer_medal_edge_blends_into_the_card() -> None:
+    color = render.RARITY_COLORS[Rarity.GOLD]
+    card = cards.render_unlock_card(_card(rarity=Rarity.GOLD), None)
+    left = 2 * render._MARGIN + render._AVATAR + 2 * render._RING_TOTAL
+    footer = _open(card).crop((left, 500, left + 40, 580))  # just the medal, no text
+    assert _has_blend(footer, color, render._BACKGROUND)
+
+
+def test_the_medal_and_diamond_sprites_are_anti_aliased() -> None:
+    for sprite in (icons.medal(36, (255, 0, 0), (0, 0, 0)), icons.diamond(32, (0, 0, 255))):
+        alphas = {
+            _pixel(sprite, (x, y))[3] for x in range(sprite.width) for y in range(sprite.height)
+        }
+        assert {0, 255} <= alphas
+        assert any(0 < a < 255 for a in alphas)
+
+
+def test_the_footer_diamond_edge_blends_into_the_card() -> None:
+    card = cards.render_unlock_card(_card(), None)
+    assert _has_blend(_open(card).crop((0, 500, 1200, 600)), render._CURRENCY, render._BACKGROUND)

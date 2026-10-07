@@ -1,6 +1,7 @@
 """Icons drawn on the cards (spec §7), because Noto Sans can't draw emoji:
-a gold trophy for achievement points and a glowing star for a period
-score. Each is painted at 4x and shrunk with LANCZOS, so edges are smooth."""
+a gold trophy for achievement points, a glowing star for a period
+score, the rarity medal and the currency diamond. Each is painted at 4x and
+shrunk with LANCZOS, so edges are smooth."""
 
 import math
 
@@ -55,4 +56,23 @@ def star(size: int = 44) -> Image.Image:
     glow.putalpha(halo)
     image = Image.alpha_composite(image, glow)
     ImageDraw.Draw(image).polygon(outline, fill=_STAR_FILL, outline=_GOLD, width=round(0.8 * u))
+    return image.resize((size, size), Image.Resampling.LANCZOS)
+
+
+Color = tuple[int, int, int]
+
+
+def medal(size: int, color: Color, hole: Color) -> Image.Image:
+    """A round rarity medal: a `color` disc with a thin `hole` ring inside it."""
+    image, draw, u = _canvas(size)
+    draw.ellipse((0, 0, 32 * u, 32 * u), fill=color)
+    inset = 5.2 * u
+    draw.ellipse((inset, inset, 32 * u - inset, 32 * u - inset), outline=hole, width=round(2.7 * u))
+    return image.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def diamond(size: int, color: Color) -> Image.Image:
+    """A flat `color` diamond filling the box."""
+    image, draw, u = _canvas(size)
+    draw.polygon([(16 * u, 0), (32 * u, 16 * u), (16 * u, 32 * u), (0, 16 * u)], fill=color)
     return image.resize((size, size), Image.Resampling.LANCZOS)
