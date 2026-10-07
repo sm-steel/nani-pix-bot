@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import CurrencyReason
-from nani_pix_bot.models.player import Player
+from nani_pix_bot.models.player import USERNAME_LENGTH, Player
 from nani_pix_bot.services.economy import config as economy_config
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.quiet_hours import parse_timezone
@@ -112,9 +112,18 @@ def set_timezone(session: Session, telegram_user_id: int, tz: ZoneInfo) -> None:
     )
 
 
+def remember_first_name(player: Player, first_name: str | None) -> None:
+    """Refresh the stored first name; never blank one we already know."""
+    if first_name:
+        player.first_name = first_name[:USERNAME_LENGTH]
+
+
 def display_name(session: Session, telegram_user_id: int) -> str:
-    """How a person is named in group-facing text: @username, else their id."""
+    """How a person is named in group-facing text: @username, else their
+    first name, else their id."""
     player = session.get(Player, telegram_user_id)
-    if player is not None and player.username:
+    if player is None:
+        return str(telegram_user_id)
+    if player.username:
         return f"@{player.username}"
-    return str(telegram_user_id)
+    return player.first_name or str(telegram_user_id)

@@ -35,4 +35,7 @@ class Player(Base):
     # to interpret an admin's /quiethours times. NULL = never set.
     timezone: Mapped[str | None] = mapped_column(String(TIMEZONE_LENGTH), default=None)
     currency: Mapped[int] = mapped_column(default=0)
+    # Telegram's first name, kept current by remember_user and used when a
+    # player has no @username.
+    first_name: Mapped[str | None] = mapped_column(String(USERNAME_LENGTH), default=None)
     title_key: Mapped[str | None] = mapped_column(String(TITLE_KEY_LENGTH), default=None)

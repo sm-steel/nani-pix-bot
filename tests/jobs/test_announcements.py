@@ -18,10 +18,17 @@ from nani_pix_bot.services.quiet_hours import QuietHours
 pytestmark = pytest.mark.achievements
 
 
+@pytest.fixture(autouse=True)
+def _no_avatars(monkeypatch) -> None:
+    monkeypatch.setattr(announcements, "fetch_avatar", AsyncMock(return_value=None))
+
+
 def _context(session_factory: sessionmaker[Session]) -> MagicMock:
     context = MagicMock()
     context.job = None
     context.bot.send_message = AsyncMock()
+    context.bot.send_photo = AsyncMock()
+    context.bot.send_media_group = AsyncMock()
     context.bot_data = {
         "session_factory": session_factory,
         "group_chat_id": 555,
@@ -48,11 +55,12 @@ async def test_an_unlock_is_posted_once_into_the_game_topic(session_factory) -> 
     await _drain(context)
     await _drain(context)
 
-    context.bot.send_message.assert_awaited_once()
-    kwargs = context.bot.send_message.await_args.kwargs
+    context.bot.send_photo.assert_awaited_once()
+    kwargs = context.bot.send_photo.await_args.kwargs
     assert (kwargs["chat_id"], kwargs["message_thread_id"]) == (555, 7)
-    assert "@alice" in kwargs["text"]
-    assert "Kingmaker" in kwargs["text"]
+    assert "@alice" in kwargs["caption"]
+    assert "Kingmaker" in kwargs["caption"]
+    assert kwargs["photo"][:4] == b"\x89PNG"
 
 
 async def test_cascaded_unlocks_post_in_grant_order(session_factory) -> None:
@@ -61,7 +69,7 @@ async def test_cascaded_unlocks_post_in_grant_order(session_factory) -> None:
 
     await _drain(context)
 
-    texts = [c.kwargs["text"] for c in context.bot.send_message.await_args_list]
+    texts = [c.kwargs["caption"] for c in context.bot.send_photo.await_args_list]
     assert "Pioneer" in texts[0]
     assert "Pixel Magnate" in texts[1]
 
@@ -75,6 +83,7 @@ async def test_nothing_is_posted_during_quiet_hours(session_factory, quiet_now: 
     await _drain(context)
 
     context.bot.send_message.assert_not_awaited()
+    context.bot.send_photo.assert_not_awaited()
     with session_scope(session_factory) as session:
         assert len(outbox.pending(session, 10)) == 1
 
@@ -82,12 +91,12 @@ async def test_nothing_is_posted_during_quiet_hours(session_factory, quiet_now: 
 async def test_a_failing_post_gives_up_after_three_attempts(session_factory, records) -> None:
     _grant(session_factory)
     context = _context(session_factory)
-    context.bot.send_message.side_effect = TelegramError("boom")
+    context.bot.send_photo.side_effect = TelegramError("boom")
 
     for _ in range(outbox.MAX_ATTEMPTS + 1):
         await _drain(context)
 
-    assert context.bot.send_message.await_count == outbox.MAX_ATTEMPTS
+    assert context.bot.send_photo.await_count == outbox.MAX_ATTEMPTS
     assert any(level == "ERROR" and "giving up" in message for level, message in records)
 
 
@@ -107,8 +116,8 @@ async def test_an_unrenderable_row_does_not_block_the_queue(session_factory, rec
     for _ in range(outbox.MAX_ATTEMPTS):
         await _drain(context)
 
-    context.bot.send_message.assert_awaited_once()
-    assert "Kingmaker" in context.bot.send_message.await_args.kwargs["text"]
+    context.bot.send_photo.assert_awaited_once()
+    assert "Kingmaker" in context.bot.send_photo.await_args.kwargs["caption"]
     with session_scope(session_factory) as session:
         assert outbox.pending(session, 10) == []
     assert any(level == "ERROR" and "could not be rendered" in m for level, m in records)
@@ -117,11 +126,11 @@ async def test_an_unrenderable_row_does_not_block_the_queue(session_factory, rec
 async def test_a_failed_send_stops_the_drain_and_spares_later_rows(session_factory) -> None:
     _grant(session_factory, "pioneer")  # queues pioneer, then pixel_magnate
     context = _context(session_factory)
-    context.bot.send_message.side_effect = TelegramError("boom")
+    context.bot.send_photo.side_effect = TelegramError("boom")
 
     await _drain(context)
 
-    context.bot.send_message.assert_awaited_once()
+    context.bot.send_photo.assert_awaited_once()
     with session_scope(session_factory) as session:
         first, second = outbox.pending(session, 10)
         assert (first.attempts, second.attempts) == (1, 0)
@@ -159,7 +168,60 @@ async def test_a_period_summary_lists_the_podium(session_factory) -> None:
 
     await _drain(context)
 
-    text = context.bot.send_message.await_args.kwargs["text"]
+    text = context.bot.send_photo.await_args.kwargs["caption"]
     assert "October 2026" in text
     assert "🥇 @alice — 14" in text
     assert "🥈 2 — 9" in text
+
+
+async def test_three_unlocks_from_one_event_post_as_one_album(session_factory) -> None:
+    with session_scope(session_factory) as session:
+        session.add(Player(telegram_user_id=1, username="alice"))
+        session.flush()
+        for key in ("kingmaker", "clutch", "first_try"):
+            engine.grant(session, engine.GrantRequest(1, key), batch_id=99)
+    context = _context(session_factory)
+
+    await _drain(context)
+
+    context.bot.send_media_group.assert_awaited_once()
+    media = context.bot.send_media_group.await_args.kwargs["media"]
+    assert len(media) >= 3
+    context.bot.send_photo.assert_not_awaited()
+
+
+async def test_a_card_that_fails_to_render_posts_as_text(
+    session_factory, monkeypatch, records
+) -> None:
+    _grant(session_factory)
+    monkeypatch.setattr(
+        announcements, "render_unlock_card", MagicMock(side_effect=ValueError("bad"))
+    )
+    context = _context(session_factory)
+
+    await _drain(context)
+
+    context.bot.send_photo.assert_not_awaited()
+    assert "Kingmaker" in context.bot.send_message.await_args.kwargs["text"]
+    assert any(level == "ERROR" for level, _ in records)
+
+
+def test_card_text_drops_the_currency_emoji_with_its_leading_space() -> None:
+    assert (
+        announcements._card_text("Потрачено 💠 на подсказки: 10000")
+        == "Потрачено на подсказки: 10000"
+    )
+    assert announcements._card_text("Spent 💠 on clues, 💠 total") == "Spent on clues, total"
+
+
+async def test_backgrounds_are_loaded_per_slot_seeded_by_the_player(
+    session_factory, monkeypatch
+) -> None:
+    _grant(session_factory)
+    loader = MagicMock(return_value=None)
+    monkeypatch.setattr(announcements, "load_background", loader)
+    context = _context(session_factory)
+
+    await _drain(context)
+
+    assert loader.call_args.args == ("unlock/bronze", 1)

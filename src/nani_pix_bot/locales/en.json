@@ -525,5 +525,11 @@
   "title.set": "Your title is now «{title}».",
   "title.cleared": "Title removed.",
   "title.stale": "That title isn't available.",
-  "achievements.summary.title": "Title: {title}"
+  "achievements.summary.title": "Title: {title}",
+  "card.unlocked": "Achievement unlocked",
+  "card.points": "+{points} pts",
+  "card.score": "{score} pts · {wins} wins",
+  "card.podium.week": "Champions of week {period}",
+  "card.podium.month": "Champions of {period}",
+  "card.podium.year": "Champions of {period}"
 }

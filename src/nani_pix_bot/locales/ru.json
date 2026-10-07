@@ -525,5 +525,11 @@
   "title.set": "Ваш титул теперь «{title}».",
   "title.cleared": "Титул снят.",
   "title.stale": "Этот титул недоступен.",
-  "achievements.summary.title": "Титул: {title}"
+  "achievements.summary.title": "Титул: {title}",
+  "card.unlocked": "Новое достижение",
+  "card.points": "+{points} очк.",
+  "card.score": "{score} очк. · побед: {wins}",
+  "card.podium.week": "Чемпионы недели {period}",
+  "card.podium.month": "Чемпионы: {period}",
+  "card.podium.year": "Чемпионы {period} года"
 }
