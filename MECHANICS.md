@@ -1022,7 +1022,15 @@ points race over finished games. The code is `services/achievements/`; the
 design is in `ARCHITECTURE.md`'s "Achievements".
 
 Icons in texts: 💠 currency, 🏆 achievement points, 🌟 champion period
-score, 👑 wins (on `/leaderboard`).
+score, 👑 wins. The two 👑 counts differ: on `/leaderboard` it is the
+lifetime `players.wins`, where a HARD MODE win adds 2; in `/standings` and
+on the period podium it is the number of games won in that period, 1 each
+(HARD MODE included).
+
+In DM, `/achievements` (with its deep link and buttons), `/standings` and
+`/title` are for group members only — anyone can DM the bot, and these
+show members' names and activity. A non-member gets the same "not a
+member" reply the shop gives.
 
 **Every win message shows the 🌟 it earned**, after the 💠 lines:
 `+5 🌟 → week 14 (#1 ⬆2) · month 31 (#2 =) · year 31 (#2 🆕)`. Each part is

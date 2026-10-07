@@ -375,11 +375,16 @@ src/nani_pix_bot/
                    # the admin's own IANA timezone (Player.timezone) and
                    # the bot-wide quiet-hours window entered in it — see
                    # MECHANICS.md's "Quiet hours"
-    onboarding.py # /start (and `/start shop`, the clue-shop deep link), /help
+    onboarding.py # /start (and `/start shop`, the clue-shop deep link, and
+                   # `/start ach_<id>`, the achievements one), /help
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
-                   # (membership.py), the one inline keyboard genuinely
-                   # shared across packages: stop_confirm_keyboard()
+                   # (membership.py), Telegram rich messages (headings,
+                   # checklists, tables) sent or edited from markdown,
+                   # with md_escape and a plain-text fallback, for the
+                   # achievements views and /standings (rich.py), the
+                   # one inline keyboard genuinely shared across
+                   # packages: stop_confirm_keyboard()
                    # (keyboards.py, used by game_flow/stop.py and
                    # stageconfig.py), bot command-menu registration
                    # (bot_menu.py), the one "is MAL linking configured?"
