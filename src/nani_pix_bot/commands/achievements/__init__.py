@@ -8,7 +8,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements import browser, compare, render
-from nani_pix_bot.commands.achievements.common import dm_link, resolve_owner
+from nani_pix_bot.commands.achievements.common import dm_link, outsider_refusal, resolve_owner
 from nani_pix_bot.commands.helpers.rich import RichTarget, send_rich
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.db import session_scope
@@ -46,6 +46,10 @@ async def _reply_unknown(message: Message, lang: str, username: str) -> None:
 
 
 async def _open_dm(message: Message, context: ContextTypes.DEFAULT_TYPE, viewer_id: int) -> None:
+    refusal = await outsider_refusal(context, viewer_id, "achievements")
+    if refusal is not None:
+        await message.reply_text(refusal)
+        return
     args = context.args or []
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)

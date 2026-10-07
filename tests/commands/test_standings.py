@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from sqlalchemy.orm import Session
 from telegram import Update
+from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import standings
@@ -85,9 +86,11 @@ def _update(user_id: int, thread_id: int | None = 7, chat_type: str = "supergrou
     return update
 
 
-def _context(session_factory) -> MagicMock:
+def _context(session_factory, *, member: bool = True) -> MagicMock:
     context = MagicMock()
     context.args = []
+    joined = ChatMemberStatus.MEMBER if member else ChatMemberStatus.LEFT
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=joined))
     context.bot_data = {
         "session_factory": session_factory,
         "group_chat_id": 555,
@@ -158,3 +161,18 @@ async def test_ignored_outside_the_game_topic(session_factory) -> None:
 
 def test_period_types_are_covered_in_order() -> None:
     assert standings.PERIODS == (PeriodType.WEEK, PeriodType.MONTH, PeriodType.YEAR)
+
+
+async def test_a_non_member_is_refused_in_a_private_chat(session_factory, records) -> None:
+    update = _update(BYSTANDER, thread_id=None, chat_type="private")
+    update.message.reply_text = AsyncMock()
+    context = _context(session_factory, member=False)
+
+    with patch.object(standings, "send_rich", new=AsyncMock()) as sent:
+        await standings.standings_command(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    sent.assert_not_awaited()
+    update.message.reply_text.assert_awaited_once_with(i18n.t("dm_start.not_a_member", "en"))
+    assert any(level == "WARNING" and "not a group member" in m for level, m in records)

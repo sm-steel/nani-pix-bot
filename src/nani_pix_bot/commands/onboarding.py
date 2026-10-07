@@ -7,7 +7,7 @@ from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.browser import Browse, open_browser
-from nani_pix_bot.commands.achievements.common import DEEP_LINK_PREFIX, MAX_ID
+from nani_pix_bot.commands.achievements.common import DEEP_LINK_PREFIX, MAX_ID, outsider_refusal
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.commands.shop import open_shop
 from nani_pix_bot.db import session_scope
@@ -34,6 +34,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     owner_id = _achievements_owner(context.args)
     if owner_id is not None:
+        refusal = await outsider_refusal(context, user.id, "achievements deep link")
+        if refusal is not None:
+            await message.reply_text(refusal)
+            return
         logger.info("opened achievements via the /start deep link")
         await open_browser(message, context, Browse(user.id, owner_id))
         return

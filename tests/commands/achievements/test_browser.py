@@ -3,19 +3,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from telegram import Update
+from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements import browser
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.achievements import engine
 from nani_pix_bot.services.achievements.status import View
 
 pytestmark = pytest.mark.achievements
 
 
-def _context(session_factory) -> MagicMock:
+def _context(session_factory, *, member: bool = True) -> MagicMock:
     context = MagicMock()
+    joined = ChatMemberStatus.MEMBER if member else ChatMemberStatus.LEFT
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=joined))
     context.bot_data = {
         "session_factory": session_factory,
         "group_chat_id": 555,
@@ -163,3 +167,19 @@ async def test_a_top_tap_edits_in_the_top_table_with_paging(session_factory) -> 
     assert "u1" in args[2]
     buttons = [b.callback_data for row in args[3].inline_keyboard for b in row]
     assert "ach:t:1" in buttons
+
+
+async def test_a_non_members_tap_is_refused(session_factory, records) -> None:
+    _seed(session_factory)
+    update = _tap("ach:v:2:a:0")
+
+    with patch.object(browser, "edit_rich", new=AsyncMock()) as edited:
+        await browser.achievements_callback(
+            cast(Update, update),
+            cast(ContextTypes.DEFAULT_TYPE, _context(session_factory, member=False)),
+        )
+
+    edited.assert_not_awaited()
+    refusal = i18n.t("dm_start.not_a_member", "en")
+    update.callback_query.answer.assert_awaited_once_with(refusal, show_alert=True)
+    assert any(level == "WARNING" and "not a group member" in m for level, m in records)

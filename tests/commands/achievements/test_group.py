@@ -3,12 +3,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from telegram import Update
+from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import achievements
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.achievements import engine
+from tests.conftest import LogLine
 
 pytestmark = pytest.mark.achievements
 
@@ -28,6 +31,7 @@ def _update(user_id: int = 1, thread_id: int | None = 7) -> MagicMock:
 def _context(session_factory, args: list[str]) -> MagicMock:
     context = MagicMock()
     context.args = args
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=ChatMemberStatus.MEMBER))
     context.bot_data = {
         "session_factory": session_factory,
         "group_chat_id": 555,
@@ -116,3 +120,28 @@ async def test_in_dm_an_unknown_player_gets_the_unknown_reply(session_factory) -
 
     opened.assert_not_awaited()
     assert "@nobody" in update.message.reply_text.await_args_list[0].args[0]
+
+
+def _outsider(context: MagicMock) -> MagicMock:
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=ChatMemberStatus.LEFT))
+    return context
+
+
+async def test_in_dm_a_non_member_is_refused_and_no_browser_opens(
+    session_factory, log_records: list[LogLine]
+) -> None:
+    with session_scope(session_factory) as session:
+        session.add(Player(telegram_user_id=2, username="bob"))
+    update = _update(user_id=9)
+    update.effective_chat.type = "private"
+
+    with patch.object(achievements.browser, "open_browser", new=AsyncMock()) as opened:
+        await achievements.achievements_command(
+            cast(Update, update),
+            cast(ContextTypes.DEFAULT_TYPE, _outsider(_context(session_factory, ["@bob"]))),
+        )
+
+    opened.assert_not_awaited()
+    reply = update.message.reply_text.await_args_list[0].args[0]
+    assert reply == i18n.t("dm_start.not_a_member", "en")
+    assert any(r.level == "WARNING" and "not a group member" in r.message for r in log_records)

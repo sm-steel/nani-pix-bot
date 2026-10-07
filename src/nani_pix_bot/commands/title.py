@@ -4,7 +4,7 @@ from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.achievements.common import MAX_ID
+from nani_pix_bot.commands.achievements.common import MAX_ID, outsider_refusal
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
@@ -18,6 +18,10 @@ _NONE = "none"
 async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, user = update.message, update.effective_user
     if not is_private_chat(update) or message is None or user is None:
+        return
+    refusal = await outsider_refusal(context, user.id, "/title")
+    if refusal is not None:
+        await message.reply_text(refusal)
         return
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)

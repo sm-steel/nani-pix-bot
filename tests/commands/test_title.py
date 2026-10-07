@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram import Update
+from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import title as title_module
@@ -27,9 +28,11 @@ def _seed(session_factory) -> tuple[int, int]:
         return mine.id, theirs.id
 
 
-def _context(session_factory) -> MagicMock:
+def _context(session_factory, *, member: bool = True) -> MagicMock:
     context = MagicMock()
-    context.bot_data = {"session_factory": session_factory}
+    context.bot_data = {"session_factory": session_factory, "group_chat_id": 555}
+    joined = ChatMemberStatus.MEMBER if member else ChatMemberStatus.LEFT
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=joined))
     return context
 
 
@@ -134,3 +137,16 @@ async def test_none_clears_the_title(session_factory) -> None:
     with session_factory() as session:
         assert session.get(Player, ME).title_key is None
     assert _edited(update) == i18n.t("title.cleared", "en")
+
+
+async def test_a_non_member_is_refused(session_factory, log_records: list[LogLine]) -> None:
+    _seed(session_factory)
+    update = _command_update()
+
+    await title_module.title_command(
+        cast(Update, update),
+        cast(ContextTypes.DEFAULT_TYPE, _context(session_factory, member=False)),
+    )
+
+    update.message.reply_text.assert_awaited_once_with(i18n.t("dm_start.not_a_member", "en"))
+    assert any(r.level == "WARNING" and "not a group member" in r.message for r in log_records)

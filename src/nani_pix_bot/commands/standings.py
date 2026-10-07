@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.achievements.common import outsider_refusal
 from nani_pix_bot.commands.helpers.rich import RichTarget, md_escape, send_rich
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.db import session_scope
@@ -78,7 +79,12 @@ async def standings_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if message is None or user is None:
         return
     bot_data = context.bot_data
-    if not is_private_chat(update) and not is_game_topic(
+    if is_private_chat(update):
+        refusal = await outsider_refusal(context, user.id, "standings")
+        if refusal is not None:
+            await message.reply_text(refusal)
+            return
+    elif not is_game_topic(
         update, group_chat_id=bot_data["group_chat_id"], game_topic_id=bot_data["game_topic_id"]
     ):
         return

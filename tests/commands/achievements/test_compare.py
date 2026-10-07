@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from telegram import Update
+from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements import browser, compare
@@ -68,7 +69,8 @@ async def test_a_compare_tap_edits_in_the_table(session_factory) -> None:
     update.callback_query.message.chat.id = 1
     update.callback_query.message.message_id = 42
     context = MagicMock()
-    context.bot_data = {"session_factory": session_factory}
+    context.bot_data = {"session_factory": session_factory, "group_chat_id": 555}
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=ChatMemberStatus.MEMBER))
 
     with patch.object(browser, "edit_rich", new=AsyncMock()) as edited:
         await browser.achievements_callback(
@@ -92,7 +94,8 @@ async def test_an_unknown_filter_and_huge_page_fall_back_to_all_on_the_last_page
     update.callback_query.message.chat.id = 1
     update.callback_query.message.message_id = 42
     context = MagicMock()
-    context.bot_data = {"session_factory": session_factory}
+    context.bot_data = {"session_factory": session_factory, "group_chat_id": 555}
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=ChatMemberStatus.MEMBER))
 
     with patch.object(browser, "edit_rich", new=AsyncMock()) as edited:
         await browser.achievements_callback(

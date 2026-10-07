@@ -11,11 +11,11 @@ from datetime import UTC, datetime
 
 from loguru import logger
 from sqlalchemy.orm import Session
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
+from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements import render
-from nani_pix_bot.commands.achievements.common import MAX_ID, PREFIX
+from nani_pix_bot.commands.achievements.common import MAX_ID, PREFIX, outsider_refusal
 from nani_pix_bot.commands.helpers.rich import RichTarget, edit_rich, md_escape, send_rich
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, players, settings
@@ -168,14 +168,8 @@ async def open_browser(
     await send_rich(context.bot, RichTarget(message.chat_id), markdown, markup)
 
 
-async def achievements_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None or query.data is None:
-        return
-    await query.answer()
-    if query.data == NOOP:
-        return
-    parsed = parse(query.data)
+def _valid_tap(query: CallbackQuery) -> tuple[str, list] | None:
+    parsed = parse(query.data or "")
     if (
         parsed is None
         or parsed[0] not in ACTIONS
@@ -183,6 +177,21 @@ async def achievements_callback(update: Update, context: ContextTypes.DEFAULT_TY
         or query.from_user is None
     ):
         logger.warning("ignored a malformed or stale achievements tap {data!r}", data=query.data)
+        return None
+    return parsed
+
+
+async def achievements_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None or query.data is None:
+        return
+    parsed = None if query.data == NOOP else _valid_tap(query)
+    if parsed is None or query.message is None:
+        await query.answer()
+        return
+    refusal = await outsider_refusal(context, query.from_user.id, "achievements tap")
+    await query.answer(refusal, show_alert=refusal is not None)
+    if refusal is not None:
         return
     action, fields = parsed
     with session_scope(context.bot_data["session_factory"]) as session:
