@@ -79,3 +79,29 @@ async def test_a_compare_tap_edits_in_the_table(session_factory) -> None:
     assert args[1].message_id == 42
     assert "| Clutch | ⬜ | ✅ |" in args[2]
     assert "Sharpshooter" not in args[2]  # "only they have"
+
+
+async def test_an_unknown_filter_and_huge_page_fall_back_to_all_on_the_last_page(
+    session_factory,
+) -> None:
+    _seed(session_factory)
+    update = MagicMock()
+    update.callback_query.data = "ach:c:2:x:999"
+    update.callback_query.from_user.id = 1
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.message.chat.id = 1
+    update.callback_query.message.message_id = 42
+    context = MagicMock()
+    context.bot_data = {"session_factory": session_factory}
+
+    with patch.object(browser, "edit_rich", new=AsyncMock()) as edited:
+        await browser.achievements_callback(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    args = edited.await_args_list[0].args
+    assert "Sharpshooter" not in args[2]  # first page is not shown
+    assert "| Achievement | You | @bob |" in args[2]
+    buttons = [b.callback_data for row in args[3].inline_keyboard for b in row]
+    assert compare.compare_data(2, CompareFilter.ALL, 2) in buttons  # prev of the last page (3)
+    assert "ach:c:2:a:3" not in buttons

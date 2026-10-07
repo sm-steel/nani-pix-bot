@@ -89,7 +89,7 @@ def compare_view(session: Session, request: CompareRequest, lang: str) -> browse
     return _table(session, request, shown, lang), InlineKeyboardMarkup(rows)
 
 
-def _compare_tap(session: Session, viewer_id: int, fields: list, lang: str) -> browser.Rendered:
+def compare_tap(session: Session, viewer_id: int, fields: list, lang: str) -> browser.Rendered:
     other_id, raw_filter, page = fields
     known = {f.value for f in CompareFilter}
     filt = CompareFilter(raw_filter) if raw_filter in known else CompareFilter.ALL
@@ -101,6 +101,3 @@ def _compare_tap(session: Session, viewer_id: int, fields: list, lang: str) -> b
         page=page + 1,
     )
     return compare_view(session, CompareRequest(viewer_id, other_id, filt, page), lang)
-
-
-browser.ACTIONS["c"] = _compare_tap

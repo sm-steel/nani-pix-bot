@@ -178,7 +178,7 @@ async def achievements_callback(update: Update, context: ContextTypes.DEFAULT_TY
     parsed = parse(query.data)
     if (
         parsed is None
-        or parsed[0] not in ACTIONS  # "c" until compare.py registers it (Task 13)
+        or parsed[0] not in ACTIONS
         or query.message is None
         or query.from_user is None
     ):

@@ -7,7 +7,7 @@ from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.achievements import browser, render
+from nani_pix_bot.commands.achievements import browser, compare, render
 from nani_pix_bot.commands.achievements.common import dm_link, resolve_owner
 from nani_pix_bot.commands.helpers.rich import RichTarget, send_rich
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
@@ -92,6 +92,5 @@ async def achievements_command(update: Update, context: ContextTypes.DEFAULT_TYP
     await _post_summary(message, context, user.id, args)
 
 
-# Importing compare registers the "c" action in browser.ACTIONS; it can't be imported
-# from browser.py (compare imports browser).
-import nani_pix_bot.commands.achievements.compare  # noqa: E402, F401
+# compare imports browser, so browser cannot register it itself.
+browser.ACTIONS["c"] = compare.compare_tap
