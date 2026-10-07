@@ -54,11 +54,23 @@ def to_event(row: EventLog) -> LoggedEvent:
 
 
 def _dispatch(session: Session, event: LoggedEvent) -> None:
-    """Hands the event to its one consumer. A function-local import: the
-    achievements package imports this module (and, via wallet, emit())."""
+    """Hands the event to its one consumer, in a savepoint: a broken
+    achievement must never roll back the player's own action, so a failure
+    discards only the achievement work (nested savepoints cover a reward
+    cascade, where this re-enters via wallet.credit). A function-local
+    import: the achievements package imports this module (and, via
+    wallet, emit())."""
     from nani_pix_bot.services import achievements
 
-    achievements.on_event(session, event)
+    try:
+        with session.begin_nested():
+            achievements.on_event(session, event)
+    except Exception:
+        logger.opt(exception=True).error(
+            "achievements failed on event {event_type} (row {event_id}); action kept",
+            event_type=event.event_type.value,
+            event_id=event.id,
+        )
 
 
 def emit(session: Session, event_type: EventType, involved: Involved, **data: Any) -> LoggedEvent:
