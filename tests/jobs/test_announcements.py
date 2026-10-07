@@ -170,8 +170,9 @@ async def test_a_period_summary_lists_the_podium(session_factory) -> None:
 
     text = context.bot.send_photo.await_args.kwargs["caption"]
     assert "October 2026" in text
-    assert "🥇 @alice — 14" in text
-    assert "🥈 2 — 9" in text
+    assert "🥇 @alice — 14 🌟 · 3 👑" in text
+    assert "🥈 2 — 9 🌟 · 2 👑" in text
+    assert text.startswith("🌟 ")
 
 
 async def test_three_unlocks_from_one_event_post_as_one_album(session_factory) -> None:

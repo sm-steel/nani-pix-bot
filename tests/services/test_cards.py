@@ -3,11 +3,11 @@ import math
 from io import BytesIO
 from typing import Any, cast
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 from nani_pix_bot.models.enums import Rarity
 from nani_pix_bot.services import cards
-from nani_pix_bot.services.cards import backgrounds, render
+from nani_pix_bot.services.cards import backgrounds, icons, render
 
 
 def _card(**overrides) -> cards.UnlockCard:
@@ -218,3 +218,50 @@ def test_the_outer_ring_has_a_different_average_hue_than_the_inner_ring() -> Non
         ring_hue, inner_hue = colorsys.rgb_to_hsv(*mean)[0], colorsys.rgb_to_hsv(*inner)[0]
         gap = abs(ring_hue - inner_hue)
         assert min(gap, 1 - gap) > 0.01, rarity
+
+
+def _blank(size: int) -> Image.Image:
+    return Image.new("RGBA", (size, size), (0, 0, 0, 0))
+
+
+def _difference_box(a: bytes, b: bytes) -> tuple[int, int, int, int] | None:
+    return ImageChops.difference(_open(a).convert("RGB"), _open(b).convert("RGB")).getbbox()
+
+
+def test_the_trophy_is_drawn_and_anti_aliased() -> None:
+    trophy = icons.trophy(32)
+    assert trophy.size == (32, 32)
+    alphas = {_pixel(trophy, (x, y))[3] for x in range(32) for y in range(32)}
+    assert 255 in alphas
+    assert 0 in alphas
+    assert any(0 < a < 255 for a in alphas)
+
+
+def test_the_star_has_a_soft_halo_around_a_bright_core() -> None:
+    star = icons.star(44)
+    centre = _pixel(star, (22, 22))
+    assert centre[3] == 255
+    assert min(centre[:3]) > 200  # white-gold core
+    halo = [_pixel(star, (x, 22))[3] for x in range(44)]
+    assert any(0 < a < 255 for a in halo)  # the glow fades out rather than ending hard
+
+
+def test_the_unlock_card_draws_the_trophy_before_the_points(monkeypatch) -> None:
+    with_icon = cards.render_unlock_card(_card(points_label="+8"), None)
+    monkeypatch.setattr(render, "trophy", _blank)
+    without = cards.render_unlock_card(_card(points_label="+8"), None)
+    box = _difference_box(with_icon, without)
+    assert box is not None
+    assert box[1] > 480  # in the footer line, nowhere else
+    assert box[3] < 600
+
+
+def test_the_podium_draws_a_star_before_each_score(monkeypatch) -> None:
+    entries = tuple(cards.PodiumEntry(f"@p{i}", f"{9 - i} · {i} wins", seed=i) for i in range(3))
+    podium = cards.PodiumCard("Champions", entries)
+    with_icon = cards.render_podium_card(podium)
+    monkeypatch.setattr(render, "star", _blank)
+    without = cards.render_podium_card(podium)
+    box = _difference_box(with_icon, without)
+    assert box is not None
+    assert box[1] > 400  # all three stars sit in the score line under the avatars

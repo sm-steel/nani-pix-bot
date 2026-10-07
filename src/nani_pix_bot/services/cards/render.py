@@ -16,6 +16,7 @@ from types import MappingProxyType
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from nani_pix_bot.models.enums import Rarity
+from nani_pix_bot.services.cards.icons import star, trophy
 
 FONT_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "fonts"
 CARD_SIZE = (1200, 630)
@@ -61,6 +62,8 @@ _SWEEP: Mapping[Rarity, tuple[tuple[int, int, int], ...]] = MappingProxyType(
 # Podium places wear the matching rarity's ring: #1 gold, #2 silver, #3 bronze.
 _PLACE_RARITIES = (Rarity.GOLD, Rarity.SILVER, Rarity.BRONZE)
 _NAME_SIZES = (64, 54, 46, 40)
+_STAR_BOX = 44  # the star icon incl. its halo
+_STAR_ADVANCE = 34  # from the star's left edge to the score text
 # Background veil opacities in the card's base colour (spec: readable white text).
 _UNLOCK_SHADE = (0.45, 0.88)  # left (behind the avatar) -> right (text area)
 _SHADE_RAMP = (400, 640)  # x range where the unlock veil ramps up
@@ -335,8 +338,9 @@ def _png(image: Image.Image) -> bytes:
 
 
 def _unlock_footer(
-    draw: ImageDraw.ImageDraw, card: UnlockCard, x: int, color: tuple[int, int, int]
+    image: Image.Image, card: UnlockCard, x: int, color: tuple[int, int, int]
 ) -> None:
+    draw = ImageDraw.Draw(image)
     y = _HEIGHT - 150
     width = _WIDTH - x - _MARGIN
     handle_font = _font(38, bold=True)
@@ -347,8 +351,13 @@ def _unlock_footer(
     draw.text((x + 48, y), card.rarity_label, font=label_font, fill=_TEXT)
     reward_x = x + 48 + draw.textlength(card.rarity_label, font=label_font) + 40
     _diamond(draw, (reward_x + 16, y + 22), 16)
-    reward = f"+{card.reward}   {card.points_label}"
-    draw.text((reward_x + 44, y), reward, font=_font(32, bold=True), fill=_TEXT)
+    bold = _font(32, bold=True)
+    reward = f"+{card.reward}"
+    draw.text((reward_x + 44, y), reward, font=bold, fill=_TEXT)
+    points_x = reward_x + 44 + draw.textlength(reward, font=bold) + 36
+    icon = trophy(32)
+    image.paste(icon, (round(points_x), y + 22 - 16), icon)
+    draw.text((points_x + 44, y), card.points_label, font=bold, fill=_TEXT)
 
 
 def render_unlock_card(
@@ -370,7 +379,7 @@ def render_unlock_card(
     draw.text((x, 150), _fit(draw, card.name, name_font, width), font=name_font, fill=_TEXT)
     for i, line in enumerate(_wrap(draw, card.description, body_font, width)):
         draw.text((x, 250 + i * 46), line, font=body_font, fill=_MUTED)
-    _unlock_footer(draw, card, x, color)
+    _unlock_footer(image, card, x, color)
     return _png(image)
 
 
@@ -384,7 +393,17 @@ def _podium_entry(image: Image.Image, entry: PodiumEntry, slot: tuple[int, int, 
     name_font = _font(36 if index == 0 else 30, bold=True)
     name = _fit(draw, entry.name, name_font, 280)
     draw.text((centre_x, text_y), name, font=name_font, fill=_TEXT, anchor="mm")
-    draw.text((centre_x, text_y + 44), entry.score_label, font=_font(28), fill=_MUTED, anchor="mm")
+    _score_line(image, entry.score_label, (centre_x, text_y + 44))
+
+
+def _score_line(image: Image.Image, label: str, centre: tuple[int, int]) -> None:
+    """A glowing star, then the score, centred together on `centre`."""
+    draw = ImageDraw.Draw(image)
+    font = _font(28)
+    left = centre[0] - (_STAR_ADVANCE + draw.textlength(label, font=font)) / 2
+    icon = star(_STAR_BOX)
+    image.paste(icon, (round(left + 14 - _STAR_BOX / 2), centre[1] - _STAR_BOX // 2), icon)
+    draw.text((left + _STAR_ADVANCE, centre[1]), label, font=font, fill=_MUTED, anchor="lm")
 
 
 def render_podium_card(card: PodiumCard, background: bytes | None = None) -> bytes:

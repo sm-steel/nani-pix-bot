@@ -17,7 +17,7 @@ def _row(rank: int, player: Player, lang: str) -> str:
     name = player.username or player.telegram_user_id
     title = titles.text(player.title_key, lang)
     suffix = f" «{title}»" if title else ""
-    return f"{rank}. {name}{suffix} — {player.wins} 🏆 · {player.currency} 💠"
+    return f"{rank}. {name}{suffix} — {player.wins} 👑 · {player.currency} 💠"
 
 
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
