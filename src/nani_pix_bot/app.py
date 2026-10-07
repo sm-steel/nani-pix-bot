@@ -43,6 +43,7 @@ from nani_pix_bot.commands import (
     shop,
     stageconfig,
     tip,
+    title,
     version,
 )
 from nani_pix_bot.commands.achievements import browser as achievements_browser
@@ -293,6 +294,7 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(refund.refund_callback_handler, pattern=r"^refund:")
     )
     application.add_handler(CallbackQueryHandler(shop.shop_callback_handler, pattern=r"^shop:"))
+    application.add_handler(CallbackQueryHandler(title.title_callback, pattern=r"^title:"))
     application.add_handler(
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
     )
@@ -312,6 +314,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))
     application.add_handler(CommandHandler("partialmatch", partialmatch.partialmatch_command))
     application.add_handler(CommandHandler("refund", refund.refund_command))
+    application.add_handler(CommandHandler("title", title.title_command))
     application.add_handler(CommandHandler("setwinner", setwinner.setwinner_command))
     application.add_handler(CommandHandler("language", language.language_command))
     application.add_handler(CommandHandler("linkmal", mal_link.linkmal_command))

@@ -9,8 +9,9 @@ from sqlalchemy.orm import Session
 
 from nani_pix_bot.commands.helpers.rich import md_escape
 from nani_pix_bot.models.enums import Rarity
+from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n, players
-from nani_pix_bot.services.achievements import names, status
+from nani_pix_bot.services.achievements import names, status, titles
 from nani_pix_bot.services.achievements.definitions import Kind, rarity_of
 from nani_pix_bot.services.achievements.status import State, Status
 
@@ -122,6 +123,10 @@ def summary(session: Session, owner_id: int, lang: str, now: datetime) -> str:
         "## 🏅 " + md_escape(players.display_name(session, owner_id)),
         header_line(session, owner_id, items, lang),
     ]
+    owner = session.get(Player, owner_id)
+    owner_title = titles.text(owner.title_key, lang) if owner else None
+    if owner_title:
+        lines.append(_t("achievements.summary.title", lang, title=owner_title))
     latest = status.newest_first(s for s in items if s.state is State.EARNED)[:_LATEST]
     if latest:
         labels = ", ".join(names.title(s.defn, s.tier, s.period_key, lang) for s in latest)
@@ -146,5 +151,9 @@ def top_table(session: Session, rows: Sequence[status.TopRow], lang: str, offset
     ]
     for rank, top_row in enumerate(rows, start=offset + 1):
         name = md_escape(players.display_name(session, top_row.player_id))
+        holder = session.get(Player, top_row.player_id)
+        title = titles.text(holder.title_key, lang) if holder else None
+        if title:
+            name += f" «{md_escape(title)}»"
         lines.append(f"| {rank} | {name} | {top_row.count} | {top_row.points} |")
     return "\n".join(lines)

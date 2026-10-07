@@ -5,6 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import leaderboard as leaderboard_command_module
+from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
 
 
@@ -83,3 +84,15 @@ async def test_leaderboard_command_shows_currency(session_factory) -> None:
     )
 
     assert "77 💠" in update.message.reply_text.await_args.args[0]
+
+
+async def test_a_chosen_title_shows_next_to_the_name(session_factory) -> None:
+    with session_scope(session_factory) as session:
+        session.add(Player(telegram_user_id=1, username="alice", wins=3, title_key="pioneer:1:"))
+    update = _make_update()
+
+    await leaderboard_command_module.leaderboard_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory))
+    )
+
+    assert "alice «Pioneer»" in update.message.reply_text.await_args.args[0]

@@ -15,7 +15,6 @@ from nani_pix_bot.services.achievements.definitions import (
     Definition,
     Kind,
     exact_tier,
-    grants_title,
     rarity_of,
     reached,
 )
@@ -89,8 +88,6 @@ def grant(
         points=row.points,
         period=request.period_key or None,
         batch_id=batch_id,
-        # grants_title: read by titles.py (a later task), which drops it from here.
-        grants_title=grants_title(defn, request.tier),
     )
     outbox.enqueue_unlock(session, row.id, batch_id)
     _pay(session, row)

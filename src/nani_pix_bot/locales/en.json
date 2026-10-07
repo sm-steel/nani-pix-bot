@@ -516,5 +516,14 @@
   "achievements.compare.you": "You",
   "achievements.compare.all": "All",
   "achievements.compare.theirs": "Only they have",
-  "achievements.compare.mine": "Only you have"
+  "achievements.compare.mine": "Only you have",
+  "commands.title": "Choose the title shown next to your name",
+  "commands.achievements": "Achievements: yours, someone's, or the top",
+  "title.pick": "Pick a title to show next to your name:",
+  "title.none_earned": "No titles yet — they come from the top tier of an achievement ladder, Pioneer, Milestone Keeper and champion wins.",
+  "title.clear": "No title",
+  "title.set": "Your title is now «{title}».",
+  "title.cleared": "Title removed.",
+  "title.stale": "That title isn't available.",
+  "achievements.summary.title": "Title: {title}"
 }

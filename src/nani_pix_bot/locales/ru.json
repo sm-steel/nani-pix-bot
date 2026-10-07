@@ -516,5 +516,14 @@
   "achievements.compare.you": "Вы",
   "achievements.compare.all": "Все",
   "achievements.compare.theirs": "Есть только у него",
-  "achievements.compare.mine": "Есть только у вас"
+  "achievements.compare.mine": "Есть только у вас",
+  "commands.title": "Выбрать титул рядом с вашим именем",
+  "commands.achievements": "Достижения: ваши, чужие или топ",
+  "title.pick": "Выберите титул, который будет рядом с вашим именем:",
+  "title.none_earned": "Титулов пока нет — их дают высшая ступень достижения, «Первопроходец», «Хранитель вех» и победы в зачётах.",
+  "title.clear": "Без титула",
+  "title.set": "Ваш титул теперь «{title}».",
+  "title.cleared": "Титул снят.",
+  "title.stale": "Этот титул недоступен.",
+  "achievements.summary.title": "Титул: {title}"
 }

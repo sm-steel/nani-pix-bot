@@ -103,6 +103,7 @@ def test_build_application_registers_every_command() -> None:
         "refund",
         "setwinner",
         "achievements",
+        "title",
     }
 
 
