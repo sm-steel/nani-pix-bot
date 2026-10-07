@@ -50,3 +50,26 @@ async def test_a_404_for_the_unknown_method_also_falls_back_and_unescapes_names(
     await rich.send_rich(bot, rich.RichTarget(555), "# hi @b" + rich.md_escape("_") + "ob")
 
     assert bot.send_message.await_args_list[0].kwargs["text"] == "# hi @b_ob"
+
+
+async def test_edit_rich_ignores_not_modified() -> None:
+    bot = MagicMock()
+    bot.do_api_request = AsyncMock(side_effect=BadRequest("Message is not modified"))
+    bot.edit_message_text = AsyncMock()
+
+    await rich.edit_rich(bot, rich.RichTarget(555, message_id=9), "# same")
+
+    bot.edit_message_text.assert_not_awaited()
+    assert bot.do_api_request.await_args_list[0].args[0] == "editMessageText"
+    assert bot.do_api_request.await_args_list[0].kwargs["api_kwargs"]["message_id"] == 9
+
+
+async def test_a_rejected_edit_falls_back_to_unescaped_plain_text(records) -> None:
+    bot = MagicMock()
+    bot.do_api_request = AsyncMock(side_effect=InvalidToken("Not Found"))
+    bot.edit_message_text = AsyncMock()
+
+    await rich.edit_rich(bot, rich.RichTarget(555, message_id=9), "# a" + rich.md_escape("_") + "b")
+
+    assert bot.edit_message_text.await_args_list[0].kwargs["text"] == "# a_b"
+    assert any(level == "ERROR" for level, _ in records)

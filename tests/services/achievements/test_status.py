@@ -124,3 +124,4 @@ def test_top_ranks_by_points_then_whoever_got_there_first(session: Session) -> N
     assert [r.player_id for r in rows] == [OTHER, ME]
     assert status.rank_of(session, ME) == 2
     assert status.points_of(session, ME) == 8
+    assert status.ranked_count(session) == 2

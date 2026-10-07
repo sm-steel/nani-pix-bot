@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.services import players
 
 DEEP_LINK_PREFIX = "ach_"
+PREFIX = "ach:"  # callback-data prefix of every achievements button
 
 
 def resolve_owner(session: Session, viewer_id: int, args: list[str]) -> int | None:

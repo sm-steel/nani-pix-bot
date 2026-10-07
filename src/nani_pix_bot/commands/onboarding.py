@@ -6,16 +6,36 @@ from telegram import Update
 from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.achievements.browser import Browse, open_browser
+from nani_pix_bot.commands.achievements.common import DEEP_LINK_PREFIX
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.commands.shop import open_shop
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, settings
 
 
+def _achievements_owner(args: list[str] | None) -> int | None:
+    """The owner id from `/start ach_<id>`, or None. The `len` check also keeps
+    the existing tests' MagicMock `context.args` (len 0) out of this path."""
+    if not args or len(args) != 1 or not args[0].startswith(DEEP_LINK_PREFIX):
+        return None
+    raw = args[0].removeprefix(DEEP_LINK_PREFIX)
+    if not raw.isdecimal():
+        logger.warning("ignored a malformed achievements deep link {arg!r}", arg=args[0])
+        return None
+    return int(raw)
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     user = update.effective_user
     if not is_private_chat(update) or message is None or user is None:
+        return
+
+    owner_id = _achievements_owner(context.args)
+    if owner_id is not None:
+        logger.info("opened achievements via the /start deep link")
+        await open_browser(message, context, Browse(user.id, owner_id))
         return
 
     if context.args == ["shop"]:

@@ -45,6 +45,7 @@ from nani_pix_bot.commands import (
     tip,
     version,
 )
+from nani_pix_bot.commands.achievements import browser as achievements_browser
 from nani_pix_bot.commands.dm_start.keyboards import (
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
     SEARCH_RETRY_CALLBACK_DATA,
@@ -292,6 +293,9 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(refund.refund_callback_handler, pattern=r"^refund:")
     )
     application.add_handler(CallbackQueryHandler(shop.shop_callback_handler, pattern=r"^shop:"))
+    application.add_handler(
+        CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
+    )
     application.add_handler(
         CallbackQueryHandler(game_flow.sharpen_callback_handler, pattern=r"^sharpen:")
     )

@@ -7,10 +7,10 @@ from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.achievements import render
+from nani_pix_bot.commands.achievements import browser, render
 from nani_pix_bot.commands.achievements.common import dm_link, resolve_owner
 from nani_pix_bot.commands.helpers.rich import RichTarget, send_rich
-from nani_pix_bot.commands.helpers.scoping import is_game_topic
+from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.achievements import status
@@ -38,6 +38,24 @@ async def _post_top(message: Message, context: ContextTypes.DEFAULT_TYPE) -> Non
     await send_rich(context.bot, _target(message), markdown)
 
 
+async def _reply_unknown(message: Message, lang: str, username: str) -> None:
+    logger.warning(
+        "asked for achievements of unknown {target_username!r}", target_username=username
+    )
+    await message.reply_text(i18n.t("achievements.unknown_user", lang, username=username))
+
+
+async def _open_dm(message: Message, context: ContextTypes.DEFAULT_TYPE, viewer_id: int) -> None:
+    args = context.args or []
+    with session_scope(context.bot_data["session_factory"]) as session:
+        lang = settings.get_language(session)
+        owner_id = resolve_owner(session, viewer_id, args)
+    if owner_id is None:
+        await _reply_unknown(message, lang, args[0])
+        return
+    await browser.open_browser(message, context, browser.Browse(viewer_id, owner_id))
+
+
 async def _post_summary(
     message: Message, context: ContextTypes.DEFAULT_TYPE, viewer_id: int, args: list[str]
 ) -> None:
@@ -48,10 +66,7 @@ async def _post_summary(
             markdown = render.summary(session, owner_id, lang, datetime.now(UTC))
             target_name = players.describe_player_id(session, owner_id)
     if owner_id is None:
-        logger.warning(
-            "asked for achievements of unknown {target_username!r}", target_username=args[0]
-        )
-        await message.reply_text(i18n.t("achievements.unknown_user", lang, username=args[0]))
+        await _reply_unknown(message, lang, args[0])
         return
     logger.info("showed the achievements of {target}", target=target_name, target_id=owner_id)
     await send_rich(context.bot, _target(message), markdown, _dm_button(context, owner_id, lang))
@@ -61,6 +76,9 @@ async def achievements_command(update: Update, context: ContextTypes.DEFAULT_TYP
     message = update.message
     user = update.effective_user
     if message is None or user is None:
+        return
+    if is_private_chat(update):
+        await _open_dm(message, context, user.id)
         return
     bot_data = context.bot_data
     if not is_game_topic(

@@ -200,6 +200,11 @@ def top(session: Session, *, limit: int, offset: int = 0) -> list[TopRow]:
     return [TopRow(player_id, int(points), int(count)) for player_id, points, count in rows]
 
 
+def ranked_count(session: Session) -> int:
+    stmt = select(func.count(func.distinct(AchievementGrant.player_id)))
+    return int(session.scalar(stmt) or 0)
+
+
 def rank_of(session: Session, player_id: int) -> int | None:
     for rank, (pid, _points, _count) in enumerate(session.execute(_top_stmt()), start=1):
         if pid == player_id:
