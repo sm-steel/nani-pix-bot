@@ -3,6 +3,7 @@ autogenerate, no matter which module happens to import `models` first."""
 
 from nani_pix_bot.models.achievement import AchievementClaim as AchievementClaim
 from nani_pix_bot.models.achievement import AchievementGrant as AchievementGrant
+from nani_pix_bot.models.announcement import AnnouncementOutbox as AnnouncementOutbox
 from nani_pix_bot.models.base import Base as Base
 from nani_pix_bot.models.bot_settings import BotSettings as BotSettings
 from nani_pix_bot.models.clue_purchase import CluePurchase as CluePurchase
@@ -12,6 +13,7 @@ from nani_pix_bot.models.enums import CurrencyParty as CurrencyParty
 from nani_pix_bot.models.enums import CurrencyReason as CurrencyReason
 from nani_pix_bot.models.enums import EventType as EventType
 from nani_pix_bot.models.enums import GameStatus as GameStatus
+from nani_pix_bot.models.enums import OutboxKind as OutboxKind
 from nani_pix_bot.models.enums import PixelStage as PixelStage
 from nani_pix_bot.models.event_log import EventLog as EventLog
 from nani_pix_bot.models.game import Game as Game

@@ -466,5 +466,20 @@
   "achievement.so_close.name": "So Close",
   "achievement.so_close.desc": "Miss the answer by a hair",
   "achievement.penny_pincher.name": "Penny Pincher",
-  "achievement.penny_pincher.desc": "Tip someone exactly 1 💠"
+  "achievement.penny_pincher.desc": "Tip someone exactly 1 💠",
+  "achievement.unlocked": "🏅 {player} unlocked «{name}»!\n{desc}\n{rarity} · +{reward} 💠 · +{points} pts",
+  "achievement.period.week": "{week} ({year})",
+  "achievement.period.month": "{month} {year}",
+  "achievement.month.1": "January",
+  "achievement.month.2": "February",
+  "achievement.month.3": "March",
+  "achievement.month.4": "April",
+  "achievement.month.5": "May",
+  "achievement.month.6": "June",
+  "achievement.month.7": "July",
+  "achievement.month.8": "August",
+  "achievement.month.9": "September",
+  "achievement.month.10": "October",
+  "achievement.month.11": "November",
+  "achievement.month.12": "December"
 }

@@ -466,5 +466,20 @@
   "achievement.so_close.name": "Совсем рядом",
   "achievement.so_close.desc": "Промахнуться на волосок",
   "achievement.penny_pincher.name": "Скупердяй",
-  "achievement.penny_pincher.desc": "Подарить кому-то ровно 1 💠"
+  "achievement.penny_pincher.desc": "Подарить кому-то ровно 1 💠",
+  "achievement.unlocked": "🏅 {player} получает достижение «{name}»!\n{desc}\n{rarity} · +{reward} 💠 · +{points} очк.",
+  "achievement.period.week": "{week} ({year})",
+  "achievement.period.month": "{month} {year}",
+  "achievement.month.1": "январь",
+  "achievement.month.2": "февраль",
+  "achievement.month.3": "март",
+  "achievement.month.4": "апрель",
+  "achievement.month.5": "май",
+  "achievement.month.6": "июнь",
+  "achievement.month.7": "июль",
+  "achievement.month.8": "август",
+  "achievement.month.9": "сентябрь",
+  "achievement.month.10": "октябрь",
+  "achievement.month.11": "ноябрь",
+  "achievement.month.12": "декабрь"
 }

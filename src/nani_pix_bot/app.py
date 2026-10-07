@@ -54,6 +54,7 @@ from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
 from nani_pix_bot.commands.quiet_hours import SET_TIMEZONE_PREFIX
 from nani_pix_bot.config import Config, load_config
+from nani_pix_bot.jobs.announcements import schedule_outbox_drain
 from nani_pix_bot.jobs.timers import rearm_pending_timeouts
 from nani_pix_bot.logging_config import setup_logging
 from nani_pix_bot.models.enums import Provider
@@ -345,6 +346,7 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
 async def _post_init(application: Application) -> None:
     session_factory = application.bot_data["session_factory"]
     await rearm_pending_timeouts(application.job_queue, session_factory)
+    schedule_outbox_drain(application.job_queue)
 
     me = await application.bot.get_me()
     application.bot_data["bot_username"] = me.username

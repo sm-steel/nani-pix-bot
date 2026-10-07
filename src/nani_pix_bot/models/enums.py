@@ -366,3 +366,9 @@ class Rarity(enum.StrEnum):
     SILVER = "silver"
     GOLD = "gold"
     PLATINUM = "platinum"
+
+
+class OutboxKind(enum.StrEnum):
+    """What an announcement_outbox row will post. Stored as a plain string."""
+
+    UNLOCK = "unlock"

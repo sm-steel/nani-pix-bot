@@ -10,7 +10,7 @@ from nani_pix_bot.models.achievement import AchievementClaim, AchievementGrant
 from nani_pix_bot.models.enums import CurrencyReason, EventType
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import players, settings
-from nani_pix_bot.services.achievements import catalogue, rewards
+from nani_pix_bot.services.achievements import catalogue, outbox, rewards
 from nani_pix_bot.services.achievements.definitions import (
     Definition,
     Kind,
@@ -97,6 +97,7 @@ def grant(
         next_threshold=next_threshold(defn, request.tier),
         granted_at=row.granted_at.isoformat(),
     )
+    outbox.enqueue_unlock(session, row.id, batch_id)
     _pay(session, row)
     return row
 

@@ -110,3 +110,11 @@ def set_timezone(session: Session, telegram_user_id: int, tz: ZoneInfo) -> None:
         player_id=telegram_user_id,
         timezone=tz.key,
     )
+
+
+def display_name(session: Session, telegram_user_id: int) -> str:
+    """How a person is named in group-facing text: @username, else their id."""
+    player = session.get(Player, telegram_user_id)
+    if player is not None and player.username:
+        return f"@{player.username}"
+    return str(telegram_user_id)
