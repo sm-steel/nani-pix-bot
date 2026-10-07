@@ -4,6 +4,7 @@ emoji — Pillow can't reliably render colour glyphs — so rarity is a colour
 and a drawn medal, and 💠 a drawn diamond."""
 
 import hashlib
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
@@ -11,7 +12,7 @@ from io import BytesIO
 from pathlib import Path
 from types import MappingProxyType
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 from nani_pix_bot.models.enums import Rarity
 
@@ -33,7 +34,16 @@ RARITY_COLORS: Mapping[Rarity, tuple[int, int, int]] = MappingProxyType(
 _PLACES = (RARITY_COLORS[Rarity.GOLD], RARITY_COLORS[Rarity.SILVER], RARITY_COLORS[Rarity.BRONZE])
 _MARGIN = 64
 _AVATAR = 300
-_RING = 12
+# The avatar badge: photo, solid inner ring, gradient outer ring, soft glow.
+_INNER_RING = 6
+_OUTER_RING = 8
+_RING_TOTAL = _INNER_RING + _OUTER_RING
+_GLOW_BLUR = 12
+_GLOW_ALPHA = 0.55
+_GLOW_PAD = 3 * _GLOW_BLUR  # room for the blur so the glow isn't clipped
+_SS = 4  # supersampling factor: the badge is drawn big, then shrunk with LANCZOS
+_TINT = 0.45  # outer ring, top-left: this far toward white
+_SHADE = 0.35  # outer ring, bottom-right: this far toward black
 _NAME_SIZES = (64, 54, 46, 40)
 # Background veil opacities in the card's base colour (spec: readable white text).
 _UNLOCK_SHADE = (0.45, 0.88)  # left (behind the avatar) -> right (text area)
@@ -120,8 +130,10 @@ def _seed_color(seed: int) -> tuple[int, int, int]:
 
 
 def _initials(name: str) -> str:
-    words = name.lstrip("@").replace("_", " ").split()
-    return ("".join(w[0] for w in words[:2]) or "?").upper()
+    """Up to two initials, letters only: "@kurogane_42" -> "K", "@Sakura_chan" -> "SC"."""
+    words = re.split(r"[\W_]+", name)
+    letters = [next((c for c in word if c.isalpha()), "") for word in words]
+    return ("".join(c for c in letters if c)[:2] or "?").upper()
 
 
 def _photo(avatar: bytes | None, size: int) -> Image.Image | None:
@@ -158,12 +170,62 @@ def avatar_disc(avatar: bytes | None, name: str, seed: int, size: int) -> Image.
     return disc
 
 
-def _ringed(disc: Image.Image, color: tuple[int, int, int]) -> Image.Image:
-    size = disc.width + 2 * _RING
-    ring = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    ImageDraw.Draw(ring).ellipse((0, 0, size - 1, size - 1), fill=color)
-    ring.paste(disc, (_RING, _RING), disc)
-    return ring
+def _mix(color: tuple[int, int, int], target: int, amount: float) -> tuple[int, int, int]:
+    r, g, b = (round(c + (target - c) * amount) for c in color)
+    return (r, g, b)
+
+
+def _diagonal(size: int) -> Image.Image:
+    """An L ramp from 0 at the top-left corner to 255 at the bottom-right."""
+    vertical = Image.linear_gradient("L").resize((size, size), Image.Resampling.BICUBIC)
+    horizontal = vertical.rotate(90)
+    return ImageChops.add(vertical, horizontal, scale=2)
+
+
+def _disc_mask(size: int, centre: float, radius: float) -> Image.Image:
+    mask = Image.new("L", (size, size), 0)
+    box = (centre - radius, centre - radius, centre + radius, centre + radius)
+    ImageDraw.Draw(mask).ellipse(box, fill=255)
+    return mask
+
+
+def _glow(size: int, radius: float, color: tuple[int, int, int]) -> Image.Image:
+    """The outer ring's silhouette in the badge colour, blurred, behind the badge."""
+    alpha = _disc_mask(size, size / 2, radius).filter(ImageFilter.GaussianBlur(_GLOW_BLUR))
+    layer = Image.new("RGBA", (size, size), color)
+    layer.putalpha(alpha.point(lambda v: round(v * _GLOW_ALPHA)))
+    return layer
+
+
+def _badge(face: Image.Image, color: tuple[int, int, int]) -> Image.Image:
+    """The avatar badge, centred in a transparent square with room for its glow.
+    `face` is the avatar disc drawn at _SS times its final size; everything is
+    drawn at that scale and shrunk once, so no edge is aliased."""
+    face_radius = face.width / 2
+    inner = face_radius + _INNER_RING * _SS
+    outer = inner + _OUTER_RING * _SS
+    big = face.width + 2 * (_RING_TOTAL + _GLOW_PAD) * _SS
+    centre = big / 2
+    badge = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    annulus = _disc_mask(big, centre, outer)
+    annulus.paste(0, mask=_disc_mask(big, centre, inner))
+    light, dark = _mix(color, 255, _TINT), _mix(color, 0, _SHADE)
+    gradient = Image.composite(
+        Image.new("RGB", (big, big), dark), Image.new("RGB", (big, big), light), _diagonal(big)
+    )
+    badge.paste(gradient, (0, 0), annulus)
+    badge.paste(Image.new("RGB", (big, big), color), (0, 0), _disc_mask(big, centre, inner))
+    corner = round(centre - face_radius)
+    badge.paste(face, (corner, corner), face)
+    final = big // _SS
+    badge = badge.resize((final, final), Image.Resampling.LANCZOS)
+    glow = _glow(final, face_radius / _SS + _RING_TOTAL, color)
+    return Image.alpha_composite(glow, badge)
+
+
+def _paste_badge(image: Image.Image, badge: Image.Image, centre: tuple[int, int]) -> None:
+    half = badge.width // 2
+    image.paste(badge, (centre[0] - half, centre[1] - half), badge)
 
 
 def _diamond(draw: ImageDraw.ImageDraw, center: tuple[float, float], radius: int) -> None:
@@ -254,9 +316,10 @@ def render_unlock_card(
     draw = ImageDraw.Draw(image)
     color = RARITY_COLORS[card.rarity]
     draw.rectangle((0, 0, _WIDTH - 1, _HEIGHT - 1), outline=color, width=10)
-    disc = _ringed(avatar_disc(avatar, card.handle, card.seed, _AVATAR), color)
-    image.paste(disc, (_MARGIN, (_HEIGHT - disc.height) // 2), disc)
-    x = 2 * _MARGIN + disc.width
+    badge = _badge(avatar_disc(avatar, card.handle, card.seed, _AVATAR * _SS), color)
+    radius = _AVATAR // 2 + _RING_TOTAL
+    _paste_badge(image, badge, (_MARGIN + radius, _HEIGHT // 2))
+    x = 2 * _MARGIN + 2 * radius
     width = _WIDTH - x - _MARGIN
     headline_font, body_font = _font(30, bold=True), _font(34)
     name_font = _name_font(draw, card.name, width)
@@ -272,10 +335,10 @@ def render_unlock_card(
 def _podium_entry(image: Image.Image, entry: PodiumEntry, slot: tuple[int, int, int]) -> None:
     index, centre_x, size = slot
     draw = ImageDraw.Draw(image)
-    disc = _ringed(avatar_disc(entry.avatar, entry.name, entry.seed, size), _PLACES[index])
-    top = 300 - disc.height // 2 + (0 if index == 0 else 30)
-    image.paste(disc, (centre_x - disc.width // 2, top), disc)
-    text_y = top + disc.height + 40
+    face = avatar_disc(entry.avatar, entry.name, entry.seed, size * _SS)
+    centre_y = 300 + (0 if index == 0 else 30)
+    _paste_badge(image, _badge(face, _PLACES[index]), (centre_x, centre_y))
+    text_y = centre_y + size // 2 + _RING_TOTAL + 40
     name_font = _font(36 if index == 0 else 30, bold=True)
     name = _fit(draw, entry.name, name_font, 280)
     draw.text((centre_x, text_y), name, font=name_font, fill=_TEXT, anchor="mm")

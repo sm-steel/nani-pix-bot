@@ -1,11 +1,12 @@
+import math
 from io import BytesIO
-from typing import Any
+from typing import Any, cast
 
 from PIL import Image
 
 from nani_pix_bot.models.enums import Rarity
 from nani_pix_bot.services import cards
-from nani_pix_bot.services.cards import backgrounds
+from nani_pix_bot.services.cards import backgrounds, render
 
 
 def _card(**overrides) -> cards.UnlockCard:
@@ -132,3 +133,61 @@ def test_a_background_shows_but_stays_dark_behind_the_text() -> None:
     assert (
         luminance.point(lambda v: 255 if v >= 100 else 0).getbbox() is None
     )  # ~88% veil over a maximal-bright picture
+
+
+def test_initials_use_letters_only() -> None:
+    assert render._initials("@kurogane_42") == "K"
+    assert render._initials("@Sakura_chan") == "SC"
+    assert render._initials("@alice") == "A"
+    assert render._initials("12345") == "?"
+    assert render._initials("@__--") == "?"
+    assert render._initials("Карина Иванова") == "КИ"
+
+
+def _pixel(image: Image.Image, xy: tuple[int, int]) -> tuple[int, ...]:
+    return cast(tuple[int, ...], image.getpixel(xy))
+
+
+def _badge(size: int = 100, color=(240, 190, 40)) -> Image.Image:
+    face = cards.avatar_disc(_red_avatar(), "@a", 1, size * render._SS)
+    return render._badge(face, color)
+
+
+def _ring_radius(size: int) -> float:
+    return size / 2 + render._INNER_RING
+
+
+def test_the_badge_edges_are_anti_aliased() -> None:
+    size = 100
+    badge = _badge(size)
+    centre = badge.width / 2
+    radius = size / 2  # where the red photo meets the gold inner ring
+    seen = set()
+    for step in range(360):
+        angle = math.radians(step)
+        for offset in (-0.5, 0.0, 0.5):
+            x = centre + (radius + offset) * math.cos(angle)
+            y = centre + (radius + offset) * math.sin(angle)
+            seen.add(_pixel(badge, (round(x), round(y)))[1])
+    # green channel: red photo = 0, gold ring = 190; anything between is a blended edge pixel
+    assert any(20 < g < 170 for g in seen)
+
+
+def test_the_glow_brightens_just_outside_the_outer_ring() -> None:
+    size = 100
+    badge = _badge(size)
+    flat = Image.new("RGBA", badge.size, (*render._BACKGROUND, 255))
+    on_flat = Image.alpha_composite(flat, badge).convert("RGB")
+    probe = (round(badge.width / 2 + size / 2 + render._RING_TOTAL + 4), badge.height // 2)
+    assert sum(_pixel(on_flat, probe)) > sum(render._BACKGROUND) + 10
+    assert _pixel(on_flat, (0, 0)) == render._BACKGROUND  # the glow fades out before the edge
+
+
+def test_the_outer_ring_is_lighter_top_left_and_darker_bottom_right() -> None:
+    size = 100
+    badge = _badge(size).convert("RGB")
+    centre, ring = badge.width // 2, size / 2 + render._INNER_RING + render._OUTER_RING / 2
+    offset = round(ring / math.sqrt(2))
+    top_left = _pixel(badge, (centre - offset, centre - offset))
+    bottom_right = _pixel(badge, (centre + offset, centre + offset))
+    assert sum(top_left) > sum(bottom_right)
