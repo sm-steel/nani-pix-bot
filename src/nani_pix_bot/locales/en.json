@@ -492,6 +492,7 @@
   "achievements.section.untouched": "Not started",
   "achievements.section.hidden": "Hidden",
   "achievements.race": "you're #{rank} right now",
+  "achievements.race_now": "now #{rank}",
   "achievements.taken_by": "taken by {player}",
   "achievements.times": "×{count}",
   "achievements.next": "next: {value}/{target}",

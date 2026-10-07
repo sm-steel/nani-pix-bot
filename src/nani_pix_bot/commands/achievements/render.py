@@ -37,6 +37,8 @@ def _earned_row(item: Status, lang: str, _holder: str | None) -> str:
     if defn.kind is Kind.PERIOD:
         latest = md_escape(names.title(defn, 1, item.period_key, lang))
         times = _t("achievements.times", lang, count=item.tier)
+        if item.rank is not None:
+            times += " · " + _t("achievements.race_now", lang, rank=item.rank)
         return f"- [x] {medal} **{md_escape(names.name(defn, 0, lang))}** {times} — {latest}"
     line = (
         f"- [x] {medal} **{md_escape(names.name(defn, item.tier, lang))}**"

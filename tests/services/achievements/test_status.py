@@ -84,7 +84,8 @@ def test_champions_count_wins_and_otherwise_show_the_live_race(session: Session)
 
     items = _by_key(status.build(session, ME, NOW))
 
-    assert (items["champion_week"].state, items["champion_week"].tier) == (State.EARNED, 1)
+    week = items["champion_week"]
+    assert (week.state, week.tier, week.rank) == (State.EARNED, 1, 1)  # a past win, still racing
     assert (items["champion_month"].state, items["champion_month"].rank) == (State.RACE, 1)
 
 

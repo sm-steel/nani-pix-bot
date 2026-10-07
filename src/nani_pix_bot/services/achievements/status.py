@@ -66,6 +66,7 @@ def _earned(defn: Definition, ctx: _Context) -> Status:
             tier=len(ctx.grants),
             granted_at=latest.granted_at,
             period_key=latest.period_key,
+            rank=_current_rank(defn, ctx),  # a past champion still races this period
         )
     tier = max(g.tier for g in ctx.grants)
     return Status(
@@ -78,10 +79,14 @@ def _earned(defn: Definition, ctx: _Context) -> Status:
     )
 
 
-def _race(defn: Definition, ctx: _Context) -> Status:
+def _current_rank(defn: Definition, ctx: _Context) -> int | None:
     ptype = periods.PERIOD_OF_CHAMPION[defn.key]
     period = periods.period_at(ptype, ctx.now, ctx.history.tz)
-    rank = periods.rank_of(ctx.session, period, ctx.history.player_id)
+    return periods.rank_of(ctx.session, period, ctx.history.player_id)
+
+
+def _race(defn: Definition, ctx: _Context) -> Status:
+    rank = _current_rank(defn, ctx)
     return Status(defn, State.RACE if rank else State.UNTOUCHED, rank=rank)
 
 

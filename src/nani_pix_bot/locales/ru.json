@@ -492,6 +492,7 @@
   "achievements.section.untouched": "Не начато",
   "achievements.section.hidden": "Скрытые",
   "achievements.race": "сейчас вы #{rank}",
+  "achievements.race_now": "сейчас #{rank}",
   "achievements.taken_by": "уже у {player}",
   "achievements.times": "×{count}",
   "achievements.next": "дальше: {value}/{target}",
