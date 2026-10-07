@@ -141,11 +141,12 @@ def schedule_outbox_drain(job_queue: JobQueue | None) -> None:
 
 def _render(session: Session, row: AnnouncementOutbox, lang: str) -> Post | None:
     """One row's post, or None when it can't be rendered. Such a row is
-    marked failed on its own, so it can't block the rows behind it."""
+    marked failed on its own, so it can't block the rows behind it —
+    whatever the renderer raised."""
     try:
         post = RENDERERS[OutboxKind(row.kind)](session, row, lang)
-    except (KeyError, ValueError) as exc:
-        logger.error(
+    except Exception as exc:
+        logger.opt(exception=True).error(
             "announcement {outbox_id} could not be rendered: {error!r}", outbox_id=row.id, error=exc
         )
         outbox.mark_failed(session, [row.id])

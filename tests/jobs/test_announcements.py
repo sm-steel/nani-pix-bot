@@ -9,11 +9,12 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import announcements
 from nani_pix_bot.models.achievement import AchievementGrant
-from nani_pix_bot.models.enums import Rarity
+from nani_pix_bot.models.enums import OutboxKind, Rarity
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import settings
 from nani_pix_bot.services.achievements import engine, outbox
 from nani_pix_bot.services.quiet_hours import QuietHours
+from tests.conftest import LogLine
 
 pytestmark = pytest.mark.achievements
 
@@ -351,3 +352,35 @@ async def test_an_avatar_is_fetched_once_per_player_per_drain(session_factory, m
     await _drain(context)
 
     assert sorted(call.args[1] for call in fetch.await_args_list) == [1, 2]
+
+
+async def test_a_renderer_crash_fails_that_row_and_posts_the_next(
+    session_factory, monkeypatch, log_records: list[LogLine]
+) -> None:
+    with session_scope(session_factory) as session:
+        session.add(Player(telegram_user_id=1, username="alice"))
+        session.flush()
+        first = engine.grant(session, engine.GrantRequest(1, "clutch"))
+        engine.grant(session, engine.GrantRequest(1, "kingmaker"))
+        broken_grant = first.id
+    real = announcements.RENDERERS[OutboxKind.UNLOCK]
+
+    def crashing(session: Session, row, lang: str):
+        if row.payload["grant_id"] == broken_grant:
+            msg = "card template broke"
+            raise RuntimeError(msg)
+        return real(session, row, lang)
+
+    monkeypatch.setitem(announcements.RENDERERS, OutboxKind.UNLOCK, crashing)
+    context = _context(session_factory)
+
+    await _drain(context)
+
+    context.bot.send_photo.assert_awaited_once()
+    assert "Kingmaker" in context.bot.send_photo.await_args.kwargs["caption"]
+    with session_scope(session_factory) as session:
+        (left,) = outbox.pending(session, 10)
+        assert (left.payload["grant_id"], left.attempts) == (broken_grant, 1)
+    (error,) = [r for r in log_records if r.level == "ERROR"]
+    assert "could not be rendered" in error.message
+    assert "RuntimeError" in error.message
