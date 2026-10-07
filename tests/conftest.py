@@ -89,3 +89,14 @@ def log_records() -> Iterator[list[LogLine]]:
     yield captured
     logger.remove(sink_id)
     logger.configure(patcher=None)
+
+
+@pytest.fixture(autouse=True)
+def _achievements_off_by_default(request: pytest.FixtureRequest, monkeypatch) -> None:
+    """Every emitted event would otherwise evaluate achievements and pay
+    rewards, changing the exact balances hundreds of economy tests assert.
+    Tests (or modules) marked `achievements` keep evaluation on."""
+    if request.node.get_closest_marker("achievements") is None:
+        from nani_pix_bot.services import events
+
+        monkeypatch.setattr(events, "_dispatch", lambda _session, _event: None)

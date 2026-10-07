@@ -2,6 +2,8 @@
 games is currently allowed) — a singleton row, same pattern as
 services/game/turns.py's TurnState handling."""
 
+from zoneinfo import ZoneInfo
+
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -158,3 +160,11 @@ def clear_quiet_hours(session: Session) -> None:
     # DEBUG: the admin command that calls this logs the change at INFO,
     # naming the admin.
     logger.debug("quiet hours turned off")
+
+
+def get_group_timezone(session: Session) -> ZoneInfo:
+    """The group's timezone: the quiet-hours zone when one is set, else UTC.
+    Achievements count active days, and champions close periods, in it."""
+    settings = session.get(BotSettings, SETTINGS_ID)
+    zone = parse_timezone(settings.quiet_timezone or "") if settings is not None else None
+    return zone or ZoneInfo("UTC")

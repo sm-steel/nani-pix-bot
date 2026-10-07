@@ -6,6 +6,10 @@ from nani_pix_bot.models.base import Base
 # Telegram usernames are capped at 32 chars; headroom for the `@` some
 # callers include.
 USERNAME_LENGTH = 64
+# The achievement title the player chose to show (/title):
+# "<achievement key>:<tier>:<period key>", NULL = none. See
+# services/achievements/titles.py.
+TITLE_KEY_LENGTH = 96
 # IANA zone names top out around 30 chars; headroom.
 TIMEZONE_LENGTH = 64
 
@@ -31,3 +35,7 @@ class Player(Base):
     # to interpret an admin's /quiethours times. NULL = never set.
     timezone: Mapped[str | None] = mapped_column(String(TIMEZONE_LENGTH), default=None)
     currency: Mapped[int] = mapped_column(default=0)
+    # Telegram's first name, kept current by remember_user and used when a
+    # player has no @username.
+    first_name: Mapped[str | None] = mapped_column(String(USERNAME_LENGTH), default=None)
+    title_key: Mapped[str | None] = mapped_column(String(TITLE_KEY_LENGTH), default=None)

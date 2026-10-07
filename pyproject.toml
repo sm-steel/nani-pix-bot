@@ -42,6 +42,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "achievements: run with achievement evaluation switched on (off by default in tests)",
+]
 
 [tool.ruff]
 line-length = 100

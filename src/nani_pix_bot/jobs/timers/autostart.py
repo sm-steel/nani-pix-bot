@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from loguru import logger
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from telegram.ext import ContextTypes, JobQueue
 
@@ -20,10 +21,11 @@ from nani_pix_bot.jobs.timers.inactivity import schedule_inactivity_timers
 from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.jobs.timers.retry import retry_on_failure
 from nani_pix_bot.jobs.timers.turn_timers import cancel_turn_timers
+from nani_pix_bot.models.enums import EventType
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.turn_state import TurnState
+from nani_pix_bot.services import events, i18n, players, quiet_hours, settings
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, players, quiet_hours, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.game import autostart as autostart_service
 
@@ -160,12 +162,28 @@ async def maybe_overthrow(
         )
         claimed = await run_bot_autostart(context, session_factory, claim)
     if claimed:
+        if winner_id is not None:
+            _record_overthrow(session_factory, winner_id)
         return
 
     with session_scope(session_factory) as session:
         turn_state = game_service.get_turn_state(session)
         if turn_state is not None:
             schedule_idle_autostart(context.job_queue, turn_state)
+
+
+def _record_overthrow(session_factory, winner_id: int) -> None:
+    """The dethroned winner's `overthrown` event, in its own transaction."""
+    try:
+        with session_scope(session_factory) as session:
+            events.emit(session, EventType.OVERTHROWN, events.Involved(actor_id=winner_id))
+    except SQLAlchemyError as error:
+        # The game is already claimed; a lost event must not abort the flow.
+        logger.error(
+            "couldn't record the overthrow of {player}: {error}",
+            player=winner_id,
+            error=error,
+        )
 
 
 def _describe_holder(session: Session, next_starter_id: int | None) -> str:

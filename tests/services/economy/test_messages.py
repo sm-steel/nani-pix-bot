@@ -1,10 +1,16 @@
+from datetime import UTC, datetime
+
+import pytest
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models import Player
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.enums import EventType, GameStatus
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.services import events
+from nani_pix_bot.services.economy import messages
 from nani_pix_bot.services.economy.earning import Earnings
 from nani_pix_bot.services.economy.messages import earnings_suffix
+from tests.conftest import LogLine
 
 
 def _game(session: Session, *, setter_username: str | None = "setter") -> Game:
@@ -67,3 +73,51 @@ def test_suffix_has_a_compensation_line(session: Session) -> None:
 
     assert "+30" in suffix.splitlines()[-1]
     assert "Ann" in suffix.splitlines()[-1]
+
+
+def test_a_won_game_gets_the_champion_score_line_after_the_earnings(session: Session) -> None:
+    game = _game(session)
+    session.add(Player(telegram_user_id=2, username="ann"))
+    session.flush()
+    events.emit(
+        session,
+        EventType.GAME_WON,
+        events.Involved(actor_id=2, subject_id=1, game_id=game.id),
+        stage=1,
+        hard_mode=False,
+        how="guess",
+        pot=0,
+        seconds=None,
+        last_slot=False,
+        distinct_guessers=1,
+        winner_wrong=0,
+        first_guess=False,
+        ended_at=datetime.now(UTC).isoformat(),
+    )
+
+    lines = (
+        earnings_suffix(session, game, Earnings(win=25), "en", player_name="Ann")
+        .strip("\n")
+        .split("\n")
+    )
+
+    assert "+25" in lines[0]
+    assert lines[1].startswith("+5 🌟 → week 5 (#1 🆕)")
+    assert lines[2] == "Host @setter +1 🌟"
+
+
+def test_broken_champion_lines_leave_the_earnings_and_log_an_error(
+    session: Session, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
+) -> None:
+    def boom(*_args: object) -> list[str]:
+        msg = "periods broke"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(messages, "win_lines", boom)
+
+    suffix = earnings_suffix(session, _game(session), Earnings(win=25), "en", player_name="Ann")
+
+    assert suffix.count("\n") == 1  # the earnings line alone
+    assert "+25" in suffix
+    (error,) = [r for r in log_records if r.level == "ERROR"]
+    assert error.extra["game_id"] is not None

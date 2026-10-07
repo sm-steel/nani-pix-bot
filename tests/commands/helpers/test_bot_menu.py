@@ -24,6 +24,9 @@ async def test_refresh_command_menu_sets_private_and_group_scopes() -> None:
         "newgame",
         "balance",
         "shop",
+        "achievements",
+        "standings",
+        "title",
         "tip",
         "language",
         "stop",
@@ -53,8 +56,20 @@ async def test_refresh_command_menu_sets_private_and_group_scopes() -> None:
         "correct",
         "skip",
         "leaderboard",
+        "achievements",
+        "standings",
         "balance",
         "tip",
         "help",
         "version",
     }
+
+
+async def test_every_menu_command_has_a_description_in_both_languages() -> None:
+    for lang in ("en", "ru"):
+        bot = MagicMock()
+        bot.set_my_commands = AsyncMock()
+        await refresh_command_menu(bot, group_chat_id=1, lang=lang)
+        for call in bot.set_my_commands.await_args_list:
+            for command in call.args[0]:
+                assert command.description != f"commands.{command.command}"

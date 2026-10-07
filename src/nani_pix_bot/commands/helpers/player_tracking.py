@@ -34,4 +34,5 @@ async def remember_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
-        players.get_or_create_player(session, user.id, username=user.username)
+        player = players.get_or_create_player(session, user.id, username=user.username)
+        players.remember_first_name(player, user.first_name)

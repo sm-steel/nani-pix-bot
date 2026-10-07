@@ -24,6 +24,7 @@ just what's currently built.
 | Win-turn reminder (15min) + expiry (12h) | Implemented |
 | Manual stop with confirmation (`/stop`) | Implemented |
 | Leaderboard (`/leaderboard`) | Implemented |
+| Achievements, titles, champions (`/achievements`, `/title`) | Implemented |
 | Pixels 💠 — earning, `/balance`, `/pixelconfig` | Implemented |
 | Clue shop (`/shop`) — spend 💠 on private clues | Implemented |
 | Public spends — bounty (`/bounty`), `/tip`, `/sharpen` | Implemented |
@@ -1007,7 +1008,224 @@ name).
 
 `/leaderboard`, usable at any time in the game topic regardless of whether
 a game is running, lists players ordered by `players.wins` descending. Each row also shows the
-player's 💠 balance as a column (ranking is still by wins, not 💠).
+player's 💠 balance as a column (ranking is still by wins, not 💠). Wins are
+marked 👑 (🏆 means achievement points everywhere else), and a player's
+chosen title (see "Achievements") follows their name in «».
+
+## Achievements
+
+**Status: Implemented.**
+
+Playing earns **achievements**: each pays 💠 and points, and the top ones
+unlock a title. Weekly, monthly and yearly **champions** are crowned from a
+points race over finished games. The code is `services/achievements/`; the
+design is in `ARCHITECTURE.md`'s "Achievements".
+
+Icons in texts: 💠 currency, 🏆 achievement points, 🌟 champion period
+score, 👑 wins. The two 👑 counts differ: on `/leaderboard` it is the
+lifetime `players.wins`, where a HARD MODE win adds 2; in `/standings` and
+on the period podium it is the number of games won in that period, 1 each
+(HARD MODE included).
+
+In DM, `/achievements` (with its deep link and buttons), `/standings` and
+`/title` are for group members only — anyone can DM the bot, and these
+show members' names and activity. A non-member gets the same "not a
+member" reply the shop gives.
+
+**Every win message shows the 🌟 it earned**, after the 💠 lines:
+`+5 🌟 → week 14 (#1 ⬆2) · month 31 (#2 =) · year 31 (#2 🆕)`. Each part is
+the winner's new total and rank in that running period; `⬆N` is the places
+gained, `=` no change, `🆕` a first score there. A period the game's
+`ended_at` falls outside (an admin `/setwinner` re-finish long after it
+closed) is left out, and with none left there is no line. A normal
+(non-HARD MODE) win adds `Host @name +1 🌟` for the host. The same lines
+close a vote win, an admin-named win, `/correct` and a re-finish.
+
+### Since launch
+
+Only events logged after this release count. `event_log` starts empty and
+nothing reads `games`, `game_guesses` or `currency_transfers` history, so a
+player's first win after the deploy is their first win as far as
+achievements go (Sharpshooter I, and Pioneer for the group's first).
+
+### Rewards
+
+| Rarity | 💠 (default) | Points |
+|---|---|---|
+| Bronze | 25 | 1 |
+| Silver | 75 | 3 |
+| Gold | 200 | 8 |
+| Platinum | 500 | 20 |
+
+The 💠 amounts are the `achievement_bronze`/`_silver`/`_gold`/`_platinum`
+keys in `/pixelconfig`; the points are fixed. A reward is an ordinary
+incoming 💠 transfer (reason `achievement`), so it counts toward Pixel
+Magnate. Points rank the achievements top; ties go to whoever reached the
+score first.
+
+Ladders climb one rarity per tier. The last defined tier and every endless
+tier are Platinum. A ladder's tiers map to rarities by count: 2 tiers G·P,
+3 B·G·P, 4 B·S·G·P, 5 B·S·S·G·P, 6 B·B·S·S·G·P. The exceptions are spelled
+out per ladder below (Purist S·G, Bounty Hunter B·S·G, Milestone Keeper
+G·G·P·P).
+
+### The catalogue
+
+33 achievements, counting Champion of the week/month/year as one family.
+Hidden ones are marked: this file is for maintainers, so their conditions
+are written down, but players see "❔ Hidden" until they earn one.
+
+**Ladders**
+
+| Name | Counts | Tiers |
+|---|---|---|
+| Sharpshooter | Every win as 1: `/guess`, `/correct`, vote and `/setwinner` alike. A HARD MODE win is also 1 | 1·5·10·25·50·100, then +100 endless |
+| Storyteller | Games you hosted that ended WON by someone | 1·5·10·25·50, then +50 endless |
+| Persistent | Distinct games with at least one guess of yours (not raw guesses, which would be spammable) | 5·25·50·100·250 |
+| Pixel Magnate | Lifetime incoming 💠, reversals excluded. Tips received and achievement rewards count | 500·1k·2.5k·5k·10k |
+| Big Spender | Clues and `/sharpen` at purchase; a bounty only when the pot pays a winner | 500·2k·5k·10k |
+| Clue Collector | Clue purchases of any kind; refunded ones still count | 5·25·100 |
+| Patron | Total 💠 tipped | 100·500·2000 |
+| Regular | Distinct active days. Active means you guessed, confirmed a hosted game, voted, or bought a clue. Days are in the group timezone | 7·30·100·365 |
+| Unbroken | Consecutive active-day streak (see "Unbroken" below) | 7·14·30 |
+| Hard Mode Hero | Any HARD MODE win, including vote and `/setwinner` | 1·5·10·25 |
+| Civic Duty | Distinct ballots you voted in, counted at close | 1·5·20 |
+| Eagle Eye | Win at stage 1, or at turn 1 in HARD MODE | 1·5·10 |
+| Stumper | A game you hosted ends UNSOLVED with at least 3 distinct guessers. `/stop` never counts | 1·3·10 |
+| Hat Trick | Consecutive finished games (WON or UNSOLVED, group order) that you won. Any finished game you didn't win resets it, except games you started, which are skipped. A refinished game counts once | 3·5 |
+| Bounty Hunter | Size of a single pot you collected | ≥100 (B) · ≥250 (S) · ≥500 (G) |
+| Purist | HARD MODE win without buying a clue yourself. Clues others shared are fine | 1 (S) · 5 (G) |
+| Wordsmith | Your wrong guesses that revealed at least one new title word | 1·10·25 |
+| On Cue | Prompt-turn bonuses earned, under the existing 1h rule | 1·10·25 |
+
+**One-shots**
+
+| Name | Condition | Rarity |
+|---|---|---|
+| Kingmaker | Your final vote went to the ballot's winner | B |
+| Clutch | Win at stage 5 with exactly one wrong-guess slot left, so the next miss would have been UNSOLVED. Normal games only | G |
+| First Try | The game's very first `/guess` is correct. `/guess` only, normal games only | S |
+| Speed Demon | Win within 60s of the game going live (`games.activated_at`). Normal games only | G |
+| Comeback | Win after at least 3 of your own wrong guesses in that game. Normal games only | B |
+| Crowd Pleaser | A game you hosted (WON or UNSOLVED) drew guesses from at least 5 distinct players | S |
+| People's Champion | Win by ballot plurality. `/setwinner` doesn't count | S |
+| Shopaholic | Buy all 5 clue kinds within one game | S |
+| Explorer | Host confirmed games from all 5 recorded sources: anilist, shikimori, tenrai, tmdb, manual. Shows k/5 progress | S |
+
+My MAL List resolves to `tenrai`, so it isn't counted as a separate source.
+
+**Group-unique** (one holder ever; others see 🔒 "taken by @x")
+
+| Name | Condition | Rarity |
+|---|---|---|
+| Pioneer | The first win after launch | P |
+| Milestone Keeper | The winner of the group's Nth WON game since launch. Tiers 100·250·500·1000, then +500 endless, one holder per tier | G·G·P·P… |
+
+**Periods**
+
+| Name | Rarity |
+|---|---|
+| Champion of the Week (key `2026-W41`) | S |
+| Champion of the Month (key `2026-10`) | G |
+| Champion of the Year (key `2026`) | P |
+
+Grants are keyed by period, so the next period's achievement exists
+automatically.
+
+**Hidden**
+
+| Name | Condition | Rarity |
+|---|---|---|
+| Dethroned | You lost your turn to the bot's overthrow roll | B |
+| So Close | A wrong guess whose fuzzy score landed just under the match threshold (within 5 points) | S |
+| Penny Pincher | `/tip` exactly 1 💠 | B |
+
+A refinished game (`/setwinner` on an unsolved one) emits a second terminal
+event for the same game; Milestone Keeper, Pioneer and Hat Trick count each
+game once. A reward that unlocks another achievement (Pixel Magnate) is
+granted in order, and the engine re-reads what a player already holds
+before each grant, so a cascade never grants a tier twice.
+
+### Money rules
+
+- **Reversals never count and never take anything away.** Refunds
+  (`/refund`, a failed-delivery refund, a bounty pot returned), HARD MODE
+  cashback and any ledger row with `reverses_id` are invisible to
+  achievements: they add no progress, remove none, and never trigger an
+  evaluation, so they can't fire an achievement twice.
+- **The original spend still counts.** Spend 100 and get 100 back: Big
+  Spender counts 100, Pixel Magnate does not count the 100 back, and a
+  refunded clue still counts for Clue Collector and Shopaholic. Clues and
+  `/sharpen` count when paid, because an admin `/refund` can arrive long
+  after the game ended, which makes "count once final" impossible.
+- **Bounty contributions** count toward Big Spender only when the pot goes
+  to a winner (the `bounty_settled` event). A returned pot never counted.
+- **Compensation** for a disputed win counts as normal earnings, and
+  achievement rewards are normal incoming 💠.
+
+### Titles
+
+A title is shown next to your name on `/leaderboard`, in the achievements
+top and in announcements. The ones that confer a title: the group-unique
+achievements, the champions, and the top *defined* tier of every ladder.
+Choose with `/title` (DM only; an earned title or "none").
+
+### Champions
+
+- **Periods** are ISO weeks (Mon–Sun), calendar months and calendar years
+  in the group timezone (the quiet-hours timezone, UTC if none). The first
+  partial periods after launch count normally.
+- **Score.** A win at stage 1–5 is worth 5/4/3/2/1; a HARD MODE win at
+  turn 1/2 is worth 6/4; hosting a game someone solved is +1.
+- **Live view.** `/standings` (topic or DM) shows the running week, month
+  and year in one message: each top 5 as a table of 🌟 score and 👑 wins,
+  plus your own line (rank, score, wins) when you are outside the top 5, or
+  a note that you haven't scored yet. It reads the same scoring the closing
+  uses, so it can never disagree with the final podium.
+- **Ties** go to more wins, then to whoever reached the score first, so
+  #1 is always unique.
+- **A game counts in the period it ended in.** The end time is the
+  `ended_at` recorded in the win event, so a `/setwinner` re-finish keeps
+  the period of the original ending.
+- **Closing.** A period closes at local midnight; the ranking is frozen at
+  the boundary. The posts wait out quiet hours. A one-shot boundary job
+  closes what ended and re-arms for the next boundary. After downtime,
+  start-up closes every missed period, oldest first, exactly once. The very
+  first start only arms the periods running at that moment (nothing before
+  launch is scored). Coinciding boundaries go week, month, year.
+- **Posting.** The top 3 are posted as a podium card, and only #1 gets the
+  Champion achievement (and title); the summary is immediately followed by
+  that unlock. A period nobody scored in is not posted.
+
+### Unbroken
+
+A day on which nobody in the group played doesn't break a streak. "Played"
+means someone logged a guess, a confirmed hosted game, a vote or a clue
+purchase that day, so the streak is measured from the event log.
+
+### Announcements
+
+Every unlock is posted to the game topic as an image card (with the
+player's avatar, or initials if there is none) with the text as the
+caption. Three or more unlocks from one event go out as an album (chunks of
+10). Posts are queued in the same transaction as the grant and sent by a
+job every 20 seconds, so a crash can't lose one; delivery is at-least-once,
+so a crash between the send and the bookkeeping can post one twice. Quiet
+hours make posts wait. A post that keeps failing is given up after 3
+attempts with an ERROR, and a drain stops at the first failed send so order
+holds; one that can't be drawn goes out as plain text.
+
+### Views
+
+- `/achievements` in the game topic: a rich summary (count, points, rank,
+  title, latest unlocks) with a **Browse in DM** button; `/achievements top`
+  for the top 10 by points.
+- The DM browser (`/achievements [@username]` or the button): one message
+  edited in place, tabs All / Earned / Not yet, 8 rows per page, a ladder
+  as one row with progress to its next tier.
+- **Compare** with another player (All / Only they have / Only you have)
+  and **Top** are reached from the browser.
+- `/title`.
 
 ## Pixels 💠
 

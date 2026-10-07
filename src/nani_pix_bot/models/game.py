@@ -137,6 +137,10 @@ class Game(Base):
     # handed to a specific player; None if it was open to anyone) — the
     # prompt-turn currency bonus compares it with created_at (services/economy/earning.py).
     turn_received_at: Mapped[datetime | None] = mapped_column(default=None)
+    # When the game went ACTIVE (services/game/state.py's activate_game) —
+    # created_at is when setup *started*. Speed Demon measures from here.
+    # NULL for games activated before this column existed.
+    activated_at: Mapped[datetime | None] = mapped_column(default=None)
     scheduled_end_at: Mapped[datetime | None] = mapped_column(default=None)
     # When the game reached WON or UNSOLVED — set by services/game/state.py's
     # _win()/force_unsolved(), which every ending goes through. NULL while

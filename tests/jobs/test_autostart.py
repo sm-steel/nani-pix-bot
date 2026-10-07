@@ -3,11 +3,14 @@ from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.jobs.timers import autostart as autostart_timers
 from nani_pix_bot.models.bot_settings import BotSettings
-from nani_pix_bot.models.enums import GameStatus, Provider
+from nani_pix_bot.models.enums import EventType, GameStatus, Provider
+from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
@@ -248,6 +251,104 @@ async def test_maybe_overthrow_claims_the_game_on_a_hit(
         turn_state = game_service.get_turn_state(session)
         assert turn_state is not None
         assert turn_state.next_starter_id is None
+
+
+def _overthrown_events(session_factory) -> list[EventLog]:
+    with session_factory() as session:
+        stmt = select(EventLog).where(EventLog.event_type == EventType.OVERTHROWN)
+        return list(session.scalars(stmt))
+
+
+async def test_a_claimed_overthrow_logs_the_dethroned_winner(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
+        session.add(BotSettings(id=1, games_enabled=True, autostart_enabled=True))
+        session.commit()
+    context = _make_context(session_factory)
+    monkeypatch.setattr(autostart_service, "roll_overthrow", lambda: True)
+    monkeypatch.setattr(
+        "nani_pix_bot.services.pixelate.pixelate",
+        lambda image_bytes, target_width, algorithm: b"pixelated",
+    )
+
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+        return _fake_pick()
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+
+    await autostart_timers.maybe_overthrow(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        winner_id=1,
+        winner_name="frieren",
+    )
+
+    (row,) = _overthrown_events(session_factory)
+    assert row.actor_id == 1
+
+
+async def test_a_failed_overthrow_event_write_is_logged_and_does_not_abort(
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
+) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
+        session.add(BotSettings(id=1, games_enabled=True, autostart_enabled=True))
+        session.commit()
+    context = _make_context(session_factory)
+    monkeypatch.setattr(autostart_service, "roll_overthrow", lambda: True)
+    monkeypatch.setattr(
+        "nani_pix_bot.services.pixelate.pixelate",
+        lambda image_bytes, target_width, algorithm: b"pixelated",
+    )
+
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+        return _fake_pick()
+
+    real_emit = autostart_timers.events.emit
+
+    def failing_emit(session, event_type, *args, **kwargs):
+        if event_type == EventType.OVERTHROWN:
+            raise SQLAlchemyError("db down")
+        return real_emit(session, event_type, *args, **kwargs)
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+    monkeypatch.setattr(autostart_timers.events, "emit", failing_emit)
+
+    await autostart_timers.maybe_overthrow(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        winner_id=1,
+        winner_name="frieren",
+    )
+
+    [line] = [r for r in log_records if r.message.startswith("couldn't record the overthrow of")]
+    assert line.level == "ERROR"
+    assert line.extra["player"] == 1
+
+
+async def test_a_missed_overthrow_roll_logs_no_event(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
+        session.add(BotSettings(id=1, games_enabled=True, autostart_enabled=True))
+        session.commit()
+    context = _make_context(session_factory)
+    monkeypatch.setattr(autostart_service, "roll_overthrow", lambda: False)
+
+    await autostart_timers.maybe_overthrow(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        winner_id=1,
+        winner_name="frieren",
+    )
+
+    assert _overthrown_events(session_factory) == []
 
 
 async def test_run_bot_autostart_cancels_the_idle_autostart_timer_on_success(

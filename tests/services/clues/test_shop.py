@@ -1,8 +1,10 @@
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models import CluePurchase, CurrencyTransfer, Player
-from nani_pix_bot.models.enums import ClueKind, GameStatus, PixelStage, Provider
+from nani_pix_bot.models.enums import ClueKind, EventType, GameStatus, PixelStage, Provider
+from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.clues import shop
@@ -500,3 +502,29 @@ def test_refund_without_cashback_deducts_nothing(session: Session) -> None:
 
     (item,) = shop.refundable_purchases(session, BUYER)
     assert (item.amount, item.cashback_deducted) == (60, 0)
+
+
+def _logged(session: Session, event_type: EventType) -> list[EventLog]:
+    stmt = select(EventLog).where(EventLog.event_type == event_type).order_by(EventLog.id)
+    return list(session.scalars(stmt))
+
+
+def test_purchase_logs_a_clue_purchased_event(session: Session) -> None:
+    game, buyer = _setup(session)
+
+    shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TITLE_SHAPE))
+
+    (row,) = _logged(session, EventType.CLUE_PURCHASED)
+    assert (row.actor_id, row.game_id) == (BUYER, game.id)
+    assert row.data == {"kind": "title_shape"}
+
+
+def test_refund_logs_a_clue_refunded_event(session: Session) -> None:
+    game, buyer = _setup(session)
+    bought = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TITLE_SHAPE))
+
+    shop.refund(session, bought)
+
+    (row,) = _logged(session, EventType.CLUE_REFUNDED)
+    assert (row.actor_id, row.game_id) == (BUYER, game.id)
+    assert row.data == {"kind": "title_shape"}

@@ -112,12 +112,12 @@ def test_transfer_rejects_same_party_before_touching_anything(session: Session, 
 
 def test_transfer_player_to_pot_requires_game_id(session: Session) -> None:
     alice = _player(session, 1, currency=10)
-    wallet.transfer(
-        session, Party.of(alice), Party.pot(), 3, wallet.LedgerEntry(CurrencyReason.GRANT)
-    )
-
+    # transfer() flushes (it logs a currency_moved event), so the constraint
+    # fires inside it rather than at a later flush.
     with pytest.raises(IntegrityError):
-        session.flush()
+        wallet.transfer(
+            session, Party.of(alice), Party.pot(), 3, wallet.LedgerEntry(CurrencyReason.GRANT)
+        )
 
 
 def test_transfer_player_to_pot_with_game_succeeds(session: Session) -> None:

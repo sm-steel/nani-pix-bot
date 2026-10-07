@@ -5,19 +5,20 @@ bookkeeping (a related but distinct concern) lives in turns.py."""
 import enum
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from loguru import logger
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from nani_pix_bot import log_context
-from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider
+from nani_pix_bot.models.enums import EventType, GameStatus, PixelStage, Provider, WinMethod
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.services import i18n, matching, players
+from nani_pix_bot.services import events, i18n, matching, players
 from nani_pix_bot.services.clues import text as clue_text
 from nani_pix_bot.services.game import guesses, turns
 from nani_pix_bot.services.game.clock import deadline_after
+from nani_pix_bot.services.game.win_facts import win_facts
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
@@ -57,6 +58,16 @@ def stage_label(stage: PixelStage) -> str:
     """`stage 2/5` — how a stage reads in log lines, rather than the
     `PixelStage.STAGE_2` enum repr."""
     return f"stage {STAGE_ORDER.index(stage) + 1}/{len(STAGE_ORDER)}"
+
+
+@dataclass(frozen=True)
+class WinTerms:
+    """What a win is worth and how it came about: the wins-counter `award`
+    (HARD MODE wins count more) and the `how` recorded on its `game_won`
+    event. Bundled so _win/_record_win stay under qlty's parameter limit."""
+
+    award: int = 1
+    how: WinMethod = WinMethod.GUESS
 
 
 class GuessOutcome(enum.Enum):
@@ -425,6 +436,7 @@ def activate_game(session: Session, game: Game) -> None:
     stage_result): move to the first stage and open the turn (the
     designated starter's turn is now consumed)."""
     game.status = GameStatus.ACTIVE
+    game.activated_at = datetime.now(UTC)
     if game.hard_mode:
         game.hard_mode_turn = 1
     else:
@@ -443,6 +455,14 @@ def activate_game(session: Session, game: Game) -> None:
         answer=display_title(game, "EN"),
         hard_mode=game.hard_mode,
         game_id=game.id,
+    )
+    events.emit(
+        session,
+        EventType.GAME_ACTIVATED,
+        events.Involved(actor_id=game.starter_id, game_id=game.id),
+        source=str(game.source),
+        hard_mode=game.hard_mode,
+        own_screenshot=game.screenshot_source is None,
     )
 
 
@@ -500,6 +520,7 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
             stage=STAGE_ORDER.index(game.current_stage) + 1,
             correct=correct,
             partial_reveal=reveal,
+            score=None if correct else matching.best_score(guess_text, match_candidates(game)),
         ),
     )
     if correct:
@@ -592,6 +613,14 @@ def advance_stage(game: Game, *, reason: str) -> GuessOutcome:
         reason=reason,
         game_id=game.id,
     )
+    _emit_detached(
+        game,
+        EventType.STAGE_ADVANCED,
+        events.Involved(game_id=game.id),
+        from_stage=next_index,
+        to_stage=next_index + 1,
+        reason=reason,
+    )
     return GuessOutcome.STAGE_ADVANCED
 
 
@@ -629,21 +658,25 @@ def force_win(session: Session, game: Game, *, winner_id: int) -> None:
         # Local import — see record_guess's identical guard above for why.
         from nani_pix_bot.services.game import hard_mode
 
-        _win(session, game, winner_id=winner_id, award=hard_mode.HARD_MODE_WIN_AWARD)
+        terms = WinTerms(award=hard_mode.HARD_MODE_WIN_AWARD, how=WinMethod.CORRECT)
     else:
-        _win(session, game, winner_id=winner_id)
+        terms = WinTerms(how=WinMethod.CORRECT)
+    _win(session, game, winner_id=winner_id, terms=terms)
 
 
-def _win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> None:
+def _win(session: Session, game: Game, *, winner_id: int, terms: WinTerms | None = None) -> None:
     """A win: record it (see _record_win) and hand the turn to the winner."""
-    _record_win(session, game, winner_id=winner_id, award=award)
+    _record_win(session, game, winner_id=winner_id, terms=terms)
     turns.set_next_starter(session, winner_id, reason=f"won game {game.id}")
 
 
-def _record_win(session: Session, game: Game, *, winner_id: int, award: int = 1) -> None:
+def _record_win(
+    session: Session, game: Game, *, winner_id: int, terms: WinTerms | None = None
+) -> None:
     """The win itself — status, winner, ended_at, wins counter — without
     touching whose turn it is next (a re-finish that keeps the turn uses
     this directly)."""
+    terms = terms or WinTerms()
     game.status = GameStatus.WON
     game.winner_id = winner_id
     # An admin re-finish (services/game/refinish.py) keeps the original
@@ -651,8 +684,9 @@ def _record_win(session: Session, game: Game, *, winner_id: int, award: int = 1)
     if game.ended_at is None:
         game.ended_at = datetime.now(UTC)
 
+    facts = win_facts(session, game, winner_id, terms.how)
     winner = players.get_or_create_player(session, winner_id)
-    winner.wins += award
+    winner.wins += terms.award
 
     winner_text = players.describe_player_id(session, winner_id)
     if game.hard_mode:
@@ -668,6 +702,23 @@ def _record_win(session: Session, game: Game, *, winner_id: int, award: int = 1)
         stage=where,
         game_id=game.id,
     )
+    events.emit(
+        session,
+        EventType.GAME_WON,
+        events.Involved(actor_id=winner_id, subject_id=game.starter_id, game_id=game.id),
+        **facts,
+    )
+
+
+def _emit_detached(
+    game: Game, event_type: EventType, involved: events.Involved, **data: Any
+) -> None:
+    """emit() for the two state functions that only take a game."""
+    session = object_session(game)
+    if session is None:
+        logger.debug("game not in a session — {event_type} not logged", event_type=event_type.value)
+        return
+    events.emit(session, event_type, involved, **data)
 
 
 def force_unsolved(game: Game, *, cause: str) -> None:
@@ -677,6 +728,16 @@ def force_unsolved(game: Game, *, cause: str) -> None:
     game.status = GameStatus.UNSOLVED
     game.ended_at = datetime.now(UTC)
     logger.info("ended UNSOLVED ({cause})", cause=cause, game_id=game.id)
+    session = object_session(game)
+    guessed = 0 if session is None else len(guesses.guessers(session, game.id))
+    _emit_detached(
+        game,
+        EventType.GAME_UNSOLVED,
+        events.Involved(subject_id=game.starter_id, game_id=game.id),
+        cause=cause,
+        hard_mode=game.hard_mode,
+        distinct_guessers=guessed,
+    )
 
 
 def has_answer_to_reveal(game: Game) -> bool:

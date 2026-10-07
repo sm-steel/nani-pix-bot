@@ -1,5 +1,6 @@
 from nani_pix_bot.services.matching import (
     PartialMatch,
+    best_score,
     is_match,
     normalize,
     partial_match,
@@ -162,3 +163,13 @@ def test_short_particles_in_the_guess_still_cover_their_title_words() -> None:
     # plus every other word still names the whole title.
     assert partial_match("titan on attack", ["Attack on Titan"], min_letters=4) is None
     assert partial_match("no kyojin shingeki", ["Shingeki no Kyojin"], min_letters=4) is None
+
+
+def test_best_score_is_the_highest_ratio_against_any_candidate() -> None:
+    assert best_score("frieren", ["Naruto", "Frieren"]) == 100.0
+    assert 0 < best_score("frieran", ["Frieren"]) < 100.0
+
+
+def test_best_score_is_zero_for_an_empty_guess_or_no_candidates() -> None:
+    assert best_score("   ", ["Frieren"]) == 0.0
+    assert best_score("frieren", [None, ""]) == 0.0
