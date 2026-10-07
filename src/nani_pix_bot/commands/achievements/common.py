@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.services import players
 
 DEEP_LINK_PREFIX = "ach_"
+MAX_ID = 2**63 - 1  # BigInteger ceiling: anything larger would overflow the DB
 PREFIX = "ach:"  # callback-data prefix of every achievements button
 
 

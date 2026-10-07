@@ -15,7 +15,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements import render
-from nani_pix_bot.commands.achievements.common import PREFIX
+from nani_pix_bot.commands.achievements.common import MAX_ID, PREFIX
 from nani_pix_bot.commands.helpers.rich import RichTarget, edit_rich, md_escape, send_rich
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, players, settings
@@ -55,9 +55,10 @@ def parse(data: str) -> tuple[str, list[int | str]] | None:
     shape = _SHAPES.get(action)
     if shape is None or len(fields) != len(shape):
         return None
-    if any(is_int and not raw.isdecimal() for raw, is_int in zip(fields, shape, strict=True)):
+    pairs = list(zip(fields, shape, strict=True))
+    if any(is_int and not (raw.isdecimal() and int(raw) <= MAX_ID) for raw, is_int in pairs):
         return None
-    return action, [int(raw) if is_int else raw for raw, is_int in zip(fields, shape, strict=True)]
+    return action, [int(raw) if is_int else raw for raw, is_int in pairs]
 
 
 def clamp_page(page: int, *, total: int, size: int = PAGE_SIZE) -> int:
@@ -122,8 +123,9 @@ def browse_view(session: Session, request: Browse, lang: str) -> Rendered:
 
 
 def top_view(session: Session, page: int, lang: str) -> Rendered:
-    page = clamp_page(page, total=status.ranked_count(session), size=TOP_PAGE_SIZE)
-    pages = max(1, -(-status.ranked_count(session) // TOP_PAGE_SIZE))
+    total = status.ranked_count(session)
+    page = clamp_page(page, total=total, size=TOP_PAGE_SIZE)
+    pages = max(1, -(-total // TOP_PAGE_SIZE))
     rows = status.top(session, limit=TOP_PAGE_SIZE, offset=page * TOP_PAGE_SIZE)
     markdown = render.top_table(session, rows, lang, page * TOP_PAGE_SIZE)
     nav = nav_row(top_data, page, pages, lang)

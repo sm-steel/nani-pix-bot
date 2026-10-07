@@ -85,3 +85,34 @@ async def test_ignored_outside_the_game_topic(session_factory) -> None:
     sent = await _run(_update(thread_id=99), _context(session_factory, []))
 
     sent.assert_not_awaited()
+
+
+async def test_in_dm_a_named_player_opens_the_browser(session_factory) -> None:
+    with session_scope(session_factory) as session:
+        session.add_all([Player(telegram_user_id=1), Player(telegram_user_id=2, username="bob")])
+    update = _update()
+    update.effective_chat.type = "private"
+
+    with patch.object(achievements.browser, "open_browser", new=AsyncMock()) as opened:
+        await achievements.achievements_command(
+            cast(Update, update),
+            cast(ContextTypes.DEFAULT_TYPE, _context(session_factory, ["@bob"])),
+        )
+
+    assert opened.await_args_list[0].args[2] == achievements.browser.Browse(1, 2)
+
+
+async def test_in_dm_an_unknown_player_gets_the_unknown_reply(session_factory) -> None:
+    with session_scope(session_factory) as session:
+        session.add(Player(telegram_user_id=1))
+    update = _update()
+    update.effective_chat.type = "private"
+
+    with patch.object(achievements.browser, "open_browser", new=AsyncMock()) as opened:
+        await achievements.achievements_command(
+            cast(Update, update),
+            cast(ContextTypes.DEFAULT_TYPE, _context(session_factory, ["@nobody"])),
+        )
+
+    opened.assert_not_awaited()
+    assert "@nobody" in update.message.reply_text.await_args_list[0].args[0]

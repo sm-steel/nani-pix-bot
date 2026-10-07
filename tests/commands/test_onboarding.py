@@ -149,3 +149,17 @@ async def test_a_malformed_achievements_deep_link_falls_back_to_start(session_fa
 
     opened.assert_not_awaited()
     update.message.reply_text.assert_awaited_once()
+
+
+async def test_an_oversized_achievements_deep_link_is_ignored(session_factory, records) -> None:
+    update = _make_dm_update()
+    context = _make_context(session_factory)
+    context.args = ["ach_99999999999999999999"]
+
+    with patch.object(onboarding, "open_browser", new=AsyncMock()) as opened:
+        await onboarding.start_command(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    opened.assert_not_awaited()
+    assert any(level == "WARNING" for level, _ in records)

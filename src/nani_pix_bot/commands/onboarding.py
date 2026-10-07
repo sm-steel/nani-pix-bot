@@ -7,7 +7,7 @@ from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.browser import Browse, open_browser
-from nani_pix_bot.commands.achievements.common import DEEP_LINK_PREFIX
+from nani_pix_bot.commands.achievements.common import DEEP_LINK_PREFIX, MAX_ID
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.commands.shop import open_shop
 from nani_pix_bot.db import session_scope
@@ -20,7 +20,7 @@ def _achievements_owner(args: list[str] | None) -> int | None:
     if not args or len(args) != 1 or not args[0].startswith(DEEP_LINK_PREFIX):
         return None
     raw = args[0].removeprefix(DEEP_LINK_PREFIX)
-    if not raw.isdecimal():
+    if not raw.isdecimal() or int(raw) > MAX_ID:
         logger.warning("ignored a malformed achievements deep link {arg!r}", arg=args[0])
         return None
     return int(raw)
