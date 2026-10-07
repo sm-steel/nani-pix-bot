@@ -24,7 +24,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.enums import GameStatus, WinMethod
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import matching
 from nani_pix_bot.services.game import guesses, state
@@ -115,6 +115,9 @@ def record_hard_mode_guess(
             stage=_current_turn(game),
             correct=correct,
             partial_reveal=reveal,
+            score=None
+            if correct
+            else matching.best_score(guess_text, state.match_candidates(game)),
         ),
     )
     if correct:
@@ -124,7 +127,12 @@ def record_hard_mode_guess(
             stage=_turn_label(game),
             game_id=game.id,
         )
-        state._win(session, game, winner_id=guesser_id, award=HARD_MODE_WIN_AWARD)
+        state._win(
+            session,
+            game,
+            winner_id=guesser_id,
+            terms=state.WinTerms(award=HARD_MODE_WIN_AWARD, how=WinMethod.GUESS),
+        )
         return GuessOutcome.WON
 
     game.wrong_guess_count += 1

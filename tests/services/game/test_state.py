@@ -1240,7 +1240,7 @@ def test_win_explicit_award_is_honored(session: Session) -> None:
     session.add(Player(telegram_user_id=2))
     session.commit()
 
-    state._win(session, game, winner_id=2, award=5)
+    state._win(session, game, winner_id=2, terms=state.WinTerms(award=5))
     session.commit()
 
     winner = session.get(Player, 2)
@@ -1437,3 +1437,14 @@ def test_win_keeps_an_already_set_ended_at(session: Session) -> None:
     state._win(session, game, winner_id=2)
 
     assert game.ended_at == earlier
+
+
+def test_activate_game_stamps_activated_at(session: Session) -> None:
+    game = _active_game(session)
+    game.status = GameStatus.SETUP
+    before = datetime.now(UTC)
+
+    game_service.activate_game(session, game)
+
+    assert game.activated_at is not None
+    assert game.activated_at >= before

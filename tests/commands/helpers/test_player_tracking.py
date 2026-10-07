@@ -15,7 +15,11 @@ def _make_context(session_factory) -> MagicMock:
 
 
 def _make_update(
-    *, user_id: int | None = 1, username: str | None = "someone", is_bot: bool = False
+    *,
+    user_id: int | None = 1,
+    username: str | None = "someone",
+    is_bot: bool = False,
+    first_name: str | None = None,
 ) -> MagicMock:
     update = MagicMock()
     if user_id is None:
@@ -24,6 +28,7 @@ def _make_update(
     update.effective_user.id = user_id
     update.effective_user.username = username
     update.effective_user.is_bot = is_bot
+    update.effective_user.first_name = first_name
     return update
 
 
@@ -86,3 +91,14 @@ async def test_remember_user_ignores_an_update_with_no_user(session_factory) -> 
 
     with session_factory() as session:
         assert session.query(Player).count() == 0
+
+
+async def test_remember_user_records_the_first_name(session_factory) -> None:
+    await _remember(
+        _make_update(user_id=9, username=None, first_name="Kari"), _make_context(session_factory)
+    )
+
+    with session_factory() as session:
+        player = session.get(Player, 9)
+        assert player is not None
+        assert player.first_name == "Kari"

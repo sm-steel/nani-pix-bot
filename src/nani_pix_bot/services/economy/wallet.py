@@ -9,8 +9,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
-from nani_pix_bot.models.enums import CurrencyParty, CurrencyReason
+from nani_pix_bot.models.enums import CurrencyParty, CurrencyReason, EventType
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.services import events
+
+# Money coming back rather than being earned: refunds (always naming the
+# charge via reverses_id) and HARD MODE cashback. Achievements ignore
+# these entirely (spec §2).
+REVERSAL_REASONS: frozenset[CurrencyReason] = frozenset(
+    {CurrencyReason.REFUND, CurrencyReason.CASHBACK}
+)
 
 
 @dataclass(frozen=True)
@@ -113,6 +121,18 @@ def transfer(
         to_type=target.type.value,
         to_id=target.player_id,
         **entry.log_fields(),
+    )
+    events.emit(
+        session,
+        EventType.CURRENCY_MOVED,
+        events.Involved(
+            actor_id=source.player_id, subject_id=target.player_id, game_id=entry.game_id
+        ),
+        amount=amount,
+        reason=entry.reason.value,
+        from_type=source.type.value,
+        to_type=target.type.value,
+        reversal=entry.reverses_id is not None or entry.reason in REVERSAL_REASONS,
     )
     return row
 

@@ -142,3 +142,26 @@ def test_describe_player_id_reads_the_stored_username(session: Session) -> None:
 
     assert players.describe_player_id(session, 7) == "7 (@carol)"
     assert players.describe_player_id(session, 8) == "8"
+
+
+def test_display_name_prefers_the_handle_and_falls_back_to_the_id(session: Session) -> None:
+    session.add_all([Player(telegram_user_id=1, username="bob"), Player(telegram_user_id=2)])
+    session.flush()
+
+    assert players.display_name(session, 1) == "@bob"
+    assert players.display_name(session, 2) == "2"
+    assert players.display_name(session, 3) == "3"
+
+
+def test_display_name_falls_back_to_the_first_name(session: Session) -> None:
+    player = Player(telegram_user_id=4)
+    session.add(player)
+    players.remember_first_name(player, "Карина")
+
+    assert players.display_name(session, 4) == "Карина"
+
+
+def test_remember_first_name_never_blanks_a_known_name() -> None:
+    player = Player(telegram_user_id=4, first_name="Kari")
+    players.remember_first_name(player, None)
+    assert player.first_name == "Kari"

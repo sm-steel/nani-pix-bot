@@ -12,10 +12,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
-from nani_pix_bot.models.enums import CurrencyParty, CurrencyReason, GameStatus
+from nani_pix_bot.models.enums import CurrencyParty, CurrencyReason, EventType, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
-from nani_pix_bot.services import i18n, players
+from nani_pix_bot.services import events, i18n, players
 from nani_pix_bot.services.economy import wallet
 
 BOUNTY_MIN = 30
@@ -88,6 +88,17 @@ def pay_out(session: Session, game: Game, winner: Player) -> int:
     amount = pot_balance(session, game.id)
     if amount <= 0:
         return 0
+    for contribution in _unrefunded_contributions(session, game.id):
+        events.emit(
+            session,
+            EventType.BOUNTY_SETTLED,
+            events.Involved(
+                actor_id=contribution.from_player_id,
+                subject_id=winner.telegram_user_id,
+                game_id=game.id,
+            ),
+            amount=contribution.amount,
+        )
     wallet.transfer(
         session,
         wallet.Party.pot(),

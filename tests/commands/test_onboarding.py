@@ -1,11 +1,14 @@
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from telegram import Update
+from telegram.constants import ChatMemberStatus
 from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import onboarding
+from nani_pix_bot.commands.achievements.browser import Browse
+from nani_pix_bot.services import i18n
 
 
 def _make_context(session_factory, **extra_bot_data) -> MagicMock:
@@ -18,6 +21,7 @@ def _make_context(session_factory, **extra_bot_data) -> MagicMock:
         **extra_bot_data,
     }
     context.bot.send_message = AsyncMock()
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=ChatMemberStatus.MEMBER))
     return context
 
 
@@ -120,3 +124,63 @@ async def test_help_command_drops_the_mention_when_the_bot_has_no_handle_yet(
     update.message.reply_text.assert_awaited_once()
     reply_text = update.message.reply_text.await_args.args[0]
     assert "@" not in reply_text
+
+
+async def test_start_with_an_achievements_deep_link_opens_the_browser(session_factory) -> None:
+    update = _make_dm_update(user_id=1)
+    context = _make_context(session_factory)
+    context.args = ["ach_2"]
+
+    with patch.object(onboarding, "open_browser", new=AsyncMock()) as opened:
+        await onboarding.start_command(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    assert opened.await_args_list[0].args[2] == Browse(viewer_id=1, owner_id=2)
+    update.message.reply_text.assert_not_awaited()
+
+
+async def test_a_malformed_achievements_deep_link_falls_back_to_start(session_factory) -> None:
+    update = _make_dm_update()
+    context = _make_context(session_factory)
+    context.args = ["ach_x"]
+
+    with patch.object(onboarding, "open_browser", new=AsyncMock()) as opened:
+        await onboarding.start_command(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    opened.assert_not_awaited()
+    update.message.reply_text.assert_awaited_once()
+
+
+async def test_an_oversized_achievements_deep_link_is_ignored(session_factory, records) -> None:
+    update = _make_dm_update()
+    context = _make_context(session_factory)
+    context.args = ["ach_99999999999999999999"]
+
+    with patch.object(onboarding, "open_browser", new=AsyncMock()) as opened:
+        await onboarding.start_command(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    opened.assert_not_awaited()
+    assert any(level == "WARNING" for level, _ in records)
+
+
+async def test_an_achievements_deep_link_is_refused_to_a_non_member(
+    session_factory, records
+) -> None:
+    update = _make_dm_update(user_id=9)
+    context = _make_context(session_factory)
+    context.args = ["ach_2"]
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=ChatMemberStatus.LEFT))
+
+    with patch.object(onboarding, "open_browser", new=AsyncMock()) as opened:
+        await onboarding.start_command(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    opened.assert_not_awaited()
+    update.message.reply_text.assert_awaited_once_with(i18n.t("dm_start.not_a_member", "en"))
+    assert any(level == "WARNING" and "not a group member" in m for level, m in records)

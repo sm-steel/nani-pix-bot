@@ -310,6 +310,7 @@ class CurrencyReason(enum.StrEnum):
     SHARPEN = "sharpen"
     CASHBACK = "cashback"
     COMPENSATION = "compensation"
+    ACHIEVEMENT = "achievement"
 
 
 class CurrencyParty(enum.StrEnum):
@@ -329,3 +330,54 @@ class ClueKind(enum.StrEnum):
     TITLE_SHAPE = "title_shape"
     SCREENSHOT = "screenshot"
     TILE = "tile"
+
+
+class EventType(enum.StrEnum):
+    """What an `event_log` row records (services/events.py). Stored as a plain
+    string, like CurrencyReason: the set grows with every consumer."""
+
+    GAME_ACTIVATED = "game_activated"
+    GUESS = "guess"
+    GAME_WON = "game_won"
+    GAME_UNSOLVED = "game_unsolved"
+    STAGE_ADVANCED = "stage_advanced"
+    VOTE_COUNTED = "vote_counted"
+    OVERTHROWN = "overthrown"
+    CURRENCY_MOVED = "currency_moved"
+    CLUE_PURCHASED = "clue_purchased"
+    CLUE_REFUNDED = "clue_refunded"
+    BOUNTY_SETTLED = "bounty_settled"
+
+
+class WinMethod(enum.StrEnum):
+    """How a game was won, recorded on its `game_won` event."""
+
+    GUESS = "guess"
+    CORRECT = "correct"
+    VOTE = "vote"
+    SETWINNER = "setwinner"
+
+
+class Rarity(enum.StrEnum):
+    """An achievement tier's rarity band — sets its 💠 reward and points
+    (services/achievements/rewards.py). Stored as a plain string."""
+
+    BRONZE = "bronze"
+    SILVER = "silver"
+    GOLD = "gold"
+    PLATINUM = "platinum"
+
+
+class OutboxKind(enum.StrEnum):
+    """What an announcement_outbox row will post. Stored as a plain string."""
+
+    UNLOCK = "unlock"
+    PERIOD_SUMMARY = "period_summary"
+
+
+class PeriodType(enum.StrEnum):
+    """A champion period (services/achievements/periods.py). Plain string."""
+
+    WEEK = "week"
+    MONTH = "month"
+    YEAR = "year"

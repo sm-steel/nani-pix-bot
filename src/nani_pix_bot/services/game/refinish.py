@@ -9,7 +9,7 @@ import enum
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.enums import GameStatus, WinMethod
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import players
 from nani_pix_bot.services.game import state
@@ -46,4 +46,5 @@ def refinish(session: Session, game: Game, *, winner_id: int) -> None:
         game_id=game.id,
     )
     award = HARD_MODE_WIN_AWARD if game.hard_mode else 1
-    state._record_win(session, game, winner_id=winner_id, award=award)
+    terms = state.WinTerms(award=award, how=WinMethod.SETWINNER)
+    state._record_win(session, game, winner_id=winner_id, terms=terms)

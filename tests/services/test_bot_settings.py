@@ -194,3 +194,12 @@ def test_set_partial_match_min_letters_stores_zero(session: Session) -> None:
 def test_set_partial_match_min_letters_rejects_negative(session: Session) -> None:
     with pytest.raises(ValueError, match="negative"):
         settings.set_partial_match_min_letters(session, -1)
+
+
+def test_group_timezone_is_the_quiet_hours_zone_else_utc(session: Session) -> None:
+    assert settings.get_group_timezone(session) == ZoneInfo("UTC")
+
+    session.add(BotSettings(id=settings.SETTINGS_ID, quiet_timezone="Europe/Moscow"))
+    session.flush()
+
+    assert settings.get_group_timezone(session) == ZoneInfo("Europe/Moscow")

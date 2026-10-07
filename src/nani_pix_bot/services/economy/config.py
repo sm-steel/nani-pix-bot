@@ -34,6 +34,10 @@ class EconomyKey(enum.StrEnum):
     SHARPEN = "sharpen"
     CLUE_CASHBACK_PERCENT = "clue_cashback_percent"
     DISPUTED_WIN_BONUS = "disputed_win_bonus"
+    ACHIEVEMENT_BRONZE = "achievement_bronze"
+    ACHIEVEMENT_SILVER = "achievement_silver"
+    ACHIEVEMENT_GOLD = "achievement_gold"
+    ACHIEVEMENT_PLATINUM = "achievement_platinum"
 
 
 DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
@@ -58,6 +62,10 @@ DEFAULT_AMOUNTS: Mapping[EconomyKey, int] = MappingProxyType(
         EconomyKey.SHARPEN: 250,
         EconomyKey.CLUE_CASHBACK_PERCENT: 50,
         EconomyKey.DISPUTED_WIN_BONUS: 30,
+        EconomyKey.ACHIEVEMENT_BRONZE: 25,
+        EconomyKey.ACHIEVEMENT_SILVER: 75,
+        EconomyKey.ACHIEVEMENT_GOLD: 200,
+        EconomyKey.ACHIEVEMENT_PLATINUM: 500,
     }
 )
 
