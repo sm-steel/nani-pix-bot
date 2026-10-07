@@ -1160,6 +1160,11 @@ Choose with `/title` (DM only; an earned title or "none").
   partial periods after launch count normally.
 - **Score.** A win at stage 1–5 is worth 5/4/3/2/1; a HARD MODE win at
   turn 1/2 is worth 6/4; hosting a game someone solved is +1.
+- **Live view.** `/standings` (topic or DM) shows the running week, month
+  and year in one message: each top 5 as a table of 🌟 score and 👑 wins,
+  plus your own line (rank, score, wins) when you are outside the top 5, or
+  a note that you haven't scored yet. It reads the same scoring the closing
+  uses, so it can never disagree with the final podium.
 - **Ties** go to more wins, then to whoever reached the score first, so
   #1 is always unique.
 - **A game counts in the period it ended in.** The end time is the

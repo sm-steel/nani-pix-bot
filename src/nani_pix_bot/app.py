@@ -42,6 +42,7 @@ from nani_pix_bot.commands import (
     setwinner,
     shop,
     stageconfig,
+    standings,
     tip,
     title,
     version,
@@ -330,6 +331,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("quiethours", quiet_hours.quiethours_command))
     application.add_handler(CommandHandler("version", version.version_command))
     application.add_handler(CommandHandler("achievements", achievements.achievements_command))
+    application.add_handler(CommandHandler("standings", standings.standings_command))
     application.add_error_handler(_error_handler)
 
     return application

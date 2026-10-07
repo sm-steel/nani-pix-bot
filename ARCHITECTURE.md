@@ -309,6 +309,8 @@ src/nani_pix_bot/
                    # ach:<view>:<owner>:<filter>:<page>[:<other>], parsed
                    # defensively; ids in callbacks and deep links are
                    # capped at 2**63-1
+    standings.py  # /standings — live week/month/year champion tables in
+                   # one rich message (periods.standings, no buttons)
     title.py      # /title — DM-only picker over the titles you earned
     balance.py    # /balance — the caller's 💠 balance, DM or game topic
     currency_config.py  # /pixelconfig — DM-only, admin-gated view/edit of
