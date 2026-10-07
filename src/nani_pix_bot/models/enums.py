@@ -310,6 +310,7 @@ class CurrencyReason(enum.StrEnum):
     SHARPEN = "sharpen"
     CASHBACK = "cashback"
     COMPENSATION = "compensation"
+    ACHIEVEMENT = "achievement"
 
 
 class CurrencyParty(enum.StrEnum):
@@ -355,3 +356,13 @@ class WinMethod(enum.StrEnum):
     CORRECT = "correct"
     VOTE = "vote"
     SETWINNER = "setwinner"
+
+
+class Rarity(enum.StrEnum):
+    """An achievement tier's rarity band — sets its 💠 reward and points
+    (services/achievements/rewards.py). Stored as a plain string."""
+
+    BRONZE = "bronze"
+    SILVER = "silver"
+    GOLD = "gold"
+    PLATINUM = "platinum"

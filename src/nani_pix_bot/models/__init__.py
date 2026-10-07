@@ -1,6 +1,8 @@
 """Re-exports every model so `Base.metadata` sees all tables for Alembic
 autogenerate, no matter which module happens to import `models` first."""
 
+from nani_pix_bot.models.achievement import AchievementClaim as AchievementClaim
+from nani_pix_bot.models.achievement import AchievementGrant as AchievementGrant
 from nani_pix_bot.models.base import Base as Base
 from nani_pix_bot.models.bot_settings import BotSettings as BotSettings
 from nani_pix_bot.models.clue_purchase import CluePurchase as CluePurchase

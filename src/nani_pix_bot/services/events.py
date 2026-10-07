@@ -53,6 +53,14 @@ def to_event(row: EventLog) -> LoggedEvent:
     )
 
 
+def _dispatch(session: Session, event: LoggedEvent) -> None:
+    """Hands the event to its one consumer. A function-local import: the
+    achievements package imports this module (and, via wallet, emit())."""
+    from nani_pix_bot.services import achievements
+
+    achievements.on_event(session, event)
+
+
 def emit(session: Session, event_type: EventType, involved: Involved, **data: Any) -> LoggedEvent:
     row = EventLog(
         event_type=event_type,
@@ -67,4 +75,6 @@ def emit(session: Session, event_type: EventType, involved: Involved, **data: An
     logger.debug(
         "event {event_type} logged (row {row_id})", event_type=event_type.value, row_id=row.id
     )
-    return to_event(row)
+    event = to_event(row)
+    _dispatch(session, event)
+    return event
