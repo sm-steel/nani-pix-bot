@@ -190,3 +190,43 @@ def test_real_variations_only_use_placeholders_the_canonical_template_uses() -> 
                     f"{key} ({lang}) variant uses {extra_placeholders - allowed} "
                     f"not in the canonical template's {allowed}: {extra!r}"
                 )
+
+
+@pytest.mark.parametrize(
+    ("n", "lang", "form"),
+    [
+        (1, "ru", "one"),
+        (21, "ru", "one"),
+        (2, "ru", "few"),
+        (24, "ru", "few"),
+        (5, "ru", "many"),
+        (11, "ru", "many"),
+        (12, "ru", "many"),
+        (111, "ru", "many"),
+        (0, "ru", "many"),
+        (1, "en", "one"),
+        (2, "en", "many"),
+        (21, "en", "many"),
+    ],
+)
+def test_plural_picks_the_form_for_the_number(n: int, lang: str, form: str) -> None:
+    assert i18n.plural(n, lang) == form
+
+
+@pytest.mark.parametrize(
+    ("n", "lang", "text"),
+    [
+        (1, "en", "1st"),
+        (2, "en", "2nd"),
+        (3, "en", "3rd"),
+        (4, "en", "4th"),
+        (11, "en", "11th"),
+        (12, "en", "12th"),
+        (13, "en", "13th"),
+        (21, "en", "21st"),
+        (102, "en", "102nd"),
+        (3, "ru", "3"),  # Russian: the ending lives in the template
+    ],
+)
+def test_ordinal_numbers(n: int, lang: str, text: str) -> None:
+    assert i18n.ordinal(n, lang) == text

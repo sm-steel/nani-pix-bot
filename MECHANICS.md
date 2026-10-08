@@ -1102,14 +1102,27 @@ In DM, `/achievements` (with its deep link and buttons), `/standings` and
 show members' names and activity. A non-member gets the same "not a
 member" reply the shop gives.
 
-**Every win message shows the 🌟 it earned**, after the 💠 lines:
-`+5 🌟 → week 14 (#1 ⬆2) · month 31 (#2 =) · year 31 (#2 🆕)`. Each part is
-the winner's new total and rank in that running period; `⬆N` is the places
-gained, `=` no change, `🆕` a first score there. A period the game's
-`ended_at` falls outside (an admin `/setwinner` re-finish long after it
-closed) is left out, and with none left there is no line. A normal
-(non-HARD MODE) win adds `Host @name +1 🌟` for the host. The same lines
-close a vote win, an admin-named win, `/correct` and a re-finish.
+**Every win message shows the 🌟 it earned**, after the 💠 lines. It names
+the winner, then gives one bullet per running period:
+
+```
+🌟 @winner: +4 points
+   • this week — 5 🌟, 3rd place (⬆1)
+   • this month — 12 🌟, 1st place
+   • this year — 40 🌟, 2nd place (new on the board)
+```
+
+Each bullet is the winner's new total for that period and their place in
+it. `(⬆N)` is the places gained, and `(new on the board)` marks a first
+score there; an unchanged place gets no marker. Russian reads
+`🌟 @winner: +4 очка` / `• за неделю — 5 🌟, 3-е место (⬆1)`, with
+очко/очка/очков following the number.
+
+A period the game's `ended_at` falls outside (an admin `/setwinner`
+re-finish long after it closed) is left out; with none left there is no
+line. A normal (non-HARD MODE) win adds `🌟 Host @name: +1 point` for the
+host. The same lines close a vote win, an admin-named win, `/correct` and a
+re-finish.
 
 ### Since launch
 
