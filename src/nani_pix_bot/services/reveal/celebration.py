@@ -125,16 +125,16 @@ def _handle_strip(text: str, h: int, tw: int, font_px: int) -> Image.Image:
     return strip.resize((strip.width // SS, strip.height // SS), Image.Resampling.LANCZOS)
 
 
-def make_badge(avatar: bytes | None, handle: str, height: int) -> Image.Image:
+def make_badge(avatar: bytes | None, label: str, height: int) -> Image.Image:
     """The winner badge (pill `height` px tall), built at final size from cached parts: per winner
-    only the face is pasted into a pre-drawn gold ring and the @handle is drawn."""
+    only the face is pasted into a pre-drawn gold ring and `label` is drawn. `label` is shown
+    verbatim: the caller builds "@username", or the plain name when there is no username."""
     h = height
     face_px = round(h * 0.70)
     ring = _ring(face_px)
     ring_d = face_px + 2 * 14  # face + both rings
     font_px = round(h * 0.46 * SS)
-    text = f"@{handle}"
-    tw = math.ceil(_font(font_px).getlength(text) / SS)
+    tw = math.ceil(_font(font_px).getlength(label) / SS)
     gap = round(h * 0.25)
     w = ring_d + gap + tw + round(h * 0.42)  # pill starts under the avatar's centre
     crown = _crown(round(h * 0.62))
@@ -147,10 +147,10 @@ def make_badge(avatar: bytes | None, handle: str, height: int) -> Image.Image:
     rx, ry = acx - ring.image.width // 2, acy - ring.image.height // 2
     canvas.alpha_composite(ring.image, (rx, ry))
     face_at = (rx + ring.face_box[0], ry + ring.face_box[1])
-    canvas.alpha_composite(_face(avatar, handle, face_px), face_at)
+    canvas.alpha_composite(_face(avatar, label, face_px), face_at)
     crown_at = (max(0, acx - round(ring_d * 0.62)), max(0, acy - round(ring_d * 0.95)))
     canvas.alpha_composite(crown, crown_at)
-    strip = _handle_strip(text, h, tw, font_px)
+    strip = _handle_strip(label, h, tw, font_px)
     stroke = max(2, h * SS // 30)
     tx = acx + ring_d // 2 + gap
     canvas.alpha_composite(strip, (tx - 2 * stroke // SS, oy + h // 2 - strip.height // 2))

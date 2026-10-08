@@ -51,3 +51,10 @@ def test_encode_rgba_clip_makes_a_mov() -> None:
     size = (16, 12)
     clip = encode.encode_rgba_clip(bytes([255, 0, 0, 128]) * (16 * 12 * 3), size)
     assert b"moov" in clip[:4096] or b"moov" in clip[-4096:]
+
+
+def test_label_is_shown_verbatim_without_adding_an_at_sign() -> None:
+    plain = celebration.make_badge(None, "Яна", 86)
+    prefixed = celebration.make_badge(None, "@Яна", 86)
+    assert plain.width < prefixed.width
+    assert plain.tobytes() != prefixed.tobytes()
