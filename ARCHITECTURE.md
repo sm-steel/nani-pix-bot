@@ -258,9 +258,13 @@ src/nani_pix_bot/
                    #                  them — _start_new_game() (the
                    #                  eligibility-check + game-creation
                    #                  logic both intake.py and newgame.py
-                   #                  call), _show_preview() (needed by
+                   #                  call), _stage_preview()/
+                   #                  _post_preview_album() (needed by
                    #                  every path that ends in "an image
-                   #                  now exists for this game")
+                   #                  now exists for this game": stage
+                   #                  in the session, then render the
+                   #                  five stages in a worker thread and
+                   #                  send after the commit, #161)
                    #   mal_browse.py  everything behind the "My MAL
                    #                  List" 6th method-picker button —
                    #                  unlinked/linked dispatch, the
@@ -298,8 +302,9 @@ src/nani_pix_bot/
                    #               shared by /guess and /sharpen (the timers
                    #               can't import commands/)
     tip.py        # /tip @user <amount> — topic or DM
-    leaderboard.py  # /leaderboard (wins and 💠 balance)
-                   # (wins as 👑, the chosen title in «» after the name)
+    leaderboard.py  # /leaderboard — all-time rich table (👑 wins, 💠, 🏆
+                   # points, the chosen title in «» after the name) from
+                   # players.leaderboard, paged with lb:<page>; topic or DM
     achievements/  # /achievements — group summary + top (__init__.py),
                    # the DM browser with tabs/pages (browser.py), compare
                    # (compare.py), the status -> rich-message markdown
@@ -310,7 +315,20 @@ src/nani_pix_bot/
                    # defensively; ids in callbacks and deep links are
                    # capped at 2**63-1
     standings.py  # /standings — live week/month/year champion tables in
-                   # one rich message (periods.standings, no buttons)
+                   # one rich message (periods.standings), with two DM
+                   # deep-link buttons (/start rules, /start recent)
+    status.py     # /status — topic-only manual resync: re-posts the
+                   # current stage image (pixelated off the event loop)
+                   # with a live caption, or says what's happening when
+                   # no game runs; no state change, no re-pin
+    history/      # /history — DM-only finished-games list with an
+                   # All/Mine toggle and per-game records with the guess
+                   # log (__init__.py), callback data hist:l:/hist:g:
+                   # parsed defensively (data.py), markdown (render.py);
+                   # queries in services/game/history.py
+    standings_dm.py  # the DM views behind them: how 🌟 points work
+                   # (rendered from periods' constants) and this week's
+                   # gains (periods.recent_gains), paged with std:r:<page>
     title.py      # /title — DM-only picker over the titles you earned
     balance.py    # /balance — the caller's 💠 balance, DM or game topic
     currency_config.py  # /pixelconfig — DM-only, admin-gated view/edit of
@@ -375,14 +393,17 @@ src/nani_pix_bot/
                    # the admin's own IANA timezone (Player.timezone) and
                    # the bot-wide quiet-hours window entered in it — see
                    # MECHANICS.md's "Quiet hours"
-    onboarding.py # /start (and `/start shop`, the clue-shop deep link, and
-                   # `/start ach_<id>`, the achievements one), /help
+    onboarding.py # /start (and `/start shop`, the clue-shop deep link,
+                   # `/start ach_<id>`, the achievements one, and
+                   # `/start rules`/`/start recent` for standings_dm.py), /help
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
                    # (membership.py), Telegram rich messages (headings,
                    # checklists, tables) sent or edited from markdown,
                    # with md_escape and a plain-text fallback, for the
                    # achievements views and /standings (rich.py), the
+                   # ◀ n/N ▶ pager every paged rich message shares, with
+                   # its no-op page:x counter (paging.py), the
                    # one inline keyboard genuinely shared across
                    # packages: stop_confirm_keyboard()
                    # (keyboards.py, used by game_flow/stop.py and
@@ -632,6 +653,13 @@ src/nani_pix_bot/
                    #                (decide_winner, VOTE_MIN_VOTES) and
                    #                close_vote; Telegram-free — see
                    #                MECHANICS.md's "HARD MODE vote"
+                   #   history.py   /history's queries: finished (WON/
+                   #                UNSOLVED) games newest first, all or
+                   #                one player's, and one game's record
+                   #                (game_won/game_unsolved event facts,
+                   #                the guess log); maps the logged
+                   #                unsolved cause to a player-facing
+                   #                UnsolvedReason
                    #   refinish.py  admin re-finish (#253): the
                    #                refusal rules and the UNSOLVED -> WON
                    #                transition /setwinner uses (turn left

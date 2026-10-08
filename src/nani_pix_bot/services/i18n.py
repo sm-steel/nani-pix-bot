@@ -62,3 +62,30 @@ def t(key: str, lang: str, **kwargs: Any) -> str:
         return key
     pool = [template, *_load_variations(lang).get(key, [])]
     return secrets.choice(pool).format(**kwargs)
+
+
+def plural(n: int, lang: str) -> str:
+    """Which plural form a count takes: "one", "few" or "many". Russian
+    follows its own rule (1 очко, 2 очка, 5 очков, 11 очков, 21 очко);
+    English only has "one" and "many", so a locale key gets all three
+    forms in both languages and English's "few" simply goes unused."""
+    if lang.lower() != "ru":
+        return "one" if n == 1 else "many"
+    if n % 10 == 1 and n % 100 != 11:
+        return "one"
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return "few"
+    return "many"
+
+
+_ENGLISH_ORDINAL_SUFFIX = {1: "st", 2: "nd", 3: "rd"}
+
+
+def ordinal(n: int, lang: str) -> str:
+    """'1st'/'2nd'/'3rd'/'11th' in English. Other languages get the bare
+    number: Russian puts its ending in the template itself."""
+    if lang.lower() != "en":
+        return str(n)
+    if 11 <= n % 100 <= 13:
+        return f"{n}th"
+    return f"{n}{_ENGLISH_ORDINAL_SUFFIX.get(n % 10, 'th')}"

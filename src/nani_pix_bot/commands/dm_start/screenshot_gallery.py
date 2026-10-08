@@ -431,7 +431,7 @@ async def _show_search_pick_gallery(
     cross-provider correction, so the page keeps offering "Wrong anime?
     Search again" for another go. Returns the i18n key for the caller's
     own message edit, or the ScreenshotFailure that fetching/sending produced."""
-    fetched = await _fetch_screenshots_or_fallback(context, game, provider, external_id)
+    fetched = await _fetch_screenshots_or_fallback(context, game.id, provider, external_id)
     if isinstance(fetched, ScreenshotFailure):
         return fetched
 
@@ -611,7 +611,7 @@ async def _handle_more_screenshots(
     names the range shown instead of saying "here are some more", which
     would be wrong half the time.
 
-    `cross_provider=True` unconditionally, like `resume_screenshot_gallery`
+    `cross_provider=True` unconditionally, like `stage_gallery_resume`/`send_gallery_resume`
     and for the same reason: the `screenshot_more:<provider>:<offset>`
     payload has nowhere to carry the flag (Telegram caps callback_data at
     64 bytes, so an extra field is expensive), and rendering "Wrong
@@ -621,7 +621,7 @@ async def _handle_more_screenshots(
     the exact moment it was wanted.
 
     Drawing that button means arming the picker, exactly as
-    `resume_screenshot_gallery` does for the same reason: tapping it
+    `stage_gallery_resume`/`send_gallery_resume` does for the same reason: tapping it
     re-arms the column itself, but a *typed* correction has only the
     column to route on, and search.py drops text with no provider being
     resolved. Page 2 of a same-provider gallery therefore used to show
@@ -637,7 +637,7 @@ async def _handle_more_screenshots(
     # latency the starter can see.
     await tap.answer()
     provider_id = _provider_id(game, provider)
-    result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
+    result = await _fetch_screenshots_or_fallback(context, game.id, provider, provider_id)
     if isinstance(result, ScreenshotFailure):
         return result
 
@@ -733,7 +733,7 @@ async def _handle_screenshot_pick(
     and a five-stage preview album first."""
     provider, index = picked
     provider_id = _provider_id(game, provider)
-    result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
+    result = await _fetch_screenshots_or_fallback(context, game.id, provider, provider_id)
     if isinstance(result, ScreenshotFailure):
         await tap.answer()
         return result

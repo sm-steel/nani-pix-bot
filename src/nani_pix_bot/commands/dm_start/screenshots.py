@@ -24,10 +24,11 @@ from typing import cast
 
 from loguru import logger
 from telegram import InputMediaPhoto, Update
-from telegram.error import TelegramError
+from telegram.error import BadRequest, TelegramError, TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
+    IMAGE_DOWNLOAD_ERRORS,
     SEARCH_SERVICE_ERRORS,
     _reject_stale_tap,
     _stored_provider,
@@ -49,12 +50,14 @@ from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 GALLERY_PAGE_SIZE = 5
+# Telegram downloads every URL in a gallery album before it answers, so the
+# client's 5 s default read timeout is far too short (issue #283).
+GALLERY_READ_TIMEOUT = 30
 
-# `resume_screenshot_gallery`'s one no-provider outcome: a stale "pick a
-# different screenshot" tap on a game whose screenshot_source was
-# cleared meanwhile. Named (rather than returned as a bare string) so
-# preview.py can tell it apart from `dm_start.screenshot_source_picked`
-# — that one lands on a gallery message carrying its own buttons, this
+# The prompt for `stage_gallery_resume`'s one no-provider outcome: a stale
+# "pick a different screenshot" tap on a game whose screenshot_source was
+# cleared meanwhile. Unlike `dm_start.screenshot_source_picked` — which
+# lands on a gallery message carrying its own buttons — this
 # one has to be rendered *with* the source menu or the starter is left
 # with nothing to tap. Placeholder-free, as SourceMenu.provider=None
 # requires.
@@ -107,7 +110,7 @@ async def _fetch_screenshots(provider: Provider, client, provider_id: int) -> li
 
 
 async def _fetch_screenshots_or_fallback(
-    context: ContextTypes.DEFAULT_TYPE, game, provider: Provider, provider_id: int | None
+    context: ContextTypes.DEFAULT_TYPE, game_id: int, provider: Provider, provider_id: int | None
 ) -> list[str] | ScreenshotFailure:
     """Fetches `provider`'s screenshots for `provider_id` — the one
     chokepoint every screenshot-gallery call site routes through.
@@ -129,7 +132,7 @@ async def _fetch_screenshots_or_fallback(
         logger.warning(
             "no {provider} id on file for a screenshot fetch (stale button?)",
             provider=provider,
-            game_id=game.id,
+            game_id=game_id,
         )
         return ScreenshotFailure("dm_start.no_screenshots_available", provider)
 
@@ -141,7 +144,7 @@ async def _fetch_screenshots_or_fallback(
             "fetching {provider} screenshots failed for id {provider_id}",
             provider=provider,
             provider_id=provider_id,
-            game_id=game.id,
+            game_id=game_id,
         )
         return ScreenshotFailure("dm_start.screenshot_service_down", provider)
 
@@ -150,7 +153,7 @@ async def _fetch_screenshots_or_fallback(
             "{provider} has no screenshots for id {provider_id}",
             provider=provider,
             provider_id=provider_id,
-            game_id=game.id,
+            game_id=game_id,
         )
         return ScreenshotFailure("dm_start.no_screenshots_available", provider)
 
@@ -364,51 +367,62 @@ def clear_screenshot_selection(game: Game) -> None:
     game.screenshot_source = None
 
 
-async def resume_screenshot_gallery(
-    context: ContextTypes.DEFAULT_TYPE, game, lang: str
-) -> str | ScreenshotFailure:
-    """Re-shows `game.screenshot_source`'s gallery from the top using its
-    already-resolved id — preview.py's "Change image" -> "Pick a
-    different screenshot" branch, reached only when the current image
-    is API-sourced (ticket 9). `cross_provider=True` unconditionally so
-    "Wrong anime? Search again" is always offered here, letting the
-    starter back out to a different provider entirely if nothing in
-    this one's gallery fits.
+@dataclass(frozen=True)
+class GalleryResume:
+    """What send_gallery_resume needs, captured while the game's session was
+    still open — see stage_gallery_resume for why the fetch and the send
+    wait until it has closed."""
 
-    Returns the i18n key for the caller's own follow-up message edit —
-    `dm_start.screenshot_source_picked` once a gallery is up, otherwise
-    a fallback key the caller passes to `reply_with_source_menu`. A
-    stale button here (`screenshot_source` cleared by a "Re-search
-    title" since this preview message was sent) must degrade
-    gracefully, not crash on a bare assert — it returns
-    NO_SOURCE_PROMPT_KEY, which the caller must render *with* the source
-    menu (there is no gallery message to carry buttons in that case)."""
+    game_id: int
+    starter_id: int
+    provider: Provider
+    provider_id: int | None
+
+
+def stage_gallery_resume(game: Game) -> GalleryResume | None:
+    """DB-phase half of re-showing `game.screenshot_source`'s gallery from the
+    top — preview.py's "Change image" -> "Pick a different screenshot"
+    branch, reached only when the current image is API-sourced (ticket 9).
+    Moves the game to PICKING_SCREENSHOT and arms the picker. The caller
+    commits that, then calls send_gallery_resume once its session has
+    closed (issue #156), so neither the provider round-trip nor the
+    gallery send can roll this back — the same "commit before send"
+    split as stage_fallback/send_fallback_notice.
+
+    None for a stale button (`screenshot_source` cleared by a "Re-search
+    title" since this preview message was sent): the caller re-offers the
+    plain source menu, since there is no gallery to carry buttons."""
     game.setup_step = SetupStep.PICKING_SCREENSHOT
     stored = game.screenshot_source
     if stored is None:
-        logger.warning(
-            "resume_screenshot_gallery called with no screenshot_source (stale button)",
-            game_id=game.id,
-        )
-        # No provider to name or flag — just re-offer the plain menu.
-        return NO_SOURCE_PROMPT_KEY
-
+        logger.warning("gallery resume with no screenshot_source (stale button)", game_id=game.id)
+        return None
     # The column hands back a bare str, so this is the one place in this
     # module that has to say so — see `_stored_provider`.
     provider = _stored_provider(stored)
-
-    # The gallery below is drawn cross_provider=True, so it carries
-    # "Wrong anime? Search again" — which means a typed correction has
-    # to route to _screenshot_search_step, which is what the picker
-    # column is for.
+    # The gallery is drawn cross_provider=True, so it carries "Wrong anime?
+    # Search again" — which means a typed correction has to route to
+    # _screenshot_search_step, which is what the picker column is for.
     game.screenshot_picker_provider = provider
-    provider_id = _provider_id(game, provider)
-    result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
+    return GalleryResume(game.id, game.starter_id, provider, _provider_id(game, provider))
+
+
+async def send_gallery_resume(
+    context: ContextTypes.DEFAULT_TYPE, resume: GalleryResume, lang: str
+) -> str | ScreenshotFailure:
+    """Network-phase half: fetches the gallery and shows its first page.
+    `cross_provider=True` unconditionally so "Wrong anime? Search again" is
+    always offered here, letting the starter back out to a different
+    provider entirely if nothing in this one's gallery fits. Returns the
+    i18n key for the caller's own follow-up message edit, or the
+    ScreenshotFailure the caller stages and shows with the source menu."""
+    result = await _fetch_screenshots_or_fallback(
+        context, resume.game_id, resume.provider, resume.provider_id
+    )
     if isinstance(result, ScreenshotFailure):
         return result
-
     target = GalleryTarget(
-        chat_id=game.starter_id, provider=provider, offset=0, cross_provider=True
+        chat_id=resume.starter_id, provider=resume.provider, offset=0, cross_provider=True
     )
     return await gallery_page_or_fallback(context, target, result, lang)
 
@@ -442,7 +456,8 @@ async def screenshot_upload_instead_callback_handler(
         await query.answer()
         logger.info('tapped "Upload my own instead"', game_id=game.id)
         game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
-        await query.edit_message_text(i18n.t("dm_start.ask_new_photo", lang))
+    # After the commit: the prompt may land even if the edit times out.
+    await query.edit_message_text(i18n.t("dm_start.ask_new_photo", lang))
 
 
 async def screenshot_source_callback_handler(
@@ -527,7 +542,7 @@ async def _resolve_screenshot_source(
         if provider_id is None:
             return ScreenshotFailure("dm_start.cross_provider_search_failed", provider)
 
-    result = await _fetch_screenshots_or_fallback(context, game, provider, provider_id)
+    result = await _fetch_screenshots_or_fallback(context, game.id, provider, provider_id)
     if isinstance(result, ScreenshotFailure):
         return result
 
@@ -635,16 +650,17 @@ async def _show_gallery_page(
     """Sends an album of up to GALLERY_PAGE_SIZE numbered screenshots
     starting at `target.offset`, followed by the gallery's own buttons
     message. Telegram fetches media-group photos server-side from a URL
-    directly — no need to download bytes ourselves until one is
-    actually picked.
+    directly, so normally nothing is downloaded until one is picked.
 
     Handing those URLs to Telegram is also what makes this the one place
-    a *Telegram* error means "this provider is unreachable": if it can't
-    fetch one (hotlink blocking, still over 10MB, a dead CDN path) it
-    answers with a BadRequest, which used to escape every caller and
-    reach app._error_handler with no reply going out at all. Returns a
-    ScreenshotFailure instead, so it takes the same source-menu exit as the
-    provider timing out — every caller already had to handle one."""
+    a *Telegram* error can mean "this provider is unreachable": if it
+    can't fetch one (hotlink blocking, still over 10MB, a dead CDN path)
+    it answers with a BadRequest, which used to escape every caller and
+    reach app._error_handler with no reply going out at all. Since
+    issue #283 that first gets a retry with bytes we download ourselves
+    (_deliver_album); only when that fails too does this return a
+    ScreenshotFailure, taking the same source-menu exit as the provider
+    timing out — every caller already had to handle one."""
     shown = urls[target.offset : target.offset + GALLERY_PAGE_SIZE]
     if not shown:
         # Defensive only: every caller either passes offset 0 against a
@@ -673,11 +689,8 @@ async def _show_gallery_page(
         )
         return None
 
-    media = [
-        InputMediaPhoto(media=url, caption=str(target.offset + i + 1))
-        for i, url in enumerate(shown)
-    ]
-
+    if not await _deliver_album(context, target, shown):
+        return ScreenshotFailure("dm_start.screenshot_service_down", target.provider)
     has_more = len(urls) > target.offset + len(shown)
     page = GalleryPage(
         provider=target.provider,
@@ -690,11 +703,9 @@ async def _show_gallery_page(
         # (a stale button) still steps back to a valid page.
         previous_offset=max(target.offset - GALLERY_PAGE_SIZE, 0) if target.offset else None,
     )
-    # Both sends, not just the album: an album that lands without its
-    # buttons message is a gallery nobody can pick from, which is the
-    # same dead end by a different route.
+    # An album that lands without its buttons message is a gallery nobody
+    # can pick from, which is the same dead end by a different route.
     try:
-        await context.bot.send_media_group(chat_id=target.chat_id, media=media)
         await context.bot.send_message(
             chat_id=target.chat_id,
             text=i18n.t("dm_start.pick_screenshot_prompt", lang),
@@ -702,11 +713,109 @@ async def _show_gallery_page(
         )
     except TelegramError:
         logger.exception(
-            "Telegram refused the {provider} gallery page at offset {offset} ({count} url(s))",
+            "couldn't send the {provider} gallery's buttons at offset {offset}",
             provider=target.provider,
             offset=target.offset,
-            count=len(urls),
         )
         return ScreenshotFailure("dm_start.screenshot_service_down", target.provider)
-
     return None
+
+
+def _numbered(target: GalleryTarget, index: int) -> str:
+    return str(target.offset + index + 1)
+
+
+async def _deliver_album(
+    context: ContextTypes.DEFAULT_TYPE, target: GalleryTarget, shown: list[str]
+) -> bool:
+    """Sends the page as an album of URLs for Telegram to fetch (issue #283).
+    A timeout is not a refusal: Telegram fetches every URL before it
+    answers, so the album most likely arrived. A refused fetch
+    (webpage_curl_failed and the like: hotlink blocking, a slow or dead
+    CDN path) gets one retry with bytes downloaded ourselves. False only
+    when the page couldn't be shown at all."""
+    media = [
+        InputMediaPhoto(media=url, caption=_numbered(target, i)) for i, url in enumerate(shown)
+    ]
+    fields = {"provider": target.provider, "offset": target.offset, "count": len(shown)}
+    try:
+        await context.bot.send_media_group(
+            chat_id=target.chat_id, media=media, read_timeout=GALLERY_READ_TIMEOUT
+        )
+    except TimedOut:
+        logger.warning(
+            "the {provider} gallery page at offset {offset} ({count} screenshot(s)) timed out"
+            " — it most likely arrived, sending its buttons anyway",
+            **fields,
+        )
+    except BadRequest as exc:
+        if not await _resend_as_uploads(context, target, shown, str(exc)):
+            return False
+    except TelegramError:
+        logger.exception(
+            "Telegram refused the {provider} gallery page at offset {offset}"
+            " ({count} screenshot(s))",
+            **fields,
+        )
+        return False
+    return True
+
+
+async def _download_page(
+    context: ContextTypes.DEFAULT_TYPE, target: GalleryTarget, shown: list[str]
+) -> list[InputMediaPhoto]:
+    client = client_for_source(context, target.provider)
+    media = []
+    for i, url in enumerate(shown):
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+        except IMAGE_DOWNLOAD_ERRORS as exc:
+            logger.warning(
+                "couldn't download {provider} screenshot #{number} for the gallery: {error}",
+                provider=target.provider,
+                number=_numbered(target, i),
+                error=exc,
+            )
+            continue
+        media.append(InputMediaPhoto(media=response.content, caption=_numbered(target, i)))
+    return media
+
+
+async def _resend_as_uploads(
+    context: ContextTypes.DEFAULT_TYPE, target: GalleryTarget, shown: list[str], error: str
+) -> bool:
+    fields = {"provider": target.provider, "offset": target.offset, "count": len(shown)}
+    media = await _download_page(context, target, shown)
+    try:
+        if len(media) == 1:  # an album needs at least two
+            only = media[0]
+            await context.bot.send_photo(
+                chat_id=target.chat_id, photo=only.media, caption=only.caption
+            )
+        elif media:
+            await context.bot.send_media_group(chat_id=target.chat_id, media=media)
+    except TelegramError:
+        logger.exception(
+            "Telegram couldn't fetch the {provider} gallery page at offset {offset}"
+            " ({count} screenshot(s)): {error}; re-sending them as uploads failed too",
+            error=error,
+            **fields,
+        )
+        return False
+    if not media:
+        logger.error(
+            "Telegram couldn't fetch the {provider} gallery page at offset {offset}"
+            " ({count} screenshot(s)): {error}; downloading them ourselves failed too",
+            error=error,
+            **fields,
+        )
+        return False
+    logger.warning(
+        "Telegram couldn't fetch the {provider} gallery page at offset {offset}: {error}"
+        " — re-sent {sent} of {count} screenshot(s) as uploads",
+        error=error,
+        sent=len(media),
+        **fields,
+    )
+    return True

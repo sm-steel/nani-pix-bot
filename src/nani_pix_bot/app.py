@@ -31,6 +31,7 @@ from nani_pix_bot.commands import (
     dm_start,
     game_flow,
     gamesenabled,
+    history,
     language,
     leaderboard,
     mal_link,
@@ -43,6 +44,8 @@ from nani_pix_bot.commands import (
     shop,
     stageconfig,
     standings,
+    standings_dm,
+    status,
     tip,
     title,
     version,
@@ -52,7 +55,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
     SEARCH_RETRY_CALLBACK_DATA,
 )
-from nani_pix_bot.commands.helpers import log_scope, player_tracking
+from nani_pix_bot.commands.helpers import log_scope, paging, player_tracking
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
@@ -299,6 +302,12 @@ def build_application(config: Config) -> Application:
     application.add_handler(
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
     )
+    application.add_handler(CallbackQueryHandler(standings_dm.standings_callback, pattern=r"^std:"))
+    application.add_handler(CallbackQueryHandler(leaderboard.leaderboard_callback, pattern=r"^lb:"))
+    application.add_handler(CallbackQueryHandler(history.history_callback, pattern=r"^hist:"))
+    application.add_handler(
+        CallbackQueryHandler(paging.noop_callback, pattern=rf"^{re.escape(paging.NOOP)}$")
+    )
     application.add_handler(
         CallbackQueryHandler(game_flow.sharpen_callback_handler, pattern=r"^sharpen:")
     )
@@ -309,6 +318,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("skip", game_flow.skip_command))
     application.add_handler(CommandHandler("stop", game_flow.stop_command))
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
+    application.add_handler(CommandHandler("status", status.status_command))
     application.add_handler(CommandHandler("balance", balance.balance_command))
     application.add_handler(CommandHandler("shop", shop.shop_command))
     application.add_handler(CommandHandler("tip", tip.tip_command))
@@ -332,6 +342,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("version", version.version_command))
     application.add_handler(CommandHandler("achievements", achievements.achievements_command))
     application.add_handler(CommandHandler("standings", standings.standings_command))
+    application.add_handler(CommandHandler("history", history.history_command))
     application.add_error_handler(_error_handler)
 
     return application

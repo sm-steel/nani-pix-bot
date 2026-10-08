@@ -9,7 +9,12 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements import browser, compare, render
-from nani_pix_bot.commands.achievements.common import dm_link, outsider_refusal, resolve_owner
+from nani_pix_bot.commands.achievements.common import (
+    DEEP_LINK_PREFIX,
+    dm_link,
+    outsider_refusal,
+    resolve_owner,
+)
 from nani_pix_bot.commands.helpers.rich import RichTarget, send_rich
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.db import session_scope
@@ -24,7 +29,7 @@ def _target(message: Message) -> RichTarget:
 
 
 def _dm_button(context: ContextTypes.DEFAULT_TYPE, owner_id: int, lang: str):
-    url = dm_link(context, owner_id)
+    url = dm_link(context, f"{DEEP_LINK_PREFIX}{owner_id}")
     if url is None:
         return None
     button = InlineKeyboardButton(i18n.t("achievements.browse_dm", lang), url=url)
