@@ -20,7 +20,10 @@ def ease_out_back(t: float, s: float = 1.4) -> float:
 
 def to_yuv420(img: Image.Image) -> tuple[bytes, bytes, bytes]:
     """RGB image -> (Y, U, V) plane bytes, chroma 2x2 box-averaged. Matches ffmpeg's own
-    conversion, so frames can be piped as yuv420p without a per-frame colour conversion."""
+    conversion, so frames can be piped as yuv420p without a per-frame colour conversion.
+
+    The width and height must be even (the half-size chroma planes drop an odd last row/column);
+    `pipeline.prep` guarantees that for every image it hands to the effects."""
     w, h = img.size
     y = img.convert("L", _MY)
     u = img.convert("L", _MU).resize((w // 2, h // 2), Image.Resampling.BOX)

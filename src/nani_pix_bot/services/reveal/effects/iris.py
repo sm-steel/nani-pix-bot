@@ -20,7 +20,7 @@ from nani_pix_bot.services.reveal import encode
 from nani_pix_bot.services.reveal.effects._common import ease_in_out, ease_out_back, to_yuv420
 
 OPEN_S, PAUSE_S, BURST_S = 0.45, 0.6, 0.7
-CRF = 23  # x264's default; the approved iris look was encoded at it (rate control isn't in the SPS)
+CRF = 23  # the CRF the approved iris was rendered with; only CRF may differ from the x264 contract
 ANALYSIS_W = 320
 WHITE_Y, WHITE_C = 235, 128
 

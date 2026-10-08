@@ -1124,7 +1124,7 @@ erDiagram
 | `period_state` | v10 | One row per period type (`period_type` PK): `next_end`, the UTC end of the next period to close. Created at the first start with the running period, so nothing before the deploy is scored; a late start catches up from it. |
 | `players` additions | v10 | `title_key` (the title chosen with `/title`) and `first_name` (kept current by `remember_user`, shown when there is no @username). |
 | `games` addition | v10 | `activated_at`: when the game went live (`created_at` is when setup started), used by `win_facts.seconds` (activation to the game's end). |
-| `reveal_video` | v11 | The one pre-rendered animated reveal (#295), at most one row: `slot` PK, always 1. `game_id` (plain column, no FK, because `/stop` deletes the game row before its reveal), `effect` (`RevealEffect`, picked at game start), `image_choice` (`a`/`b`, hard mode only), `status` (`pending`/`ready`/`failed`), `part1_ts` (deferred LONGBLOB, part 1 as MPEG-TS), `join_offset` (where the ending's timestamps start), `created_at`, `ready_at`. Written only via `services/reveal/store.py`; see "Reveal video". |
+| `reveal_video` | v11 | The one pre-rendered animated reveal (#295), at most one row: `slot` PK, always 1. `game_id` (plain column, no FK, because `/stop` deletes the game row before its reveal), `effect` (`RevealEffect`, picked at game start), `image_choice` (`a`/`b`, hard mode only), `status` (`pending`/`ready`/`failed`), `part1_ts` (deferred LONGBLOB, part 1 as MPEG-TS), `join_offset` (the `-output_ts_offset` the ending needs so its first frame lands 1/FPS after part 1's last), `created_at`, `ready_at`. Written only via `services/reveal/store.py`; see "Reveal video". |
 
 ### Achievements
 

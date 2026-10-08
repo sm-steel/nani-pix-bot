@@ -43,7 +43,7 @@ _RING_TOTAL = _INNER_RING + _OUTER_RING
 _GLOW_BLUR = 12
 _GLOW_ALPHA = 0.55
 _GLOW_PAD = 3 * _GLOW_BLUR  # room for the blur so the glow isn't clipped
-_SS = 4  # supersampling factor: the badge is drawn big, then shrunk with LANCZOS
+SUPERSAMPLE = 4  # supersampling factor: the badge is drawn big, then shrunk with LANCZOS
 _SWEEP_STEPS = 720  # wedges per revolution when drawing the sweep gradient
 _GLINTS = (225.0, 45.0)  # outer-ring highlights, in PIL angles (top-left, bottom-right)
 _GLINT_WIDTH = 24.0  # degrees either side of a glint's centre
@@ -51,7 +51,7 @@ _GLINT_STRENGTH = 0.8
 _GLINT_COLOR = (252, 252, 255)
 # Outer-ring sweep palettes: related to the rarity colour, clearly different from it.
 # Each is interpolated around the full circle and wraps back to its first stop.
-_SWEEP: Mapping[Rarity, tuple[tuple[int, int, int], ...]] = MappingProxyType(
+SWEEP: Mapping[Rarity, tuple[tuple[int, int, int], ...]] = MappingProxyType(
     {
         Rarity.BRONZE: ((0x8E, 0x3B, 0x24), (0xF2, 0xA9, 0x7A), (0xC9, 0x87, 0x7A)),
         Rarity.SILVER: ((0x6F, 0x86, 0xA8), (0xB9, 0xB2, 0xE0), (0xEE, 0xF1, 0xF8)),
@@ -248,23 +248,23 @@ def _glow(size: int, radius: float, color: tuple[int, int, int]) -> Image.Image:
 def badge_ring(face: Image.Image, color: tuple[int, int, int], rarity: Rarity) -> Image.Image:
     """The avatar badge, centred in a transparent square with room for its glow.
     `color` (rarity or place) sets the inner ring and glow; `rarity` picks the outer
-    ring's sweep palette. `face` is the avatar disc drawn at _SS times its final size; everything is
-    drawn at that scale and shrunk once, so no edge is aliased."""
+    ring's sweep palette. `face` is the avatar disc drawn at SUPERSAMPLE times its final size;
+    everything is drawn at that scale and shrunk once, so no edge is aliased."""
     face_radius = face.width / 2
-    inner = face_radius + _INNER_RING * _SS
-    outer = inner + _OUTER_RING * _SS
-    big = face.width + 2 * (_RING_TOTAL + _GLOW_PAD) * _SS
+    inner = face_radius + _INNER_RING * SUPERSAMPLE
+    outer = inner + _OUTER_RING * SUPERSAMPLE
+    big = face.width + 2 * (_RING_TOTAL + _GLOW_PAD) * SUPERSAMPLE
     centre = big / 2
     badge = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     annulus = _disc_mask(big, centre, outer)
     annulus.paste(0, mask=_disc_mask(big, centre, inner))
-    badge.paste(sweep(big, inner, outer, _SWEEP[rarity]), (0, 0), annulus)
+    badge.paste(sweep(big, inner, outer, SWEEP[rarity]), (0, 0), annulus)
     badge.paste(Image.new("RGB", (big, big), color), (0, 0), _disc_mask(big, centre, inner))
     corner = round(centre - face_radius)
     badge.paste(face, (corner, corner), face)
-    final = big // _SS
+    final = big // SUPERSAMPLE
     badge = badge.resize((final, final), Image.Resampling.LANCZOS)
-    glow = _glow(final, face_radius / _SS + _RING_TOTAL, color)
+    glow = _glow(final, face_radius / SUPERSAMPLE + _RING_TOTAL, color)
     return Image.alpha_composite(glow, badge)
 
 
@@ -355,7 +355,7 @@ def render_unlock_card(
     color = RARITY_COLORS[card.rarity]
     draw.rectangle((0, 0, _WIDTH - 1, _HEIGHT - 1), outline=color, width=10)
     badge = badge_ring(
-        avatar_disc(avatar, card.handle, card.seed, _AVATAR * _SS), color, card.rarity
+        avatar_disc(avatar, card.handle, card.seed, _AVATAR * SUPERSAMPLE), color, card.rarity
     )
     radius = _AVATAR // 2 + _RING_TOTAL
     _paste_badge(image, badge, (_MARGIN + radius, _HEIGHT // 2))
@@ -375,7 +375,7 @@ def render_unlock_card(
 def _podium_entry(image: Image.Image, entry: PodiumEntry, slot: tuple[int, int, int]) -> None:
     index, centre_x, size = slot
     draw = ImageDraw.Draw(image)
-    face = avatar_disc(entry.avatar, entry.name, entry.seed, size * _SS)
+    face = avatar_disc(entry.avatar, entry.name, entry.seed, size * SUPERSAMPLE)
     centre_y = 300 + (0 if index == 0 else 30)
     _paste_badge(
         image, badge_ring(face, _PLACES[index], _PLACE_RARITIES[index]), (centre_x, centre_y)

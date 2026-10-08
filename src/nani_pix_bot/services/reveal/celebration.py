@@ -40,7 +40,7 @@ def _font(px: int) -> ImageFont.FreeTypeFont:
 
 @functools.lru_cache(maxsize=8)
 def _gold_sweep(size: int) -> Image.Image:
-    return cards.sweep(size, 0, size, cards._SWEEP[Rarity.GOLD]).convert("RGBA")
+    return cards.sweep(size, 0, size, cards.SWEEP[Rarity.GOLD]).convert("RGBA")
 
 
 @functools.lru_cache(maxsize=8)
@@ -76,7 +76,7 @@ class _Ring:
 
 @functools.lru_cache(maxsize=4)
 def _ring(face_px: int) -> _Ring:
-    side = face_px * cards._SS
+    side = face_px * cards.SUPERSAMPLE
     image = cards.badge_ring(Image.new("RGBA", (side, side), (0, 0, 0, 0)), GOLD, Rarity.GOLD)
     corner = (image.width - face_px) // 2
     return _Ring(image, (corner, corner))

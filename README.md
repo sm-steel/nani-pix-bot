@@ -48,7 +48,8 @@ uv run ty check          # type check
 ```
 
 The animated end-of-game reveal video is rendered with `ffmpeg`, so running
-from source needs `ffmpeg` and `ffprobe` on your `PATH` (5.1 or newer).
+from source needs `ffmpeg` and `ffprobe` on your `PATH`. The Docker image
+ships Debian bookworm's ffmpeg (5.1); the bot doesn't check the version.
 Without them the bot still works: every reveal falls back to the plain
 photo, and the tests marked `ffmpeg` skip.
 

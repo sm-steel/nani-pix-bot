@@ -194,6 +194,7 @@ def _emit(cores: list[Any], sizes: list[tuple[int, int]]) -> _Frame:
     out = []
     for core, (pw, ph) in zip(cores, sizes, strict=True):
         # Pillow's encoder directly: the whole plane in one chunk, no tobytes() wrapper or join
+        # (Image._getencoder: private Pillow API, verified on 12.3.0; covered by tests)
         enc = Image._getencoder("L", "raw", "L")
         enc.setimage(core, (0, 0, pw, ph))
         _, err, data = enc.encode(pw * ph + pw)
@@ -216,6 +217,7 @@ def _paint_step(work: list[_PlaneWork], k: int, flip_n: int) -> None:
             continue
         # ImagingCore.resize/paste directly: Image.resize/paste spend ~3x longer in their Python
         # wrappers (load, isinstance, _ensure_mutable, _new) than in C for these tiny strips
+        # (ImagingCore calls: private Pillow API, verified on 12.3.0; covered by tests)
         face, mode = (tile.face_back, bil) if strip.back else (tile.face_front, near)
         tile.core.paste(face.resize(strip.size, mode, tile.src_box), strip.box, strip.cover)
         tile.core.paste(tile.solid, strip.box, strip.shade)

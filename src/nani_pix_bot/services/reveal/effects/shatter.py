@@ -14,7 +14,7 @@ piece is one 1-bit mask paste into Y and a half-size one into U and V.
 import math
 import random
 from collections.abc import Iterator
-from typing import NamedTuple, cast
+from typing import Any, NamedTuple, cast
 
 from PIL import Image, ImageChops
 
@@ -45,7 +45,21 @@ _FLASH_LUT = [
 _YUV = tuple[int, int, int]
 _Planes = tuple[Image.Image, Image.Image, Image.Image]
 _Box = tuple[int, int, int, int]
-_Mask = tuple  # (luma mask core, w, h, chroma mask core, cw, ch)
+_Cores = tuple[Any, Any, Any]  # the (Y, U, V) planes' ImagingCore objects (untyped in Pillow)
+
+
+class _Mask(NamedTuple):
+    """The 1-bit masks of one piece pose: luma and half-size chroma, each as an ImagingCore."""
+
+    luma: Any
+    w: int
+    h: int
+    chroma: Any
+    cw: int
+    ch: int
+
+
+_MaskTable = list[list[list[_Mask | None]]]  # [scale step][tumble step][angle step]
 
 
 class _Piece(NamedTuple):
@@ -64,7 +78,7 @@ class _Piece(NamedTuple):
 class _Flight(NamedTuple):
     """Constants of the in-flight loop for one render."""
 
-    table: list
+    table: _MaskTable
     half_g: float
     sc_tab: list[int]
     bounds: _Box  # xmin, xmax, ymax, ymin
@@ -122,7 +136,7 @@ def _build_pieces(front: Image.Image, size: tuple[int, int]) -> list[_Piece]:
     return sorted(pieces, key=lambda p: p.start)
 
 
-_MASKS: dict[tuple[int, int], list] = {}
+_MASKS: dict[tuple[int, int], _MaskTable] = {}
 
 
 def _mask(bw: int, bh: int, a: int, tb: int, sc: int) -> _Mask:
@@ -137,10 +151,10 @@ def _mask(bw: int, bh: int, a: int, tb: int, sc: int) -> _Mask:
     c.load()
     # .im: private Pillow API, verified on 12.3.0; covered by tests. Pasting through the core skips
     # Image.paste's per-call Python overhead, which dominates with ~2000 pieces a frame.
-    return m.im, m.width, m.height, c.im, c.width, c.height
+    return _Mask(m.im, m.width, m.height, c.im, c.width, c.height)
 
 
-def _mask_table(bw: int, bh: int) -> list:
+def _mask_table(bw: int, bh: int) -> _MaskTable:
     """[sc][tb][a] -> mask tuple, built lazily per block size and kept for the process."""
     t = _MASKS.get((bw, bh))
     if t is None:
@@ -150,7 +164,7 @@ def _mask_table(bw: int, bh: int) -> list:
     return t
 
 
-def _fly(flying: list[_Piece], f: int, env: _Flight, cores: tuple) -> list[_Piece]:
+def _fly(flying: list[_Piece], f: int, env: _Flight, cores: _Cores) -> list[_Piece]:
     """Paint every piece still on screen at frame f into the (Y, U, V) cores; return the pieces
     that haven't left it for good."""
     yim, uim, vim = cores
@@ -176,14 +190,14 @@ def _fly(flying: list[_Piece], f: int, env: _Flight, cores: tuple) -> list[_Piec
         m = row[a]
         if m is None:
             m = row[a] = _mask(bw, bh, a, tb, sc)
-        mim, mw, mh, mcim, cw, ch = m
+        mw, mh, cw, ch = m.w, m.h, m.cw, m.ch
         ix, iy = int(x) - (mw >> 1), int(y) - (mh >> 1)
         yc, uc, vc = p.colors[tb]
-        yim.paste(yc, (ix, iy, ix + mw, iy + mh), mim)
+        yim.paste(yc, (ix, iy, ix + mw, iy + mh), m.luma)
         jx, jy = ix >> 1, iy >> 1
         cb = (jx, jy, jx + cw, jy + ch)
-        uim.paste(uc, cb, mcim)
-        vim.paste(vc, cb, mcim)
+        uim.paste(uc, cb, m.chroma)
+        vim.paste(vc, cb, m.chroma)
     return alive
 
 
@@ -272,7 +286,8 @@ def frames(front: Image.Image, original: Image.Image) -> Iterator[tuple[bytes, b
             flying.append(pieces[nxt])
             nxt += 1
         planes = base.frame()
-        flying = _fly(flying, f, env, tuple(p.im for p in planes))  # private Pillow API (.im)
+        # .im: private Pillow API, verified on 12.3.0; covered by tests
+        flying = _fly(flying, f, env, (planes[0].im, planes[1].im, planes[2].im))
         if f < FLASH_FRAMES:
             planes = flash.apply(f, planes)
         data = _emit(planes)
