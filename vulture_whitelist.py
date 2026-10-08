@@ -21,6 +21,7 @@ from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.reveal import celebration as reveal_celebration
 from nani_pix_bot.services.reveal import effects as reveal_effects
 from nani_pix_bot.services.reveal import encode as reveal_encode
+from nani_pix_bot.services.reveal import pipeline as reveal_pipeline
 from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.reveal.effects import iris as reveal_iris
 from nani_pix_bot.services.reveal.effects import ripple as reveal_ripple
@@ -75,6 +76,9 @@ _kept = (
     reveal_celebration.make_badge,
     reveal_celebration.badge_frames,
     reveal_celebration.confetti_clip,
+    reveal_pipeline.pregenerate,
+    reveal_pipeline.finish,
+    reveal_pipeline.warm_up,
 )
 
 if TYPE_CHECKING:
