@@ -20,6 +20,10 @@ jobs:
       - name: Install project dependencies
         run: uv sync
 
+      # The reveal video tests (marked `ffmpeg`) skip without it (issue #295).
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       # No service containers needed — every test fixture uses an
       # in-memory SQLite engine (create_engine("sqlite:///:memory:")),
       # never the real MariaDB the bot runs against in production.

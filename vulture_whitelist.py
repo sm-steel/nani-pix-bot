@@ -12,7 +12,6 @@ Anything else vulture reports is dead code: remove it or wire it up.
 
 from typing import TYPE_CHECKING
 
-from nani_pix_bot.jobs import reveal as reveal_job
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.turn_state import TurnState
@@ -46,9 +45,6 @@ _kept = (
     TurnState.turn_opened_at,
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
-    # TEMPORARY — animated reveal (#295) building blocks not yet called;
-    # removed by the wiring tasks (#308/#309/#310)
-    reveal_job.reload_on_startup,
 )
 
 if TYPE_CHECKING:
