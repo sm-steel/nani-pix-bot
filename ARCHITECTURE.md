@@ -258,9 +258,13 @@ src/nani_pix_bot/
                    #                  them — _start_new_game() (the
                    #                  eligibility-check + game-creation
                    #                  logic both intake.py and newgame.py
-                   #                  call), _show_preview() (needed by
+                   #                  call), _stage_preview()/
+                   #                  _post_preview_album() (needed by
                    #                  every path that ends in "an image
-                   #                  now exists for this game")
+                   #                  now exists for this game": stage
+                   #                  in the session, then render the
+                   #                  five stages in a worker thread and
+                   #                  send after the commit, #161)
                    #   mal_browse.py  everything behind the "My MAL
                    #                  List" 6th method-picker button —
                    #                  unlinked/linked dispatch, the
