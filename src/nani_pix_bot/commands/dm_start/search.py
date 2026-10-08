@@ -400,11 +400,6 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if setup_game is None:
             await _reject_stale_tap(query, lang)
             return
-        # Inside the open write transaction, like every other await in
-        # this block — see issue #82, which is filed against exactly
-        # that shape here; this is one more call for its sweep to move,
-        # not a new pattern.
-        await query.answer()
         game_service.stage_result(setup_game, result, source=source)
         logger.info(
             "picked {title!r} ({provider} {provider_id})",
@@ -423,8 +418,9 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             picker_prompt = stage_screenshot_picker(setup_game)
             message_key = "dm_start.identification_staged"
     # Block closed and committed above — see _post_preview_album's/
-    # send_screenshot_picker_prompt's docstrings for why the send has to
-    # happen after.
+    # send_screenshot_picker_prompt's docstrings for why the sends,
+    # this tap's answer included, have to happen after (issue #292).
+    await query.answer()
     if has_image:
         await _post_preview_album(context, album, lang)
     else:

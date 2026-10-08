@@ -30,6 +30,10 @@ Split across submodules by flow stage:
                        Search again" cross-provider correction) — split
                        out of screenshots.py once that file's own
                        complexity grew past qlty's threshold
+  source_pick.py      the screenshot-source button tap itself: answer,
+                       search/fetch with no session open, commit what it
+                       resolved, then send (issue #292) — also split out
+                       of screenshots.py for its complexity
   preview.py          the confirmation preview (show/confirm/change-
                        image/research/add-synonym) and the final post
                        to the group
@@ -62,7 +66,6 @@ from nani_pix_bot.commands.dm_start.screenshot_gallery import (
     screenshot_search_pick_callback_handler,
 )
 from nani_pix_bot.commands.dm_start.screenshots import (
-    screenshot_source_callback_handler,
     screenshot_upload_instead_callback_handler,
 )
 from nani_pix_bot.commands.dm_start.search import (
@@ -70,6 +73,7 @@ from nani_pix_bot.commands.dm_start.search import (
     pick_callback_handler,
     search_text_handler,
 )
+from nani_pix_bot.commands.dm_start.source_pick import screenshot_source_callback_handler
 
 __all__ = [
     "mal_list_page_callback_handler",

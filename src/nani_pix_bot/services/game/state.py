@@ -225,7 +225,7 @@ def screenshot_capable_providers(game: Game) -> list[Provider]:
     all). Every provider is offered regardless of whether the game
     already has an id for it — a caller not finding one triggers
     cross-provider resolution (see commands/dm_start/screenshots.py's
-    _resolve_screenshot_source, and services/game/autostart.py's
+    _fetch_for_pick, and services/game/autostart.py's
     _pick_screenshot for the bot-initiated equivalent).
 
     `game.source` arrives as a bare str (the Provider columns are

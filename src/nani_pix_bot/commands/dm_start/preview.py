@@ -3,9 +3,12 @@ every pixelation stage, a follow-up message with confirm/change-image/
 research/add-synonym buttons, and (on confirm) the actual post to the
 group topic. See MECHANICS.md's "Starting a game" section."""
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from loguru import logger
+from sqlalchemy.orm import Session
 from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -162,9 +165,19 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
     if user is None:
         return
 
-    if await _handle_posting_tap(context, session_factory, query, user):
-        return
+    if not await _handle_posting_tap(context, session_factory, query, user):
+        await _handle_branch_tap(context, session_factory, query, user)
 
+
+async def _handle_branch_tap(
+    context: ContextTypes.DEFAULT_TYPE, session_factory, query, user
+) -> None:
+    """A _BRANCHES button: the branch prepares its edit inside the session,
+    and the edit goes out only once that session has committed — whatever
+    step the branch moved the game to is saved before the message that
+    shows it, so a timed-out edit (which may well have landed) can't roll
+    it back (issue #292; see post_current_image's docstring)."""
+    branch = _BRANCHES.get(query.data)
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
@@ -174,23 +187,11 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
                 data=query.data,
             )
             return
-
-        if query.data == PREVIEW_CHANGE_IMAGE_CALLBACK_DATA:
-            await _preview_change_image(query, setup_game, lang)
-        elif query.data == PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA:
-            await _preview_change_image_upload(query, setup_game, lang)
-        elif query.data == PREVIEW_RESEARCH_CALLBACK_DATA:
-            await _preview_research(query, setup_game, lang, context)
-        elif query.data == PREVIEW_ADD_SYNONYM_CALLBACK_DATA:
-            await _preview_add_synonym(query, setup_game, lang)
-        elif query.data == PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA:
-            await _preview_pixel_algorithm(query, setup_game, lang)
-        elif query.data == PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA:
-            await _preview_pixel_algorithm_back(query, setup_game, lang)
-        elif query.data == PREVIEW_BOUNTY_CALLBACK_DATA:
-            await _preview_bounty(query, session, setup_game, lang)
-        elif query.data == PREVIEW_BOUNTY_BACK_CALLBACK_DATA:
-            await _preview_bounty_back(query, setup_game, lang)
+        edit = branch(_Tap(session, setup_game, lang, context)) if branch else None
+    if edit is not None:
+        await query.edit_message_text(
+            text=edit.text, reply_markup=edit.reply_markup, parse_mode=edit.parse_mode
+        )
 
 
 async def _handle_posting_tap(
@@ -249,27 +250,47 @@ async def _handle_confirm_tap(
     return lang
 
 
-async def _preview_change_image(query, game: Game, lang: str) -> None:
+@dataclass(frozen=True)
+class _Tap:
+    """What a preview branch works from, inside preview_callback_handler's
+    session."""
+
+    session: Session
+    game: Game
+    lang: str
+    context: ContextTypes.DEFAULT_TYPE
+
+
+@dataclass(frozen=True)
+class _Edit:
+    """The message edit a preview branch answers with, sent only once the
+    branch's session has committed."""
+
+    text: str
+    reply_markup: InlineKeyboardMarkup | None = None
+    parse_mode: str | None = None
+
+
+def _preview_change_image(tap: _Tap) -> _Edit:
     """A genuine upload (screenshot_source unset) goes straight to
     asking for a new photo, exactly as before ticket 9. An API-sourced
     screenshot instead offers a choice — upload one after all, or pick
     a different screenshot from the same provider — via
     _preview_change_image_upload/_preview_change_image_pick_screenshot."""
+    game, lang = tap.game, tap.lang
     logger.info("tapped Change image on the preview", game_id=game.id)
     if game.screenshot_source is not None:
-        await query.edit_message_text(
-            text=i18n.t("dm_start.pick_new_image_source_prompt", lang),
-            reply_markup=change_image_keyboard(lang),
+        return _Edit(
+            i18n.t("dm_start.pick_new_image_source_prompt", lang), change_image_keyboard(lang)
         )
-        return
     game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
-    await query.edit_message_text(text=i18n.t("dm_start.ask_new_photo", lang))
+    return _Edit(i18n.t("dm_start.ask_new_photo", lang))
 
 
-async def _preview_change_image_upload(query, game: Game, lang: str) -> None:
-    logger.info("chose to upload a new photo from the preview", game_id=game.id)
-    game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
-    await query.edit_message_text(text=i18n.t("dm_start.ask_new_photo", lang))
+def _preview_change_image_upload(tap: _Tap) -> _Edit:
+    logger.info("chose to upload a new photo from the preview", game_id=tap.game.id)
+    tap.game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
+    return _Edit(i18n.t("dm_start.ask_new_photo", tap.lang))
 
 
 async def _handle_change_image_pick_screenshot_tap(
@@ -321,9 +342,8 @@ async def _handle_change_image_pick_screenshot_tap(
     await send_fallback_notice(query.edit_message_text, notice, lang)
 
 
-async def _preview_research(
-    query, game: Game, lang: str, context: ContextTypes.DEFAULT_TYPE
-) -> None:
+def _preview_research(tap: _Tap) -> _Edit:
+    game, lang = tap.game, tap.lang
     logger.info("tapped Re-search title on the preview", game_id=game.id)
     # An API-sourced screenshot is cleared here (see
     # clear_screenshot_selection's docstring) since re-searching might
@@ -331,16 +351,16 @@ async def _preview_research(
     # unchanged from before ticket 9.
     clear_screenshot_selection(game)
     game.setup_step = SetupStep.PICKING_METHOD
-    await query.edit_message_text(
-        text=i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
-        reply_markup=_method_keyboard(context, lang),
+    return _Edit(
+        i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
+        _method_keyboard(tap.context, lang),
     )
 
 
-async def _preview_add_synonym(query, game: Game, lang: str) -> None:
-    logger.info("tapped Add a synonym on the preview", game_id=game.id)
-    game.setup_step = SetupStep.AWAITING_SYNONYM
-    await query.edit_message_text(text=i18n.t("dm_start.ask_extra_synonym", lang))
+def _preview_add_synonym(tap: _Tap) -> _Edit:
+    logger.info("tapped Add a synonym on the preview", game_id=tap.game.id)
+    tap.game.setup_step = SetupStep.AWAITING_SYNONYM
+    return _Edit(i18n.t("dm_start.ask_extra_synonym", tap.lang))
 
 
 def _algorithm_options(lang: str) -> str:
@@ -364,27 +384,28 @@ def _algorithm_options(lang: str) -> str:
     return "\n".join(lines)
 
 
-async def _preview_pixel_algorithm(query, game: Game, lang: str) -> None:
+def _preview_pixel_algorithm(tap: _Tap) -> _Edit:
+    game, lang = tap.game, tap.lang
     logger.info("opened the pixelation submenu", game_id=game.id)
-    await query.edit_message_text(
-        text=i18n.t(
-            "dm_start.pixel_algorithm_prompt",
-            lang,
-            options=_algorithm_options(lang),
-        ),
-        reply_markup=pixel_algorithm_keyboard(lang, game.pixel_algorithm),
+    return _Edit(
+        i18n.t("dm_start.pixel_algorithm_prompt", lang, options=_algorithm_options(lang)),
+        pixel_algorithm_keyboard(lang, game.pixel_algorithm),
         parse_mode="HTML",
     )
 
 
-async def _preview_pixel_algorithm_back(query, game: Game, lang: str) -> None:
-    """Leave the submenu without changing anything — back to the same
-    prompt and buttons the album's follow-up message started with."""
-    logger.info("closed the pixelation submenu without changing it", game_id=game.id)
-    await query.edit_message_text(
-        text=i18n.t("dm_start.preview_confirm_prompt", lang),
-        reply_markup=preview_keyboard(lang, game.pixel_algorithm),
+def _back_to_preview(tap: _Tap) -> _Edit:
+    """The same prompt and buttons the album's follow-up message started with."""
+    return _Edit(
+        i18n.t("dm_start.preview_confirm_prompt", tap.lang),
+        preview_keyboard(tap.lang, tap.game.pixel_algorithm),
     )
+
+
+def _preview_pixel_algorithm_back(tap: _Tap) -> _Edit:
+    """Leave the submenu without changing anything."""
+    logger.info("closed the pixelation submenu without changing it", game_id=tap.game.id)
+    return _back_to_preview(tap)
 
 
 async def _handle_pixel_algorithm_pick_tap(
@@ -448,18 +469,31 @@ def _bounty_menu(session, game: Game, lang: str) -> tuple[str, InlineKeyboardMar
     return text, bounty_keyboard(lang, balance)
 
 
-async def _preview_bounty(query, session, game: Game, lang: str) -> None:
-    logger.info("opened the bounty submenu", game_id=game.id)
-    text, markup = _bounty_menu(session, game, lang)
-    await query.edit_message_text(text=text, reply_markup=markup)
+def _preview_bounty(tap: _Tap) -> _Edit:
+    logger.info("opened the bounty submenu", game_id=tap.game.id)
+    text, markup = _bounty_menu(tap.session, tap.game, tap.lang)
+    return _Edit(text, markup)
 
 
-async def _preview_bounty_back(query, game: Game, lang: str) -> None:
-    logger.info("closed the bounty submenu", game_id=game.id)
-    await query.edit_message_text(
-        text=i18n.t("dm_start.preview_confirm_prompt", lang),
-        reply_markup=preview_keyboard(lang, game.pixel_algorithm),
-    )
+def _preview_bounty_back(tap: _Tap) -> _Edit:
+    logger.info("closed the bounty submenu", game_id=tap.game.id)
+    return _back_to_preview(tap)
+
+
+# The preview buttons that only change the setup step and the message. The
+# ones that post albums or answer with alerts have handlers of their own.
+_BRANCHES: Mapping[str, Callable[[_Tap], _Edit]] = MappingProxyType(
+    {
+        PREVIEW_CHANGE_IMAGE_CALLBACK_DATA: _preview_change_image,
+        PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA: _preview_change_image_upload,
+        PREVIEW_RESEARCH_CALLBACK_DATA: _preview_research,
+        PREVIEW_ADD_SYNONYM_CALLBACK_DATA: _preview_add_synonym,
+        PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA: _preview_pixel_algorithm,
+        PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA: _preview_pixel_algorithm_back,
+        PREVIEW_BOUNTY_CALLBACK_DATA: _preview_bounty,
+        PREVIEW_BOUNTY_BACK_CALLBACK_DATA: _preview_bounty_back,
+    }
+)
 
 
 async def _handle_bounty_pick_tap(session_factory, query, user) -> None:
