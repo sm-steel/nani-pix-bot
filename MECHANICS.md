@@ -1187,6 +1187,18 @@ Choose with `/title` (DM only; an earned title or "none").
   plus your own line (rank, score, wins) when you are outside the top 5, or
   a note that you haven't scored yet. It reads the same scoring the closing
   uses, so it can never disagree with the final podium.
+- **Explainer and recent changes.** Under `/standings` are two buttons
+  that open the bot's DM (deep links, so they work even for someone who
+  never started the bot; group members only):
+  - **📖 How points work**: this section's scoring in plain words. Every
+    number is rendered from the scoring constants, so the text can't
+    disagree with the code.
+  - **🕑 Recent changes**: this week's 🌟 gains, newest first, 10 per page.
+    Each row has the time, the player, the points, why (won game #N at
+    stage s/5, won in HARD MODE at turn t/2, or host of game #N) and the
+    rank move in the week (`#3 → #1`, `— → #2` for a first score). It's
+    the week's standings replayed one game at a time, so it always adds up
+    to the table.
 - **Ties** go to more wins, then to whoever reached the score first, so
   #1 is always unique.
 - **A game counts in the period it ended in.** The end time is the

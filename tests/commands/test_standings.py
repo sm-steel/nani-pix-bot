@@ -113,7 +113,7 @@ async def test_posts_week_month_and_year_in_order_with_tables(session_factory) -
     sent = await _run(_update(VIEWER), session_factory)
 
     sent.assert_awaited_once()
-    _bot, target, markdown = sent.await_args_list[0].args
+    _bot, target, markdown, _markup = sent.await_args_list[0].args
     assert (target.chat_id, target.thread_id) == (555, 7)
     headers = [line for line in markdown.splitlines() if line.startswith("## ")]
     assert len(headers) == 3

@@ -4,6 +4,7 @@ timezone, scoring from game_won events, and freezing a closed period."""
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
+from enum import StrEnum
 from types import MappingProxyType
 from zoneinfo import ZoneInfo
 
@@ -30,8 +31,8 @@ PERIOD_OF_CHAMPION: Mapping[str, PeriodType] = MappingProxyType(
 )
 TOP_SIZE = 3
 # Index = stage - 1 (normal) or turn - 1 (HARD MODE).
-_WIN_POINTS = (5, 4, 3, 2, 1)
-_HARD_POINTS = (6, 4)
+WIN_POINTS = (5, 4, 3, 2, 1)
+HARD_POINTS = (6, 4)
 HOST_POINTS = 1
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -85,29 +86,94 @@ def _ended(event: LoggedEvent) -> datetime:
 
 
 def _win_points(event: LoggedEvent) -> int:
-    table = _HARD_POINTS if event.data["hard_mode"] else _WIN_POINTS
+    table = HARD_POINTS if event.data["hard_mode"] else WIN_POINTS
     stage = event.data["stage"]
     return table[stage - 1] if 1 <= stage <= len(table) else 0
 
 
+class GainRole(StrEnum):
+    WIN = "win"
+    HOST = "host"
+
+
+def _shares(event: LoggedEvent) -> list[tuple[int, int, GainRole]]:
+    """Who one win pays and how much: the winner, and the host unless HARD MODE."""
+    shares = []
+    if event.actor_id is not None:
+        shares.append((event.actor_id, _win_points(event), GainRole.WIN))
+    if not event.data["hard_mode"] and event.subject_id is not None:
+        shares.append((event.subject_id, HOST_POINTS, GainRole.HOST))
+    return shares
+
+
 def _tally(board: dict[int, Standing], event: LoggedEvent) -> None:
     ended = _ended(event)
-    if event.actor_id is not None:
-        winner = board.setdefault(event.actor_id, Standing(event.actor_id))
-        winner.add(_win_points(event), ended)
-        winner.wins += 1
-    if not event.data["hard_mode"] and event.subject_id is not None:
-        board.setdefault(event.subject_id, Standing(event.subject_id)).add(HOST_POINTS, ended)
+    for player_id, points, role in _shares(event):
+        standing = board.setdefault(player_id, Standing(player_id))
+        standing.add(points, ended)
+        if role is GainRole.WIN:
+            standing.wins += 1
+
+
+def _counted(won_events: Iterable[LoggedEvent], period: Period) -> list[LoggedEvent]:
+    """Each game's latest win (a refinish counts once) inside the period, in
+    the order the games ended."""
+    latest = {e.game_id: e for e in won_events}
+    in_period = (e for e in latest.values() if period.start <= _ended(e) < period.end)
+    return sorted(in_period, key=_ended)
+
+
+def _ranked(board: dict[int, Standing]) -> list[Standing]:
+    ranked = (s for s in board.values() if s.score > 0)
+    return sorted(ranked, key=lambda s: (-s.score, -s.wins, s.reached_at))
 
 
 def score(won_events: Iterable[LoggedEvent], period: Period) -> list[Standing]:
-    latest = {e.game_id: e for e in won_events}  # a refinish counts once
     board: dict[int, Standing] = {}
-    for event in sorted(latest.values(), key=_ended):
-        if period.start <= _ended(event) < period.end:
-            _tally(board, event)
-    ranked = (s for s in board.values() if s.score > 0)
-    return sorted(ranked, key=lambda s: (-s.score, -s.wins, s.reached_at))
+    for event in _counted(won_events, period):
+        _tally(board, event)
+    return _ranked(board)
+
+
+@dataclass(frozen=True)
+class Gain:
+    """One player's share of one win, and where it moved them in the period."""
+
+    player_id: int
+    points: int
+    role: GainRole
+    game_id: int | None
+    at: datetime
+    stage: int
+    hard_mode: bool
+    rank_before: int | None  # None: no score in this period before the win
+    rank_after: int | None
+
+
+def gains(won_events: Iterable[LoggedEvent], period: Period) -> list[Gain]:
+    """Every share of every win in the period, oldest first — the standings
+    replayed one game at a time, so it always adds up to score()."""
+    board: dict[int, Standing] = {}
+    found: list[Gain] = []
+    for event in _counted(won_events, period):
+        before = _ranked(board)
+        _tally(board, event)
+        after = _ranked(board)
+        found.extend(
+            Gain(
+                player_id=player_id,
+                points=points,
+                role=role,
+                game_id=event.game_id,
+                at=_ended(event),
+                stage=event.data["stage"],
+                hard_mode=bool(event.data["hard_mode"]),
+                rank_before=_rank(before, player_id),
+                rank_after=_rank(after, player_id),
+            )
+            for player_id, points, role in _shares(event)
+        )
+    return found
 
 
 def _naive(at: datetime) -> datetime:
@@ -130,6 +196,11 @@ def _won_events(session: Session, period: Period) -> list[LoggedEvent]:
 
 def standings(session: Session, period: Period) -> list[Standing]:
     return score(_won_events(session, period), period)
+
+
+def recent_gains(session: Session, period: Period) -> list[Gain]:
+    """The period's gains, newest first."""
+    return gains(_won_events(session, period), period)[::-1]
 
 
 @dataclass(frozen=True)

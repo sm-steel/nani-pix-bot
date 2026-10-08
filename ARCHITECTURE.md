@@ -310,7 +310,11 @@ src/nani_pix_bot/
                    # defensively; ids in callbacks and deep links are
                    # capped at 2**63-1
     standings.py  # /standings — live week/month/year champion tables in
-                   # one rich message (periods.standings, no buttons)
+                   # one rich message (periods.standings), with two DM
+                   # deep-link buttons (/start rules, /start recent)
+    standings_dm.py  # the DM views behind them: how 🌟 points work
+                   # (rendered from periods' constants) and this week's
+                   # gains (periods.recent_gains), paged with std:r:<page>
     title.py      # /title — DM-only picker over the titles you earned
     balance.py    # /balance — the caller's 💠 balance, DM or game topic
     currency_config.py  # /pixelconfig — DM-only, admin-gated view/edit of
@@ -375,14 +379,17 @@ src/nani_pix_bot/
                    # the admin's own IANA timezone (Player.timezone) and
                    # the bot-wide quiet-hours window entered in it — see
                    # MECHANICS.md's "Quiet hours"
-    onboarding.py # /start (and `/start shop`, the clue-shop deep link, and
-                   # `/start ach_<id>`, the achievements one), /help
+    onboarding.py # /start (and `/start shop`, the clue-shop deep link,
+                   # `/start ach_<id>`, the achievements one, and
+                   # `/start rules`/`/start recent` for standings_dm.py), /help
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
                    # (membership.py), Telegram rich messages (headings,
                    # checklists, tables) sent or edited from markdown,
                    # with md_escape and a plain-text fallback, for the
                    # achievements views and /standings (rich.py), the
+                   # ◀ n/N ▶ pager every paged rich message shares, with
+                   # its no-op page:x counter (paging.py), the
                    # one inline keyboard genuinely shared across
                    # packages: stop_confirm_keyboard()
                    # (keyboards.py, used by game_flow/stop.py and

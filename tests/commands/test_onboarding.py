@@ -184,3 +184,36 @@ async def test_an_achievements_deep_link_is_refused_to_a_non_member(
     opened.assert_not_awaited()
     update.message.reply_text.assert_awaited_once_with(i18n.t("dm_start.not_a_member", "en"))
     assert any(level == "WARNING" and "not a group member" in m for level, m in records)
+
+
+async def test_start_rules_and_recent_open_the_standings_views(session_factory) -> None:
+    for payload, view in (("rules", "open_rules"), ("recent", "open_recent")):
+        update = _make_dm_update()
+        context = _make_context(session_factory)
+        context.args = [payload]
+        opened = AsyncMock()
+
+        with patch.dict(onboarding._STANDINGS_VIEWS, {(payload,): opened}):
+            await onboarding.start_command(
+                cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+            )
+
+        opened.assert_awaited_once_with(update.message, context)
+        update.message.reply_text.assert_not_awaited()
+        assert onboarding._STANDINGS_VIEWS[(payload,)].__name__ == view
+
+
+async def test_start_rules_refuses_a_non_member(session_factory) -> None:
+    update = _make_dm_update()
+    context = _make_context(session_factory)
+    context.args = ["rules"]
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=ChatMemberStatus.LEFT))
+    opened = AsyncMock()
+
+    with patch.dict(onboarding._STANDINGS_VIEWS, {("rules",): opened}):
+        await onboarding.start_command(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    opened.assert_not_awaited()
+    update.message.reply_text.assert_awaited_once_with(i18n.t("dm_start.not_a_member", "en"))

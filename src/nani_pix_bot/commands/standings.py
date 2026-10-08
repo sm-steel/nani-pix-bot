@@ -1,6 +1,8 @@
 """/standings — the live weekly, monthly and yearly champion races in one
 message (spec §6). Scoring lives in services/achievements/periods.py; this
-only lays it out. Sent once, never edited, so no buttons and no callbacks."""
+only lays it out. Sent once, never edited. Its two buttons are deep links
+into the DM (how points work, recent changes — standings_dm.py), so they
+need no callback here."""
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -8,12 +10,13 @@ from zoneinfo import ZoneInfo
 
 from loguru import logger
 from sqlalchemy.orm import Session
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.achievements.common import outsider_refusal
+from nani_pix_bot.commands.achievements.common import dm_link, outsider_refusal
 from nani_pix_bot.commands.helpers.rich import RichTarget, md_escape, send_rich
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
+from nani_pix_bot.commands.standings_dm import RECENT_PAYLOAD, RULES_PAYLOAD
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import PeriodType
 from nani_pix_bot.services import i18n, players, settings
@@ -73,6 +76,18 @@ def section(session: Session, period: Period, viewer_id: int, ctx: tuple[ZoneInf
     return "\n".join(lines)
 
 
+def dm_buttons(context: ContextTypes.DEFAULT_TYPE, lang: str) -> InlineKeyboardMarkup | None:
+    """How-points-work and recent-changes, both opening the DM; none until
+    the bot knows its own username."""
+    buttons = []
+    for key, payload in (("rules", RULES_PAYLOAD), ("recent", RECENT_PAYLOAD)):
+        url = dm_link(context, payload)
+        if url is None:
+            return None
+        buttons.append(InlineKeyboardButton(i18n.t(f"standings.button.{key}", lang), url=url))
+    return InlineKeyboardMarkup([[button] for button in buttons])
+
+
 async def standings_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     user = update.effective_user
@@ -98,4 +113,4 @@ async def standings_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         ]
     logger.info("viewed the champion standings")
     target = RichTarget(message.chat_id, thread_id=message.message_thread_id)
-    await send_rich(context.bot, target, "\n\n".join(sections))
+    await send_rich(context.bot, target, "\n\n".join(sections), dm_buttons(context, lang))

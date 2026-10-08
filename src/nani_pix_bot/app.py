@@ -43,6 +43,7 @@ from nani_pix_bot.commands import (
     shop,
     stageconfig,
     standings,
+    standings_dm,
     tip,
     title,
     version,
@@ -52,7 +53,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
     SEARCH_RETRY_CALLBACK_DATA,
 )
-from nani_pix_bot.commands.helpers import log_scope, player_tracking
+from nani_pix_bot.commands.helpers import log_scope, paging, player_tracking
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
@@ -298,6 +299,10 @@ def build_application(config: Config) -> Application:
     application.add_handler(CallbackQueryHandler(title.title_callback, pattern=r"^title:"))
     application.add_handler(
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
+    )
+    application.add_handler(CallbackQueryHandler(standings_dm.standings_callback, pattern=r"^std:"))
+    application.add_handler(
+        CallbackQueryHandler(paging.noop_callback, pattern=rf"^{re.escape(paging.NOOP)}$")
     )
     application.add_handler(
         CallbackQueryHandler(game_flow.sharpen_callback_handler, pattern=r"^sharpen:")

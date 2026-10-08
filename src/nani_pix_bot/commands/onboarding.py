@@ -2,7 +2,7 @@
 command/topic model."""
 
 from loguru import logger
-from telegram import Update
+from telegram import Message, Update, User
 from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
@@ -10,6 +10,12 @@ from nani_pix_bot.commands.achievements.browser import Browse, open_browser
 from nani_pix_bot.commands.achievements.common import DEEP_LINK_PREFIX, MAX_ID, outsider_refusal
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.commands.shop import open_shop
+from nani_pix_bot.commands.standings_dm import (
+    RECENT_PAYLOAD,
+    RULES_PAYLOAD,
+    open_recent,
+    open_rules,
+)
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, settings
 
@@ -26,25 +32,45 @@ def _achievements_owner(args: list[str] | None) -> int | None:
     return int(raw)
 
 
+_STANDINGS_VIEWS = {(RULES_PAYLOAD,): open_rules, (RECENT_PAYLOAD,): open_recent}
+
+
+async def _members_only(
+    message: Message, context: ContextTypes.DEFAULT_TYPE, user_id: int, what: str
+) -> bool:
+    """True when the deep link may open; otherwise the refusal is sent."""
+    refusal = await outsider_refusal(context, user_id, what)
+    if refusal is not None:
+        await message.reply_text(refusal)
+    return refusal is None
+
+
+async def _open_deep_link(message: Message, context: ContextTypes.DEFAULT_TYPE, user: User) -> bool:
+    """Opens what `/start <payload>` points at; False when it carried none."""
+    owner_id = _achievements_owner(context.args)
+    if owner_id is not None:
+        if await _members_only(message, context, user.id, "achievements deep link"):
+            logger.info("opened achievements via the /start deep link")
+            await open_browser(message, context, Browse(user.id, owner_id))
+        return True
+    standings_view = _STANDINGS_VIEWS.get(tuple(context.args or ()))
+    if standings_view is not None:
+        if await _members_only(message, context, user.id, "standings deep link"):
+            await standings_view(message, context)
+        return True
+    if context.args == ["shop"]:
+        logger.info("opened the shop via the /start deep link")
+        await open_shop(message, context, user)
+        return True
+    return False
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     user = update.effective_user
     if not is_private_chat(update) or message is None or user is None:
         return
-
-    owner_id = _achievements_owner(context.args)
-    if owner_id is not None:
-        refusal = await outsider_refusal(context, user.id, "achievements deep link")
-        if refusal is not None:
-            await message.reply_text(refusal)
-            return
-        logger.info("opened achievements via the /start deep link")
-        await open_browser(message, context, Browse(user.id, owner_id))
-        return
-
-    if context.args == ["shop"]:
-        logger.info("opened the shop via the /start deep link")
-        await open_shop(message, context, user)
+    if await _open_deep_link(message, context, user):
         return
 
     session_factory = context.bot_data["session_factory"]

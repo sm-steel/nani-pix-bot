@@ -92,6 +92,71 @@ def test_games_ending_outside_the_period_dont_count_and_a_refinish_counts_once()
     assert [(s.player_id, s.wins) for s in standings if s.player_id != HOST] == [(B, 1)]
 
 
+def _gain_rows(gains: list[periods.Gain]) -> list[tuple[Any, ...]]:
+    return [(g.player_id, g.points, g.role, g.rank_before, g.rank_after) for g in gains]
+
+
+def test_gains_replay_each_win_with_the_ranks_it_moved() -> None:
+    gains = periods.gains(
+        [
+            _won(A, 1, datetime(2026, 10, 2, tzinfo=UTC), stage=4),  # A 2, host 1
+            _won(B, 2, datetime(2026, 10, 3, tzinfo=UTC), stage=1),  # B 5, host 2
+        ],
+        OCT,
+    )
+    win, host = periods.GainRole.WIN, periods.GainRole.HOST
+    assert _gain_rows(gains) == [
+        (A, 2, win, None, 1),
+        (HOST, 1, host, None, 2),
+        (B, 5, win, None, 1),
+        (HOST, 1, host, 2, 3),
+    ]
+    assert gains[2].game_id == 2
+    assert gains[2].stage == 1
+    assert gains[2].at == datetime(2026, 10, 3, tzinfo=UTC)
+
+
+def test_gains_give_no_host_share_in_hard_mode_and_report_the_turn() -> None:
+    gains = periods.gains(
+        [_won(A, 1, datetime(2026, 10, 2, tzinfo=UTC), stage=2, hard_mode=True)], OCT
+    )
+    assert _gain_rows(gains) == [(A, 4, periods.GainRole.WIN, None, 1)]
+    assert gains[0].hard_mode
+
+
+def test_a_host_who_also_wins_gets_both_shares_like_the_standings() -> None:
+    won = ev(
+        EventType.GAME_WON,
+        A,
+        A,
+        game=1,
+        stage=1,
+        hard_mode=False,
+        ended_at=datetime(2026, 10, 2, tzinfo=UTC).isoformat(),
+    )
+    gains = periods.gains([won], OCT)
+    assert [(g.points, g.role) for g in gains] == [
+        (5, periods.GainRole.WIN),
+        (1, periods.GainRole.HOST),
+    ]
+    assert periods.score([won], OCT)[0].score == sum(g.points for g in gains)
+
+
+def test_gains_skip_other_periods_and_count_a_refinish_once() -> None:
+    gains = periods.gains(
+        [
+            _won(A, 1, datetime(2026, 9, 30, tzinfo=UTC)),
+            _won(B, 2, datetime(2026, 10, 2, tzinfo=UTC)),
+            _won(A, 2, datetime(2026, 10, 2, tzinfo=UTC), how="setwinner"),
+        ],
+        OCT,
+    )
+    assert [(g.player_id, g.role) for g in gains] == [
+        (A, periods.GainRole.WIN),
+        (HOST, periods.GainRole.HOST),
+    ]
+
+
 @pytest.mark.achievements
 def test_finalize_records_the_top_and_grants_the_champion_after_the_summary(
     session: Session,

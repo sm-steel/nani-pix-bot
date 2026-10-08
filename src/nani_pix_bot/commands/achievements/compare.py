@@ -9,6 +9,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nani_pix_bot.commands.achievements import browser
 from nani_pix_bot.commands.achievements.common import PREFIX
+from nani_pix_bot.commands.helpers import paging
 from nani_pix_bot.commands.helpers.rich import md_escape
 from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import names, status
@@ -75,11 +76,11 @@ def compare_view(session: Session, request: CompareRequest, lang: str) -> browse
     now = datetime.now(UTC)
     mine = status.build(session, request.viewer_id, now)
     pairs = status.compare(mine, status.build(session, request.other_id, now), request.filt)
-    page = browser.clamp_page(request.page, total=len(pairs), size=COMPARE_PAGE_SIZE)
-    pages = max(1, -(-len(pairs) // COMPARE_PAGE_SIZE))
+    page = paging.clamp_page(request.page, total=len(pairs), size=COMPARE_PAGE_SIZE)
+    pages = paging.page_count(len(pairs), COMPARE_PAGE_SIZE)
     shown = pairs[page * COMPARE_PAGE_SIZE : (page + 1) * COMPARE_PAGE_SIZE]
     rows = [_tabs(request.other_id, request.filt, lang)]
-    nav = browser.nav_row(
+    nav = paging.nav_row(
         lambda p: compare_data(request.other_id, request.filt, p), page, pages, lang
     )
     if nav:
