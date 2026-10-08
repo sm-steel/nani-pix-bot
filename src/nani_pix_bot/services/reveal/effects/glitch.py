@@ -162,6 +162,8 @@ def frames(original: Image.Image, stages: list[Image.Image]) -> Iterator[bytes]:
 def render_part1(original: Image.Image, stages: list[Image.Image]) -> bytes:
     """Part 1 MP4: glitching stages stepping to the clear image, ending on the clear frame."""
     k = encode.FPS // GLITCH_FPS
+    # 0.7 s at 15 fps rounds up to 11 input frames; with the clean first frame itself that is an
+    # effective ~0.8 s opening hold, kept identical to the approved look
     hold_in = math.ceil(encode.HOLD_START * GLITCH_FPS)
     n_in = len(plan(len(stages), GLITCH_FPS, INTRO_S)) + 2  # + clean coarse first + clear last
     options = encode.Part1Options(
