@@ -4,18 +4,28 @@ announcement is confirmed sent" tail end every terminal (WON/UNSOLVED)
 outcome needs — see MECHANICS.md's "Pixelation stages" and "Cleanup"
 notes."""
 
+from dataclasses import dataclass
+
 from loguru import logger
 from sqlalchemy.orm import Session, sessionmaker
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Message
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputMediaPhoto,
+    InputMediaVideo,
+    Message,
+)
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.jobs import reveal
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.economy import bounty
+from nani_pix_bot.services.reveal import store as reveal_store
 
 
 async def post_current_image(
@@ -189,26 +199,28 @@ async def post_current_images(
     both. Same best-effort spirit as post_current_image's own
     pin-permission-failure handling: this is a known, accepted
     limitation, not a bug to work around."""
-    return await _post_album(context, session_factory, photos, caption)
+    return await _post_album(context, session_factory, _photo_album(photos, caption))
+
+
+def _photo_album(photos: tuple[bytes, bytes], caption: str) -> list[InputMediaPhoto]:
+    """The 2-photo album, the caption on the first."""
+    return [InputMediaPhoto(media=photos[0], caption=caption), InputMediaPhoto(media=photos[1])]
 
 
 async def _post_album(
     context: ContextTypes.DEFAULT_TYPE,
     session_factory: sessionmaker[Session],
-    photos: tuple[bytes, bytes],
-    caption: str,
+    media: list[InputMediaPhoto] | list[InputMediaPhoto | InputMediaVideo],
 ) -> tuple[Message, ...] | None:
-    """The shared send-then-pin tail of post_current_images/post_stage_images."""
+    """The shared send-then-pin tail of post_current_images/post_stage_images
+    and the reveal album, which carries a video first."""
     chat_id = context.bot_data["group_chat_id"]
     message_thread_id = context.bot_data["game_topic_id"]
     try:
         result = await context.bot.send_media_group(
             chat_id=chat_id,
             message_thread_id=message_thread_id,
-            media=[
-                InputMediaPhoto(media=photos[0], caption=caption),
-                InputMediaPhoto(media=photos[1]),
-            ],
+            media=media,
         )
     except TelegramError as exc:
         logger.warning(
@@ -249,7 +261,119 @@ async def post_stage_images(
     url = shop_link_url(context)
     if url is not None:
         caption = f"{caption}\n🛒 {url}"
-    return await _post_album(context, session_factory, photos, caption)
+    return await _post_album(context, session_factory, _photo_album(photos, caption))
+
+
+@dataclass(frozen=True)
+class RevealWinner:
+    """Who the reveal video's badge shows; `handle` is the badge text
+    verbatim ("@username", or the full name when there is no username)."""
+
+    user_id: int
+    handle: str
+
+
+@dataclass(frozen=True)
+class RevealTarget:
+    """Which game's pre-rendered reveal to post, and who (if anyone) won it."""
+
+    game_id: int
+    winner: RevealWinner | None
+
+
+async def _render(
+    context: ContextTypes.DEFAULT_TYPE, target: RevealTarget, clear: bytes
+) -> bytes | None:
+    winner = target.winner
+    return await reveal.render_reveal(
+        context.application,
+        target.game_id,
+        clear,
+        winner.user_id if winner else None,
+        winner.handle if winner else None,
+    )
+
+
+async def _send_video(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory: sessionmaker[Session],
+    video: bytes,
+    caption: str,
+) -> Message | None:
+    """Sends the reveal video then pins it; None (logged) when Telegram
+    rejects it."""
+    try:
+        message = await context.bot.send_video(
+            chat_id=context.bot_data["group_chat_id"],
+            message_thread_id=context.bot_data["game_topic_id"],
+            video=video,
+            caption=caption,
+            supports_streaming=True,
+        )
+    except TelegramError as exc:
+        logger.warning("Telegram rejected the reveal video: {error}", error=exc)
+        return None
+    pinned = await _pin(context, session_factory, message.message_id)
+    logger.info(
+        "reveal video posted to the group{pinned} (msg {msg_id}, {kib} KiB)",
+        pinned=" and pinned" if pinned else "",
+        msg_id=message.message_id,
+        kib=len(video) // 1024,
+    )
+    return message
+
+
+async def post_reveal(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory: sessionmaker[Session],
+    target: RevealTarget,
+    photo: bytes,
+    caption: str,
+) -> Message | None:
+    """post_current_image for the end of a game: sends the animated reveal
+    video (caption and pin as for the photo), falling back to exactly the
+    photo post when there is no video or Telegram rejects it. Frees the
+    reveal slot once something was confirmed sent; returns None, keeping
+    the slot, when nothing was. `photo` is the game's stored image bytes
+    (what the pre-render used)."""
+    video = await _render(context, target, photo)
+    sent = None
+    if video is not None:
+        sent = await _send_video(context, session_factory, video, caption)
+    if sent is None:
+        sent = await post_current_image(context, session_factory, photo=photo, caption=caption)
+    if sent is not None:
+        reveal.finished(context.application, target.game_id)
+    return sent
+
+
+async def post_reveal_pair(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory: sessionmaker[Session],
+    target: RevealTarget,
+    photos: tuple[bytes, bytes],
+    caption: str,
+) -> tuple[Message, ...] | None:
+    """post_reveal for hard mode: an album whose first item is the video of
+    the image the slot chose (with the caption), the other screenshot second
+    as a photo. Falls back to the plain 2-photo album like post_reveal."""
+    with session_scope(session_factory) as session:
+        slot = reveal_store.load(session)
+        choice = slot.image_choice if slot is not None and slot.game_id == target.game_id else None
+    first, second = (photos[1], photos[0]) if choice == "b" else photos
+    video = await _render(context, target, first)
+    sent = None
+    if video is not None:
+        media = [
+            InputMediaVideo(media=video, caption=caption, supports_streaming=True),
+            InputMediaPhoto(media=second),
+        ]
+        sent = await _post_album(context, session_factory, media)
+    if sent is None:
+        sent = await post_current_images(context, session_factory, photos=photos, caption=caption)
+    if sent is not None:
+        reveal.finished(context.application, target.game_id)
+    return sent
 
 
 def clear_image_if_sent(

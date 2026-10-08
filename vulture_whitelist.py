@@ -13,6 +13,7 @@ Anything else vulture reports is dead code: remove it or wire it up.
 from typing import TYPE_CHECKING
 
 from nani_pix_bot.jobs import reveal as reveal_job
+from nani_pix_bot.jobs.timers import current_image
 from nani_pix_bot.models.enums import RevealEffect
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.mal_link import MalCredentials
@@ -81,9 +82,9 @@ _kept = (
     reveal_pipeline.finish,
     reveal_pipeline.warm_up,
     reveal_job.stop_worker,
-    reveal_job.render_reveal,
     reveal_job.reload_on_startup,
-    reveal_job.finished,
+    current_image.post_reveal,
+    current_image.post_reveal_pair,
 )
 
 if TYPE_CHECKING:
