@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from nani_pix_bot.commands.helpers.durations import duration
 from nani_pix_bot.commands.helpers.rich import md_escape
 from nani_pix_bot.models.enums import GameStatus, Provider
 from nani_pix_bot.models.game import Game
@@ -32,19 +33,6 @@ def _as_utc(at: datetime) -> datetime:
 
 def _local(at: datetime, tz: ZoneInfo, fmt: str) -> str:
     return _as_utc(at).astimezone(tz).strftime(fmt)
-
-
-def duration(span: timedelta, lang: str) -> str:
-    """'2d 3h', '1h 05m', '12m' — the two largest units, at least a minute."""
-    minutes = max(int(span.total_seconds()) // 60, 1)
-    days, rest = divmod(minutes, 24 * 60)
-    hours, mins = divmod(rest, 60)
-    parts = [
-        i18n.t(f"history.unit.{unit}", lang, n=n)
-        for unit, n in (("day", days), ("hour", hours), ("minute", mins))
-        if n
-    ]
-    return " ".join(parts[:2])
 
 
 def _name(session: Session, player_id: int | None) -> str:

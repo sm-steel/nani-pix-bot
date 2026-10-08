@@ -45,6 +45,7 @@ from nani_pix_bot.commands import (
     stageconfig,
     standings,
     standings_dm,
+    status,
     tip,
     title,
     version,
@@ -317,6 +318,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("skip", game_flow.skip_command))
     application.add_handler(CommandHandler("stop", game_flow.stop_command))
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
+    application.add_handler(CommandHandler("status", status.status_command))
     application.add_handler(CommandHandler("balance", balance.balance_command))
     application.add_handler(CommandHandler("shop", shop.shop_command))
     application.add_handler(CommandHandler("tip", tip.tip_command))

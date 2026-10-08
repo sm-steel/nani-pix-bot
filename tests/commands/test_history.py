@@ -9,8 +9,9 @@ from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import history
+from nani_pix_bot.commands.helpers import durations
 from nani_pix_bot.commands.helpers.rich import md_escape
-from nani_pix_bot.commands.history import data, render
+from nani_pix_bot.commands.history import data
 from nani_pix_bot.commands.history.data import Filter, GameRequest, ListRequest
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import EventType, GameStatus, PixelStage
@@ -66,7 +67,7 @@ def test_callback_data_round_trips_and_rejects_junk() -> None:
     ],
 )
 def test_durations_read_with_the_two_largest_units(span: timedelta, text: str) -> None:
-    assert render.duration(span, "en") == text
+    assert durations.duration(span, "en") == text
 
 
 def test_the_list_shows_finished_games_with_a_button_each(session: Session) -> None:

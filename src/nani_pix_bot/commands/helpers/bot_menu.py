@@ -53,6 +53,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("sharpen", i18n.t("commands.sharpen", lang)),
         BotCommand("correct", i18n.t("commands.correct", lang)),
         BotCommand("skip", i18n.t("commands.skip", lang)),
+        BotCommand("status", i18n.t("commands.status", lang)),
         BotCommand("leaderboard", i18n.t("commands.leaderboard", lang)),
         BotCommand("achievements", i18n.t("commands.achievements", lang)),
         BotCommand("standings", i18n.t("commands.standings", lang)),

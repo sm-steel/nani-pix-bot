@@ -317,6 +317,10 @@ src/nani_pix_bot/
     standings.py  # /standings — live week/month/year champion tables in
                    # one rich message (periods.standings), with two DM
                    # deep-link buttons (/start rules, /start recent)
+    status.py     # /status — topic-only manual resync: re-posts the
+                   # current stage image (pixelated off the event loop)
+                   # with a live caption, or says what's happening when
+                   # no game runs; no state change, no re-pin
     history/      # /history — DM-only finished-games list with an
                    # All/Mine toggle and per-game records with the guess
                    # log (__init__.py), callback data hist:l:/hist:g:

@@ -20,10 +20,12 @@ just what's currently built.
 | 2-day timeout | Implemented |
 | Inactivity nudge (3h) + auto-advance (6h) | Implemented |
 | Pinned current image (one at a time, follows the game) | Implemented |
+| Manual resync (`/status`) — re-post the current image with a live caption | Implemented |
 | Setup-abandon timeout (1h) | Implemented |
 | Win-turn reminder (15min) + expiry (12h) | Implemented |
 | Manual stop with confirmation (`/stop`) | Implemented |
 | Leaderboard (`/leaderboard`) | Implemented |
+| Game history (`/history`) | Implemented |
 | Achievements, titles, champions (`/achievements`, `/title`) | Implemented |
 | Pixels 💠 — earning, `/balance`, `/pixelconfig` | Implemented |
 | Clue shop (`/shop`) — spend 💠 on private clues | Implemented |
@@ -567,6 +569,21 @@ lacks the group's "Pin messages" admin permission, the pin/unpin call is
 skipped and logged as a warning rather than blocking the post itself
 (see `ARCHITECTURE.md`). The pin is left in place once a game ends; the
 next game's first post naturally supersedes it.
+
+**`/status`** (game topic, any time) is a manual resync for when the chat
+looks out of step with the bot: a post that never arrived, or a missing
+or stale pin (its caption's guess count is frozen at post time).
+
+- **During a game**, it re-posts the current stage image (the HARD MODE
+  pair as an album) with a live caption:
+  - stage (or turn) and guesses left at it
+  - the bounty, if any
+  - how long until the game ends on its own
+  - the 🎲 game number
+- **Otherwise** it says what is happening instead: who is setting up the
+  next game, that a vote is open, or whose turn it is to start one.
+
+It never changes anything and never re-pins.
 
 A separate **`/setgamesenabled on|off`** command (also DM-only,
 admin-gated) lets an admin pause *starting* new games entirely —

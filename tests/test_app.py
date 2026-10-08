@@ -105,6 +105,7 @@ def test_build_application_registers_every_command() -> None:
         "achievements",
         "standings",
         "history",
+        "status",
         "title",
     }
 
