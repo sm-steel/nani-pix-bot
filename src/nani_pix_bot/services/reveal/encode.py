@@ -18,8 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, TypeVar
 
-from loguru import logger
-
 FPS = 30
 HOLD_START = 0.7
 ENDING_FRAMES = 60  # 2 s of clear image (+ celebration) after part 1
@@ -336,13 +334,7 @@ def ending_and_join(
             if code := proc.returncode:
                 err.seek(0)
                 raise FfmpegError(f"ending {name} exited {code}: {_tail(err.read())}")
-        data = out.read_bytes()
-    logger.debug(
-        "ending joined: {size} bytes, overlay={overlay}",
-        size=len(data),
-        overlay=overlay is not None,
-    )
-    return data
+        return out.read_bytes()
 
 
 def _run_ending(

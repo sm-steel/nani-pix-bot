@@ -11,7 +11,6 @@ import io
 import time
 from dataclasses import dataclass, field
 
-from loguru import logger
 from PIL import Image
 
 from nani_pix_bot.models.enums import PixelAlgorithm, RevealEffect
@@ -119,12 +118,6 @@ def pregenerate(
     _confetti(static)  # winner-independent: built now, so a win doesn't pay for it
     _remember(image, static)
     render_ms = round((time.perf_counter() - started) * 1000)
-    logger.info(
-        "reveal part 1 rendered: effect {effect}, frame {frame}, {render_ms} ms",
-        effect=effect.value,
-        frame=original.size,
-        render_ms=render_ms,
-    )
     return Pregen(part1_ts, join_offset, render_ms)
 
 
@@ -138,19 +131,11 @@ def _overlay(static: _Static, badge: Badge) -> encode.Overlay:
 
 def finish(pregen: Pregen, clear: bytes, badge: Badge | None) -> bytes:
     """The final MP4: part 1 plus the ending (with the celebration when there's a `badge`)."""
-    started = time.perf_counter()
     static = _static_for(clear)
     overlay = None if badge is None else _overlay(static, badge)
-    video = encode.ending_and_join(
+    return encode.ending_and_join(
         pregen.part1_ts, pregen.join_offset, static.clear_yuv, static.size, overlay
     )
-    logger.info(
-        "reveal finished: {size} bytes, celebration={celebration}, {ms} ms",
-        size=len(video),
-        celebration=badge is not None,
-        ms=round((time.perf_counter() - started) * 1000),
-    )
-    return video
 
 
 def warm_up() -> None:

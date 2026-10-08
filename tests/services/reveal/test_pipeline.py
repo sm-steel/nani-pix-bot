@@ -1,5 +1,6 @@
 import io
 import pickle
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -80,3 +81,15 @@ def test_pregenerate_builds_the_confetti_so_finish_does_not(monkeypatch) -> None
 
     monkeypatch.setattr(celebration, "confetti_clip", boom)
     assert decode_clean(pipeline.finish(pregen, png, pipeline.Badge(None, "@w")))
+
+
+def test_nothing_run_by_the_worker_imports_loguru() -> None:
+    """The spawned worker never runs setup_logging, so its log lines would carry no game context
+    (and break LOG_FORMAT=json); timings are logged bot-side. store.py runs bot-side only."""
+    package = Path(pipeline.__file__).parent
+    offenders = [
+        path.relative_to(package).as_posix()
+        for path in package.rglob("*.py")
+        if path.name != "store.py" and "loguru" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []

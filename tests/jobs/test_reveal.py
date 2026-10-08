@@ -367,3 +367,18 @@ async def test_the_avatar_fetch_overlaps_the_pre_render_wait(session_factory, mo
     assert await reveal.render_reveal(application, 5, b"png", 9, "@w") == b"mp4"
     assert time.perf_counter() - started < 0.35
     application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_a_finished_render_logs_its_timing_with_the_game(
+    session_factory, monkeypatch, log_records
+) -> None:
+    monkeypatch.setattr(pipeline, "finish", MagicMock(return_value=b"mp4"))
+    application = _application(session_factory)
+    application.bot_data["reveal_cache"].ready(5, PREGEN)
+    assert await reveal.render_reveal(application, 5, b"png", None, None) == b"mp4"
+    [line] = [line for line in log_records if line.message.startswith("reveal rendered")]
+    assert line.level == "INFO"
+    assert line.extra["game_id"] == 5
+    assert isinstance(line.extra["ms"], int)
+    assert line.extra["kib"] == 0
+    application.bot_data["reveal_executor"].shutdown()

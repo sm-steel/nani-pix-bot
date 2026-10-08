@@ -8,6 +8,7 @@ Every failure degrades to None / a log line: the caller then posts the
 plain photo, as before this feature existed."""
 
 import asyncio
+import time
 
 from loguru import logger
 from telegram.ext import Application
@@ -126,11 +127,21 @@ async def render_reveal(
         _fallback(game_id, pregen)
         return None
     badge = None if avatar_task is None else pipeline.Badge(await avatar_task, handle or "")
+    started = time.perf_counter()
     try:
-        return await asyncio.wait_for(
+        video = await asyncio.wait_for(
             reveal_worker.submit(application.bot_data, pipeline.finish, pregen, clear, badge),
             RENDER_TIMEOUT,
         )
+        # the worker process can't log with the game's context, so the timing is logged here
+        logger.info(
+            "reveal rendered in {ms} ms, {kib} KiB, celebration={celebration}",
+            ms=round((time.perf_counter() - started) * 1000),
+            kib=len(video) // 1024,
+            celebration=badge is not None,
+            game_id=game_id,
+        )
+        return video
     except TimeoutError:
         logger.warning(
             "the reveal render took over {seconds:g} s", seconds=RENDER_TIMEOUT, game_id=game_id
