@@ -247,6 +247,12 @@ src/nani_pix_bot/
                    #                  screenshots.py once that file's
                    #                  own complexity grew past qlty's
                    #                  threshold
+                   #   source_pick.py the screenshot-source button tap:
+                   #                  read it, answer it and search/
+                   #                  fetch with no session open,
+                   #                  commit what that resolved, then
+                   #                  send (#292) — split out of
+                   #                  screenshots.py for the same reason
                    #   preview.py     the confirmation preview (show/
                    #                  confirm/change-image/research/
                    #                  add-synonym) + the final post to

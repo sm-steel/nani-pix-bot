@@ -792,3 +792,37 @@ async def test_a_preview_button_logs_the_tap_at_info(
         if r.level == "INFO" and r.message == "tapped Add a synonym on the preview"
     ]
     assert line.extra["game_id"] == game_id
+
+
+@pytest.mark.parametrize(
+    ("data", "overrides", "step"),
+    [
+        (PREVIEW_CHANGE_IMAGE_CALLBACK_DATA, {}, SetupStep.AWAITING_PHOTO_CHANGE),
+        (
+            PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA,
+            {"screenshot_source": "shikimori", "shikimori_id": 52991},
+            SetupStep.AWAITING_PHOTO_CHANGE,
+        ),
+        (PREVIEW_RESEARCH_CALLBACK_DATA, {}, SetupStep.PICKING_METHOD),
+        (PREVIEW_ADD_SYNONYM_CALLBACK_DATA, {}, SetupStep.AWAITING_SYNONYM),
+    ],
+)
+async def test_a_preview_button_commits_its_step_before_editing_the_message(
+    session_factory, data: str, overrides: dict, step: SetupStep
+) -> None:
+    """Issue #292: the edit goes out after the session commits, so a
+    timeout on it — the new screen may well have landed — can't roll the
+    step back."""
+    _staged_setup_game(session_factory, **overrides)
+    update = _make_preview_callback_update(data=data, user_id=1)
+    update.callback_query.edit_message_text = AsyncMock(side_effect=TimedOut())
+    context = _make_context(session_factory)
+
+    with pytest.raises(TimedOut):
+        await preview.preview_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == step

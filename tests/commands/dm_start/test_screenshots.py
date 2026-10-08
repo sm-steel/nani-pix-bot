@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.error import BadRequest, TimedOut
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import screenshots
+from nani_pix_bot.commands.dm_start import screenshots, source_pick
 from nani_pix_bot.commands.dm_start.keyboards import SCREENSHOT_UPLOAD_CALLBACK_DATA
 from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
@@ -107,7 +107,7 @@ async def test_stage_screenshot_picker_offers_all_three_providers_even_with_no_i
     capable provider is offered regardless of the identification
     source — an AniList-identified game still gets Shikimori/Tenrai/TMDB
     buttons, auto-searched by title when tapped (see
-    _resolve_screenshot_source)."""
+    _fetch_for_pick)."""
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
         session.commit()
@@ -131,7 +131,7 @@ async def test_screenshot_source_callback_handler_shows_the_gallery(
     update = _make_callback_update(data="screenshot_source:shikimori")
     context = _make_context(session_factory)
 
-    await screenshots.screenshot_source_callback_handler(
+    await source_pick.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
@@ -165,7 +165,7 @@ async def test_screenshot_source_callback_handler_paginates_when_more_than_a_pag
     update = _make_callback_update(data="screenshot_source:shikimori")
     context = _make_context(session_factory)
 
-    await screenshots.screenshot_source_callback_handler(
+    await source_pick.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
@@ -230,7 +230,7 @@ async def test_screenshot_source_callback_handler_cross_provider_auto_resolves_t
     update = _make_callback_update(data="screenshot_source:shikimori")
     context = _make_context(session_factory)
 
-    await screenshots.screenshot_source_callback_handler(
+    await source_pick.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
@@ -276,7 +276,7 @@ async def test_screenshot_source_callback_handler_cross_provider_searches_a_nati
     update = _make_callback_update(data="screenshot_source:shikimori")
     context = _make_context(session_factory)
 
-    await screenshots.screenshot_source_callback_handler(
+    await source_pick.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
@@ -302,7 +302,7 @@ async def test_screenshot_source_callback_handler_cross_provider_searches_a_russ
     update = _make_callback_update(data="screenshot_source:tenrai")
     context = _make_context(session_factory)
 
-    await screenshots.screenshot_source_callback_handler(
+    await source_pick.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
@@ -318,7 +318,7 @@ async def test_screenshot_source_callback_handler_cross_provider_no_match_asks_t
     update = _make_callback_update(data="screenshot_source:shikimori")
     context = _make_context(session_factory)
 
-    await screenshots.screenshot_source_callback_handler(
+    await source_pick.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
@@ -349,7 +349,7 @@ async def test_screenshot_source_callback_handler_falls_back_when_the_fetch_fail
     update = _make_callback_update(data="screenshot_source:shikimori")
     context = _make_context(session_factory)
 
-    await screenshots.screenshot_source_callback_handler(
+    await source_pick.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
@@ -385,7 +385,7 @@ async def test_screenshot_source_callback_handler_keeps_the_fallback_state_when_
     update.callback_query.edit_message_text = AsyncMock(side_effect=TimedOut())
 
     with pytest.raises(TimedOut):
-        await screenshots.screenshot_source_callback_handler(
+        await source_pick.screenshot_source_callback_handler(
             cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
         )
 
@@ -420,7 +420,7 @@ async def test_screenshot_source_callback_handler_falls_back_when_telegram_rejec
     # ...and downloading the page ourselves fails too (issue #283's fallback).
     context.bot_data["search_client"].get = AsyncMock(side_effect=httpx.ConnectError("down"))
 
-    await screenshots.screenshot_source_callback_handler(
+    await source_pick.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
@@ -455,7 +455,7 @@ async def test_screenshot_source_callback_handler_falls_back_on_a_malformed_prov
     update = _make_callback_update(data="screenshot_source:shikimori")
     context = _make_context(session_factory)
 
-    await screenshots.screenshot_source_callback_handler(
+    await source_pick.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
@@ -527,7 +527,7 @@ async def test_a_source_tap_with_no_setup_row_left_says_so_on_screen(session_fac
     context = _make_context(session_factory)  # no game row at all
     update = _make_callback_update(data="screenshot_source:shikimori")
 
-    await screenshots.screenshot_source_callback_handler(
+    await source_pick.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
@@ -562,8 +562,62 @@ async def test_a_live_source_tap_still_gets_its_bare_acknowledgement(
     update = _make_callback_update(data="screenshot_source:shikimori")
     context = _make_context(session_factory)
 
-    await screenshots.screenshot_source_callback_handler(
+    await source_pick.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
     update.callback_query.answer.assert_awaited_once_with()
+
+
+async def test_a_source_pick_commits_what_it_resolved_before_the_gallery_goes_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #292: the cross-provider id and the picker column are saved
+    before the gallery is sent, so a send that blows up (cancelled, a
+    bug) can't roll back a gallery the starter may already be looking at."""
+    monkeypatch.setattr(shikimori, "search", AsyncMock(return_value=[_FRIEREN_SHIKIMORI]))
+    monkeypatch.setattr(
+        shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
+    )
+    game_id = _staged_game(session_factory, source="anilist", anilist_id=99)
+    update = _make_callback_update(data="screenshot_source:shikimori")
+    context = _make_context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=RuntimeError("send blew up"))
+
+    with pytest.raises(RuntimeError, match="send blew up"):
+        await source_pick.screenshot_source_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.shikimori_id == 52991
+        assert fetched.screenshot_picker_provider == "shikimori"
+
+
+async def test_a_source_pick_keeps_its_fallback_when_the_setup_is_gone_meanwhile(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The network calls now run between two sessions, so the setup can
+    vanish in between (a /stop): the pick is dropped, nothing is written."""
+    game_id = _staged_game(session_factory, shikimori_id=52991)
+
+    async def stop_mid_fetch(*_args: object) -> list[str]:
+        with session_factory() as session:
+            game = session.get(Game, game_id)
+            assert game is not None
+            session.delete(game)
+            session.commit()
+        return ["https://shikimori.io/x/0.jpg"]
+
+    monkeypatch.setattr(shikimori, "screenshots", stop_mid_fetch)
+    update = _make_callback_update(data="screenshot_source:shikimori")
+    context = _make_context(session_factory)
+
+    await source_pick.screenshot_source_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_media_group.assert_not_awaited()
+    update.callback_query.edit_message_text.assert_not_awaited()

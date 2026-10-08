@@ -17,7 +17,10 @@ the "Wrong anime? Search again" correction sub-flow) lives in
 screenshot_gallery.py instead — split out once this file's own total
 complexity grew past qlty's threshold; that module imports the
 `_fetch_screenshots_or_fallback`/`_provider_id`/`GalleryTarget`/
-`_show_gallery_page` helpers below rather than duplicating them."""
+`_show_gallery_page` helpers below rather than duplicating them. The
+source-button tap itself (searching, fetching, then committing what it
+found before anything is sent) lives in source_pick.py for the same
+reason."""
 
 from dataclasses import dataclass
 from typing import cast
@@ -36,7 +39,6 @@ from nani_pix_bot.commands.dm_start._shared import (
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     GalleryPage,
-    parse_screenshot_source_callback_data,
     screenshot_gallery_keyboard,
     screenshot_source_keyboard,
 )
@@ -458,190 +460,6 @@ async def screenshot_upload_instead_callback_handler(
         game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
     # After the commit: the prompt may land even if the edit times out.
     await query.edit_message_text(i18n.t("dm_start.ask_new_photo", lang))
-
-
-async def screenshot_source_callback_handler(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    """A screenshot-source button tapped from `start_screenshot_picker`'s
-    keyboard — same-provider (an id already on file) or cross-provider
-    (ticket 8's silent auto-search), see _resolve_screenshot_source."""
-    query = update.callback_query
-    if query is None or query.data is None:
-        return
-    user = query.from_user
-    if user is None:
-        return
-
-    session_factory = context.bot_data["session_factory"]
-    notice = None
-    with session_scope(session_factory) as session:
-        lang = settings.get_language(session)
-        game = game_service.get_setup_game_for_starter(session, user.id)
-        if game is None:
-            await _reject_stale_tap(query, lang)
-            return
-        # One answer per query id, so this waits until the stale branch
-        # above has had its chance at it (see _reject_stale_tap). Still
-        # ahead of the provider round-trip below, so the spinner clears
-        # at the same moment it always did for a tap that works.
-        # Inside the open write transaction, like every other await in
-        # this block — see issue #82, which is filed against exactly
-        # that shape here; this is one more call for its sweep to move,
-        # not a new pattern.
-        await query.answer()
-
-        provider = parse_screenshot_source_callback_data(query.data)
-        if provider is None:
-            # keyboards.py already logged what was wrong with the payload
-            # itself; this says which screen it was aimed at and which
-            # game it would have moved, neither of which it can see.
-            logger.warning(
-                "rejected screenshot-source tap {data!r}", data=query.data, game_id=game.id
-            )
-            return
-        logger.info(
-            "picked {provider} as the screenshot source", provider=provider, game_id=game.id
-        )
-        # The picker column is written by whichever screen this ends on,
-        # not here: _resolve_screenshot_source sets it for the gallery it
-        # shows, and stage_fallback sets it for a failure screen. Note
-        # it is never screenshot_source — no image exists yet, and this
-        # tap must not claim one (see models/game.py).
-        failure = await _resolve_screenshot_source(context, game, provider, lang)
-        if failure is not None:
-            notice = stage_fallback(game, failure)
-    # Block closed and committed above — see stage_fallback's docstring
-    # for why the reply has to happen after (a failure) — and, now that
-    # this branch is split anyway, the success reply moves out here too.
-    if notice is not None:
-        await send_fallback_notice(query.edit_message_text, notice, lang)
-    else:
-        await query.edit_message_text(i18n.t("dm_start.screenshot_source_picked", lang))
-
-
-async def _resolve_screenshot_source(
-    context: ContextTypes.DEFAULT_TYPE, game, provider: Provider, lang: str
-) -> ScreenshotFailure | None:
-    """Runs once a screenshot-source button is tapped: same-provider (an
-    id already on file) goes straight to the gallery; cross-provider
-    silently searches by the confirmed title first (ticket 8) and only
-    falls back if that search finds nothing or the provider is down.
-    Once a provider id is in hand either way, a screenshot-fetch failure
-    or a genuinely empty result falls back the same way, via
-    _fetch_screenshots_or_fallback.
-
-    Returns None once a gallery is on screen, or the i18n key for a
-    failure — which the caller hands to `reply_with_source_menu`, so
-    every one of these exits leaves the starter on the source menu
-    rather than staring at a bare error."""
-    provider_id = _provider_id(game, provider)
-    cross_provider = provider_id is None
-    if cross_provider:
-        provider_id = await _resolve_cross_provider_id(context, game, provider)
-        if provider_id is None:
-            return ScreenshotFailure("dm_start.cross_provider_search_failed", provider)
-
-    result = await _fetch_screenshots_or_fallback(context, game.id, provider, provider_id)
-    if isinstance(result, ScreenshotFailure):
-        return result
-
-    logger.info(
-        "showing the {provider} gallery ({count} screenshot(s), cross-provider: {cross_provider})",
-        provider=provider,
-        count=len(result),
-        cross_provider=cross_provider,
-        game_id=game.id,
-    )
-    # A cross-provider gallery carries "Wrong anime? Search again", so a
-    # typed correction still has to reach this provider's search. A
-    # same-provider one has nothing left to resolve — the id came from
-    # identification, and it offers no such button — so a typed message
-    # there is not a correction query and must not be searched as one.
-    game.screenshot_picker_provider = provider if cross_provider else None
-    target = GalleryTarget(
-        chat_id=game.starter_id, provider=provider, offset=0, cross_provider=cross_provider
-    )
-    return await _show_gallery_page(context, target, result, lang)
-
-
-async def _resolve_cross_provider_id(
-    context: ContextTypes.DEFAULT_TYPE, game, provider: Provider
-) -> int | None:
-    """Silently searches `provider` by the already-confirmed title and
-    stages its top result's id onto the game
-    (game_service.set_screenshot_provider_id) — ticket 8's cross-
-    provider resolution. Returns None on zero results or a search
-    failure so the caller can fall back to asking for a manual query
-    (the "Wrong anime? Search again" flow lands in that exact same
-    fallback state, see search_text_handler's PICKING_SCREENSHOT
-    branch in search.py)."""
-    # Every stored variant, not just the Latin-script two: AniList often
-    # has no English title and TMDB has no romaji one at all, so a game
-    # can easily reach here identified by its native (or, from
-    # Shikimori, its Russian) title alone — which used to be searched
-    # for as `""`. That degraded into the manual-query fallback rather
-    # than breaking, but it asked the starter to type a title the game
-    # already knows.
-    #
-    # Same order as prioritized_title()'s non-RU one (services/game/
-    # state.py) — a fourth restatement of it, tied to that function by
-    # intent but not by code, so a reorder there wants a look here.
-    # Deliberately not display_title() itself, which is why this is a
-    # copy: a *search query* must not follow the bot's display language
-    # (a RU bot would then send Tenrai/TMDB a Russian title even when an
-    # English one is on file), and display_title's "?" fallback for a
-    # title-less game would be a query rather than the no-query this
-    # still wants. Native before Russian for the same reason — all three
-    # providers index the Japanese title, only Shikimori knows the
-    # Russian one.
-    #
-    # next() over the tuple rather than an `or` chain: five chained
-    # operands are a qlty "complex binary expression", and the two read
-    # the same anyway (first truthy, else the default).
-    query_text = next(
-        (
-            title
-            for title in (
-                game.title_english,
-                game.title_romaji,
-                game.title_native,
-                game.title_russian,
-            )
-            if title
-        ),
-        "",
-    )
-    client = client_for_source(context, provider)
-    try:
-        results = await _search_provider(provider, client, query_text)
-    except SEARCH_SERVICE_ERRORS:
-        logger.exception(
-            "{provider} cross-provider screenshot search failed for {query!r}",
-            provider=provider,
-            query=query_text,
-            game_id=game.id,
-        )
-        return None
-
-    if not results:
-        logger.info(
-            "no {provider} cross-provider match for {query!r}",
-            provider=provider,
-            query=query_text,
-            game_id=game.id,
-        )
-        return None
-
-    game_service.set_screenshot_provider_id(game, results[0])
-    provider_id = _provider_id(game, provider)
-    logger.info(
-        "cross-provider resolved {provider} -> id {provider_id}",
-        provider=provider,
-        provider_id=provider_id,
-        game_id=game.id,
-    )
-    return provider_id
 
 
 async def _show_gallery_page(
