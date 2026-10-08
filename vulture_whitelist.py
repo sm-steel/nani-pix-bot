@@ -18,6 +18,7 @@ from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services.game.state import TitleVariants
+from nani_pix_bot.services.reveal import encode as reveal_encode
 from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 from nani_pix_bot.services.version import _TelegramHTMLRenderer
@@ -48,8 +49,7 @@ _kept = (
     TurnState.turn_opened_at,
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
-    # TEMPORARY — animated reveal (#295) building blocks not yet called;
-    # removed by the wiring tasks (#308/#309/#310)
+    # TEMPORARY — animated reveal (#295) building blocks not yet called; removed by the wiring tasks (#308/#309/#310)  # noqa: E501
     RevealEffect.IRIS,
     RevealEffect.TILE_FLIP,
     RevealEffect.RIPPLE,
@@ -60,6 +60,15 @@ _kept = (
     reveal_store.pick_image,
     reveal_store.reserve,
     reveal_store.mark_ready,
+    # TEMPORARY — animated reveal (#295) building blocks not yet called; removed by the wiring tasks (#308/#309/#310)  # noqa: E501
+    reveal_encode.encode_part1,
+    reveal_encode.Part1Options.pix_fmt,  # ty: ignore[unresolved-attribute]
+    reveal_encode.Part1Options.input_fps,  # ty: ignore[unresolved-attribute]
+    reveal_encode.Part1Options.vf,  # ty: ignore[unresolved-attribute]
+    reveal_encode.to_ts,
+    reveal_encode.ending_and_join,
+    reveal_encode.probe_frames,  # used by tests only until the pipeline logs it
+    reveal_encode.decode_clean,  # used by tests only until the pipeline logs it
 )
 
 if TYPE_CHECKING:
