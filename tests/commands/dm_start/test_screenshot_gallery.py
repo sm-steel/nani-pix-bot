@@ -1271,7 +1271,7 @@ async def test_screenshot_gallery_paging_arms_the_picker_for_a_typed_correction(
 ) -> None:
     """Regression (#72): every page is drawn `cross_provider=True`, so it
     carries "Wrong anime? Search again" — and the rule
-    `resume_screenshot_gallery` states in its own words is that such a
+    `stage_gallery_resume`/`send_gallery_resume` states in its own words is that such a
     gallery has to arm the picker, because a *typed* correction routes on
     that column alone. Paging off a same-provider gallery (picker None)
     used to draw the button while search.py silently dropped anything

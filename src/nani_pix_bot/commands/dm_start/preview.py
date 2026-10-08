@@ -43,10 +43,11 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     ScreenshotFailure,
     clear_screenshot_selection,
     reply_with_source_menu,
-    resume_screenshot_gallery,
     send_fallback_notice,
+    send_gallery_resume,
     source_menu_for,
     stage_fallback,
+    stage_gallery_resume,
 )
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
@@ -274,17 +275,14 @@ async def _preview_change_image_upload(query, game: Game, lang: str) -> None:
 async def _handle_change_image_pick_screenshot_tap(
     context: ContextTypes.DEFAULT_TYPE, session_factory, query, user
 ) -> None:
-    """Split out from preview_callback_handler's shared session: a
-    ScreenshotFailure outcome re-arms the setup_step/screenshot_picker_provider
-    columns (via stage_fallback), which must commit before the fallback
-    notice is attempted (see post_current_image's docstring) — the same
-    reason _handle_confirm_tap can't share a session with the other
-    branches either.
-
-    Note: resume_screenshot_gallery's own success path still sends its
-    gallery page from inside the session below (it owns that network
-    call internally, not this function) — narrower in scope than the
-    fallback-notice fix this split makes, and not addressed here."""
+    """Split out from preview_callback_handler's shared session, and itself
+    in phases (issue #156): the picker state commits first, the provider
+    fetch and gallery send run after, and a ScreenshotFailure is staged
+    (stage_fallback re-arms setup_step/screenshot_picker_provider) in a
+    second short session before its notice goes out — so no Telegram call
+    or provider round-trip ever holds a transaction open or can roll back
+    what the starter is already looking at (see post_current_image's
+    docstring)."""
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
@@ -292,37 +290,35 @@ async def _handle_change_image_pick_screenshot_tap(
             logger.warning("tapped Pick a different screenshot with no SETUP game left — ignoring")
             return
         logger.info("chose to pick a different screenshot from the preview", game_id=setup_game.id)
-        # resume_screenshot_gallery owns the setup_step transition itself
-        # and returns either a plain reply key or a ScreenshotFailure —
-        # the latter puts the starter back on the source menu rather
-        # than leaving this message buttonless (see screenshots.py's
-        # reply_with_source_menu).
-        outcome = await resume_screenshot_gallery(context, setup_game, lang)
-        notice = None
-        if isinstance(outcome, ScreenshotFailure):
-            notice = stage_fallback(setup_game, outcome)
-    if isinstance(outcome, ScreenshotFailure):
-        if notice is None:
-            raise RuntimeError("stage_fallback was not called for a ScreenshotFailure outcome")
-        # Block closed and committed above — see stage_fallback's
-        # docstring for why the send has to happen after.
-        await send_fallback_notice(query.edit_message_text, notice, lang)
-        return
-    if outcome == NO_SOURCE_PROMPT_KEY:
+        resume = stage_gallery_resume(setup_game)
+        stale_menu = source_menu_for(setup_game, None) if resume is None else None
+    if stale_menu is not None:
         # A stale tap: the source this gallery would have resumed is
         # gone, so no gallery (and therefore no buttons) goes out
         # alongside this message. It has to carry the source menu
         # itself, plain — there is no provider at fault to flag — or the
         # starter reads "Where should I get a screenshot from?" with
         # nothing to tap (MECHANICS.md's "When a provider fails").
-        logger.warning(
-            "stale pick-a-screenshot tap, re-offering the source menu", game_id=setup_game.id
-        )
+        logger.warning("stale pick-a-screenshot tap, re-offering the source menu")
         await reply_with_source_menu(
-            query.edit_message_text, source_menu_for(setup_game, None), lang, outcome
+            query.edit_message_text, stale_menu, lang, NO_SOURCE_PROMPT_KEY
         )
         return
-    await query.edit_message_text(text=i18n.t(outcome, lang))
+    if resume is None:
+        raise RuntimeError("stage_gallery_resume returned neither a resume nor a stale menu")
+    outcome = await send_gallery_resume(context, resume, lang)
+    if not isinstance(outcome, ScreenshotFailure):
+        await query.edit_message_text(text=i18n.t(outcome, lang))
+        return
+    with session_scope(session_factory) as session:
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        if setup_game is None:
+            logger.warning("setup vanished while its gallery was loading — dropping the fallback")
+            return
+        notice = stage_fallback(setup_game, outcome)
+    # Block closed and committed above — see stage_fallback's docstring
+    # for why the send has to happen after.
+    await send_fallback_notice(query.edit_message_text, notice, lang)
 
 
 async def _preview_research(

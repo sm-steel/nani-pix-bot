@@ -293,6 +293,33 @@ async def test_preview_change_image_pick_screenshot_resumes_the_gallery(
     update.callback_query.edit_message_text.assert_awaited_once()
 
 
+async def test_preview_change_image_pick_screenshot_commits_before_the_gallery_goes_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #156: the gallery's fetch and send happen after the picker state
+    commits, so a send that blows up (cancelled, a bug) can't roll back
+    a screen the starter may already be looking at."""
+    monkeypatch.setattr(
+        shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
+    )
+    _staged_setup_game(session_factory, screenshot_source="shikimori", shikimori_id=52991)
+    update = _make_preview_callback_update(
+        data=PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA, user_id=1
+    )
+    context = _make_context(session_factory, search_client=MagicMock())
+    context.bot.send_media_group = AsyncMock(side_effect=RuntimeError("send blew up"))
+
+    with pytest.raises(RuntimeError, match="send blew up"):
+        await preview.preview_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        assert fetched.screenshot_picker_provider == "shikimori"
+
+
 async def test_preview_change_image_pick_screenshot_keeps_the_fallback_when_the_edit_times_out(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:

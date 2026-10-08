@@ -194,6 +194,26 @@ async def test_screenshot_upload_instead_callback_handler_asks_for_a_photo(
     update.callback_query.edit_message_text.assert_awaited_once()
 
 
+async def test_upload_instead_keeps_the_new_step_when_the_edit_times_out(
+    session_factory,
+) -> None:
+    """Commit before send (issue #156's sweep): the prompt may well have
+    arrived, so the step it asks for must not be rolled back."""
+    game_id = _staged_game(session_factory, shikimori_id=52991)
+    update = _make_callback_update(data="screenshot:upload")
+    update.callback_query.edit_message_text = AsyncMock(side_effect=TimedOut())
+
+    with pytest.raises(TimedOut):
+        await screenshots.screenshot_upload_instead_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory))
+        )
+
+    with session_factory() as session:
+        fetched = session.get(Game, game_id)
+        assert fetched is not None
+        assert fetched.setup_step == SetupStep.AWAITING_PHOTO_CHANGE
+
+
 async def test_screenshot_source_callback_handler_cross_provider_auto_resolves_top_result(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:

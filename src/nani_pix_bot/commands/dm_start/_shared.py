@@ -225,7 +225,7 @@ def _stored_provider(stored: str) -> Provider:
     read one of those columns into a `Provider`-typed slot, rather than
     defensively at every `.display_name`: `search.py`'s
     `search_text_handler` (twice — the picker column and `source`),
-    `screenshots.py`'s `resume_screenshot_gallery`, and
+    `screenshots.py`'s `stage_gallery_resume`/`send_gallery_resume`, and
     `game_service.screenshot_capable_providers` (services/game/state.py)
     — the load-bearing one, since its result feeds a `list[Provider]` the
     ordinary (non-failure) screenshot-source screen draws its
