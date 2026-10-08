@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs import reveal
+from nani_pix_bot.jobs import reveal, reveal_worker
 from nani_pix_bot.models.enums import GameStatus, PixelStage, RevealEffect, RevealStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -206,3 +206,125 @@ async def test_render_without_a_worker_falls_back_to_the_photo(log_records) -> N
     application = MagicMock()
     assert await reveal.render_reveal(application, 5, b"png", None, None) is None
     assert any("photo" in line.message for line in log_records if line.level == "INFO")
+
+
+async def test_future_settles_when_mark_failed_raises(session_factory, monkeypatch) -> None:
+    def _boom(*args):
+        raise RuntimeError("ffmpeg exploded")
+
+    def _db_down(*args):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(pipeline, "pregenerate", _boom)
+    monkeypatch.setattr(store, "mark_failed", _db_down)
+    game_id = _game(session_factory)
+    _reserve(session_factory, game_id)
+    application = _application(session_factory)
+    reveal.start_pregeneration(application, game_id)
+    future = application.bot_data["reveal_cache"].future
+    await asyncio.wait_for(asyncio.wait([future]), 2)
+    assert isinstance(future.exception(), RuntimeError)
+    application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_future_settles_when_the_task_is_cancelled(session_factory, monkeypatch) -> None:
+    gate = threading.Event()
+
+    def _slow(*args):
+        gate.wait(2)
+        return PREGEN
+
+    monkeypatch.setattr(pipeline, "pregenerate", _slow)
+    game_id = _game(session_factory)
+    _reserve(session_factory, game_id)
+    application = _application(session_factory)
+    tasks: list[asyncio.Task] = []
+    application.create_task = lambda coro, **_: tasks.append(asyncio.ensure_future(coro))
+    reveal.start_pregeneration(application, game_id)
+    await asyncio.sleep(0.05)
+    tasks[0].cancel()
+    await asyncio.wait(tasks)
+    future = application.bot_data["reveal_cache"].future
+    assert future.done()
+    assert isinstance(future.exception(), RuntimeError)
+    gate.set()
+    application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_start_pregeneration_never_raises_on_a_db_failure(
+    session_factory, monkeypatch, log_records
+) -> None:
+    def _boom(*args):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(reveal, "_read_inputs", _boom)
+    application = _application(session_factory)
+    reveal.start_pregeneration(application, 1)
+    assert any(line.level == "ERROR" for line in log_records)
+    application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_nothing_to_render_marks_the_slot_failed(session_factory) -> None:
+    _reserve(session_factory, 4242)  # no such game
+    application = _application(session_factory)
+    reveal.start_pregeneration(application, 4242)
+    assert _slot(session_factory) == (4242, RevealStatus.FAILED)
+    application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_concurrent_broken_pools_replace_the_executor_once(
+    session_factory, monkeypatch
+) -> None:
+    barrier = threading.Barrier(2)
+
+    def _broken(*args):
+        barrier.wait(2)
+        raise BrokenProcessPool("worker died")
+
+    replacements: list[ThreadPoolExecutor] = []
+
+    def _start_worker(bot_data) -> None:
+        replacements.append(ThreadPoolExecutor(1))
+        bot_data["reveal_executor"] = replacements[-1]
+
+    monkeypatch.setattr(reveal_worker, "start_worker", _start_worker)
+    bot_data = {"reveal_executor": ThreadPoolExecutor(2)}
+    old = bot_data["reveal_executor"]
+    results = await asyncio.gather(
+        reveal_worker.submit(bot_data, _broken),
+        reveal_worker.submit(bot_data, _broken),
+        return_exceptions=True,
+    )
+    assert all(isinstance(r, BrokenProcessPool) for r in results)
+    assert len(replacements) == 1
+    old.shutdown()
+    replacements[0].shutdown()
+
+
+async def test_avatar_timeout_warns_with_the_winner(
+    session_factory, monkeypatch, log_records
+) -> None:
+    async def _slow_avatar(bot, user_id):
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(reveal, "AVATAR_TIMEOUT", 0.05)
+    monkeypatch.setattr(reveal, "fetch_avatar", _slow_avatar)
+    monkeypatch.setattr(pipeline, "finish", MagicMock(return_value=b"mp4"))
+    application = _application(session_factory)
+    application.bot_data["reveal_cache"].ready(5, PREGEN)
+    assert await reveal.render_reveal(application, 5, b"png", 9, "@w") == b"mp4"
+    warnings = [line for line in log_records if line.level == "WARNING"]
+    assert [line.extra["winner_id"] for line in warnings] == [9]
+    application.bot_data["reveal_executor"].shutdown()
+
+
+def test_warm_up_failure_is_logged(monkeypatch, log_records) -> None:
+    def _boom() -> None:
+        raise RuntimeError("import failed")
+
+    monkeypatch.setattr(pipeline, "warm_up", _boom)
+    monkeypatch.setattr(reveal_worker, "ProcessPoolExecutor", lambda **_: ThreadPoolExecutor(1))
+    bot_data: dict = {}
+    reveal.start_worker(bot_data)
+    bot_data["reveal_executor"].shutdown(wait=True)
+    assert any(line.level == "ERROR" for line in log_records)
