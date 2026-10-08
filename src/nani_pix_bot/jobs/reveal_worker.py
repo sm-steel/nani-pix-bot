@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from loguru import logger
+from telegram.ext import Application
 
 from nani_pix_bot.services.reveal import pipeline
 
@@ -35,6 +36,16 @@ class RevealCache:
     def drop(self, game_id: int) -> None:
         if self.game_id == game_id:
             self.game_id = self.pregen = self.future = None
+
+
+def runtime(application: Application) -> RevealCache | None:
+    """The cache, when this application has a real worker and cache (a bare
+    mock `application` in other tests doesn't)."""
+    executor = application.bot_data.get("reveal_executor")
+    cache = application.bot_data.get("reveal_cache")
+    if isinstance(executor, Executor) and isinstance(cache, RevealCache):
+        return cache
+    return None
 
 
 def _log_warm_up(future: Future[None]) -> None:

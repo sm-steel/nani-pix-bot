@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from unittest.mock import AsyncMock, MagicMock
@@ -7,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs import reveal, reveal_worker
+from nani_pix_bot.jobs import reveal, reveal_pregen, reveal_worker
 from nani_pix_bot.models.enums import GameStatus, PixelStage, RevealEffect, RevealStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -257,7 +258,7 @@ async def test_start_pregeneration_never_raises_on_a_db_failure(
     def _boom(*args):
         raise RuntimeError("db down")
 
-    monkeypatch.setattr(reveal, "_read_inputs", _boom)
+    monkeypatch.setattr(reveal_pregen, "_read_inputs", _boom)
     application = _application(session_factory)
     reveal.start_pregeneration(application, 1)
     assert any(line.level == "ERROR" for line in log_records)
@@ -315,6 +316,7 @@ async def test_avatar_timeout_warns_with_the_winner(
     assert await reveal.render_reveal(application, 5, b"png", 9, "@w") == b"mp4"
     warnings = [line for line in log_records if line.level == "WARNING"]
     assert [line.extra["winner_id"] for line in warnings] == [9]
+    assert [line.extra["winner"] for line in warnings] == ["9 (@w)"]
     application.bot_data["reveal_executor"].shutdown()
 
 
@@ -328,3 +330,40 @@ def test_warm_up_failure_is_logged(monkeypatch, log_records) -> None:
     reveal.start_worker(bot_data)
     bot_data["reveal_executor"].shutdown(wait=True)
     assert any(line.level == "ERROR" for line in log_records)
+
+
+async def test_a_slow_render_times_out_and_falls_back(
+    session_factory, monkeypatch, log_records
+) -> None:
+    gate = threading.Event()
+
+    def _slow(*args):
+        gate.wait(2)
+        return b"mp4"
+
+    monkeypatch.setattr(reveal, "RENDER_TIMEOUT", 0.05)
+    monkeypatch.setattr(pipeline, "finish", _slow)
+    application = _application(session_factory)
+    application.bot_data["reveal_cache"].ready(5, PREGEN)
+    assert await reveal.render_reveal(application, 5, b"png", None, None) is None
+    assert any(line.level == "WARNING" for line in log_records)
+    assert any("photo" in line.message for line in log_records if line.level == "INFO")
+    gate.set()
+    application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_the_avatar_fetch_overlaps_the_pre_render_wait(session_factory, monkeypatch) -> None:
+    async def _slow_avatar(bot, user_id):
+        await asyncio.sleep(0.2)
+        return b"avatar"
+
+    monkeypatch.setattr(reveal, "fetch_avatar", _slow_avatar)
+    monkeypatch.setattr(pipeline, "finish", MagicMock(return_value=b"mp4"))
+    application = _application(session_factory)
+    future = asyncio.get_running_loop().create_future()
+    application.bot_data["reveal_cache"].pending(5, future)
+    asyncio.get_running_loop().call_later(0.2, future.set_result, PREGEN)
+    started = time.perf_counter()
+    assert await reveal.render_reveal(application, 5, b"png", 9, "@w") == b"mp4"
+    assert time.perf_counter() - started < 0.35
+    application.bot_data["reveal_executor"].shutdown()
