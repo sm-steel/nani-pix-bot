@@ -476,3 +476,41 @@ async def test_post_shutdown_stops_the_reveal_worker(monkeypatch: pytest.MonkeyP
     await app._post_shutdown(application)
 
     assert stopped == [application.bot_data]
+
+
+@pytest.mark.parametrize("broken", ["start_worker", "reload_on_startup"])
+async def test_post_init_survives_a_broken_reveal_setup(
+    monkeypatch: pytest.MonkeyPatch, broken: str
+) -> None:
+    """#295: a failing worker start or reload must not stop the bot from starting; every
+    reveal then falls back to the photo."""
+
+    def boom(*_args) -> None:
+        raise OSError("can't spawn")
+
+    async def aboom(*_args) -> None:
+        raise OSError("db locked")
+
+    monkeypatch.setattr(app, "rearm_pending_timeouts", AsyncMock())
+    monkeypatch.setattr(app, "schedule_outbox_drain", lambda *_: None)
+    monkeypatch.setattr(app, "schedule_period_job", lambda *_: None)
+    menu = AsyncMock()
+    monkeypatch.setattr(app, "refresh_command_menu", menu)
+    monkeypatch.setattr(app, "start_worker", boom if broken == "start_worker" else lambda *_: None)
+    monkeypatch.setattr(
+        app.reveal, "reload_on_startup", aboom if broken == "reload_on_startup" else AsyncMock()
+    )
+    monkeypatch.setattr(app.settings, "get_language", lambda _session: "en")
+    bot = MagicMock()
+    bot.get_me = AsyncMock(return_value=SimpleNamespace(username="bot"))
+    factory = db.make_session_factory(db.get_engine("sqlite:///:memory:"))
+    application = SimpleNamespace(
+        bot_data={"session_factory": factory, "group_chat_id": 1},
+        job_queue=MagicMock(),
+        bot=bot,
+    )
+
+    await app._post_init(cast(Application, application))
+
+    bot.get_me.assert_awaited_once()
+    menu.assert_awaited_once()

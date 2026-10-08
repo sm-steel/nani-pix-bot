@@ -48,8 +48,25 @@ def _mark_failed(session_factory, game_id: int) -> None:
         logger.opt(exception=True).error("couldn't mark the reveal slot failed", game_id=game_id)
 
 
-def start_pregeneration(application: Application, game_id: int) -> None:
+# Strong references to the startup re-render tasks (the loop only keeps weak ones).
+_startup_tasks: set[asyncio.Task[None]] = set()
+
+
+def _spawn(application: Application, coro, startup: bool) -> None:
+    """Runs `coro` in the background. `Application.create_task` before the application is
+    running makes PTB warn that the task won't be awaited automatically, so the startup
+    re-render (called from `post_init`) goes straight onto the loop."""
+    if not startup:
+        application.create_task(coro)
+        return
+    task = asyncio.get_running_loop().create_task(coro)
+    _startup_tasks.add(task)
+    task.add_done_callback(_startup_tasks.discard)
+
+
+def start_pregeneration(application: Application, game_id: int, *, startup: bool = False) -> None:
     """Fire-and-forget: renders the effect part in the worker while the game is played.
+    `startup` is for the re-render from `post_init`, before the application is running.
     Never raises into the caller."""
     cache = runtime(application)
     if cache is None:
@@ -71,7 +88,7 @@ def start_pregeneration(application: Application, game_id: int) -> None:
     cache.pending(game_id, future)
     coro = _pregenerate(application, cache, game_id, future, inputs)
     try:
-        application.create_task(coro)
+        _spawn(application, coro, startup)
     except Exception as exc:
         coro.close()
         logger.opt(exception=exc).error("couldn't schedule the pre-render", game_id=game_id)

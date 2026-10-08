@@ -183,7 +183,7 @@ async def reload_on_startup(application: Application) -> None:
         )
     else:
         logger.info("re-rendering the pending reveal", game_id=game_id)
-        reveal_pregen.start_pregeneration(application, game_id)
+        reveal_pregen.start_pregeneration(application, game_id, startup=True)
 
 
 def finished(application: Application, game_id: int) -> None:

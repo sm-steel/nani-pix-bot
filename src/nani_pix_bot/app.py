@@ -368,14 +368,25 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
+async def _start_reveal(application: Application) -> None:
+    """Never lets the reveal feature stop the bot from starting: on any failure the bot runs
+    without a worker, and every reveal then falls back to the plain photo."""
+    try:
+        application.bot_data["reveal_cache"] = RevealCache()
+        start_worker(application.bot_data)
+        await reveal.reload_on_startup(application)
+    except Exception:
+        logger.opt(exception=True).error(
+            "the animated reveal couldn't start; reveals will post the plain photo"
+        )
+
+
 async def _post_init(application: Application) -> None:
     session_factory = application.bot_data["session_factory"]
     await rearm_pending_timeouts(application.job_queue, session_factory)
     # The reveal worker (#295) before the reload: reloading may re-render a
     # pending slot through it. start_worker also warms the worker up.
-    application.bot_data["reveal_cache"] = RevealCache()
-    start_worker(application.bot_data)
-    await reveal.reload_on_startup(application)
+    await _start_reveal(application)
     schedule_outbox_drain(application.job_queue)
     schedule_period_job(application.job_queue, 0)
 

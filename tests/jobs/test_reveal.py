@@ -382,3 +382,20 @@ async def test_a_finished_render_logs_its_timing_with_the_game(
     assert isinstance(line.extra["ms"], int)
     assert line.extra["kib"] == 0
     application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_startup_rerender_does_not_use_the_not_yet_running_application(
+    session_factory, monkeypatch
+) -> None:
+    """application.create_task before the app is running makes PTB warn that the task
+    won't be awaited automatically; the startup re-render spawns on the loop itself."""
+    monkeypatch.setattr(pipeline, "pregenerate", lambda *args: PREGEN)
+    game_id = _game(session_factory)
+    _reserve(session_factory, game_id)
+    application = _application(session_factory)
+    application.create_task = MagicMock(side_effect=AssertionError("PTB would warn"))
+    await reveal.reload_on_startup(application)
+    await asyncio.gather(*reveal_pregen._startup_tasks)
+    assert _slot(session_factory) == (game_id, RevealStatus.READY)
+    assert not reveal_pregen._startup_tasks
+    application.bot_data["reveal_executor"].shutdown()
