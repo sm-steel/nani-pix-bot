@@ -18,7 +18,6 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services.game.state import TitleVariants
-from nani_pix_bot.services.reveal import effects as reveal_effects
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 from nani_pix_bot.services.version import _TelegramHTMLRenderer
 
@@ -50,7 +49,6 @@ _kept = (
     MalAnimeListEntry.image_url,
     # TEMPORARY — animated reveal (#295) building blocks not yet called;
     # removed by the wiring tasks (#308/#309/#310)
-    reveal_effects.EFFECTS,
     reveal_job.reload_on_startup,
     current_image.post_reveal,
     current_image.post_reveal_pair,
