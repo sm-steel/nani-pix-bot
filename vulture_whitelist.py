@@ -12,10 +12,13 @@ Anything else vulture reports is dead code: remove it or wire it up.
 
 from typing import TYPE_CHECKING
 
+from nani_pix_bot.models.enums import RevealEffect
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.mal_link import MalCredentials
+from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services.game.state import TitleVariants
+from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 from nani_pix_bot.services.version import _TelegramHTMLRenderer
 
@@ -45,6 +48,18 @@ _kept = (
     TurnState.turn_opened_at,
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
+    # TEMPORARY — animated reveal (#295) building blocks not yet called;
+    # removed by the wiring tasks (#308/#309/#310)
+    RevealEffect.IRIS,
+    RevealEffect.TILE_FLIP,
+    RevealEffect.RIPPLE,
+    RevealEffect.GLITCH,
+    RevealEffect.SHATTER,
+    RevealVideo.ready_at,
+    reveal_store.pick_effect,
+    reveal_store.pick_image,
+    reveal_store.reserve,
+    reveal_store.mark_ready,
 )
 
 if TYPE_CHECKING:
