@@ -1,12 +1,9 @@
-import subprocess
-import tempfile
-from pathlib import Path
-
 import pytest
 from PIL import Image, ImageChops, ImageDraw, ImageStat
 
 from nani_pix_bot.models.enums import PixelAlgorithm
 from nani_pix_bot.services.pixelate import pixelate_image
+from tests.services.reveal.ffprobe_helpers import decode_frames
 
 WIDTHS = (64, 80, 128, 192, 512)
 
@@ -25,14 +22,8 @@ def scene() -> tuple[Image.Image, list[Image.Image]]:
 
 
 def last_frame(mp4: bytes, size: tuple[int, int]) -> Image.Image:
-    """Decode the final frame via ffmpeg (tests only)."""
-    with tempfile.TemporaryDirectory() as tmp:
-        src = Path(tmp, "v.mp4")
-        src.write_bytes(mp4)
-        cmd = ["ffmpeg", "-v", "error", "-sseof", "-0.1", "-i", str(src), "-frames:v", "1",
-               "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]  # fmt: skip
-        raw = subprocess.run(cmd, capture_output=True, check=True).stdout  # noqa: S603
-    return Image.frombytes("RGB", size, raw[-size[0] * size[1] * 3 :])
+    """The final decoded frame (tests only)."""
+    return decode_frames(mp4, size)[-1]
 
 
 def mean_abs_diff(a: Image.Image, b: Image.Image) -> float:

@@ -4,7 +4,7 @@ from nani_pix_bot.models.enums import RevealEffect
 from nani_pix_bot.services.reveal import encode
 from nani_pix_bot.services.reveal.effects import EFFECTS, ripple
 from tests.services.reveal.effects.conftest import last_frame, mean_abs_diff
-from tests.services.reveal.ffprobe_helpers import decode_clean, probe_frames
+from tests.services.reveal.ffprobe_helpers import decode_clean, decode_frames, probe_frames
 
 
 @pytest.mark.ffmpeg
@@ -48,3 +48,17 @@ def test_interesting_point_prefers_the_detailed_cell() -> None:
     x, y = ripple.interesting_point(img)
     assert 190 <= x <= 250
     assert 50 <= y <= 130
+
+
+def test_ripple_frame_arithmetic_is_exact(scene) -> None:
+    original, stages = scene
+    mp4 = ripple.render_part1(original, stages)
+    hold = round(encode.HOLD_START * encode.FPS)  # tpad's cloned opening frames
+    timeline = ripple._timeline(len(stages), encode.FPS)
+    assert timeline[-1].kind == "flash"
+    assert timeline[-1].a == ripple.FLASH_FRAMES  # the decayed flash is the clear image, once
+    assert probe_frames(mp4) == hold + sum(step.repeat for step in timeline)
+    img = decode_frames(mp4, original.size)
+    assert len(img) == probe_frames(mp4)
+    assert mean_abs_diff(img[-1], img[-2]) > 0.5  # the clear frame appears exactly once
+    assert mean_abs_diff(img[-1], original) < 6

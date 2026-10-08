@@ -194,3 +194,74 @@ async def test_finished_failure_never_masks_the_send(
     )
     assert sent is not None
     assert [line.level for line in log_records if line.level == "ERROR"] == ["ERROR"]
+
+
+async def test_a_rejected_video_album_falls_back_to_the_photo_album(
+    session_factory, monkeypatch
+) -> None:
+    monkeypatch.setattr(reveal, "render_reveal", AsyncMock(return_value=b"mp4"))
+    finished = MagicMock()
+    monkeypatch.setattr(reveal, "finished", finished)
+    context = _context(session_factory)
+    context.bot.send_media_group = AsyncMock(
+        side_effect=[
+            TelegramError("bad video"),
+            [MagicMock(message_id=13), MagicMock(message_id=14)],
+        ]
+    )
+    sent = await current_image.post_reveal_pair(
+        context, session_factory, target=RevealTarget(3, None), photos=(b"a", b"b"), caption="cap"
+    )
+    assert sent is not None
+    assert [message.message_id for message in sent] == [13, 14]
+    first, second = (call.kwargs["media"] for call in context.bot.send_media_group.await_args_list)
+    assert isinstance(first[0], InputMediaVideo)
+    assert all(isinstance(item, InputMediaPhoto) for item in second)
+    assert second[0].caption == "cap"
+    finished.assert_called_once_with(context.application, 3)
+
+
+async def test_a_pair_with_nothing_sent_keeps_the_slot(session_factory, monkeypatch) -> None:
+    monkeypatch.setattr(reveal, "render_reveal", AsyncMock(return_value=b"mp4"))
+    finished = MagicMock()
+    monkeypatch.setattr(reveal, "finished", finished)
+    context = _context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=TelegramError("down"))
+    sent = await current_image.post_reveal_pair(
+        context, session_factory, target=RevealTarget(3, None), photos=(b"a", b"b"), caption="cap"
+    )
+    assert sent is None
+    assert context.bot.send_media_group.await_count == 2  # the video album, then the photo album
+    finished.assert_not_called()
+
+
+@pytest.mark.parametrize("slot_game_id", [None, 99])
+async def test_a_missing_or_foreign_slot_renders_image_a(
+    session_factory, monkeypatch, slot_game_id
+) -> None:
+    if slot_game_id is not None:
+        with session_scope(session_factory) as session:
+            store.reserve(session, slot_game_id, RevealEffect.IRIS, "b")
+    render = AsyncMock(return_value=None)
+    monkeypatch.setattr(reveal, "render_reveal", render)
+    monkeypatch.setattr(reveal, "finished", MagicMock())
+    await current_image.post_reveal_pair(
+        _context(session_factory),
+        session_factory,
+        target=RevealTarget(3, None),
+        photos=(b"img-a", b"img-b"),
+        caption="cap",
+    )
+    assert render.await_args is not None
+    assert render.await_args.args[2] == b"img-a"
+
+
+async def test_the_reveal_album_pins_its_first_message(session_factory, monkeypatch) -> None:
+    monkeypatch.setattr(reveal, "render_reveal", AsyncMock(return_value=b"mp4"))
+    monkeypatch.setattr(reveal, "finished", MagicMock())
+    context = _context(session_factory)
+    await current_image.post_reveal_pair(
+        context, session_factory, target=RevealTarget(3, None), photos=(b"a", b"b"), caption="cap"
+    )
+    context.bot.pin_chat_message.assert_awaited_once()
+    assert context.bot.pin_chat_message.await_args.kwargs["message_id"] == 13

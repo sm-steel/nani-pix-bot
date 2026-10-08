@@ -1,6 +1,5 @@
 import asyncio
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from typing import cast
@@ -371,19 +370,26 @@ async def test_a_slow_render_times_out_and_falls_back(
 
 
 async def test_the_avatar_fetch_overlaps_the_pre_render_wait(session_factory, monkeypatch) -> None:
-    async def _slow_avatar(bot, user_id):
-        await asyncio.sleep(0.2)
+    """Each side finishes only once the other has started, so running them one after the other
+    would deadlock (and time the test out) instead of passing."""
+    avatar_started, pregen_started = asyncio.Event(), asyncio.Event()
+
+    async def _avatar(bot, user_id):
+        avatar_started.set()
+        await pregen_started.wait()
         return b"avatar"
 
-    monkeypatch.setattr(reveal, "fetch_avatar", _slow_avatar)
+    async def _find(*args):
+        pregen_started.set()
+        await avatar_started.wait()
+        return PREGEN
+
+    monkeypatch.setattr(reveal, "fetch_avatar", _avatar)
+    monkeypatch.setattr(reveal, "_find_pregen", _find)
     monkeypatch.setattr(pipeline, "finish", MagicMock(return_value=b"mp4"))
     application = _application(session_factory)
-    future = asyncio.get_running_loop().create_future()
-    application.bot_data["reveal_cache"].pending(5, future)
-    asyncio.get_running_loop().call_later(0.2, future.set_result, PREGEN)
-    started = time.perf_counter()
-    assert await reveal.render_reveal(application, 5, b"png", 9, "@w") == b"mp4"
-    assert time.perf_counter() - started < 0.35
+    render = reveal.render_reveal(application, 5, b"png", 9, "@w")
+    assert await asyncio.wait_for(render, 5) == b"mp4"
     application.bot_data["reveal_executor"].shutdown()
 
 

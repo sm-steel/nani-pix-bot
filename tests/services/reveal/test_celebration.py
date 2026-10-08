@@ -5,6 +5,8 @@ from PIL import Image
 
 from nani_pix_bot.services.reveal import celebration, encode
 
+from .ffprobe_helpers import decode_clean, probe_stream
+
 
 def _avatar() -> bytes:
     buffer = io.BytesIO()
@@ -39,11 +41,10 @@ def test_badge_height_scales_with_the_frame() -> None:
 
 
 @pytest.mark.ffmpeg
-def test_confetti_clip_is_a_decodable_mov() -> None:
+def test_confetti_clip_is_a_decodable_qtrle_mov_of_the_declared_size() -> None:
     clip, size = celebration.confetti_clip(60)
-    assert clip[4:8] == b"ftyp" or b"moov" in clip[:4096]
-    assert size[0] > 0
-    assert size[1] > 60
+    assert decode_clean(clip)
+    assert probe_stream(clip) == ("qtrle", *size, celebration.CONFETTI_FRAMES)
 
 
 @pytest.mark.ffmpeg
