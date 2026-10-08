@@ -206,6 +206,112 @@ async def test_reload_clears_the_slot_of_a_deleted_game(session_factory) -> None
     assert _slot(session_factory) is None
 
 
+def _hard_mode_game(session_factory) -> int:
+    with session_factory() as session:
+        if session.get(Player, 1) is None:
+            session.add(Player(telegram_user_id=1))
+        game = Game(
+            starter_id=1,
+            status=GameStatus.ACTIVE,
+            hard_mode=True,
+            hard_mode_turn=1,
+            hard_mode_image_a=b"image-a",
+            hard_mode_image_b=b"image-b",
+            wrong_guess_count=0,
+            anilist_id=99,
+            title_romaji="Sousou no Frieren",
+            synonyms=[],
+        )
+        session.add(game)
+        session.commit()
+        return game.id
+
+
+def _slot_choice(session_factory) -> tuple[int, RevealStatus, str | None] | None:
+    with session_scope(session_factory) as session:
+        row = store.load(session)
+        return None if row is None else (row.game_id, row.status, row.image_choice)
+
+
+async def test_reload_backfills_a_game_that_was_already_running(
+    session_factory, monkeypatch, log_records
+) -> None:
+    """The game spanning the deploy that added the reveal has no slot at all:
+    it gets one at startup and its pre-render runs, so its ending animates."""
+    rendered = MagicMock(return_value=PREGEN)
+    monkeypatch.setattr(pipeline, "pregenerate", rendered)
+    game_id = _game(session_factory)
+    application = _application(session_factory)
+    await reveal.reload_on_startup(application)
+    await _settle(application)
+    assert _slot_choice(session_factory) == (game_id, RevealStatus.READY, None)
+    assert rendered.call_args.args[0] == b"png-bytes"
+    assert application.bot_data["reveal_cache"].pregen == PREGEN
+    backfill = [r for r in log_records if "running game" in r.message]
+    assert [(r.level, r.extra.get("game_id")) for r in backfill] == [("INFO", game_id)]
+
+
+async def test_reload_backfills_a_hard_mode_game_with_an_image_choice(
+    session_factory, monkeypatch
+) -> None:
+    monkeypatch.setattr(pipeline, "pregenerate", MagicMock(return_value=PREGEN))
+    game_id = _hard_mode_game(session_factory)
+    application = _application(session_factory)
+    await reveal.reload_on_startup(application)
+    await _settle(application)
+    slot = _slot_choice(session_factory)
+    assert slot is not None
+    assert slot[:2] == (game_id, RevealStatus.READY)
+    assert slot[2] in {"a", "b"}
+
+
+async def test_reload_replaces_a_stale_slot_with_the_running_game(
+    session_factory, monkeypatch
+) -> None:
+    """A ready slot left over from an ended game is neither reloaded into the
+    cache nor kept: the running game takes the slot."""
+    monkeypatch.setattr(pipeline, "pregenerate", MagicMock(return_value=PREGEN))
+    ended = _game(session_factory, GameStatus.WON)
+    _reserve(session_factory, ended)
+    with session_scope(session_factory) as session:
+        store.mark_ready(session, ended, b"\x47old", 1.0)
+    running = _game(session_factory)
+    application = _application(session_factory)
+    await reveal.reload_on_startup(application)
+    await _settle(application)
+    assert _slot_choice(session_factory) == (running, RevealStatus.READY, None)
+    assert application.bot_data["reveal_cache"].game_id == running
+
+
+async def test_reload_does_not_cache_a_ready_slot_of_an_ended_game(session_factory) -> None:
+    ended = _game(session_factory, GameStatus.UNSOLVED)
+    _reserve(session_factory, ended)
+    with session_scope(session_factory) as session:
+        store.mark_ready(session, ended, b"\x47old", 1.0)
+    application = _application(session_factory)
+    await reveal.reload_on_startup(application)
+    assert _slot(session_factory) is None
+    assert application.bot_data["reveal_cache"].pregen is None
+
+
+@pytest.mark.parametrize("status", [GameStatus.VOTING, GameStatus.SETUP])
+async def test_reload_does_not_backfill_a_vote_or_a_setup(session_factory, status) -> None:
+    """A hard-mode vote already posted its reveal when it opened, and a game
+    still in setup gets its slot when it's activated."""
+    _game(session_factory, status)
+    application = _application(session_factory)
+    await reveal.reload_on_startup(application)
+    await _settle(application)
+    assert _slot(session_factory) is None
+
+
+async def test_reload_with_no_slot_and_no_game_does_nothing(session_factory) -> None:
+    application = _application(session_factory)
+    await reveal.reload_on_startup(application)
+    assert _slot(session_factory) is None
+    assert application.tasks == []
+
+
 async def test_pregeneration_is_a_quiet_noop_without_a_worker(
     session_factory, monkeypatch, log_records
 ) -> None:

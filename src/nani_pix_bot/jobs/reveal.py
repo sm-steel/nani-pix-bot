@@ -9,8 +9,11 @@ plain photo, as before this feature existed."""
 
 import asyncio
 import time
+from dataclasses import dataclass
+from datetime import datetime
 
 from loguru import logger
+from sqlalchemy.orm import Session
 from telegram.ext import Application
 
 from nani_pix_bot.db import session_scope
@@ -23,6 +26,7 @@ from nani_pix_bot.jobs.reveal_worker import stop_worker as stop_worker
 from nani_pix_bot.models.enums import GameStatus, RevealStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.reveal_video import RevealVideo
+from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.players import describe_person
 from nani_pix_bot.services.reveal import pipeline, store
 
@@ -166,36 +170,73 @@ async def _finish(
         return None
 
 
+@dataclass(frozen=True)
+class _Restore:
+    """What startup does about the running game's reveal: put a ready one
+    back in the cache (`pregen` set), or render it (`pregen` None)."""
+
+    game_id: int
+    pregen: pipeline.Pregen | None = None
+    ready_at: datetime | None = None
+
+
+def _own_slot(row: RevealVideo, game: Game) -> _Restore | None:
+    """The running game's own slot: ready → cache it, pending → render it.
+    A failed one returns None, so it's cleared and retried like no slot."""
+    pregen = _row_pregen(row)
+    if pregen is not None:
+        return _Restore(game.id, pregen, row.ready_at)
+    if row.status == RevealStatus.PENDING:
+        logger.info("re-rendering the pending reveal", game_id=game.id)
+        return _Restore(game.id)
+    return None
+
+
+def _restore_plan(session: Session) -> _Restore | None:
+    row = store.load(session)
+    game = game_service.active_or_setup_game(session)
+    live = game if game is not None and game.status in _ACTIVE else None
+    if row is not None and live is not None and row.game_id == live.id:
+        restore = _own_slot(row, live)
+        if restore is not None:
+            return restore
+    if row is not None:
+        store.clear(session, row.game_id)
+        logger.info(
+            "cleared a stale reveal slot ({status})", status=row.status.value, game_id=row.game_id
+        )
+    # A hard-mode vote already posted its reveal when it opened; only a game
+    # still being played can use one.
+    if live is None or live.status != GameStatus.ACTIVE:
+        return None
+    image_choice = store.pick_image() if live.hard_mode else None
+    store.reserve(session, live.id, store.pick_effect(), image_choice)
+    logger.info("backfilled the reveal of the running game", game_id=live.id)
+    return _Restore(live.id)
+
+
 async def reload_on_startup(application: Application) -> None:
-    """Restores the slot after a restart: a ready one goes back in the cache,
-    a pending one of a live game is re-rendered, anything else is cleared."""
+    """Restores the reveal after a restart. The running game's own slot is
+    put back in the cache (ready) or re-rendered (pending). A running game
+    without a usable slot — it started before the reveal existed, its render
+    failed, or its reservation was lost — gets a fresh one and is rendered.
+    Any slot of another game is stale and cleared."""
     cache = reveal_worker.runtime(application)
     if cache is None:
         return
     with session_scope(application.bot_data["session_factory"]) as session:
-        row = store.load(session)
-        if row is None:
-            return
-        game_id, status, ready_at = row.game_id, row.status, row.ready_at
-        pregen = _row_pregen(row)
-        game = session.get(Game, game_id)
-        rerender = status == RevealStatus.PENDING and game is not None and game.status in _ACTIVE
-        if pregen is None and not rerender:
-            store.clear(session, game_id)
-            logger.info(
-                "cleared a stale reveal slot ({status})", status=status.value, game_id=game_id
-            )
-            return
-    if pregen is not None:
-        cache.ready(game_id, pregen)
+        restore = _restore_plan(session)
+    if restore is None:
+        return
+    if restore.pregen is not None:
+        cache.ready(restore.game_id, restore.pregen)
         logger.info(
             "reloaded the pre-rendered reveal (ready at {ready_at})",
-            ready_at=ready_at,
-            game_id=game_id,
+            ready_at=restore.ready_at,
+            game_id=restore.game_id,
         )
-    else:
-        logger.info("re-rendering the pending reveal", game_id=game_id)
-        reveal_pregen.start_pregeneration(application, game_id, startup=True)
+        return
+    reveal_pregen.start_pregeneration(application, restore.game_id, startup=True)
 
 
 def finished(application: Application, game_id: int) -> None:

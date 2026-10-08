@@ -936,9 +936,14 @@ flowchart LR
   same one entry in memory, plus the in-flight future; it is a speed copy
   only. A reveal takes the pregen from the cache, else waits up to 5 s for
   the future, else reads the DB row.
-- **Restart.** `reveal.reload_on_startup` puts a `ready` row back in the
-  cache, re-submits a `pending` row of a live game, and clears anything
-  else.
+- **Restart.** `reveal.reload_on_startup` looks at the running game's own
+  slot: `ready` goes back in the cache, `pending` is re-rendered. A running
+  (`ACTIVE`) game without a usable slot — it started before the reveal
+  existed, its render failed, or its reservation was lost — gets a fresh
+  one (effect, and hard-mode image, picked then) and is pre-rendered, so
+  its ending still animates (issue #313). A slot of any other game is
+  stale and cleared. A `VOTING` game is never backfilled: its reveal was
+  already posted when the vote opened.
 - **Fallback.** Any failure (no pregen, timeout, worker or ffmpeg error,
   Telegram rejecting the video) posts the still photo as before; the image
   is cleared only after a confirmed send. `ffmpeg`/`ffprobe` are BtbN's
