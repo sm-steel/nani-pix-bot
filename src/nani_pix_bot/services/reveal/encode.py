@@ -32,6 +32,10 @@ X264: tuple[str, ...] = (
 _SHM = Path("/dev/shm")  # noqa: S108 - RAM-backed scratch on the Linux worker
 _SCRATCH: Path | None = _SHM if _SHM.is_dir() else None
 _STDERR_TAIL = 800
+# Hard limits: a hung or missing ffmpeg must never block the reveal.
+_PART1_TIMEOUT = 120.0
+_REMUX_TIMEOUT = 30.0  # MP4 -> TS remux, ffprobe and the one-off offset measurement
+_ENDING_TIMEOUT = 60.0
 _QUEUE_DEPTH = 8
 _FFMPEG = ("ffmpeg", "-y", "-nostdin", "-loglevel", "error")
 _MUX = ("ffmpeg", "-y", "-loglevel", "error", "-f", "mpegts", "-i", "pipe:0", "-c", "copy",
@@ -65,12 +69,79 @@ def _tail(stderr: bytes) -> str:
     return stderr.decode(errors="replace").strip()[-_STDERR_TAIL:]
 
 
-def _run(cmd: list[str], *, stdin_data: bytes | None = None) -> bytes:
-    """Run one ffmpeg/ffprobe command; stdout on success, FfmpegError with stderr's tail if not."""
-    proc = subprocess.run(cmd, input=stdin_data, capture_output=True, check=False)  # noqa: S603 - fixed argv
+def _run(cmd: list[str], *, timeout: float, stdin_data: bytes | None = None) -> bytes:
+    """Run one ffmpeg/ffprobe command; stdout on success, FfmpegError with stderr's tail if not
+    (non-zero exit, timeout - the process is killed - or a missing binary)."""
+    try:
+        proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            cmd, input=stdin_data, capture_output=True, check=False, timeout=timeout
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise FfmpegError(f"{cmd[0]} timed out after {timeout:g}s") from exc
+    except OSError as exc:
+        raise FfmpegError(f"{cmd[0]} could not run: {exc}") from exc
     if proc.returncode:
         raise FfmpegError(f"{cmd[0]} exited {proc.returncode}: {_tail(proc.stderr)}")
     return proc.stdout
+
+
+@dataclass(frozen=True)
+class _Stdio:
+    stdin: int | IO[bytes] | None = None
+    stdout: int | IO[bytes] | None = None
+    stderr: int | IO[bytes] | None = None
+
+
+def _popen(
+    cmd: list[str], procs: list[subprocess.Popen[bytes]], stdio: _Stdio
+) -> subprocess.Popen[bytes]:
+    """Popen that registers the process for cleanup and maps a missing binary to FfmpegError."""
+    try:
+        proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+            cmd, stdin=stdio.stdin, stdout=stdio.stdout, stderr=stdio.stderr
+        )
+    except OSError as exc:
+        raise FfmpegError(f"{cmd[0]} could not start: {exc}") from exc
+    procs.append(proc)
+    return proc
+
+
+class _Watchdog:
+    """Kills the registered processes if `timeout` passes before `cancel()`."""
+
+    def __init__(self, timeout: float, procs: list[subprocess.Popen[bytes]]) -> None:
+        self.fired = False
+        self._procs = procs
+        self._timer = threading.Timer(timeout, self._fire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _fire(self) -> None:
+        self.fired = True
+        _kill(self._procs)
+
+    def cancel(self) -> None:
+        self._timer.cancel()
+
+
+def _kill(procs: list[subprocess.Popen[bytes]]) -> None:
+    for proc in list(procs):
+        with contextlib.suppress(OSError):
+            proc.kill()
+
+
+def _reap(procs: list[subprocess.Popen[bytes]]) -> None:
+    """Cleanup for any exit path: kill whatever still runs (on success nothing does), wait for
+    all, close every pipe."""
+    for proc in procs:
+        if proc.poll() is None:
+            with contextlib.suppress(OSError):
+                proc.kill()
+        proc.wait()
+        for pipe in (proc.stdin, proc.stdout):
+            if pipe is not None:
+                with contextlib.suppress(OSError):
+                    pipe.close()
 
 
 _S = TypeVar("_S", bound=IO[bytes])
@@ -99,23 +170,34 @@ def _drain_into(stdin: IO[bytes], frames: "queue.Queue[bytes | None]") -> None:
         stdin.close()
 
 
+def _feed(proc: subprocess.Popen[bytes], frames: Iterable[bytes]) -> None:
+    pending: queue.Queue[bytes | None] = queue.Queue(maxsize=_QUEUE_DEPTH)
+    writer = threading.Thread(target=_drain_into, args=(_stream(proc.stdin), pending), daemon=True)
+    writer.start()
+    try:
+        for frame in frames:
+            pending.put(frame)
+    finally:
+        pending.put(None)
+        writer.join()
+
+
 def _pipe_frames(cmd: list[str], frames: Iterable[bytes]) -> None:
     """Stream `frames` into ffmpeg's stdin from a writer thread so the caller's generator
-    overlaps with encoding; raise FfmpegError on a non-zero exit."""
+    overlaps with encoding; raise FfmpegError on a non-zero exit, timeout or missing ffmpeg."""
+    procs: list[subprocess.Popen[bytes]] = []
+    dog = _Watchdog(_PART1_TIMEOUT, procs)
     with tempfile.TemporaryFile() as err:
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=err)  # noqa: S603 - fixed argv
-        stdin = _stream(proc.stdin)
-        pending: queue.Queue[bytes | None] = queue.Queue(maxsize=_QUEUE_DEPTH)
-        writer = threading.Thread(target=_drain_into, args=(stdin, pending), daemon=True)
-        writer.start()
         try:
-            for frame in frames:
-                pending.put(frame)
+            proc = _popen(cmd, procs, _Stdio(stdin=subprocess.PIPE, stderr=err))
+            _feed(proc, frames)
+            proc.wait()
         finally:
-            pending.put(None)
-            writer.join()
-            code = proc.wait()
-        if code:
+            dog.cancel()
+            _reap(procs)
+        if dog.fired:
+            raise FfmpegError(f"ffmpeg timed out after {_PART1_TIMEOUT:g}s")
+        if code := procs[0].returncode:
             err.seek(0)
             raise FfmpegError(f"ffmpeg exited {code}: {_tail(err.read())}")
 
@@ -152,8 +234,9 @@ def encode_part1(
 
 
 def _pts(path: Path) -> list[float]:
-    out = _run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                "packet=pts_time", "-of", "csv=p=0", str(path)])  # fmt: skip
+    cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time",
+           "-of", "csv=p=0", str(path)]  # fmt: skip
+    out = _run(cmd, timeout=_REMUX_TIMEOUT)
     return [float(x.strip(",")) for x in out.decode().split() if x.strip(",")]
 
 
@@ -164,8 +247,9 @@ def _part2_base() -> float:
     k = 10.0
     with _tmp() as tmp:
         probe = Path(tmp, "probe.ts")
-        _run([*_FFMPEG, "-f", "lavfi", "-i", f"color=s=64x64:r={FPS}:d=0.2", *X264,
-              "-output_ts_offset", str(k), "-f", "mpegts", str(probe)])  # fmt: skip
+        cmd = [*_FFMPEG, "-f", "lavfi", "-i", f"color=s=64x64:r={FPS}:d=0.2", *X264,
+               "-output_ts_offset", str(k), "-f", "mpegts", str(probe)]  # fmt: skip
+        _run(cmd, timeout=_REMUX_TIMEOUT)
         return min(_pts(probe)) - k
 
 
@@ -175,7 +259,8 @@ def to_ts(part1_mp4: bytes) -> tuple[bytes, float]:
     with _tmp() as tmp:
         src, dst = Path(tmp, "p1.mp4"), Path(tmp, "p1.ts")
         src.write_bytes(part1_mp4)
-        _run([*_FFMPEG, "-i", str(src), "-c", "copy", "-f", "mpegts", str(dst)])
+        cmd = [*_FFMPEG, "-i", str(src), "-c", "copy", "-f", "mpegts", str(dst)]
+        _run(cmd, timeout=_REMUX_TIMEOUT)
         next_pts = max(_pts(dst)) + 1 / FPS
         return dst.read_bytes(), next_pts - _part2_base()
 
@@ -220,27 +305,22 @@ def ending_and_join(
         clear.write_bytes(clear_yuv)
         if overlay is not None:
             confetti.write_bytes(overlay.confetti_mov)
-        cmd = _ending_cmd(clear, size, join_offset, overlay, confetti)
-        enc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
-            cmd,
-            stdin=subprocess.PIPE if overlay else subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=enc_err,
-        )
-        mux = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
-            [*_MUX, str(out)], stdin=subprocess.PIPE, stderr=mux_err
-        )
-        relay = (part1_ts, _stream(enc.stdout), _stream(mux.stdin))
-        thread = threading.Thread(target=_relay, args=relay, daemon=True)
-        thread.start()
-        if overlay is not None:
-            stdin = _stream(enc.stdin)
-            with contextlib.suppress(OSError):  # encoder died early; its code is reported below
-                stdin.write(overlay.badge_rgba)
-                stdin.close()
-        thread.join()
-        for name, proc, err in (("encoder", enc, enc_err), ("muxer", mux, mux_err)):
-            if code := proc.wait():
+        procs: list[subprocess.Popen[bytes]] = []
+        dog = _Watchdog(_ENDING_TIMEOUT, procs)
+        try:
+            cmds = (
+                _ending_cmd(clear, size, join_offset, overlay, confetti),
+                [*_MUX, str(out)],
+            )
+            _run_ending(cmds, part1_ts, overlay.badge_rgba if overlay else None, procs,
+                        (enc_err, mux_err))  # fmt: skip
+        finally:
+            dog.cancel()
+            _reap(procs)
+        if dog.fired:
+            raise FfmpegError(f"ending timed out after {_ENDING_TIMEOUT:g}s")
+        for name, proc, err in zip(("encoder", "muxer"), procs, (enc_err, mux_err), strict=True):
+            if code := proc.returncode:
                 err.seek(0)
                 raise FfmpegError(f"ending {name} exited {code}: {_tail(err.read())}")
         data = out.read_bytes()
@@ -250,6 +330,34 @@ def ending_and_join(
         overlay=overlay is not None,
     )
     return data
+
+
+def _run_ending(
+    cmds: tuple[list[str], list[str]],
+    part1_ts: bytes,
+    badge: bytes | None,
+    procs: list[subprocess.Popen[bytes]],
+    errs: tuple[IO[bytes], IO[bytes]],
+) -> None:
+    """Start the ending encoder and the muxer (`cmds`) together and run them to completion.
+    Everything started is registered in `procs`, so the caller can reap it on any exit path."""
+    badge_in = subprocess.DEVNULL if badge is None else subprocess.PIPE
+    enc = _popen(cmds[0], procs, _Stdio(badge_in, subprocess.PIPE, errs[0]))
+    mux = _popen(cmds[1], procs, _Stdio(subprocess.PIPE, None, errs[1]))
+    relay = (part1_ts, _stream(enc.stdout), _stream(mux.stdin))
+    thread = threading.Thread(target=_relay, args=relay, daemon=True)
+    thread.start()
+    try:
+        if badge is not None:
+            stdin = _stream(enc.stdin)
+            with contextlib.suppress(OSError):  # encoder died early; its code is reported later
+                stdin.write(badge)
+            with contextlib.suppress(OSError):
+                stdin.close()
+    finally:
+        thread.join(_ENDING_TIMEOUT)
+    for proc in procs:
+        proc.wait()
 
 
 def _relay(part1_ts: bytes, encoder_out: IO[bytes], muxer_in: IO[bytes]) -> None:

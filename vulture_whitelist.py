@@ -49,7 +49,8 @@ _kept = (
     TurnState.turn_opened_at,
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
-    # TEMPORARY — animated reveal (#295) building blocks not yet called; removed by the wiring tasks (#308/#309/#310)  # noqa: E501
+    # TEMPORARY — animated reveal (#295) building blocks not yet called;
+    # removed by the wiring tasks (#308/#309/#310)
     RevealEffect.IRIS,
     RevealEffect.TILE_FLIP,
     RevealEffect.RIPPLE,
@@ -60,7 +61,6 @@ _kept = (
     reveal_store.pick_image,
     reveal_store.reserve,
     reveal_store.mark_ready,
-    # TEMPORARY — animated reveal (#295) building blocks not yet called; removed by the wiring tasks (#308/#309/#310)  # noqa: E501
     reveal_encode.encode_part1,
     reveal_encode.to_ts,
     reveal_encode.ending_and_join,

@@ -1,5 +1,7 @@
+import gc
 import subprocess
 import tempfile
+import warnings
 from pathlib import Path
 
 import pytest
@@ -67,3 +69,38 @@ def test_ending_with_overlay_joins_cleanly() -> None:
 def test_ffmpeg_failure_raises() -> None:
     with pytest.raises(encode.FfmpegError):
         encode.encode_part1([b"too-short"], SIZE)
+
+
+def test_ending_failure_raises_ffmpeg_error_and_leaks_nothing() -> None:
+    mp4 = encode.encode_part1(_frames(10), SIZE)
+    ts, offset = encode.to_ts(mp4)
+    junk = encode.Overlay(b"not a mov", _overlay().badge_rgba, (20, 10))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ResourceWarning)
+        with pytest.raises(encode.FfmpegError):
+            encode.ending_and_join(ts, offset, _clear_yuv(), SIZE, overlay=junk)
+        gc.collect()  # a leaked pipe would warn when collected
+
+
+def test_missing_ffmpeg_raises_ffmpeg_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PATH", "")
+    with pytest.raises(encode.FfmpegError):
+        encode.encode_part1(_frames(2), SIZE)
+    with pytest.raises(encode.FfmpegError):
+        encode.to_ts(b"x")
+    with pytest.raises(encode.FfmpegError):
+        encode.ending_and_join(b"", 0.0, _clear_yuv(), SIZE, overlay=None)
+
+
+def test_hung_ending_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    mp4 = encode.encode_part1(_frames(10), SIZE)
+    ts, offset = encode.to_ts(mp4)
+    monkeypatch.setattr(encode, "_ENDING_TIMEOUT", 0.001)
+    with pytest.raises(encode.FfmpegError, match="timed out"):
+        encode.ending_and_join(ts, offset, _clear_yuv(), SIZE, overlay=None)
+
+
+def test_part1_timeout_kills_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(encode, "_PART1_TIMEOUT", 0.001)
+    with pytest.raises(encode.FfmpegError, match="timed out"):
+        encode.encode_part1(_frames(10), SIZE)
