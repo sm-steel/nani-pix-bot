@@ -1,0 +1,2 @@
+[tools]
+"conda:ffmpeg" = "7.1.1"

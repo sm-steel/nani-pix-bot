@@ -864,6 +864,7 @@ migrations/       # Alembic migrations
 tests/            # mirrors src/ layout
 scripts/          # one-off / operational scripts, if any turn out to be needed
 Dockerfile, docker-compose.yml   # bot + mariadb, see "Infrastructure" above
+mise.toml         # pinned machine tools (ffmpeg), for local dev, CI and the image
 ```
 
 `Provider.screenshot_module`/`search_module` resolve to real
@@ -940,8 +941,9 @@ flowchart LR
   else.
 - **Fallback.** Any failure (no pregen, timeout, worker or ffmpeg error,
   Telegram rejecting the video) posts the still photo as before; the image
-  is cleared only after a confirmed send. `ffmpeg`/`ffprobe` come with the
-  Docker image; from source they must be on `PATH`.
+  is cleared only after a confirmed send. `ffmpeg`/`ffprobe` are pinned to
+  7.1.1 in `mise.toml`; the Docker image, CI and local dev all install that
+  pin with mise, so frame counts can't drift between ffmpeg versions.
 
 ### Before adding something new
 

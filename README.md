@@ -48,10 +48,14 @@ uv run ty check          # type check
 ```
 
 The animated end-of-game reveal video is rendered with `ffmpeg`, so running
-from source needs `ffmpeg` and `ffprobe` on your `PATH`. The Docker image
-ships Debian bookworm's ffmpeg (5.1); the bot doesn't check the version.
-Without them the bot still works: every reveal falls back to the plain
-photo, and the tests marked `ffmpeg` skip.
+from source needs `ffmpeg` and `ffprobe` on your `PATH`. The version is
+pinned in `mise.toml` (ffmpeg 7.1.1, conda-forge's build) and installed by
+[mise](https://mise.jdx.dev/): run `mise install` once, then run commands
+through it (`mise exec -- uv run pytest`) or let mise's shell activation put
+it on `PATH`. CI and the Docker image install the same pin the same way,
+so all three run the identical binary. Without ffmpeg the bot still works:
+every reveal falls back to the plain photo, and the tests marked `ffmpeg`
+skip.
 
 ## Self-hosting
 
@@ -63,8 +67,9 @@ section walks through setting up your own instance from nothing.
 - Docker and the Docker Compose plugin (`docker compose version` should work).
 - A Telegram account.
 
-The Docker image bundles `ffmpeg`, which renders the animated reveal video
-posted when a game ends; there is nothing extra to install on the host.
+The Docker image bundles `ffmpeg` (the version pinned in `mise.toml`), which
+renders the animated reveal video posted when a game ends; there is nothing
+extra to install on the host.
 
 ### 1. Create a Telegram bot
 
