@@ -46,17 +46,22 @@ def test_focus_point_finds_the_skin_blob(scene) -> None:
 
 def test_iris_frame_arithmetic_is_exact(scene) -> None:
     original, stages = scene
-    radii, _, pause = iris._radii(original.size, iris.focus_point(original))
+    focus = iris.focus_point(original)
     hold = round(encode.HOLD_START * encode.FPS)
-    # unique frames: front + radii + the clear image twice (CFR output drops the last one),
-    # spaced by the opening hold and the pause
+    open_n = int(encode.FPS * iris.OPEN_S)
+    pause_n = int(encode.FPS * iris.PAUSE_S)
+    burst_n = int(encode.FPS * iris.BURST_S)
+    # constant-rate input: the front stage, the opening, the pause (the widest opening frame
+    # repeated), the burst (its last step is the clear image itself), then the clear image once
+    fed = 1 + open_n + pause_n + burst_n
+    frames = list(iris._frames(iris.IrisFrames(original, stages[0], focus)))
+    assert len(frames) == fed
+    peak = frames[open_n]
+    assert frames[open_n : open_n + pause_n + 1] == [peak] * (pause_n + 1)
+    assert frames[open_n + pause_n + 1] != peak
+    assert frames[-1] != frames[-2]  # the clear image is fed exactly once
+    # the encoder only prepends the default opening hold
     mp4 = iris.render_part1(original, stages)
-    assert probe_frames(mp4) == len(radii) + 2 + hold + pause
+    assert probe_frames(mp4) == hold + fed
     assert len(decode_frames(mp4, original.size)) == probe_frames(mp4)
     assert mean_abs_diff(last_frame(mp4, original.size), original) < 6
-    # the clear image is fed exactly twice (CFR output drops the last), never a third time
-    frames = list(
-        iris._frames(iris.IrisFrames(original, stages[0], iris.focus_point(original)), radii)
-    )
-    assert frames[-1] == frames[-2] != frames[-3]
-    assert len(frames) == len(radii) + 3

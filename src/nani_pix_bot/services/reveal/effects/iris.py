@@ -4,13 +4,14 @@ with a glowing ring to the full clear image.
 An iris frame is three regions: the pixelated front outside the circle, the clear image inside
 it, and a soft white glow ring on the boundary. Frames are built directly as yuv420p planes: the
 disc by joining row slices of front and clear bytes (plain memcpy, no masks), the ring by pasting
-constant white through a small precomputed radial-alpha mask. The opening hold and the pause never
-cross the pipe: a `setpts` expression spaces the unique frames and ffmpeg's constant-frame-rate
-output repeats them to fill the gaps.
+constant white through a small precomputed radial-alpha mask. Like the other effects it feeds
+constant-frame-rate input and leaves the opening hold to `encode_part1`'s default `tpad`; the pause
+repeats one already-built frame, so it costs no extra drawing.
 """
 
 import array
 import functools
+import itertools
 import math
 from collections.abc import Iterator
 
@@ -207,8 +208,9 @@ class IrisFrames:
         return b"".join(self.clear)
 
 
-def _radii(size: tuple[int, int], focus: tuple[int, int]) -> tuple[list[float], int, int]:
-    """Radius per unique moving frame, plus (index of the frame the pause holds, pause frames)."""
+def _radii(size: tuple[int, int], focus: tuple[int, int]) -> tuple[list[float], int, list[float]]:
+    """Radii of the opening frames, the pause length in frames (it holds the last opening frame),
+    and the radii of the burst frames."""
     w, h = size
     fx, fy = focus
     far = max(math.hypot(fx - cx, fy - cy) for cx in (0, w) for cy in (0, h))
@@ -221,32 +223,23 @@ def _radii(size: tuple[int, int], focus: tuple[int, int]) -> tuple[list[float], 
     burst_r = [
         peek + (far * 1.05 - peek) * ease_in_out(i / burst_n) ** 1.3 for i in range(1, burst_n)
     ]
-    return open_r + burst_r, open_n, pause_n
+    return open_r, pause_n, burst_r
 
 
-def _pts_expr(start: int, hold_idx: int, extra: int) -> str:
-    """Unique frame N lands at output frame N, shifted by `start` frames after frame 0 (the
-    opening hold) and by `extra` more after `hold_idx` (the pause); ffmpeg's CFR output repeats the
-    previous frame to fill each gap. Replaces tpad, which mis-counted on this VFR input."""
-    return f"(N+gt(N\\,0)*{start}+gt(N\\,{hold_idx})*{extra})/({encode.FPS}*TB)"
-
-
-def _frames(frames: IrisFrames, radii: list[float]) -> Iterator[bytes]:
+def _frames(frames: IrisFrames) -> Iterator[bytes]:
+    """Constant-rate frames: front stage, opening, pause, burst, then the clear image once."""
+    open_r, pause_n, burst_r = _radii(frames.size, frames.focus)
     yield frames.front_frame()
-    yield from map(frames.frame, radii)
-    clear = frames.clear_frame()
-    yield clear  # twice: CFR output drops the stream's last frame (no next timestamp)
-    yield clear
+    yield from map(frames.frame, open_r[:-1])
+    yield from itertools.repeat(frames.frame(open_r[-1]), 1 + pause_n)
+    yield from map(frames.frame, burst_r)
+    yield frames.clear_frame()
 
 
 def render_part1(original: Image.Image, stages: list[Image.Image]) -> bytes:
     """Part 1 MP4: front stage -> peephole pops open on the focus -> pause -> burst to the clear
     image, ending on it."""
-    focus = focus_point(original)
-    radii, hold_idx, pause = _radii(original.size, focus)
-    hold = round(encode.HOLD_START * encode.FPS)
-    options = encode.Part1Options(
-        pix_fmt="yuv420p", vf=f"setpts={_pts_expr(hold, hold_idx, pause)}", crf=CRF
+    frames = _frames(IrisFrames(original, stages[0], focus_point(original)))
+    return encode.encode_part1(
+        frames, original.size, encode.Part1Options(pix_fmt="yuv420p", crf=CRF)
     )
-    frames = _frames(IrisFrames(original, stages[0], focus), radii)
-    return encode.encode_part1(frames, original.size, options)
