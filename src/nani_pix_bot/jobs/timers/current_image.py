@@ -15,7 +15,7 @@ from telegram import (
     InputMediaVideo,
     Message,
 )
-from telegram.error import TelegramError
+from telegram.error import TelegramError, TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.db import session_scope
@@ -211,9 +211,12 @@ async def _post_album(
     context: ContextTypes.DEFAULT_TYPE,
     session_factory: sessionmaker[Session],
     media: list[InputMediaPhoto] | list[InputMediaPhoto | InputMediaVideo],
+    reraise_timeout: bool = False,
 ) -> tuple[Message, ...] | None:
     """The shared send-then-pin tail of post_current_images/post_stage_images
-    and the reveal album, which carries a video first."""
+    and the reveal album, which carries a video first. With `reraise_timeout`
+    a `TimedOut` (the album may well have been delivered) propagates after
+    its log line, so the reveal caller can skip its photo fallback."""
     chat_id = context.bot_data["group_chat_id"]
     message_thread_id = context.bot_data["game_topic_id"]
     try:
@@ -228,6 +231,8 @@ async def _post_album(
             group_chat_id=chat_id,
             error=exc,
         )
+        if reraise_timeout and isinstance(exc, TimedOut):
+            raise
         return None
 
     if not result:
@@ -301,7 +306,7 @@ async def _send_video(
     caption: str,
 ) -> Message | None:
     """Sends the reveal video then pins it; None (logged) when Telegram
-    rejects it."""
+    rejects it. A `TimedOut` propagates: the video may have been delivered."""
     try:
         message = await context.bot.send_video(
             chat_id=context.bot_data["group_chat_id"],
@@ -310,6 +315,12 @@ async def _send_video(
             caption=caption,
             supports_streaming=True,
         )
+    except TimedOut as exc:
+        logger.warning(
+            "reveal video send timed out; not falling back, it may have been delivered: {error}",
+            error=exc,
+        )
+        raise
     except TelegramError as exc:
         logger.warning("Telegram rejected the reveal video: {error}", error=exc)
         return None
@@ -323,6 +334,15 @@ async def _send_video(
     return message
 
 
+def _finish(context: ContextTypes.DEFAULT_TYPE, game_id: int) -> None:
+    """reveal.finished after a confirmed send; a failure here is logged,
+    never allowed to mask the send that succeeded."""
+    try:
+        reveal.finished(context.application, game_id)
+    except Exception as exc:
+        logger.opt(exception=exc).error("couldn't free the reveal slot", game_id=game_id)
+
+
 async def post_reveal(
     context: ContextTypes.DEFAULT_TYPE,
     session_factory: sessionmaker[Session],
@@ -332,18 +352,22 @@ async def post_reveal(
 ) -> Message | None:
     """post_current_image for the end of a game: sends the animated reveal
     video (caption and pin as for the photo), falling back to exactly the
-    photo post when there is no video or Telegram rejects it. Frees the
+    photo post when there is no video or Telegram rejects it (but not on a
+    timeout: the video may have arrived, so None is returned). Frees the
     reveal slot once something was confirmed sent; returns None, keeping
     the slot, when nothing was. `photo` is the game's stored image bytes
     (what the pre-render used)."""
     video = await _render(context, target, photo)
     sent = None
     if video is not None:
-        sent = await _send_video(context, session_factory, video, caption)
+        try:
+            sent = await _send_video(context, session_factory, video, caption)
+        except TimedOut:
+            return None
     if sent is None:
         sent = await post_current_image(context, session_factory, photo=photo, caption=caption)
     if sent is not None:
-        reveal.finished(context.application, target.game_id)
+        _finish(context, target.game_id)
     return sent
 
 
@@ -368,11 +392,14 @@ async def post_reveal_pair(
             InputMediaVideo(media=video, caption=caption, supports_streaming=True),
             InputMediaPhoto(media=second),
         ]
-        sent = await _post_album(context, session_factory, media)
+        try:
+            sent = await _post_album(context, session_factory, media, reraise_timeout=True)
+        except TimedOut:
+            return None
     if sent is None:
         sent = await post_current_images(context, session_factory, photos=photos, caption=caption)
     if sent is not None:
-        reveal.finished(context.application, target.game_id)
+        _finish(context, target.game_id)
     return sent
 
 

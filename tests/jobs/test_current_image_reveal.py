@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram import InputMediaPhoto, InputMediaVideo
-from telegram.error import TelegramError
+from telegram.error import TelegramError, TimedOut
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import reveal
@@ -146,3 +146,51 @@ async def test_pair_falls_back_to_the_photo_album(session_factory, monkeypatch) 
     media = context.bot.send_media_group.await_args.kwargs["media"]
     assert all(isinstance(item, InputMediaPhoto) for item in media)
     assert media[0].caption == "cap"
+
+
+async def test_video_timeout_does_not_fall_back(session_factory, monkeypatch) -> None:
+    monkeypatch.setattr(reveal, "render_reveal", AsyncMock(return_value=b"mp4"))
+    finished = MagicMock()
+    monkeypatch.setattr(reveal, "finished", finished)
+    context = _context(session_factory)
+    context.bot.send_video = AsyncMock(side_effect=TimedOut())
+    sent = await current_image.post_reveal(
+        context, session_factory, target=RevealTarget(3, None), photo=b"png", caption="cap"
+    )
+    assert sent is None
+    context.bot.send_photo.assert_not_awaited()
+    finished.assert_not_called()
+
+
+async def test_video_album_timeout_does_not_fall_back(session_factory, monkeypatch) -> None:
+    monkeypatch.setattr(reveal, "render_reveal", AsyncMock(return_value=b"mp4"))
+    finished = MagicMock()
+    monkeypatch.setattr(reveal, "finished", finished)
+    context = _context(session_factory)
+    context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
+    sent = await current_image.post_reveal_pair(
+        context,
+        session_factory,
+        target=RevealTarget(3, None),
+        photos=(b"a", b"b"),
+        caption="cap",
+    )
+    assert sent is None
+    assert context.bot.send_media_group.await_count == 1
+    finished.assert_not_called()
+
+
+async def test_finished_failure_never_masks_the_send(
+    session_factory, monkeypatch, log_records
+) -> None:
+    monkeypatch.setattr(reveal, "render_reveal", AsyncMock(return_value=b"mp4"))
+    monkeypatch.setattr(reveal, "finished", MagicMock(side_effect=RuntimeError("db down")))
+    sent = await current_image.post_reveal(
+        _context(session_factory),
+        session_factory,
+        target=RevealTarget(3, None),
+        photo=b"png",
+        caption="cap",
+    )
+    assert sent is not None
+    assert [line.level for line in log_records if line.level == "ERROR"] == ["ERROR"]
