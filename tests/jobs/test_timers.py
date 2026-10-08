@@ -7,6 +7,9 @@ from telegram.error import BadRequest, Forbidden, TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.jobs import timers as timeout_module
+from nani_pix_bot.jobs.timers import game_timeout as game_timeout_module
+from nani_pix_bot.jobs.timers import inactivity as inactivity_module
+from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -1713,3 +1716,77 @@ async def test_hard_mode_timeout_without_a_guesser_reveals_unsolved(
 
     assert _status(session_factory, game_id) is GameStatus.UNSOLVED
     context.bot.send_media_group.assert_awaited_once()
+
+
+def _patch_reveals(monkeypatch: pytest.MonkeyPatch, module) -> tuple[AsyncMock, AsyncMock]:
+    post_reveal = AsyncMock(return_value=MagicMock(message_id=1))
+    post_reveal_pair = AsyncMock(return_value=(MagicMock(message_id=1), MagicMock(message_id=2)))
+    monkeypatch.setattr(module, "post_reveal", post_reveal)
+    monkeypatch.setattr(module, "post_reveal_pair", post_reveal_pair)
+    return post_reveal, post_reveal_pair
+
+
+async def test_timeout_posts_the_reveal_without_a_winner(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory)
+    post_reveal, _ = _patch_reveals(monkeypatch, game_timeout_module)
+    context = _make_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    post_reveal.assert_awaited_once()
+    assert post_reveal.await_args is not None
+    kwargs = post_reveal.await_args.kwargs
+    assert kwargs["target"] == RevealTarget(game_id, None)
+    assert kwargs["photo"] == b"file123"
+    assert "Frieren: Beyond Journey's End" in kwargs["caption"]
+
+
+async def test_hard_mode_timeout_posts_the_reveal_pair(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _hard_mode_active_game(session_factory)
+    _, post_reveal_pair = _patch_reveals(monkeypatch, game_timeout_module)
+    context = _make_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    post_reveal_pair.assert_awaited_once()
+    assert post_reveal_pair.await_args is not None
+    kwargs = post_reveal_pair.await_args.kwargs
+    assert kwargs["target"] == RevealTarget(game_id, None)
+    assert kwargs["photos"] == (b"hm-image-a", b"hm-image-b")
+    assert "Frieren: Beyond Journey's End" in kwargs["caption"]
+
+
+async def test_inactivity_unsolved_posts_the_reveal_without_a_winner(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5)
+    post_reveal, _ = _patch_reveals(monkeypatch, inactivity_module)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    post_reveal.assert_awaited_once()
+    assert post_reveal.await_args is not None
+    kwargs = post_reveal.await_args.kwargs
+    assert kwargs["target"] == RevealTarget(game_id, None)
+    assert kwargs["photo"] == b"file123"
+
+
+async def test_hard_mode_inactivity_unsolved_posts_the_reveal_pair(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _hard_mode_active_game(session_factory, hard_mode_turn=2)
+    _, post_reveal_pair = _patch_reveals(monkeypatch, inactivity_module)
+    context = _make_advance_job_context(session_factory, game_id=game_id)
+
+    await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+
+    post_reveal_pair.assert_awaited_once()
+    assert post_reveal_pair.await_args is not None
+    kwargs = post_reveal_pair.await_args.kwargs
+    assert kwargs["target"] == RevealTarget(game_id, None)
+    assert kwargs["photos"] == (b"hm-image-a", b"hm-image-b")

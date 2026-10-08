@@ -16,7 +16,11 @@ from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until
-from nani_pix_bot.jobs.timers.current_image import clear_image_if_sent, post_current_images
+from nani_pix_bot.jobs.timers.current_image import (
+    RevealTarget,
+    clear_image_if_sent,
+    post_reveal_pair,
+)
 from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.jobs.timers.retry import retry_on_failure
 from nani_pix_bot.jobs.timers.turn_timers import schedule_turn_timers
@@ -128,7 +132,13 @@ async def post_vote_ballot(
         caption = i18n.t("vote.reveal_caption", lang, title=title)
         caption += game_service.game_id_line(game_id, lang)
         text, markup = ballot_text(session, game, lang), ballot_markup(session, game)
-    await post_current_images(context, session_factory, photos=photos, caption=caption)
+    await post_reveal_pair(
+        context,
+        session_factory,
+        target=RevealTarget(game_id, None),
+        photos=photos,
+        caption=caption,
+    )
     try:
         message = await context.bot.send_message(
             chat_id=context.bot_data["group_chat_id"],

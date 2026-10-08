@@ -61,8 +61,10 @@ from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
 from nani_pix_bot.commands.quiet_hours import SET_TIMEZONE_PREFIX
 from nani_pix_bot.config import Config, load_config
+from nani_pix_bot.jobs import reveal, reveal_pregen
 from nani_pix_bot.jobs.announcements import schedule_outbox_drain
 from nani_pix_bot.jobs.periods import schedule_period_job
+from nani_pix_bot.jobs.reveal import RevealCache, start_worker, stop_worker
 from nani_pix_bot.jobs.timers import rearm_pending_timeouts
 from nani_pix_bot.logging_config import setup_logging
 from nani_pix_bot.models.enums import Provider
@@ -366,9 +368,25 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
+async def _start_reveal(application: Application) -> None:
+    """Never lets the reveal feature stop the bot from starting: on any failure the bot runs
+    without a worker, and every reveal then falls back to the plain photo."""
+    try:
+        application.bot_data["reveal_cache"] = RevealCache()
+        start_worker(application.bot_data)
+        await reveal.reload_on_startup(application)
+    except Exception:
+        logger.opt(exception=True).error(
+            "the animated reveal couldn't start; reveals will post the plain photo"
+        )
+
+
 async def _post_init(application: Application) -> None:
     session_factory = application.bot_data["session_factory"]
     await rearm_pending_timeouts(application.job_queue, session_factory)
+    # The reveal worker (#295) before the reload: reloading may re-render a
+    # pending slot through it. start_worker also warms the worker up.
+    await _start_reveal(application)
     schedule_outbox_drain(application.job_queue)
     schedule_period_job(application.job_queue, 0)
 
@@ -388,7 +406,10 @@ async def _post_shutdown(application: Application) -> None:
     ours, not PTB's, so nothing else closes them. In production they're
     process-lifetime objects and this is just tidiness on the way out;
     in tests, where an Application is built per case, it's what stops
-    four clients leaking every time."""
+    four clients leaking every time. Also cancels the reveal's startup re-renders,
+    then stops the reveal worker process (#295) without waiting for an in-flight render."""
+    await reveal_pregen.cancel_startup_tasks()
+    stop_worker(application.bot_data)
     for key in ("search_client", "tmdb_client", "tenrai_client", "mal_client"):
         client = application.bot_data.get(key)
         if client is not None:

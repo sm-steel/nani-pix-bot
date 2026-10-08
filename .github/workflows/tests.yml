@@ -20,6 +20,25 @@ jobs:
       - name: Install project dependencies
         run: uv sync
 
+      # ffmpeg is pinned in mise.toml (BtbN's static 7.1.1 build) and its
+      # sha256 in mise.lock, the same binary local dev and the Docker image
+      # use; mise.toml's locked mode fails the install on any mismatch. The
+      # reveal video tests (marked `ffmpeg`) skip without it (issue #295).
+      - name: Install pinned tools (ffmpeg)
+        uses: jdx/mise-action@v5.1.1
+        with:
+          version: 2026.10.4
+
+      # Prove which ffmpeg the tests run against, rather than trusting PATH.
+      - name: Check the ffmpeg version
+        run: |
+          version="$(ffmpeg -version | head -1)"
+          echo "$version"
+          case "$version" in
+            *n7.1.1-57-g1b48158a23*) ;;
+            *) echo "::error::expected the pinned ffmpeg n7.1.1-57-g1b48158a23"; exit 1 ;;
+          esac
+
       # No service containers needed — every test fixture uses an
       # in-memory SQLite engine (create_engine("sqlite:///:memory:")),
       # never the real MariaDB the bot runs against in production.

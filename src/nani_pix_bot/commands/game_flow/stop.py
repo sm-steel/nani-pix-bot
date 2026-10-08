@@ -20,6 +20,7 @@ from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
+from nani_pix_bot.jobs.timers.current_image import RevealTarget, free_reveal_slot
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
@@ -217,19 +218,22 @@ async def _announce_stop(
     game row is already gone by the time this runs, so there's nothing
     left to gate on a successful send either way.
 
-    Revealing posts the un-pixelated original captioned with the title —
-    the same `post_current_image` the win/unsolved/timeout reveals use, so
-    it becomes the topic's pinned image too. That caption already says the
-    turn is open, so the reveal path posts one message rather than a photo
-    plus a duplicate notice. A hard-mode game instead posts its stored
-    screenshot pair as a 2-photo album via `post_current_images`, same
+    Revealing posts the animated reveal video of the original, captioned
+    with the title — `post_reveal`, the same call the win/unsolved/timeout
+    reveals use, which falls back to the plain un-pixelated photo (the
+    topic's pinned image) when there is no video. That caption already says
+    the turn is open, so the reveal path posts one message rather than a
+    photo plus a duplicate notice. A hard-mode game instead posts its stored
+    screenshot pair via `post_reveal_pair` (the video plus the other
+    screenshot, or the plain 2-photo album as the fallback), same
     caption-already-says-the-turn-is-open reasoning. Falls back to the
     plain notice if the button was a stale tap on a game that no longer
     had its image(s) (see the caller's own warning log for that case)."""
     if reveal and stopped_game.hard_mode_photos is not None:
-        sent = await timeout_module.post_current_images(
+        sent = await timeout_module.post_reveal_pair(
             context,
             session_factory,
+            target=RevealTarget(stopped_game.game_id, None),
             photos=stopped_game.hard_mode_photos,
             caption=i18n.t("stop.hard_mode_stopped_reveal_caption", lang, title=stopped_game.title)
             + game_service.game_id_line(stopped_game.game_id, lang),
@@ -237,15 +241,19 @@ async def _announce_stop(
         return sent is not None
 
     if reveal and stopped_game.original_bytes is not None:
-        sent = await timeout_module.post_current_image(
+        sent = await timeout_module.post_reveal(
             context,
             session_factory,
+            target=RevealTarget(stopped_game.game_id, None),
             photo=stopped_game.original_bytes,
             caption=i18n.t("stop.stopped_reveal_caption", lang, title=stopped_game.title)
             + game_service.game_id_line(stopped_game.game_id, lang),
         )
         return sent is not None
 
+    # No reveal video will be sent: free the slot (and the cache) so a pre-render for this
+    # deleted game can't be reloaded as READY after a restart.
+    free_reveal_slot(context, stopped_game.game_id)
     try:
         await context.bot.send_message(
             chat_id=context.bot_data["group_chat_id"],

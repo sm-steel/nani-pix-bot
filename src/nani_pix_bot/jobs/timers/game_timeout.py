@@ -10,9 +10,10 @@ from telegram.ext import ContextTypes, JobQueue
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until_timeout
 from nani_pix_bot.jobs.timers.current_image import (
+    RevealTarget,
     clear_image_if_sent,
-    post_current_image,
-    post_current_images,
+    post_reveal,
+    post_reveal_pair,
 )
 from nani_pix_bot.jobs.timers.inactivity import cancel_inactivity_timers
 from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
@@ -132,6 +133,8 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
             refund_note = settlement.settle_unsolved(session, game, lang)
             game_service.mark_turn_open_if_unassigned(session)
             original_bytes = game.original_image
+            if original_bytes is None:
+                raise RuntimeError("normal-mode timeout with no original_image")
             caption = i18n.t("timeout.caption", lang, title=game_service.display_title(game, lang))
             caption += game_service.game_id_line(game.id, lang)
             caption += refund_note
@@ -142,15 +145,20 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         await post_vote_ballot(context, session_factory, game_id)
         return
     if hard_mode_reveal is not None:
-        sent = await post_current_images(
+        sent = await post_reveal_pair(
             context,
             session_factory,
+            target=RevealTarget(game_id, None),
             photos=hard_mode_reveal.photos,
             caption=hard_mode_reveal.caption,
         )
     else:
-        sent = await post_current_image(
-            context, session_factory, photo=original_bytes, caption=caption
+        sent = await post_reveal(
+            context,
+            session_factory,
+            target=RevealTarget(game_id, None),
+            photo=original_bytes,
+            caption=caption,
         )
     clear_image_if_sent(session_factory, game_id, sent)
     await maybe_overthrow(context, session_factory)

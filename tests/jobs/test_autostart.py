@@ -9,16 +9,18 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.jobs.timers import autostart as autostart_timers
 from nani_pix_bot.models.bot_settings import BotSettings
-from nani_pix_bot.models.enums import EventType, GameStatus, Provider
+from nani_pix_bot.models.enums import EventType, GameStatus, Provider, RevealStatus
 from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.game import autostart as autostart_service
 from nani_pix_bot.services.game.autostart import AnimePick, GatheredPick, ScreenshotPick
 from nani_pix_bot.services.quiet_hours import QuietHours
+from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from tests.conftest import LogLine
 
@@ -514,6 +516,86 @@ async def test_run_bot_autostart_creates_a_hard_mode_game_and_posts_both_images(
         assert game.shown_screenshot_urls == ["https://x/a.jpg", "https://x/b.jpg"]
         assert game.original_image is None
         assert game.hard_mode_clue_discount == 20
+
+
+async def test_run_bot_autostart_reserves_the_reveal_slot_and_starts_the_pre_render_first(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hard mode picks the image too ("a" or "b"), and the pre-render is
+    started before the stage post goes out so the two overlap."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=None))
+        session.commit()
+    context = _make_context(session_factory)
+    order: list[str] = []
+    context.bot.send_media_group = AsyncMock(
+        side_effect=lambda **_: (
+            order.append("post") or [MagicMock(message_id=998), MagicMock(message_id=999)]
+        )
+    )
+    start = MagicMock(side_effect=lambda *_: order.append("pregenerate"))
+    monkeypatch.setattr(autostart_timers.reveal, "start_pregeneration", start)
+    monkeypatch.setattr(
+        "nani_pix_bot.services.pixelate.pixelate", lambda image, width, algorithm: image
+    )
+
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+        return _fake_pick()
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+
+    claim = autostart_timers._AutostartClaim(
+        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    )
+    started = await autostart_timers.run_bot_autostart(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
+    )
+
+    assert started is True
+    with session_factory() as session:
+        game_id = session.query(Game).one().id
+        slot = reveal_store.load(session)
+        assert slot is not None
+        assert slot.game_id == game_id
+        assert slot.status == RevealStatus.PENDING
+        assert slot.image_choice in {"a", "b"}
+    start.assert_called_once_with(context.application, game_id)
+    assert order == ["pregenerate", "post"]
+
+
+async def test_run_bot_autostart_replaces_an_older_reveal_slot(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=None))
+        reveal_store.reserve(session, 4242, reveal_store.pick_effect(), "a")
+        session.commit()
+    context = _make_context(session_factory)
+    monkeypatch.setattr(autostart_timers.reveal, "start_pregeneration", MagicMock())
+    monkeypatch.setattr(
+        "nani_pix_bot.services.pixelate.pixelate", lambda image, width, algorithm: image
+    )
+
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+        return _fake_pick()
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+    claim = autostart_timers._AutostartClaim(
+        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    )
+
+    await autostart_timers.run_bot_autostart(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
+    )
+
+    with session_factory() as session:
+        game_id = session.query(Game).one().id
+        assert session.query(RevealVideo).count() == 1
+        slot = reveal_store.load(session)
+        assert slot is not None
+        assert slot.game_id == game_id
 
 
 async def test_run_bot_autostart_uses_the_overthrow_open_caption_when_no_winner_was_dethroned(
