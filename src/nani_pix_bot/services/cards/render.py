@@ -102,7 +102,7 @@ class PodiumCard:
 
 
 @lru_cache(maxsize=16)
-def _font(size: int, *, bold: bool = False) -> ImageFont.FreeTypeFont:
+def font(size: int, *, bold: bool = False) -> ImageFont.FreeTypeFont:
     name = "NotoSans-Bold.ttf" if bold else "NotoSans-Regular.ttf"
     return ImageFont.truetype(str(FONT_DIR / name), size)
 
@@ -118,10 +118,10 @@ def _fit(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, wid
 def _name_font(draw: ImageDraw.ImageDraw, text: str, width: int) -> ImageFont.FreeTypeFont:
     """The biggest title size that fits on one line; the smallest one is cut instead."""
     for size in _NAME_SIZES[:-1]:
-        font = _font(size, bold=True)
-        if draw.textlength(text, font=font) <= width:
-            return font
-    return _font(_NAME_SIZES[-1], bold=True)
+        candidate = font(size, bold=True)
+        if draw.textlength(text, font=candidate) <= width:
+            return candidate
+    return font(_NAME_SIZES[-1], bold=True)
 
 
 def _wrap(
@@ -173,7 +173,7 @@ def _initials_face(name: str, seed: int, size: int) -> Image.Image:
     ImageDraw.Draw(face).text(
         (size / 2, size / 2),
         _initials(name),
-        font=_font(size // 3, bold=True),
+        font=font(size // 3, bold=True),
         fill=_TEXT,
         anchor="mm",
     )
@@ -208,7 +208,7 @@ def _sweep_color(palette: tuple[tuple[int, int, int], ...], angle: float) -> tup
     return color
 
 
-def _sweep(
+def sweep(
     size: int, inner: float, outer: float, palette: tuple[tuple[int, int, int], ...]
 ) -> Image.Image:
     """A conic gradient over the ring between `inner` and `outer`, drawn as thin
@@ -245,7 +245,7 @@ def _glow(size: int, radius: float, color: tuple[int, int, int]) -> Image.Image:
     return layer
 
 
-def _badge(face: Image.Image, color: tuple[int, int, int], rarity: Rarity) -> Image.Image:
+def badge_ring(face: Image.Image, color: tuple[int, int, int], rarity: Rarity) -> Image.Image:
     """The avatar badge, centred in a transparent square with room for its glow.
     `color` (rarity or place) sets the inner ring and glow; `rarity` picks the outer
     ring's sweep palette. `face` is the avatar disc drawn at _SS times its final size; everything is
@@ -258,7 +258,7 @@ def _badge(face: Image.Image, color: tuple[int, int, int], rarity: Rarity) -> Im
     badge = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     annulus = _disc_mask(big, centre, outer)
     annulus.paste(0, mask=_disc_mask(big, centre, inner))
-    badge.paste(_sweep(big, inner, outer, _SWEEP[rarity]), (0, 0), annulus)
+    badge.paste(sweep(big, inner, outer, _SWEEP[rarity]), (0, 0), annulus)
     badge.paste(Image.new("RGB", (big, big), color), (0, 0), _disc_mask(big, centre, inner))
     corner = round(centre - face_radius)
     badge.paste(face, (corner, corner), face)
@@ -328,17 +328,17 @@ def _unlock_footer(
     draw = ImageDraw.Draw(image)
     y = _HEIGHT - 150
     width = _WIDTH - x - _MARGIN
-    handle_font = _font(38, bold=True)
+    handle_font = font(38, bold=True)
     draw.text((x, y), _fit(draw, card.handle, handle_font, width), font=handle_font, fill=_TEXT)
     y += 62
-    label_font = _font(32)
+    label_font = font(32)
     badge = medal(36, color, _BACKGROUND)
     image.paste(badge, (x, y + 4), badge)
     draw.text((x + 48, y), card.rarity_label, font=label_font, fill=_TEXT)
     reward_x = x + 48 + draw.textlength(card.rarity_label, font=label_font) + 40
     gem = diamond(32, _CURRENCY)
     image.paste(gem, (round(reward_x), y + 6), gem)
-    bold = _font(32, bold=True)
+    bold = font(32, bold=True)
     reward = f"+{card.reward}"
     draw.text((reward_x + 44, y), reward, font=bold, fill=_TEXT)
     points_x = reward_x + 44 + draw.textlength(reward, font=bold) + 36
@@ -354,12 +354,14 @@ def render_unlock_card(
     draw = ImageDraw.Draw(image)
     color = RARITY_COLORS[card.rarity]
     draw.rectangle((0, 0, _WIDTH - 1, _HEIGHT - 1), outline=color, width=10)
-    badge = _badge(avatar_disc(avatar, card.handle, card.seed, _AVATAR * _SS), color, card.rarity)
+    badge = badge_ring(
+        avatar_disc(avatar, card.handle, card.seed, _AVATAR * _SS), color, card.rarity
+    )
     radius = _AVATAR // 2 + _RING_TOTAL
     _paste_badge(image, badge, (_MARGIN + radius, _HEIGHT // 2))
     x = 2 * _MARGIN + 2 * radius
     width = _WIDTH - x - _MARGIN
-    headline_font, body_font = _font(30, bold=True), _font(34)
+    headline_font, body_font = font(30, bold=True), font(34)
     name_font = _name_font(draw, card.name, width)
     headline = _fit(draw, card.headline.upper(), headline_font, width)
     draw.text((x, 100), headline, font=headline_font, fill=color)
@@ -375,9 +377,11 @@ def _podium_entry(image: Image.Image, entry: PodiumEntry, slot: tuple[int, int, 
     draw = ImageDraw.Draw(image)
     face = avatar_disc(entry.avatar, entry.name, entry.seed, size * _SS)
     centre_y = 300 + (0 if index == 0 else 30)
-    _paste_badge(image, _badge(face, _PLACES[index], _PLACE_RARITIES[index]), (centre_x, centre_y))
+    _paste_badge(
+        image, badge_ring(face, _PLACES[index], _PLACE_RARITIES[index]), (centre_x, centre_y)
+    )
     text_y = centre_y + size // 2 + _RING_TOTAL + 40
-    name_font = _font(36 if index == 0 else 30, bold=True)
+    name_font = font(36 if index == 0 else 30, bold=True)
     name = _fit(draw, entry.name, name_font, 280)
     draw.text((centre_x, text_y), name, font=name_font, fill=_TEXT, anchor="mm")
     _score_line(image, entry.score_label, (centre_x, text_y + 44))
@@ -386,18 +390,18 @@ def _podium_entry(image: Image.Image, entry: PodiumEntry, slot: tuple[int, int, 
 def _score_line(image: Image.Image, label: str, centre: tuple[int, int]) -> None:
     """A glowing star, then the score, centred together on `centre`."""
     draw = ImageDraw.Draw(image)
-    font = _font(28)
-    left = centre[0] - (_STAR_ADVANCE + draw.textlength(label, font=font)) / 2
+    star_font = font(28)
+    left = centre[0] - (_STAR_ADVANCE + draw.textlength(label, font=star_font)) / 2
     icon = star(_STAR_BOX)
     image.paste(icon, (round(left + 14 - _STAR_BOX / 2), centre[1] - _STAR_BOX // 2), icon)
-    draw.text((left + _STAR_ADVANCE, centre[1]), label, font=font, fill=_MUTED, anchor="lm")
+    draw.text((left + _STAR_ADVANCE, centre[1]), label, font=star_font, fill=_MUTED, anchor="lm")
 
 
 def render_podium_card(card: PodiumCard, background: bytes | None = None) -> bytes:
     image = _canvas(background, _podium_shade())
     draw = ImageDraw.Draw(image)
     draw.rectangle((0, 0, _WIDTH - 1, _HEIGHT - 1), outline=_PLACES[0], width=10)
-    title_font = _font(52, bold=True)
+    title_font = font(52, bold=True)
     title = _fit(draw, card.title, title_font, _WIDTH - 2 * _MARGIN)
     draw.text((_WIDTH / 2, 70), title, font=title_font, fill=_TEXT, anchor="mm")
     for slot in _PODIUM_SLOTS:

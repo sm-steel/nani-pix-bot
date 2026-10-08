@@ -151,7 +151,7 @@ def _pixel(image: Image.Image, xy: tuple[int, int]) -> tuple[int, ...]:
 
 def _badge(size: int = 100, rarity: Rarity = Rarity.GOLD) -> Image.Image:
     face = cards.avatar_disc(_red_avatar(), "@a", 1, size * render._SS)
-    return render._badge(face, render.RARITY_COLORS[rarity], rarity)
+    return render.badge_ring(face, render.RARITY_COLORS[rarity], rarity)
 
 
 def _ring_radius(size: int) -> float:

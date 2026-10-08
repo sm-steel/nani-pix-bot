@@ -36,6 +36,7 @@ _STDERR_TAIL = 800
 _PART1_TIMEOUT = 120.0
 _REMUX_TIMEOUT = 30.0  # MP4 -> TS remux, ffprobe and the one-off offset measurement
 _ENDING_TIMEOUT = 60.0
+_CLIP_TIMEOUT = 60.0
 _QUEUE_DEPTH = 8
 _FFMPEG = ("ffmpeg", "-y", "-nostdin", "-loglevel", "error")
 _MUX = ("ffmpeg", "-y", "-loglevel", "error", "-f", "mpegts", "-i", "pipe:0", "-c", "copy",
@@ -230,6 +231,18 @@ def encode_part1(
             *x264(opts.crf), str(out),
         ]  # fmt: skip
         _pipe_frames(cmd, frames)
+        return out.read_bytes()
+
+
+def encode_rgba_clip(frames: bytes, size: tuple[int, int]) -> bytes:
+    """Concatenated raw RGBA frames of `size` -> a qtrle/argb .mov (mostly-transparent frames
+    run-length encode to almost nothing and decode for free), the confetti `Overlay` format."""
+    w, h = size
+    with _tmp() as tmp:
+        out = Path(tmp, "clip.mov")
+        cmd = [*_FFMPEG, "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{w}x{h}", "-r", str(FPS),
+               "-i", "pipe:0", "-c:v", "qtrle", "-pix_fmt", "argb", str(out)]  # fmt: skip
+        _run(cmd, timeout=_CLIP_TIMEOUT, stdin_data=frames)
         return out.read_bytes()
 
 

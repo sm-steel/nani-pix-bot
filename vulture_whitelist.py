@@ -18,6 +18,7 @@ from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services.game.state import TitleVariants
+from nani_pix_bot.services.reveal import celebration as reveal_celebration
 from nani_pix_bot.services.reveal import effects as reveal_effects
 from nani_pix_bot.services.reveal import encode as reveal_encode
 from nani_pix_bot.services.reveal import store as reveal_store
@@ -70,6 +71,10 @@ _kept = (
     reveal_effects.EFFECTS,
     reveal_iris.render_part1,
     reveal_ripple.render_part1,
+    reveal_celebration.badge_height,
+    reveal_celebration.make_badge,
+    reveal_celebration.badge_frames,
+    reveal_celebration.confetti_clip,
 )
 
 if TYPE_CHECKING:
