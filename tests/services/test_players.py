@@ -2,7 +2,9 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
+from nani_pix_bot.models.enums import Rarity
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import players
 
@@ -42,57 +44,53 @@ def test_find_player_by_username_returns_none_when_unknown(session: Session) -> 
     assert players.find_player_by_username(session, "nobody") is None
 
 
-def test_top_players_orders_by_wins_descending(session: Session) -> None:
+def _grant(session: Session, player_id: int, key: str, points: int) -> None:
+    session.add(
+        AchievementGrant(
+            player_id=player_id, key=key, tier=1, rarity=Rarity.SILVER, reward=0, points=points
+        )
+    )
+
+
+def test_leaderboard_orders_by_wins_then_achievement_points(session: Session) -> None:
     session.add_all(
         [
             Player(telegram_user_id=1, username="low", wins=1),
-            Player(telegram_user_id=2, username="high", wins=5),
-            Player(telegram_user_id=3, username="mid", wins=3),
+            Player(telegram_user_id=2, username="high", wins=5, currency=40),
+            Player(telegram_user_id=3, username="tied_less", wins=3),
+            Player(telegram_user_id=4, username="tied_more", wins=3),
         ]
     )
+    session.flush()
+    _grant(session, 4, "clutch", 3)
+    _grant(session, 4, "first_try", 2)
+    _grant(session, 3, "clutch", 1)
     session.commit()
 
-    top = players.top_players(session, limit=10)
+    rows = players.leaderboard(session, limit=10)
 
-    assert [p.username for p in top] == ["high", "mid", "low"]
+    assert [r.player_id for r in rows] == [2, 4, 3, 1]
+    assert (rows[0].wins, rows[0].currency, rows[0].points) == (5, 40, 0)
+    assert rows[1].points == 5
 
 
-def test_top_players_respects_the_limit(session: Session) -> None:
-    session.add_all(
-        [
-            Player(telegram_user_id=1, wins=1),
-            Player(telegram_user_id=2, wins=2),
-            Player(telegram_user_id=3, wins=3),
-        ]
-    )
+def test_leaderboard_pages_and_leaves_out_players_without_a_win(session: Session) -> None:
+    session.add_all(Player(telegram_user_id=i, wins=i - 1) for i in range(1, 6))  # 1 has 0
     session.commit()
 
-    top = players.top_players(session, limit=2)
-
-    assert len(top) == 2
-    assert top[0].wins == 3
-    assert top[1].wins == 2
-
-
-def test_top_players_excludes_players_with_zero_wins(session: Session) -> None:
-    session.add_all(
-        [
-            Player(telegram_user_id=1, wins=0),
-            Player(telegram_user_id=2, wins=1),
-        ]
-    )
-    session.commit()
-
-    top = players.top_players(session, limit=10)
-
-    assert [p.telegram_user_id for p in top] == [2]
+    assert [r.player_id for r in players.leaderboard(session, limit=2)] == [5, 4]
+    assert [r.player_id for r in players.leaderboard(session, limit=2, offset=2)] == [3, 2]
+    assert players.leaderboard_count(session) == 4
+    assert players.leaderboard_rank(session, 3) == 3
+    assert players.leaderboard_rank(session, 1) is None
 
 
-def test_top_players_returns_empty_list_when_no_one_has_won(session: Session) -> None:
+def test_leaderboard_is_empty_when_no_one_has_won(session: Session) -> None:
     session.add(Player(telegram_user_id=1, wins=0))
     session.commit()
 
-    assert players.top_players(session, limit=10) == []
+    assert players.leaderboard(session, limit=10) == []
+    assert players.leaderboard_count(session) == 0
 
 
 def test_timezone_defaults_to_none(session: Session) -> None:

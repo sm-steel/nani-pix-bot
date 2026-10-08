@@ -3,12 +3,14 @@ case-insensitive username lookup, and the /leaderboard query. Win
 increments themselves live in services/game/state.py's _win() (the
 only place that mutates a Game/Player pair together)."""
 
+from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.enums import CurrencyReason
 from nani_pix_bot.models.player import USERNAME_LENGTH, Player
 from nani_pix_bot.services.economy import config as economy_config
@@ -80,16 +82,55 @@ def find_player_by_username(session: Session, username: str) -> Player | None:
     return session.scalars(stmt).first()
 
 
-def top_players(session: Session, *, limit: int) -> list[Player]:
-    """Players with at least one win, ordered by wins descending."""
-    stmt = select(Player).where(Player.wins > 0).order_by(Player.wins.desc()).limit(limit)
-    players = list(session.scalars(stmt))
-    logger.debug(
-        "leaderboard query returned {count} player(s) (limit {limit})",
-        count=len(players),
-        limit=limit,
+@dataclass(frozen=True)
+class LeaderRow:
+    player_id: int
+    wins: int
+    currency: int
+    points: int  # achievement 🏆 points
+    title_key: str | None
+
+
+def _leaderboard_stmt():
+    points = (
+        select(AchievementGrant.player_id, func.sum(AchievementGrant.points).label("points"))
+        .group_by(AchievementGrant.player_id)
+        .subquery()
     )
-    return players
+    total = func.coalesce(points.c.points, 0)
+    return (
+        select(Player.telegram_user_id, Player.wins, Player.currency, total, Player.title_key)
+        .outerjoin(points, points.c.player_id == Player.telegram_user_id)
+        .where(Player.wins > 0)
+        .order_by(Player.wins.desc(), total.desc(), Player.telegram_user_id)
+    )
+
+
+def leaderboard(session: Session, *, limit: int, offset: int = 0) -> list[LeaderRow]:
+    """All-time board: players with a win, by 👑 wins, then 🏆 points."""
+    rows = session.execute(_leaderboard_stmt().limit(limit).offset(offset))
+    found = [
+        LeaderRow(pid, wins, currency, int(pts), title) for pid, wins, currency, pts, title in rows
+    ]
+    logger.debug(
+        "leaderboard query returned {count} row(s) (limit {limit}, offset {offset})",
+        count=len(found),
+        limit=limit,
+        offset=offset,
+    )
+    return found
+
+
+def leaderboard_count(session: Session) -> int:
+    stmt = select(func.count()).select_from(Player).where(Player.wins > 0)
+    return int(session.scalar(stmt) or 0)
+
+
+def leaderboard_rank(session: Session, player_id: int) -> int | None:
+    for rank, row in enumerate(session.execute(_leaderboard_stmt()), start=1):
+        if row[0] == player_id:
+            return rank
+    return None
 
 
 def get_timezone(session: Session, telegram_user_id: int) -> ZoneInfo | None:

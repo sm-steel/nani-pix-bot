@@ -298,8 +298,9 @@ src/nani_pix_bot/
                    #               shared by /guess and /sharpen (the timers
                    #               can't import commands/)
     tip.py        # /tip @user <amount> — topic or DM
-    leaderboard.py  # /leaderboard (wins and 💠 balance)
-                   # (wins as 👑, the chosen title in «» after the name)
+    leaderboard.py  # /leaderboard — all-time rich table (👑 wins, 💠, 🏆
+                   # points, the chosen title in «» after the name) from
+                   # players.leaderboard, paged with lb:<page>; topic or DM
     achievements/  # /achievements — group summary + top (__init__.py),
                    # the DM browser with tabs/pages (browser.py), compare
                    # (compare.py), the status -> rich-message markdown

@@ -13,7 +13,7 @@ from telegram.error import Conflict, NetworkError
 from telegram.ext import CallbackQueryHandler, ContextTypes, TypeHandler
 
 from nani_pix_bot import app
-from nani_pix_bot.commands import quiet_hours
+from nani_pix_bot.commands import leaderboard, quiet_hours, standings_dm
 from nani_pix_bot.commands.dm_start import (
     pick_callback_handler,
     screenshot_gallery_callback_handler,
@@ -22,7 +22,7 @@ from nani_pix_bot.commands.dm_start import (
     screenshot_source_callback_handler,
     screenshot_upload_instead_callback_handler,
 )
-from nani_pix_bot.commands.helpers import log_scope, player_tracking
+from nani_pix_bot.commands.helpers import log_scope, paging, player_tracking
 from nani_pix_bot.config import Config
 from nani_pix_bot.models.enums import Provider
 from tests.conftest import LogLine
@@ -402,3 +402,23 @@ def test_timezone_callback_handler_is_registered_for_its_prefix() -> None:
     assert isinstance(pattern, re.Pattern)
     assert pattern.match("set_timezone:Europe/Moscow")
     assert not pattern.match("set_language:RU")
+
+
+def _callback_for(application: Any, data: str) -> object | None:
+    """The callback of the first CallbackQueryHandler whose pattern matches."""
+    for group in application.handlers.values():
+        for handler in group:
+            if not isinstance(handler, CallbackQueryHandler):
+                continue
+            pattern = handler.pattern
+            if isinstance(pattern, re.Pattern) and pattern.match(data):
+                return handler.callback
+    return None
+
+
+def test_paged_views_route_their_taps_to_their_own_handlers() -> None:
+    application = app.build_application(_config())
+
+    assert _callback_for(application, standings_dm.feed_data(1)) is standings_dm.standings_callback
+    assert _callback_for(application, leaderboard.page_data(1)) is leaderboard.leaderboard_callback
+    assert _callback_for(application, paging.NOOP) is paging.noop_callback

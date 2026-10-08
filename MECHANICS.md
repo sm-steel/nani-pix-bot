@@ -1006,11 +1006,16 @@ name).
 
 **Status: Implemented.**
 
-`/leaderboard`, usable at any time in the game topic regardless of whether
-a game is running, lists players ordered by `players.wins` descending. Each row also shows the
-player's 💠 balance as a column (ranking is still by wins, not 💠). Wins are
-marked 👑 (🏆 means achievement points everywhere else), and a player's
-chosen title (see "Achievements") follows their name in «».
+`/leaderboard` is the all-time board: a table of every player with at least
+one win, 10 per page (◀ n/N ▶ edits the message in place). Columns: rank,
+player (their chosen title, see "Achievements", in «» after the name),
+👑 lifetime wins, 💠 balance and 🏆 achievement points. Order: 👑 wins,
+then 🏆 points, then player id, so ranks are always unique.
+
+It works at any time in the game topic, whether or not a game is running,
+and in DM for group members. Only the DM copy adds a "You: #N …" line when
+you aren't on the page shown: the topic message is shared, so whoever pages
+it isn't necessarily who that line would describe.
 
 ## Achievements
 

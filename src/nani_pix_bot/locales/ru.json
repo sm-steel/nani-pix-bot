@@ -89,6 +89,8 @@
 
   "leaderboard.empty": "Пока никто не выигрывал — может, это будете вы!",
   "leaderboard.header": "👑 Таблица лидеров",
+  "leaderboard.you": "Вы: #{rank} · {wins} 👑 · {currency} 💠 · {points} 🏆",
+  "leaderboard.you_unranked": "Вы пока не выиграли ни одной игры.",
 
   "skip.game_running": "Нельзя пропустить ход, пока идёт игра.",
   "skip.not_your_turn": "Сейчас не ваша очередь пропускать ход.",

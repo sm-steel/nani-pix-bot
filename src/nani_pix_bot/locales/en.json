@@ -89,6 +89,8 @@
 
   "leaderboard.empty": "No one has won a round yet — could be you!",
   "leaderboard.header": "👑 Leaderboard",
+  "leaderboard.you": "You: #{rank} · {wins} 👑 · {currency} 💠 · {points} 🏆",
+  "leaderboard.you_unranked": "You haven't won a game yet.",
 
   "skip.game_running": "Can't skip while a game is running.",
   "skip.not_your_turn": "It's not your turn to skip.",

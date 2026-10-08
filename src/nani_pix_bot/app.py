@@ -301,6 +301,7 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
     )
     application.add_handler(CallbackQueryHandler(standings_dm.standings_callback, pattern=r"^std:"))
+    application.add_handler(CallbackQueryHandler(leaderboard.leaderboard_callback, pattern=r"^lb:"))
     application.add_handler(
         CallbackQueryHandler(paging.noop_callback, pattern=rf"^{re.escape(paging.NOOP)}$")
     )
