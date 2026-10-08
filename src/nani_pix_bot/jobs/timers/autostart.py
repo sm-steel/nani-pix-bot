@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.jobs import reveal
 from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until
 from nani_pix_bot.jobs.timers.current_image import post_stage_images
 from nani_pix_bot.jobs.timers.game_timeout import schedule_timeout
@@ -28,6 +29,7 @@ from nani_pix_bot.services import events, i18n, players, quiet_hours, settings
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.game import autostart as autostart_service
+from nani_pix_bot.services.reveal import store as reveal_store
 
 IDLE_AUTOSTART_JOB_NAME = "idle-autostart"
 
@@ -347,6 +349,9 @@ async def run_bot_autostart(
         setattr(game, pick.screenshot.provider.id_attr_name, pick.screenshot.provider_id)
         game_service.clear_turn_timers(session)
         first_turn_post = _build_first_turn_post(session, context, game, lang, claim)
+        reveal_store.reserve(
+            session, game.id, reveal_store.pick_effect(), reveal_store.pick_image()
+        )
         game_service.clear_autostart(session)
         game_id = game.id
 
@@ -360,6 +365,7 @@ async def run_bot_autostart(
         provider=pick.screenshot.provider,
         game_id=game_id,
     )
+    reveal.start_pregeneration(context.application, game_id)
     await post_stage_images(
         context,
         session_factory,

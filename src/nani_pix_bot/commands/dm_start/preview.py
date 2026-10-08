@@ -53,6 +53,7 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     stage_gallery_resume,
 )
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.jobs import reveal
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import DISCOURAGED_ALGORITHMS, PixelAlgorithm, SetupStep
 from nani_pix_bot.models.game import Game
@@ -61,6 +62,7 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.economy import bounty, earning, wallet
+from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -113,6 +115,7 @@ def _activate_and_stage_first_post(
     )
     caption += game_service.game_id_line(game.id, lang)
     game_service.activate_game(session, game)
+    reveal_store.reserve(session, game.id, reveal_store.pick_effect(), None)
     prompt_bonus = earning.award_prompt_start(session, game)
     if prompt_bonus:
         caption += "\n" + i18n.t(
@@ -241,9 +244,13 @@ async def _handle_confirm_tap(
         first_stage_post = _activate_and_stage_first_post(
             session, context, setup_game, lang, user.full_name
         )
+        game_id = setup_game.id
     # Block closed and committed above — activation is durable now
     # regardless of whether the announcement below actually reaches the
-    # group (see post_current_image's docstring).
+    # group (see post_current_image's docstring). The pre-render only
+    # schedules a task, so starting it first overlaps rendering with the
+    # upload instead of delaying it.
+    reveal.start_pregeneration(context.application, game_id)
     await timeout_module.post_stage_image(
         context, session_factory, photo=first_stage_post.photo, caption=first_stage_post.caption
     )
