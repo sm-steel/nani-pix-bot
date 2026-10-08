@@ -85,23 +85,39 @@ def _new_static(original: Image.Image) -> _Static:
     return _Static(original.size, b"".join(to_yuv420(original)))
 
 
-def _static_for(clear: bytes) -> _Static:
+def _remember(clear: bytes, static: _Static) -> None:
+    """The only writer of the cache."""
     global _static
-    key = _key(clear)
-    if _static is None or _static[0] != key:
-        _static = (key, _new_static(_load(clear)))
-    return _static[1]
+    _static = (_key(clear), static)
+
+
+def _confetti(static: _Static) -> bytes:
+    """The confetti clip for this frame size's badge height, built once per entry."""
+    height = celebration.badge_height(static.size)
+    if height not in static.confetti:
+        static.confetti[height] = celebration.confetti_clip(height)
+    return static.confetti[height][0]
+
+
+def _static_for(clear: bytes) -> _Static:
+    cached = _static
+    if cached is not None and cached[0] == _key(clear):
+        return cached[1]
+    static = _new_static(_load(clear))
+    _remember(clear, static)
+    return static
 
 
 def pregenerate(
     image: bytes, algorithm: PixelAlgorithm, widths: tuple[int, ...], effect: RevealEffect
 ) -> Pregen:
     """Render the effect part for `image` as MPEG-TS and warm the static cache for it."""
-    global _static
     started = time.perf_counter()
     original, stages = prep(image, algorithm, widths)
     part1_ts, join_offset = encode.to_ts(EFFECTS[effect](original, stages))
-    _static = (_key(image), _new_static(original))
+    static = _new_static(original)
+    _confetti(static)  # winner-independent: built now, so a win doesn't pay for it
+    _remember(image, static)
     render_ms = round((time.perf_counter() - started) * 1000)
     logger.info(
         "reveal part 1 rendered: effect {effect}, frame {frame}, {render_ms} ms",
@@ -114,12 +130,10 @@ def pregenerate(
 
 def _overlay(static: _Static, badge: Badge) -> encode.Overlay:
     height = celebration.badge_height(static.size)
-    if height not in static.confetti:
-        static.confetti[height] = celebration.confetti_clip(height)
     rgba, badge_size = celebration.badge_frames(
         celebration.make_badge(badge.avatar, badge.handle, height)
     )
-    return encode.Overlay(static.confetti[height][0], rgba, badge_size)
+    return encode.Overlay(_confetti(static), rgba, badge_size)
 
 
 def finish(pregen: Pregen, clear: bytes, badge: Badge | None) -> bytes:

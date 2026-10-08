@@ -5,7 +5,7 @@ import pytest
 from PIL import Image
 
 from nani_pix_bot.models.enums import PixelAlgorithm, RevealEffect
-from nani_pix_bot.services.reveal import pipeline
+from nani_pix_bot.services.reveal import celebration, pipeline
 from tests.services.reveal.ffprobe_helpers import decode_clean, probe_frames
 
 WIDTHS = (64, 80, 128, 192, 512)
@@ -65,3 +65,18 @@ def test_finish_works_from_a_cold_or_replaced_cache() -> None:
     assert decode_clean(pipeline.finish(pregen, png, pipeline.Badge(None, "@w")))
     pipeline.pregenerate(_png((160, 90)), PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS)
     assert decode_clean(pipeline.finish(pregen, png, None))  # other image cached: rebuilt
+
+
+@pytest.mark.ffmpeg
+def test_pregenerate_builds_the_confetti_so_finish_does_not(monkeypatch) -> None:
+    png = _png()
+    pregen = pipeline.pregenerate(png, PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS)
+    assert pipeline._static is not None
+    static = pipeline._static[1]
+    assert celebration.badge_height(static.size) in static.confetti
+
+    def boom(_height):
+        raise AssertionError("confetti rebuilt at win time")
+
+    monkeypatch.setattr(celebration, "confetti_clip", boom)
+    assert decode_clean(pipeline.finish(pregen, png, pipeline.Badge(None, "@w")))
