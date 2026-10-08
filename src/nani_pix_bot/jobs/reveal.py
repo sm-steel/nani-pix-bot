@@ -1,7 +1,8 @@
-"""Telegram-side lifecycle of the animated reveal (#295): a one-worker
-process pool for the CPU-heavy rendering, a one-entry in-memory cache of
-the pre-rendered effect part, the fire-and-forget pre-render at game
-start, the reveal-time render, and the startup reload from the DB slot.
+"""Telegram-side lifecycle of the animated reveal (#295): the
+fire-and-forget pre-render at game start, the reveal-time render, and the
+startup reload from the DB slot. The one-worker process pool and the
+one-entry in-memory cache of the pre-rendered effect part live in
+`reveal_worker.py` (re-exported here).
 
 Every failure degrades to None / a log line: the caller then posts the
 plain photo, as before this feature existed."""

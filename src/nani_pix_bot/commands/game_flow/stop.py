@@ -218,12 +218,14 @@ async def _announce_stop(
     game row is already gone by the time this runs, so there's nothing
     left to gate on a successful send either way.
 
-    Revealing posts the un-pixelated original captioned with the title —
-    the same `post_current_image` the win/unsolved/timeout reveals use, so
-    it becomes the topic's pinned image too. That caption already says the
-    turn is open, so the reveal path posts one message rather than a photo
-    plus a duplicate notice. A hard-mode game instead posts its stored
-    screenshot pair as a 2-photo album via `post_current_images`, same
+    Revealing posts the animated reveal video of the original, captioned
+    with the title — `post_reveal`, the same call the win/unsolved/timeout
+    reveals use, which falls back to the plain un-pixelated photo (the
+    topic's pinned image) when there is no video. That caption already says
+    the turn is open, so the reveal path posts one message rather than a
+    photo plus a duplicate notice. A hard-mode game instead posts its stored
+    screenshot pair via `post_reveal_pair` (the video plus the other
+    screenshot, or the plain 2-photo album as the fallback), same
     caption-already-says-the-turn-is-open reasoning. Falls back to the
     plain notice if the button was a stale tap on a game that no longer
     had its image(s) (see the caller's own warning log for that case)."""

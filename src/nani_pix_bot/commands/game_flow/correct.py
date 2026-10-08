@@ -106,8 +106,10 @@ def _prepare_correct_reveal(
     """Builds the reveal payload (exactly one of the first two return
     values is populated) and caption for the win /correct just forced —
     a hard-mode game reveals its stored screenshot pair via
-    post_current_images (a 2-photo album), a normal-mode game reveals
-    original_image via post_current_image — same one-of-two-fields
+    post_reveal_pair (the reveal video plus the other screenshot, or a
+    2-photo album as the fallback), a normal-mode game reveals
+    original_image via post_reveal (the reveal video, or the photo as
+    the fallback) — same one-of-two-fields
     dispatch shape as stage_post.py's Announcement/send_announcement.
     _validate_active_game_for_starter already checked original_image is
     set for a normal-mode game, so the RuntimeError here restores the

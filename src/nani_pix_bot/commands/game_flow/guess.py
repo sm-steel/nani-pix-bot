@@ -84,8 +84,9 @@ def _prepare_hard_mode_won_announcement(
     user: User,
 ) -> Announcement:
     """The hard-mode analogue of _prepare_won_announcement — reveals the
-    stored screenshot pair via post_current_images (a 2-photo album)
-    instead of a single post_current_image call. Timer/turn-state
+    stored screenshot pair (posted via post_reveal_pair: the reveal video
+    plus the other screenshot, or a 2-photo album as the fallback) instead
+    of a single post_reveal call. Timer/turn-state
     handling is identical to the normal-mode helper; only the reveal
     photos and caption key differ."""
     winner = _reveal_winner(user)
@@ -213,8 +214,7 @@ def _dispatch_non_won_outcome(
 ) -> tuple[Announcement | None, bool, str | None]:
     """Routes every recorded GuessOutcome except WON to its announcement/
     reply text (guess_command handles WON itself — see its own
-    hard_mode branch — so this doesn't need a winner_name param to stay
-    under qlty's "many parameters" threshold). Hoisted out of
+    hard_mode branch). Hoisted out of
     guess_command entirely, not just each hard-mode branch individually,
     to keep guess_command's own cyclomatic complexity under qlty's
     complexity threshold once TURN_ADVANCED's arm and every WRONG/

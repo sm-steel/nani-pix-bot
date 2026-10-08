@@ -19,6 +19,7 @@ just what's currently built.
 | Turn handoff (`/skip`) | Implemented |
 | 2-day timeout | Implemented |
 | Inactivity nudge (3h) + auto-advance (6h) | Implemented |
+| Animated reveal video at every ending that reveals the image | Implemented |
 | Pinned current image (one at a time, follows the game) | Implemented |
 | Manual resync (`/status`) — re-post the current image with a live caption | Implemented |
 | Setup-abandon timeout (1h) | Implemented |
@@ -615,7 +616,8 @@ A game ends in a win one of two ways:
   routinely couldn't find its target.
 
 On a win, the bot:
-1. Reveals the original (un-pixelated) screenshot together with the
+1. Reveals the original (un-pixelated) screenshot, as the animated
+   reveal video (see "The reveal video" below), together with the
    anime's title, naming the winner by name in the caption.
 2. Sets `status → WON`, records `winner_id` and `ended_at`, and increments
    that player's `players.wins`.
@@ -629,6 +631,34 @@ On a win, the bot:
    `Game.original_image` — nothing after this point ever needs to
    re-pixelate the screenshot, so the stored bytes are dropped rather
    than kept around indefinitely.
+
+### The reveal video
+
+**Status: Implemented.**
+
+Every ending that reveals the clear screenshot posts an animated video
+instead of a still photo: the pixelated image turns into the clear one
+through a transition effect. Captions, pinning and everything after the
+reveal are exactly as for a photo. Telegram loops the video; there is no
+way to play it once.
+
+| Ending | What the video shows |
+|---|---|
+| Win by `/guess` or `/correct` | the effect, then the clear image with a celebration: a gold badge with the winner's avatar and `@handle` (their name when they have no username), a crown, a pop-in, one shine sweep and confetti |
+| Unsolved: stage 5 exhausted, 2-day timeout, inactivity on stage 5, `/stop` with reveal | the same effect, then the clear image held, no badge |
+| HARD MODE (any of the above) and the vote opening | the album as before, but the screenshot picked at game start is the reveal video (a badge on a win, none on the vote opening or an unsolved ending) and the other one stays a photo |
+
+The effect is picked uniformly at random **at game start** from `iris`,
+`tile_flip`, `ripple`, `glitch` and `shatter`. For HARD MODE the animated
+screenshot (`a` or `b`) is picked then too. The effect part is rendered in
+the background right after the game goes live, so the reveal itself only
+renders the ending and never delays a game's start.
+
+**Still-photo fallback.** The reveal is never lost: if the pre-render
+failed, isn't done within 5 seconds of the ending, the render fails, or
+Telegram rejects the video, the bot posts the plain photo exactly as
+before. The one exception is a send that timed out: the video may have
+arrived, so nothing is posted twice.
 
 ## Ending unsolved
 
