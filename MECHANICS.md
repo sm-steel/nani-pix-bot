@@ -1017,6 +1017,41 @@ and in DM for group members. Only the DM copy adds a "You: #N …" line when
 you aren't on the page shown: the topic message is shared, so whoever pages
 it isn't necessarily who that line would describe.
 
+## Game history
+
+**Status: Implemented.**
+
+`/history` (DM only, group members only) lists the group's finished games,
+won or unsolved, newest first, 10 per page. A game still being set up,
+running or being voted on never appears, so the history can't spoil a
+round. Each row shows the 🎲 game number, the date it ended, the anime, the
+winner (❌ when unsolved) and the host, and has a `#N` button that opens the
+game's record. **👤 Only mine** narrows the list to games you hosted, won
+or made a guess in; **📜 All games** switches back.
+
+A game's record shows:
+- its titles
+- the host
+- how the anime was found (provider, or typed in by hand) and where the
+  screenshot came from
+- HARD MODE, if it was
+- when it started and ended, and how long it lasted
+- the outcome:
+  - won: who won, at which stage or turn, how (/guess, the host's
+    /correct, the group's vote or an admin's /setwinner), how long it took
+    to solve, the bounty paid out and the 🌟 the winner got
+  - unsolved: why (time ran out, every stage used up, HARD MODE with nobody
+    guessing, or a vote with no winner)
+- the full guess log: time, player, guess, stage, ✅/❌, 25 per page
+
+◀ Back returns to the same list page.
+
+Games older than the records some parts come from just leave those parts
+out:
+- how a game was won, the bounty, the solve time and an unsolved game's
+  cause come from the event log, which started with achievements
+- the guess log started with issue #251
+
 ## Achievements
 
 **Status: Implemented.**

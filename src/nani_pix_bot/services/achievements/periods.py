@@ -85,7 +85,7 @@ def _ended(event: LoggedEvent) -> datetime:
     return datetime.fromisoformat(event.data["ended_at"])
 
 
-def _win_points(event: LoggedEvent) -> int:
+def win_points(event: LoggedEvent) -> int:
     table = HARD_POINTS if event.data["hard_mode"] else WIN_POINTS
     stage = event.data["stage"]
     return table[stage - 1] if 1 <= stage <= len(table) else 0
@@ -100,7 +100,7 @@ def _shares(event: LoggedEvent) -> list[tuple[int, int, GainRole]]:
     """Who one win pays and how much: the winner, and the host unless HARD MODE."""
     shares = []
     if event.actor_id is not None:
-        shares.append((event.actor_id, _win_points(event), GainRole.WIN))
+        shares.append((event.actor_id, win_points(event), GainRole.WIN))
     if not event.data["hard_mode"] and event.subject_id is not None:
         shares.append((event.subject_id, HOST_POINTS, GainRole.HOST))
     return shares
@@ -246,7 +246,7 @@ def _gain_in(session: Session, period: Period, won: LoggedEvent) -> PeriodGain |
     return PeriodGain(
         period=period,
         player_id=won.actor_id,
-        gain=_win_points(won),
+        gain=win_points(won),
         score=after[rank_after - 1].score,
         rank_before=_rank(before, won.actor_id),
         rank_after=rank_after,

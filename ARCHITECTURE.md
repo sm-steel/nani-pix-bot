@@ -313,6 +313,11 @@ src/nani_pix_bot/
     standings.py  # /standings — live week/month/year champion tables in
                    # one rich message (periods.standings), with two DM
                    # deep-link buttons (/start rules, /start recent)
+    history/      # /history — DM-only finished-games list with an
+                   # All/Mine toggle and per-game records with the guess
+                   # log (__init__.py), callback data hist:l:/hist:g:
+                   # parsed defensively (data.py), markdown (render.py);
+                   # queries in services/game/history.py
     standings_dm.py  # the DM views behind them: how 🌟 points work
                    # (rendered from periods' constants) and this week's
                    # gains (periods.recent_gains), paged with std:r:<page>
@@ -640,6 +645,13 @@ src/nani_pix_bot/
                    #                (decide_winner, VOTE_MIN_VOTES) and
                    #                close_vote; Telegram-free — see
                    #                MECHANICS.md's "HARD MODE vote"
+                   #   history.py   /history's queries: finished (WON/
+                   #                UNSOLVED) games newest first, all or
+                   #                one player's, and one game's record
+                   #                (game_won/game_unsolved event facts,
+                   #                the guess log); maps the logged
+                   #                unsolved cause to a player-facing
+                   #                UnsolvedReason
                    #   refinish.py  admin re-finish (#253): the
                    #                refusal rules and the UNSOLVED -> WON
                    #                transition /setwinner uses (turn left
