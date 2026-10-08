@@ -8,7 +8,7 @@ from nani_pix_bot.models.enums import (
     DISCOURAGED_ALGORITHMS,
     PixelAlgorithm,
 )
-from nani_pix_bot.services.pixelate import ALGORITHMS, pixelate, render
+from nani_pix_bot.services.pixelate import ALGORITHMS, pixelate, pixelate_image, render
 
 _TEST_IMAGE_SIZE = 192
 # Every algorithm must satisfy the shared mosaic properties below; which
@@ -204,3 +204,24 @@ def test_reveal_tiles_resizes_a_differently_sized_pixelated_image() -> None:
     result = Image.open(io.BytesIO(render.reveal_tiles(original, pixelated, [], 8)))
 
     assert result.size == (80, 40)
+
+
+def _sample_png() -> bytes:
+    image = Image.new("RGB", (97, 61))
+    for x in range(97):
+        for y in range(61):
+            image.putpixel((x, y), (x * 2 % 256, y * 4 % 256, (x * y) % 256))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize("algorithm", list(PixelAlgorithm))
+@pytest.mark.parametrize("width", [8, 20, 64])
+def test_pixelate_image_matches_pixelate_bytes(algorithm: PixelAlgorithm, width: int) -> None:
+    png = _sample_png()
+    expected = Image.open(io.BytesIO(pixelate(png, width, algorithm))).convert("RGB")
+    actual = pixelate_image(Image.open(io.BytesIO(png)).convert("RGB"), width, algorithm)
+    assert actual.mode == "RGB"
+    assert actual.size == expected.size
+    assert actual.tobytes() == expected.tobytes()
