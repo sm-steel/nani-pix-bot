@@ -3,6 +3,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -438,4 +439,122 @@ async def test_a_failed_mark_on_a_foreign_slot_does_not_claim_a_render_was_disca
     reveal.start_pregeneration(application, 4242)  # no such game: nothing to render
     assert not any("discarded" in line.message for line in log_records)
     assert any("another game" in line.message for line in log_records if line.level == "INFO")
+    application.bot_data["reveal_executor"].shutdown()
+
+
+def _hanging_avatar(monkeypatch) -> tuple[list[asyncio.Task], asyncio.Event]:
+    """Replaces the avatar fetch with one that hangs; returns its captured task and a
+    'started' event."""
+    tasks: list[asyncio.Task] = []
+    started = asyncio.Event()
+
+    async def _avatar(*args):
+        tasks.append(cast(asyncio.Task, asyncio.current_task()))
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(reveal, "_avatar", _avatar)
+    return tasks, started
+
+
+async def test_the_avatar_task_is_cancelled_when_finding_the_pregen_raises(
+    session_factory, monkeypatch
+) -> None:
+    tasks, _ = _hanging_avatar(monkeypatch)
+
+    async def _boom(*args):
+        await asyncio.sleep(0)  # let the avatar task start
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(reveal, "_find_pregen", _boom)
+    application = _application(session_factory)
+    with pytest.raises(RuntimeError, match="db down"):
+        await reveal.render_reveal(application, 5, b"png", 9, "@w")
+    await asyncio.wait(tasks)
+    assert tasks[0].cancelled()
+    application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_the_avatar_task_is_cancelled_when_the_render_is_cancelled(
+    session_factory, monkeypatch
+) -> None:
+    tasks, started = _hanging_avatar(monkeypatch)
+
+    async def _wait_forever(*args):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(reveal, "_find_pregen", _wait_forever)
+    application = _application(session_factory)
+    render = asyncio.ensure_future(reveal.render_reveal(application, 5, b"png", 9, "@w"))
+    await started.wait()
+    render.cancel()
+    await asyncio.wait([render])
+    await asyncio.wait(tasks)
+    assert tasks[0].cancelled()
+    application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_shutdown_cancels_the_pending_startup_rerenders(session_factory, monkeypatch) -> None:
+    gate, started = threading.Event(), threading.Event()
+
+    def _slow(*args):
+        started.set()
+        gate.wait(2)
+        return PREGEN
+
+    monkeypatch.setattr(pipeline, "pregenerate", _slow)
+    game_id = _game(session_factory)
+    _reserve(session_factory, game_id)
+    application = _application(session_factory)
+    await reveal.reload_on_startup(application)
+    assert await asyncio.to_thread(started.wait, 2)
+    [task] = reveal_pregen._startup_tasks
+    await reveal_pregen.cancel_startup_tasks()
+    assert task.cancelled()
+    assert not reveal_pregen._startup_tasks
+    gate.set()
+    application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_a_scheduling_failure_marks_the_slot_failed(session_factory, monkeypatch) -> None:
+    def _no_task(*args, **kwargs):
+        raise RuntimeError("loop closed")
+
+    monkeypatch.setattr(pipeline, "pregenerate", lambda *args: PREGEN)
+    game_id = _game(session_factory)
+    _reserve(session_factory, game_id)
+    application = _application(session_factory)
+    application.create_task = _no_task
+    reveal.start_pregeneration(application, game_id)
+    assert _slot(session_factory) == (game_id, RevealStatus.FAILED)
+    assert isinstance(application.bot_data["reveal_cache"].future.exception(), RuntimeError)
+    application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_a_store_write_failure_is_not_reported_as_a_failed_render(
+    session_factory, monkeypatch, log_records
+) -> None:
+    def _db_down(*args):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(pipeline, "pregenerate", lambda *args: PREGEN)
+    monkeypatch.setattr(store, "mark_ready", _db_down)
+    game_id = _game(session_factory)
+    _reserve(session_factory, game_id)
+    application = _application(session_factory)
+    reveal.start_pregeneration(application, game_id)
+    await _settle(application)
+    errors = [line.message for line in log_records if line.level == "ERROR"]
+    assert errors == ["couldn't store the pre-rendered reveal"]
+    assert _slot(session_factory) == (game_id, RevealStatus.FAILED)
+    assert isinstance(application.bot_data["reveal_cache"].future.exception(), RuntimeError)
+    application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_a_failed_mark_with_no_slot_says_so(session_factory, log_records) -> None:
+    application = _application(session_factory)
+    reveal.start_pregeneration(application, 4242)  # no game, no slot
+    lines = [line.message for line in log_records if line.level == "INFO"]
+    assert any("no reveal slot any more" in m for m in lines)
+    assert not any("another game" in m for m in lines)
     application.bot_data["reveal_executor"].shutdown()

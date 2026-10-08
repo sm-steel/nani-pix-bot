@@ -156,27 +156,39 @@ def _tmp() -> tempfile.TemporaryDirectory[str]:
     return tempfile.TemporaryDirectory(dir=_SCRATCH)
 
 
-def _drain_into(stdin: IO[bytes], frames: "queue.Queue[bytes | None]") -> None:
-    broken = False
+def _drain_into(
+    stdin: IO[bytes], frames: "queue.Queue[bytes | None]", dead: threading.Event
+) -> None:
     while (frame := frames.get()) is not None:
-        if broken:
+        if dead.is_set():
             continue  # keep draining so the producer never blocks on a dead encoder
         try:
             stdin.write(frame)
         except OSError:
-            broken = True
+            dead.set()
     with contextlib.suppress(OSError):  # the encoder already exited; the caller reports its code
         stdin.close()
 
 
 def _feed(proc: subprocess.Popen[bytes], frames: Iterable[bytes]) -> None:
+    """Hand `frames` to the writer thread. Once the encoder is dead (broken pipe or exited) the
+    producer is stopped early (the iterator is closed) instead of rendering the remaining
+    frames."""
     pending: queue.Queue[bytes | None] = queue.Queue(maxsize=_QUEUE_DEPTH)
-    writer = threading.Thread(target=_drain_into, args=(_stream(proc.stdin), pending), daemon=True)
+    dead = threading.Event()
+    writer = threading.Thread(
+        target=_drain_into, args=(_stream(proc.stdin), pending, dead), daemon=True
+    )
     writer.start()
     try:
         for frame in frames:
             pending.put(frame)
+            if dead.is_set() or proc.poll() is not None:
+                break
     finally:
+        close = getattr(frames, "close", None)
+        if close is not None:
+            close()
         pending.put(None)
         writer.join()
 

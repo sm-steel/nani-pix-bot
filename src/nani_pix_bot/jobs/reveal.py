@@ -120,13 +120,25 @@ async def render_reveal(
         if winner_id
         else None
     )
-    pregen = await _find_pregen(application, cache, game_id)
-    if isinstance(pregen, str):
+    try:
+        pregen = await _find_pregen(application, cache, game_id)
+        if isinstance(pregen, str):
+            _fallback(game_id, pregen)
+            return None
+        badge = None if avatar_task is None else pipeline.Badge(await avatar_task, handle or "")
+    finally:
         if avatar_task is not None:
-            avatar_task.cancel()
-        _fallback(game_id, pregen)
-        return None
-    badge = None if avatar_task is None else pipeline.Badge(await avatar_task, handle or "")
+            avatar_task.cancel()  # a no-op once finished; stops it on every other way out
+    return await _finish(application, game_id, clear, pregen, badge)
+
+
+async def _finish(
+    application: Application,
+    game_id: int,
+    clear: bytes,
+    pregen: pipeline.Pregen,
+    badge: pipeline.Badge | None,
+) -> bytes | None:
     started = time.perf_counter()
     try:
         video = await asyncio.wait_for(

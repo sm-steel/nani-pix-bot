@@ -1,5 +1,6 @@
 import gc
 import subprocess
+import sys
 import tempfile
 import warnings
 from pathlib import Path
@@ -104,3 +105,22 @@ def test_part1_timeout_kills_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(encode, "_PART1_TIMEOUT", 0.001)
     with pytest.raises(encode.FfmpegError, match="timed out"):
         encode.encode_part1(_frames(10), SIZE)
+
+
+def test_a_dead_encoder_stops_the_frame_producer_early() -> None:
+    total, pulled = 500, []
+    closed = []
+
+    def _frames_gen():
+        try:
+            for i in range(total):
+                pulled.append(i)
+                yield bytes(1 << 20)  # bigger than any pipe buffer: the writer blocks or breaks
+        finally:
+            closed.append(True)
+
+    dies = [sys.executable, "-c", "import sys; sys.exit(3)"]
+    with pytest.raises(encode.FfmpegError, match="exited 3"):
+        encode._pipe_frames(dies, _frames_gen())
+    assert len(pulled) < total // 10
+    assert closed  # the generator was closed, not left suspended

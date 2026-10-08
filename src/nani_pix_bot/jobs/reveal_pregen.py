@@ -38,14 +38,19 @@ def _read_inputs(session: Session, game_id: int) -> _Inputs | None:
     return image, game.pixel_algorithm, widths, slot.effect
 
 
+def _not_owned(session: Session) -> str:
+    """Why a guarded slot write found nothing to write to: no slot at all, or another game's."""
+    if store.load(session) is None:
+        return "there is no reveal slot any more"
+    return "the reveal slot belongs to another game"
+
+
 def _mark_failed(session_factory, game_id: int) -> None:
     """Marks the slot FAILED; never raises (it runs on error paths)."""
     try:
         with session_scope(session_factory) as session:
             if not store.mark_failed(session, game_id):
-                logger.info(
-                    "the reveal slot belongs to another game; not marked failed", game_id=game_id
-                )
+                logger.info("{why}; not marked failed", why=_not_owned(session), game_id=game_id)
     except Exception:
         logger.opt(exception=True).error("couldn't mark the reveal slot failed", game_id=game_id)
 
@@ -64,6 +69,14 @@ def _spawn(application: Application, coro, startup: bool) -> None:
     task = asyncio.get_running_loop().create_task(coro)
     _startup_tasks.add(task)
     task.add_done_callback(_startup_tasks.discard)
+
+
+async def cancel_startup_tasks() -> None:
+    """Cancels the startup re-renders still running and waits for them (shutdown)."""
+    tasks = list(_startup_tasks)
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def start_pregeneration(application: Application, game_id: int, *, startup: bool = False) -> None:
@@ -96,6 +109,7 @@ def start_pregeneration(application: Application, game_id: int, *, startup: bool
         coro.close()
         logger.opt(exception=exc).error("couldn't schedule the pre-render", game_id=game_id)
         _resolve(future, exc)
+        _mark_failed(session_factory, game_id)
 
 
 def _resolve(
@@ -112,8 +126,10 @@ def _resolve(
         future.set_result(pregen)
 
 
-def _log_stored(cache: RevealCache, game_id: int, effect: RevealEffect, pregen, stored) -> None:
-    if stored and cache.ready(game_id, pregen):
+def _log_stored(
+    cache: RevealCache, game_id: int, effect: RevealEffect, pregen, why_not: str | None
+) -> None:
+    if why_not is None and cache.ready(game_id, pregen):
         logger.info(
             "reveal pre-rendered ({effect}) in {ms} ms, {kib} KiB",
             effect=effect.value,
@@ -122,7 +138,19 @@ def _log_stored(cache: RevealCache, game_id: int, effect: RevealEffect, pregen, 
             game_id=game_id,
         )
     else:
-        logger.info("discarded a reveal render for an older game", game_id=game_id)
+        logger.info(
+            "discarded a reveal render for an older game ({why})",
+            why=why_not or "another game owns the cache",
+            game_id=game_id,
+        )
+
+
+def _store_ready(session_factory, game_id: int, pregen: pipeline.Pregen) -> str | None:
+    """Writes the render to the slot; None when stored, else why it wasn't."""
+    with session_scope(session_factory) as session:
+        if store.mark_ready(session, game_id, pregen.part1_ts, pregen.join_offset):
+            return None
+        return _not_owned(session)
 
 
 async def _pregenerate(
@@ -137,13 +165,21 @@ async def _pregenerate(
     outcome: pipeline.Pregen | BaseException = RuntimeError("the pre-render was cancelled")
     try:
         pregen = await reveal_worker.submit(application.bot_data, pipeline.pregenerate, *inputs)
-        with session_scope(session_factory) as session:
-            stored = store.mark_ready(session, game_id, pregen.part1_ts, pregen.join_offset)
-        outcome = pregen
-        _log_stored(cache, game_id, inputs[3], pregen, stored)
     except Exception as exc:
         outcome = exc
         logger.opt(exception=exc).error("reveal pre-render failed", game_id=game_id)
         _mark_failed(session_factory, game_id)
+    else:
+        try:
+            why_not = _store_ready(session_factory, game_id, pregen)
+        except Exception as exc:
+            outcome = exc
+            logger.opt(exception=exc).error(
+                "couldn't store the pre-rendered reveal", game_id=game_id
+            )
+            _mark_failed(session_factory, game_id)
+        else:
+            outcome = pregen
+            _log_stored(cache, game_id, inputs[3], pregen, why_not)
     finally:
         _resolve(future, outcome)

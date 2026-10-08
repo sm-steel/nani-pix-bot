@@ -61,7 +61,7 @@ from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
 from nani_pix_bot.commands.quiet_hours import SET_TIMEZONE_PREFIX
 from nani_pix_bot.config import Config, load_config
-from nani_pix_bot.jobs import reveal
+from nani_pix_bot.jobs import reveal, reveal_pregen
 from nani_pix_bot.jobs.announcements import schedule_outbox_drain
 from nani_pix_bot.jobs.periods import schedule_period_job
 from nani_pix_bot.jobs.reveal import RevealCache, start_worker, stop_worker
@@ -408,6 +408,7 @@ async def _post_shutdown(application: Application) -> None:
     in tests, where an Application is built per case, it's what stops
     four clients leaking every time. Also stops the reveal worker process
     (#295) without waiting for an in-flight render."""
+    await reveal_pregen.cancel_startup_tasks()
     stop_worker(application.bot_data)
     for key in ("search_client", "tmdb_client", "tenrai_client", "mal_client"):
         client = application.bot_data.get(key)
