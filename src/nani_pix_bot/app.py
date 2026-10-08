@@ -406,8 +406,8 @@ async def _post_shutdown(application: Application) -> None:
     ours, not PTB's, so nothing else closes them. In production they're
     process-lifetime objects and this is just tidiness on the way out;
     in tests, where an Application is built per case, it's what stops
-    four clients leaking every time. Also stops the reveal worker process
-    (#295) without waiting for an in-flight render."""
+    four clients leaking every time. Also cancels the reveal's startup re-renders,
+    then stops the reveal worker process (#295) without waiting for an in-flight render."""
     await reveal_pregen.cancel_startup_tasks()
     stop_worker(application.bot_data)
     for key in ("search_client", "tmdb_client", "tenrai_client", "mal_client"):

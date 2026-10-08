@@ -186,11 +186,14 @@ def _feed(proc: subprocess.Popen[bytes], frames: Iterable[bytes]) -> None:
             if dead.is_set() or proc.poll() is not None:
                 break
     finally:
-        close = getattr(frames, "close", None)
-        if close is not None:
-            close()
-        pending.put(None)
-        writer.join()
+        try:
+            close = getattr(frames, "close", None)
+            if close is not None:
+                with contextlib.suppress(Exception):  # a generator's own error must not mask
+                    close()  # the encoder's FfmpegError the caller reports
+        finally:
+            pending.put(None)
+            writer.join()
 
 
 def _pipe_frames(cmd: list[str], frames: Iterable[bytes]) -> None:

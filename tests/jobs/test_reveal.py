@@ -386,10 +386,13 @@ async def test_the_avatar_fetch_overlaps_the_pre_render_wait(session_factory, mo
 
     monkeypatch.setattr(reveal, "fetch_avatar", _avatar)
     monkeypatch.setattr(reveal, "_find_pregen", _find)
-    monkeypatch.setattr(pipeline, "finish", MagicMock(return_value=b"mp4"))
+    finish = MagicMock(return_value=b"mp4")
+    monkeypatch.setattr(pipeline, "finish", finish)
+    monkeypatch.setattr(reveal, "AVATAR_TIMEOUT", 30.0)  # a serial run must deadlock, not time out
     application = _application(session_factory)
     render = reveal.render_reveal(application, 5, b"png", 9, "@w")
-    assert await asyncio.wait_for(render, 5) == b"mp4"
+    assert await asyncio.wait_for(render, 1) == b"mp4"
+    assert finish.call_args.args[2] == pipeline.Badge(avatar=b"avatar", handle="@w")
     application.bot_data["reveal_executor"].shutdown()
 
 
@@ -476,7 +479,7 @@ async def test_the_avatar_task_is_cancelled_when_finding_the_pregen_raises(
     application = _application(session_factory)
     with pytest.raises(RuntimeError, match="db down"):
         await reveal.render_reveal(application, 5, b"png", 9, "@w")
-    await asyncio.wait(tasks)
+    await asyncio.wait_for(asyncio.wait(tasks), 5)
     assert tasks[0].cancelled()
     application.bot_data["reveal_executor"].shutdown()
 
@@ -494,8 +497,8 @@ async def test_the_avatar_task_is_cancelled_when_the_render_is_cancelled(
     render = asyncio.ensure_future(reveal.render_reveal(application, 5, b"png", 9, "@w"))
     await started.wait()
     render.cancel()
-    await asyncio.wait([render])
-    await asyncio.wait(tasks)
+    await asyncio.wait_for(asyncio.wait([render]), 5)
+    await asyncio.wait_for(asyncio.wait(tasks), 5)
     assert tasks[0].cancelled()
     application.bot_data["reveal_executor"].shutdown()
 
