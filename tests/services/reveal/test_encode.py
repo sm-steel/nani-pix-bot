@@ -6,6 +6,8 @@ import pytest
 
 from nani_pix_bot.services.reveal import encode
 
+from .ffprobe_helpers import decode_clean, probe_frames
+
 pytestmark = pytest.mark.ffmpeg
 SIZE = (64, 48)
 
@@ -42,24 +44,24 @@ def test_x264_keeps_contract_and_swaps_crf() -> None:
 
 def test_encode_part1_adds_the_opening_hold() -> None:
     mp4 = encode.encode_part1(_frames(10), SIZE)
-    assert encode.decode_clean(mp4)
-    assert encode.probe_frames(mp4) == 10 + round(encode.HOLD_START * encode.FPS)
+    assert decode_clean(mp4)
+    assert probe_frames(mp4) == 10 + round(encode.HOLD_START * encode.FPS)
 
 
 def test_part1_and_ending_join_without_reencode() -> None:
     mp4 = encode.encode_part1(_frames(10), SIZE)
     ts, offset = encode.to_ts(mp4)
     final = encode.ending_and_join(ts, offset, _clear_yuv(), SIZE, overlay=None)
-    assert encode.decode_clean(final)
-    assert encode.probe_frames(final) == encode.probe_frames(mp4) + encode.ENDING_FRAMES
+    assert decode_clean(final)
+    assert probe_frames(final) == probe_frames(mp4) + encode.ENDING_FRAMES
 
 
 def test_ending_with_overlay_joins_cleanly() -> None:
     mp4 = encode.encode_part1(_frames(10), SIZE)
     ts, offset = encode.to_ts(mp4)
     final = encode.ending_and_join(ts, offset, _clear_yuv(), SIZE, overlay=_overlay())
-    assert encode.decode_clean(final)
-    assert encode.probe_frames(final) == encode.probe_frames(mp4) + encode.ENDING_FRAMES
+    assert decode_clean(final)
+    assert probe_frames(final) == probe_frames(mp4) + encode.ENDING_FRAMES
 
 
 def test_ffmpeg_failure_raises() -> None:

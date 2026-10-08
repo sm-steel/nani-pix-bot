@@ -16,7 +16,7 @@ import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, TypedDict, TypeVar, Unpack
+from typing import IO, TypeVar
 
 from loguru import logger
 
@@ -120,31 +120,32 @@ def _pipe_frames(cmd: list[str], frames: Iterable[bytes]) -> None:
             raise FfmpegError(f"ffmpeg exited {code}: {_tail(err.read())}")
 
 
-class Part1Options(TypedDict, total=False):
-    """Keyword options of `encode_part1`."""
+@dataclass(frozen=True)
+class Part1Options:
+    """Options of `encode_part1`."""
 
-    pix_fmt: str  # raw input pixel format (default rgb24)
-    input_fps: int  # frame rate of the raw input (default FPS)
-    vf: str  # replaces the default opening-hold `tpad` filter
-    max_frames: int  # cap on the output frame count
-    crf: int  # replaces the contract's default CRF
+    pix_fmt: str = "rgb24"  # raw input pixel format
+    input_fps: int = FPS  # frame rate of the raw input
+    vf: str | None = None  # replaces the default opening-hold `tpad` filter
+    max_frames: int | None = None  # cap on the output frame count
+    crf: int | None = None  # replaces the contract's default CRF
 
 
 def encode_part1(
-    frames: Iterable[bytes], size: tuple[int, int], **opts: Unpack[Part1Options]
+    frames: Iterable[bytes], size: tuple[int, int], options: Part1Options | None = None
 ) -> bytes:
     """Raw frames (streamed) -> part 1 MP4. `vf` defaults to the opening-hold `tpad`."""
     w, h = size
-    max_frames = opts.get("max_frames")
+    opts = options or Part1Options()
     with _tmp() as tmp:
         out = Path(tmp, "part1.mp4")
         cmd = [
             *_FFMPEG,
-            "-f", "rawvideo", "-pix_fmt", opts.get("pix_fmt", "rgb24"), "-s", f"{w}x{h}",
-            "-r", str(opts.get("input_fps", FPS)), "-i", "pipe:0",
-            "-vf", opts.get("vf") or f"tpad=start_mode=clone:start_duration={HOLD_START}",
-            *(["-frames:v", str(max_frames)] if max_frames else []),
-            *x264(opts.get("crf")), str(out),
+            "-f", "rawvideo", "-pix_fmt", opts.pix_fmt, "-s", f"{w}x{h}",
+            "-r", str(opts.input_fps), "-i", "pipe:0",
+            "-vf", opts.vf or f"tpad=start_mode=clone:start_duration={HOLD_START}",
+            *(["-frames:v", str(opts.max_frames)] if opts.max_frames else []),
+            *x264(opts.crf), str(out),
         ]  # fmt: skip
         _pipe_frames(cmd, frames)
         return out.read_bytes()
@@ -262,24 +263,3 @@ def _relay(part1_ts: bytes, encoder_out: IO[bytes], muxer_in: IO[bytes]) -> None
     finally:
         with contextlib.suppress(OSError):
             muxer_in.close()
-
-
-def probe_frames(mp4: bytes) -> int:
-    """Number of video packets in an MP4 (one per frame)."""
-    with _tmp() as tmp:
-        src = Path(tmp, "v.mp4")
-        src.write_bytes(mp4)
-        out = _run(["ffprobe", "-v", "error", "-count_packets", "-select_streams", "v:0",
-                    "-show_entries", "stream=nb_read_packets", "-of", "csv=p=0",
-                    str(src)])  # fmt: skip
-        return int(out.decode().strip().strip(","))
-
-
-def decode_clean(mp4: bytes) -> bool:
-    """True if ffmpeg decodes the whole file without a single warning or error."""
-    with _tmp() as tmp:
-        src = Path(tmp, "v.mp4")
-        src.write_bytes(mp4)
-        cmd = ["ffmpeg", "-v", "error", "-nostdin", "-i", str(src), "-f", "null", "-"]
-        proc = subprocess.run(cmd, capture_output=True, check=False)  # noqa: S603
-        return proc.returncode == 0 and not proc.stderr.strip()

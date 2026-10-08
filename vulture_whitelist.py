@@ -62,13 +62,8 @@ _kept = (
     reveal_store.mark_ready,
     # TEMPORARY — animated reveal (#295) building blocks not yet called; removed by the wiring tasks (#308/#309/#310)  # noqa: E501
     reveal_encode.encode_part1,
-    reveal_encode.Part1Options.pix_fmt,  # ty: ignore[unresolved-attribute]
-    reveal_encode.Part1Options.input_fps,  # ty: ignore[unresolved-attribute]
-    reveal_encode.Part1Options.vf,  # ty: ignore[unresolved-attribute]
     reveal_encode.to_ts,
     reveal_encode.ending_and_join,
-    reveal_encode.probe_frames,  # used by tests only until the pipeline logs it
-    reveal_encode.decode_clean,  # used by tests only until the pipeline logs it
 )
 
 if TYPE_CHECKING:
