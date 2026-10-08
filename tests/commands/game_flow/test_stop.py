@@ -722,3 +722,19 @@ async def test_stop_reveal_hard_mode_posts_the_reveal_pair(
     assert kwargs["target"] == RevealTarget(game_id, None)
     assert kwargs["photos"] == (b"image-a-bytes", b"image-b-bytes")
     assert "Frieren: Beyond Journey's End" in kwargs["caption"]
+
+
+async def test_stop_without_a_reveal_frees_the_reveal_slot(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    free = MagicMock()
+    monkeypatch.setattr(stop_command_module, "free_reveal_slot", free)
+    update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    free.assert_called_once_with(context, game_id)

@@ -52,7 +52,8 @@ class _Geo(NamedTuple):
 
 
 class _Strip(NamedTuple):
-    """One flip step placed on a tile: strip size and box, with the masks as ImagingCore objects."""
+    """One flip step placed on a tile: strip size and box, with the masks as ImagingCore objects
+    (`Image.im`: private Pillow API, verified on 12.3.0; covered by tests)."""
 
     size: tuple[int, int]
     box: _Box
@@ -62,7 +63,8 @@ class _Strip(NamedTuple):
 
 
 class _PlaneWork(NamedTuple):
-    """One tile on one plane, as ImagingCore objects (see `_paint_step`)."""
+    """One tile on one plane, as ImagingCore objects (see `_paint_step`; `Image.im`:
+    private Pillow API, verified on 12.3.0; covered by tests)."""
 
     core: Any
     box: _Box
@@ -120,6 +122,7 @@ def _geometry(tw: int, th: int, flip_n: int) -> _Geometry:
 
 def _strips(geo: _Geometry, box: _Box) -> dict[int, _Strip | None]:
     """Each step's geometry placed on the tile at `box`."""
+    # g.cover.im / g.shade.im below: private Pillow API, verified on 12.3.0; covered by tests
     th = box[3] - box[1]
     strips: dict[int, _Strip | None] = {}
     for k, g in geo.items():
@@ -140,6 +143,7 @@ def _tile_work(
     geometries: list[_Geometry],
 ) -> list[_PlaneWork]:
     """One tile's per-plane work: its faces cropped once, ready for the hot loop."""
+    # the .im of each cropped face below: private Pillow API, verified on 12.3.0; covered by tests
     front, back, shadow = faces
     work = []
     for p, box in enumerate(boxes):
@@ -167,7 +171,7 @@ def _tiles(
     rows = max(1, round(h / (w / COLS)))
     xs = [c * w // COLS for c in range(COLS + 1)]
     ys = [r * h // rows for r in range(rows + 1)]
-    cores = [c.im for c in canvas]
+    cores = [c.im for c in canvas]  # .im: private Pillow API, verified on 12.3.0; covered by tests
     cache: dict[tuple[int, int], _Geometry] = {}
     tiles = []
     for r in range(rows):
@@ -236,7 +240,7 @@ def render_yuv(front: Image.Image, original: Image.Image) -> Iterator[_Frame]:
         for k in range(1, flip_n + 1):
             schedule[start + k].append((i, k))
 
-    cores = [c.im for c in canvas]
+    cores = [c.im for c in canvas]  # .im: private Pillow API, verified on 12.3.0; covered by tests
     sizes = [c.size for c in canvas]
     yield _emit(cores, sizes)
     for entries in schedule[1:]:

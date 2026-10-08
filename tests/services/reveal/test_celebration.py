@@ -58,3 +58,26 @@ def test_label_is_shown_verbatim_without_adding_an_at_sign() -> None:
     prefixed = celebration.make_badge(None, "@Яна", 86)
     assert plain.width < prefixed.width
     assert plain.tobytes() != prefixed.tobytes()
+
+
+def test_badge_max_width_accounts_for_the_pop_in_overshoot() -> None:
+    cap = celebration.badge_max_width(320, 20)
+    assert cap * celebration._SMAX <= 320 - 2 * 20 < (cap + 1) * celebration._SMAX
+
+
+def test_a_128_char_name_is_truncated_to_fit_a_small_frame() -> None:
+    cap = celebration.badge_max_width(320, 20)
+    badge = celebration.make_badge(None, "W" * 128, celebration.badge_height((320, 180)), cap)
+    assert badge.width <= cap
+    _, (frame_w, _) = celebration.badge_frames(badge)
+    assert frame_w <= 320 - 2 * 20
+
+
+def test_the_cap_leaves_a_label_that_already_fits_untouched() -> None:
+    """The approved badge: @UnstableFractal at 1280 px is byte-identical with or without a cap."""
+    height = celebration.badge_height((1280, 632))
+    plain = celebration.make_badge(None, "@UnstableFractal", height)
+    capped = celebration.make_badge(
+        None, "@UnstableFractal", height, celebration.badge_max_width(1280, 20)
+    )
+    assert capped.tobytes() == plain.tobytes()

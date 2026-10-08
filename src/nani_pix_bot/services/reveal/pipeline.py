@@ -79,8 +79,9 @@ def prep(
 
 
 def _new_static(original: Image.Image) -> _Static:
-    # to_yuv420 is what the effects use for their own frames, so the ending's clear frame is
-    # bit-identical to part 1's last one (no visible step at the join) and costs no ffmpeg run.
+    # to_yuv420 is what the effects use for their own frames, so the ending's clear frame matches
+    # part 1's last one (bit-identical for iris, within a level or two of rounding, invisible,
+    # for the other effects: no visible step at the join) and costs no ffmpeg run.
     return _Static(original.size, b"".join(to_yuv420(original)))
 
 
@@ -124,7 +125,12 @@ def pregenerate(
 def _overlay(static: _Static, badge: Badge) -> encode.Overlay:
     height = celebration.badge_height(static.size)
     rgba, badge_size = celebration.badge_frames(
-        celebration.make_badge(badge.avatar, badge.handle, height)
+        celebration.make_badge(
+            badge.avatar,
+            badge.handle,
+            height,
+            celebration.badge_max_width(static.size[0], encode.Overlay.margin),
+        )
     )
     return encode.Overlay(_confetti(static), rgba, badge_size)
 

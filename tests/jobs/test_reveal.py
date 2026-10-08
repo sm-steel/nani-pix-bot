@@ -25,7 +25,13 @@ def _application(session_factory) -> MagicMock:
         "reveal_cache": reveal.RevealCache(),
     }
     application.bot.get_user_profile_photos = AsyncMock(return_value=MagicMock(photos=[]))
-    application.create_task = lambda coro, **_: asyncio.ensure_future(coro)
+    application.tasks = []
+
+    def _create_task(coro, **_):
+        application.tasks.append(asyncio.ensure_future(coro))
+        return application.tasks[-1]
+
+    application.create_task = _create_task
     return application
 
 
@@ -59,9 +65,9 @@ def _slot(session_factory):
         return None if row is None else (row.game_id, row.status)
 
 
-async def _settle() -> None:
-    for _ in range(20):
-        await asyncio.sleep(0.01)
+async def _settle(application) -> None:
+    """Awaits the background tasks the code under test spawned (no wall-clock sleeping)."""
+    await asyncio.gather(*application.tasks, *reveal_pregen._startup_tasks, return_exceptions=True)
 
 
 async def test_pregeneration_fills_cache_and_db(session_factory, monkeypatch) -> None:
@@ -72,7 +78,7 @@ async def test_pregeneration_fills_cache_and_db(session_factory, monkeypatch) ->
     reveal.start_pregeneration(application, game_id)
     cache = application.bot_data["reveal_cache"]
     assert await asyncio.wait_for(cache.future, 2) == PREGEN
-    await _settle()
+    await _settle(application)
     assert (cache.game_id, cache.pregen) == (game_id, PREGEN)
     assert _slot(session_factory) == (game_id, RevealStatus.READY)
 
@@ -86,8 +92,9 @@ async def test_failed_pregeneration_marks_the_slot_failed(
     monkeypatch.setattr(pipeline, "pregenerate", _boom)
     game_id = _game(session_factory)
     _reserve(session_factory, game_id)
-    reveal.start_pregeneration(_application(session_factory), game_id)
-    await _settle()
+    application = _application(session_factory)
+    reveal.start_pregeneration(application, game_id)
+    await _settle(application)
     assert _slot(session_factory) == (game_id, RevealStatus.FAILED)
     assert any(line.level == "ERROR" for line in log_records)
 
@@ -108,7 +115,7 @@ async def test_stale_render_is_discarded(session_factory, monkeypatch) -> None:
     _reserve(session_factory, new, RevealEffect.GLITCH)
     application.bot_data["reveal_cache"].pending(new, asyncio.get_running_loop().create_future())
     gate.set()
-    await _settle()
+    await _settle(application)
     assert _slot(session_factory) == (new, RevealStatus.PENDING)
     cache = application.bot_data["reveal_cache"]
     assert (cache.game_id, cache.pregen) == (new, None)
@@ -141,13 +148,22 @@ async def test_broken_worker_falls_back_and_is_replaced(session_factory, monkeyp
     def _broken(*args):
         raise BrokenProcessPool("worker died")
 
+    replacements: list[ThreadPoolExecutor] = []
+
+    def _fake_pool(**_kwargs) -> ThreadPoolExecutor:
+        replacements.append(ThreadPoolExecutor(1))  # stands in for the spawn process pool
+        return replacements[-1]
+
     monkeypatch.setattr(pipeline, "finish", _broken)
+    monkeypatch.setattr(reveal_worker, "ProcessPoolExecutor", _fake_pool)
     application = _application(session_factory)
     old_executor = application.bot_data["reveal_executor"]
     application.bot_data["reveal_cache"].ready(5, PREGEN)
     assert await reveal.render_reveal(application, 5, b"png", None, None) is None
+    assert replacements == [application.bot_data["reveal_executor"]]
     assert application.bot_data["reveal_executor"] is not old_executor
-    reveal.stop_worker(application.bot_data)
+    old_executor.shutdown()
+    replacements[0].shutdown()
 
 
 async def test_reload_puts_a_ready_slot_in_the_cache(session_factory, monkeypatch) -> None:
@@ -170,8 +186,9 @@ async def test_reload_rerenders_a_pending_slot_of_an_active_game(
     monkeypatch.setattr(pipeline, "pregenerate", lambda *args: PREGEN)
     game_id = _game(session_factory)
     _reserve(session_factory, game_id)
-    await reveal.reload_on_startup(_application(session_factory))
-    await _settle()
+    application = _application(session_factory)
+    await reveal.reload_on_startup(application)
+    await _settle(application)
     assert _slot(session_factory) == (game_id, RevealStatus.READY)
 
 
@@ -198,7 +215,6 @@ async def test_pregeneration_is_a_quiet_noop_without_a_worker(
     _reserve(session_factory, game_id)
     application = MagicMock()  # bot_data is a MagicMock: no real worker or cache
     reveal.start_pregeneration(application, game_id)
-    await _settle()
     pregenerate.assert_not_called()
     assert not any(line.level in ("WARNING", "ERROR") for line in log_records)
 
@@ -229,9 +245,10 @@ async def test_future_settles_when_mark_failed_raises(session_factory, monkeypat
 
 
 async def test_future_settles_when_the_task_is_cancelled(session_factory, monkeypatch) -> None:
-    gate = threading.Event()
+    gate, started = threading.Event(), threading.Event()
 
     def _slow(*args):
+        started.set()
         gate.wait(2)
         return PREGEN
 
@@ -242,7 +259,7 @@ async def test_future_settles_when_the_task_is_cancelled(session_factory, monkey
     tasks: list[asyncio.Task] = []
     application.create_task = lambda coro, **_: tasks.append(asyncio.ensure_future(coro))
     reveal.start_pregeneration(application, game_id)
-    await asyncio.sleep(0.05)
+    assert await asyncio.to_thread(started.wait, 2)  # the task is inside the worker call
     tasks[0].cancel()
     await asyncio.wait(tasks)
     future = application.bot_data["reveal_cache"].future
@@ -395,7 +412,30 @@ async def test_startup_rerender_does_not_use_the_not_yet_running_application(
     application = _application(session_factory)
     application.create_task = MagicMock(side_effect=AssertionError("PTB would warn"))
     await reveal.reload_on_startup(application)
-    await asyncio.gather(*reveal_pregen._startup_tasks)
+    await _settle(application)
     assert _slot(session_factory) == (game_id, RevealStatus.READY)
     assert not reveal_pregen._startup_tasks
+    application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_pre_render_start_is_logged(session_factory, monkeypatch, log_records) -> None:
+    monkeypatch.setattr(pipeline, "pregenerate", lambda *args: PREGEN)
+    game_id = _game(session_factory)
+    _reserve(session_factory, game_id)
+    application = _application(session_factory)
+    reveal.start_pregeneration(application, game_id)
+    [line] = [line for line in log_records if line.message.startswith("reveal pre-render started")]
+    assert (line.level, line.extra["game_id"], line.extra["effect"]) == ("INFO", game_id, "iris")
+    await application.bot_data["reveal_cache"].future
+    application.bot_data["reveal_executor"].shutdown()
+
+
+async def test_a_failed_mark_on_a_foreign_slot_does_not_claim_a_render_was_discarded(
+    session_factory, log_records
+) -> None:
+    _reserve(session_factory, _game(session_factory))
+    application = _application(session_factory)
+    reveal.start_pregeneration(application, 4242)  # no such game: nothing to render
+    assert not any("discarded" in line.message for line in log_records)
+    assert any("another game" in line.message for line in log_records if line.level == "INFO")
     application.bot_data["reveal_executor"].shutdown()

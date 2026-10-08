@@ -334,7 +334,7 @@ async def _send_video(
     return message
 
 
-def _finish(context: ContextTypes.DEFAULT_TYPE, game_id: int) -> None:
+def free_reveal_slot(context: ContextTypes.DEFAULT_TYPE, game_id: int) -> None:
     """reveal.finished after a confirmed send; a failure here is logged,
     never allowed to mask the send that succeeded."""
     try:
@@ -367,7 +367,7 @@ async def post_reveal(
     if sent is None:
         sent = await post_current_image(context, session_factory, photo=photo, caption=caption)
     if sent is not None:
-        _finish(context, target.game_id)
+        free_reveal_slot(context, target.game_id)
     return sent
 
 
@@ -399,7 +399,7 @@ async def post_reveal_pair(
     if sent is None:
         sent = await post_current_images(context, session_factory, photos=photos, caption=caption)
     if sent is not None:
-        _finish(context, target.game_id)
+        free_reveal_slot(context, target.game_id)
     return sent
 
 

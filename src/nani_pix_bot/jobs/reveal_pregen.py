@@ -43,7 +43,9 @@ def _mark_failed(session_factory, game_id: int) -> None:
     try:
         with session_scope(session_factory) as session:
             if not store.mark_failed(session, game_id):
-                logger.info("discarded a reveal render for an older game", game_id=game_id)
+                logger.info(
+                    "the reveal slot belongs to another game; not marked failed", game_id=game_id
+                )
     except Exception:
         logger.opt(exception=True).error("couldn't mark the reveal slot failed", game_id=game_id)
 
@@ -86,6 +88,7 @@ def start_pregeneration(application: Application, game_id: int, *, startup: bool
         return
     future: asyncio.Future[pipeline.Pregen] = asyncio.get_running_loop().create_future()
     cache.pending(game_id, future)
+    logger.info("reveal pre-render started ({effect})", effect=inputs[3].value, game_id=game_id)
     coro = _pregenerate(application, cache, game_id, future, inputs)
     try:
         _spawn(application, coro, startup)

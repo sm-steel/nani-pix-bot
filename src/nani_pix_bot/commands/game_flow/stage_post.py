@@ -36,12 +36,12 @@ class Announcement:
     closes.
 
     Exactly one of `photo`/`photos` is populated: a normal-mode outcome
-    sets `photo` (sent via post_current_image), a hard-mode outcome sets
-    `photos` (sent via post_current_images as a 2-photo album) — see
-    `send_announcement` in this module, which picks between the two
-    functions based on which field is set. A non-stage ending that sets
-    `reveal` goes through post_reveal/post_reveal_pair instead, so the
-    animated reveal video is posted."""
+    sets `photo`, a hard-mode outcome sets `photos` (a 2-photo album) —
+    see `send_announcement` in this module, which picks the sender based
+    on which field is set. A stage post goes out as a still via
+    post_current_image/post_current_images; an ending that sets `reveal`
+    goes through post_reveal/post_reveal_pair instead (the animated reveal
+    video, with these photos as the fallback)."""
 
     caption: str
     photo: bytes | None = None

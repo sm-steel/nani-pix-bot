@@ -125,18 +125,39 @@ def _handle_strip(text: str, h: int, tw: int, font_px: int) -> Image.Image:
     return strip.resize((strip.width // SS, strip.height // SS), Image.Resampling.LANCZOS)
 
 
-def make_badge(avatar: bytes | None, label: str, height: int) -> Image.Image:
+def badge_max_width(frame_width: int, margin: int) -> int:
+    """The widest badge whose pop-in overshoot (`_SMAX`) still fits `margin` px from both
+    sides of a frame `frame_width` px wide."""
+    return int((frame_width - 2 * margin) / _SMAX)
+
+
+def _fit_label(label: str, font: ImageFont.FreeTypeFont, room: int) -> str:
+    """`label`, cut and ended with "…" when its text (at SS) would be wider than `room` px."""
+    if math.ceil(font.getlength(label) / SS) <= room:
+        return label
+    while label and math.ceil(font.getlength(label + "…") / SS) > room:
+        label = label[:-1]
+    return label + "…"
+
+
+def make_badge(
+    avatar: bytes | None, label: str, height: int, max_width: int | None = None
+) -> Image.Image:
     """The winner badge (pill `height` px tall), built at final size from cached parts: per winner
     only the face is pasted into a pre-drawn gold ring and `label` is drawn. `label` is shown
-    verbatim: the caller builds "@username", or the plain name when there is no username."""
+    verbatim (the caller builds "@username", or the plain name when there is no username), except
+    that with a `max_width` a label too long for it is cut and ended with "…"."""
     h = height
     face_px = round(h * 0.70)
     ring = _ring(face_px)
     ring_d = face_px + 2 * 14  # face + both rings
     font_px = round(h * 0.46 * SS)
-    tw = math.ceil(_font(font_px).getlength(label) / SS)
     gap = round(h * 0.25)
-    w = ring_d + gap + tw + round(h * 0.42)  # pill starts under the avatar's centre
+    pill_pad = ring_d + gap + round(h * 0.42)  # pill starts under the avatar's centre
+    if max_width is not None:
+        label = _fit_label(label, _font(font_px), max_width - pill_pad - ring.image.width // 2)
+    tw = math.ceil(_font(font_px).getlength(label) / SS)
+    w = pill_pad + tw
     crown = _crown(round(h * 0.62))
     top_room = round(h * 0.62) // 2
     size = (w + ring.image.width // 2, h + top_room + ring.image.height // 2)

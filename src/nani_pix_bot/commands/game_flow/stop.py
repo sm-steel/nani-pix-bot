@@ -20,7 +20,7 @@ from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.jobs.timers.current_image import RevealTarget
+from nani_pix_bot.jobs.timers.current_image import RevealTarget, free_reveal_slot
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
@@ -251,6 +251,9 @@ async def _announce_stop(
         )
         return sent is not None
 
+    # No reveal video will be sent: free the slot (and the cache) so a pre-render for this
+    # deleted game can't be reloaded as READY after a restart.
+    free_reveal_slot(context, stopped_game.game_id)
     try:
         await context.bot.send_message(
             chat_id=context.bot_data["group_chat_id"],
