@@ -18,8 +18,10 @@ from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services.game.state import TitleVariants
+from nani_pix_bot.services.reveal import effects as reveal_effects
 from nani_pix_bot.services.reveal import encode as reveal_encode
 from nani_pix_bot.services.reveal import store as reveal_store
+from nani_pix_bot.services.reveal.effects import iris as reveal_iris
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 from nani_pix_bot.services.version import _TelegramHTMLRenderer
 
@@ -64,6 +66,8 @@ _kept = (
     reveal_encode.encode_part1,
     reveal_encode.to_ts,
     reveal_encode.ending_and_join,
+    reveal_effects.EFFECTS,
+    reveal_iris.render_part1,
 )
 
 if TYPE_CHECKING:
