@@ -73,3 +73,18 @@ def test_shatter_scales_a_small_stage_to_the_original(scene) -> None:
     small = stages[0].resize((64, 36), Image.Resampling.NEAREST)
     mp4 = shatter.render_part1(original, [small])
     assert decode_clean(mp4)
+
+
+def test_shatter_terminates_on_odd_dimensions_and_ends_on_the_clear_planes() -> None:
+    from PIL import ImageDraw
+
+    from nani_pix_bot.models.enums import PixelAlgorithm
+    from nani_pix_bot.services.pixelate import pixelate_image
+
+    original = Image.new("RGB", (321, 181), (120, 170, 220))
+    ImageDraw.Draw(original).ellipse((100, 40, 220, 140), fill=(240, 200, 170))
+    front = pixelate_image(original, 64, PixelAlgorithm.MEDIAN)
+    out = list(shatter.frames(front, original))  # must not loop forever
+    assert len(out) < shatter.MAX_FRAMES
+    assert out[-1] == tuple(p.tobytes() for p in shatter._planes(original))
+    assert out[-1] != out[-2]
