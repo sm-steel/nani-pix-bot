@@ -12,7 +12,7 @@ from nani_pix_bot.models.enums import Rarity
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import names, status, titles
-from nani_pix_bot.services.achievements.definitions import Kind, rarity_of
+from nani_pix_bot.services.achievements.definitions import Kind, rarity_of, reached
 from nani_pix_bot.services.achievements.status import State, Status
 
 MEDALS: Mapping[Rarity, str] = MappingProxyType(
@@ -51,10 +51,24 @@ def _earned_row(item: Status, lang: str, _holder: str | None) -> str:
     return line
 
 
+def _open_tier(item: Status) -> int:
+    """The tier an open row describes: the first, except for a group milestone
+    whose earlier tiers the group already passed — that one names the next."""
+    if item.defn.kind is Kind.GROUP_UNIQUE:
+        return reached(item.defn, item.value) + 1
+    return 1
+
+
 def _open_row(item: Status, lang: str, _holder: str | None) -> str:
-    name = md_escape(names.name(item.defn, 0, lang))
-    line = f"- [ ] **{name}** — {md_escape(names.description(item.defn, 1, lang))}"
-    if item.state is State.PARTIAL and item.target is not None:
+    defn = item.defn
+    name = md_escape(names.name(defn, 0, lang))
+    line = f"- [ ] **{name}** — {md_escape(names.description(defn, _open_tier(item), lang))}"
+    if item.target is None:
+        return line
+    if defn.kind is Kind.GROUP_UNIQUE:
+        progress = _t("achievements.group_progress", lang, value=item.value, target=item.target)
+        line += " · " + progress
+    elif item.state is State.PARTIAL:
         line += f" · {item.value}/{item.target}"
     return line
 

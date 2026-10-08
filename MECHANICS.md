@@ -1121,6 +1121,11 @@ My MAL List resolves to `tenrai`, so it isn't counted as a separate source.
 | Pioneer | The first win after launch | P |
 | Milestone Keeper | The winner of the group's Nth WON game since launch. Tiers 100·250·500·1000, then +500 endless, one holder per tier | G·G·P·P… |
 
+Milestone Keeper counts **solved** games since launch, not the 🎲 Game #id
+shown on every game (that id also counts unsolved and cancelled games, and
+games from before launch). The achievements browser shows the group's
+count against the next unclaimed threshold, e.g. "solved so far: 137/250".
+
 **Periods**
 
 | Name | Rarity |
