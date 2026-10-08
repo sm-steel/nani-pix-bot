@@ -300,6 +300,19 @@ only source with screenshots for that title. That covers a failed
 auto-resolution, a failed or empty typed query, a screenshot fetch that
 errors or comes back empty, and a chosen image that won't download.
 
+A gallery page Telegram can't deliver doesn't count as the provider being
+down, as long as the starter can still see it (issue #283). The gallery
+hands the provider's image URLs to Telegram, whose servers download them
+before answering. There are two ways that can go wrong:
+- **Telegram takes too long to answer.** The album most likely arrived, so
+  its buttons are sent anyway.
+- **Telegram says it couldn't fetch a URL** (`webpage_curl_failed`: hotlink
+  blocking, a slow CDN). The bot downloads that page's screenshots itself
+  and uploads them, keeping their numbers.
+
+Only if those downloads fail too does it fall back to the source menu with
+the provider flagged.
+
 The starter therefore always has three ways forward — a different
 provider, another typed query, or their own upload — and none of these
 paths can leave a `SETUP` game with no buttons on screen. Before this,

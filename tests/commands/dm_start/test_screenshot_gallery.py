@@ -385,6 +385,8 @@ async def test_screenshot_gallery_paging_falls_back_when_telegram_rejects_the_al
     update = _make_callback_update(data="screenshot_more:shikimori:5")
     context = _make_context(session_factory)
     context.bot.send_media_group = AsyncMock(side_effect=BadRequest("failed to get HTTP URL"))
+    # ...and downloading the page ourselves fails too (issue #283's fallback).
+    context.bot_data["search_client"].get = AsyncMock(side_effect=httpx.ConnectError("down"))
 
     await screenshot_gallery.screenshot_gallery_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)

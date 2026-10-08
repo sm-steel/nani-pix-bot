@@ -1,6 +1,7 @@
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 from telegram import Update
 from telegram.error import BadRequest, TimedOut
@@ -396,6 +397,8 @@ async def test_screenshot_source_callback_handler_falls_back_when_telegram_rejec
     update = _make_callback_update(data="screenshot_source:shikimori")
     context = _make_context(session_factory)
     context.bot.send_media_group = AsyncMock(side_effect=BadRequest("wrong file identifier"))
+    # ...and downloading the page ourselves fails too (issue #283's fallback).
+    context.bot_data["search_client"].get = AsyncMock(side_effect=httpx.ConnectError("down"))
 
     await screenshots.screenshot_source_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)

@@ -24,10 +24,11 @@ from typing import cast
 
 from loguru import logger
 from telegram import InputMediaPhoto, Update
-from telegram.error import TelegramError
+from telegram.error import BadRequest, TelegramError, TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
+    IMAGE_DOWNLOAD_ERRORS,
     SEARCH_SERVICE_ERRORS,
     _reject_stale_tap,
     _stored_provider,
@@ -49,6 +50,9 @@ from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
 
 GALLERY_PAGE_SIZE = 5
+# Telegram downloads every URL in a gallery album before it answers, so the
+# client's 5 s default read timeout is far too short (issue #283).
+GALLERY_READ_TIMEOUT = 30
 
 # `resume_screenshot_gallery`'s one no-provider outcome: a stale "pick a
 # different screenshot" tap on a game whose screenshot_source was
@@ -635,16 +639,17 @@ async def _show_gallery_page(
     """Sends an album of up to GALLERY_PAGE_SIZE numbered screenshots
     starting at `target.offset`, followed by the gallery's own buttons
     message. Telegram fetches media-group photos server-side from a URL
-    directly — no need to download bytes ourselves until one is
-    actually picked.
+    directly, so normally nothing is downloaded until one is picked.
 
     Handing those URLs to Telegram is also what makes this the one place
-    a *Telegram* error means "this provider is unreachable": if it can't
-    fetch one (hotlink blocking, still over 10MB, a dead CDN path) it
-    answers with a BadRequest, which used to escape every caller and
-    reach app._error_handler with no reply going out at all. Returns a
-    ScreenshotFailure instead, so it takes the same source-menu exit as the
-    provider timing out — every caller already had to handle one."""
+    a *Telegram* error can mean "this provider is unreachable": if it
+    can't fetch one (hotlink blocking, still over 10MB, a dead CDN path)
+    it answers with a BadRequest, which used to escape every caller and
+    reach app._error_handler with no reply going out at all. Since
+    issue #283 that first gets a retry with bytes we download ourselves
+    (_deliver_album); only when that fails too does this return a
+    ScreenshotFailure, taking the same source-menu exit as the provider
+    timing out — every caller already had to handle one."""
     shown = urls[target.offset : target.offset + GALLERY_PAGE_SIZE]
     if not shown:
         # Defensive only: every caller either passes offset 0 against a
@@ -673,11 +678,8 @@ async def _show_gallery_page(
         )
         return None
 
-    media = [
-        InputMediaPhoto(media=url, caption=str(target.offset + i + 1))
-        for i, url in enumerate(shown)
-    ]
-
+    if not await _deliver_album(context, target, shown):
+        return ScreenshotFailure("dm_start.screenshot_service_down", target.provider)
     has_more = len(urls) > target.offset + len(shown)
     page = GalleryPage(
         provider=target.provider,
@@ -690,11 +692,9 @@ async def _show_gallery_page(
         # (a stale button) still steps back to a valid page.
         previous_offset=max(target.offset - GALLERY_PAGE_SIZE, 0) if target.offset else None,
     )
-    # Both sends, not just the album: an album that lands without its
-    # buttons message is a gallery nobody can pick from, which is the
-    # same dead end by a different route.
+    # An album that lands without its buttons message is a gallery nobody
+    # can pick from, which is the same dead end by a different route.
     try:
-        await context.bot.send_media_group(chat_id=target.chat_id, media=media)
         await context.bot.send_message(
             chat_id=target.chat_id,
             text=i18n.t("dm_start.pick_screenshot_prompt", lang),
@@ -702,11 +702,109 @@ async def _show_gallery_page(
         )
     except TelegramError:
         logger.exception(
-            "Telegram refused the {provider} gallery page at offset {offset} ({count} url(s))",
+            "couldn't send the {provider} gallery's buttons at offset {offset}",
             provider=target.provider,
             offset=target.offset,
-            count=len(urls),
         )
         return ScreenshotFailure("dm_start.screenshot_service_down", target.provider)
-
     return None
+
+
+def _numbered(target: GalleryTarget, index: int) -> str:
+    return str(target.offset + index + 1)
+
+
+async def _deliver_album(
+    context: ContextTypes.DEFAULT_TYPE, target: GalleryTarget, shown: list[str]
+) -> bool:
+    """Sends the page as an album of URLs for Telegram to fetch (issue #283).
+    A timeout is not a refusal: Telegram fetches every URL before it
+    answers, so the album most likely arrived. A refused fetch
+    (webpage_curl_failed and the like: hotlink blocking, a slow or dead
+    CDN path) gets one retry with bytes downloaded ourselves. False only
+    when the page couldn't be shown at all."""
+    media = [
+        InputMediaPhoto(media=url, caption=_numbered(target, i)) for i, url in enumerate(shown)
+    ]
+    fields = {"provider": target.provider, "offset": target.offset, "count": len(shown)}
+    try:
+        await context.bot.send_media_group(
+            chat_id=target.chat_id, media=media, read_timeout=GALLERY_READ_TIMEOUT
+        )
+    except TimedOut:
+        logger.warning(
+            "the {provider} gallery page at offset {offset} ({count} screenshot(s)) timed out"
+            " — it most likely arrived, sending its buttons anyway",
+            **fields,
+        )
+    except BadRequest as exc:
+        if not await _resend_as_uploads(context, target, shown, str(exc)):
+            return False
+    except TelegramError:
+        logger.exception(
+            "Telegram refused the {provider} gallery page at offset {offset}"
+            " ({count} screenshot(s))",
+            **fields,
+        )
+        return False
+    return True
+
+
+async def _download_page(
+    context: ContextTypes.DEFAULT_TYPE, target: GalleryTarget, shown: list[str]
+) -> list[InputMediaPhoto]:
+    client = client_for_source(context, target.provider)
+    media = []
+    for i, url in enumerate(shown):
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+        except IMAGE_DOWNLOAD_ERRORS as exc:
+            logger.warning(
+                "couldn't download {provider} screenshot #{number} for the gallery: {error}",
+                provider=target.provider,
+                number=_numbered(target, i),
+                error=exc,
+            )
+            continue
+        media.append(InputMediaPhoto(media=response.content, caption=_numbered(target, i)))
+    return media
+
+
+async def _resend_as_uploads(
+    context: ContextTypes.DEFAULT_TYPE, target: GalleryTarget, shown: list[str], error: str
+) -> bool:
+    fields = {"provider": target.provider, "offset": target.offset, "count": len(shown)}
+    media = await _download_page(context, target, shown)
+    try:
+        if len(media) == 1:  # an album needs at least two
+            only = media[0]
+            await context.bot.send_photo(
+                chat_id=target.chat_id, photo=only.media, caption=only.caption
+            )
+        elif media:
+            await context.bot.send_media_group(chat_id=target.chat_id, media=media)
+    except TelegramError:
+        logger.exception(
+            "Telegram couldn't fetch the {provider} gallery page at offset {offset}"
+            " ({count} screenshot(s)): {error}; re-sending them as uploads failed too",
+            error=error,
+            **fields,
+        )
+        return False
+    if not media:
+        logger.error(
+            "Telegram couldn't fetch the {provider} gallery page at offset {offset}"
+            " ({count} screenshot(s)): {error}; downloading them ourselves failed too",
+            error=error,
+            **fields,
+        )
+        return False
+    logger.warning(
+        "Telegram couldn't fetch the {provider} gallery page at offset {offset}: {error}"
+        " — re-sent {sent} of {count} screenshot(s) as uploads",
+        error=error,
+        sent=len(media),
+        **fields,
+    )
+    return True
