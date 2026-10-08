@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
+from nani_pix_bot.jobs.timers.current_image import RevealTarget, RevealWinner
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -53,6 +54,9 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await message.reply_text(i18n.t("correct.cannot_target_self", lang))
             return
         game_id = game.id
+        reveal_target = RevealTarget(
+            game_id, RevealWinner(target.telegram_user_id, f"@{target_username}")
+        )
         original_bytes, photos, caption = _prepare_correct_reveal(game, target_username, lang)
 
         logger.info(
@@ -73,12 +77,14 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # of whether the reveal below actually reaches the group (see
     # post_current_image's docstring).
     if photos is not None:
-        sent = await timeout_module.post_current_images(
-            context, session_factory, photos=photos, caption=caption
+        sent = await timeout_module.post_reveal_pair(
+            context, session_factory, target=reveal_target, photos=photos, caption=caption
         )
+    elif original_bytes is None:
+        raise RuntimeError("neither a photo pair nor original_image to reveal")
     else:
-        sent = await timeout_module.post_current_image(
-            context, session_factory, photo=original_bytes, caption=caption
+        sent = await timeout_module.post_reveal(
+            context, session_factory, target=reveal_target, photo=original_bytes, caption=caption
         )
     timeout_module.clear_image_if_sent(session_factory, game_id, sent)
     # Fire-and-forget — see guess.py's identical comment: maybe_overthrow()
@@ -100,8 +106,10 @@ def _prepare_correct_reveal(
     """Builds the reveal payload (exactly one of the first two return
     values is populated) and caption for the win /correct just forced —
     a hard-mode game reveals its stored screenshot pair via
-    post_current_images (a 2-photo album), a normal-mode game reveals
-    original_image via post_current_image — same one-of-two-fields
+    post_reveal_pair (the reveal video plus the other screenshot, or a
+    2-photo album as the fallback), a normal-mode game reveals
+    original_image via post_reveal (the reveal video, or the photo as
+    the fallback) — same one-of-two-fields
     dispatch shape as stage_post.py's Announcement/send_announcement.
     _validate_active_game_for_starter already checked original_image is
     set for a normal-mode game, so the RuntimeError here restores the

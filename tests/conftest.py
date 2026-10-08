@@ -1,3 +1,4 @@
+import shutil
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import NamedTuple
@@ -100,3 +101,12 @@ def _achievements_off_by_default(request: pytest.FixtureRequest, monkeypatch) ->
         from nani_pix_bot.services import events
 
         monkeypatch.setattr(events, "_dispatch", lambda _session, _event: None)
+
+
+def pytest_collection_modifyitems(config, items) -> None:
+    if shutil.which("ffmpeg") and shutil.which("ffprobe"):
+        return
+    skip = pytest.mark.skip(reason="ffmpeg/ffprobe not on PATH")
+    for item in items:
+        if "ffmpeg" in item.keywords:
+            item.add_marker(skip)

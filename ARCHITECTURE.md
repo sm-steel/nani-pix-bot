@@ -247,6 +247,12 @@ src/nani_pix_bot/
                    #                  screenshots.py once that file's
                    #                  own complexity grew past qlty's
                    #                  threshold
+                   #   source_pick.py the screenshot-source button tap:
+                   #                  read it, answer it and search/
+                   #                  fetch with no session open,
+                   #                  commit what that resolved, then
+                   #                  send (#292) — split out of
+                   #                  screenshots.py for the same reason
                    #   preview.py     the confirmation preview (show/
                    #                  confirm/change-image/research/
                    #                  add-synonym) + the final post to
@@ -258,9 +264,13 @@ src/nani_pix_bot/
                    #                  them — _start_new_game() (the
                    #                  eligibility-check + game-creation
                    #                  logic both intake.py and newgame.py
-                   #                  call), _show_preview() (needed by
+                   #                  call), _stage_preview()/
+                   #                  _post_preview_album() (needed by
                    #                  every path that ends in "an image
-                   #                  now exists for this game")
+                   #                  now exists for this game": stage
+                   #                  in the session, then render the
+                   #                  five stages in a worker thread and
+                   #                  send after the commit, #161)
                    #   mal_browse.py  everything behind the "My MAL
                    #                  List" 6th method-picker button —
                    #                  unlinked/linked dispatch, the
@@ -298,8 +308,9 @@ src/nani_pix_bot/
                    #               shared by /guess and /sharpen (the timers
                    #               can't import commands/)
     tip.py        # /tip @user <amount> — topic or DM
-    leaderboard.py  # /leaderboard (wins and 💠 balance)
-                   # (wins as 👑, the chosen title in «» after the name)
+    leaderboard.py  # /leaderboard — all-time rich table (👑 wins, 💠, 🏆
+                   # points, the chosen title in «» after the name) from
+                   # players.leaderboard, paged with lb:<page>; topic or DM
     achievements/  # /achievements — group summary + top (__init__.py),
                    # the DM browser with tabs/pages (browser.py), compare
                    # (compare.py), the status -> rich-message markdown
@@ -310,7 +321,20 @@ src/nani_pix_bot/
                    # defensively; ids in callbacks and deep links are
                    # capped at 2**63-1
     standings.py  # /standings — live week/month/year champion tables in
-                   # one rich message (periods.standings, no buttons)
+                   # one rich message (periods.standings), with two DM
+                   # deep-link buttons (/start rules, /start recent)
+    status.py     # /status — topic-only manual resync: re-posts the
+                   # current stage image (pixelated off the event loop)
+                   # with a live caption, or says what's happening when
+                   # no game runs; no state change, no re-pin
+    history/      # /history — DM-only finished-games list with an
+                   # All/Mine toggle and per-game records with the guess
+                   # log (__init__.py), callback data hist:l:/hist:g:
+                   # parsed defensively (data.py), markdown (render.py);
+                   # queries in services/game/history.py
+    standings_dm.py  # the DM views behind them: how 🌟 points work
+                   # (rendered from periods' constants) and this week's
+                   # gains (periods.recent_gains), paged with std:r:<page>
     title.py      # /title — DM-only picker over the titles you earned
     balance.py    # /balance — the caller's 💠 balance, DM or game topic
     currency_config.py  # /pixelconfig — DM-only, admin-gated view/edit of
@@ -375,14 +399,17 @@ src/nani_pix_bot/
                    # the admin's own IANA timezone (Player.timezone) and
                    # the bot-wide quiet-hours window entered in it — see
                    # MECHANICS.md's "Quiet hours"
-    onboarding.py # /start (and `/start shop`, the clue-shop deep link, and
-                   # `/start ach_<id>`, the achievements one), /help
+    onboarding.py # /start (and `/start shop`, the clue-shop deep link,
+                   # `/start ach_<id>`, the achievements one, and
+                   # `/start rules`/`/start recent` for standings_dm.py), /help
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
                    # (membership.py), Telegram rich messages (headings,
                    # checklists, tables) sent or edited from markdown,
                    # with md_escape and a plain-text fallback, for the
                    # achievements views and /standings (rich.py), the
+                   # ◀ n/N ▶ pager every paged rich message shares, with
+                   # its no-op page:x counter (paging.py), the
                    # one inline keyboard genuinely shared across
                    # packages: stop_confirm_keyboard()
                    # (keyboards.py, used by game_flow/stop.py and
@@ -491,6 +518,17 @@ src/nani_pix_bot/
                    # only arms the running periods
     avatars.py    # a player's current profile photo (None on any miss ->
                    # the card draws initials)
+    reveal.py     # Telegram side of the animated reveal (#295): the
+                   # fire-and-forget pre-render at game start
+                   # (start_pregeneration), render_reveal at the ending,
+                   # reload_on_startup from the DB slot, finished(); falls
+                   # back to the photo on any failure. Re-exports
+                   # reveal_worker's names
+    reveal_worker.py  # the one-worker spawn ProcessPoolExecutor
+                   # (start_worker also warms it up, stop_worker
+                   # terminates it, submit() replaces a dead pool) and
+                   # RevealCache, the one-entry in-memory copy of the
+                   # pre-rendered part
   services/       # the actual game logic — framework-agnostic, no
                    # python-telegram-bot imports in this package
     search/       # anime identification + screenshot fetching, called
@@ -600,6 +638,25 @@ src/nani_pix_bot/
                    #                  tiles over the pixelated image)
                    #   algorithms.py  PixelAlgorithm -> implementation
                    #                  registry, and pixelate() itself
+    reveal/       # the animated reveal video (#295): Pillow + ffmpeg
+                   # subprocesses, no telegram imports; runs in the worker
+                   # process (jobs/reveal_worker.py):
+                   #   encode.py       the only module that runs ffmpeg and
+                   #                   the fixed x264 contract both video
+                   #                   parts share (part 1, TS remux, the
+                   #                   ending, the stream-copy join)
+                   #   effects/        one module per effect (iris,
+                   #                   tile_flip, ripple, glitch, shatter)
+                   #                   with shared helpers in _common.py;
+                   #                   EFFECTS maps RevealEffect to them
+                   #   celebration.py  the winner's badge, shine and
+                   #                   confetti frames (reuses
+                   #                   services/cards/render.py)
+                   #   pipeline.py     the picklable worker entry points,
+                   #                   pregenerate and finish
+                   #   store.py        the single reveal_video slot: reserve,
+                   #                   mark_ready/mark_failed (guarded by
+                   #                   game_id), load, clear
     game/         # the state machine — the only package that mutates a
                    # Game row:
                    #   clock.py     deadline_after() — the single place every
@@ -632,6 +689,13 @@ src/nani_pix_bot/
                    #                (decide_winner, VOTE_MIN_VOTES) and
                    #                close_vote; Telegram-free — see
                    #                MECHANICS.md's "HARD MODE vote"
+                   #   history.py   /history's queries: finished (WON/
+                   #                UNSOLVED) games newest first, all or
+                   #                one player's, and one game's record
+                   #                (game_won/game_unsolved event facts,
+                   #                the guess log); maps the logged
+                   #                unsolved cause to a player-facing
+                   #                UnsolvedReason
                    #   refinish.py  admin re-finish (#253): the
                    #                refusal rules and the UNSOLVED -> WON
                    #                transition /setwinner uses (turn left
@@ -775,6 +839,8 @@ src/nani_pix_bot/
     clue_purchase.py  # CluePurchase (one clue a player bought in one game)
     game_guess.py  # GameGuess (one row per /guess: text, stage/turn,
                    #           correct, partial reveal — #251)
+    reveal_video.py  # RevealVideo (the single pre-rendered reveal slot,
+                   #               at most one row ever; #295)
     game_vote.py  # GameVote (one current vote per voter per game; no
                    #           updated_at column — a changed vote just
                    #           overwrites candidate_id)
@@ -798,6 +864,7 @@ migrations/       # Alembic migrations
 tests/            # mirrors src/ layout
 scripts/          # one-off / operational scripts, if any turn out to be needed
 Dockerfile, docker-compose.yml   # bot + mariadb, see "Infrastructure" above
+mise.toml, mise.lock  # pinned machine tools (static ffmpeg) + their sha256s, for local dev, CI and the image
 ```
 
 `Provider.screenshot_module`/`search_module` resolve to real
@@ -817,6 +884,74 @@ executes, so it doesn't create the runtime cycle the paragraph above is
 about. The two properties now return each module's `service` adapter
 instance rather than the module itself — see `base.py`'s own docstring for
 why (cache.py's client-must-be-first-arg contract).
+
+### Reveal video
+
+Every ending that reveals the clear image posts an animated MP4 (the
+pixelated image turning into the clear one, plus a winner celebration);
+`MECHANICS.md`'s "The reveal video" has what players see. Rendering is
+CPU-heavy, so it is split: most of it happens ahead of time, in a separate
+worker process, while the game is played.
+
+```mermaid
+flowchart LR
+    subgraph bot[Bot process]
+        start[activation<br/>preview.py / autostart.py] -->|reserve slot, pending| db[(reveal_video<br/>single row)]
+        start -->|start_pregeneration| pre[pregen task]
+        pre -->|run_in_executor| W
+        pre -->|ready + part1_ts| db
+        pre --> cache[RevealCache<br/>one entry]
+        ending[ending sites<br/>guess / correct / timeout /<br/>inactivity / stop / vote] --> reveal[post_reveal / post_reveal_pair]
+        reveal --> cache
+        reveal -->|finish| W
+        reveal -->|sendVideo or fallback sendPhoto| tg[Telegram]
+    end
+    subgraph W[Worker process, 1 worker]
+        pg[pipeline.pregenerate]
+        fin[pipeline.finish]
+    end
+```
+
+- **Two parts.** `pipeline.pregenerate` renders part 1 (the pixelated
+  stages and the effect) as MPEG-TS right after activation.
+  `pipeline.finish` renders the ending (the clear image, with the
+  celebration badge on a win) and joins it to part 1 by stream copy,
+  which only works because `services/reveal/encode.py` is the one place
+  that runs ffmpeg and fixes the x264 settings both parts share.
+- **The worker process.** `jobs/reveal_worker.py` owns a
+  `ProcessPoolExecutor(max_workers=1)` on a `spawn` context, so renders
+  are serialized and never take the bot's GIL. `_post_init` creates it
+  (`start_worker` also warms it up, so the first real job doesn't pay
+  interpreter start-up) and `_post_shutdown` stops it. If it dies
+  (`BrokenProcessPool`), the next submit builds a new one and that reveal
+  falls back to the photo.
+- **The `reveal_video` slot.** One row at most (`slot` is always 1): the
+  effect, the hard-mode image choice, a `pending`/`ready`/`failed` status
+  and part 1 as MPEG-TS bytes. It is the source of truth.
+  `services/reveal/store.py` guards every write by `game_id`, so a render
+  that finishes after a newer game took the slot can't overwrite it. After
+  a confirmed send, the row is deleted. `game_id` is a plain column rather
+  than a FK, because `/stop` deletes the game row before its reveal.
+- **The cache.** `RevealCache` (in `bot_data["reveal_cache"]`) holds the
+  same one entry in memory, plus the in-flight future; it is a speed copy
+  only. A reveal takes the pregen from the cache, else waits up to 5 s for
+  the future, else reads the DB row.
+- **Restart.** `reveal.reload_on_startup` looks at the running game's own
+  slot: `ready` goes back in the cache, `pending` is re-rendered. A running
+  (`ACTIVE`) game without a usable slot — it started before the reveal
+  existed, its render failed, or its reservation was lost — gets a fresh
+  one (effect, and hard-mode image, picked then) and is pre-rendered, so
+  its ending still animates (issue #313). A slot of any other game is
+  stale and cleared. A `VOTING` game is never backfilled: its reveal was
+  already posted when the vote opened.
+- **Fallback.** Any failure (no pregen, timeout, worker or ffmpeg error,
+  Telegram rejecting the video) posts the still photo as before; the image
+  is cleared only after a confirmed send. `ffmpeg`/`ffprobe` are BtbN's
+  static 7.1.1 build, pinned in `mise.toml` with each platform's sha256 in
+  `mise.lock`. Local dev and CI install it with `mise install` in locked
+  mode; the Dockerfile does the same in a builder stage and copies only the
+  two static binaries into the final image. All three run the same binary,
+  so frame counts can't drift between ffmpeg versions.
 
 ### Before adding something new
 
@@ -999,6 +1134,7 @@ erDiagram
 | `period_state` | v10 | One row per period type (`period_type` PK): `next_end`, the UTC end of the next period to close. Created at the first start with the running period, so nothing before the deploy is scored; a late start catches up from it. |
 | `players` additions | v10 | `title_key` (the title chosen with `/title`) and `first_name` (kept current by `remember_user`, shown when there is no @username). |
 | `games` addition | v10 | `activated_at`: when the game went live (`created_at` is when setup started), used by `win_facts.seconds` (activation to the game's end). |
+| `reveal_video` | v11 | The one pre-rendered animated reveal (#295), at most one row: `slot` PK, always 1. `game_id` (plain column, no FK, because `/stop` deletes the game row before its reveal), `effect` (`RevealEffect`, picked at game start), `image_choice` (`a`/`b`, hard mode only), `status` (`pending`/`ready`/`failed`), `part1_ts` (deferred LONGBLOB, part 1 as MPEG-TS), `join_offset` (the `-output_ts_offset` the ending needs so its first frame lands 1/FPS after part 1's last), `created_at`, `ready_at`. Written only via `services/reveal/store.py`; see "Reveal video". |
 
 ### Achievements
 

@@ -12,13 +12,17 @@ from nani_pix_bot.services.achievements import periods
 from nani_pix_bot.services.achievements.periods import PeriodGain
 
 
+def _points(gain: int, lang: str) -> str:
+    return i18n.t(f"champion.win.unit.{i18n.plural(gain, lang)}", lang)
+
+
 def _marker(gain: PeriodGain, lang: str) -> str:
     if gain.rank_before is None:
         return i18n.t("champion.win.new", lang)
     moved = gain.rank_before - gain.rank_after
     if moved > 0:
         return i18n.t("champion.win.up", lang, places=moved)
-    return i18n.t("champion.win.same", lang)  # a score only grows; never "down"
+    return ""  # unchanged — and a score only grows, so never "down"
 
 
 def _part(gain: PeriodGain, lang: str) -> str:
@@ -27,17 +31,19 @@ def _part(gain: PeriodGain, lang: str) -> str:
         lang,
         period=i18n.t(f"champion.win.period.{gain.period.type.value}", lang),
         score=gain.score,
-        rank=gain.rank_after,
+        place=i18n.t("champion.win.place", lang, ordinal=i18n.ordinal(gain.rank_after, lang)),
         marker=_marker(gain, lang),
     )
 
 
-def gain_line(gains: Sequence[PeriodGain], lang: str) -> str:
-    """'+5 🌟 → week 14 (#1 ⬆2) · month 31 (#2 =)'; '' with no period."""
+def gain_line(gains: Sequence[PeriodGain], winner: str, lang: str) -> str:
+    """'🌟 @a: +5 points' and one bullet per running period, e.g.
+    '   • this week — 14 🌟, 1st place (⬆2)'; '' with no period."""
     if not gains:
         return ""
-    parts = i18n.t("champion.win.join", lang).join(_part(g, lang) for g in gains)
-    return i18n.t("champion.win.gain", lang, gain=gains[0].gain, parts=parts)
+    gain = gains[0].gain
+    header = i18n.t("champion.win.gain", lang, player=winner, gain=gain, unit=_points(gain, lang))
+    return "\n".join([header, *(_part(g, lang) for g in gains)])
 
 
 def _host_line(session: Session, game_id: int, lang: str) -> str:
@@ -45,7 +51,8 @@ def _host_line(session: Session, game_id: int, lang: str) -> str:
     if won is None or won.data["hard_mode"] or won.subject_id in (None, won.actor_id):
         return ""
     host = players.display_name(session, won.subject_id)
-    return i18n.t("champion.win.host", lang, host=host, gain=periods.HOST_POINTS)
+    gain = periods.HOST_POINTS
+    return i18n.t("champion.win.host", lang, host=host, gain=gain, unit=_points(gain, lang))
 
 
 def win_lines(session: Session, game_id: int, lang: str, now: datetime) -> list[str]:
@@ -55,5 +62,6 @@ def win_lines(session: Session, game_id: int, lang: str, now: datetime) -> list[
     gains = periods.win_gains(session, game_id, now, tz)
     if not gains:
         return []
-    lines = [gain_line(gains, lang), _host_line(session, game_id, lang)]
+    winner = players.display_name(session, gains[0].player_id)
+    lines = [gain_line(gains, winner, lang), _host_line(session, game_id, lang)]
     return [line for line in lines if line]

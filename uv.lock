@@ -515,7 +515,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "mistune", specifier = ">=3.3.4" },
-    { name = "pillow", specifier = ">=11.0" },
+    { name = "pillow", specifier = ">=12.1" },
     { name = "pymysql", specifier = ">=1.1" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "python-telegram-bot", extras = ["job-queue"], specifier = ">=21.0" },

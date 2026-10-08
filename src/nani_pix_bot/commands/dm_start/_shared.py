@@ -1,5 +1,6 @@
 """Small helpers shared by more than one submodule of this package."""
 
+import asyncio
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -225,7 +226,7 @@ def _stored_provider(stored: str) -> Provider:
     read one of those columns into a `Provider`-typed slot, rather than
     defensively at every `.display_name`: `search.py`'s
     `search_text_handler` (twice — the picker column and `source`),
-    `screenshots.py`'s `resume_screenshot_gallery`, and
+    `screenshots.py`'s `stage_gallery_resume`/`send_gallery_resume`, and
     `game_service.screenshot_capable_providers` (services/game/state.py)
     — the load-bearing one, since its result feeds a `list[Provider]` the
     ordinary (non-failure) screenshot-source screen draws its
@@ -473,13 +474,29 @@ async def _send_first_stage_preview(
 class _PreviewAlbum:
     """What _post_preview_album needs, captured while the staging game's
     session was still open — the send happens after that session (and
-    its setup_step=CONFIRMING commit) has already closed."""
+    its setup_step=CONFIRMING commit) has already closed. It carries what
+    rendering needs rather than rendered images: pixelating five stages
+    takes hundreds of milliseconds with the rank filters, so it happens in
+    _post_preview_album, off the event loop (issue #161)."""
 
     starter_id: int
-    media: list[InputMediaPhoto]
-    # Read off the game row here so the network phase can label the
-    # keyboard without reaching back into a closed session.
+    image: bytes
+    widths: list[int]  # one per stage, blockiest first
+    caption: str  # on the first photo only
+    # Read off the game row here so the network phase can render and label
+    # the keyboard without reaching back into a closed session.
     algorithm: PixelAlgorithm
+
+
+def _render_preview(album: _PreviewAlbum) -> list[InputMediaPhoto]:
+    """Every stage, blockiest to clearest; CPU-bound, so run it in a thread."""
+    return [
+        InputMediaPhoto(
+            media=pixelate_service.pixelate(album.image, width, album.algorithm),
+            caption=album.caption if index == 0 else None,
+        )
+        for index, width in enumerate(album.widths)
+    ]
 
 
 def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum:
@@ -514,32 +531,31 @@ def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum:
     ]
     answers = ", ".join(other_answers) or "—"
     caption = i18n.t("dm_start.preview_caption", lang, title=title, answers=answers)
-    captions = [caption, *([None] * (len(game_service.STAGE_ORDER) - 1))]
-    media = [
-        InputMediaPhoto(
-            media=pixelate_service.pixelate(
-                original_bytes, config[stage].target_width, game.pixel_algorithm
-            ),
-            caption=stage_caption,
-        )
-        for stage, stage_caption in zip(game_service.STAGE_ORDER, captions, strict=True)
-    ]
+    widths = [config[stage].target_width for stage in game_service.STAGE_ORDER]
     game.setup_step = SetupStep.CONFIRMING
     logger.info(
         "showing the {count}-stage confirmation preview for {title!r} (also accepted: {answers})",
-        count=len(media),
+        count=len(widths),
         title=title,
         answers=answers,
         game_id=game.id,
     )
-    return _PreviewAlbum(starter_id=game.starter_id, media=media, algorithm=game.pixel_algorithm)
+    return _PreviewAlbum(
+        starter_id=game.starter_id,
+        image=original_bytes,
+        widths=widths,
+        caption=caption,
+        algorithm=game.pixel_algorithm,
+    )
 
 
 async def _post_preview_album(
     context: ContextTypes.DEFAULT_TYPE, album: _PreviewAlbum, lang: str
 ) -> None:
     """Network-phase half: no DB access, safe to call after the caller's
-    session_scope has committed and closed. `sendMediaGroup` has no
+    session_scope has committed and closed. Renders the five stages in a
+    worker thread first, so the event loop keeps serving every other chat
+    meanwhile (issue #161). `sendMediaGroup` has no
     `reply_markup` support, so the confirm/change-image/research/add-
     synonym buttons go on a short separate follow-up text message right
     after the album, not on the album itself. Nothing is posted to the
@@ -555,7 +571,8 @@ async def _post_preview_album(
     principle). Letting it raise keeps the already-committed mutation
     intact either way and surfaces the failure the normal way, via PTB's
     own error handler."""
-    await context.bot.send_media_group(chat_id=album.starter_id, media=album.media)
+    media = await asyncio.to_thread(_render_preview, album)
+    await context.bot.send_media_group(chat_id=album.starter_id, media=media)
     await context.bot.send_message(
         chat_id=album.starter_id,
         text=i18n.t("dm_start.preview_confirm_prompt", lang),

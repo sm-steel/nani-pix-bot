@@ -43,35 +43,27 @@ def apply(image_bytes: bytes, transform: Callable[[Image.Image], Image.Image]) -
     return buffer.getvalue()
 
 
-def mosaic(image_bytes: bytes, width: int, *, down: Image.Resampling) -> bytes:
+def mosaic_image(rgb: Image.Image, width: int, *, down: Image.Resampling) -> Image.Image:
     """Downscale to `width` with `down`, then back up to the original
     size with NEAREST — the blocky pixelation effect. The downscale
     filter is what picks each block's colour: NEAREST samples one
     arbitrary pixel, BOX averages, LANCZOS uses a windowed resample."""
-
-    def run(rgb: Image.Image) -> Image.Image:
-        full = rgb.size
-        return rgb.resize(scaled(full, width), down).resize(full, Image.Resampling.NEAREST)
-
-    return apply(image_bytes, run)
+    full = rgb.size
+    return rgb.resize(scaled(full, width), down).resize(full, Image.Resampling.NEAREST)
 
 
-def rank_mosaic(image_bytes: bytes, width: int, *, kernel: ImageFilter.Filter) -> bytes:
+def rank_mosaic_image(rgb: Image.Image, width: int, *, kernel: ImageFilter.Filter) -> Image.Image:
     """A mosaic whose block colour is a rank statistic of the block (a
     median or a mode) rather than a mean or an arbitrary sample. See
     OVERSAMPLE for why this takes the scenic route rather than filtering
     at full resolution."""
-
-    def run(rgb: Image.Image) -> Image.Image:
-        full = rgb.size
-        # Never upscale on the way in: a target width close to the
-        # source's would otherwise enlarge before filtering.
-        oversampled = min(width * OVERSAMPLE, full[0])
-        small = rgb.resize(scaled(full, oversampled), Image.Resampling.BOX)
-        blocks = small.filter(kernel).resize(scaled(full, width), Image.Resampling.NEAREST)
-        return blocks.resize(full, Image.Resampling.NEAREST)
-
-    return apply(image_bytes, run)
+    full = rgb.size
+    # Never upscale on the way in: a target width close to the
+    # source's would otherwise enlarge before filtering.
+    oversampled = min(width * OVERSAMPLE, full[0])
+    small = rgb.resize(scaled(full, oversampled), Image.Resampling.BOX)
+    blocks = small.filter(kernel).resize(scaled(full, width), Image.Resampling.NEAREST)
+    return blocks.resize(full, Image.Resampling.NEAREST)
 
 
 def tile_box(size: tuple[int, int], index: int, grid: int) -> tuple[int, int, int, int]:

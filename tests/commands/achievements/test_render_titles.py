@@ -49,3 +49,23 @@ def test_an_earned_champion_out_of_the_race_shows_no_rank() -> None:
     resting = Status(week, State.EARNED, tier=1, period_key="2026-W40")
 
     assert "now" not in render.row(resting, "en", None)
+
+
+def test_an_open_milestone_names_the_next_threshold_and_the_group_count() -> None:
+    keeper = catalogue.get("milestone_keeper")
+    open_keeper = Status(keeper, State.UNTOUCHED, value=137, target=250)
+
+    line = render.row(open_keeper, "en", None)
+
+    assert md_escape("250th solved game") in line
+    assert md_escape("solved so far: 137/250") in line
+    assert md_escape("решено: 137/250") in render.row(open_keeper, "ru", None)
+
+
+def test_an_open_milestone_before_the_first_tier_names_the_first_threshold() -> None:
+    keeper = catalogue.get("milestone_keeper")
+
+    line = render.row(Status(keeper, State.UNTOUCHED, value=12, target=100), "en", None)
+
+    assert md_escape("100th solved game") in line
+    assert md_escape("12/100") in line

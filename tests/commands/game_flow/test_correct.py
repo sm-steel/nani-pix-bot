@@ -7,6 +7,8 @@ from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import correct as correct_command_module
+from nani_pix_bot.jobs import timers as timers_package
+from nani_pix_bot.jobs.timers.current_image import RevealTarget, RevealWinner
 from nani_pix_bot.models import CurrencyTransfer
 from nani_pix_bot.models.enums import CurrencyReason, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
@@ -536,3 +538,51 @@ async def test_correct_command_pays_the_pot_to_the_winner_and_names_it(session_f
         paid = session.query(CurrencyTransfer).filter_by(reason=CurrencyReason.BOUNTY_WIN).one()
         assert (paid.amount, paid.to_player_id) == (30, 2)
         assert winner.currency >= before + 30
+
+
+async def test_correct_posts_the_reveal_with_the_targets_handle(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory, total_guess_count=1)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="winner"))
+        session.commit()
+    post_reveal = AsyncMock(return_value=MagicMock(message_id=1))
+    monkeypatch.setattr(timers_package, "post_reveal", post_reveal)
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    post_reveal.assert_awaited_once()
+    assert post_reveal.await_args is not None
+    kwargs = post_reveal.await_args.kwargs
+    assert kwargs["target"] == RevealTarget(game_id, RevealWinner(2, "@winner"))
+    assert kwargs["photo"] == b"file123"
+    assert "Frieren: Beyond Journey's End" in kwargs["caption"]
+
+
+async def test_correct_hard_mode_posts_the_reveal_pair(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_hard_mode_game(session_factory, total_guess_count=1)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="winner"))
+        session.commit()
+    post_reveal_pair = AsyncMock(return_value=(MagicMock(message_id=1), MagicMock(message_id=2)))
+    monkeypatch.setattr(timers_package, "post_reveal_pair", post_reveal_pair)
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    post_reveal_pair.assert_awaited_once()
+    assert post_reveal_pair.await_args is not None
+    kwargs = post_reveal_pair.await_args.kwargs
+    assert kwargs["target"] == RevealTarget(game_id, RevealWinner(2, "@winner"))
+    assert kwargs["photos"] == (b"image-a-bytes", b"image-b-bytes")
+    assert "Frieren: Beyond Journey's End" in kwargs["caption"]

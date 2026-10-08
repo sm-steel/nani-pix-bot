@@ -102,8 +102,13 @@ def test_a_won_game_gets_the_champion_score_line_after_the_earnings(session: Ses
     )
 
     assert "+25" in lines[0]
-    assert lines[1].startswith("+5 🌟 → week 5 (#1 🆕)")
-    assert lines[2] == "Host @setter +1 🌟"
+    assert lines[1:] == [
+        "🌟 @ann: +5 points",
+        "   • this week — 5 🌟, 1st place (new on the board)",
+        "   • this month — 5 🌟, 1st place (new on the board)",
+        "   • this year — 5 🌟, 1st place (new on the board)",
+        "🌟 Host @setter: +1 point",
+    ]
 
 
 def test_broken_champion_lines_leave_the_earnings_and_log_an_error(

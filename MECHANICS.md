@@ -19,11 +19,14 @@ just what's currently built.
 | Turn handoff (`/skip`) | Implemented |
 | 2-day timeout | Implemented |
 | Inactivity nudge (3h) + auto-advance (6h) | Implemented |
+| Animated reveal video at every ending that reveals the image | Implemented |
 | Pinned current image (one at a time, follows the game) | Implemented |
+| Manual resync (`/status`) — re-post the current image with a live caption | Implemented |
 | Setup-abandon timeout (1h) | Implemented |
 | Win-turn reminder (15min) + expiry (12h) | Implemented |
 | Manual stop with confirmation (`/stop`) | Implemented |
 | Leaderboard (`/leaderboard`) | Implemented |
+| Game history (`/history`) | Implemented |
 | Achievements, titles, champions (`/achievements`, `/title`) | Implemented |
 | Pixels 💠 — earning, `/balance`, `/pixelconfig` | Implemented |
 | Clue shop (`/shop`) — spend 💠 on private clues | Implemented |
@@ -300,6 +303,19 @@ only source with screenshots for that title. That covers a failed
 auto-resolution, a failed or empty typed query, a screenshot fetch that
 errors or comes back empty, and a chosen image that won't download.
 
+A gallery page Telegram can't deliver doesn't count as the provider being
+down, as long as the starter can still see it (issue #283). The gallery
+hands the provider's image URLs to Telegram, whose servers download them
+before answering. There are two ways that can go wrong:
+- **Telegram takes too long to answer.** The album most likely arrived, so
+  its buttons are sent anyway.
+- **Telegram says it couldn't fetch a URL** (`webpage_curl_failed`: hotlink
+  blocking, a slow CDN). The bot downloads that page's screenshots itself
+  and uploads them, keeping their numbers.
+
+Only if those downloads fail too does it fall back to the source menu with
+the provider flagged.
+
 The starter therefore always has three ways forward — a different
 provider, another typed query, or their own upload — and none of these
 paths can leave a `SETUP` game with no buttons on screen. Before this,
@@ -555,6 +571,21 @@ skipped and logged as a warning rather than blocking the post itself
 (see `ARCHITECTURE.md`). The pin is left in place once a game ends; the
 next game's first post naturally supersedes it.
 
+**`/status`** (game topic, any time) is a manual resync for when the chat
+looks out of step with the bot: a post that never arrived, or a missing
+or stale pin (its caption's guess count is frozen at post time).
+
+- **During a game**, it re-posts the current stage image (the HARD MODE
+  pair as an album) with a live caption:
+  - stage (or turn) and guesses left at it
+  - the bounty, if any
+  - how long until the game ends on its own
+  - the 🎲 game number
+- **Otherwise** it says what is happening instead: who is setting up the
+  next game, that a vote is open, or whose turn it is to start one.
+
+It never changes anything and never re-pins.
+
 A separate **`/setgamesenabled on|off`** command (also DM-only,
 admin-gated) lets an admin pause *starting* new games entirely —
 independent of the above, useful for locking things down while
@@ -585,7 +616,8 @@ A game ends in a win one of two ways:
   routinely couldn't find its target.
 
 On a win, the bot:
-1. Reveals the original (un-pixelated) screenshot together with the
+1. Reveals the original (un-pixelated) screenshot, as the animated
+   reveal video (see "The reveal video" below), together with the
    anime's title, naming the winner by name in the caption.
 2. Sets `status → WON`, records `winner_id` and `ended_at`, and increments
    that player's `players.wins`.
@@ -599,6 +631,34 @@ On a win, the bot:
    `Game.original_image` — nothing after this point ever needs to
    re-pixelate the screenshot, so the stored bytes are dropped rather
    than kept around indefinitely.
+
+### The reveal video
+
+**Status: Implemented.**
+
+Every ending that reveals the clear screenshot posts an animated video
+instead of a still photo: the pixelated image turns into the clear one
+through a transition effect. Captions, pinning and everything after the
+reveal are exactly as for a photo. Telegram loops the video; there is no
+way to play it once.
+
+| Ending | What the video shows |
+|---|---|
+| Win by `/guess` or `/correct` | the effect, then the clear image with a celebration: a gold badge with the winner's avatar and `@handle` (their name when they have no username), a crown, a pop-in, one shine sweep and confetti |
+| Unsolved: stage 5 exhausted, 2-day timeout, inactivity on stage 5, `/stop` with reveal | the same effect, then the clear image held, no badge |
+| HARD MODE (any of the above) and the vote opening | the album as before, but the screenshot picked at game start is the reveal video (a badge on a win, none on the vote opening or an unsolved ending) and the other one stays a photo |
+
+The effect is picked uniformly at random **at game start** from `iris`,
+`tile_flip`, `ripple`, `glitch` and `shatter`. For HARD MODE the animated
+screenshot (`a` or `b`) is picked then too. The effect part is rendered in
+the background right after the game goes live, so the reveal itself only
+renders the ending and never delays a game's start.
+
+**Still-photo fallback.** The reveal is never lost: if the pre-render
+failed, isn't done within 5 seconds of the ending, the render fails, or
+Telegram rejects the video, the bot posts the plain photo exactly as
+before. The one exception is a send that timed out: the video may have
+arrived, so nothing is posted twice.
 
 ## Ending unsolved
 
@@ -1006,11 +1066,51 @@ name).
 
 **Status: Implemented.**
 
-`/leaderboard`, usable at any time in the game topic regardless of whether
-a game is running, lists players ordered by `players.wins` descending. Each row also shows the
-player's 💠 balance as a column (ranking is still by wins, not 💠). Wins are
-marked 👑 (🏆 means achievement points everywhere else), and a player's
-chosen title (see "Achievements") follows their name in «».
+`/leaderboard` is the all-time board: a table of every player with at least
+one win, 10 per page (◀ n/N ▶ edits the message in place). Columns: rank,
+player (their chosen title, see "Achievements", in «» after the name),
+👑 lifetime wins, 💠 balance and 🏆 achievement points. Order: 👑 wins,
+then 🏆 points, then player id, so ranks are always unique.
+
+It works at any time in the game topic, whether or not a game is running,
+and in DM for group members. Only the DM copy adds a "You: #N …" line when
+you aren't on the page shown: the topic message is shared, so whoever pages
+it isn't necessarily who that line would describe.
+
+## Game history
+
+**Status: Implemented.**
+
+`/history` (DM only, group members only) lists the group's finished games,
+won or unsolved, newest first, 10 per page. A game still being set up,
+running or being voted on never appears, so the history can't spoil a
+round. Each row shows the 🎲 game number, the date it ended, the anime, the
+winner (❌ when unsolved) and the host, and has a `#N` button that opens the
+game's record. **👤 Only mine** narrows the list to games you hosted, won
+or made a guess in; **📜 All games** switches back.
+
+A game's record shows:
+- its titles
+- the host
+- how the anime was found (provider, or typed in by hand) and where the
+  screenshot came from
+- HARD MODE, if it was
+- when it started and ended, and how long it lasted
+- the outcome:
+  - won: who won, at which stage or turn, how (/guess, the host's
+    /correct, the group's vote or an admin's /setwinner), how long it took
+    to solve, the bounty paid out and the 🌟 the winner got
+  - unsolved: why (time ran out, every stage used up, HARD MODE with nobody
+    guessing, or a vote with no winner)
+- the full guess log: time, player, guess, stage, ✅/❌, 25 per page
+
+◀ Back returns to the same list page.
+
+Games older than the records some parts come from just leave those parts
+out:
+- how a game was won, the bounty, the solve time and an unsolved game's
+  cause come from the event log, which started with achievements
+- the guess log started with issue #251
 
 ## Achievements
 
@@ -1032,14 +1132,27 @@ In DM, `/achievements` (with its deep link and buttons), `/standings` and
 show members' names and activity. A non-member gets the same "not a
 member" reply the shop gives.
 
-**Every win message shows the 🌟 it earned**, after the 💠 lines:
-`+5 🌟 → week 14 (#1 ⬆2) · month 31 (#2 =) · year 31 (#2 🆕)`. Each part is
-the winner's new total and rank in that running period; `⬆N` is the places
-gained, `=` no change, `🆕` a first score there. A period the game's
-`ended_at` falls outside (an admin `/setwinner` re-finish long after it
-closed) is left out, and with none left there is no line. A normal
-(non-HARD MODE) win adds `Host @name +1 🌟` for the host. The same lines
-close a vote win, an admin-named win, `/correct` and a re-finish.
+**Every win message shows the 🌟 it earned**, after the 💠 lines. It names
+the winner, then gives one bullet per running period:
+
+```
+🌟 @winner: +4 points
+   • this week — 5 🌟, 3rd place (⬆1)
+   • this month — 12 🌟, 1st place
+   • this year — 40 🌟, 2nd place (new on the board)
+```
+
+Each bullet is the winner's new total for that period and their place in
+it. `(⬆N)` is the places gained, and `(new on the board)` marks a first
+score there; an unchanged place gets no marker. Russian reads
+`🌟 @winner: +4 очка` / `• за неделю — 5 🌟, 3-е место (⬆1)`, with
+очко/очка/очков following the number.
+
+A period the game's `ended_at` falls outside (an admin `/setwinner`
+re-finish long after it closed) is left out; with none left there is no
+line. A normal (non-HARD MODE) win adds `🌟 Host @name: +1 point` for the
+host. The same lines close a vote win, an admin-named win, `/correct` and a
+re-finish.
 
 ### Since launch
 
@@ -1121,6 +1234,11 @@ My MAL List resolves to `tenrai`, so it isn't counted as a separate source.
 | Pioneer | The first win after launch | P |
 | Milestone Keeper | The winner of the group's Nth WON game since launch. Tiers 100·250·500·1000, then +500 endless, one holder per tier | G·G·P·P… |
 
+Milestone Keeper counts **solved** games since launch, not the 🎲 Game #id
+shown on every game (that id also counts unsolved and cancelled games, and
+games from before launch). The achievements browser shows the group's
+count against the next unclaimed threshold, e.g. "solved so far: 137/250".
+
 **Periods**
 
 | Name | Rarity |
@@ -1182,6 +1300,18 @@ Choose with `/title` (DM only; an earned title or "none").
   plus your own line (rank, score, wins) when you are outside the top 5, or
   a note that you haven't scored yet. It reads the same scoring the closing
   uses, so it can never disagree with the final podium.
+- **Explainer and recent changes.** Under `/standings` are two buttons
+  that open the bot's DM (deep links, so they work even for someone who
+  never started the bot; group members only):
+  - **📖 How points work**: this section's scoring in plain words. Every
+    number is rendered from the scoring constants, so the text can't
+    disagree with the code.
+  - **🕑 Recent changes**: this week's 🌟 gains, newest first, 10 per page.
+    Each row has the time, the player, the points, why (won game #N at
+    stage s/5, won in HARD MODE at turn t/2, or host of game #N) and the
+    rank move in the week (`#3 → #1`, `— → #2` for a first score). It's
+    the week's standings replayed one game at a time, so it always adds up
+    to the table.
 - **Ties** go to more wins, then to whoever reached the score first, so
   #1 is always unique.
 - **A game counts in the period it ended in.** The end time is the

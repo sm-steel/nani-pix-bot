@@ -1,7 +1,8 @@
 """The achievements browser in DM (spec §5): one rich message, edited in
 place — All / Earned / Not yet tabs, ◀ page ▶, Compare and Top. Callback
 data: ach:v:<owner>:<view>:<page>, ach:c:<other>:<filter>:<page> (compare.py),
-ach:t:<page>, ach:x (the page counter: no-op). Everything after the prefix
+ach:t:<page>. The page counter is helpers/paging.py's NOOP (ach:x on
+older messages, still answered here). Everything after the prefix
 is client-controlled, so it is parsed defensively (see dm_start/keyboards.py's
 _validated_index)."""
 
@@ -16,6 +17,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements import render
 from nani_pix_bot.commands.achievements.common import MAX_ID, PREFIX, outsider_refusal
+from nani_pix_bot.commands.helpers.paging import clamp_page, nav_row, page_count
 from nani_pix_bot.commands.helpers.rich import RichTarget, edit_rich, md_escape, send_rich
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, players, settings
@@ -24,7 +26,7 @@ from nani_pix_bot.services.achievements.status import View
 
 PAGE_SIZE = 8
 TOP_PAGE_SIZE = 10
-NOOP = f"{PREFIX}x"
+NOOP = f"{PREFIX}x"  # the page counter on messages sent before paging.NOOP
 Rendered = tuple[str, InlineKeyboardMarkup]
 # action -> how many fields it carries, and which of them are ints
 _SHAPES: dict[str, tuple[bool, ...]] = {
@@ -61,31 +63,6 @@ def parse(data: str) -> tuple[str, list[int | str]] | None:
     return action, [int(raw) if is_int else raw for raw, is_int in pairs]
 
 
-def clamp_page(page: int, *, total: int, size: int = PAGE_SIZE) -> int:
-    pages = max(1, -(-total // size))
-    return max(0, min(page, pages - 1))
-
-
-def nav_row(
-    make: Callable[[int], str], page: int, pages: int, lang: str
-) -> list[InlineKeyboardButton]:
-    if pages <= 1:
-        return []
-    row = []
-    if page > 0:
-        row.append(
-            InlineKeyboardButton(i18n.t("achievements.prev", lang), callback_data=make(page - 1))
-        )
-    row.append(InlineKeyboardButton(f"{page + 1}/{pages}", callback_data=NOOP))
-    if page < pages - 1:
-        row.append(
-            InlineKeyboardButton(
-                i18n.t("achievements.next_page", lang), callback_data=make(page + 1)
-            )
-        )
-    return row
-
-
 def _tab(view: View, current: View, owner_id: int, lang: str) -> InlineKeyboardButton:
     label = i18n.t(f"achievements.tab.{view.name.lower()}", lang)
     marker = "● " if view is current else ""
@@ -113,8 +90,8 @@ def _keyboard(request: Browse, pages: int, lang: str) -> InlineKeyboardMarkup:
 def browse_view(session: Session, request: Browse, lang: str) -> Rendered:
     items = status.build(session, request.owner_id, datetime.now(UTC))
     ordered = status.ordered(items, request.view)
-    page = clamp_page(request.page, total=len(ordered))
-    pages = max(1, -(-len(ordered) // PAGE_SIZE))
+    page = clamp_page(request.page, total=len(ordered), size=PAGE_SIZE)
+    pages = page_count(len(ordered), PAGE_SIZE)
     header = "# 🏅 " + md_escape(players.display_name(session, request.owner_id))
     header += "\n" + render.header_line(session, request.owner_id, items, lang)
     shown = ordered[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
@@ -125,7 +102,7 @@ def browse_view(session: Session, request: Browse, lang: str) -> Rendered:
 def top_view(session: Session, page: int, lang: str) -> Rendered:
     total = status.ranked_count(session)
     page = clamp_page(page, total=total, size=TOP_PAGE_SIZE)
-    pages = max(1, -(-total // TOP_PAGE_SIZE))
+    pages = page_count(total, TOP_PAGE_SIZE)
     rows = status.top(session, limit=TOP_PAGE_SIZE, offset=page * TOP_PAGE_SIZE)
     markdown = render.top_table(session, rows, lang, page * TOP_PAGE_SIZE)
     nav = nav_row(top_data, page, pages, lang)

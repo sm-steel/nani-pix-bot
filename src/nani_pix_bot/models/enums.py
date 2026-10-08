@@ -265,6 +265,28 @@ DISCOURAGED_ALGORITHMS = frozenset({PixelAlgorithm.MODE})
 # have a single import site.
 
 
+class RevealEffect(enum.Enum):
+    """Which transition the animated end-of-game reveal (issue #295) uses
+    to go from the pixelated image to the clear one. Persisted by name in
+    `reveal_video.effect`, like the other enums."""
+
+    IRIS = "iris"
+    TILE_FLIP = "tile_flip"
+    RIPPLE = "ripple"
+    GLITCH = "glitch"
+    SHATTER = "shatter"
+
+
+class RevealStatus(enum.Enum):
+    """Where the pre-rendered reveal video is: still rendering, ready to
+    send, or the render failed. Persisted by name in
+    `reveal_video.status`, like the other enums."""
+
+    PENDING = "pending"
+    READY = "ready"
+    FAILED = "failed"
+
+
 class SetupStep(enum.Enum):
     """Where a SETUP game's starter currently is in the multi-step DM
     identification flow — see MECHANICS.md's "Starting a game" section.

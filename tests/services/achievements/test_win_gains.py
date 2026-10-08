@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import EventType, PeriodType
 from nani_pix_bot.models.player import Player
-from nani_pix_bot.services import events
+from nani_pix_bot.services import events, i18n
 from nani_pix_bot.services.achievements import periods, win_lines
 from nani_pix_bot.services.achievements.periods import PeriodGain
 
@@ -111,7 +111,16 @@ def test_this_games_own_event_is_excluded_from_the_before_side(session: Session)
 def test_the_host_line_names_the_host(session: Session) -> None:
     _win(session, 1, A, host=B)
 
-    assert win_lines.win_lines(session, 1, "en", NOW)[1] == "Host @p2 +1 🌟"
+    assert win_lines.win_lines(session, 1, "en", NOW)[1] == "🌟 Host @p2: +1 point"
+    assert win_lines.win_lines(session, 1, "ru", NOW)[1] == "🌟 Ведущий @p2: +1 очко"
+
+
+def test_the_winner_line_names_the_winner(session: Session) -> None:
+    _win(session, 1, A, stage=2)
+
+    lines = win_lines.win_lines(session, 1, "en", NOW)
+
+    assert lines[0].splitlines()[0] == "🌟 @p1: +4 points"
 
 
 def test_a_hard_mode_win_has_no_host_line(session: Session) -> None:
@@ -120,16 +129,18 @@ def test_a_hard_mode_win_has_no_host_line(session: Session) -> None:
     lines = win_lines.win_lines(session, 1, "en", NOW)
 
     assert len(lines) == 1
-    assert lines[0].startswith("+6 🌟")
+    assert lines[0].startswith("🌟 @p1: +6 points")
 
 
 def test_a_win_with_no_running_period_has_no_lines(session: Session) -> None:
     assert win_lines.win_lines(session, 5, "en", NOW) == []
 
 
-def _gain(ptype: PeriodType, score: int, ranks: tuple[int | None, int]) -> PeriodGain:
+def _gain(
+    ptype: PeriodType, score: int, ranks: tuple[int | None, int], gain: int = 5
+) -> PeriodGain:
     period = periods.period_at(ptype, NOW, UTC_TZ)
-    return PeriodGain(period, A, 5, score, ranks[0], ranks[1])
+    return PeriodGain(period, A, gain, score, ranks[0], ranks[1])
 
 
 def test_the_gain_line_is_exact_in_english() -> None:
@@ -139,21 +150,54 @@ def test_the_gain_line_is_exact_in_english() -> None:
             _gain(PeriodType.MONTH, 31, (2, 2)),
             _gain(PeriodType.YEAR, 31, (None, 4)),
         ],
+        "@p1",
         "en",
     )
 
-    assert line == "+5 🌟 → week 14 (#1 ⬆2) · month 31 (#2 =) · year 31 (#4 🆕)"
+    assert line == (
+        "🌟 @p1: +5 points\n"
+        "   • this week — 14 🌟, 1st place (⬆2)\n"
+        "   • this month — 31 🌟, 2nd place\n"
+        "   • this year — 31 🌟, 4th place (new on the board)"
+    )
 
 
 def test_the_gain_line_is_exact_in_russian() -> None:
-    line = win_lines.gain_line([_gain(PeriodType.WEEK, 14, (2, 1))], "ru")
+    line = win_lines.gain_line(
+        [
+            _gain(PeriodType.WEEK, 5, (4, 3), gain=4),
+            _gain(PeriodType.MONTH, 12, (1, 1), gain=4),
+            _gain(PeriodType.YEAR, 40, (None, 2), gain=4),
+        ],
+        "@hant115",
+        "ru",
+    )
 
-    assert line == "+5 🌟 → неделя 14 (#1 ⬆1)"
+    def place(n: int) -> str:
+        return i18n.t("champion.win.place", "ru", ordinal=n)
+
+    assert line == (
+        "🌟 @hant115: +4 очка\n"
+        f"   • за неделю — 5 🌟, {place(3)} (⬆1)\n"
+        f"   • за месяц — 12 🌟, {place(1)}\n"
+        f"   • за год — 40 🌟, {place(2)} (новый в зачёте)"
+    )
 
 
-def test_a_computed_downward_move_shows_the_same_marker() -> None:
-    assert win_lines.gain_line([_gain(PeriodType.WEEK, 9, (1, 3))], "en").endswith("(#3 =)")
+def test_one_point_and_five_points_read_right_in_russian() -> None:
+    assert win_lines.gain_line([_gain(PeriodType.WEEK, 1, (1, 1), gain=1)], "@a", "ru").startswith(
+        "🌟 @a: +1 очко\n"
+    )
+    assert win_lines.gain_line([_gain(PeriodType.WEEK, 5, (1, 1))], "@a", "ru").startswith(
+        "🌟 @a: +5 очков\n"
+    )
+
+
+def test_a_computed_downward_move_shows_no_marker() -> None:
+    line = win_lines.gain_line([_gain(PeriodType.WEEK, 9, (1, 3))], "@a", "en")
+
+    assert line.endswith("— 9 🌟, 3rd place")
 
 
 def test_no_gains_make_no_line() -> None:
-    assert win_lines.gain_line([], "en") == ""
+    assert win_lines.gain_line([], "@a", "en") == ""

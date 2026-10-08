@@ -385,6 +385,8 @@ async def test_screenshot_gallery_paging_falls_back_when_telegram_rejects_the_al
     update = _make_callback_update(data="screenshot_more:shikimori:5")
     context = _make_context(session_factory)
     context.bot.send_media_group = AsyncMock(side_effect=BadRequest("failed to get HTTP URL"))
+    # ...and downloading the page ourselves fails too (issue #283's fallback).
+    context.bot_data["search_client"].get = AsyncMock(side_effect=httpx.ConnectError("down"))
 
     await screenshot_gallery.screenshot_gallery_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
@@ -1269,7 +1271,7 @@ async def test_screenshot_gallery_paging_arms_the_picker_for_a_typed_correction(
 ) -> None:
     """Regression (#72): every page is drawn `cross_provider=True`, so it
     carries "Wrong anime? Search again" — and the rule
-    `resume_screenshot_gallery` states in its own words is that such a
+    `stage_gallery_resume`/`send_gallery_resume` states in its own words is that such a
     gallery has to arm the picker, because a *typed* correction routes on
     that column alone. Paging off a same-provider gallery (picker None)
     used to draw the button while search.py silently dropped anything

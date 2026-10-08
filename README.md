@@ -47,6 +47,19 @@ uv run ruff format .     # format
 uv run ty check          # type check
 ```
 
+The animated end-of-game reveal video is rendered with `ffmpeg`, so running
+from source needs `ffmpeg` and `ffprobe` on your `PATH`. `mise.toml` pins
+[BtbN's static ffmpeg 7.1.1 build](https://github.com/BtbN/FFmpeg-Builds)
+(GPL, with libx264) and `mise.lock` records each platform's download URL and
+sha256. Install it with [mise](https://mise.jdx.dev/): run `mise install`
+once (locked mode, set in `mise.toml`, fails on anything that doesn't match
+the lockfile), then run commands through it (`mise exec -- uv run pytest`)
+or let mise's shell activation put it on `PATH`. CI and the Docker image
+install the same locked build, so all three run the identical binary
+(`ffmpeg -version` reports `n7.1.1-57-g1b48158a23`). Without ffmpeg the bot still works:
+every reveal falls back to the plain photo, and the tests marked `ffmpeg`
+skip.
+
 ## Self-hosting
 
 Runs entirely in Docker (bot + MariaDB), via `docker-compose.yml`. This
@@ -56,6 +69,11 @@ section walks through setting up your own instance from nothing.
 
 - Docker and the Docker Compose plugin (`docker compose version` should work).
 - A Telegram account.
+
+The Docker image bundles the static `ffmpeg`/`ffprobe` pinned in `mise.toml`
+and `mise.lock` (installed in a build stage; mise itself isn't in the
+final image), which renders the animated reveal video posted when a game ends; there is nothing
+extra to install on the host.
 
 ### 1. Create a Telegram bot
 

@@ -19,9 +19,10 @@ See MECHANICS.md for what the choice means in play, and CLAUDE.md's
 test-driven-development note for why this package's tests came first.
 """
 
-from nani_pix_bot.services.pixelate.algorithms import ALGORITHMS, pixelate
+from nani_pix_bot.services.pixelate.algorithms import ALGORITHMS, pixelate, pixelate_image
 
 __all__ = [
     "ALGORITHMS",
     "pixelate",
+    "pixelate_image",
 ]

@@ -21,7 +21,7 @@ class Player(Base):
     resolve a typed handle against this table, and `/correct` exists
     precisely for someone who answered in plain prose without ever
     issuing a command. A row with `wins == 0` is the normal case and is
-    filtered out of the leaderboard by `players.top_players`.
+    filtered out of the leaderboard by `players.leaderboard`.
 
     `currency` is the 💠 balance, always moved together with a
     `currency_transfers` row (services/economy/wallet.py)."""

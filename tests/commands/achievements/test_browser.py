@@ -112,9 +112,9 @@ async def test_a_forged_tap_is_ignored(session_factory, records) -> None:
 
 
 def test_the_last_page_clamps() -> None:
-    assert browser.clamp_page(99, total=20) == 2
-    assert browser.clamp_page(-1, total=20) == 0
-    assert browser.clamp_page(0, total=0) == 0
+    assert browser.clamp_page(99, total=20, size=browser.PAGE_SIZE) == 2
+    assert browser.clamp_page(-1, total=20, size=browser.PAGE_SIZE) == 0
+    assert browser.clamp_page(0, total=0, size=browser.PAGE_SIZE) == 0
 
 
 def _tap(data: str, *, message: bool = True) -> MagicMock:

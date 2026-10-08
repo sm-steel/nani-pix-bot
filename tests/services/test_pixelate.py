@@ -1,3 +1,4 @@
+import hashlib
 import io
 
 import pytest
@@ -8,7 +9,7 @@ from nani_pix_bot.models.enums import (
     DISCOURAGED_ALGORITHMS,
     PixelAlgorithm,
 )
-from nani_pix_bot.services.pixelate import ALGORITHMS, pixelate, render
+from nani_pix_bot.services.pixelate import ALGORITHMS, pixelate, pixelate_image, render
 
 _TEST_IMAGE_SIZE = 192
 # Every algorithm must satisfy the shared mosaic properties below; which
@@ -204,3 +205,48 @@ def test_reveal_tiles_resizes_a_differently_sized_pixelated_image() -> None:
     result = Image.open(io.BytesIO(render.reveal_tiles(original, pixelated, [], 8)))
 
     assert result.size == (80, 40)
+
+
+def _sample_png() -> bytes:
+    image = Image.new("RGB", (97, 61))
+    for x in range(97):
+        for y in range(61):
+            image.putpixel((x, y), (x * 2 % 256, y * 4 % 256, (x * y) % 256))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize("algorithm", list(PixelAlgorithm))
+@pytest.mark.parametrize("width", [8, 20, 64])
+def test_pixelate_image_matches_pixelate_bytes(algorithm: PixelAlgorithm, width: int) -> None:
+    png = _sample_png()
+    expected = Image.open(io.BytesIO(pixelate(png, width, algorithm))).convert("RGB")
+    actual = pixelate_image(Image.open(io.BytesIO(png)).convert("RGB"), width, algorithm)
+    assert actual.mode == "RGB"
+    assert actual.size == expected.size
+    assert actual.tobytes() == expected.tobytes()
+
+
+# sha256 of the RGB pixel bytes of `_sample_png()` pixelated to width 20, computed by running the
+# ORIGINAL bytes-based `pixelate()` as of commit 4f5cb5b (before `pixelate_image` existed), not
+# this branch's code - so a drift in the new image-based path can't hide behind itself.
+_PRE_BRANCH_SHA256_AT_WIDTH_20 = {
+    PixelAlgorithm.NEAREST: "27eec5a1d612fb13fac404c6f99703c8a1f1f4d1006e4723c91aafccb576c628",
+    PixelAlgorithm.BOX: "604bef760c418084f2e56154c54a44c121f135410c9fd5fcb659e0366fa88fe5",
+    PixelAlgorithm.MEDIAN: "37facded3f4d7e9865907223246abadaea30883e42cfbda9a5b4dd98e8475540",
+    PixelAlgorithm.MODE: "743ff5ab6322f001d7a51f762f5487a2dfb5b6efda0f13a4b5231a16e9f63a1c",
+    PixelAlgorithm.LANCZOS: "a5dca1365764844bdb07d02ac2106b1bcebe286f0a317b52ea7935579517b608",
+}
+
+
+def test_every_algorithm_has_a_pre_branch_hash() -> None:
+    assert set(_PRE_BRANCH_SHA256_AT_WIDTH_20) == set(PixelAlgorithm)
+
+
+@pytest.mark.parametrize("algorithm", list(PixelAlgorithm))
+def test_pixelate_image_still_produces_the_pre_branch_pixels(algorithm: PixelAlgorithm) -> None:
+    image = Image.open(io.BytesIO(_sample_png())).convert("RGB")
+    actual = pixelate_image(image, 20, algorithm)
+    digest = hashlib.sha256(actual.tobytes()).hexdigest()
+    assert digest == _PRE_BRANCH_SHA256_AT_WIDTH_20[algorithm]

@@ -4,16 +4,17 @@ handlers) — main()'s actual polling loop is not something a unit test
 should run."""
 
 import re
+from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from cryptography.fernet import Fernet
 from telegram.error import Conflict, NetworkError
-from telegram.ext import CallbackQueryHandler, ContextTypes, TypeHandler
+from telegram.ext import Application, CallbackQueryHandler, ContextTypes, TypeHandler
 
-from nani_pix_bot import app
-from nani_pix_bot.commands import quiet_hours
+from nani_pix_bot import app, db
+from nani_pix_bot.commands import leaderboard, quiet_hours, standings_dm
 from nani_pix_bot.commands.dm_start import (
     pick_callback_handler,
     screenshot_gallery_callback_handler,
@@ -22,8 +23,9 @@ from nani_pix_bot.commands.dm_start import (
     screenshot_source_callback_handler,
     screenshot_upload_instead_callback_handler,
 )
-from nani_pix_bot.commands.helpers import log_scope, player_tracking
+from nani_pix_bot.commands.helpers import log_scope, paging, player_tracking
 from nani_pix_bot.config import Config
+from nani_pix_bot.jobs.reveal import RevealCache
 from nani_pix_bot.models.enums import Provider
 from tests.conftest import LogLine
 
@@ -104,6 +106,8 @@ def test_build_application_registers_every_command() -> None:
         "setwinner",
         "achievements",
         "standings",
+        "history",
+        "status",
         "title",
     }
 
@@ -402,3 +406,111 @@ def test_timezone_callback_handler_is_registered_for_its_prefix() -> None:
     assert isinstance(pattern, re.Pattern)
     assert pattern.match("set_timezone:Europe/Moscow")
     assert not pattern.match("set_language:RU")
+
+
+def _callback_for(application: Any, data: str) -> object | None:
+    """The callback of the first CallbackQueryHandler whose pattern matches."""
+    for group in application.handlers.values():
+        for handler in group:
+            if not isinstance(handler, CallbackQueryHandler):
+                continue
+            pattern = handler.pattern
+            if isinstance(pattern, re.Pattern) and pattern.match(data):
+                return handler.callback
+    return None
+
+
+def test_paged_views_route_their_taps_to_their_own_handlers() -> None:
+    application = app.build_application(_config())
+
+    assert _callback_for(application, standings_dm.feed_data(1)) is standings_dm.standings_callback
+    assert _callback_for(application, leaderboard.page_data(1)) is leaderboard.leaderboard_callback
+    assert _callback_for(application, paging.NOOP) is paging.noop_callback
+
+
+async def test_post_init_starts_the_reveal_worker_then_reloads_the_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#295: the worker and cache exist before the slot is reloaded (the
+    reload re-renders through them), and start_worker warms the worker up
+    itself, so _post_init must not warm it a second time."""
+    calls: list[str] = []
+
+    async def fake_rearm(*_args) -> None:
+        calls.append("rearm")
+
+    def fake_start(bot_data) -> None:
+        calls.append("start")
+        assert isinstance(bot_data["reveal_cache"], RevealCache)
+
+    async def fake_reload(_application) -> None:
+        calls.append("reload")
+
+    monkeypatch.setattr(app, "rearm_pending_timeouts", fake_rearm)
+    monkeypatch.setattr(app, "schedule_outbox_drain", lambda *_: None)
+    monkeypatch.setattr(app, "schedule_period_job", lambda *_: None)
+    monkeypatch.setattr(app, "refresh_command_menu", AsyncMock())
+    monkeypatch.setattr(app, "start_worker", fake_start)
+    monkeypatch.setattr(app.reveal, "reload_on_startup", fake_reload)
+    monkeypatch.setattr(app.settings, "get_language", lambda _session: "en")
+    bot = MagicMock()
+    bot.get_me = AsyncMock(return_value=SimpleNamespace(username="bot"))
+    factory = db.make_session_factory(db.get_engine("sqlite:///:memory:"))
+    application = SimpleNamespace(
+        bot_data={"session_factory": factory, "group_chat_id": 1},
+        job_queue=MagicMock(),
+        bot=bot,
+    )
+
+    await app._post_init(cast(Application, application))
+
+    assert calls == ["rearm", "start", "reload"]
+    assert isinstance(application.bot_data["reveal_cache"], RevealCache)
+
+
+async def test_post_shutdown_stops_the_reveal_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    stopped = []
+    monkeypatch.setattr(app, "stop_worker", stopped.append)
+    application = app.build_application(_config())
+
+    await app._post_shutdown(application)
+
+    assert stopped == [application.bot_data]
+
+
+@pytest.mark.parametrize("broken", ["start_worker", "reload_on_startup"])
+async def test_post_init_survives_a_broken_reveal_setup(
+    monkeypatch: pytest.MonkeyPatch, broken: str
+) -> None:
+    """#295: a failing worker start or reload must not stop the bot from starting; every
+    reveal then falls back to the photo."""
+
+    def boom(*_args) -> None:
+        raise OSError("can't spawn")
+
+    async def aboom(*_args) -> None:
+        raise OSError("db locked")
+
+    monkeypatch.setattr(app, "rearm_pending_timeouts", AsyncMock())
+    monkeypatch.setattr(app, "schedule_outbox_drain", lambda *_: None)
+    monkeypatch.setattr(app, "schedule_period_job", lambda *_: None)
+    menu = AsyncMock()
+    monkeypatch.setattr(app, "refresh_command_menu", menu)
+    monkeypatch.setattr(app, "start_worker", boom if broken == "start_worker" else lambda *_: None)
+    monkeypatch.setattr(
+        app.reveal, "reload_on_startup", aboom if broken == "reload_on_startup" else AsyncMock()
+    )
+    monkeypatch.setattr(app.settings, "get_language", lambda _session: "en")
+    bot = MagicMock()
+    bot.get_me = AsyncMock(return_value=SimpleNamespace(username="bot"))
+    factory = db.make_session_factory(db.get_engine("sqlite:///:memory:"))
+    application = SimpleNamespace(
+        bot_data={"session_factory": factory, "group_chat_id": 1},
+        job_queue=MagicMock(),
+        bot=bot,
+    )
+
+    await app._post_init(cast(Application, application))
+
+    bot.get_me.assert_awaited_once()
+    menu.assert_awaited_once()

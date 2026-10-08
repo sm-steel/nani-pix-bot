@@ -3,9 +3,12 @@ every pixelation stage, a follow-up message with confirm/change-image/
 research/add-synonym buttons, and (on confirm) the actual post to the
 group topic. See MECHANICS.md's "Starting a game" section."""
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from loguru import logger
+from sqlalchemy.orm import Session
 from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -43,12 +46,14 @@ from nani_pix_bot.commands.dm_start.screenshots import (
     ScreenshotFailure,
     clear_screenshot_selection,
     reply_with_source_menu,
-    resume_screenshot_gallery,
     send_fallback_notice,
+    send_gallery_resume,
     source_menu_for,
     stage_fallback,
+    stage_gallery_resume,
 )
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.jobs import reveal
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import DISCOURAGED_ALGORITHMS, PixelAlgorithm, SetupStep
 from nani_pix_bot.models.game import Game
@@ -57,6 +62,7 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.economy import bounty, earning, wallet
+from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -109,6 +115,7 @@ def _activate_and_stage_first_post(
     )
     caption += game_service.game_id_line(game.id, lang)
     game_service.activate_game(session, game)
+    reveal_store.reserve(session, game.id, reveal_store.pick_effect(), None)
     prompt_bonus = earning.award_prompt_start(session, game)
     if prompt_bonus:
         caption += "\n" + i18n.t(
@@ -161,9 +168,19 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
     if user is None:
         return
 
-    if await _handle_posting_tap(context, session_factory, query, user):
-        return
+    if not await _handle_posting_tap(context, session_factory, query, user):
+        await _handle_branch_tap(context, session_factory, query, user)
 
+
+async def _handle_branch_tap(
+    context: ContextTypes.DEFAULT_TYPE, session_factory, query, user
+) -> None:
+    """A _BRANCHES button: the branch prepares its edit inside the session,
+    and the edit goes out only once that session has committed — whatever
+    step the branch moved the game to is saved before the message that
+    shows it, so a timed-out edit (which may well have landed) can't roll
+    it back (issue #292; see post_current_image's docstring)."""
+    branch = _BRANCHES.get(query.data)
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
@@ -173,23 +190,11 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
                 data=query.data,
             )
             return
-
-        if query.data == PREVIEW_CHANGE_IMAGE_CALLBACK_DATA:
-            await _preview_change_image(query, setup_game, lang)
-        elif query.data == PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA:
-            await _preview_change_image_upload(query, setup_game, lang)
-        elif query.data == PREVIEW_RESEARCH_CALLBACK_DATA:
-            await _preview_research(query, setup_game, lang, context)
-        elif query.data == PREVIEW_ADD_SYNONYM_CALLBACK_DATA:
-            await _preview_add_synonym(query, setup_game, lang)
-        elif query.data == PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA:
-            await _preview_pixel_algorithm(query, setup_game, lang)
-        elif query.data == PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA:
-            await _preview_pixel_algorithm_back(query, setup_game, lang)
-        elif query.data == PREVIEW_BOUNTY_CALLBACK_DATA:
-            await _preview_bounty(query, session, setup_game, lang)
-        elif query.data == PREVIEW_BOUNTY_BACK_CALLBACK_DATA:
-            await _preview_bounty_back(query, setup_game, lang)
+        edit = branch(_Tap(session, setup_game, lang, context)) if branch else None
+    if edit is not None:
+        await query.edit_message_text(
+            text=edit.text, reply_markup=edit.reply_markup, parse_mode=edit.parse_mode
+        )
 
 
 async def _handle_posting_tap(
@@ -239,52 +244,73 @@ async def _handle_confirm_tap(
         first_stage_post = _activate_and_stage_first_post(
             session, context, setup_game, lang, user.full_name
         )
+        game_id = setup_game.id
     # Block closed and committed above — activation is durable now
     # regardless of whether the announcement below actually reaches the
-    # group (see post_current_image's docstring).
+    # group (see post_current_image's docstring). The pre-render only
+    # schedules a task, so starting it first overlaps rendering with the
+    # upload instead of delaying it.
+    reveal.start_pregeneration(context.application, game_id)
     await timeout_module.post_stage_image(
         context, session_factory, photo=first_stage_post.photo, caption=first_stage_post.caption
     )
     return lang
 
 
-async def _preview_change_image(query, game: Game, lang: str) -> None:
+@dataclass(frozen=True)
+class _Tap:
+    """What a preview branch works from, inside preview_callback_handler's
+    session."""
+
+    session: Session
+    game: Game
+    lang: str
+    context: ContextTypes.DEFAULT_TYPE
+
+
+@dataclass(frozen=True)
+class _Edit:
+    """The message edit a preview branch answers with, sent only once the
+    branch's session has committed."""
+
+    text: str
+    reply_markup: InlineKeyboardMarkup | None = None
+    parse_mode: str | None = None
+
+
+def _preview_change_image(tap: _Tap) -> _Edit:
     """A genuine upload (screenshot_source unset) goes straight to
     asking for a new photo, exactly as before ticket 9. An API-sourced
     screenshot instead offers a choice — upload one after all, or pick
     a different screenshot from the same provider — via
     _preview_change_image_upload/_preview_change_image_pick_screenshot."""
+    game, lang = tap.game, tap.lang
     logger.info("tapped Change image on the preview", game_id=game.id)
     if game.screenshot_source is not None:
-        await query.edit_message_text(
-            text=i18n.t("dm_start.pick_new_image_source_prompt", lang),
-            reply_markup=change_image_keyboard(lang),
+        return _Edit(
+            i18n.t("dm_start.pick_new_image_source_prompt", lang), change_image_keyboard(lang)
         )
-        return
     game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
-    await query.edit_message_text(text=i18n.t("dm_start.ask_new_photo", lang))
+    return _Edit(i18n.t("dm_start.ask_new_photo", lang))
 
 
-async def _preview_change_image_upload(query, game: Game, lang: str) -> None:
-    logger.info("chose to upload a new photo from the preview", game_id=game.id)
-    game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
-    await query.edit_message_text(text=i18n.t("dm_start.ask_new_photo", lang))
+def _preview_change_image_upload(tap: _Tap) -> _Edit:
+    logger.info("chose to upload a new photo from the preview", game_id=tap.game.id)
+    tap.game.setup_step = SetupStep.AWAITING_PHOTO_CHANGE
+    return _Edit(i18n.t("dm_start.ask_new_photo", tap.lang))
 
 
 async def _handle_change_image_pick_screenshot_tap(
     context: ContextTypes.DEFAULT_TYPE, session_factory, query, user
 ) -> None:
-    """Split out from preview_callback_handler's shared session: a
-    ScreenshotFailure outcome re-arms the setup_step/screenshot_picker_provider
-    columns (via stage_fallback), which must commit before the fallback
-    notice is attempted (see post_current_image's docstring) — the same
-    reason _handle_confirm_tap can't share a session with the other
-    branches either.
-
-    Note: resume_screenshot_gallery's own success path still sends its
-    gallery page from inside the session below (it owns that network
-    call internally, not this function) — narrower in scope than the
-    fallback-notice fix this split makes, and not addressed here."""
+    """Split out from preview_callback_handler's shared session, and itself
+    in phases (issue #156): the picker state commits first, the provider
+    fetch and gallery send run after, and a ScreenshotFailure is staged
+    (stage_fallback re-arms setup_step/screenshot_picker_provider) in a
+    second short session before its notice goes out — so no Telegram call
+    or provider round-trip ever holds a transaction open or can roll back
+    what the starter is already looking at (see post_current_image's
+    docstring)."""
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
@@ -292,42 +318,39 @@ async def _handle_change_image_pick_screenshot_tap(
             logger.warning("tapped Pick a different screenshot with no SETUP game left — ignoring")
             return
         logger.info("chose to pick a different screenshot from the preview", game_id=setup_game.id)
-        # resume_screenshot_gallery owns the setup_step transition itself
-        # and returns either a plain reply key or a ScreenshotFailure —
-        # the latter puts the starter back on the source menu rather
-        # than leaving this message buttonless (see screenshots.py's
-        # reply_with_source_menu).
-        outcome = await resume_screenshot_gallery(context, setup_game, lang)
-        notice = None
-        if isinstance(outcome, ScreenshotFailure):
-            notice = stage_fallback(setup_game, outcome)
-    if isinstance(outcome, ScreenshotFailure):
-        if notice is None:
-            raise RuntimeError("stage_fallback was not called for a ScreenshotFailure outcome")
-        # Block closed and committed above — see stage_fallback's
-        # docstring for why the send has to happen after.
-        await send_fallback_notice(query.edit_message_text, notice, lang)
-        return
-    if outcome == NO_SOURCE_PROMPT_KEY:
+        resume = stage_gallery_resume(setup_game)
+        stale_menu = source_menu_for(setup_game, None) if resume is None else None
+    if stale_menu is not None:
         # A stale tap: the source this gallery would have resumed is
         # gone, so no gallery (and therefore no buttons) goes out
         # alongside this message. It has to carry the source menu
         # itself, plain — there is no provider at fault to flag — or the
         # starter reads "Where should I get a screenshot from?" with
         # nothing to tap (MECHANICS.md's "When a provider fails").
-        logger.warning(
-            "stale pick-a-screenshot tap, re-offering the source menu", game_id=setup_game.id
-        )
+        logger.warning("stale pick-a-screenshot tap, re-offering the source menu")
         await reply_with_source_menu(
-            query.edit_message_text, source_menu_for(setup_game, None), lang, outcome
+            query.edit_message_text, stale_menu, lang, NO_SOURCE_PROMPT_KEY
         )
         return
-    await query.edit_message_text(text=i18n.t(outcome, lang))
+    if resume is None:
+        raise RuntimeError("stage_gallery_resume returned neither a resume nor a stale menu")
+    outcome = await send_gallery_resume(context, resume, lang)
+    if not isinstance(outcome, ScreenshotFailure):
+        await query.edit_message_text(text=i18n.t(outcome, lang))
+        return
+    with session_scope(session_factory) as session:
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        if setup_game is None:
+            logger.warning("setup vanished while its gallery was loading — dropping the fallback")
+            return
+        notice = stage_fallback(setup_game, outcome)
+    # Block closed and committed above — see stage_fallback's docstring
+    # for why the send has to happen after.
+    await send_fallback_notice(query.edit_message_text, notice, lang)
 
 
-async def _preview_research(
-    query, game: Game, lang: str, context: ContextTypes.DEFAULT_TYPE
-) -> None:
+def _preview_research(tap: _Tap) -> _Edit:
+    game, lang = tap.game, tap.lang
     logger.info("tapped Re-search title on the preview", game_id=game.id)
     # An API-sourced screenshot is cleared here (see
     # clear_screenshot_selection's docstring) since re-searching might
@@ -335,16 +358,16 @@ async def _preview_research(
     # unchanged from before ticket 9.
     clear_screenshot_selection(game)
     game.setup_step = SetupStep.PICKING_METHOD
-    await query.edit_message_text(
-        text=i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
-        reply_markup=_method_keyboard(context, lang),
+    return _Edit(
+        i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
+        _method_keyboard(tap.context, lang),
     )
 
 
-async def _preview_add_synonym(query, game: Game, lang: str) -> None:
-    logger.info("tapped Add a synonym on the preview", game_id=game.id)
-    game.setup_step = SetupStep.AWAITING_SYNONYM
-    await query.edit_message_text(text=i18n.t("dm_start.ask_extra_synonym", lang))
+def _preview_add_synonym(tap: _Tap) -> _Edit:
+    logger.info("tapped Add a synonym on the preview", game_id=tap.game.id)
+    tap.game.setup_step = SetupStep.AWAITING_SYNONYM
+    return _Edit(i18n.t("dm_start.ask_extra_synonym", tap.lang))
 
 
 def _algorithm_options(lang: str) -> str:
@@ -368,27 +391,28 @@ def _algorithm_options(lang: str) -> str:
     return "\n".join(lines)
 
 
-async def _preview_pixel_algorithm(query, game: Game, lang: str) -> None:
+def _preview_pixel_algorithm(tap: _Tap) -> _Edit:
+    game, lang = tap.game, tap.lang
     logger.info("opened the pixelation submenu", game_id=game.id)
-    await query.edit_message_text(
-        text=i18n.t(
-            "dm_start.pixel_algorithm_prompt",
-            lang,
-            options=_algorithm_options(lang),
-        ),
-        reply_markup=pixel_algorithm_keyboard(lang, game.pixel_algorithm),
+    return _Edit(
+        i18n.t("dm_start.pixel_algorithm_prompt", lang, options=_algorithm_options(lang)),
+        pixel_algorithm_keyboard(lang, game.pixel_algorithm),
         parse_mode="HTML",
     )
 
 
-async def _preview_pixel_algorithm_back(query, game: Game, lang: str) -> None:
-    """Leave the submenu without changing anything — back to the same
-    prompt and buttons the album's follow-up message started with."""
-    logger.info("closed the pixelation submenu without changing it", game_id=game.id)
-    await query.edit_message_text(
-        text=i18n.t("dm_start.preview_confirm_prompt", lang),
-        reply_markup=preview_keyboard(lang, game.pixel_algorithm),
+def _back_to_preview(tap: _Tap) -> _Edit:
+    """The same prompt and buttons the album's follow-up message started with."""
+    return _Edit(
+        i18n.t("dm_start.preview_confirm_prompt", tap.lang),
+        preview_keyboard(tap.lang, tap.game.pixel_algorithm),
     )
+
+
+def _preview_pixel_algorithm_back(tap: _Tap) -> _Edit:
+    """Leave the submenu without changing anything."""
+    logger.info("closed the pixelation submenu without changing it", game_id=tap.game.id)
+    return _back_to_preview(tap)
 
 
 async def _handle_pixel_algorithm_pick_tap(
@@ -452,18 +476,31 @@ def _bounty_menu(session, game: Game, lang: str) -> tuple[str, InlineKeyboardMar
     return text, bounty_keyboard(lang, balance)
 
 
-async def _preview_bounty(query, session, game: Game, lang: str) -> None:
-    logger.info("opened the bounty submenu", game_id=game.id)
-    text, markup = _bounty_menu(session, game, lang)
-    await query.edit_message_text(text=text, reply_markup=markup)
+def _preview_bounty(tap: _Tap) -> _Edit:
+    logger.info("opened the bounty submenu", game_id=tap.game.id)
+    text, markup = _bounty_menu(tap.session, tap.game, tap.lang)
+    return _Edit(text, markup)
 
 
-async def _preview_bounty_back(query, game: Game, lang: str) -> None:
-    logger.info("closed the bounty submenu", game_id=game.id)
-    await query.edit_message_text(
-        text=i18n.t("dm_start.preview_confirm_prompt", lang),
-        reply_markup=preview_keyboard(lang, game.pixel_algorithm),
-    )
+def _preview_bounty_back(tap: _Tap) -> _Edit:
+    logger.info("closed the bounty submenu", game_id=tap.game.id)
+    return _back_to_preview(tap)
+
+
+# The preview buttons that only change the setup step and the message. The
+# ones that post albums or answer with alerts have handlers of their own.
+_BRANCHES: Mapping[str, Callable[[_Tap], _Edit]] = MappingProxyType(
+    {
+        PREVIEW_CHANGE_IMAGE_CALLBACK_DATA: _preview_change_image,
+        PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA: _preview_change_image_upload,
+        PREVIEW_RESEARCH_CALLBACK_DATA: _preview_research,
+        PREVIEW_ADD_SYNONYM_CALLBACK_DATA: _preview_add_synonym,
+        PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA: _preview_pixel_algorithm,
+        PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA: _preview_pixel_algorithm_back,
+        PREVIEW_BOUNTY_CALLBACK_DATA: _preview_bounty,
+        PREVIEW_BOUNTY_BACK_CALLBACK_DATA: _preview_bounty_back,
+    }
+)
 
 
 async def _handle_bounty_pick_tap(session_factory, query, user) -> None:

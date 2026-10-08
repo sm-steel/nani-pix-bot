@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.jobs import timers
 from nani_pix_bot.jobs.timers import vote as vote_module
+from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models import GameVote
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
@@ -273,3 +274,23 @@ async def test_ballot_repost_job_posts_the_ballot(session_factory) -> None:
         game = session.get(Game, game_id)
         assert game is not None
         assert game.vote_message_id == 77
+
+
+async def test_the_vote_opening_posts_the_reveal_pair_without_a_winner(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _voting_game(session_factory, votes={})
+    post_reveal_pair = AsyncMock(return_value=(MagicMock(message_id=1), MagicMock(message_id=2)))
+    monkeypatch.setattr(vote_module, "post_reveal_pair", post_reveal_pair)
+    context = _job_context(session_factory, game_id)
+
+    await vote_module.post_vote_ballot(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, game_id
+    )
+
+    post_reveal_pair.assert_awaited_once()
+    assert post_reveal_pair.await_args is not None
+    kwargs = post_reveal_pair.await_args.kwargs
+    assert kwargs["target"] == RevealTarget(game_id, None)
+    assert kwargs["photos"] == (b"a", b"b")
+    assert "Frieren" in kwargs["caption"]

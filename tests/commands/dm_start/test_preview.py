@@ -30,12 +30,16 @@ from nani_pix_bot.models.enums import (
     GameStatus,
     PixelAlgorithm,
     Provider,
+    RevealEffect,
+    RevealStatus,
     SetupStep,
 )
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.economy import bounty
+from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.search import shikimori
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.settings import stage_config
@@ -161,6 +165,58 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
         preview.timeout_module.setup_abandon_job_name(fetched.id)
     )
     update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_preview_confirm_reserves_the_reveal_slot_and_starts_the_pre_render_before_the_post(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    game_id = _staged_setup_game(session_factory)
+    order: list[str] = []
+    start = MagicMock(side_effect=lambda *_: order.append("pregenerate"))
+    monkeypatch.setattr(preview.reveal, "start_pregeneration", start)
+    update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_callback_context(session_factory)
+    context.bot.send_photo = AsyncMock(
+        side_effect=lambda **_: order.append("post") or MagicMock(message_id=999)
+    )
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    start.assert_called_once_with(context.application, game_id)
+    assert order == ["pregenerate", "post"]
+    with session_factory() as session:
+        slot = reveal_store.load(session)
+        assert slot is not None
+        assert slot.game_id == game_id
+        assert slot.status == RevealStatus.PENDING
+        assert slot.image_choice is None
+
+
+async def test_preview_confirm_replaces_an_older_reveal_slot(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(preview.reveal, "start_pregeneration", MagicMock())
+    game_id = _staged_setup_game(session_factory)
+    with session_factory() as session:
+        reveal_store.reserve(session, game_id - 1000, RevealEffect.IRIS, "a")
+        session.commit()
+    update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_callback_context(session_factory)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        assert session.query(RevealVideo).count() == 1
+        slot = reveal_store.load(session)
+        assert slot is not None
+        assert slot.game_id == game_id
+        assert slot.image_choice is None
 
 
 async def test_preview_confirm_shows_and_pays_the_prompt_start_bonus(
@@ -291,6 +347,33 @@ async def test_preview_change_image_pick_screenshot_resumes_the_gallery(
         # set, not merely the image's provenance.
         assert fetched.screenshot_picker_provider == "shikimori"
     update.callback_query.edit_message_text.assert_awaited_once()
+
+
+async def test_preview_change_image_pick_screenshot_commits_before_the_gallery_goes_out(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #156: the gallery's fetch and send happen after the picker state
+    commits, so a send that blows up (cancelled, a bug) can't roll back
+    a screen the starter may already be looking at."""
+    monkeypatch.setattr(
+        shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
+    )
+    _staged_setup_game(session_factory, screenshot_source="shikimori", shikimori_id=52991)
+    update = _make_preview_callback_update(
+        data=PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA, user_id=1
+    )
+    context = _make_context(session_factory, search_client=MagicMock())
+    context.bot.send_media_group = AsyncMock(side_effect=RuntimeError("send blew up"))
+
+    with pytest.raises(RuntimeError, match="send blew up"):
+        await preview.preview_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == SetupStep.PICKING_SCREENSHOT
+        assert fetched.screenshot_picker_provider == "shikimori"
 
 
 async def test_preview_change_image_pick_screenshot_keeps_the_fallback_when_the_edit_times_out(
@@ -765,3 +848,37 @@ async def test_a_preview_button_logs_the_tap_at_info(
         if r.level == "INFO" and r.message == "tapped Add a synonym on the preview"
     ]
     assert line.extra["game_id"] == game_id
+
+
+@pytest.mark.parametrize(
+    ("data", "overrides", "step"),
+    [
+        (PREVIEW_CHANGE_IMAGE_CALLBACK_DATA, {}, SetupStep.AWAITING_PHOTO_CHANGE),
+        (
+            PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA,
+            {"screenshot_source": "shikimori", "shikimori_id": 52991},
+            SetupStep.AWAITING_PHOTO_CHANGE,
+        ),
+        (PREVIEW_RESEARCH_CALLBACK_DATA, {}, SetupStep.PICKING_METHOD),
+        (PREVIEW_ADD_SYNONYM_CALLBACK_DATA, {}, SetupStep.AWAITING_SYNONYM),
+    ],
+)
+async def test_a_preview_button_commits_its_step_before_editing_the_message(
+    session_factory, data: str, overrides: dict, step: SetupStep
+) -> None:
+    """Issue #292: the edit goes out after the session commits, so a
+    timeout on it — the new screen may well have landed — can't roll the
+    step back."""
+    _staged_setup_game(session_factory, **overrides)
+    update = _make_preview_callback_update(data=data, user_id=1)
+    update.callback_query.edit_message_text = AsyncMock(side_effect=TimedOut())
+    context = _make_context(session_factory)
+
+    with pytest.raises(TimedOut):
+        await preview.preview_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.setup_step == step
