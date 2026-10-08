@@ -4,7 +4,7 @@
 from dataclasses import dataclass
 
 from loguru import logger
-from telegram import Message, Update
+from telegram import Message, Update, User
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow.stage_post import (
@@ -18,6 +18,7 @@ from nani_pix_bot.commands.game_flow.stage_post import (
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
+from nani_pix_bot.jobs.timers.current_image import RevealTarget, RevealWinner
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
@@ -45,9 +46,20 @@ def _partial_reveal_line(session, game: Game, lang: str) -> str:
     return "\n" + i18n.t("guess.partial_reveal", lang, reveal=row.partial_reveal)
 
 
+def _reveal_winner(user: User) -> RevealWinner:
+    """The reveal badge's winner: "@username", or the full name for a
+    player with no username."""
+    return RevealWinner(user.id, f"@{user.username}" if user.username else user.full_name)
+
+
 def _prepare_won_announcement(
-    session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str, winner_name: str
+    session,
+    context: ContextTypes.DEFAULT_TYPE,
+    game: Game,
+    lang: str,
+    user: User,
 ) -> Announcement:
+    winner = _reveal_winner(user)
     original_bytes = require_original_image(game, "a WON outcome")
     timeout_module.cancel_timeout(context.job_queue, game.id)
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
@@ -55,20 +67,28 @@ def _prepare_won_announcement(
     if turn_state is not None:
         timeout_module.schedule_turn_timers(context.job_queue, turn_state)
     caption = i18n.t(
-        "guess.won_caption", lang, winner=winner_name, title=game_service.display_title(game, lang)
+        "guess.won_caption",
+        lang,
+        winner=user.full_name,
+        title=game_service.display_title(game, lang),
     )
     caption += game_service.game_id_line(game.id, lang)
-    return Announcement(photo=original_bytes, caption=caption)
+    return Announcement(photo=original_bytes, caption=caption, reveal=RevealTarget(game.id, winner))
 
 
 def _prepare_hard_mode_won_announcement(
-    session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str, winner_name: str
+    session,
+    context: ContextTypes.DEFAULT_TYPE,
+    game: Game,
+    lang: str,
+    user: User,
 ) -> Announcement:
     """The hard-mode analogue of _prepare_won_announcement — reveals the
     stored screenshot pair via post_current_images (a 2-photo album)
     instead of a single post_current_image call. Timer/turn-state
     handling is identical to the normal-mode helper; only the reveal
     photos and caption key differ."""
+    winner = _reveal_winner(user)
     photos = game_service.hard_mode_reveal_images(game)
     timeout_module.cancel_timeout(context.job_queue, game.id)
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
@@ -78,11 +98,11 @@ def _prepare_hard_mode_won_announcement(
     caption = i18n.t(
         "guess.hard_mode_won_caption",
         lang,
-        winner=winner_name,
+        winner=user.full_name,
         title=game_service.display_title(game, lang),
     )
     caption += game_service.game_id_line(game.id, lang)
-    return Announcement(photos=photos, caption=caption)
+    return Announcement(photos=photos, caption=caption, reveal=RevealTarget(game.id, winner))
 
 
 def _prepare_turn_advanced_announcement(
@@ -129,7 +149,7 @@ def _prepare_unsolved_announcement(
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
     caption = i18n.t("guess.unsolved_caption", lang, title=game_service.display_title(game, lang))
     caption += game_service.game_id_line(game.id, lang)
-    return Announcement(photo=original_bytes, caption=caption)
+    return Announcement(photo=original_bytes, caption=caption, reveal=RevealTarget(game.id, None))
 
 
 def _prepare_vote_opened(context: ContextTypes.DEFAULT_TYPE, game: Game) -> None:
@@ -141,7 +161,11 @@ def _prepare_vote_opened(context: ContextTypes.DEFAULT_TYPE, game: Game) -> None
 
 
 def _prepare_won_announcement_dispatch(
-    session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str, winner_name: str
+    session,
+    context: ContextTypes.DEFAULT_TYPE,
+    game: Game,
+    lang: str,
+    user: User,
 ) -> Announcement:
     """Picks the hard-mode or normal-mode WON announcement helper based
     on game.hard_mode — hoisted out of guess_command's own dispatch
@@ -150,8 +174,8 @@ def _prepare_won_announcement_dispatch(
     send_announcement. Neither _prepare_won_announcement nor
     _prepare_hard_mode_won_announcement is touched by this wrapper."""
     if game.hard_mode:
-        return _prepare_hard_mode_won_announcement(session, context, game, lang, winner_name)
-    return _prepare_won_announcement(session, context, game, lang, winner_name)
+        return _prepare_hard_mode_won_announcement(session, context, game, lang, user)
+    return _prepare_won_announcement(session, context, game, lang, user)
 
 
 def _prepare_wrong_feedback(
@@ -282,9 +306,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if outcome not in _NO_PARTIAL_REVEAL:
             suffix = _partial_reveal_line(session, game, lang) + suffix
         if outcome is game_service.GuessOutcome.WON:
-            announcement = _prepare_won_announcement_dispatch(
-                session, context, game, lang, user.full_name
-            )
+            announcement = _prepare_won_announcement_dispatch(session, context, game, lang, user)
             result = _GuessResult(game.id, None, with_suffix(announcement, suffix), True)
         else:
             result = _non_won_result(session, context, game, outcome, suffix)

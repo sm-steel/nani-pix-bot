@@ -14,6 +14,8 @@ from nani_pix_bot.commands.helpers.keyboards import (
     STOP_CONFIRM_CALLBACK_DATA,
     STOP_REVEAL_CALLBACK_DATA,
 )
+from nani_pix_bot.jobs import timers as timers_package
+from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models import CluePurchase
 from nani_pix_bot.models.enums import ClueKind, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
@@ -678,3 +680,45 @@ async def test_stop_prompt_and_stop_are_logged_at_info(session_factory, log_reco
         "ACTIVE",
         "not revealed",
     )
+
+
+async def test_stop_reveal_posts_the_reveal_without_a_winner(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    post_reveal = AsyncMock(return_value=MagicMock(message_id=1))
+    monkeypatch.setattr(timers_package, "post_reveal", post_reveal)
+    update = _make_callback_update(data=STOP_REVEAL_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    post_reveal.assert_awaited_once()
+    assert post_reveal.await_args is not None
+    kwargs = post_reveal.await_args.kwargs
+    assert kwargs["target"] == RevealTarget(game_id, None)
+    assert kwargs["photo"] == b"file123"
+    assert "Frieren: Beyond Journey's End" in kwargs["caption"]
+
+
+async def test_stop_reveal_hard_mode_posts_the_reveal_pair(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_hard_mode_game(session_factory, starter_id=1)
+    post_reveal_pair = AsyncMock(return_value=(MagicMock(message_id=1), MagicMock(message_id=2)))
+    monkeypatch.setattr(timers_package, "post_reveal_pair", post_reveal_pair)
+    update = _make_callback_update(data=STOP_REVEAL_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    post_reveal_pair.assert_awaited_once()
+    assert post_reveal_pair.await_args is not None
+    kwargs = post_reveal_pair.await_args.kwargs
+    assert kwargs["target"] == RevealTarget(game_id, None)
+    assert kwargs["photos"] == (b"image-a-bytes", b"image-b-bytes")
+    assert "Frieren: Beyond Journey's End" in kwargs["caption"]

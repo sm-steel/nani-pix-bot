@@ -13,7 +13,6 @@ Anything else vulture reports is dead code: remove it or wire it up.
 from typing import TYPE_CHECKING
 
 from nani_pix_bot.jobs import reveal as reveal_job
-from nani_pix_bot.jobs.timers import current_image
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.turn_state import TurnState
@@ -50,8 +49,6 @@ _kept = (
     # TEMPORARY — animated reveal (#295) building blocks not yet called;
     # removed by the wiring tasks (#308/#309/#310)
     reveal_job.reload_on_startup,
-    current_image.post_reveal,
-    current_image.post_reveal_pair,
 )
 
 if TYPE_CHECKING:

@@ -9,6 +9,7 @@ from telegram import Message
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.jobs import timers as timeout_module
+from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
@@ -38,13 +39,16 @@ class Announcement:
     sets `photo` (sent via post_current_image), a hard-mode outcome sets
     `photos` (sent via post_current_images as a 2-photo album) — see
     `send_announcement` in this module, which picks between the two
-    functions based on which field is set."""
+    functions based on which field is set. A non-stage ending that sets
+    `reveal` goes through post_reveal/post_reveal_pair instead, so the
+    animated reveal video is posted."""
 
     caption: str
     photo: bytes | None = None
     photos: tuple[bytes, bytes] | None = None
     is_stage_post: bool = False
     posted_log: PostedLog | None = None
+    reveal: RevealTarget | None = None
 
 
 def require_original_image(game: Game, situation: str) -> bytes:
@@ -127,9 +131,36 @@ def _log_posted(posted: PostedLog) -> None:
         )
 
 
+async def _send_reveal(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory,
+    announcement: Announcement,
+    reveal: RevealTarget,
+) -> Message | tuple[Message, ...] | None:
+    if announcement.photos is not None:
+        return await timeout_module.post_reveal_pair(
+            context,
+            session_factory,
+            target=reveal,
+            photos=announcement.photos,
+            caption=announcement.caption,
+        )
+    if announcement.photo is not None:
+        return await timeout_module.post_reveal(
+            context,
+            session_factory,
+            target=reveal,
+            photo=announcement.photo,
+            caption=announcement.caption,
+        )
+    raise RuntimeError("Announcement has neither photo nor photos set")
+
+
 async def _send(
     context: ContextTypes.DEFAULT_TYPE, session_factory, announcement: Announcement
 ) -> Message | tuple[Message, ...] | None:
+    if announcement.reveal is not None and not announcement.is_stage_post:
+        return await _send_reveal(context, session_factory, announcement, announcement.reveal)
     if announcement.photos is not None:
         post_album = (
             timeout_module.post_stage_images

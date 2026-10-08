@@ -11,9 +11,10 @@ from telegram.ext import ContextTypes, JobQueue
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until
 from nani_pix_bot.jobs.timers.current_image import (
+    RevealTarget,
     clear_image_if_sent,
-    post_current_image,
-    post_current_images,
+    post_reveal,
+    post_reveal_pair,
     post_stage_image,
     post_stage_images,
 )
@@ -220,8 +221,12 @@ async def _post_hard_mode_outcome(
             context, session_factory, photos=announcement.photos, caption=announcement.caption
         )
         return
-    sent = await post_current_images(
-        context, session_factory, photos=announcement.photos, caption=announcement.caption
+    sent = await post_reveal_pair(
+        context,
+        session_factory,
+        target=RevealTarget(game_id, None),
+        photos=announcement.photos,
+        caption=announcement.caption,
     )
     clear_image_if_sent(session_factory, game_id, sent)
     await maybe_overthrow(context, session_factory)
@@ -339,8 +344,12 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     if outcome is game_service.GuessOutcome.UNSOLVED:
-        sent = await post_current_image(
-            context, session_factory, photo=original_bytes, caption=unsolved_caption
+        sent = await post_reveal(
+            context,
+            session_factory,
+            target=RevealTarget(game_id, None),
+            photo=original_bytes,
+            caption=unsolved_caption,
         )
         clear_image_if_sent(session_factory, game_id, sent)
         await maybe_overthrow(context, session_factory)

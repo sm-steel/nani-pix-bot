@@ -20,6 +20,7 @@ from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
+from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
@@ -227,9 +228,10 @@ async def _announce_stop(
     plain notice if the button was a stale tap on a game that no longer
     had its image(s) (see the caller's own warning log for that case)."""
     if reveal and stopped_game.hard_mode_photos is not None:
-        sent = await timeout_module.post_current_images(
+        sent = await timeout_module.post_reveal_pair(
             context,
             session_factory,
+            target=RevealTarget(stopped_game.game_id, None),
             photos=stopped_game.hard_mode_photos,
             caption=i18n.t("stop.hard_mode_stopped_reveal_caption", lang, title=stopped_game.title)
             + game_service.game_id_line(stopped_game.game_id, lang),
@@ -237,9 +239,10 @@ async def _announce_stop(
         return sent is not None
 
     if reveal and stopped_game.original_bytes is not None:
-        sent = await timeout_module.post_current_image(
+        sent = await timeout_module.post_reveal(
             context,
             session_factory,
+            target=RevealTarget(stopped_game.game_id, None),
             photo=stopped_game.original_bytes,
             caption=i18n.t("stop.stopped_reveal_caption", lang, title=stopped_game.title)
             + game_service.game_id_line(stopped_game.game_id, lang),

@@ -7,6 +7,8 @@ from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import guess as guess_command_module
+from nani_pix_bot.jobs import timers as timers_package
+from nani_pix_bot.jobs.timers.current_image import RevealTarget, RevealWinner
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -975,3 +977,111 @@ async def test_won_caption_has_no_partial_reveal_line(session_factory) -> None:
 
     _, kwargs = context.bot.send_photo.await_args
     assert "Partly right" not in kwargs["caption"]
+
+
+def _patch_reveal(monkeypatch: pytest.MonkeyPatch, name: str, sent) -> AsyncMock:
+    mock = AsyncMock(return_value=sent)
+    monkeypatch.setattr(timers_package, name, mock)
+    return mock
+
+
+async def test_guess_win_posts_the_reveal_with_the_winners_handle(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory)
+    post_reveal = _patch_reveal(monkeypatch, "post_reveal", MagicMock(message_id=1))
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    post_reveal.assert_awaited_once()
+    assert post_reveal.await_args is not None
+    kwargs = post_reveal.await_args.kwargs
+    assert kwargs["target"] == RevealTarget(game_id, RevealWinner(2, "@guesser"))
+    assert kwargs["photo"] == b"file123"
+    assert "Frieren: Beyond Journey's End" in kwargs["caption"]
+
+
+async def test_guess_win_without_a_username_badges_the_full_name(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory)
+    post_reveal = _patch_reveal(monkeypatch, "post_reveal", MagicMock(message_id=1))
+    update = _make_update(user_id=2, args=["frieren"])
+    update.effective_user.username = None
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert post_reveal.await_args is not None
+    assert post_reveal.await_args.kwargs["target"] == RevealTarget(
+        game_id, RevealWinner(2, "Guesser Name")
+    )
+
+
+async def test_guess_hard_mode_win_posts_the_reveal_pair(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_hard_mode_game(session_factory)
+    post_reveal_pair = _patch_reveal(
+        monkeypatch, "post_reveal_pair", (MagicMock(message_id=1), MagicMock(message_id=2))
+    )
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    post_reveal_pair.assert_awaited_once()
+    assert post_reveal_pair.await_args is not None
+    kwargs = post_reveal_pair.await_args.kwargs
+    assert kwargs["target"] == RevealTarget(game_id, RevealWinner(2, "@guesser"))
+    assert kwargs["photos"] == (b"image-a-bytes", b"image-b-bytes")
+    assert "Frieren: Beyond Journey's End" in kwargs["caption"]
+
+
+async def test_guess_hard_mode_win_without_a_username_badges_the_full_name(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_hard_mode_game(session_factory)
+    post_reveal_pair = _patch_reveal(
+        monkeypatch, "post_reveal_pair", (MagicMock(message_id=1), MagicMock(message_id=2))
+    )
+    update = _make_update(user_id=2, args=["frieren"])
+    update.effective_user.username = None
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert post_reveal_pair.await_args is not None
+    assert post_reveal_pair.await_args.kwargs["target"] == RevealTarget(
+        game_id, RevealWinner(2, "Guesser Name")
+    )
+
+
+async def test_guess_unsolved_posts_the_reveal_without_a_winner(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory, current_stage=PixelStage.STAGE_5, wrong_guess_count=7)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_5, wrong_guess_limit=8)
+    post_reveal = _patch_reveal(monkeypatch, "post_reveal", MagicMock(message_id=1))
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    post_reveal.assert_awaited_once()
+    assert post_reveal.await_args is not None
+    kwargs = post_reveal.await_args.kwargs
+    assert kwargs["target"] == RevealTarget(game_id, None)
+    assert kwargs["photo"] == b"file123"
