@@ -11,8 +11,8 @@ SECTIONS = {
     "en": ("### ✨ New", "### 🛠 Fixed"),
     "ru": ("### ✨ Новое", "### 🛠 Исправлено"),
 }
-MAX_BULLETS = 8
-MAX_PAGE_CHARS = 3000
+# Telegram's rich-message size limit (Bot API): a transport ceiling, not a content rule.
+RICH_MESSAGE_LIMIT = 32768
 HEADING = re.compile(r"^## v\d+\.\d+\.\d+ · \d{4}-\d{2}-\d{2}$")
 FORBIDDEN = {
     "issue or PR number": re.compile(r"#\d+"),
@@ -140,13 +140,13 @@ def _sections(markdown: str) -> list[tuple[str, int]]:
 
 
 @pytest.mark.parametrize("lang", LANGS)
-def test_real_notes_have_only_the_two_sections_and_few_bullets(lang: str) -> None:
+def test_real_notes_have_only_the_two_sections_each_with_bullets(lang: str) -> None:
     for release in release_notes.load(lang):
         sections = _sections(release.markdown)
         headings = [heading for heading, _ in sections]
         assert headings in ([], *([s] for s in SECTIONS[lang]), list(SECTIONS[lang])), headings
         for heading, count in sections:
-            assert 1 <= count <= MAX_BULLETS, (release.version, heading, count)
+            assert count >= 1, (release.version, heading)
 
 
 @pytest.mark.parametrize("lang", LANGS)
@@ -180,6 +180,6 @@ def test_real_notes_carry_no_internals(lang: str) -> None:
 
 
 @pytest.mark.parametrize("lang", LANGS)
-def test_every_real_page_is_short(lang: str) -> None:
+def test_every_real_release_fits_in_one_rich_message(lang: str) -> None:
     for release in release_notes.load(lang):
-        assert len(release.markdown) <= MAX_PAGE_CHARS, release.version
+        assert len(release.markdown) <= RICH_MESSAGE_LIMIT, release.version

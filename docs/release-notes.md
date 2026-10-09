@@ -40,8 +40,11 @@ them as a rich message and pages with `ver:<page>`.
 ## What a release's notes look like
 
 - Two optional sections, in this order: `### ✨ New` and `### 🛠 Fixed`. Each
-  is a bullet list (`- `) of **at most 8 bullets**. Nothing else: no other
-  headings, no prose between sections.
+  is a bullet list (`- `). Nothing else: no other headings, no prose between
+  sections.
+- **No bullet limit, but condense.** A big release is condensed, never cut
+  to a count: one bullet per feature (many commits of one feature are one
+  bullet), related changes merged into one, the most noticeable first.
 - **One sentence per bullet**, written for players, in the bot's own playful
   voice (read `locales/en.json` / `ru.json` for it). Use the bot's symbols
   (💠 pixels, 🌟 champion points, 👑 wins, 🏆 achievement points, ❌ wrong
@@ -66,9 +69,12 @@ become one bullet.
 
 Both languages have the same sections, the same number of bullets in each
 section, and the same previous-release headings. `tests/services/
-test_release_notes.py` checks this, the section and bullet rules, and
-forbidden tokens (`#123`, commit hashes, `.py`, `foo()` outside a code span)
-on the real files, and keeps every page under 3000 characters.
+test_release_notes.py` checks this parity, the shape (only those two
+sections, each with at least one bullet, proper previous-release headings,
+at most four of them), and forbidden tokens (`#123`, commit hashes, `.py`,
+`foo()` outside a code span) on the real files. The only size check is
+Telegram's transport ceiling: a page must fit in one rich message (32768
+characters).
 
 ## When the notes are written
 

@@ -15,7 +15,8 @@ PREVIOUS = [
     Release("1.2.0", "2026-10-08", "### 🛠 Fixed\n- Mended."),
     Release("1.1.0", "2026-10-01", "### ✨ New\n- Older."),
 ]
-MAX_PAGE_CHARS = 3000
+# Telegram's rich-message size limit (Bot API): a transport ceiling, not a content rule.
+RICH_MESSAGE_LIMIT = 32768
 
 
 @pytest.fixture(autouse=True)
@@ -218,8 +219,8 @@ def test_page_data_round_trips() -> None:
 
 
 @pytest.mark.parametrize("lang", ["en", "ru"])
-def test_every_real_page_stays_well_under_the_rich_limit(lang: str) -> None:
+def test_every_real_page_fits_in_one_rich_message(lang: str) -> None:
     releases = release_notes.load(lang)
     for page in range(len(releases)):
         markdown, _markup = version_command.page_view(releases, page, "1.3.0", lang)
-        assert len(markdown) <= MAX_PAGE_CHARS, page
+        assert len(markdown) <= RICH_MESSAGE_LIMIT, page

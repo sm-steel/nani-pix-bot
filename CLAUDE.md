@@ -434,8 +434,8 @@ shipped ones), not the commit list semantic-release puts on GitHub. **Every
 PR into `develop` that a player or admin could notice adds its bullets to
 `release-notes-en.md` and `release-notes-ru.md` in that same PR**; the
 release PR only reviews them, and nothing is committed to these files during
-or after a release. The rules (what qualifies, the voice, the 8-bullet cap)
-and the rotation into `previous-releases-*.md` are in
+or after a release. The rules (what qualifies, the voice, condensing, not
+capping) and the rotation into `previous-releases-*.md` are in
 [`docs/release-notes.md`](docs/release-notes.md).
 
 ## Coding practices
