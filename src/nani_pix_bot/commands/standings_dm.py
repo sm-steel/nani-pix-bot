@@ -49,6 +49,7 @@ def rules_markdown(lang: str, tz_name: str) -> str:
         "## " + _t("standings.rules.title", lang),
         _t("standings.rules.intro", lang),
         "\n".join(table),
+        _t("standings.rules.clean", lang, bonus=periods.CLEAN_BONUS),
         _t("standings.rules.hard", lang, turns=turns),
         _t("standings.rules.host", lang, points=periods.HOST_POINTS),
         _t("standings.rules.unsolved", lang),
@@ -74,6 +75,11 @@ def parse_page(data: str) -> int | None:
 
 
 def _why(gain: Gain, lang: str) -> str:
+    why = _reason(gain, lang)
+    return why + i18n.t("standings.recent.clean", lang) if gain.clean else why
+
+
+def _reason(gain: Gain, lang: str) -> str:
     if gain.role is GainRole.HOST:
         return i18n.t("standings.recent.host", lang, game=gain.game_id)
     if gain.hard_mode:

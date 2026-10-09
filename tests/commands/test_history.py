@@ -136,7 +136,7 @@ def test_a_won_game_shows_the_full_record_and_its_guesses(session: Session) -> N
         "Won by @alice at stage 2/5 with /guess",
         "Solved in 1h 5m",
         "Bounty paid out: 30 💠",
-        "Standings: +4 🌟 to the winner",
+        "Standings: +5 🌟 to the winner",  # stage 2 + the clean bonus
         "Guesses: 2",
     ):
         assert md_escape(fact) in markdown, fact

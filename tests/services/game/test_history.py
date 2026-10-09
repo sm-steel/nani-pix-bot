@@ -106,7 +106,7 @@ def test_detail_of_a_won_game_carries_how_it_was_won_and_the_guess_log(session: 
     assert detail.how == "guess"
     assert detail.pot == 30
     assert detail.seconds == 600
-    assert detail.points == 4  # a stage-2 win
+    assert detail.points == 5  # a stage-2 win (4) plus the clean bonus
     assert detail.unsolved is None
     assert [(g.text, g.correct) for g in detail.guesses] == [("naruto", False), ("frieren", True)]
 

@@ -1294,7 +1294,11 @@ Choose with `/title` (DM only; an earned title or "none").
   in the group timezone (the quiet-hours timezone, UTC if none). The first
   partial periods after launch count normally.
 - **Score.** A win at stage 1–5 is worth 5/4/3/2/1; a HARD MODE win at
-  turn 1/2 is worth 6/4; hosting a game someone solved is +1.
+  turn 1/2 is worth 6/4; hosting a game someone solved is +1. A **clean
+  solve** (a normal-mode win with no wrong guess of the winner's own in
+  that game) is worth +1 more; a host-confirmed win (`/correct`) doesn't
+  count the confirmed guess as wrong. HARD MODE gets no clean bonus. The
+  recent-changes feed marks a clean win with ✨.
 - **Live view.** `/standings` (topic or DM) shows the running week, month
   and year in one message: each top 5 as a table of 🌟 score and 👑 wins,
   plus your own line (rank, score, wins) when you are outside the top 5, or

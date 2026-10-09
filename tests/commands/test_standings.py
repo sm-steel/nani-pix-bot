@@ -71,8 +71,8 @@ def _seed(session_factory) -> None:
         )
         session.flush()
         for player in range(1, 6):
-            _win(session, player, player, 1, now)  # 5 each
-        _win(session, VIEWER, 6, 5, now)  # 1 point, outside the top five
+            _win(session, player, player, 1, now)  # 5 + the clean bonus each
+        _win(session, VIEWER, 6, 5, now)  # 1 + the clean bonus, outside the top five
 
 
 def _update(user_id: int, thread_id: int | None = 7, chat_type: str = "supergroup") -> MagicMock:
@@ -126,7 +126,7 @@ async def test_posts_week_month_and_year_in_order_with_tables(session_factory) -
     assert markdown.count("\n| 1 | ") == 3
     assert markdown.count(r"@kurogane\_42") == 3
     assert "\n| 6 | " not in markdown
-    assert markdown.count(r"You: \#6 · 1 🌟 · 1 👑") == 3
+    assert markdown.count(r"You: \#6 · 2 🌟 · 1 👑") == 3
 
 
 async def test_a_viewer_without_a_score_gets_the_unscored_line(session_factory) -> None:

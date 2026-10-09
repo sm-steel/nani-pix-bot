@@ -46,11 +46,56 @@ def test_a_dst_week_spans_its_real_local_midnights() -> None:
 
 
 def _won(winner: int, game: int, ended: datetime, **data: Any):
-    facts = {"stage": 1, "hard_mode": False, "ended_at": ended.isoformat()} | data
+    """A win with one wrong guess of the winner's own (no clean bonus)
+    unless the test says otherwise."""
+    facts = {"stage": 1, "hard_mode": False, "winner_wrong": 1, "ended_at": ended.isoformat()}
+    facts |= data
     return ev(EventType.GAME_WON, winner, HOST, game=game, **facts)
 
 
 OCT = periods.period_at(PeriodType.MONTH, datetime(2026, 10, 15, tzinfo=UTC), ZoneInfo("UTC"))
+OCT_2 = datetime(2026, 10, 2, tzinfo=UTC)
+
+
+def test_a_win_with_no_wrong_guesses_of_your_own_earns_the_clean_bonus() -> None:
+    clean = _won(A, 1, OCT_2, stage=2, winner_wrong=0)
+    assert periods.is_clean(clean)
+    assert periods.win_points(clean) == periods.WIN_POINTS[1] + periods.CLEAN_BONUS
+
+
+def test_a_wrong_guess_of_your_own_loses_the_clean_bonus() -> None:
+    won = _won(A, 1, OCT_2, stage=2, winner_wrong=1)
+    assert not periods.is_clean(won)
+    assert periods.win_points(won) == periods.WIN_POINTS[1]
+
+
+def test_hard_mode_never_gets_the_clean_bonus() -> None:
+    won = _won(A, 1, OCT_2, stage=1, hard_mode=True, winner_wrong=0)
+    assert not periods.is_clean(won)
+    assert periods.win_points(won) == periods.HARD_POINTS[0]
+
+
+def test_a_host_confirmed_guess_is_not_one_of_your_wrong_guesses() -> None:
+    # /correct stores the confirmed guess as wrong (the matcher missed it).
+    confirmed = _won(A, 1, OCT_2, how="correct", winner_wrong=1)
+    assert periods.wrong_before_win(confirmed) == 0
+    assert periods.is_clean(confirmed)
+    assert periods.wrong_before_win(_won(A, 2, OCT_2, how="correct", winner_wrong=3)) == 2
+    assert periods.wrong_before_win(_won(A, 3, OCT_2, how="correct", winner_wrong=0)) == 0
+
+
+def test_an_old_win_without_the_wrong_count_counts_as_clean() -> None:
+    old = ev(EventType.GAME_WON, A, HOST, game=1, stage=1, hard_mode=False, ended_at="x")
+    assert periods.wrong_before_win(old) == 0
+    assert periods.is_clean(old)
+
+
+def test_gains_mark_a_clean_win_but_never_the_host_share() -> None:
+    gains = periods.gains([_won(A, 1, OCT_2, stage=1, winner_wrong=0)], OCT)
+    assert [(g.role, g.points, g.clean) for g in gains] == [
+        (periods.GainRole.WIN, periods.WIN_POINTS[0] + periods.CLEAN_BONUS, True),
+        (periods.GainRole.HOST, periods.HOST_POINTS, False),
+    ]
 
 
 def test_score_weights_stages_and_hard_mode_and_credits_the_host() -> None:
@@ -132,6 +177,7 @@ def test_a_host_who_also_wins_gets_both_shares_like_the_standings() -> None:
         game=1,
         stage=1,
         hard_mode=False,
+        winner_wrong=1,
         ended_at=datetime(2026, 10, 2, tzinfo=UTC).isoformat(),
     )
     gains = periods.gains([won], OCT)

@@ -12,7 +12,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import EventType, PeriodType
+from nani_pix_bot.models.enums import EventType, PeriodType, WinMethod
 from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.period import PeriodResult, PeriodState
 from nani_pix_bot.services import players
@@ -34,6 +34,8 @@ TOP_SIZE = 3
 WIN_POINTS = (5, 4, 3, 2, 1)
 HARD_POINTS = (6, 4)
 HOST_POINTS = 1
+# A normal-mode win with no wrong guess of the winner's own.
+CLEAN_BONUS = 1
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
@@ -85,10 +87,26 @@ def _ended(event: LoggedEvent) -> datetime:
     return datetime.fromisoformat(event.data["ended_at"])
 
 
+def wrong_before_win(event: LoggedEvent) -> int:
+    """The winner's own wrong guesses in the game they won. A host-confirmed
+    win (/correct) stores the confirmed guess as wrong, because the matcher
+    missed it (win_facts._wrong_guesses), so it doesn't count here. A win
+    logged before `winner_wrong` existed counts as 0."""
+    wrong = event.data.get("winner_wrong") or 0
+    if event.data.get("how") == WinMethod.CORRECT.value:
+        wrong -= 1
+    return max(wrong, 0)
+
+
+def is_clean(event: LoggedEvent) -> bool:
+    return not event.data["hard_mode"] and wrong_before_win(event) == 0
+
+
 def win_points(event: LoggedEvent) -> int:
     table = HARD_POINTS if event.data["hard_mode"] else WIN_POINTS
     stage = event.data["stage"]
-    return table[stage - 1] if 1 <= stage <= len(table) else 0
+    points = table[stage - 1] if 1 <= stage <= len(table) else 0
+    return points + CLEAN_BONUS if is_clean(event) else points
 
 
 class GainRole(StrEnum):
@@ -146,6 +164,7 @@ class Gain:
     at: datetime
     stage: int
     hard_mode: bool
+    clean: bool  # the winner's share earned the clean bonus
     rank_before: int | None  # None: no score in this period before the win
     rank_after: int | None
 
@@ -168,6 +187,7 @@ def gains(won_events: Iterable[LoggedEvent], period: Period) -> list[Gain]:
                 at=_ended(event),
                 stage=event.data["stage"],
                 hard_mode=bool(event.data["hard_mode"]),
+                clean=role is GainRole.WIN and is_clean(event),
                 rank_before=_rank(before, player_id),
                 rank_after=_rank(after, player_id),
             )

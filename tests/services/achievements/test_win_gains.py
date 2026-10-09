@@ -41,7 +41,7 @@ def _win(
         seconds=None,
         last_slot=False,
         distinct_guessers=1,
-        winner_wrong=0,
+        winner_wrong=1,  # no clean bonus: keeps the point arithmetic below plain
         first_guess=False,
         ended_at=ended.isoformat(),
     )
