@@ -7,7 +7,7 @@ import hashlib
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
@@ -70,8 +70,13 @@ _SHADE_RAMP = (400, 640)  # x range where the unlock veil ramps up
 _PODIUM_SHADE = (0.60, 0.86)  # overall, title and text bands
 _PODIUM_BANDS = ((-40, 130), (440, _HEIGHT + 40))
 _BAND_BLUR = 14  # soft band edges
-# (index into entries, centre x, avatar size): #1 in the middle and larger.
-_PODIUM_SLOTS = ((0, 600, 230), (1, 300, 170), (2, 900, 170))
+# Avatar sizes: #1 (every co-champion) larger than #2 and #3.
+_CHAMPION_SIZE = 230
+_PLACED_SIZE = 170
+_PODIUM_NAME_WIDTH = 280
+_BADGE_GAP = 12  # at least this much clear space between two badges
+# The most players the card draws; the summary text lists everyone placed.
+PODIUM_CARD_MAX = 4
 
 
 @dataclass(frozen=True)
@@ -92,7 +97,21 @@ class PodiumEntry:
     name: str
     score_label: str
     seed: int
+    rank: int  # the competition rank: co-champions all hold 1
     avatar: bytes | None = None
+
+
+@dataclass(frozen=True)
+class PodiumSlot:
+    entry: int  # index into the card's entries
+    place: int  # rank - 1: the ring colour and the champion-or-not styling
+    x: int  # centre
+    size: int  # avatar diameter
+    name_width: int
+
+
+# The plain 1/2/3 podium: #1 in the middle and larger, #2 left, #3 right.
+_CLASSIC_X = (600, 300, 900)
 
 
 @dataclass(frozen=True)
@@ -372,19 +391,74 @@ def render_unlock_card(
     return _png(image)
 
 
-def _podium_entry(image: Image.Image, entry: PodiumEntry, slot: tuple[int, int, int]) -> None:
-    index, centre_x, size = slot
-    draw = ImageDraw.Draw(image)
-    face = avatar_disc(entry.avatar, entry.name, entry.seed, size * SUPERSAMPLE)
-    centre_y = 300 + (0 if index == 0 else 30)
-    _paste_badge(
-        image, badge_ring(face, _PLACES[index], _PLACE_RARITIES[index]), (centre_x, centre_y)
+def _tier_size(place: int) -> int:
+    return _CHAMPION_SIZE if place == 0 else _PLACED_SIZE
+
+
+def _classic_slots(count: int) -> tuple[PodiumSlot, ...]:
+    return tuple(
+        PodiumSlot(i, i, _CLASSIC_X[i], _tier_size(i), _PODIUM_NAME_WIDTH) for i in range(count)
     )
-    text_y = centre_y + size // 2 + _RING_TOTAL + 40
-    name_font = font(36 if index == 0 else 30, bold=True)
-    name = _fit(draw, entry.name, name_font, 280)
-    draw.text((centre_x, text_y), name, font=name_font, fill=_TEXT, anchor="mm")
-    _score_line(image, entry.score_label, (centre_x, text_y + 44))
+
+
+def _row_order(ranks: tuple[int, ...]) -> list[int]:
+    """Entry indexes left to right: the co-champions in the middle, the
+    others alternating left and right of them (the first one left, like #2)."""
+    champions = [i for i, rank in enumerate(ranks) if rank == 1]
+    others = [i for i, rank in enumerate(ranks) if rank != 1]
+    return others[0::2][::-1] + champions + others[1::2]
+
+
+def _shown(ranks: tuple[int, ...]) -> list[int]:
+    """The entries the card has room for: the best ranks first (so every
+    co-champion), then stored order; kept in stored order."""
+    best = sorted(range(len(ranks)), key=lambda i: (ranks[i], i))
+    return sorted(best[:PODIUM_CARD_MAX])
+
+
+def podium_slots(ranks: tuple[int, ...]) -> tuple[PodiumSlot, ...]:
+    """Where each entry sits, for at most PODIUM_CARD_MAX of them (see
+    _shown), so the badges never shrink below the four-entry sizes."""
+    shown = _shown(ranks)
+    slots = _row_slots(tuple(ranks[i] for i in shown))
+    return tuple(replace(slot, entry=shown[slot.entry]) for slot in slots)
+
+
+def _row_slots(ranks: tuple[int, ...]) -> tuple[PodiumSlot, ...]:
+    """By rank rather than list position. A plain 1/2/3 podium (or its
+    first one or two places) keeps the classic layout; shared ranks spread
+    every entry evenly in one row, champions large in the middle, shrunk
+    only as far as needed to keep the badges apart."""
+    if ranks == tuple(range(1, len(ranks) + 1)) and len(ranks) <= len(_CLASSIC_X):
+        return _classic_slots(len(ranks))
+    spacing = _WIDTH / (len(ranks) + 1)
+    fit = int(spacing) - 2 * _RING_TOTAL - _BADGE_GAP
+    name_width = min(_PODIUM_NAME_WIDTH, int(spacing) - 20)
+    slots = [
+        PodiumSlot(
+            entry=entry,
+            place=ranks[entry] - 1,
+            x=round((column + 1) * spacing),
+            size=min(_tier_size(ranks[entry] - 1), fit),
+            name_width=name_width,
+        )
+        for column, entry in enumerate(_row_order(ranks))
+    ]
+    return tuple(sorted(slots, key=lambda slot: slot.entry))
+
+
+def _podium_entry(image: Image.Image, entry: PodiumEntry, slot: PodiumSlot) -> None:
+    draw = ImageDraw.Draw(image)
+    face = avatar_disc(entry.avatar, entry.name, entry.seed, slot.size * SUPERSAMPLE)
+    champion = slot.place == 0
+    centre_y = 300 + (0 if champion else 30)
+    ring = badge_ring(face, _PLACES[slot.place], _PLACE_RARITIES[slot.place])
+    _paste_badge(image, ring, (slot.x, centre_y))
+    text_y = centre_y + slot.size // 2 + _RING_TOTAL + 40
+    name_font = font(36 if champion else 30, bold=True)
+    name = _fit(draw, entry.name, name_font, slot.name_width)
+    draw.text((slot.x, text_y), name, font=name_font, fill=_TEXT, anchor="mm")
+    _score_line(image, entry.score_label, (slot.x, text_y + 44))
 
 
 def _score_line(image: Image.Image, label: str, centre: tuple[int, int]) -> None:
@@ -404,7 +478,6 @@ def render_podium_card(card: PodiumCard, background: bytes | None = None) -> byt
     title_font = font(52, bold=True)
     title = _fit(draw, card.title, title_font, _WIDTH - 2 * _MARGIN)
     draw.text((_WIDTH / 2, 70), title, font=title_font, fill=_TEXT, anchor="mm")
-    for slot in _PODIUM_SLOTS:
-        if slot[0] < len(card.entries):
-            _podium_entry(image, card.entries[slot[0]], slot)
+    for slot in podium_slots(tuple(entry.rank for entry in card.entries)):
+        _podium_entry(image, card.entries[slot.entry], slot)
     return _png(image)

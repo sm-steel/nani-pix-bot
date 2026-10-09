@@ -1,7 +1,7 @@
 """Weekly / monthly / yearly champions (spec §6): period math in the group
 timezone, scoring from game_won events, and freezing a closed period."""
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
@@ -12,7 +12,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import EventType, PeriodType
+from nani_pix_bot.models.enums import EventType, PeriodType, WinMethod
 from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.period import PeriodResult, PeriodState
 from nani_pix_bot.services import players
@@ -30,11 +30,14 @@ PERIOD_OF_CHAMPION: Mapping[str, PeriodType] = MappingProxyType(
     {key: ptype for ptype, key in CHAMPION_KEYS.items()}
 )
 TOP_SIZE = 3
+# Everyone tied at #1 is champion, up to this many; a bigger tie crowns nobody.
+CHAMPION_CAP = 3
 # Index = stage - 1 (normal) or turn - 1 (HARD MODE).
 WIN_POINTS = (5, 4, 3, 2, 1)
 HARD_POINTS = (6, 4)
 HOST_POINTS = 1
-_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+# A normal-mode win with no wrong guess of the winner's own.
+CLEAN_BONUS = 1
 
 
 @dataclass(frozen=True)
@@ -71,24 +74,50 @@ def following(period: Period, tz: ZoneInfo) -> Period:
 
 @dataclass
 class Standing:
+    """One player's period total, plus the two visible tie-breakers: their
+    own wrong guesses and total solve seconds, over the wins counted in the
+    period only."""
+
     player_id: int
     score: int = 0
     wins: int = 0
-    reached_at: datetime = _EPOCH
+    wrong: int = 0
+    seconds: float = 0.0
 
-    def add(self, points: int, at: datetime) -> None:
-        self.score += points
-        self.reached_at = at
+
+Placed = tuple[int, Standing]  # (shared competition rank, standing)
 
 
 def _ended(event: LoggedEvent) -> datetime:
     return datetime.fromisoformat(event.data["ended_at"])
 
 
-def win_points(event: LoggedEvent) -> int:
+def wrong_before_win(event: LoggedEvent) -> int:
+    """The winner's own wrong guesses in the game they won. Every win the
+    matcher didn't catch (/correct, a HARD MODE vote, /setwinner) stores the
+    winning guess as wrong (win_facts._wrong_guesses), so it doesn't count
+    here. A win logged before `winner_wrong` existed counts as 0."""
+    wrong = event.data.get("winner_wrong") or 0
+    if event.data.get("how", WinMethod.GUESS.value) != WinMethod.GUESS.value:
+        wrong -= 1
+    return max(wrong, 0)
+
+
+def _base_points(event: LoggedEvent) -> int:
+    """The stage (or HARD MODE turn) points; 0 for an unknown stage."""
     table = HARD_POINTS if event.data["hard_mode"] else WIN_POINTS
     stage = event.data["stage"]
     return table[stage - 1] if 1 <= stage <= len(table) else 0
+
+
+def is_clean(event: LoggedEvent) -> bool:
+    """Earns CLEAN_BONUS (and the feed's ✨): a scoring normal-mode win with
+    no wrong guess of the winner's own. An unknown stage earns nothing."""
+    return not event.data["hard_mode"] and _base_points(event) > 0 and wrong_before_win(event) == 0
+
+
+def win_points(event: LoggedEvent) -> int:
+    return _base_points(event) + (CLEAN_BONUS if is_clean(event) else 0)
 
 
 class GainRole(StrEnum):
@@ -107,12 +136,13 @@ def _shares(event: LoggedEvent) -> list[tuple[int, int, GainRole]]:
 
 
 def _tally(board: dict[int, Standing], event: LoggedEvent) -> None:
-    ended = _ended(event)
     for player_id, points, role in _shares(event):
         standing = board.setdefault(player_id, Standing(player_id))
-        standing.add(points, ended)
+        standing.score += points
         if role is GainRole.WIN:
             standing.wins += 1
+            standing.wrong += wrong_before_win(event)
+            standing.seconds += event.data.get("seconds") or 0
 
 
 def _counted(won_events: Iterable[LoggedEvent], period: Period) -> list[LoggedEvent]:
@@ -123,9 +153,27 @@ def _counted(won_events: Iterable[LoggedEvent], period: Period) -> list[LoggedEv
     return sorted(in_period, key=_ended)
 
 
+def rank_key(s: Standing) -> tuple[int, int, int, float]:
+    """More 🌟, then more 👑 wins, then fewer ❌ wrong guesses, then less ⏱."""
+    return (-s.score, -s.wins, s.wrong, s.seconds)
+
+
 def _ranked(board: dict[int, Standing]) -> list[Standing]:
-    ranked = (s for s in board.values() if s.score > 0)
-    return sorted(ranked, key=lambda s: (-s.score, -s.wins, s.reached_at))
+    # Stable: players equal on every key keep the order they first scored in.
+    return sorted((s for s in board.values() if s.score > 0), key=rank_key)
+
+
+def ranked(board: Sequence[Standing]) -> list[Placed]:
+    """Competition ranks for a sorted board: players equal on every key
+    share the place, and the next one skips past them (1, 1, 3)."""
+    placed: list[Placed] = []
+    for index, standing in enumerate(board):
+        if not placed or rank_key(standing) != rank_key(placed[-1][1]):
+            rank = index + 1
+        else:
+            rank = placed[-1][0]
+        placed.append((rank, standing))
+    return placed
 
 
 def score(won_events: Iterable[LoggedEvent], period: Period) -> list[Standing]:
@@ -146,6 +194,7 @@ class Gain:
     at: datetime
     stage: int
     hard_mode: bool
+    clean: bool  # the winner's share earned the clean bonus
     rank_before: int | None  # None: no score in this period before the win
     rank_after: int | None
 
@@ -168,6 +217,7 @@ def gains(won_events: Iterable[LoggedEvent], period: Period) -> list[Gain]:
                 at=_ended(event),
                 stage=event.data["stage"],
                 hard_mode=bool(event.data["hard_mode"]),
+                clean=role is GainRole.WIN and is_clean(event),
                 rank_before=_rank(before, player_id),
                 rank_after=_rank(after, player_id),
             )
@@ -213,6 +263,7 @@ class PeriodGain:
     score: int
     rank_before: int | None  # None: no score in this period before the win
     rank_after: int
+    shared: bool = False  # someone else holds rank_after too
 
 
 def win_event(session: Session, game_id: int) -> LoggedEvent | None:
@@ -227,29 +278,34 @@ def win_event(session: Session, game_id: int) -> LoggedEvent | None:
     return to_event(row) if row is not None else None
 
 
+def _placed(board: list[Standing], player_id: int) -> Placed | None:
+    return next(((r, s) for r, s in ranked(board) if s.player_id == player_id), None)
+
+
 def _rank(board: list[Standing], player_id: int) -> int | None:
-    for rank, standing in enumerate(board, start=1):
-        if standing.player_id == player_id:
-            return rank
-    return None
+    placed = _placed(board, player_id)
+    return None if placed is None else placed[0]
 
 
 def _gain_in(session: Session, period: Period, won: LoggedEvent) -> PeriodGain | None:
     if won.actor_id is None or not period.start <= _ended(won) < period.end:
         return None
     events = _won_events(session, period)
-    after = score(events, period)
-    rank_after = _rank(after, won.actor_id)
-    if rank_after is None:
+    board = score(events, period)
+    placed = _placed(board, won.actor_id)
+    if placed is None:
         return None
+    rank_after, standing = placed
+    holders = sum(1 for rank, _ in ranked(board) if rank == rank_after)
     before = score([e for e in events if e.game_id != won.game_id], period)
     return PeriodGain(
         period=period,
         player_id=won.actor_id,
         gain=win_points(won),
-        score=after[rank_after - 1].score,
+        score=standing.score,
         rank_before=_rank(before, won.actor_id),
         rank_after=rank_after,
+        shared=holders > 1,
     )
 
 
@@ -267,9 +323,8 @@ def rank_of(session: Session, period: Period, player_id: int) -> int | None:
     return _rank(standings(session, period), player_id)
 
 
-def finalize(session: Session, period: Period) -> list[Standing]:
-    top = standings(session, period)[:TOP_SIZE]
-    for rank, standing in enumerate(top, start=1):
+def _record(session: Session, period: Period, top: list[Placed]) -> None:
+    for rank, standing in top:
         session.add(
             PeriodResult(
                 period_type=period.type,
@@ -280,17 +335,41 @@ def finalize(session: Session, period: Period) -> list[Standing]:
                 wins=standing.wins,
             )
         )
+
+
+def _crowned(period: Period, top: list[Placed]) -> list[int]:
+    """Everyone tied at #1, up to CHAMPION_CAP; a bigger tie crowns nobody."""
+    tied = [s.player_id for rank, s in top if rank == 1]
+    if len(tied) <= CHAMPION_CAP:
+        return tied
+    logger.info(
+        "no champion for {period_type} {period_key}: {count}-way tie at #1",
+        period_type=period.type.value,
+        period_key=period.key,
+        count=len(tied),
+    )
+    return []
+
+
+def finalize(session: Session, period: Period) -> list[Placed]:
+    """Freeze the podium (every place up to TOP_SIZE, so a tie can put more
+    than three on it), queue its summary, then grant the champions."""
+    top = [(rank, s) for rank, s in ranked(standings(session, period)) if rank <= TOP_SIZE]
+    _record(session, period, top)
+    champions = _crowned(period, top)
     if top:
         session.flush()
         outbox.enqueue_period_summary(session, period.type.value, period.key)
-        request = engine.GrantRequest(top[0].player_id, CHAMPION_KEYS[period.type], 1, period.key)
+    for player_id in champions:
+        request = engine.GrantRequest(player_id, CHAMPION_KEYS[period.type], 1, period.key)
         engine.grant(session, request)
+    named = ", ".join(players.describe_player_id(session, p) for p in champions)
     logger.info(
-        "closed {period_type} {period_key}: {count} ranked, champion {champion}",
+        "closed {period_type} {period_key}: {count} ranked, champions {champions}",
         period_type=period.type.value,
         period_key=period.key,
         count=len(top),
-        champion=players.describe_player_id(session, top[0].player_id) if top else "nobody",
+        champions=named or "nobody",
     )
     return top
 

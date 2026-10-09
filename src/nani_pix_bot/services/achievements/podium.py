@@ -14,7 +14,8 @@ def results(session: Session, ptype: str, key: str) -> list[PeriodResult]:
     stmt = (
         select(PeriodResult)
         .where(PeriodResult.period_type == ptype, PeriodResult.period_key == key)
-        .order_by(PeriodResult.rank)
+        # Tied places share a rank; finalize stored them in display order.
+        .order_by(PeriodResult.rank, PeriodResult.id)
     )
     return list(session.scalars(stmt))
 
@@ -34,11 +35,14 @@ def lines(session: Session, placed: list[PeriodResult], lang: str) -> list[str]:
 
 
 def card(session: Session, placed: list[PeriodResult], title: str, lang: str) -> PodiumCard:
+    """Every place, positioned by rank on the card (co-champions share the
+    large #1 styling)."""
     entries = tuple(
         PodiumEntry(
             players.display_name(session, r.player_id),
             i18n.t("card.score", lang, score=r.score, wins=r.wins),
             r.player_id,
+            r.rank,
         )
         for r in placed
     )

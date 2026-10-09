@@ -31,7 +31,11 @@ def _part(gain: PeriodGain, lang: str) -> str:
         lang,
         period=i18n.t(f"champion.win.period.{gain.period.type.value}", lang),
         score=gain.score,
-        place=i18n.t("champion.win.place", lang, ordinal=i18n.ordinal(gain.rank_after, lang)),
+        place=i18n.t(
+            "champion.win.place_shared" if gain.shared else "champion.win.place",
+            lang,
+            ordinal=i18n.ordinal(gain.rank_after, lang),
+        ),
         marker=_marker(gain, lang),
     )
 

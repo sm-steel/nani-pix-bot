@@ -1174,9 +1174,10 @@ the winner, then gives one bullet per running period:
 
 Each bullet is the winner's new total for that period and their place in
 it. `(⬆N)` is the places gained, and `(new on the board)` marks a first
-score there; an unchanged place gets no marker. Russian reads
-`🌟 @winner: +4 очка` / `• за неделю — 5 🌟, 3-е место (⬆1)`, with
-очко/очка/очков following the number.
+score there; an unchanged place gets no marker. A place held with someone
+else (equal on every tie-breaker) reads `shared 1st place`. Russian reads
+`🌟 @winner: +4 очка` / `• за неделю — 5 🌟, 3-е место (⬆1)` (shared:
+`делит 1-е место`), with очко/очка/очков following the number.
 
 A period the game's `ended_at` falls outside (an admin `/setwinner`
 re-finish long after it closed) is left out; with none left there is no
@@ -1324,10 +1325,19 @@ Choose with `/title` (DM only; an earned title or "none").
   in the group timezone (the quiet-hours timezone, UTC if none). The first
   partial periods after launch count normally.
 - **Score.** A win at stage 1–5 is worth 5/4/3/2/1; a HARD MODE win at
-  turn 1/2 is worth 6/4; hosting a game someone solved is +1.
+  turn 1/2 is worth 6/4; hosting a game someone solved is +1. A **clean
+  solve** (a normal-mode win with no wrong guess of the winner's own in
+  that game) is worth +1 more. A win the matcher didn't catch
+  (`/correct`, a HARD MODE vote, `/setwinner`) doesn't count the winning
+  guess as wrong, here or in the ❌ tie-breaker. HARD MODE gets no clean
+  bonus, and a win with an unknown stage earns nothing, bonus included.
+  The recent-changes feed marks a clean win with ✨.
 - **Live view.** `/standings` (topic or DM) shows the running week, month
-  and year in one message: each top 5 as a table of 🌟 score and 👑 wins,
-  plus your own line (rank, score, wins) when you are outside the top 5, or
+  and year in one message: each top 5 as a table of the (shared) place,
+  🌟 score, 👑 wins and the two tie-breakers, ❌ wrong guesses and ⏱
+  total solve time (to the second, `m:ss` or `h:mm:ss`, since a second
+  can decide a tie), plus your own line (place, score, wins, ❌, ⏱) when
+  you are outside the top 5 rows, or
   a note that you haven't scored yet. It reads the same scoring the closing
   uses, so it can never disagree with the final podium.
 - **Explainer and recent changes.** Under `/standings` are two buttons
@@ -1342,8 +1352,13 @@ Choose with `/title` (DM only; an earned title or "none").
     rank move in the week (`#3 → #1`, `— → #2` for a first score). It's
     the week's standings replayed one game at a time, so it always adds up
     to the table.
-- **Ties** go to more wins, then to whoever reached the score first, so
-  #1 is always unique.
+- **Ties** go to more 👑 wins in the period, then to fewer ❌ wrong
+  guesses of your own in the games you won that period, then to less
+  total ⏱ solve time over those wins (activation to the win; a win
+  without a start time counts 0). Both tie-breakers cover only the wins
+  counted in that period: a September win doesn't weigh on October.
+  Hosting adds to neither. Players still equal on all four keys **share
+  the place** (competition ranking: 1, 1, 3), so #1 can be shared.
 - **A game counts in the period it ended in.** The end time is the
   `ended_at` recorded in the win event, so a `/setwinner` re-finish keeps
   the period of the original ending.
@@ -1353,9 +1368,25 @@ Choose with `/title` (DM only; an earned title or "none").
   start-up closes every missed period, oldest first, exactly once. The very
   first start only arms the periods running at that moment (nothing before
   launch is scored). Coinciding boundaries go week, month, year.
-- **Posting.** The top 3 are posted as a podium card, and only #1 gets the
-  Champion achievement (and title); the summary is immediately followed by
-  that unlock. A period nobody scored in is not posted.
+- **Posting.** Every player placed #1–#3 goes on the podium, so a tie
+  can put more than three there (1, 2, 2, 2). The summary text lists all
+  of them. The podium card places players by rank:
+  a plain 1/2/3 podium keeps its classic layout (#1 large in the middle),
+  while shared ranks spread the players shown evenly in one row, every co-champion
+  large with a gold ring and the rest smaller, shrunk only as needed to
+  keep four badges apart. The image shows at most four players (every
+  co-champion first, then the best places); the text lists everyone
+  placed.
+  Everyone at #1 becomes **co-champion** and gets the Champion
+  achievement (and title), up to 3; a tie of four or more at #1 crowns
+  nobody, and the podium is still posted. The summary is immediately
+  followed by the unlocks. A period nobody scored in is not posted.
+- **When the rules changed.** The clean-solve bonus, the ❌/⏱
+  tie-breakers and shared places apply to every period still running when
+  they shipped (the standings are recomputed from the win events on every
+  read, and every win event already carries the wrong count, solve time and
+  how it was won). Periods closed before that keep the podium and Champion
+  grants they were frozen with; nothing is re-scored.
 
 ### Unbroken
 

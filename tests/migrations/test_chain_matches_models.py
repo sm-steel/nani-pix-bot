@@ -373,3 +373,21 @@ def test_currency_transfers_has_its_lookup_indexes(migrated_inspector: sa.Inspec
         "ix_currency_transfers_to_player_id",
         "ix_currency_transfers_game_id",
     } <= index_names
+
+
+def test_period_results_unique_constraints_match_the_model(
+    migrated_inspector: sa.Inspector,
+) -> None:
+    """Tied players share a rank (#319), so the chain must drop the old
+    one-player-per-rank constraint and add one row per player instead."""
+    model_uniques = {
+        (constraint.name, tuple(column.name for column in constraint.columns))
+        for constraint in Base.metadata.tables["period_results"].constraints
+        if isinstance(constraint, sa.UniqueConstraint)
+    }
+    migrated_uniques = {
+        (constraint["name"], tuple(constraint["column_names"]))
+        for constraint in migrated_inspector.get_unique_constraints("period_results")
+    }
+    assert model_uniques
+    assert migrated_uniques == model_uniques
