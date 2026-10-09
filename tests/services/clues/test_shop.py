@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -256,8 +258,55 @@ def test_mark_shared_only_once(session: Session) -> None:
     game, buyer = _setup(session)
     bought = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.LAST_LETTER))
 
-    assert shop.mark_shared(bought) is True
-    assert shop.mark_shared(bought) is False
+    assert shop.mark_shared(session, bought) is True
+    assert shop.mark_shared(session, bought) is False
+
+
+def test_shape_may_be_shared_again_after_a_newer_letter(session: Session) -> None:
+    game, buyer = _setup(session)
+    shape = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TITLE_SHAPE))
+    assert shop.mark_shared(session, shape) is True
+    assert shop.mark_shared(session, shape) is False
+
+    letter = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.FIRST_LETTER))
+    assert shape.shared_at is not None
+    letter.created_at = shape.shared_at + timedelta(seconds=1)
+
+    assert shop.mark_shared(session, shape) is True
+    shape.shared_at = letter.created_at + timedelta(seconds=1)  # the re-share's own stamp
+    assert shop.mark_shared(session, shape) is False
+
+
+def test_shape_shared_after_its_letters_is_not_shareable_again(session: Session) -> None:
+    game, buyer = _setup(session)
+    letter = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.FIRST_LETTER))
+    shape = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TITLE_SHAPE))
+    assert shop.mark_shared(session, shape) is True
+    assert shape.shared_at is not None
+    letter.created_at = shape.shared_at - timedelta(seconds=1)
+
+    assert shop.mark_shared(session, shape) is False
+
+
+def test_a_letter_clue_is_never_shared_twice(session: Session) -> None:
+    game, buyer = _setup(session)
+    letter = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.FIRST_LETTER))
+    assert shop.mark_shared(session, letter) is True
+    other = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.LAST_LETTER))
+    assert letter.shared_at is not None
+    other.created_at = letter.shared_at + timedelta(seconds=1)
+
+    assert shop.mark_shared(session, letter) is False
+
+
+def test_purchase_of_kind(session: Session) -> None:
+    game, buyer = _setup(session)
+    assert shop.purchase_of_kind(session, game.id, BUYER, ClueKind.TITLE_SHAPE) is None
+    shape = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.TITLE_SHAPE))
+
+    assert shop.purchase_of_kind(session, game.id, BUYER, ClueKind.TITLE_SHAPE) is shape
+    assert shop.purchase_of_kind(session, game.id, BUYER, ClueKind.FIRST_LETTER) is None
+    assert shop.purchase_of_kind(session, game.id, BUYER + 1, ClueKind.TITLE_SHAPE) is None
 
 
 @pytest.mark.parametrize("index", [None, -1, 64])

@@ -4,7 +4,7 @@ from sqlalchemy import select
 from telegram.error import TimedOut
 
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.enums import ClueKind, GameStatus
 from nani_pix_bot.services import settings
 from nani_pix_bot.services.economy.config import EconomyKey
 from tests.commands.shop.helpers import (
@@ -110,7 +110,9 @@ async def test_letter_after_shape_resends_the_filled_shape(session_factory) -> N
     assert len(dms) == 2
     assert "<code>S " in dms[1].kwargs["text"]
     assert dms[1].kwargs["text"].count("<code>") == 1
-    assert dms[1].kwargs.get("reply_markup") is None
+    shape_id = next(p.id for p in purchases(session_factory) if p.kind == ClueKind.TITLE_SHAPE)
+    button = dms[1].kwargs["reply_markup"].inline_keyboard[0][0]
+    assert button.callback_data == f"shop:share:{shape_id}"
 
 
 async def test_ru_group_falls_back_and_names_the_field(session_factory) -> None:

@@ -432,9 +432,35 @@ def refund_game(session: Session, game_id: int) -> int:
     return len(rows)
 
 
-def mark_shared(purchase_row: CluePurchase) -> bool:
-    """Stamp the clue as shared with the group; False if it already was."""
-    if purchase_row.shared_at is not None:
+def purchase_of_kind(
+    session: Session, game_id: int, player_id: int, kind: ClueKind
+) -> CluePurchase | None:
+    """The player's purchase of `kind` in the game, if they bought one."""
+    return next((p for p in _purchases(session, game_id, player_id) if p.kind == kind), None)
+
+
+def _shape_gained_letters(session: Session, shape: CluePurchase) -> bool:
+    """Whether the buyer bought a letter after the shape was last shared, so
+    it now shows more than the group saw."""
+    newer_letter = (
+        select(CluePurchase.id)
+        .where(
+            CluePurchase.game_id == shape.game_id,
+            CluePurchase.player_id == shape.player_id,
+            CluePurchase.kind.in_(_LETTER_KINDS),
+            CluePurchase.created_at > shape.shared_at,
+        )
+        .limit(1)
+    )
+    return session.scalars(newer_letter).first() is not None
+
+
+def mark_shared(session: Session, purchase_row: CluePurchase) -> bool:
+    """Stamp the clue as shared with the group; False if it already was —
+    except a title shape that gained a letter since, which may go again."""
+    if purchase_row.shared_at is not None and not (
+        purchase_row.kind == ClueKind.TITLE_SHAPE and _shape_gained_letters(session, purchase_row)
+    ):
         return False
     purchase_row.shared_at = datetime.now(UTC)
     return True

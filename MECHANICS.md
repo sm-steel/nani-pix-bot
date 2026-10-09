@@ -1494,10 +1494,13 @@ player's balance.
 short notice naming the buyer and the type of clue (not its contents).
 
 **Sharing.** Every delivered clue message has a *Share with the group*
-button. (The re-sent title shape after a later letter purchase is a
-follow-up to that message and has no button of its own.) Sharing is free, works once per clue, and only while that round is still
-active; it posts the clue (the text, or the picture) to the game topic
-under the player's name.
+button, and so does the title shape re-sent after a later letter
+purchase (it is its own message with its own button). Sharing is free,
+works once per clue, and only while that round is still active; it
+posts the clue (the text, or the picture) to the game topic under the
+player's name. The one exception: a title shape that has since revealed
+a new letter (bought after it was last shared) may be shared again. Every
+share is recorded in the event log (`clue_shared`) with what was shared.
 
 **Failure and refunds.**
 - If Telegram refuses to deliver a clue, the player is refunded in full
