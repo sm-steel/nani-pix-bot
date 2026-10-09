@@ -3,7 +3,9 @@ directly (no network calls happen building an Application/registering
 handlers) — main()'s actual polling loop is not something a unit test
 should run."""
 
+import asyncio
 import re
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
@@ -204,6 +206,31 @@ def test_build_application_configures_a_larger_get_updates_pool() -> None:
     application = app.build_application(_config())
 
     assert application.bot.token == _VALID_TOKEN
+
+
+async def test_a_job_armed_before_the_scheduler_starts_still_runs() -> None:
+    """#336: every job is armed in _post_init, before PTB starts the
+    JobQueue's scheduler — behind get_me, the command-menu refresh and
+    start_polling. APScheduler's default misfire grace is 1 s, so a slow
+    start (1.46 s on the 1.14.1 deploy) skipped the period job's startup
+    run, and nothing re-armed it. Overdue deadlines re-armed by
+    rearm_pending_timeouts are clamped to 0 and race the same way. A job
+    armed in the past is what the scheduler sees in both cases."""
+    application = app.build_application(_config())
+    job_queue = application.job_queue
+    assert job_queue is not None
+    ran = asyncio.Event()
+
+    async def callback(_context: ContextTypes.DEFAULT_TYPE) -> None:
+        ran.set()
+
+    job_queue.run_once(callback, when=datetime.now(UTC) - timedelta(seconds=5))
+    await job_queue.start()
+    try:
+        await asyncio.wait_for(ran.wait(), timeout=2)
+    finally:
+        await job_queue.stop(wait=False)
+        await app._post_shutdown(application)
 
 
 def test_build_application_registers_an_error_handler() -> None:

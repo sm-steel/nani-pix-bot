@@ -1,6 +1,9 @@
 """The period boundary job (spec §6): at every boundary, close whatever
 ended — catching up after downtime — then re-arm for the next one. Started
-at once from app.py's _post_init, which is also the downtime catch-up.
+at once from app.py's _post_init, which is also the downtime catch-up —
+and only runs because app.py tells the JobQueue to run jobs however late
+they are due (#336: armed before the scheduler starts, it used to be
+dropped as a misfire on a slow start, and nothing else re-arms it).
 Posting is the outbox's job (quiet hours hold the posts, not the closing)."""
 
 from datetime import UTC, datetime, timedelta

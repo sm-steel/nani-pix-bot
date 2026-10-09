@@ -170,7 +170,12 @@ exactly who no command handler would ever have recorded.
   PTB's `JobQueue`, not `CommandHandler`/`CallbackQueryHandler`s registered
   against a user action — a genuinely different shape, so it's a sibling
   package rather than living under `commands/` despite depending on the
-  same `services/`/`models/` layers.
+  same `services/`/`models/` layers. The queue runs every job however late
+  it's due (`misfire_grace_time=None`, set in `app.py`): jobs are armed in
+  `_post_init` before the scheduler starts, and overdue deadlines re-armed
+  at startup are clamped to 0 — with APScheduler's default 1 s grace, a
+  slow start silently dropped them, and a one-shot job that is dropped is
+  gone until the next restart (issue #336).
 - **`services/`** — the game logic, framework-agnostic (no
   `python-telegram-bot` imports). This is what unit tests target.
 - **`models/`** — SQLAlchemy ORM models, one module per table. Columns and
