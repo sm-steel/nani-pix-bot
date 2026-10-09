@@ -354,3 +354,34 @@ def test_a_fourth_podium_entry_is_drawn() -> None:
     three = _open(cards.render_podium_card(cards.PodiumCard("Champions", tuple(entries[:3]))))
     assert four.size == cards.CARD_SIZE
     assert ImageChops.difference(four.convert("RGB"), three.convert("RGB")).getbbox() is not None
+
+
+def test_the_card_draws_at_most_four_keeping_the_champions() -> None:
+    six = render.podium_slots((1, 2, 2, 2, 2, 2))
+    assert len(six) == render.PODIUM_CARD_MAX == 4
+    assert [s.entry for s in six] == [0, 1, 2, 3]  # champion, then stored order
+    late_champion = render.podium_slots((2, 2, 2, 2, 1, 3))
+    assert 4 in {s.entry for s in late_champion}
+    assert len(late_champion) == 4
+    assert 5 not in {s.entry for s in late_champion}  # lowest ranks win the seats
+    many = render.podium_slots((1,) * 7)
+    assert [s.entry for s in many] == [0, 1, 2, 3]
+
+
+def test_a_crowded_podium_never_shrinks_below_the_four_entry_sizes() -> None:
+    floor = {s.place == 0: s.size for s in render.podium_slots((1, 2, 2, 2))}
+    for ranks in ((1, 2, 2, 2, 2, 2), (1, 1, 1, 1, 1), (1, 2, 3, 3, 3, 3, 3)):
+        slots = render.podium_slots(ranks)
+        assert _badges_apart(slots)
+        for slot in slots:
+            assert slot.size >= floor[slot.place == 0]
+
+
+def test_a_six_entry_podium_renders() -> None:
+    entries = tuple(
+        cards.PodiumEntry(f"@p{i}", "5 pts", seed=i, rank=r)
+        for i, r in enumerate((1, 2, 2, 2, 2, 2))
+    )
+    assert _open(cards.render_podium_card(cards.PodiumCard("Champions", entries))).size == (
+        cards.CARD_SIZE
+    )

@@ -7,7 +7,7 @@ import hashlib
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
@@ -75,6 +75,8 @@ _CHAMPION_SIZE = 230
 _PLACED_SIZE = 170
 _PODIUM_NAME_WIDTH = 280
 _BADGE_GAP = 12  # at least this much clear space between two badges
+# The most players the card draws; the summary text lists everyone placed.
+PODIUM_CARD_MAX = 4
 
 
 @dataclass(frozen=True)
@@ -407,11 +409,26 @@ def _row_order(ranks: tuple[int, ...]) -> list[int]:
     return others[0::2][::-1] + champions + others[1::2]
 
 
+def _shown(ranks: tuple[int, ...]) -> list[int]:
+    """The entries the card has room for: the best ranks first (so every
+    co-champion), then stored order; kept in stored order."""
+    best = sorted(range(len(ranks)), key=lambda i: (ranks[i], i))
+    return sorted(best[:PODIUM_CARD_MAX])
+
+
 def podium_slots(ranks: tuple[int, ...]) -> tuple[PodiumSlot, ...]:
-    """Where each entry sits, by rank rather than list position. A plain
-    1/2/3 podium (or its first one or two places) keeps the classic layout;
-    shared ranks spread every entry evenly in one row, champions large in
-    the middle, shrunk only as far as needed to keep the badges apart."""
+    """Where each entry sits, for at most PODIUM_CARD_MAX of them (see
+    _shown), so the badges never shrink below the four-entry sizes."""
+    shown = _shown(ranks)
+    slots = _row_slots(tuple(ranks[i] for i in shown))
+    return tuple(replace(slot, entry=shown[slot.entry]) for slot in slots)
+
+
+def _row_slots(ranks: tuple[int, ...]) -> tuple[PodiumSlot, ...]:
+    """By rank rather than list position. A plain 1/2/3 podium (or its
+    first one or two places) keeps the classic layout; shared ranks spread
+    every entry evenly in one row, champions large in the middle, shrunk
+    only as far as needed to keep the badges apart."""
     if ranks == tuple(range(1, len(ranks) + 1)) and len(ranks) <= len(_CLASSIC_X):
         return _classic_slots(len(ranks))
     spacing = _WIDTH / (len(ranks) + 1)

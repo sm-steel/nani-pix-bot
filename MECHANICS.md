@@ -1340,11 +1340,13 @@ Choose with `/title` (DM only; an earned title or "none").
   launch is scored). Coinciding boundaries go week, month, year.
 - **Posting.** Every player placed #1–#3 goes on the podium, so a tie
   can put more than three there (1, 2, 2, 2). The summary text lists all
-  of them, and so does the podium card. The card places players by rank:
+  of them. The podium card places players by rank:
   a plain 1/2/3 podium keeps its classic layout (#1 large in the middle),
-  while shared ranks spread everyone evenly in one row, every co-champion
+  while shared ranks spread the players shown evenly in one row, every co-champion
   large with a gold ring and the rest smaller, shrunk only as needed to
-  keep four badges apart.
+  keep four badges apart. The image shows at most four players (every
+  co-champion first, then the best places); the text lists everyone
+  placed.
   Everyone at #1 becomes **co-champion** and gets the Champion
   achievement (and title), up to 3; a tie of four or more at #1 crowns
   nobody, and the podium is still posted. The summary is immediately
