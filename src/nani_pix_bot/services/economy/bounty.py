@@ -88,7 +88,7 @@ def pay_out(session: Session, game: Game, winner: Player) -> int:
     amount = pot_balance(session, game.id)
     if amount <= 0:
         return 0
-    for contribution in _unrefunded_contributions(session, game.id):
+    for contribution in contributions(session, game.id):
         events.emit(
             session,
             EventType.BOUNTY_SETTLED,
@@ -116,14 +116,15 @@ def pay_out(session: Session, game: Game, winner: Player) -> int:
     return amount
 
 
-def _unrefunded_contributions(session: Session, game_id: int) -> list[CurrencyTransfer]:
+def contributions(session: Session, game_id: int) -> list[CurrencyTransfer]:
+    """The game's pot contributions that weren't refunded, oldest first."""
     refunded = select(CurrencyTransfer.reverses_id).where(CurrencyTransfer.reverses_id.is_not(None))
     stmt = select(CurrencyTransfer).where(
         CurrencyTransfer.game_id == game_id,
         CurrencyTransfer.to_type == CurrencyParty.POT,
         CurrencyTransfer.id.not_in(refunded),
     )
-    return list(session.scalars(stmt))
+    return list(session.scalars(stmt.order_by(CurrencyTransfer.id)))
 
 
 def refund_pot(session: Session, game_id: int) -> int:
@@ -133,7 +134,7 @@ def refund_pot(session: Session, game_id: int) -> int:
     if pot_balance(session, game_id) <= 0:
         return 0
     total = 0
-    for contribution in _unrefunded_contributions(session, game_id):
+    for contribution in contributions(session, game_id):
         contributor = session.get(Player, contribution.from_player_id)
         if contributor is None:
             continue

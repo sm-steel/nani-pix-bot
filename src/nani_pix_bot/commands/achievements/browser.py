@@ -1,7 +1,7 @@
 """The achievements browser in DM (spec §5): one rich message, edited in
 place — All / Earned / Not yet tabs, ◀ page ▶, Compare and Top. Callback
 data: ach:v:<owner>:<view>:<page>, ach:c:<other>:<filter>:<page> (compare.py),
-ach:t:<page>. The page counter is helpers/paging.py's NOOP (ach:x on
+ach:t:<page>, ach:p:<page> (picker.py). The page counter is helpers/paging.py's NOOP (ach:x on
 older messages, still answered here). Everything after the prefix
 is client-controlled, so it is parsed defensively (see dm_start/keyboards.py's
 _validated_index)."""
@@ -9,6 +9,7 @@ _validated_index)."""
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -17,6 +18,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements import render
 from nani_pix_bot.commands.achievements.common import MAX_ID, PREFIX, outsider_refusal
+from nani_pix_bot.commands.helpers.keyboards import tab_button
 from nani_pix_bot.commands.helpers.paging import clamp_page, nav_row, page_count
 from nani_pix_bot.commands.helpers.rich import RichTarget, edit_rich, md_escape, send_rich
 from nani_pix_bot.db import session_scope
@@ -33,6 +35,7 @@ _SHAPES: dict[str, tuple[bool, ...]] = {
     "v": (True, False, True),
     "c": (True, False, True),
     "t": (True,),
+    "p": (True,),
 }
 
 
@@ -52,6 +55,10 @@ def top_data(page: int) -> str:
     return f"{PREFIX}t:{page}"
 
 
+def pick_data(page: int) -> str:
+    return f"{PREFIX}p:{page}"
+
+
 def parse(data: str) -> tuple[str, list[int | str]] | None:
     action, *fields = data.removeprefix(PREFIX).split(":")
     shape = _SHAPES.get(action)
@@ -65,8 +72,7 @@ def parse(data: str) -> tuple[str, list[int | str]] | None:
 
 def _tab(view: View, current: View, owner_id: int, lang: str) -> InlineKeyboardButton:
     label = i18n.t(f"achievements.tab.{view.name.lower()}", lang)
-    marker = "● " if view is current else ""
-    return InlineKeyboardButton(marker + label, callback_data=view_data(owner_id, view, 0))
+    return tab_button(label, current=view is current, callback_data=view_data(owner_id, view, 0))
 
 
 def _keyboard(request: Browse, pages: int, lang: str) -> InlineKeyboardMarkup:
@@ -79,6 +85,12 @@ def _keyboard(request: Browse, pages: int, lang: str) -> InlineKeyboardMarkup:
         compare = f"{PREFIX}c:{request.owner_id}:a:0"
         extra.append(
             InlineKeyboardButton(i18n.t("achievements.compare", lang), callback_data=compare)
+        )
+    else:
+        extra.append(
+            InlineKeyboardButton(
+                i18n.t("achievements.compare_pick", lang), callback_data=pick_data(0)
+            )
         )
     extra.append(
         InlineKeyboardButton(i18n.t("achievements.top_button", lang), callback_data=top_data(0))
@@ -109,8 +121,8 @@ def top_view(session: Session, page: int, lang: str) -> Rendered:
     return markdown, InlineKeyboardMarkup([nav] if nav else [])
 
 
-def _view_tap(session: Session, viewer_id: int, fields: list, lang: str) -> Rendered:
-    owner_id, view, page = fields
+def _view_tap(session: Session, viewer_id: int, fields: list[int | str], lang: str) -> Rendered:
+    owner_id, view, page = cast(tuple[int, str, int], tuple(fields))
     if view not in {v.value for v in View}:
         view = View.ALL.value
     logger.info(
@@ -123,12 +135,16 @@ def _view_tap(session: Session, viewer_id: int, fields: list, lang: str) -> Rend
     return browse_view(session, Browse(viewer_id, owner_id, View(view), page), lang)
 
 
-def _top_tap(session: Session, _viewer_id: int, fields: list, lang: str) -> Rendered:
-    logger.info("paged the achievements top to page {page}", page=fields[0] + 1)
-    return top_view(session, fields[0], lang)
+def _top_tap(session: Session, _viewer_id: int, fields: list[int | str], lang: str) -> Rendered:
+    (page,) = cast(tuple[int], tuple(fields))
+    logger.info("paged the achievements top to page {page}", page=page + 1)
+    return top_view(session, page, lang)
 
 
-ACTIONS: dict[str, Callable[[Session, int, list, str], Rendered]] = {"v": _view_tap, "t": _top_tap}
+ACTIONS: dict[str, Callable[[Session, int, list[int | str], str], Rendered]] = {
+    "v": _view_tap,
+    "t": _top_tap,
+}
 
 
 async def open_browser(

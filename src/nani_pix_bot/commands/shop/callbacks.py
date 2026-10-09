@@ -59,6 +59,7 @@ class _Bought:
     amount: int
     message: str
     followup: str | None
+    followup_purchase_id: int | None
 
 
 @dataclass(frozen=True)
@@ -187,15 +188,18 @@ def _purchase(session_factory, tap: _BuyTap) -> _Bought:
         lang = settings.get_language(session)
         game, row, amount = _charge(session, tap, PurchaseRequest(tap.kind))
         owned = shop.owned_kinds(session, game.id, tap.user.id)
-        followup = None
+        followup = followup_purchase_id = None
         if tap.kind in _LETTER_KINDS and ClueKind.TITLE_SHAPE in owned:
             followup = text_clue_message(game, ClueKind.TITLE_SHAPE, owned, lang)
+            shape = shop.purchase_of_kind(session, game.id, tap.user.id, ClueKind.TITLE_SHAPE)
+            followup_purchase_id = shape.id if shape else None
         return _Bought(
             lang=lang,
             purchase_id=row.id,
             amount=amount,
             message=text_clue_message(game, tap.kind, owned, lang),
             followup=followup,
+            followup_purchase_id=followup_purchase_id,
         )
 
 
@@ -236,8 +240,9 @@ async def _deliver(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, bought: _Bo
         await _fail_delivery(context, tap, bought)
         return
     _log_delivered(tap, bought.purchase_id)
-    if bought.followup is not None:
-        await deliver_text_clue(context, tap.user, bought.followup)
+    if bought.followup is not None and bought.followup_purchase_id is not None:
+        followup_markup = share_keyboard(bought.followup_purchase_id, bought.lang)
+        await deliver_text_clue(context, tap.user, bought.followup, followup_markup)
     await _announce(context, tap, bought.lang)
 
 
