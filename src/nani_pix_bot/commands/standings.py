@@ -5,7 +5,7 @@ into the DM (how points work, recent changes — standings_dm.py), so they
 need no callback here."""
 
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from loguru import logger
@@ -14,6 +14,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import dm_link, outsider_refusal
+from nani_pix_bot.commands.helpers.durations import duration
 from nani_pix_bot.commands.helpers.rich import RichTarget, md_escape, send_rich
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.commands.standings_dm import RECENT_PAYLOAD, RULES_PAYLOAD
@@ -27,19 +28,39 @@ TOP_SIZE = 5
 PERIODS = (PeriodType.WEEK, PeriodType.MONTH, PeriodType.YEAR)
 
 
-def top_rows(board: Sequence[Standing]) -> Sequence[Standing]:
-    return board[:TOP_SIZE]
+Placed = tuple[int, Standing]  # (shared competition rank, standing)
+
+
+def top_rows(board: Sequence[Standing]) -> list[Placed]:
+    """The first five rows; a tie keeps its shared rank, so five rows can
+    read 1, 1, 3, 4, 4."""
+    return periods.ranked(board)[:TOP_SIZE]
+
+
+def solve_time(standing: Standing, lang: str) -> str:
+    """Total ⏱ over the period's wins; '—' when there is none to show (a
+    host-only score, or wins logged without a start time)."""
+    if standing.seconds <= 0:
+        return "—"
+    return duration(timedelta(seconds=standing.seconds), lang)
 
 
 def you_line(board: Sequence[Standing], viewer_id: int, lang: str) -> str | None:
-    """The viewer's own line: none while they are inside the top five (their
-    row is enough), their rank outside it, or a note that they have no score."""
-    for rank, standing in enumerate(board, start=1):
+    """The viewer's own line: none while they are inside the top five rows
+    (their row is enough), their shared rank and tie-breakers outside them,
+    or a note that they have no score."""
+    for index, (rank, standing) in enumerate(periods.ranked(board)):
         if standing.player_id == viewer_id:
-            if rank <= TOP_SIZE:
+            if index < TOP_SIZE:
                 return None
             return i18n.t(
-                "standings.you", lang, rank=rank, score=standing.score, wins=standing.wins
+                "standings.you",
+                lang,
+                rank=rank,
+                score=standing.score,
+                wins=standing.wins,
+                wrong=standing.wrong,
+                time=solve_time(standing, lang),
             )
     return i18n.t("standings.you_unscored", lang)
 
@@ -51,14 +72,16 @@ def _header(period: Period, tz: ZoneInfo, lang: str) -> str:
     return "## " + md_escape(f"{title} · {i18n.t('standings.ends', lang, when=when)}")
 
 
-def _table(session: Session, rows: Sequence[Standing], lang: str) -> list[str]:
+def table(session: Session, rows: Sequence[Placed], lang: str) -> list[str]:
     lines = [
-        "| # | " + md_escape(i18n.t("standings.player", lang)) + " | 🌟 | 👑 |",
-        "|---|---|---|---|",
+        "| # | " + md_escape(i18n.t("standings.player", lang)) + " | 🌟 | 👑 | ❌ | ⏱ |",
+        "|---|---|---|---|---|---|",
     ]
-    for rank, row in enumerate(rows, start=1):
+    for rank, row in rows:
         name = md_escape(players.display_name(session, row.player_id))
-        lines.append(f"| {rank} | {name} | {row.score} | {row.wins} |")
+        cells = [str(rank), name, str(row.score), str(row.wins), str(row.wrong)]
+        cells.append(md_escape(solve_time(row, lang)))
+        lines.append("| " + " | ".join(cells) + " |")
     return lines
 
 
@@ -69,7 +92,7 @@ def section(session: Session, period: Period, viewer_id: int, ctx: tuple[ZoneInf
     if not board:
         lines.extend(["", md_escape(i18n.t("standings.empty", lang))])
         return "\n".join(lines)
-    lines.extend(["", *_table(session, top_rows(board), lang)])
+    lines.extend(["", *table(session, top_rows(board), lang)])
     own = you_line(board, viewer_id, lang)
     if own is not None:
         lines.extend(["", md_escape(own)])

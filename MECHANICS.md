@@ -1300,8 +1300,10 @@ Choose with `/title` (DM only; an earned title or "none").
   count the confirmed guess as wrong. HARD MODE gets no clean bonus. The
   recent-changes feed marks a clean win with ✨.
 - **Live view.** `/standings` (topic or DM) shows the running week, month
-  and year in one message: each top 5 as a table of 🌟 score and 👑 wins,
-  plus your own line (rank, score, wins) when you are outside the top 5, or
+  and year in one message: each top 5 as a table of the (shared) place,
+  🌟 score, 👑 wins and the two tie-breakers, ❌ wrong guesses and ⏱
+  total solve time, plus your own line (place, score, wins, ❌, ⏱) when
+  you are outside the top 5 rows, or
   a note that you haven't scored yet. It reads the same scoring the closing
   uses, so it can never disagree with the final podium.
 - **Explainer and recent changes.** Under `/standings` are two buttons
@@ -1316,8 +1318,13 @@ Choose with `/title` (DM only; an earned title or "none").
     rank move in the week (`#3 → #1`, `— → #2` for a first score). It's
     the week's standings replayed one game at a time, so it always adds up
     to the table.
-- **Ties** go to more wins, then to whoever reached the score first, so
-  #1 is always unique.
+- **Ties** go to more 👑 wins in the period, then to fewer ❌ wrong
+  guesses of your own in the games you won that period, then to less
+  total ⏱ solve time over those wins (activation to the win; a win
+  without a start time counts 0). Both tie-breakers cover only the wins
+  counted in that period: a September win doesn't weigh on October.
+  Hosting adds to neither. Players still equal on all four keys **share
+  the place** (competition ranking: 1, 1, 3), so #1 can be shared.
 - **A game counts in the period it ended in.** The end time is the
   `ended_at` recorded in the win event, so a `/setwinner` re-finish keeps
   the period of the original ending.

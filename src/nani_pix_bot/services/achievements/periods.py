@@ -1,7 +1,7 @@
 """Weekly / monthly / yearly champions (spec §6): period math in the group
 timezone, scoring from game_won events, and freezing a closed period."""
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
@@ -36,7 +36,6 @@ HARD_POINTS = (6, 4)
 HOST_POINTS = 1
 # A normal-mode win with no wrong guess of the winner's own.
 CLEAN_BONUS = 1
-_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 @dataclass(frozen=True)
@@ -73,14 +72,15 @@ def following(period: Period, tz: ZoneInfo) -> Period:
 
 @dataclass
 class Standing:
+    """One player's period total, plus the two visible tie-breakers: their
+    own wrong guesses and total solve seconds, over the wins counted in the
+    period only."""
+
     player_id: int
     score: int = 0
     wins: int = 0
-    reached_at: datetime = _EPOCH
-
-    def add(self, points: int, at: datetime) -> None:
-        self.score += points
-        self.reached_at = at
+    wrong: int = 0
+    seconds: float = 0.0
 
 
 def _ended(event: LoggedEvent) -> datetime:
@@ -125,12 +125,13 @@ def _shares(event: LoggedEvent) -> list[tuple[int, int, GainRole]]:
 
 
 def _tally(board: dict[int, Standing], event: LoggedEvent) -> None:
-    ended = _ended(event)
     for player_id, points, role in _shares(event):
         standing = board.setdefault(player_id, Standing(player_id))
-        standing.add(points, ended)
+        standing.score += points
         if role is GainRole.WIN:
             standing.wins += 1
+            standing.wrong += wrong_before_win(event)
+            standing.seconds += event.data.get("seconds") or 0
 
 
 def _counted(won_events: Iterable[LoggedEvent], period: Period) -> list[LoggedEvent]:
@@ -141,9 +142,27 @@ def _counted(won_events: Iterable[LoggedEvent], period: Period) -> list[LoggedEv
     return sorted(in_period, key=_ended)
 
 
+def rank_key(s: Standing) -> tuple[int, int, int, float]:
+    """More 🌟, then more 👑 wins, then fewer ❌ wrong guesses, then less ⏱."""
+    return (-s.score, -s.wins, s.wrong, s.seconds)
+
+
 def _ranked(board: dict[int, Standing]) -> list[Standing]:
-    ranked = (s for s in board.values() if s.score > 0)
-    return sorted(ranked, key=lambda s: (-s.score, -s.wins, s.reached_at))
+    # Stable: players equal on every key keep the order they first scored in.
+    return sorted((s for s in board.values() if s.score > 0), key=rank_key)
+
+
+def ranked(board: Sequence[Standing]) -> list[tuple[int, Standing]]:
+    """Competition ranks for a sorted board: players equal on every key
+    share the place, and the next one skips past them (1, 1, 3)."""
+    placed: list[tuple[int, Standing]] = []
+    for index, standing in enumerate(board):
+        if not placed or rank_key(standing) != rank_key(placed[-1][1]):
+            rank = index + 1
+        else:
+            rank = placed[-1][0]
+        placed.append((rank, standing))
+    return placed
 
 
 def score(won_events: Iterable[LoggedEvent], period: Period) -> list[Standing]:
@@ -247,27 +266,29 @@ def win_event(session: Session, game_id: int) -> LoggedEvent | None:
     return to_event(row) if row is not None else None
 
 
+def _placed(board: list[Standing], player_id: int) -> tuple[int, Standing] | None:
+    return next(((r, s) for r, s in ranked(board) if s.player_id == player_id), None)
+
+
 def _rank(board: list[Standing], player_id: int) -> int | None:
-    for rank, standing in enumerate(board, start=1):
-        if standing.player_id == player_id:
-            return rank
-    return None
+    placed = _placed(board, player_id)
+    return None if placed is None else placed[0]
 
 
 def _gain_in(session: Session, period: Period, won: LoggedEvent) -> PeriodGain | None:
     if won.actor_id is None or not period.start <= _ended(won) < period.end:
         return None
     events = _won_events(session, period)
-    after = score(events, period)
-    rank_after = _rank(after, won.actor_id)
-    if rank_after is None:
+    placed = _placed(score(events, period), won.actor_id)
+    if placed is None:
         return None
+    rank_after, standing = placed
     before = score([e for e in events if e.game_id != won.game_id], period)
     return PeriodGain(
         period=period,
         player_id=won.actor_id,
         gain=win_points(won),
-        score=after[rank_after - 1].score,
+        score=standing.score,
         rank_before=_rank(before, won.actor_id),
         rank_after=rank_after,
     )

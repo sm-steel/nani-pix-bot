@@ -59,6 +59,10 @@ def test_the_rules_spell_out_every_point_value_from_the_constants() -> None:
         clean = i18n.t("standings.rules.clean", lang, bonus=periods.CLEAN_BONUS)
         assert md_escape(clean) in text
         assert f"+{periods.CLEAN_BONUS} 🌟" in text
+        ties = md_escape(i18n.t("standings.rules.ties", lang))
+        assert ties in text
+        assert "❌" in ties
+        assert "⏱" in ties
 
 
 def test_the_feed_marks_a_clean_win(session: Session) -> None:

@@ -27,13 +27,44 @@ def test_you_line_is_absent_for_someone_inside_the_top_five() -> None:
     assert standings.you_line(_board(8), 5, "en") is None
 
 
-def test_you_line_shows_rank_score_and_wins_outside_the_top_five() -> None:
+def test_you_line_shows_rank_score_wins_and_tie_breakers_outside_the_top_five() -> None:
     board = _board(8)
     board[5].wins = 3
+    board[5].wrong = 4
+    board[5].seconds = 3900
 
     line = standings.you_line(board, 6, "en")
 
-    assert line == "You: #6 · 94 🌟 · 3 👑"
+    assert line == "You: #6 · 94 🌟 · 3 👑 · 4 ❌ · 1h 5m ⏱"
+
+
+def test_you_line_shows_a_shared_rank() -> None:
+    board = _board(8)
+    board[6].score = board[5].score  # 7 ties 6 for sixth
+
+    line = standings.you_line(board, 7, "en")
+
+    assert line is not None
+    assert line.startswith("You: #6 · ")
+
+
+def test_the_table_shows_shared_ranks_and_the_tie_breakers(session: Session) -> None:
+    session.add_all(Player(telegram_user_id=i, username=f"p{i}") for i in (1, 2, 3))
+    session.flush()
+    rows = [
+        Standing(player_id=1, score=6, wins=1, wrong=0, seconds=600),
+        Standing(player_id=2, score=6, wins=1, wrong=0, seconds=600),
+        Standing(player_id=3, score=1, wins=0),
+    ]
+
+    lines = standings.table(session, standings.top_rows(rows), "en")
+
+    assert lines[0] == "| # | Player | 🌟 | 👑 | ❌ | ⏱ |"
+    assert lines[2:] == [
+        "| 1 | @p1 | 6 | 1 | 0 | 10m |",
+        "| 1 | @p2 | 6 | 1 | 0 | 10m |",
+        "| 3 | @p3 | 1 | 0 | 0 | — |",
+    ]
 
 
 def test_you_line_says_so_when_the_viewer_has_not_scored() -> None:
@@ -121,12 +152,13 @@ async def test_posts_week_month_and_year_in_order_with_tables(session_factory) -
     assert "ends" in headers[0]
     assert str(datetime.now(UTC).year) in headers[2]
     assert markdown.index(headers[0]) < markdown.index(headers[1]) < markdown.index(headers[2])
-    assert markdown.count("| # | Player | 🌟 | 👑 |") == 3
-    # top five only, names escaped, viewer's own line outside the top five
-    assert markdown.count("\n| 1 | ") == 3
+    assert markdown.count("| # | Player | 🌟 | 👑 | ❌ | ⏱ |") == 3
+    # top five only (tied on every key, so they share first place), names
+    # escaped, viewer's own line outside the top five
+    assert markdown.count("\n| 1 | ") == 3 * 5
     assert markdown.count(r"@kurogane\_42") == 3
     assert "\n| 6 | " not in markdown
-    assert markdown.count(r"You: \#6 · 2 🌟 · 1 👑") == 3
+    assert markdown.count(r"You: \#6 · 2 🌟 · 1 👑 · 0 ❌ · — ⏱") == 3
 
 
 async def test_a_viewer_without_a_score_gets_the_unscored_line(session_factory) -> None:

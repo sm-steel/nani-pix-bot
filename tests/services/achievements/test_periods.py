@@ -114,15 +114,75 @@ def test_score_weights_stages_and_hard_mode_and_credits_the_host() -> None:
     ]
 
 
-def test_ties_go_to_more_wins_then_whoever_got_there_first() -> None:
-    standings = periods.score(
-        [
-            _won(A, 1, datetime(2026, 10, 5, tzinfo=UTC), stage=3),
-            _won(B, 2, datetime(2026, 10, 2, tzinfo=UTC), stage=3),
-        ],
-        OCT,
-    )
-    assert [s.player_id for s in standings[:2]] == [B, A]
+def _order(won: list[Any]) -> list[int]:
+    return [s.player_id for s in periods.score(won, OCT) if s.player_id != HOST]
+
+
+def test_ties_go_to_more_wins() -> None:
+    won = [
+        _won(A, 1, OCT_2, stage=1),  # 5 from one win
+        _won(B, 2, OCT_2, stage=3),
+        _won(B, 3, OCT_2, stage=4),  # 3 + 2 from two
+    ]
+    assert _order(won) == [B, A]
+
+
+def test_then_fewer_wrong_guesses_in_the_won_games() -> None:
+    won = [
+        _won(A, 1, datetime(2026, 10, 2, tzinfo=UTC), winner_wrong=3),
+        _won(B, 2, datetime(2026, 10, 5, tzinfo=UTC), winner_wrong=1),
+    ]
+    assert _order(won) == [B, A]
+    board = {s.player_id: s for s in periods.score(won, OCT)}
+    assert (board[A].wrong, board[B].wrong, board[HOST].wrong) == (3, 1, 0)
+
+
+def test_then_less_total_solve_time_with_unknown_time_as_zero() -> None:
+    won = [_won(A, 1, OCT_2, seconds=300.0), _won(B, 2, OCT_2, seconds=120.0)]
+    assert _order(won) == [B, A]
+    board = {s.player_id: s for s in periods.score(won, OCT)}
+    assert (board[A].seconds, board[B].seconds) == (300.0, 120.0)
+    unknown = periods.score([_won(A, 1, OCT_2, seconds=None)], OCT)
+    assert unknown[0].seconds == 0
+
+
+def test_wrong_guesses_only_count_for_wins_inside_the_period() -> None:
+    won = [
+        _won(A, 1, datetime(2026, 9, 28, tzinfo=UTC), winner_wrong=5),  # September
+        _won(A, 2, OCT_2, winner_wrong=2, seconds=10.0),
+        _won(B, 3, OCT_2, winner_wrong=2, seconds=20.0),
+    ]
+    assert _order(won) == [A, B]
+    assert periods.score(won, OCT)[0].wrong == 2
+
+
+def test_players_tied_on_every_key_share_the_rank() -> None:
+    won = [
+        _won(A, 1, OCT_2, seconds=60.0),
+        _won(B, 2, datetime(2026, 10, 9, tzinfo=UTC), seconds=60.0),
+    ]
+    board = periods.score(won, OCT)
+    ranked = periods.ranked(board)
+    assert [(rank, s.player_id) for rank, s in ranked] == [(1, A), (1, B), (3, HOST)]
+    assert periods.rank_key(board[0]) == periods.rank_key(board[1])
+
+
+def test_shared_ranks_skip_after_a_tie_and_resume_on_a_new_key() -> None:
+    board = [
+        periods.Standing(1, score=9),
+        periods.Standing(2, score=5),
+        periods.Standing(3, score=5),
+        periods.Standing(4, score=5),
+        periods.Standing(5, score=4),
+        periods.Standing(6, score=4),
+    ]
+    assert [rank for rank, _ in periods.ranked(board)] == [1, 2, 2, 2, 5, 5]
+
+
+def test_gains_report_shared_ranks() -> None:
+    gains = periods.gains([_won(A, 1, OCT_2, seconds=60.0), _won(B, 2, OCT_2, seconds=60.0)], OCT)
+    b_win = next(g for g in gains if g.player_id == B)
+    assert (b_win.rank_before, b_win.rank_after) == (None, 1)
 
 
 def test_games_ending_outside_the_period_dont_count_and_a_refinish_counts_once() -> None:
