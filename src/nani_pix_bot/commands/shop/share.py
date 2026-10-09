@@ -3,6 +3,7 @@ bought to the game topic, once, while its round is active."""
 
 import html
 from dataclasses import dataclass
+from typing import TypedDict
 
 from loguru import logger
 from telegram import CallbackQuery, User
@@ -19,6 +20,17 @@ from nani_pix_bot.services.clues import shop
 from nani_pix_bot.services.clues.shop import TEXT_KINDS
 
 
+class SharedContent(TypedDict, total=False):
+    """What the group was shown, as recorded in the `clue_shared` event: a
+    text clue has `text` (+ `revealed` for the shape), an image clue the rest."""
+
+    text: str
+    revealed: list[str]
+    file_id: str | None
+    tile_index: int | None
+    screenshot_url: str | None
+
+
 @dataclass(frozen=True)
 class _SharePost:
     """What a committed share needs for its topic post: `text` is the HTML
@@ -31,7 +43,7 @@ class _SharePost:
     game_id: int
     purchase_id: int
     kind: ClueKind
-    content: dict
+    content: SharedContent
 
 
 class _ShareRefusedError(Exception):
@@ -79,6 +91,7 @@ def _prepare_share(session_factory, user: User, purchase_id: int) -> _SharePost:
             )
             raise _ShareRefusedError(i18n.t("shop.already_shared", lang))
         header = i18n.t("shop.shared", lang, name=html.escape(user.full_name))
+        content: SharedContent
         if is_image:
             content = {
                 "file_id": row.telegram_file_id,
