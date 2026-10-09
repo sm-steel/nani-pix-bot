@@ -75,6 +75,11 @@ async def test_a_rejected_edit_falls_back_to_unescaped_plain_text(records) -> No
     assert any(level == "ERROR" for level, _ in records)
 
 
+def test_the_limits_are_telegrams_rich_and_plain_text_limits() -> None:
+    assert rich.RICH_LIMIT == 32768
+    assert rich.TEXT_LIMIT == 4096
+
+
 def test_fit_leaves_a_message_within_the_limit_alone(records) -> None:
     text = "x" * rich.RICH_LIMIT
 
@@ -83,7 +88,7 @@ def test_fit_leaves_a_message_within_the_limit_alone(records) -> None:
 
 
 def test_fit_cuts_an_oversized_message_at_a_line_break_and_logs_an_error(records) -> None:
-    lines = [f"| row {i} |" for i in range(1000)]
+    lines = [f"| row {i} |" for i in range(5000)]
     markdown = "\n".join(lines)
 
     cut = rich.fit(markdown)
@@ -105,3 +110,20 @@ async def test_send_and_edit_send_the_fitted_text() -> None:
     for call in bot.do_api_request.await_args_list:
         sent = call.kwargs["api_kwargs"]["rich_message"]["markdown"]
         assert sent == rich.fit(long)
+
+
+async def test_a_rejected_rich_message_falls_back_cut_to_the_plain_text_limit(records) -> None:
+    bot = MagicMock()
+    bot.do_api_request = AsyncMock(side_effect=BadRequest("unsupported"))
+    bot.send_message = AsyncMock()
+    bot.edit_message_text = AsyncMock()
+    long = "line\n" * 2000  # within RICH_LIMIT, over TEXT_LIMIT
+
+    await rich.send_rich(bot, rich.RichTarget(555), long)
+    await rich.edit_rich(bot, rich.RichTarget(555, message_id=9), long)
+
+    for fallback in (bot.send_message, bot.edit_message_text):
+        text = fallback.await_args_list[0].kwargs["text"]
+        assert len(text) <= rich.TEXT_LIMIT
+        assert text.endswith("line\n\n…")
+    assert ("ERROR", f"plain-text fallback of {len(long)} chars cut to fit") in records

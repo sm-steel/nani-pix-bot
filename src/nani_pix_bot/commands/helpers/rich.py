@@ -6,8 +6,8 @@ bot.do_api_request; switch to PTB's own methods once it supports them. A
 rejected rich message (an old server, a markdown edge case) falls back to
 the same text sent plain, with an ERROR, so a view never silently vanishes.
 A message over RICH_LIMIT is cut at a line break first (fit), also with an
-ERROR: otherwise both the rich and the plain send are rejected and a tap
-just does nothing."""
+ERROR, and so is a plain-text fallback over TEXT_LIMIT: otherwise the send
+is rejected and a tap just does nothing."""
 
 import re
 from dataclasses import dataclass
@@ -19,11 +19,16 @@ from telegram.error import BadRequest, InvalidToken
 
 from nani_pix_bot.services.text import cut_at_line
 
-# Assumed equal to Telegram's text message limit. An approximation: fit counts
-# Python code points of the markdown source, Telegram counts UTF-16 units of the
-# parsed text. The markup and escapes that drop out usually outweigh emoji
-# counting double, so it errs on the safe side.
-RICH_LIMIT = 4096
+# Bot API "Rich Message Limits": up to 32768 UTF-8 characters of rich message
+# text (custom emoji alternative text and formula source included), up to 500
+# blocks (nested blocks, list items and table rows each count), 16 levels of
+# nesting, 50 media attachments and 20 table columns. fit measures our markdown
+# source, which errs safe: its markup and escapes drop out of the rich text.
+# Only the character limit is guarded; a 25-row table is far below 500 blocks.
+RICH_LIMIT = 32768
+# sendMessage / editMessageText: 1-4096 characters after entity parsing — the
+# plain-text fallback's limit.
+TEXT_LIMIT = 4096
 CUT_MARKER = "\n\n…"
 
 # ASCII punctuation markdown can give meaning to; a backslash makes each literal.
@@ -43,12 +48,17 @@ def _unescape(markdown: str) -> str:
     return _ESCAPED.sub(r"\1", markdown)
 
 
-def fit(markdown: str) -> str:
-    """`markdown` cut at a line break to fit RICH_LIMIT, if it doesn't."""
-    if len(markdown) <= RICH_LIMIT:
-        return markdown
-    logger.error("rich message of {length} chars cut to fit", length=len(markdown))
-    return cut_at_line(markdown, RICH_LIMIT, CUT_MARKER)
+def fit(text: str, limit: int = RICH_LIMIT, kind: str = "rich message") -> str:
+    """`text` cut at a line break to fit `limit`, if it doesn't."""
+    if len(text) <= limit:
+        return text
+    logger.error("{kind} of {length} chars cut to fit", kind=kind, length=len(text))
+    return cut_at_line(text, limit, CUT_MARKER)
+
+
+def _plain(markdown: str) -> str:
+    """The plain-text fallback: unescaped, and within sendMessage's limit."""
+    return fit(_unescape(markdown), TEXT_LIMIT, "plain-text fallback")
 
 
 @dataclass(frozen=True)
@@ -85,7 +95,7 @@ async def send_rich(
         return await bot.send_message(
             chat_id=target.chat_id,
             message_thread_id=target.thread_id,
-            text=_unescape(markdown),
+            text=_plain(markdown),
             reply_markup=markup,
         )
 
@@ -109,6 +119,6 @@ async def edit_rich(
         await bot.edit_message_text(
             chat_id=target.chat_id,
             message_id=target.message_id,
-            text=_unescape(markdown),
+            text=_plain(markdown),
             reply_markup=markup,
         )

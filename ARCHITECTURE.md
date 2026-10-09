@@ -1205,10 +1205,13 @@ messages (`sendRichMessage`, `editMessageText` with a `rich_message`). PTB
 calls through `bot.do_api_request` until PTB supports them. On `BadRequest`
 or `InvalidToken` it falls back to the same text sent plain (un-escaped),
 with an ERROR, so a view never silently vanishes. Before sending, `fit()`
-cuts a message over `RICH_LIMIT` (4096, assumed equal to Telegram's text
-limit) at its last line break and appends "…", also with an ERROR:
-otherwise both the rich send and the plain fallback are rejected and the
-tap does nothing (#323).
+cuts a message over `RICH_LIMIT` (32768, the Bot API's rich-message text
+limit, measured on the markdown source) at its last line break and
+appends "…", also with an ERROR; the plain fallback is cut the same way
+at `TEXT_LIMIT` (4096, sendMessage's limit). Otherwise the send is
+rejected and the tap does nothing (#323). The rich-message cap of 500
+blocks (table rows count) isn't guarded: /history's tables stay far
+below it.
 
 **Cards.** `services/cards/` draws the unlock and podium cards with Pillow,
 using the bundled Noto Sans (Latin and Cyrillic, no emoji), a drawn diamond
