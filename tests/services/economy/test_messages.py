@@ -103,10 +103,10 @@ def test_a_won_game_gets_the_champion_score_line_after_the_earnings(session: Ses
 
     assert "+25" in lines[0]
     assert lines[1:] == [
-        "🌟 @ann: +5 points",
-        "   • this week — 5 🌟, 1st place (new on the board)",
-        "   • this month — 5 🌟, 1st place (new on the board)",
-        "   • this year — 5 🌟, 1st place (new on the board)",
+        "🌟 @ann: +6 points",  # stage 1 plus the clean bonus
+        "   • this week — 6 🌟, 1st place (new on the board)",
+        "   • this month — 6 🌟, 1st place (new on the board)",
+        "   • this year — 6 🌟, 1st place (new on the board)",
         "🌟 Host @setter: +1 point",
     ]
 

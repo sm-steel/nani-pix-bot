@@ -56,13 +56,40 @@ def test_the_rules_spell_out_every_point_value_from_the_constants() -> None:
         assert f"+{periods.HOST_POINTS} 🌟" in text
         assert md_escape("Europe/Moscow") in text
         assert "standings.rules" not in text  # every key resolved
+        clean = i18n.t("standings.rules.clean", lang, bonus=periods.CLEAN_BONUS)
+        assert md_escape(clean) in text
+        assert f"+{periods.CLEAN_BONUS} 🌟" in text
+        ties = md_escape(i18n.t("standings.rules.ties", lang))
+        assert ties in text
+        assert "❌" in ties
+        assert "⏱" in ties
+        champions = i18n.t(
+            "standings.rules.champions", lang, top=periods.TOP_SIZE, cap=periods.CHAMPION_CAP
+        )
+        assert md_escape(champions) in text
+        assert str(periods.CHAMPION_CAP) in champions
+
+
+def test_the_feed_marks_a_clean_win(session: Session) -> None:
+    _players(session, 1, 2, HOST)
+    now = datetime.now(UTC)
+    _win(session, 1, 1, 1, now - timedelta(minutes=2), winner_wrong=0)
+    _win(session, 2, 2, 1, now - timedelta(minutes=1), winner_wrong=2)
+    period = periods.period_at(periods.PeriodType.WEEK, now, UTC_TZ)
+
+    markdown, _markup = standings_dm.feed_view(session, 0, period, UTC_TZ, "en")
+
+    rows = [line for line in markdown.splitlines() if " | \\+" in line]
+    clean = md_escape(i18n.t("standings.recent.clean", "en"))
+    assert [clean in row for row in rows] == [False, False, False, True]
+    assert f"\\+{periods.WIN_POINTS[0] + periods.CLEAN_BONUS}" in rows[3]
 
 
 def test_the_feed_lists_shares_newest_first_with_rank_moves(session: Session) -> None:
     _players(session, 1, 2, HOST)
     now = datetime.now(UTC)
-    _win(session, 1, 1, 4, now - timedelta(minutes=2))  # 1: 2 (#1), host: 1 (#2)
-    _win(session, 2, 2, 1, now - timedelta(minutes=1))  # 2: 5 (#1), host 2 (#3)
+    _win(session, 1, 1, 4, now - timedelta(minutes=2))  # 1: 3 (#1), host: 1 (#2)
+    _win(session, 2, 2, 1, now - timedelta(minutes=1))  # 2: 6 (#1), host 2 (#3)
     period = periods.period_at(periods.PeriodType.WEEK, now, UTC_TZ)
 
     markdown, _markup = standings_dm.feed_view(session, 0, period, UTC_TZ, "en")
@@ -70,7 +97,7 @@ def test_the_feed_lists_shares_newest_first_with_rank_moves(session: Session) ->
     rows = [line for line in markdown.splitlines() if " | \\+" in line]
     assert len(rows) == 4
     assert "p\\_2" in rows[1]
-    assert "\\+5" in rows[1]
+    assert "\\+6" in rows[1]  # stage 1 plus the clean bonus
     assert "— → \\#1" in rows[1]  # player 2 entered at the top
     assert "\\#2 → \\#3" in rows[0]  # the host's second share pushed them down
     assert md_escape(i18n.t("standings.recent.host", "en", game=2)) in rows[0]

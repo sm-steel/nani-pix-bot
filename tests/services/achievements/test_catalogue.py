@@ -37,3 +37,7 @@ def test_period_definitions_have_no_triggers() -> None:
         defn = catalogue.get(key)
         assert defn.kind is Kind.PERIOD
         assert defn.triggers == frozenset()
+
+
+def test_a_clue_share_triggers_no_achievement() -> None:
+    assert catalogue.triggered_by(EventType.CLUE_SHARED) == ()

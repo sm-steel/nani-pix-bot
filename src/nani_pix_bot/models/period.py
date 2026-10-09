@@ -11,12 +11,13 @@ PERIOD_KEY_LENGTH = 16
 
 
 class PeriodResult(Base):
-    """One place on a finished period's podium, frozen when the period
-    closed (services/achievements/periods.py's finalize)."""
+    """One player's place on a finished period's podium, frozen when the
+    period closed (services/achievements/periods.py's finalize). `rank` is
+    the competition rank, so tied players share it (1, 1, 3)."""
 
     __tablename__ = "period_results"
     __table_args__ = (
-        UniqueConstraint("period_type", "period_key", "rank", name="uq_period_result_rank"),
+        UniqueConstraint("period_type", "period_key", "player_id", name="uq_period_result_player"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

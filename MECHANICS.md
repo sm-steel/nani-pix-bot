@@ -1086,10 +1086,17 @@ won or unsolved, newest first, 10 per page. A game still being set up,
 running or being voted on never appears, so the history can't spoil a
 round. Each row shows the 🎲 game number, the date it ended, the anime, the
 winner (❌ when unsolved) and the host, and has a `#N` button that opens the
-game's record. **👤 Only mine** narrows the list to games you hosted, won
-or made a guess in; **📜 All games** switches back.
+game's record. A row of four tabs above the list narrows it, the current
+one marked ●:
+- **📜 All**: every finished game
+- **👤 I played**: games you hosted, won or made a guess in
+- **🎲 I hosted**: games you hosted
+- **👑 I won**: games you won
 
-A game's record shows:
+A game's record has two tabs, the current one marked ●: **📋 Record**
+(where it opens) and **💬 Guesses (N)**.
+
+📋 Record shows:
 - its titles
 - the host
 - how the anime was found (provider, or typed in by hand) and where the
@@ -1102,14 +1109,37 @@ A game's record shows:
     to solve, the bounty paid out and the 🌟 the winner got
   - unsolved: why (time ran out, every stage used up, HARD MODE with nobody
     guessing, or a vote with no winner)
-- the full guess log: time, player, guess, stage, ✅/❌, 25 per page
+- 🛒 the clues bought: time, player, clue, the 💠 paid and when the buyer
+  shared it (— if never). A refunded clue is deleted with its refund, so
+  it doesn't appear.
+- 💰 the bounty: what each player put in, added up. Contributions that
+  were refunded (every one, when the game ended unsolved) don't count.
+- 🎞 the stages: when each stage advance happened and why (the wrong-guess
+  limit was reached, someone paid to /sharpen, or 6 hours went by with no
+  guess). Normal games only: a HARD MODE turn change logs no stage
+  advance, so a HARD MODE record has no stages section.
+- 👥 how many players guessed
+- 🗳 HARD MODE: each vote, voter → candidate
 
-◀ Back returns to the same list page.
+Each part is left out when the game has none of it.
+
+💬 Guesses is the full guess log: time, player, guess, stage, ✅/❌, 25 per
+page.
+
+◀ Back, on either tab, returns to the same list page.
+
+Where the parts come from:
+- how a game was won, the bounty paid out, the solve time, how many
+  players guessed, an unsolved game's cause and the stage advances: the
+  event log
+- the clues: the clue purchases, priced from the 💠 charge each one names
+- the bounty contributions: the currency ledger
+- the votes: the HARD MODE ballots
+- the guess log: the guesses table
 
 Games older than the records some parts come from just leave those parts
 out:
-- how a game was won, the bounty, the solve time and an unsolved game's
-  cause come from the event log, which started with achievements
+- the event log started with achievements
 - the guess log started with issue #251
 
 ## Achievements
@@ -1144,9 +1174,10 @@ the winner, then gives one bullet per running period:
 
 Each bullet is the winner's new total for that period and their place in
 it. `(⬆N)` is the places gained, and `(new on the board)` marks a first
-score there; an unchanged place gets no marker. Russian reads
-`🌟 @winner: +4 очка` / `• за неделю — 5 🌟, 3-е место (⬆1)`, with
-очко/очка/очков following the number.
+score there; an unchanged place gets no marker. A place held with someone
+else (equal on every tie-breaker) reads `shared 1st place`. Russian reads
+`🌟 @winner: +4 очка` / `• за неделю — 5 🌟, 3-е место (⬆1)` (shared:
+`делит 1-е место`), with очко/очка/очков following the number.
 
 A period the game's `ended_at` falls outside (an admin `/setwinner`
 re-finish long after it closed) is left out; with none left there is no
@@ -1294,10 +1325,19 @@ Choose with `/title` (DM only; an earned title or "none").
   in the group timezone (the quiet-hours timezone, UTC if none). The first
   partial periods after launch count normally.
 - **Score.** A win at stage 1–5 is worth 5/4/3/2/1; a HARD MODE win at
-  turn 1/2 is worth 6/4; hosting a game someone solved is +1.
+  turn 1/2 is worth 6/4; hosting a game someone solved is +1. A **clean
+  solve** (a normal-mode win with no wrong guess of the winner's own in
+  that game) is worth +1 more. A win the matcher didn't catch
+  (`/correct`, a HARD MODE vote, `/setwinner`) doesn't count the winning
+  guess as wrong, here or in the ❌ tie-breaker. HARD MODE gets no clean
+  bonus, and a win with an unknown stage earns nothing, bonus included.
+  The recent-changes feed marks a clean win with ✨.
 - **Live view.** `/standings` (topic or DM) shows the running week, month
-  and year in one message: each top 5 as a table of 🌟 score and 👑 wins,
-  plus your own line (rank, score, wins) when you are outside the top 5, or
+  and year in one message: each top 5 as a table of the (shared) place,
+  🌟 score, 👑 wins and the two tie-breakers, ❌ wrong guesses and ⏱
+  total solve time (to the second, `m:ss` or `h:mm:ss`, since a second
+  can decide a tie), plus your own line (place, score, wins, ❌, ⏱) when
+  you are outside the top 5 rows, or
   a note that you haven't scored yet. It reads the same scoring the closing
   uses, so it can never disagree with the final podium.
 - **Explainer and recent changes.** Under `/standings` are two buttons
@@ -1312,8 +1352,13 @@ Choose with `/title` (DM only; an earned title or "none").
     rank move in the week (`#3 → #1`, `— → #2` for a first score). It's
     the week's standings replayed one game at a time, so it always adds up
     to the table.
-- **Ties** go to more wins, then to whoever reached the score first, so
-  #1 is always unique.
+- **Ties** go to more 👑 wins in the period, then to fewer ❌ wrong
+  guesses of your own in the games you won that period, then to less
+  total ⏱ solve time over those wins (activation to the win; a win
+  without a start time counts 0). Both tie-breakers cover only the wins
+  counted in that period: a September win doesn't weigh on October.
+  Hosting adds to neither. Players still equal on all four keys **share
+  the place** (competition ranking: 1, 1, 3), so #1 can be shared.
 - **A game counts in the period it ended in.** The end time is the
   `ended_at` recorded in the win event, so a `/setwinner` re-finish keeps
   the period of the original ending.
@@ -1323,9 +1368,25 @@ Choose with `/title` (DM only; an earned title or "none").
   start-up closes every missed period, oldest first, exactly once. The very
   first start only arms the periods running at that moment (nothing before
   launch is scored). Coinciding boundaries go week, month, year.
-- **Posting.** The top 3 are posted as a podium card, and only #1 gets the
-  Champion achievement (and title); the summary is immediately followed by
-  that unlock. A period nobody scored in is not posted.
+- **Posting.** Every player placed #1–#3 goes on the podium, so a tie
+  can put more than three there (1, 2, 2, 2). The summary text lists all
+  of them. The podium card places players by rank:
+  a plain 1/2/3 podium keeps its classic layout (#1 large in the middle),
+  while shared ranks spread the players shown evenly in one row, every co-champion
+  large with a gold ring and the rest smaller, shrunk only as needed to
+  keep four badges apart. The image shows at most four players (every
+  co-champion first, then the best places); the text lists everyone
+  placed.
+  Everyone at #1 becomes **co-champion** and gets the Champion
+  achievement (and title), up to 3; a tie of four or more at #1 crowns
+  nobody, and the podium is still posted. The summary is immediately
+  followed by the unlocks. A period nobody scored in is not posted.
+- **When the rules changed.** The clean-solve bonus, the ❌/⏱
+  tie-breakers and shared places apply to every period still running when
+  they shipped (the standings are recomputed from the win events on every
+  read, and every win event already carries the wrong count, solve time and
+  how it was won). Periods closed before that keep the podium and Champion
+  grants they were frozen with; nothing is re-scored.
 
 ### Unbroken
 
@@ -1354,7 +1415,11 @@ holds; one that can't be drawn goes out as plain text.
   edited in place, tabs All / Earned / Not yet, 8 rows per page, a ladder
   as one row with progress to its next tier.
 - **Compare** with another player (All / Only they have / Only you have)
-  and **Top** are reached from the browser.
+  and **Top** are reached from the browser. On someone else's browser the
+  button compares them with you directly; on your own, **Compare** opens a
+  picker of the other players by 🏆 points (10 per page, a button each,
+  best first). Players with no achievement are not listed: there is
+  nothing to compare.
 - `/title`.
 
 ## Pixels 💠
@@ -1494,10 +1559,13 @@ player's balance.
 short notice naming the buyer and the type of clue (not its contents).
 
 **Sharing.** Every delivered clue message has a *Share with the group*
-button. (The re-sent title shape after a later letter purchase is a
-follow-up to that message and has no button of its own.) Sharing is free, works once per clue, and only while that round is still
-active; it posts the clue (the text, or the picture) to the game topic
-under the player's name.
+button, and so does the title shape re-sent after a later letter
+purchase (it is its own message with its own button). Sharing is free,
+works once per clue, and only while that round is still active; it
+posts the clue (the text, or the picture) to the game topic under the
+player's name. The one exception: a title shape that has since revealed
+a new letter (bought after it was last shared) may be shared again. Every
+share is recorded in the event log (`clue_shared`) with what was shared.
 
 **Failure and refunds.**
 - If Telegram refuses to deliver a clue, the player is refunded in full

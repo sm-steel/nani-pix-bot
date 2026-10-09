@@ -128,6 +128,18 @@ def test_top_ranks_by_points_then_whoever_got_there_first(session: Session) -> N
     assert status.ranked_count(session) == 2
 
 
+def test_top_and_ranked_count_can_exclude_a_player(session: Session) -> None:
+    _players(session)
+    engine.grant(session, engine.GrantRequest(OTHER, "clutch"))
+    engine.grant(session, engine.GrantRequest(ME, "clutch"))
+
+    rows = status.top(session, limit=10, exclude=ME)
+
+    assert [r.player_id for r in rows] == [OTHER]
+    assert status.ranked_count(session, exclude=ME) == 1
+    assert status.ranked_count(session, exclude=999) == 2
+
+
 def test_compare_filters_by_who_has_what() -> None:
     clutch, first_try, so_close = (catalogue.get(k) for k in ("clutch", "first_try", "so_close"))
     mine = [

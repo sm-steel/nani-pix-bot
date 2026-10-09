@@ -16,3 +16,11 @@ def duration(span: timedelta, lang: str) -> str:
         if n
     ]
     return " ".join(parts[:2])
+
+
+def clock(seconds: float) -> str:
+    """A total to the second, for tables where seconds can decide a tie:
+    'm:ss' under an hour, 'h:mm:ss' from an hour up."""
+    hours, rest = divmod(int(seconds), 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"

@@ -191,22 +191,28 @@ class TopRow:
     count: int
 
 
-def _top_stmt():
+def _top_stmt(exclude: int | None = None):
     points = func.sum(AchievementGrant.points)
-    return (
-        select(AchievementGrant.player_id, points, func.count(AchievementGrant.id))
-        .group_by(AchievementGrant.player_id)
-        .order_by(points.desc(), func.max(AchievementGrant.granted_at), AchievementGrant.player_id)
+    stmt = select(AchievementGrant.player_id, points, func.count(AchievementGrant.id))
+    if exclude is not None:
+        stmt = stmt.where(AchievementGrant.player_id != exclude)
+    return stmt.group_by(AchievementGrant.player_id).order_by(
+        points.desc(), func.max(AchievementGrant.granted_at), AchievementGrant.player_id
     )
 
 
-def top(session: Session, *, limit: int, offset: int = 0) -> list[TopRow]:
-    rows = session.execute(_top_stmt().limit(limit).offset(offset))
+def top(
+    session: Session, *, limit: int, offset: int = 0, exclude: int | None = None
+) -> list[TopRow]:
+    """Players with at least one grant, best first; `exclude` leaves one out."""
+    rows = session.execute(_top_stmt(exclude).limit(limit).offset(offset))
     return [TopRow(player_id, int(points), int(count)) for player_id, points, count in rows]
 
 
-def ranked_count(session: Session) -> int:
+def ranked_count(session: Session, *, exclude: int | None = None) -> int:
     stmt = select(func.count(func.distinct(AchievementGrant.player_id)))
+    if exclude is not None:
+        stmt = stmt.where(AchievementGrant.player_id != exclude)
     return int(session.scalar(stmt) or 0)
 
 

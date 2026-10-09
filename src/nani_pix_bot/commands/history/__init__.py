@@ -1,7 +1,10 @@
 """/history — finished games in DM (group members only): a paged table with
-a button per game, an All / Mine toggle, and each game's full record with
-its guess log. One rich message, edited in place; callback data in data.py,
-markdown in render.py, the queries in services/game/history.py."""
+a button per game, All / I played / I hosted / I won tabs, and each game's
+full record, with Record and Guesses tabs. One rich message, edited in
+place; callback data in data.py, markdown in render.py and
+render_record.py, the queries in services/game/history.py."""
+
+from dataclasses import replace
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -9,6 +12,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import outsider_refusal
+from nani_pix_bot.commands.helpers.keyboards import tab_button
 from nani_pix_bot.commands.helpers.paging import clamp_page, nav_row, page_count
 from nani_pix_bot.commands.helpers.rich import RichTarget, edit_rich, md_escape, send_rich
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
@@ -17,6 +21,7 @@ from nani_pix_bot.commands.history.data import (
     Filter,
     GameRequest,
     ListRequest,
+    Tab,
     game_data,
     list_data,
     parse,
@@ -42,24 +47,25 @@ def _list_keyboard(
     nav = nav_row(lambda p: list_data(ListRequest(request.filt, p)), request.page, pages, lang)
     if nav:
         rows.append(nav)
-    other = Filter.ALL if request.filt is Filter.MINE else Filter.MINE
-    toggle = i18n.t(f"history.filter.{other.name.lower()}", lang)
-    rows.append([InlineKeyboardButton(toggle, callback_data=list_data(ListRequest(other, 0)))])
+    rows.append([_filter_tab(filt, request.filt, lang) for filt in Filter])
     return InlineKeyboardMarkup(rows)
 
 
+def _filter_tab(filt: Filter, current: Filter, lang: str) -> InlineKeyboardButton:
+    label = i18n.t(f"history.filter.{filt.name.lower()}", lang)
+    return tab_button(label, current=filt is current, callback_data=list_data(ListRequest(filt, 0)))
+
+
 def list_view(session: Session, viewer_id: int, request: ListRequest, lang: str) -> Rendered:
-    player_id = viewer_id if request.filt is Filter.MINE else None
-    total = history.count_finished(session, player_id=player_id)
+    scope = history.Scope(request.filt, None if request.filt is Filter.ALL else viewer_id)
+    total = history.count_finished(session, scope)
     page = clamp_page(request.page, total=total, size=PAGE_SIZE)
     request = ListRequest(request.filt, page)
     heading = i18n.t(f"history.title.{request.filt.name.lower()}", lang)
     if total == 0:
         empty = md_escape(i18n.t(f"history.empty.{request.filt.name.lower()}", lang))
         return f"## {md_escape(heading)}\n\n{empty}", _list_keyboard([], request, 1, lang)
-    games = history.finished_games(
-        session, player_id=player_id, limit=PAGE_SIZE, offset=page * PAGE_SIZE
-    )
+    games = history.finished_games(session, scope, limit=PAGE_SIZE, offset=page * PAGE_SIZE)
     tz = settings.get_group_timezone(session)
     markdown = render.list_markdown(session, games, heading, tz, lang)
     return markdown, _list_keyboard(games, request, page_count(total, PAGE_SIZE), lang)
@@ -70,23 +76,41 @@ def game_view(session: Session, request: GameRequest, lang: str) -> Rendered | N
     detail = history.game_detail(session, request.game_id)
     if detail is None:
         return None
-    total = len(detail.guesses)
-    page = clamp_page(request.guess_page, total=total, size=GUESS_PAGE_SIZE)
-    shown = detail.guesses[page * GUESS_PAGE_SIZE : (page + 1) * GUESS_PAGE_SIZE]
     tz = settings.get_group_timezone(session)
-    markdown = render.detail_markdown(session, detail, shown, tz, lang)
-    rows = []
-    nav = nav_row(
-        lambda p: game_data(GameRequest(request.game_id, request.back, p)),
-        page,
-        page_count(total, GUESS_PAGE_SIZE),
-        lang,
-    )
-    if nav:
-        rows.append(nav)
+    rows = [_game_tabs(request, detail.game.total_guess_count, lang)]
+    if request.tab is Tab.RECORD:
+        markdown = render.record_markdown(session, detail, tz, lang)
+    else:
+        total = len(detail.guesses)
+        page = clamp_page(request.guess_page, total=total, size=GUESS_PAGE_SIZE)
+        shown = detail.guesses[page * GUESS_PAGE_SIZE : (page + 1) * GUESS_PAGE_SIZE]
+        markdown = render.guesses_markdown(session, detail, shown, tz, lang)
+        nav = nav_row(
+            lambda p: game_data(replace(request, guess_page=p)),
+            page,
+            page_count(total, GUESS_PAGE_SIZE),
+            lang,
+        )
+        if nav:
+            rows.append(nav)
     back = InlineKeyboardButton(i18n.t("history.back", lang), callback_data=list_data(request.back))
     rows.append([back])
     return markdown, InlineKeyboardMarkup(rows)
+
+
+def _game_tabs(request: GameRequest, guess_count: int, lang: str) -> list[InlineKeyboardButton]:
+    labels = {
+        Tab.RECORD: i18n.t("history.tab.record", lang),
+        Tab.GUESSES: i18n.t("history.tab.guesses", lang, count=guess_count),
+    }
+    return [
+        tab_button(
+            label,
+            current=tab is request.tab,
+            callback_data=game_data(GameRequest(request.game_id, request.back, tab)),
+        )
+        for tab, label in labels.items()
+    ]
 
 
 async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -120,8 +144,9 @@ def _tap_view(session: Session, viewer_id: int, request: ListRequest | GameReque
         )
     else:
         logger.info(
-            "viewed a game in /history (guess page {page})",
+            "viewed a game in /history ({tab} tab, guess page {page})",
             game_id=request.game_id,
+            tab=request.tab.name.lower(),
             page=request.guess_page + 1,
         )
     return rendered

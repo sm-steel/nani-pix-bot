@@ -327,11 +327,16 @@ src/nani_pix_bot/
                    # current stage image (pixelated off the event loop)
                    # with a live caption, or says what's happening when
                    # no game runs; no state change, no re-pin
-    history/      # /history — DM-only finished-games list with an
-                   # All/Mine toggle and per-game records with the guess
-                   # log (__init__.py), callback data hist:l:/hist:g:
-                   # parsed defensively (data.py), markdown (render.py);
-                   # queries in services/game/history.py
+    history/      # /history — DM-only finished-games list with All /
+                   # I played / I hosted / I won tabs and per-game
+                   # Record / Guesses tabs (__init__.py), callback data
+                   # hist:l:/hist:g: parsed defensively (data.py),
+                   # markdown (render.py; the record's clues, bounty,
+                   # stages and votes in render_record.py; shared cells
+                   # in cells.py); queries in services/game/history.py
+    version.py    # /version — DM or topic: the running version over the
+                   # current release notes as one rich message, paged back
+                   # through earlier releases with ver:<page>
     standings_dm.py  # the DM views behind them: how 🌟 points work
                    # (rendered from periods' constants) and this week's
                    # gains (periods.recent_gains), paged with std:r:<page>
@@ -691,11 +696,15 @@ src/nani_pix_bot/
                    #                MECHANICS.md's "HARD MODE vote"
                    #   history.py   /history's queries: finished (WON/
                    #                UNSOLVED) games newest first, all or
-                   #                one player's, and one game's record
+                   #                the ones a player played in, hosted
+                   #                or won, and one game's record
                    #                (game_won/game_unsolved event facts,
-                   #                the guess log); maps the logged
-                   #                unsolved cause to a player-facing
-                   #                UnsolvedReason
+                   #                the guess log, clue purchases with
+                   #                their price, unrefunded bounty
+                   #                contributions, stage_advanced events,
+                   #                HARD MODE votes); maps the logged
+                   #                unsolved cause and stage-advance
+                   #                reason to player-facing enums
                    #   refinish.py  admin re-finish (#253): the
                    #                refusal rules and the UNSOLVED -> WON
                    #                transition /setwinner uses (turn left
@@ -717,6 +726,8 @@ src/nani_pix_bot/
     quiet_hours.py  # pure quiet-window math (QuietHours, is_quiet,
                    # add_active_time, window_end_after, parsing) — no
                    # DB/Telegram; DST-correct via zoneinfo
+    text.py       # cut_at_line: cut text to a length at a line break,
+                   # with a marker (release notes, rich.py's fit)
     players.py    # Player lookup/creation, win-count bookkeeping,
                    # leaderboard query — everything that touches only
                    # the Player table (win increments themselves happen
@@ -800,6 +811,10 @@ src/nani_pix_bot/
                    #               price, sharpen)
     i18n.py       # simple dict/JSON t(key, lang, **kwargs) — see
                    # CLAUDE.md's "Language / i18n"
+    release_notes.py  # load(lang): the hand-written notes in release_notes/
+                   # as a list of Release (page 0 the current notes, then
+                   # up to four previous releases split on `## ` headings)
+    version.py    # installed_version() from the package metadata
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,
                    #                    games-enabled flag, autostart-
@@ -826,6 +841,10 @@ src/nani_pix_bot/
                    #                    raises rather than silently
                    #                    returning garbage — callers treat
                    #                    that the same as "never linked"
+  release_notes/  # player-facing release notes per language, shown by
+                   # /version: release-notes-<lang>.md (the release being
+                   # built) and previous-releases-<lang>.md (up to four
+                   # shipped ones) — rules in docs/release-notes.md
   models/         # SQLAlchemy ORM models, one module per table
     base.py       # declarative base
     player.py     # Player
@@ -1130,7 +1149,7 @@ erDiagram
 | `achievement_grants` | v10 | One achievement tier a player unlocked: `key`, `tier`, `rarity`, `reward`, `points`, the ledger `transfer_id` and `granted_at`. Unique on (`player_id`, `key`, `tier`, `period_key`). `period_key` is `NOT NULL DEFAULT ''` (`''` = not a period grant) because MariaDB treats NULLs as distinct in a unique index, which would let a champion tier be granted twice. |
 | `achievement_claims` | v10 | The single holder of a group-unique tier (Pioneer, Milestone Keeper N). The primary key (`key`, `tier`) is what makes a second holder impossible. There is no timestamp: the grant row has it. |
 | `announcement_outbox` | v10 | A group post owed but not yet sent (`kind` `unlock`/`period_summary`, JSON `payload`), written in the same transaction as what it announces. `batch_id` (the causing event) groups unlocks into one album, `attempts` counts failed sends (given up at 3), `posted_at` is NULL until delivered. Posted in id order by `jobs/announcements.py`. |
-| `period_results` | v10 | One place on a closed period's podium (`period_type`, `period_key`, `rank`, `player_id`, `score`, `wins`), frozen when the period closed. Unique on (`period_type`, `period_key`, `rank`). |
+| `period_results` | v10 | One player's place on a closed period's podium (`period_type`, `period_key`, `rank`, `player_id`, `score`, `wins`), frozen when the period closed. `rank` is the competition rank, so tied players share it. Unique on (`period_type`, `period_key`, `player_id`). |
 | `period_state` | v10 | One row per period type (`period_type` PK): `next_end`, the UTC end of the next period to close. Created at the first start with the running period, so nothing before the deploy is scored; a late start catches up from it. |
 | `players` additions | v10 | `title_key` (the title chosen with `/title`) and `first_name` (kept current by `remember_user`, shown when there is no @username). |
 | `games` addition | v10 | `activated_at`: when the game went live (`created_at` is when setup started), used by `win_facts.seconds` (activation to the game's end). |
@@ -1196,7 +1215,14 @@ messages (`sendRichMessage`, `editMessageText` with a `rich_message`). PTB
 22.8 speaks Bot API 10.0, so `commands/helpers/rich.py` sends them as raw
 calls through `bot.do_api_request` until PTB supports them. On `BadRequest`
 or `InvalidToken` it falls back to the same text sent plain (un-escaped),
-with an ERROR, so a view never silently vanishes.
+with an ERROR, so a view never silently vanishes. Before sending, `fit()`
+cuts a message over `RICH_LIMIT` (32768, the Bot API's rich-message text
+limit, measured on the markdown source) at its last line break and
+appends "…", also with an ERROR; the plain fallback is cut the same way
+at `TEXT_LIMIT` (4096, sendMessage's limit). Otherwise the send is
+rejected and the tap does nothing (#323). The rich-message cap of 500
+blocks (table rows count) isn't guarded: /history's tables stay far
+below it.
 
 **Cards.** `services/cards/` draws the unlock and podium cards with Pillow,
 using the bundled Noto Sans (Latin and Cyrillic, no emoji), a drawn diamond

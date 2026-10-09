@@ -1,8 +1,10 @@
 """stop_confirm_keyboard() — shared across commands/game_flow/stop.py and
 commands/stageconfig.py (offered when a config edit is blocked by a
 running game), so it lives here in helpers/ rather than in either
-package specifically. Every other keyboard builder is specific to one
-flow: commands/dm_start/keyboards.py for the DM setup flow."""
+package specifically — and tab_button(), the "● "-marked tab every tab
+row shares (/achievements, its compare view, /history). Every other
+keyboard builder is specific to one flow: commands/dm_start/keyboards.py
+for the DM setup flow."""
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -11,6 +13,13 @@ from nani_pix_bot.services import i18n
 STOP_CONFIRM_CALLBACK_DATA = "stop:confirm"
 STOP_REVEAL_CALLBACK_DATA = "stop:reveal"
 STOP_CANCEL_CALLBACK_DATA = "stop:cancel"
+TAB_MARKER = "● "
+
+
+def tab_button(label: str, *, current: bool, callback_data: str) -> InlineKeyboardButton:
+    """One tab of a tab row; the current one is marked."""
+    text = TAB_MARKER + label if current else label
+    return InlineKeyboardButton(text, callback_data=callback_data)
 
 
 def stop_confirm_keyboard(lang: str, *, can_reveal: bool = False) -> InlineKeyboardMarkup:
