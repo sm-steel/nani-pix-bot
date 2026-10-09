@@ -1,5 +1,6 @@
 """Finished games for /history (DM): the list, newest first, optionally
-narrowed to one player's games, and one game's full record. Only WON and
+narrowed to the games one player played in, hosted or won, and one game's
+full record. Only WON and
 UNSOLVED games — never a running one, so nothing here can spoil a round.
 
 The game row says who hosted and who won; how it was won, the pot, the
@@ -47,26 +48,59 @@ def unsolved_reason(cause: str) -> UnsolvedReason:
     return UnsolvedReason.OTHER
 
 
-def _finished(player_id: int | None):
+class Involvement(StrEnum):
+    """Which finished games a list shows; the values are /history's
+    callback data ("m" is the old "only mine", kept so its buttons parse)."""
+
+    ALL = "a"
+    PLAYED = "m"  # hosted, won or guessed in
+    HOSTED = "h"
+    WON = "w"
+
+
+@dataclass(frozen=True)
+class Scope:
+    """Which games a list shows: every filter but ALL is about `player_id`."""
+
+    filt: Involvement = Involvement.ALL
+    player_id: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.filt is not Involvement.ALL and self.player_id is None:
+            msg = f"the {self.filt.name.lower()} filter needs a player"
+            raise ValueError(msg)
+
+
+EVERY_GAME = Scope()
+
+
+def _finished(scope: Scope):
     stmt = select(Game).where(Game.status.in_(FINISHED))
-    if player_id is None:
+    player_id = scope.player_id
+    if scope.filt is Involvement.ALL or player_id is None:
         return stmt
     guessed = exists().where(GameGuess.game_id == Game.id, GameGuess.player_id == player_id)
-    return stmt.where(or_(Game.starter_id == player_id, Game.winner_id == player_id, guessed))
+    hosted, won = Game.starter_id == player_id, Game.winner_id == player_id
+    involved = {
+        Involvement.PLAYED: or_(hosted, won, guessed),
+        Involvement.HOSTED: hosted,
+        Involvement.WON: won,
+    }
+    return stmt.where(involved[scope.filt])
 
 
 def finished_games(
-    session: Session, *, player_id: int | None = None, limit: int, offset: int = 0
+    session: Session, scope: Scope = EVERY_GAME, *, limit: int, offset: int = 0
 ) -> list[Game]:
     """Newest first: by when the game ended, or when it started for a game
     that ended before ended_at was recorded (issue #239)."""
     when = func.coalesce(Game.ended_at, Game.created_at)
-    stmt = _finished(player_id).order_by(when.desc(), Game.id.desc()).limit(limit).offset(offset)
-    return list(session.scalars(stmt))
+    stmt = _finished(scope).order_by(when.desc(), Game.id.desc())
+    return list(session.scalars(stmt.limit(limit).offset(offset)))
 
 
-def count_finished(session: Session, *, player_id: int | None = None) -> int:
-    stmt = select(func.count()).select_from(_finished(player_id).subquery())
+def count_finished(session: Session, scope: Scope = EVERY_GAME) -> int:
+    stmt = select(func.count()).select_from(_finished(scope).subquery())
     return int(session.scalar(stmt) or 0)
 
 

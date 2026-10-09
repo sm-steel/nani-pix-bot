@@ -50,12 +50,20 @@ def _game(session: Session, status: GameStatus, ended: datetime, **fields) -> Ga
 
 
 def test_callback_data_round_trips_and_rejects_junk() -> None:
-    listing = ListRequest(Filter.MINE, 3)
+    listing = ListRequest(Filter.PLAYED, 3)
     one = GameRequest(104, listing, 2)
     assert data.parse(data.list_data(listing)) == listing
     assert data.parse(data.game_data(one)) == one
     for junk in ("hist:l:x:1", "hist:l:a", "hist:g:1:a:0", "hist:g:x:a:0:0", "hist:z:1", "ach:1"):
         assert data.parse(junk) is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "filt"),
+    [("a", Filter.ALL), ("m", Filter.PLAYED), ("h", Filter.HOSTED), ("w", Filter.WON)],
+)
+def test_every_filter_parses_including_the_legacy_only_mine_value(raw: str, filt: Filter) -> None:
+    assert data.parse(f"hist:l:{raw}:0") == ListRequest(filt, 0)
 
 
 @pytest.mark.parametrize(
@@ -85,19 +93,44 @@ def test_the_list_shows_finished_games_with_a_button_each(session: Session) -> N
     assert f"| {won.id} | {md_escape('01.10.26')} | Frieren | {md_escape('@alice')} |" in markdown
     buttons = [b for row in markup.inline_keyboard for b in row]
     assert [b.text for b in buttons[:2]] == [f"#{lost.id}", f"#{won.id}"]
-    assert buttons[-1].text == i18n.t("history.filter.mine", "en")
 
 
-def test_the_mine_filter_and_its_empty_state(session: Session) -> None:
+def test_the_filters_are_one_row_of_four_tabs_with_the_current_marked(session: Session) -> None:
+    _players(session)
+
+    _markdown, markup = history.list_view(session, BOB, ListRequest(Filter.HOSTED), "en")
+
+    tabs = markup.inline_keyboard[-1]
+    assert [b.text for b in tabs] == [
+        i18n.t("history.filter.all", "en"),
+        i18n.t("history.filter.played", "en"),
+        "● " + i18n.t("history.filter.hosted", "en"),
+        i18n.t("history.filter.won", "en"),
+    ]
+    assert [data.parse(str(b.callback_data)) for b in tabs] == [ListRequest(f, 0) for f in Filter]
+
+
+@pytest.mark.parametrize("filt", [Filter.PLAYED, Filter.HOSTED, Filter.WON])
+def test_each_player_filter_has_its_title_and_empty_state(session: Session, filt: Filter) -> None:
     _players(session)
     _game(session, GameStatus.WON, T0, winner_id=ALICE)
 
-    markdown, markup = history.list_view(session, BOB, ListRequest(Filter.MINE), "en")
+    markdown, _markup = history.list_view(session, BOB, ListRequest(filt), "en")
 
-    assert md_escape(i18n.t("history.empty.mine", "en")) in markdown
-    toggle = markup.inline_keyboard[-1][0]
-    assert toggle.text == i18n.t("history.filter.all", "en")
-    assert data.parse(str(toggle.callback_data)) == ListRequest(Filter.ALL, 0)
+    name = filt.name.lower()
+    assert md_escape(i18n.t(f"history.title.{name}", "en")) in markdown
+    assert md_escape(i18n.t(f"history.empty.{name}", "en")) in markdown
+
+
+def test_the_won_filter_lists_the_viewers_wins(session: Session) -> None:
+    _players(session)
+    mine = _game(session, GameStatus.WON, T0, winner_id=BOB)
+    _game(session, GameStatus.WON, T0, winner_id=ALICE, starter_id=BOB)
+
+    _markdown, markup = history.list_view(session, BOB, ListRequest(Filter.WON), "en")
+
+    picks = [b.text for row in markup.inline_keyboard[:-1] for b in row]
+    assert picks == [f"#{mine.id}"]
 
 
 def test_a_won_game_shows_the_full_record_and_its_guesses(session: Session) -> None:

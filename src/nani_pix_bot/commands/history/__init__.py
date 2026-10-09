@@ -1,5 +1,5 @@
 """/history — finished games in DM (group members only): a paged table with
-a button per game, an All / Mine toggle, and each game's full record with
+a button per game, All / I played / I hosted / I won tabs, and each game's full record with
 its guess log. One rich message, edited in place; callback data in data.py,
 markdown in render.py, the queries in services/game/history.py."""
 
@@ -42,24 +42,26 @@ def _list_keyboard(
     nav = nav_row(lambda p: list_data(ListRequest(request.filt, p)), request.page, pages, lang)
     if nav:
         rows.append(nav)
-    other = Filter.ALL if request.filt is Filter.MINE else Filter.MINE
-    toggle = i18n.t(f"history.filter.{other.name.lower()}", lang)
-    rows.append([InlineKeyboardButton(toggle, callback_data=list_data(ListRequest(other, 0)))])
+    rows.append([_filter_tab(filt, request.filt, lang) for filt in Filter])
     return InlineKeyboardMarkup(rows)
 
 
+def _filter_tab(filt: Filter, current: Filter, lang: str) -> InlineKeyboardButton:
+    label = i18n.t(f"history.filter.{filt.name.lower()}", lang)
+    marker = "● " if filt is current else ""
+    return InlineKeyboardButton(marker + label, callback_data=list_data(ListRequest(filt, 0)))
+
+
 def list_view(session: Session, viewer_id: int, request: ListRequest, lang: str) -> Rendered:
-    player_id = viewer_id if request.filt is Filter.MINE else None
-    total = history.count_finished(session, player_id=player_id)
+    scope = history.Scope(request.filt, None if request.filt is Filter.ALL else viewer_id)
+    total = history.count_finished(session, scope)
     page = clamp_page(request.page, total=total, size=PAGE_SIZE)
     request = ListRequest(request.filt, page)
     heading = i18n.t(f"history.title.{request.filt.name.lower()}", lang)
     if total == 0:
         empty = md_escape(i18n.t(f"history.empty.{request.filt.name.lower()}", lang))
         return f"## {md_escape(heading)}\n\n{empty}", _list_keyboard([], request, 1, lang)
-    games = history.finished_games(
-        session, player_id=player_id, limit=PAGE_SIZE, offset=page * PAGE_SIZE
-    )
+    games = history.finished_games(session, scope, limit=PAGE_SIZE, offset=page * PAGE_SIZE)
     tz = settings.get_group_timezone(session)
     markdown = render.list_markdown(session, games, heading, tz, lang)
     return markdown, _list_keyboard(games, request, page_count(total, PAGE_SIZE), lang)

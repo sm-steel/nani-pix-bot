@@ -7,16 +7,11 @@ so it is parsed defensively (field count, filter value, int bounds):
 """
 
 from dataclasses import dataclass
-from enum import StrEnum
 
 from nani_pix_bot.commands.achievements.common import MAX_ID
+from nani_pix_bot.services.game.history import Involvement as Filter
 
 PREFIX = "hist:"
-
-
-class Filter(StrEnum):
-    ALL = "a"
-    MINE = "m"
 
 
 @dataclass(frozen=True)

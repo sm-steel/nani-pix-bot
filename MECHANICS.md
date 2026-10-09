@@ -1086,8 +1086,12 @@ won or unsolved, newest first, 10 per page. A game still being set up,
 running or being voted on never appears, so the history can't spoil a
 round. Each row shows the 🎲 game number, the date it ended, the anime, the
 winner (❌ when unsolved) and the host, and has a `#N` button that opens the
-game's record. **👤 Only mine** narrows the list to games you hosted, won
-or made a guess in; **📜 All games** switches back.
+game's record. A row of four tabs above the list narrows it, the current
+one marked ●:
+- **📜 All**: every finished game
+- **👤 I played**: games you hosted, won or made a guess in
+- **🎲 I hosted**: games you hosted
+- **👑 I won**: games you won
 
 A game's record shows:
 - its titles

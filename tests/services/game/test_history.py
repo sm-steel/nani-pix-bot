@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import EventType, GameStatus, PixelStage
@@ -53,7 +54,7 @@ def test_a_game_from_before_ended_at_was_recorded_sorts_by_its_start(session: Se
     assert [g.id for g in history.finished_games(session, limit=10)] == [legacy.id, recent.id]
 
 
-def test_mine_means_hosted_won_or_guessed_in(session: Session) -> None:
+def _involvement_games(session: Session) -> tuple[Game, Game, Game]:
     _players(session)
     hosted = _game(session, GameStatus.UNSOLVED, ended=T0, starter_id=BOB)
     won = _game(session, GameStatus.WON, ended=T0 + timedelta(hours=1), winner_id=BOB)
@@ -62,14 +63,40 @@ def test_mine_means_hosted_won_or_guessed_in(session: Session) -> None:
     session.add(GameGuess(game_id=guessed.id, player_id=BOB, text="naruto", stage=1))
     session.add(GameGuess(game_id=guessed.id, player_id=BOB, text="bleach", stage=2))
     session.flush()
+    return hosted, won, guessed
 
-    mine = history.finished_games(session, player_id=BOB, limit=10)
+
+def test_played_means_hosted_won_or_guessed_in(session: Session) -> None:
+    hosted, won, guessed = _involvement_games(session)
+    played = history.Scope(history.Involvement.PLAYED, BOB)
+
+    mine = history.finished_games(session, played, limit=10)
 
     assert [g.id for g in mine] == [guessed.id, won.id, hosted.id]
-    assert history.count_finished(session, player_id=BOB) == 3
-    assert [g.id for g in history.finished_games(session, player_id=BOB, limit=1, offset=1)] == [
-        won.id
-    ]
+    assert history.count_finished(session, played) == 3
+    page = history.finished_games(session, played, limit=1, offset=1)
+    assert [g.id for g in page] == [won.id]
+
+
+def test_hosted_means_only_games_the_player_hosted(session: Session) -> None:
+    hosted, _won, _guessed = _involvement_games(session)
+    scope = history.Scope(history.Involvement.HOSTED, BOB)
+
+    assert [g.id for g in history.finished_games(session, scope, limit=10)] == [hosted.id]
+    assert history.count_finished(session, scope) == 1
+
+
+def test_won_means_only_games_the_player_won(session: Session) -> None:
+    _hosted, won, _guessed = _involvement_games(session)
+    scope = history.Scope(history.Involvement.WON, BOB)
+
+    assert [g.id for g in history.finished_games(session, scope, limit=10)] == [won.id]
+    assert history.count_finished(session, scope) == 1
+
+
+def test_a_player_filter_without_a_player_is_a_bug() -> None:
+    with pytest.raises(ValueError, match="needs a player"):
+        history.Scope(history.Involvement.WON)
 
 
 def test_detail_of_a_won_game_carries_how_it_was_won_and_the_guess_log(session: Session) -> None:
