@@ -120,6 +120,29 @@ def test_at_most_four_previous_releases_are_loaded(tmp_path: Path) -> None:
     assert [r.version for r in releases[1:]] == ["1.1.0", "1.2.0", "1.3.0", "1.4.0"]
 
 
+def test_the_language_code_is_matched_case_insensitively(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The /language picker stores 'RU'; i18n.t lowercases it, so load must too.
+    Asserts the file names asked for, since Windows filesystems ignore case."""
+    _write(tmp_path, "release-notes-ru.md", "- Сейчас.\n")
+    _write(tmp_path, "previous-releases-ru.md", "## v1.0.0 · 2026-01-01\n- Раньше.\n")
+    read: list[str] = []
+    original = release_notes._read
+
+    def spy(path: Path) -> str:
+        read.append(path.name)
+        return original(path)
+
+    monkeypatch.setattr(release_notes, "_read", spy)
+
+    assert release_notes.load("RU", tmp_path) == [
+        Release(None, None, "- Сейчас."),
+        Release("1.0.0", "2026-01-01", "- Раньше."),
+    ]
+    assert read == ["release-notes-ru.md", "previous-releases-ru.md"]
+
+
 # --- the real files ----------------------------------------------------------
 
 

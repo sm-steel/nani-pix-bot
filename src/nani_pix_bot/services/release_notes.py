@@ -51,7 +51,9 @@ def _parse_previous(text: str) -> list[Release]:
 def load(lang: str, directory: Path | None = None) -> list[Release]:
     """Page 0 is the current notes (possibly empty), then up to
     MAX_PREVIOUS older releases, newest first. `directory` defaults to
-    NOTES_DIR, looked up per call."""
+    NOTES_DIR, looked up per call. `lang` is lowercased like i18n.t does: the
+    stored code may be the picker's 'RU', the files are named 'ru'."""
+    lang = lang.lower()
     directory = NOTES_DIR if directory is None else directory
     current = Release(None, None, _read(directory / f"release-notes-{lang}.md").strip())
     previous = _parse_previous(_read(directory / f"previous-releases-{lang}.md"))

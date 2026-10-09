@@ -89,16 +89,17 @@ characters).
 ## Rotation
 
 The first qualifying PR after a release moves the shipped notes out of the
-current file. The tell that they have shipped: the latest tag is newer than
-the last commit that touched `release-notes-*.md`.
+current file. The tell that they have shipped is commit ancestry, not dates (a
+release can happen the same day the notes last changed): the last commit that
+touched the notes is an ancestor of the latest tag.
 
 ```sh
 git describe --tags --abbrev=0                                 # e.g. v1.14.0
-git log -1 --format=%cs v1.14.0                                # its date, e.g. 2026-10-12
-git log -1 --format=%cs -- src/nani_pix_bot/release_notes/release-notes-en.md
+git merge-base --is-ancestor "$(git log -1 --format=%H -- src/nani_pix_bot/release_notes/release-notes-en.md)" v1.14.0 && echo shipped
+git log -1 --format=%cs v1.14.0                                # the date for the heading, e.g. 2026-10-12
 ```
 
-If the tag's commit is newer than the last change to the notes, then, for
+If it prints `shipped` (and the file is not empty), then, for
 **each language**:
 
 1. Open `previous-releases-<lang>.md` and add, at the top, a heading
