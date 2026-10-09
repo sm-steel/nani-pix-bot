@@ -193,8 +193,8 @@
   "quiethours.need_timezone": "First tell me your timezone, so I know which {start} you mean — then send the command again:",
 
   "commands.version": "Show bot version",
-  "version.reply": "🤖 <b>nani-pix-bot</b> v{version}\n\n{notes}",
-  "version.no_notes": "🤖 <b>nani-pix-bot</b> v{version}",
+  "version.reply": "🤖 **nani-pix-bot** v{version}\n\n{notes}",
+  "version.no_notes": "🤖 **nani-pix-bot** v{version}\n\nNothing noted for this build yet.",
 
   "keyboards.preview_pixel_algorithm": "🎨 Pixelation: {name}",
   "keyboards.pixel_algorithm_back": "⬅️ Back",

@@ -1,0 +1,46 @@
+"""The hand-written release notes /version shows (see docs/release-notes.md
+for the rules). Two markdown files per language, packaged with the bot:
+`release-notes-<lang>.md`, the notes of the running (or upcoming) release
+with no heading of its own, and `previous-releases-<lang>.md`, older
+releases newest first, each under a `## vX.Y.Z · YYYY-MM-DD` heading.
+Pure file reading and parsing, no Telegram."""
+
+from dataclasses import dataclass
+from pathlib import Path
+
+NOTES_DIR = Path(__file__).resolve().parent.parent / "release_notes"
+MAX_PREVIOUS = 4
+_HEADING = "## "
+_DATE_SEPARATOR = " · "
+
+
+@dataclass(frozen=True)
+class Release:
+    version: str | None  # None for the running release: /version knows it
+    date: str | None
+    markdown: str
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+
+def _release(chunk: str) -> Release:
+    """One `## ` section, its heading marker already split off."""
+    title, _, body = chunk.partition("\n")
+    version, _, date = title.partition(_DATE_SEPARATOR)
+    return Release(version.strip().removeprefix("v"), date.strip() or None, body.strip())
+
+
+def _parse_previous(text: str) -> list[Release]:
+    # Text before the first heading (chunk 0) belongs to no release.
+    chunks = ("\n" + text).split("\n" + _HEADING)[1:]
+    return [_release(chunk) for chunk in chunks]
+
+
+def load(lang: str, directory: Path = NOTES_DIR) -> list[Release]:
+    """Page 0 is the current notes (possibly empty), then up to
+    MAX_PREVIOUS older releases, newest first."""
+    current = Release(None, None, _read(directory / f"release-notes-{lang}.md").strip())
+    previous = _parse_previous(_read(directory / f"previous-releases-{lang}.md"))
+    return [current, *previous[:MAX_PREVIOUS]]

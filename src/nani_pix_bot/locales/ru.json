@@ -193,8 +193,8 @@
   "quiethours.need_timezone": "Сначала укажите свой часовой пояс, чтобы я понял, какое {start} вы имеете в виду, — а потом отправьте команду ещё раз:",
 
   "commands.version": "Показать версию бота",
-  "version.reply": "🤖 <b>nani-pix-bot</b> v{version}\n\n{notes}",
-  "version.no_notes": "🤖 <b>nani-pix-bot</b> v{version}",
+  "version.reply": "🤖 **nani-pix-bot** v{version}\n\n{notes}",
+  "version.no_notes": "🤖 **nani-pix-bot** v{version}\n\nДля этой сборки пока ничего не отмечено.",
 
   "keyboards.preview_pixel_algorithm": "🎨 Пикселизация: {name}",
   "keyboards.pixel_algorithm_back": "⬅️ Назад",
