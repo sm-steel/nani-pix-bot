@@ -327,11 +327,13 @@ src/nani_pix_bot/
                    # current stage image (pixelated off the event loop)
                    # with a live caption, or says what's happening when
                    # no game runs; no state change, no re-pin
-    history/      # /history — DM-only finished-games list with an
-                   # All/Mine toggle and per-game records with the guess
-                   # log (__init__.py), callback data hist:l:/hist:g:
-                   # parsed defensively (data.py), markdown (render.py);
-                   # queries in services/game/history.py
+    history/      # /history — DM-only finished-games list with All /
+                   # I played / I hosted / I won tabs and per-game
+                   # Record / Guesses tabs (__init__.py), callback data
+                   # hist:l:/hist:g: parsed defensively (data.py),
+                   # markdown (render.py; the record's clues, bounty,
+                   # stages and votes in render_record.py; shared cells
+                   # in cells.py); queries in services/game/history.py
     standings_dm.py  # the DM views behind them: how 🌟 points work
                    # (rendered from periods' constants) and this week's
                    # gains (periods.recent_gains), paged with std:r:<page>
@@ -691,11 +693,15 @@ src/nani_pix_bot/
                    #                MECHANICS.md's "HARD MODE vote"
                    #   history.py   /history's queries: finished (WON/
                    #                UNSOLVED) games newest first, all or
-                   #                one player's, and one game's record
+                   #                the ones a player played in, hosted
+                   #                or won, and one game's record
                    #                (game_won/game_unsolved event facts,
-                   #                the guess log); maps the logged
-                   #                unsolved cause to a player-facing
-                   #                UnsolvedReason
+                   #                the guess log, clue purchases with
+                   #                their price, unrefunded bounty
+                   #                contributions, stage_advanced events,
+                   #                HARD MODE votes); maps the logged
+                   #                unsolved cause and stage-advance
+                   #                reason to player-facing enums
                    #   refinish.py  admin re-finish (#253): the
                    #                refusal rules and the UNSOLVED -> WON
                    #                transition /setwinner uses (turn left
@@ -717,6 +723,8 @@ src/nani_pix_bot/
     quiet_hours.py  # pure quiet-window math (QuietHours, is_quiet,
                    # add_active_time, window_end_after, parsing) — no
                    # DB/Telegram; DST-correct via zoneinfo
+    text.py       # cut_at_line: cut text to a length at a line break,
+                   # with a marker (release notes, rich.py's fit)
     players.py    # Player lookup/creation, win-count bookkeeping,
                    # leaderboard query — everything that touches only
                    # the Player table (win increments themselves happen
@@ -1196,7 +1204,11 @@ messages (`sendRichMessage`, `editMessageText` with a `rich_message`). PTB
 22.8 speaks Bot API 10.0, so `commands/helpers/rich.py` sends them as raw
 calls through `bot.do_api_request` until PTB supports them. On `BadRequest`
 or `InvalidToken` it falls back to the same text sent plain (un-escaped),
-with an ERROR, so a view never silently vanishes.
+with an ERROR, so a view never silently vanishes. Before sending, `fit()`
+cuts a message over `RICH_LIMIT` (4096, assumed equal to Telegram's text
+limit) at its last line break and appends "…", also with an ERROR:
+otherwise both the rich send and the plain fallback are rejected and the
+tap does nothing (#323).
 
 **Cards.** `services/cards/` draws the unlock and podium cards with Pillow,
 using the bundled Noto Sans (Latin and Cyrillic, no emoji), a drawn diamond

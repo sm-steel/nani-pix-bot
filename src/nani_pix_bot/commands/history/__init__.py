@@ -1,7 +1,10 @@
 """/history — finished games in DM (group members only): a paged table with
-a button per game, All / I played / I hosted / I won tabs, and each game's full record with
-its guess log. One rich message, edited in place; callback data in data.py,
-markdown in render.py, the queries in services/game/history.py."""
+a button per game, All / I played / I hosted / I won tabs, and each game's
+full record, with Record and Guesses tabs. One rich message, edited in
+place; callback data in data.py, markdown in render.py and
+render_record.py, the queries in services/game/history.py."""
+
+from dataclasses import replace
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -17,6 +20,7 @@ from nani_pix_bot.commands.history.data import (
     Filter,
     GameRequest,
     ListRequest,
+    Tab,
     game_data,
     list_data,
     parse,
@@ -46,10 +50,14 @@ def _list_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
+def _tab(label: str, current: bool, data: str) -> InlineKeyboardButton:
+    """One tab of a row, the current one marked "● " (as in /achievements)."""
+    return InlineKeyboardButton(("● " if current else "") + label, callback_data=data)
+
+
 def _filter_tab(filt: Filter, current: Filter, lang: str) -> InlineKeyboardButton:
     label = i18n.t(f"history.filter.{filt.name.lower()}", lang)
-    marker = "● " if filt is current else ""
-    return InlineKeyboardButton(marker + label, callback_data=list_data(ListRequest(filt, 0)))
+    return _tab(label, filt is current, list_data(ListRequest(filt, 0)))
 
 
 def list_view(session: Session, viewer_id: int, request: ListRequest, lang: str) -> Rendered:
@@ -72,23 +80,37 @@ def game_view(session: Session, request: GameRequest, lang: str) -> Rendered | N
     detail = history.game_detail(session, request.game_id)
     if detail is None:
         return None
-    total = len(detail.guesses)
-    page = clamp_page(request.guess_page, total=total, size=GUESS_PAGE_SIZE)
-    shown = detail.guesses[page * GUESS_PAGE_SIZE : (page + 1) * GUESS_PAGE_SIZE]
     tz = settings.get_group_timezone(session)
-    markdown = render.detail_markdown(session, detail, shown, tz, lang)
-    rows = []
-    nav = nav_row(
-        lambda p: game_data(GameRequest(request.game_id, request.back, p)),
-        page,
-        page_count(total, GUESS_PAGE_SIZE),
-        lang,
-    )
-    if nav:
-        rows.append(nav)
+    rows = [_game_tabs(request, detail.game.total_guess_count, lang)]
+    if request.tab is Tab.RECORD:
+        markdown = render.record_markdown(session, detail, tz, lang)
+    else:
+        total = len(detail.guesses)
+        page = clamp_page(request.guess_page, total=total, size=GUESS_PAGE_SIZE)
+        shown = detail.guesses[page * GUESS_PAGE_SIZE : (page + 1) * GUESS_PAGE_SIZE]
+        markdown = render.guesses_markdown(session, detail, shown, tz, lang)
+        nav = nav_row(
+            lambda p: game_data(replace(request, guess_page=p)),
+            page,
+            page_count(total, GUESS_PAGE_SIZE),
+            lang,
+        )
+        if nav:
+            rows.append(nav)
     back = InlineKeyboardButton(i18n.t("history.back", lang), callback_data=list_data(request.back))
     rows.append([back])
     return markdown, InlineKeyboardMarkup(rows)
+
+
+def _game_tabs(request: GameRequest, guess_count: int, lang: str) -> list[InlineKeyboardButton]:
+    labels = {
+        Tab.RECORD: i18n.t("history.tab.record", lang),
+        Tab.GUESSES: i18n.t("history.tab.guesses", lang, count=guess_count),
+    }
+    return [
+        _tab(label, tab is request.tab, game_data(GameRequest(request.game_id, request.back, tab)))
+        for tab, label in labels.items()
+    ]
 
 
 async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -122,8 +144,9 @@ def _tap_view(session: Session, viewer_id: int, request: ListRequest | GameReque
         )
     else:
         logger.info(
-            "viewed a game in /history (guess page {page})",
+            "viewed a game in /history ({tab} tab, guess page {page})",
             game_id=request.game_id,
+            tab=request.tab.name.lower(),
             page=request.guess_page + 1,
         )
     return rendered

@@ -12,13 +12,16 @@ from nani_pix_bot.commands import history
 from nani_pix_bot.commands.helpers import durations
 from nani_pix_bot.commands.helpers.rich import md_escape
 from nani_pix_bot.commands.history import data
-from nani_pix_bot.commands.history.data import Filter, GameRequest, ListRequest
+from nani_pix_bot.commands.history.data import Filter, GameRequest, ListRequest, Tab
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import EventType, GameStatus, PixelStage
+from nani_pix_bot.models.clue_purchase import CluePurchase
+from nani_pix_bot.models.enums import ClueKind, CurrencyReason, EventType, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
+from nani_pix_bot.models.game_vote import GameVote
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import events, i18n
+from nani_pix_bot.services.economy import bounty, wallet
 
 HOST, ALICE, BOB = 1, 2, 3
 T0 = datetime(2026, 10, 1, 12, tzinfo=UTC)
@@ -51,11 +54,16 @@ def _game(session: Session, status: GameStatus, ended: datetime, **fields) -> Ga
 
 def test_callback_data_round_trips_and_rejects_junk() -> None:
     listing = ListRequest(Filter.PLAYED, 3)
-    one = GameRequest(104, listing, 2)
+    one = GameRequest(104, listing, Tab.GUESSES, 2)
     assert data.parse(data.list_data(listing)) == listing
     assert data.parse(data.game_data(one)) == one
-    for junk in ("hist:l:x:1", "hist:l:a", "hist:g:1:a:0", "hist:g:x:a:0:0", "hist:z:1", "ach:1"):
-        assert data.parse(junk) is None
+    junk = ("hist:l:x:1", "hist:l:a", "hist:g:1:a:0", "hist:g:x:a:0:0", "hist:g:1:a:0:x:0")
+    for raw in (*junk, "hist:z:1", "ach:1"):
+        assert data.parse(raw) is None
+
+
+def test_a_game_button_from_before_the_tabs_opens_the_record() -> None:
+    assert data.parse("hist:g:104:m:3:2") == GameRequest(104, ListRequest(Filter.PLAYED, 3))
 
 
 @pytest.mark.parametrize(
@@ -156,9 +164,11 @@ def test_a_won_game_shows_the_full_record_and_its_guesses(session: Session) -> N
     back = ListRequest(Filter.ALL, 1)
 
     rendered = history.game_view(session, GameRequest(game.id, back), "en")
+    guesses = history.game_view(session, GameRequest(game.id, back, Tab.GUESSES), "en")
 
     assert rendered is not None
-    markdown, markup = rendered
+    assert guesses is not None
+    markdown = rendered[0]
     for fact in (
         f"Game #{game.id} · Frieren",
         "Also known as: Sousou no Frieren",
@@ -170,13 +180,16 @@ def test_a_won_game_shows_the_full_record_and_its_guesses(session: Session) -> N
         "Solved in 1h 5m",
         "Bounty paid out: 30 💠",
         "Standings: +4 🌟 to the winner",
-        "Guesses: 2",
     ):
         assert md_escape(fact) in markdown, fact
-    assert md_escape("naruto_x") in markdown
-    assert markdown.index("naruto") < markdown.index("| frieren")
-    back_button = markup.inline_keyboard[-1][0]
-    assert data.parse(str(back_button.callback_data)) == back
+    assert "naruto" not in markdown
+    log = guesses[0]
+    assert md_escape("Guesses: 2") in log
+    assert md_escape("naruto_x") in log
+    assert log.index("naruto") < log.index("| frieren")
+    for _view, view_markup in (rendered, guesses):
+        back_button = view_markup.inline_keyboard[-1][0]
+        assert data.parse(str(back_button.callback_data)) == back
 
 
 def test_an_unsolved_legacy_game_says_why_and_that_guesses_were_not_logged(
@@ -194,13 +207,14 @@ def test_an_unsolved_legacy_game_says_why_and_that_guesses_were_not_logged(
     )
 
     rendered = history.game_view(session, GameRequest(game.id, ListRequest()), "ru")
+    log = history.game_view(session, GameRequest(game.id, ListRequest(), Tab.GUESSES), "ru")
 
     assert rendered is not None
-    markdown = rendered[0]
+    assert log is not None
     unsolved = i18n.t("history.detail.unsolved", "ru")
     timeout = i18n.t("history.detail.unsolved.timeout", "ru")
-    assert md_escape(f"{unsolved} — {timeout}") in markdown
-    assert md_escape(i18n.t("history.detail.no_log", "ru")) in markdown
+    assert md_escape(f"{unsolved} — {timeout}") in rendered[0]
+    assert md_escape(i18n.t("history.detail.no_log", "ru")) in log[0]
 
 
 def test_a_long_guess_log_pages(session: Session) -> None:
@@ -211,12 +225,112 @@ def test_a_long_guess_log_pages(session: Session) -> None:
     )
     session.flush()
 
-    rendered = history.game_view(session, GameRequest(game.id, ListRequest(), 1), "en")
+    rendered = history.game_view(session, GameRequest(game.id, ListRequest(), Tab.GUESSES, 1), "en")
+    record = history.game_view(session, GameRequest(game.id, ListRequest()), "en")
 
     assert rendered is not None
+    assert record is not None
     markdown, markup = rendered
     assert markdown.count("| g") == 5
     assert "2/2" in [b.text for row in markup.inline_keyboard for b in row]
+    assert "2/2" not in [b.text for row in record[1].inline_keyboard for b in row]
+
+
+def test_the_game_view_has_record_and_guesses_tabs_with_the_current_marked(
+    session: Session,
+) -> None:
+    _players(session)
+    game = _game(session, GameStatus.UNSOLVED, T0, total_guess_count=7)
+    back = ListRequest(Filter.WON, 2)
+
+    rendered = history.game_view(session, GameRequest(game.id, back, Tab.GUESSES), "en")
+
+    assert rendered is not None
+    tabs = rendered[1].inline_keyboard[0]
+    assert [b.text for b in tabs] == [
+        i18n.t("history.tab.record", "en"),
+        "● " + i18n.t("history.tab.guesses", "en", count=7),
+    ]
+    assert [data.parse(str(b.callback_data)) for b in tabs] == [
+        GameRequest(game.id, back, Tab.RECORD),
+        GameRequest(game.id, back, Tab.GUESSES),
+    ]
+
+
+def _buy(session: Session, game: Game, buyer_id: int, kind: ClueKind, price: int, **fields) -> None:
+    buyer = session.get(Player, buyer_id)
+    assert buyer is not None
+    buyer.currency = 1000
+    entry = wallet.LedgerEntry(CurrencyReason.CLUE_PURCHASE, game_id=game.id)
+    charge = wallet.debit(session, buyer, price, entry)
+    session.flush()
+    session.add(
+        CluePurchase(
+            game_id=game.id, player_id=buyer_id, kind=kind, transfer_id=charge.id, **fields
+        )
+    )
+    session.flush()
+
+
+def test_the_record_shows_clues_bounty_stages_guessers_and_votes(session: Session) -> None:
+    _players(session)
+    game = _game(session, GameStatus.ACTIVE, T0, hard_mode=True)
+    _buy(session, game, BOB, ClueKind.FIRST_LETTER, 25, created_at=T0, shared_at=T0)
+    _buy(session, game, ALICE, ClueKind.TILE, 40, created_at=T0 + timedelta(minutes=1))
+    bob = session.get(Player, BOB)
+    assert bob is not None
+    bounty.contribute(session, game, bob, 30)
+    bounty.contribute(session, game, bob, 70)
+    events.emit(
+        session,
+        EventType.STAGE_ADVANCED,
+        events.Involved(game_id=game.id),
+        from_stage=1,
+        to_stage=2,
+        reason="sharpened",
+    )
+    session.add(GameVote(game_id=game.id, voter_id=BOB, candidate_id=ALICE))
+    game.status = GameStatus.UNSOLVED
+    events.emit(
+        session,
+        EventType.GAME_UNSOLVED,
+        events.Involved(subject_id=HOST, game_id=game.id),
+        cause="vote closed with no winner",
+        hard_mode=True,
+        distinct_guessers=3,
+    )
+
+    rendered = history.game_view(session, GameRequest(game.id, ListRequest()), "en")
+
+    assert rendered is not None
+    markdown = rendered[0]
+    for part in (
+        "### " + md_escape(i18n.t("history.detail.clues", "en", count=2)),
+        "| " + md_escape("@bob") + " | first letter | 25 | ",
+        "| " + md_escape("@alice") + " | unpixelated tile | 40 | — |",
+        md_escape(i18n.t("history.detail.bounty", "en", contributions="@bob 100 💠")),
+        "### " + md_escape(i18n.t("history.detail.stages", "en")),
+        md_escape(i18n.t("history.detail.stage.sharpened", "en")),
+        md_escape(i18n.t("history.detail.guessers", "en", count=3)),
+        md_escape(i18n.t("history.detail.votes", "en")),
+        md_escape("@bob → @alice"),
+    ):
+        assert part in markdown, part
+
+
+def test_the_record_leaves_out_parts_a_game_has_none_of(session: Session) -> None:
+    _players(session)
+    game = _game(session, GameStatus.WON, T0, winner_id=ALICE)
+
+    rendered = history.game_view(session, GameRequest(game.id, ListRequest()), "en")
+
+    assert rendered is not None
+    markdown = rendered[0]
+    for key in ("history.detail.stages", "history.detail.votes"):
+        assert md_escape(i18n.t(key, "en")) not in markdown, key
+    assert md_escape(i18n.t("history.detail.clues", "en", count=0)) not in markdown
+    assert "💰" not in markdown
+    assert "👥" not in markdown
 
 
 def _context(session_factory, *, member: bool = True) -> MagicMock:
