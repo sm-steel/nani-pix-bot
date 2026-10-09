@@ -1,7 +1,7 @@
 """The achievements browser in DM (spec §5): one rich message, edited in
 place — All / Earned / Not yet tabs, ◀ page ▶, Compare and Top. Callback
 data: ach:v:<owner>:<view>:<page>, ach:c:<other>:<filter>:<page> (compare.py),
-ach:t:<page>. The page counter is helpers/paging.py's NOOP (ach:x on
+ach:t:<page>, ach:p:<page> (picker.py). The page counter is helpers/paging.py's NOOP (ach:x on
 older messages, still answered here). Everything after the prefix
 is client-controlled, so it is parsed defensively (see dm_start/keyboards.py's
 _validated_index)."""
@@ -33,6 +33,7 @@ _SHAPES: dict[str, tuple[bool, ...]] = {
     "v": (True, False, True),
     "c": (True, False, True),
     "t": (True,),
+    "p": (True,),
 }
 
 
@@ -50,6 +51,10 @@ def view_data(owner_id: int, view: View, page: int) -> str:
 
 def top_data(page: int) -> str:
     return f"{PREFIX}t:{page}"
+
+
+def pick_data(page: int) -> str:
+    return f"{PREFIX}p:{page}"
 
 
 def parse(data: str) -> tuple[str, list[int | str]] | None:
@@ -79,6 +84,12 @@ def _keyboard(request: Browse, pages: int, lang: str) -> InlineKeyboardMarkup:
         compare = f"{PREFIX}c:{request.owner_id}:a:0"
         extra.append(
             InlineKeyboardButton(i18n.t("achievements.compare", lang), callback_data=compare)
+        )
+    else:
+        extra.append(
+            InlineKeyboardButton(
+                i18n.t("achievements.compare_pick", lang), callback_data=pick_data(0)
+            )
         )
     extra.append(
         InlineKeyboardButton(i18n.t("achievements.top_button", lang), callback_data=top_data(0))

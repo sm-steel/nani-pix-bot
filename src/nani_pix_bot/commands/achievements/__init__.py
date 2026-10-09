@@ -8,7 +8,7 @@ from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.achievements import browser, compare, render
+from nani_pix_bot.commands.achievements import browser, compare, picker, render
 from nani_pix_bot.commands.achievements.common import (
     DEEP_LINK_PREFIX,
     dm_link,
@@ -105,5 +105,6 @@ async def achievements_command(update: Update, context: ContextTypes.DEFAULT_TYP
     await _post_summary(message, context, user.id, args)
 
 
-# compare imports browser, so browser cannot register it itself.
+# compare and picker import browser, so browser cannot register them itself.
 browser.ACTIONS["c"] = compare.compare_tap
+browser.ACTIONS["p"] = picker.pick_tap

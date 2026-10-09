@@ -1354,7 +1354,11 @@ holds; one that can't be drawn goes out as plain text.
   edited in place, tabs All / Earned / Not yet, 8 rows per page, a ladder
   as one row with progress to its next tier.
 - **Compare** with another player (All / Only they have / Only you have)
-  and **Top** are reached from the browser.
+  and **Top** are reached from the browser. On someone else's browser the
+  button compares them with you directly; on your own, **Compare** opens a
+  picker of the other players by 🏆 points (10 per page, a button each,
+  best first). Players with no achievement are not listed: there is
+  nothing to compare.
 - `/title`.
 
 ## Pixels 💠

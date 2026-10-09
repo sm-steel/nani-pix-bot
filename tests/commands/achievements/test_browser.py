@@ -1,3 +1,4 @@
+import re
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -64,7 +65,7 @@ async def test_opening_someone_elses_list_offers_compare_and_top(session_factory
     assert "ach:t:0" in buttons
 
 
-async def test_own_list_has_no_compare_button(session_factory) -> None:
+async def test_own_list_offers_the_compare_picker_not_a_compare_with_self(session_factory) -> None:
     _seed(session_factory)
     message = MagicMock()
     message.chat_id = 2
@@ -76,6 +77,80 @@ async def test_own_list_has_no_compare_button(session_factory) -> None:
         b.callback_data for row in sent.await_args_list[0].args[3].inline_keyboard for b in row
     ]
     assert not any(b.startswith("ach:c:") for b in buttons)
+    assert "ach:p:0" in buttons
+
+
+def test_picker_callback_data_round_trips_and_rejects_forgeries() -> None:
+    assert browser.parse("ach:p:3") == ("p", [3])
+    assert browser.parse("ach:p") is None
+    assert browser.parse("ach:p:1:2") is None
+    assert browser.parse("ach:p:x") is None
+    assert browser.parse("ach:p:99999999999999999999") is None
+
+
+def _seed_many(session_factory, count: int = 12) -> None:
+    with session_scope(session_factory) as session:
+        session.add_all(
+            [Player(telegram_user_id=i, username=f"u{i}") for i in range(1, count + 1)]
+            + [Player(telegram_user_id=500, username="nogrants")]
+        )
+        session.flush()
+        for i in range(1, count + 1):
+            engine.grant(session, engine.GrantRequest(i, "clutch"))
+
+
+async def test_the_picker_lists_other_players_and_pages(session_factory, records) -> None:
+    _seed_many(session_factory)
+
+    with patch.object(browser, "edit_rich", new=AsyncMock()) as edited:
+        await browser.achievements_callback(
+            cast(Update, _tap("ach:p:0")),
+            cast(ContextTypes.DEFAULT_TYPE, _context(session_factory)),
+        )
+
+    args = edited.await_args_list[0].args
+    assert args[1].message_id == 42
+    assert not re.search(r"@u1\b", args[2])  # the viewer is left out
+    assert "nogrants" not in args[2]
+    buttons = [(b.text, b.callback_data) for row in args[3].inline_keyboard for b in row]
+    compares = [b for b in buttons if b[1].startswith("ach:c:")]
+    assert len(compares) == 10
+    assert ("@u2 · 8 🏆", "ach:c:2:a:0") in compares
+    assert not any(b[1] == "ach:c:1:a:0" for b in compares)
+    assert "ach:p:1" in [b[1] for b in buttons]
+    assert buttons[-1] == ("↩", "ach:v:1:a:0")
+    assert any("opened the compare picker (page 1)" in text for _lvl, text in records)
+
+
+async def test_the_picker_second_page_has_the_rest(session_factory) -> None:
+    _seed_many(session_factory)
+
+    with patch.object(browser, "edit_rich", new=AsyncMock()) as edited:
+        await browser.achievements_callback(
+            cast(Update, _tap("ach:p:1")),
+            cast(ContextTypes.DEFAULT_TYPE, _context(session_factory)),
+        )
+
+    buttons = [
+        b.callback_data for row in edited.await_args_list[0].args[3].inline_keyboard for b in row
+    ]
+    assert [b for b in buttons if b.startswith("ach:c:")] == ["ach:c:12:a:0"]
+    assert "ach:p:0" in buttons
+
+
+async def test_an_empty_picker_says_so(session_factory) -> None:
+    with session_scope(session_factory) as session:
+        session.add_all([Player(telegram_user_id=1), Player(telegram_user_id=2)])
+
+    with patch.object(browser, "edit_rich", new=AsyncMock()) as edited:
+        await browser.achievements_callback(
+            cast(Update, _tap("ach:p:0")),
+            cast(ContextTypes.DEFAULT_TYPE, _context(session_factory)),
+        )
+
+    args = edited.await_args_list[0].args
+    assert i18n.t("achievements.pick.empty", "en") in args[2]
+    assert [b.callback_data for row in args[3].inline_keyboard for b in row] == ["ach:v:1:a:0"]
 
 
 async def test_a_tab_tap_edits_the_message_in_place(session_factory) -> None:
