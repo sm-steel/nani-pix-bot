@@ -35,7 +35,7 @@ def test_you_line_shows_rank_score_wins_and_tie_breakers_outside_the_top_five() 
 
     line = standings.you_line(board, 6, "en")
 
-    assert line == "You: #6 · 94 🌟 · 3 👑 · 4 ❌ · 1h 5m ⏱"
+    assert line == "You: #6 · 94 🌟 · 3 👑 · 4 ❌ · 1:05:00 ⏱"
 
 
 def test_you_line_shows_a_shared_rank() -> None:
@@ -49,11 +49,12 @@ def test_you_line_shows_a_shared_rank() -> None:
 
 
 def test_the_table_shows_shared_ranks_and_the_tie_breakers(session: Session) -> None:
-    session.add_all(Player(telegram_user_id=i, username=f"p{i}") for i in (1, 2, 3))
+    session.add_all(Player(telegram_user_id=i, username=f"p{i}") for i in (1, 2, 3, 4))
     session.flush()
     rows = [
         Standing(player_id=1, score=6, wins=1, wrong=0, seconds=600),
-        Standing(player_id=2, score=6, wins=1, wrong=0, seconds=600),
+        Standing(player_id=2, score=6, wins=1, wrong=0, seconds=601),
+        Standing(player_id=4, score=6, wins=1, wrong=0, seconds=601),
         Standing(player_id=3, score=1, wins=0),
     ]
 
@@ -61,9 +62,10 @@ def test_the_table_shows_shared_ranks_and_the_tie_breakers(session: Session) -> 
 
     assert lines[0] == "| # | Player | 🌟 | 👑 | ❌ | ⏱ |"
     assert lines[2:] == [
-        "| 1 | @p1 | 6 | 1 | 0 | 10m |",
-        "| 1 | @p2 | 6 | 1 | 0 | 10m |",
-        "| 3 | @p3 | 1 | 0 | 0 | — |",
+        "| 1 | @p1 | 6 | 1 | 0 | 10:00 |",
+        "| 2 | @p2 | 6 | 1 | 0 | 10:01 |",  # one second decides it, visibly
+        "| 2 | @p4 | 6 | 1 | 0 | 10:01 |",
+        "| 4 | @p3 | 1 | 0 | 0 | — |",
     ]
 
 

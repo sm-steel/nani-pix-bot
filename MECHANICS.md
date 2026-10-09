@@ -1304,7 +1304,8 @@ Choose with `/title` (DM only; an earned title or "none").
 - **Live view.** `/standings` (topic or DM) shows the running week, month
   and year in one message: each top 5 as a table of the (shared) place,
   🌟 score, 👑 wins and the two tie-breakers, ❌ wrong guesses and ⏱
-  total solve time, plus your own line (place, score, wins, ❌, ⏱) when
+  total solve time (to the second, `m:ss` or `h:mm:ss`, since a second
+  can decide a tie), plus your own line (place, score, wins, ❌, ⏱) when
   you are outside the top 5 rows, or
   a note that you haven't scored yet. It reads the same scoring the closing
   uses, so it can never disagree with the final podium.

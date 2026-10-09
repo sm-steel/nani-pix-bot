@@ -5,7 +5,7 @@ into the DM (how points work, recent changes — standings_dm.py), so they
 need no callback here."""
 
 from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from loguru import logger
@@ -14,7 +14,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import dm_link, outsider_refusal
-from nani_pix_bot.commands.helpers.durations import duration
+from nani_pix_bot.commands.helpers.durations import clock
 from nani_pix_bot.commands.helpers.rich import RichTarget, md_escape, send_rich
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.commands.standings_dm import RECENT_PAYLOAD, RULES_PAYLOAD
@@ -37,12 +37,11 @@ def top_rows(board: Sequence[Standing]) -> list[Placed]:
     return periods.ranked(board)[:TOP_SIZE]
 
 
-def solve_time(standing: Standing, lang: str) -> str:
-    """Total ⏱ over the period's wins; '—' when there is none to show (a
-    host-only score, or wins logged without a start time)."""
-    if standing.seconds <= 0:
-        return "—"
-    return duration(timedelta(seconds=standing.seconds), lang)
+def solve_time(standing: Standing) -> str:
+    """Total ⏱ over the period's wins, to the second (it can decide a tie);
+    '—' when there is none to show (a host-only score, or wins logged
+    without a start time)."""
+    return clock(standing.seconds) if standing.seconds > 0 else "—"
 
 
 def you_line(board: Sequence[Standing], viewer_id: int, lang: str) -> str | None:
@@ -60,7 +59,7 @@ def you_line(board: Sequence[Standing], viewer_id: int, lang: str) -> str | None
                 score=standing.score,
                 wins=standing.wins,
                 wrong=standing.wrong,
-                time=solve_time(standing, lang),
+                time=solve_time(standing),
             )
     return i18n.t("standings.you_unscored", lang)
 
@@ -80,7 +79,7 @@ def table(session: Session, rows: Sequence[Placed], lang: str) -> list[str]:
     for rank, row in rows:
         name = md_escape(players.display_name(session, row.player_id))
         cells = [str(rank), name, str(row.score), str(row.wins), str(row.wrong)]
-        cells.append(md_escape(solve_time(row, lang)))
+        cells.append(md_escape(solve_time(row)))
         lines.append("| " + " | ".join(cells) + " |")
     return lines
 
