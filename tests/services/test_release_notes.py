@@ -65,6 +65,39 @@ def test_missing_files_mean_no_notes_and_no_history(tmp_path: Path) -> None:
     assert release_notes.load("en", tmp_path) == [Release(None, None, "")]
 
 
+def test_a_missing_file_logs_a_warning_with_its_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, log_records
+) -> None:
+    monkeypatch.setattr(release_notes, "NOTES_DIR", tmp_path)
+    _write(tmp_path, "release-notes-en.md", "- Now.")
+
+    assert release_notes.load("en") == [Release(None, None, "- Now.")]
+
+    warnings = [r for r in log_records if r.level == "WARNING"]
+    assert len(warnings) == 1
+    assert warnings[0].extra["path"] == str(tmp_path / "previous-releases-en.md")
+
+
+@pytest.mark.parametrize("content", [b"\xff\xfe broken", None])
+def test_an_unreadable_file_logs_an_error_and_reads_as_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, log_records, content: bytes | None
+) -> None:
+    monkeypatch.setattr(release_notes, "NOTES_DIR", tmp_path)
+    current = tmp_path / "release-notes-en.md"
+    if content is None:
+        current.mkdir()  # a directory where the file should be: OSError on read
+    else:
+        current.write_bytes(content)  # not UTF-8
+    _write(tmp_path, "previous-releases-en.md", "## v1.0.0 · 2026-01-01\n- One.\n")
+
+    releases = release_notes.load("en")
+
+    assert releases == [Release(None, None, ""), Release("1.0.0", "2026-01-01", "- One.")]
+    errors = [r for r in log_records if r.level == "ERROR"]
+    assert len(errors) == 1
+    assert errors[0].extra["path"] == str(current)
+
+
 def test_text_before_the_first_heading_is_ignored(tmp_path: Path) -> None:
     _write(tmp_path, "previous-releases-en.md", "stray\n## v1.0.0 · 2026-01-01\n- One.\n")
 

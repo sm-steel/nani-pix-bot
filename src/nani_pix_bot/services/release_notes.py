@@ -3,10 +3,12 @@ for the rules). Two markdown files per language, packaged with the bot:
 `release-notes-<lang>.md`, the notes of the running (or upcoming) release
 with no heading of its own, and `previous-releases-<lang>.md`, older
 releases newest first, each under a `## vX.Y.Z · YYYY-MM-DD` heading.
-Pure file reading and parsing, no Telegram."""
+File reading and parsing only, no Telegram."""
 
 from dataclasses import dataclass
 from pathlib import Path
+
+from loguru import logger
 
 NOTES_DIR = Path(__file__).resolve().parent.parent / "release_notes"
 MAX_PREVIOUS = 4
@@ -22,7 +24,15 @@ class Release:
 
 
 def _read(path: Path) -> str:
-    return path.read_text(encoding="utf-8") if path.is_file() else ""
+    """A missing or broken file reads as empty, so /version still answers
+    ("Nothing noted") instead of failing."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.warning("release notes {path} not found", path=str(path))
+    except (OSError, UnicodeDecodeError):
+        logger.opt(exception=True).error("release notes {path} could not be read", path=str(path))
+    return ""
 
 
 def _release(chunk: str) -> Release:
@@ -38,9 +48,11 @@ def _parse_previous(text: str) -> list[Release]:
     return [_release(chunk) for chunk in chunks]
 
 
-def load(lang: str, directory: Path = NOTES_DIR) -> list[Release]:
+def load(lang: str, directory: Path | None = None) -> list[Release]:
     """Page 0 is the current notes (possibly empty), then up to
-    MAX_PREVIOUS older releases, newest first."""
+    MAX_PREVIOUS older releases, newest first. `directory` defaults to
+    NOTES_DIR, looked up per call."""
+    directory = NOTES_DIR if directory is None else directory
     current = Release(None, None, _read(directory / f"release-notes-{lang}.md").strip())
     previous = _parse_previous(_read(directory / f"previous-releases-{lang}.md"))
     return [current, *previous[:MAX_PREVIOUS]]
