@@ -17,7 +17,6 @@ from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
-from nani_pix_bot.services.version import _TelegramHTMLRenderer
 
 if TYPE_CHECKING:
     from loguru import Record
@@ -29,15 +28,6 @@ _kept = (
     TitleVariants.romaji,
     TitleVariants.native,
     TitleVariants.russian,
-    # mistune calls these renderer hooks by name while rendering.
-    _TelegramHTMLRenderer.heading,
-    _TelegramHTMLRenderer.paragraph,
-    _TelegramHTMLRenderer.list_item,
-    _TelegramHTMLRenderer.thematic_break,
-    _TelegramHTMLRenderer.image,
-    _TelegramHTMLRenderer.linebreak,
-    _TelegramHTMLRenderer.block_html,
-    _TelegramHTMLRenderer.block_error,
     # --- Kept on purpose (issue #239) ---
     # Written for the record, read only by people querying the database.
     Game.ended_at,

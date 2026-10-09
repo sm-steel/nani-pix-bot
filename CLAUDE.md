@@ -426,6 +426,18 @@ Format: `<type>(<optional scope>): <description>`
 One logical change per commit, same as always — this doesn't change that,
 it just adds a prefix that says what kind of change it is.
 
+## Release notes
+
+`/version` shows hand-written, player-facing notes kept in
+`src/nani_pix_bot/release_notes/` (the release being built, plus up to four
+shipped ones), not the commit list semantic-release puts on GitHub. **Every
+PR into `develop` that a player or admin could notice adds its bullets to
+`release-notes-en.md` and `release-notes-ru.md` in that same PR**; the
+release PR only reviews them, and nothing is committed to these files during
+or after a release. The rules (what qualifies, the voice, condensing, not
+capping) and the rotation into `previous-releases-*.md` are in
+[`docs/release-notes.md`](docs/release-notes.md).
+
 ## Coding practices
 
 - **KISS.** This is a small social game for one group chat, not a
