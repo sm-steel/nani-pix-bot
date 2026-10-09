@@ -20,6 +20,7 @@ from loguru import logger
 
 from nani_pix_bot.services.search import cache
 from nani_pix_bot.services.search.rest import RestApi, get_json
+from nani_pix_bot.services.text import cut_at_line
 
 _DISTRIBUTION_NAME = "nani-pix-bot"
 
@@ -82,7 +83,7 @@ def render_release_notes_html(markdown_body: str) -> str:
     GFM-to-HTML pass-through."""
     if not markdown_body:
         return ""
-    truncated = _truncate_markdown(markdown_body)
+    truncated = cut_at_line(markdown_body, _MAX_RELEASE_NOTES_MARKDOWN_CHARS, _TRUNCATION_MARKER)
     rendered = _RENDER_MARKDOWN(truncated)
     if not isinstance(rendered, str):
         # Only possible if _RENDER_MARKDOWN were reconfigured with an AST
@@ -90,16 +91,6 @@ def render_release_notes_html(markdown_body: str) -> str:
         msg = "mistune returned an AST instead of HTML — renderer misconfigured"
         raise RuntimeError(msg)
     return rendered.strip()
-
-
-def _truncate_markdown(markdown_body: str) -> str:
-    if len(markdown_body) <= _MAX_RELEASE_NOTES_MARKDOWN_CHARS:
-        return markdown_body
-    cut = markdown_body[:_MAX_RELEASE_NOTES_MARKDOWN_CHARS]
-    last_newline = cut.rfind("\n")
-    if last_newline > 0:
-        cut = cut[:last_newline]
-    return cut + _TRUNCATION_MARKER
 
 
 class _TelegramHTMLRenderer(mistune.HTMLRenderer):

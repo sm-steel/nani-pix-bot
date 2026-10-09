@@ -368,6 +368,7 @@ class EventType(enum.StrEnum):
     CURRENCY_MOVED = "currency_moved"
     CLUE_PURCHASED = "clue_purchased"
     CLUE_REFUNDED = "clue_refunded"
+    CLUE_SHARED = "clue_shared"
     BOUNTY_SETTLED = "bounty_settled"
 
 

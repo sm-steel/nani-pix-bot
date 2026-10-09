@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -10,6 +11,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from nani_pix_bot.commands.achievements import browser
 from nani_pix_bot.commands.achievements.common import PREFIX
 from nani_pix_bot.commands.helpers import paging
+from nani_pix_bot.commands.helpers.keyboards import tab_button
 from nani_pix_bot.commands.helpers.rich import md_escape
 from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import names, status
@@ -40,8 +42,9 @@ def _label(mine: Status, theirs: Status, lang: str) -> str:
 
 def _tabs(other_id: int, current: CompareFilter, lang: str) -> list[InlineKeyboardButton]:
     return [
-        InlineKeyboardButton(
-            ("● " if f is current else "") + i18n.t(f"achievements.compare.{f.name.lower()}", lang),
+        tab_button(
+            i18n.t(f"achievements.compare.{f.name.lower()}", lang),
+            current=f is current,
             callback_data=compare_data(other_id, f, 0),
         )
         for f in CompareFilter
@@ -90,8 +93,10 @@ def compare_view(session: Session, request: CompareRequest, lang: str) -> browse
     return _table(session, request, shown, lang), InlineKeyboardMarkup(rows)
 
 
-def compare_tap(session: Session, viewer_id: int, fields: list, lang: str) -> browser.Rendered:
-    other_id, raw_filter, page = fields
+def compare_tap(
+    session: Session, viewer_id: int, fields: list[int | str], lang: str
+) -> browser.Rendered:
+    other_id, raw_filter, page = cast(tuple[int, str, int], tuple(fields))
     known = {f.value for f in CompareFilter}
     filt = CompareFilter(raw_filter) if raw_filter in known else CompareFilter.ALL
     logger.info(
