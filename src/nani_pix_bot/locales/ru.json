@@ -628,6 +628,7 @@
   "champion.win.unit.many": "очков",
   "champion.win.part": "   • {period} — {score} 🌟, {place}{marker}",
   "champion.win.place": "{ordinal}-е место",
+  "champion.win.place_shared": "делит {ordinal}-е место",
   "champion.win.up": " (⬆{places})",
   "champion.win.new": " (новый в зачёте)",
   "champion.win.period.week": "за неделю",

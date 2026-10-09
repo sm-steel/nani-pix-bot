@@ -193,6 +193,28 @@ def test_one_point_and_five_points_read_right_in_russian() -> None:
     )
 
 
+def test_a_gain_knows_when_its_place_is_shared(session: Session) -> None:
+    _win(session, 1, A)
+    assert not _gains(session, 1)[PeriodType.WEEK].shared  # alone at #1
+    _win(session, 2, B)  # same score, wins and tie-breakers as A
+
+    gain = _gains(session, 2)[PeriodType.WEEK]
+
+    assert (gain.rank_after, gain.shared) == (1, True)
+
+
+def test_a_shared_place_says_so() -> None:
+    period = periods.period_at(PeriodType.WEEK, NOW, UTC_TZ)
+    shared = PeriodGain(period, A, 5, 14, 3, 1, shared=True)
+
+    english = win_lines.gain_line([shared], "@p1", "en")
+    russian = win_lines.gain_line([shared], "@p1", "ru")
+
+    assert english.endswith("   • this week — 14 🌟, shared 1st place (⬆2)")
+    shared_ru = i18n.t("champion.win.place_shared", "ru", ordinal=i18n.ordinal(1, "ru"))
+    assert russian.endswith(f"   • за неделю — 14 🌟, {shared_ru} (⬆2)")
+
+
 def test_a_computed_downward_move_shows_no_marker() -> None:
     line = win_lines.gain_line([_gain(PeriodType.WEEK, 9, (1, 3))], "@a", "en")
 

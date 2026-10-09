@@ -1144,9 +1144,10 @@ the winner, then gives one bullet per running period:
 
 Each bullet is the winner's new total for that period and their place in
 it. `(⬆N)` is the places gained, and `(new on the board)` marks a first
-score there; an unchanged place gets no marker. Russian reads
-`🌟 @winner: +4 очка` / `• за неделю — 5 🌟, 3-е место (⬆1)`, with
-очко/очка/очков following the number.
+score there; an unchanged place gets no marker. A place held with someone
+else (equal on every tie-breaker) reads `shared 1st place`. Russian reads
+`🌟 @winner: +4 очка` / `• за неделю — 5 🌟, 3-е место (⬆1)` (shared:
+`делит 1-е место`), with очко/очка/очков following the number.
 
 A period the game's `ended_at` falls outside (an admin `/setwinner`
 re-finish long after it closed) is left out; with none left there is no
@@ -1339,7 +1340,11 @@ Choose with `/title` (DM only; an earned title or "none").
   launch is scored). Coinciding boundaries go week, month, year.
 - **Posting.** Every player placed #1–#3 goes on the podium, so a tie
   can put more than three there (1, 2, 2, 2). The summary text lists all
-  of them; the podium card has three slots and shows the first three.
+  of them, and so does the podium card. The card places players by rank:
+  a plain 1/2/3 podium keeps its classic layout (#1 large in the middle),
+  while shared ranks spread everyone evenly in one row, every co-champion
+  large with a gold ring and the rest smaller, shrunk only as needed to
+  keep four badges apart.
   Everyone at #1 becomes **co-champion** and gets the Champion
   achievement (and title), up to 3; a tie of four or more at #1 crowns
   nobody, and the podium is still posted. The summary is immediately

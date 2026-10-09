@@ -35,13 +35,14 @@ def lines(session: Session, placed: list[PeriodResult], lang: str) -> list[str]:
 
 
 def card(session: Session, placed: list[PeriodResult], title: str, lang: str) -> PodiumCard:
-    """The card has three slots, so a podium widened by a tie shows its
-    first three there; the text lists everyone."""
+    """Every place, positioned by rank on the card (co-champions share the
+    large #1 styling)."""
     entries = tuple(
         PodiumEntry(
             players.display_name(session, r.player_id),
             i18n.t("card.score", lang, score=r.score, wins=r.wins),
             r.player_id,
+            r.rank,
         )
         for r in placed
     )

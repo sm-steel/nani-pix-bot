@@ -22,13 +22,10 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import PeriodType
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.achievements import names, periods
-from nani_pix_bot.services.achievements.periods import Period, Standing
+from nani_pix_bot.services.achievements.periods import Period, Placed, Standing
 
 TOP_SIZE = 5
 PERIODS = (PeriodType.WEEK, PeriodType.MONTH, PeriodType.YEAR)
-
-
-Placed = tuple[int, Standing]  # (shared competition rank, standing)
 
 
 def top_rows(board: Sequence[Standing]) -> list[Placed]:

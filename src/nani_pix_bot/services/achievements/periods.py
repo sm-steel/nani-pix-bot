@@ -85,6 +85,9 @@ class Standing:
     seconds: float = 0.0
 
 
+Placed = tuple[int, Standing]  # (shared competition rank, standing)
+
+
 def _ended(event: LoggedEvent) -> datetime:
     return datetime.fromisoformat(event.data["ended_at"])
 
@@ -160,10 +163,10 @@ def _ranked(board: dict[int, Standing]) -> list[Standing]:
     return sorted((s for s in board.values() if s.score > 0), key=rank_key)
 
 
-def ranked(board: Sequence[Standing]) -> list[tuple[int, Standing]]:
+def ranked(board: Sequence[Standing]) -> list[Placed]:
     """Competition ranks for a sorted board: players equal on every key
     share the place, and the next one skips past them (1, 1, 3)."""
-    placed: list[tuple[int, Standing]] = []
+    placed: list[Placed] = []
     for index, standing in enumerate(board):
         if not placed or rank_key(standing) != rank_key(placed[-1][1]):
             rank = index + 1
@@ -260,6 +263,7 @@ class PeriodGain:
     score: int
     rank_before: int | None  # None: no score in this period before the win
     rank_after: int
+    shared: bool = False  # someone else holds rank_after too
 
 
 def win_event(session: Session, game_id: int) -> LoggedEvent | None:
@@ -274,7 +278,7 @@ def win_event(session: Session, game_id: int) -> LoggedEvent | None:
     return to_event(row) if row is not None else None
 
 
-def _placed(board: list[Standing], player_id: int) -> tuple[int, Standing] | None:
+def _placed(board: list[Standing], player_id: int) -> Placed | None:
     return next(((r, s) for r, s in ranked(board) if s.player_id == player_id), None)
 
 
@@ -287,10 +291,12 @@ def _gain_in(session: Session, period: Period, won: LoggedEvent) -> PeriodGain |
     if won.actor_id is None or not period.start <= _ended(won) < period.end:
         return None
     events = _won_events(session, period)
-    placed = _placed(score(events, period), won.actor_id)
+    board = score(events, period)
+    placed = _placed(board, won.actor_id)
     if placed is None:
         return None
     rank_after, standing = placed
+    holders = sum(1 for rank, _ in ranked(board) if rank == rank_after)
     before = score([e for e in events if e.game_id != won.game_id], period)
     return PeriodGain(
         period=period,
@@ -299,6 +305,7 @@ def _gain_in(session: Session, period: Period, won: LoggedEvent) -> PeriodGain |
         score=standing.score,
         rank_before=_rank(before, won.actor_id),
         rank_after=rank_after,
+        shared=holders > 1,
     )
 
 
@@ -316,7 +323,7 @@ def rank_of(session: Session, period: Period, player_id: int) -> int | None:
     return _rank(standings(session, period), player_id)
 
 
-def _record(session: Session, period: Period, top: list[tuple[int, Standing]]) -> None:
+def _record(session: Session, period: Period, top: list[Placed]) -> None:
     for rank, standing in top:
         session.add(
             PeriodResult(
@@ -330,7 +337,7 @@ def _record(session: Session, period: Period, top: list[tuple[int, Standing]]) -
         )
 
 
-def _crowned(period: Period, top: list[tuple[int, Standing]]) -> list[int]:
+def _crowned(period: Period, top: list[Placed]) -> list[int]:
     """Everyone tied at #1, up to CHAMPION_CAP; a bigger tie crowns nobody."""
     tied = [s.player_id for rank, s in top if rank == 1]
     if len(tied) <= CHAMPION_CAP:
@@ -344,7 +351,7 @@ def _crowned(period: Period, top: list[tuple[int, Standing]]) -> list[int]:
     return []
 
 
-def finalize(session: Session, period: Period) -> list[tuple[int, Standing]]:
+def finalize(session: Session, period: Period) -> list[Placed]:
     """Freeze the podium (every place up to TOP_SIZE, so a tie can put more
     than three on it), queue its summary, then grant the champions."""
     top = [(rank, s) for rank, s in ranked(standings(session, period)) if rank <= TOP_SIZE]

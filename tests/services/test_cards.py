@@ -1,6 +1,7 @@
 import colorsys
 import math
 from io import BytesIO
+from itertools import pairwise
 from typing import Any, cast
 
 from PIL import Image, ImageChops
@@ -68,7 +69,9 @@ def test_a_broken_avatar_falls_back_to_initials() -> None:
 
 def test_podium_renders_one_to_three_entries() -> None:
     for count in (1, 2, 3):
-        entries = tuple(cards.PodiumEntry(f"@p{i}", f"{10 - i} pts", seed=i) for i in range(count))
+        entries = tuple(
+            cards.PodiumEntry(f"@p{i}", f"{10 - i} pts", seed=i, rank=i + 1) for i in range(count)
+        )
         png = cards.render_podium_card(cards.PodiumCard("Champions of October 2026", entries))
         assert _open(png).size == cards.CARD_SIZE
 
@@ -114,14 +117,14 @@ def test_slot_names() -> None:
 def test_cards_render_with_a_background() -> None:
     background = _busy_background()
     assert _open(cards.render_unlock_card(_card(), None, background)).size == cards.CARD_SIZE
-    podium = cards.PodiumCard("Champions", (cards.PodiumEntry("@a", "1 pt", seed=1),))
+    podium = cards.PodiumCard("Champions", (cards.PodiumEntry("@a", "1 pt", seed=1, rank=1),))
     assert _open(cards.render_podium_card(podium, background)).size == cards.CARD_SIZE
 
 
 def test_a_broken_background_falls_back_to_the_flat_card() -> None:
     flat = cards.render_unlock_card(_card(), None)
     assert cards.render_unlock_card(_card(), None, b"not an image") == flat
-    podium = cards.PodiumCard("Champions", (cards.PodiumEntry("@a", "1 pt", seed=1),))
+    podium = cards.PodiumCard("Champions", (cards.PodiumEntry("@a", "1 pt", seed=1, rank=1),))
     assert cards.render_podium_card(podium, b"nope") == cards.render_podium_card(podium)
 
 
@@ -257,7 +260,9 @@ def test_the_unlock_card_draws_the_trophy_before_the_points(monkeypatch) -> None
 
 
 def test_the_podium_draws_a_star_before_each_score(monkeypatch) -> None:
-    entries = tuple(cards.PodiumEntry(f"@p{i}", f"{9 - i} · {i} wins", seed=i) for i in range(3))
+    entries = tuple(
+        cards.PodiumEntry(f"@p{i}", f"{9 - i} · {i} wins", seed=i, rank=i + 1) for i in range(3)
+    )
     podium = cards.PodiumCard("Champions", entries)
     with_icon = cards.render_podium_card(podium)
     monkeypatch.setattr(render, "star", _blank)
@@ -296,3 +301,56 @@ def test_the_medal_and_diamond_sprites_are_anti_aliased() -> None:
 def test_the_footer_diamond_edge_blends_into_the_card() -> None:
     card = cards.render_unlock_card(_card(), None)
     assert _has_blend(_open(card).crop((0, 500, 1200, 600)), render._CURRENCY, render._BACKGROUND)
+
+
+def _badges_apart(slots: tuple[render.PodiumSlot, ...]) -> bool:
+    """No two badges (avatar plus both rings) touch on the card."""
+    ordered = sorted(slots, key=lambda s: s.x)
+    return all(
+        b.x - a.x >= (a.size + b.size) / 2 + 2 * render._RING_TOTAL for a, b in pairwise(ordered)
+    )
+
+
+def test_the_classic_podium_keeps_its_slots() -> None:
+    # The layout every plain 1/2/3 podium has always had: draw code is
+    # unchanged, so these slots keep those cards pixel-identical.
+    classic = (
+        render.PodiumSlot(entry=0, place=0, x=600, size=230, name_width=280),
+        render.PodiumSlot(entry=1, place=1, x=300, size=170, name_width=280),
+        render.PodiumSlot(entry=2, place=2, x=900, size=170, name_width=280),
+    )
+    assert render.podium_slots((1, 2, 3)) == classic
+    assert render.podium_slots((1, 2)) == classic[:2]
+    assert render.podium_slots((1,)) == classic[:1]
+
+
+def test_co_champions_are_all_large_and_spread_out() -> None:
+    two = render.podium_slots((1, 1))
+    assert [(s.x, s.size, s.place) for s in two] == [(400, 230, 0), (800, 230, 0)]
+    three = render.podium_slots((1, 1, 1))
+    assert sorted(s.x for s in three) == [300, 600, 900]
+    assert {s.size for s in three} == {230}
+    assert _badges_apart(three)
+
+
+def test_a_shared_rank_podium_shows_everyone_without_overlap() -> None:
+    for ranks in ((1, 1, 3), (1, 2, 2, 2), (1, 2, 2), (1, 1, 1, 1)):
+        slots = render.podium_slots(ranks)
+        assert sorted(s.entry for s in slots) == list(range(len(ranks)))
+        assert _badges_apart(slots), ranks
+        for slot in slots:
+            assert slot.place == ranks[slot.entry] - 1
+    wide = render.podium_slots((1, 2, 2, 2))
+    assert sorted(s.x for s in wide) == [240, 480, 720, 960]
+    champion = next(s for s in wide if s.place == 0)
+    assert all(champion.size >= s.size for s in wide)
+
+
+def test_a_fourth_podium_entry_is_drawn() -> None:
+    entries = [
+        cards.PodiumEntry(f"@p{i}", "5 pts", seed=i, rank=r) for i, r in enumerate((1, 2, 2, 2))
+    ]
+    four = _open(cards.render_podium_card(cards.PodiumCard("Champions", tuple(entries))))
+    three = _open(cards.render_podium_card(cards.PodiumCard("Champions", tuple(entries[:3]))))
+    assert four.size == cards.CARD_SIZE
+    assert ImageChops.difference(four.convert("RGB"), three.convert("RGB")).getbbox() is not None

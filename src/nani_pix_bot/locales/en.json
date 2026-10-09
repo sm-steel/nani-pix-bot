@@ -628,6 +628,7 @@
   "champion.win.unit.many": "points",
   "champion.win.part": "   • {period} — {score} 🌟, {place}{marker}",
   "champion.win.place": "{ordinal} place",
+  "champion.win.place_shared": "shared {ordinal} place",
   "champion.win.up": " (⬆{places})",
   "champion.win.new": " (new on the board)",
   "champion.win.period.week": "this week",
