@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -90,8 +91,10 @@ def compare_view(session: Session, request: CompareRequest, lang: str) -> browse
     return _table(session, request, shown, lang), InlineKeyboardMarkup(rows)
 
 
-def compare_tap(session: Session, viewer_id: int, fields: list, lang: str) -> browser.Rendered:
-    other_id, raw_filter, page = fields
+def compare_tap(
+    session: Session, viewer_id: int, fields: list[int | str], lang: str
+) -> browser.Rendered:
+    other_id, raw_filter, page = cast(tuple[int, str, int], tuple(fields))
     known = {f.value for f in CompareFilter}
     filt = CompareFilter(raw_filter) if raw_filter in known else CompareFilter.ALL
     logger.info(

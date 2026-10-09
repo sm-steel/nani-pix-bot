@@ -1,6 +1,8 @@
 """The compare picker (spec §5): a paginated list of the other players with
 achievements, best first, each a button that opens the Compare table."""
 
+from typing import cast
+
 from loguru import logger
 from sqlalchemy.orm import Session
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -16,20 +18,20 @@ from nani_pix_bot.services.achievements.status import CompareFilter, View
 PICK_PAGE_SIZE = 10
 
 
-def _table(session: Session, rows: list[status.TopRow], offset: int, lang: str) -> str:
+def _table(session: Session, rows: list[status.TopRow], lang: str) -> str:
     lines = [
         "## " + md_escape(i18n.t("achievements.pick.header", lang)),
         "",
-        "| # | "
+        "| "
         + md_escape(i18n.t("achievements.top.player", lang))
         + " | "
         + md_escape(i18n.t("achievements.top.points", lang))
         + " |",
-        "|---|---|---|",
+        "|---|---|",
     ]
-    for rank, row in enumerate(rows, start=offset + 1):
+    for row in rows:
         name = md_escape(players.display_name(session, row.player_id))
-        lines.append(f"| {rank} | {name} | {row.points} |")
+        lines.append(f"| {name} | {row.points} |")
     return "\n".join(lines)
 
 
@@ -52,9 +54,12 @@ def pick_view(session: Session, viewer_id: int, page: int, lang: str) -> browser
     ]
     nav = paging.nav_row(browser.pick_data, page, paging.page_count(total, PICK_PAGE_SIZE), lang)
     keyboard = buttons + ([nav] if nav else []) + [back]
-    return _table(session, rows, offset, lang), InlineKeyboardMarkup(keyboard)
+    return _table(session, rows, lang), InlineKeyboardMarkup(keyboard)
 
 
-def pick_tap(session: Session, viewer_id: int, fields: list, lang: str) -> browser.Rendered:
-    logger.info("opened the compare picker (page {page})", page=fields[0] + 1)
-    return pick_view(session, viewer_id, fields[0], lang)
+def pick_tap(
+    session: Session, viewer_id: int, fields: list[int | str], lang: str
+) -> browser.Rendered:
+    (page,) = cast(tuple[int], tuple(fields))
+    logger.info("opened the compare picker (page {page})", page=page + 1)
+    return pick_view(session, viewer_id, page, lang)

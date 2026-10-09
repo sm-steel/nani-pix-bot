@@ -112,6 +112,8 @@ async def test_the_picker_lists_other_players_and_pages(session_factory, records
     assert args[1].message_id == 42
     assert not re.search(r"@u1\b", args[2])  # the viewer is left out
     assert "nogrants" not in args[2]
+    assert "| Player | 🏆 |" in args[2]  # no rank column: the viewer is removed
+    assert "| # |" not in args[2]
     buttons = [(b.text, b.callback_data) for row in args[3].inline_keyboard for b in row]
     compares = [b for b in buttons if b[1].startswith("ach:c:")]
     assert len(compares) == 10

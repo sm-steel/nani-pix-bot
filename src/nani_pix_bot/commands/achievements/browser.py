@@ -9,6 +9,7 @@ _validated_index)."""
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -120,8 +121,8 @@ def top_view(session: Session, page: int, lang: str) -> Rendered:
     return markdown, InlineKeyboardMarkup([nav] if nav else [])
 
 
-def _view_tap(session: Session, viewer_id: int, fields: list, lang: str) -> Rendered:
-    owner_id, view, page = fields
+def _view_tap(session: Session, viewer_id: int, fields: list[int | str], lang: str) -> Rendered:
+    owner_id, view, page = cast(tuple[int, str, int], tuple(fields))
     if view not in {v.value for v in View}:
         view = View.ALL.value
     logger.info(
@@ -134,12 +135,16 @@ def _view_tap(session: Session, viewer_id: int, fields: list, lang: str) -> Rend
     return browse_view(session, Browse(viewer_id, owner_id, View(view), page), lang)
 
 
-def _top_tap(session: Session, _viewer_id: int, fields: list, lang: str) -> Rendered:
-    logger.info("paged the achievements top to page {page}", page=fields[0] + 1)
-    return top_view(session, fields[0], lang)
+def _top_tap(session: Session, _viewer_id: int, fields: list[int | str], lang: str) -> Rendered:
+    (page,) = cast(tuple[int], tuple(fields))
+    logger.info("paged the achievements top to page {page}", page=page + 1)
+    return top_view(session, page, lang)
 
 
-ACTIONS: dict[str, Callable[[Session, int, list, str], Rendered]] = {"v": _view_tap, "t": _top_tap}
+ACTIONS: dict[str, Callable[[Session, int, list[int | str], str], Rendered]] = {
+    "v": _view_tap,
+    "t": _top_tap,
+}
 
 
 async def open_browser(
