@@ -18,6 +18,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    JobQueue,
     MessageHandler,
     TypeHandler,
     filters,
@@ -144,6 +145,26 @@ def _warn_about_partial_mal_config(bot_data: Mapping[str, Any]) -> None:
     )
 
 
+def _run_jobs_however_late(job_queue: JobQueue | None) -> None:
+    """Every job is armed in _post_init — before PTB starts the JobQueue's
+    scheduler, which only happens in Application.start(), after get_me, the
+    command-menu refresh and start_polling — and rearm_pending_timeouts arms
+    an overdue deadline at 0. APScheduler's default misfire grace is 1 s:
+    anything already more than that overdue when the scheduler first looks
+    is logged as "missed" and dropped, and a one-shot job is never re-armed
+    until the next restart. Issue #336: the 1.14.1 deploy took 1.46 s and
+    lost the period job for the process's life. So run every job however
+    late it is — each callback re-reads the DB and no-ops on an already-
+    resolved game/turn/period, so late is always better than never.
+    PTB's documented way to add a scheduler setting is to re-pass its own
+    configuration alongside it."""
+    if job_queue is None:
+        return
+    job_queue.scheduler.configure(
+        **job_queue.scheduler_configuration, job_defaults={"misfire_grace_time": None}
+    )
+
+
 def build_application(config: Config) -> Application:
     builder = ApplicationBuilder().token(config.bot_token)
     builder = builder.get_updates_connection_pool_size(GET_UPDATES_CONNECTION_POOL_SIZE)
@@ -152,6 +173,7 @@ def build_application(config: Config) -> Application:
             config.telegram_proxy_url
         )
     application = builder.post_init(_post_init).post_shutdown(_post_shutdown).build()
+    _run_jobs_however_late(application.job_queue)
 
     engine = db.get_engine(config.database_url)
     application.bot_data["session_factory"] = db.make_session_factory(engine)
