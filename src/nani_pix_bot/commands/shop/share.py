@@ -13,8 +13,8 @@ from nani_pix_bot.commands.shop.deliver import share_clue, text_clue_message
 from nani_pix_bot.commands.shop.keyboards import SHOP_SHARE_PREFIX
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models import CluePurchase
-from nani_pix_bot.models.enums import ClueKind
-from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.models.enums import ClueKind, EventType
+from nani_pix_bot.services import events, i18n, settings
 from nani_pix_bot.services.clues import shop
 from nani_pix_bot.services.clues.shop import TEXT_KINDS
 
@@ -22,12 +22,16 @@ from nani_pix_bot.services.clues.shop import TEXT_KINDS
 @dataclass(frozen=True)
 class _SharePost:
     """What a committed share needs for its topic post: `text` is the HTML
-    message, or the caption when `file_id` (an image clue) is set."""
+    message, or the caption when `file_id` (an image clue) is set. `content`
+    is what the group was shown, for the event log."""
 
     lang: str
     text: str
     file_id: str | None
     game_id: int
+    purchase_id: int
+    kind: ClueKind
+    content: dict
 
 
 class _ShareRefusedError(Exception):
@@ -67,7 +71,7 @@ def _prepare_share(session_factory, user: User, purchase_id: int) -> _SharePost:
                 game_id=game.id,
             )
             raise _ShareRefusedError(i18n.t("shop.share_failed", lang))
-        if not shop.mark_shared(row):
+        if not shop.mark_shared(session, row):
             logger.info(
                 "tried to share purchase {purchase_id} again — already shared",
                 purchase_id=purchase_id,
@@ -76,10 +80,32 @@ def _prepare_share(session_factory, user: User, purchase_id: int) -> _SharePost:
             raise _ShareRefusedError(i18n.t("shop.already_shared", lang))
         header = i18n.t("shop.shared", lang, name=html.escape(user.full_name))
         if is_image:
-            return _SharePost(lang, header, row.telegram_file_id, game.id)
+            content = {
+                "file_id": row.telegram_file_id,
+                "tile_index": row.tile_index,
+                "screenshot_url": row.screenshot_url,
+            }
+            return _SharePost(lang, header, row.telegram_file_id, game.id, row.id, kind, content)
         owned = shop.owned_kinds(session, game.id, user.id)
         clue = text_clue_message(game, kind, owned, lang)
-        return _SharePost(lang, f"{header}\n{clue}", None, game.id)
+        content = {"text": clue}
+        if kind is ClueKind.TITLE_SHAPE:
+            letters = (ClueKind.FIRST_LETTER, ClueKind.LAST_LETTER)
+            content["revealed"] = [k.value for k in letters if k in owned]
+        return _SharePost(lang, f"{header}\n{clue}", None, game.id, row.id, kind, content)
+
+
+def _record_shared(session_factory, post: _SharePost, user: User) -> None:
+    """Log a landed share, with everything the group was shown."""
+    with session_scope(session_factory) as session:
+        events.emit(
+            session,
+            EventType.CLUE_SHARED,
+            events.Involved(actor_id=user.id, game_id=post.game_id),
+            purchase_id=post.purchase_id,
+            kind=post.kind.value,
+            **post.content,
+        )
 
 
 def _unshare(session_factory, purchase_id: int) -> None:
@@ -110,8 +136,10 @@ async def _share(
         _unshare(session_factory, purchase_id)
         await query.answer(i18n.t("shop.share_failed", post.lang), show_alert=True)
         return
+    _record_shared(session_factory, post, user)
     logger.info(
-        "shared clue purchase {purchase_id} with the group",
+        "shared {kind} clue purchase {purchase_id} with the group",
+        kind=post.kind.value,
         purchase_id=purchase_id,
         game_id=post.game_id,
     )
