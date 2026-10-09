@@ -73,3 +73,35 @@ async def test_a_rejected_edit_falls_back_to_unescaped_plain_text(records) -> No
 
     assert bot.edit_message_text.await_args_list[0].kwargs["text"] == "# a_b"
     assert any(level == "ERROR" for level, _ in records)
+
+
+def test_fit_leaves_a_message_within_the_limit_alone(records) -> None:
+    text = "x" * rich.RICH_LIMIT
+
+    assert rich.fit(text) == text
+    assert records == []
+
+
+def test_fit_cuts_an_oversized_message_at_a_line_break_and_logs_an_error(records) -> None:
+    lines = [f"| row {i} |" for i in range(1000)]
+    markdown = "\n".join(lines)
+
+    cut = rich.fit(markdown)
+
+    assert len(cut) <= rich.RICH_LIMIT
+    assert cut.endswith("|\n\n…")
+    assert cut.removesuffix("\n\n…") in markdown
+    assert ("ERROR", f"rich message of {len(markdown)} chars cut to fit") in records
+
+
+async def test_send_and_edit_send_the_fitted_text() -> None:
+    bot = MagicMock()
+    bot.do_api_request = AsyncMock()
+    long = "line\n" * rich.RICH_LIMIT
+
+    await rich.send_rich(bot, rich.RichTarget(555), long)
+    await rich.edit_rich(bot, rich.RichTarget(555, message_id=9), long)
+
+    for call in bot.do_api_request.await_args_list:
+        sent = call.kwargs["api_kwargs"]["rich_message"]["markdown"]
+        assert sent == rich.fit(long)
