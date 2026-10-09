@@ -1,3 +1,8 @@
+## v1.14.1 · 2026-10-09
+
+### 🛠 Fixed
+- `/version` shows the release notes again — it came up empty when the bot's language was set to Russian.
+
 ## v1.14.0 · 2026-10-09
 
 ### ✨ New
@@ -37,15 +42,3 @@
 - Weekly, monthly and yearly champion races: every win scores 🌟 points, and `/standings` shows the live tables.
 - When a race closes, its podium is posted on a card, and the winner becomes Champion of the week, month or year, title included.
 - Every win message shows the 🌟 points it just earned.
-
-## v1.11.0 · 2026-10-06
-
-### ✨ New
-- A wrong guess that gets part of the title right now shows the words it hit: 🔎 Partly right.
-- HARD MODE clues go on sale, and the sale grows after every round nobody cracks.
-- When nobody cracks a HARD MODE round, the group gets 15 minutes to vote on who was actually right: a named winner gets a 💠 bonus on top, and if nobody is named, part of your clue spend comes back.
-- Every game announcement shows its 🎲 game number.
-- Random screenshot picks from Shikimori and Tenrai stick to TV series and movies.
-- 👮 `/setwinner` lets an admin name the winner of a game that ended unsolved.
-- 👮 `/refund` gives a player back one of their clue purchases.
-- 👮 `/partialmatch` sets how many matched letters it takes to reveal part of the title.
