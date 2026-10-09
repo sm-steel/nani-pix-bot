@@ -599,7 +599,7 @@
   "standings.rules.setwinner": "If an admin names a winner later (/setwinner), the game counts on the day it originally ended.",
   "standings.rules.ties": "Ties go to more 👑 wins in the period, then fewer ❌ wrong guesses in the games you won that period, then less total ⏱ solve time. Players still tied share the place.",
   "standings.rules.periods": "Weeks start on Monday at 00:00, months on the 1st, years on 1 January — all in the group's timezone ({tz}).",
-  "standings.rules.champions": "When a period ends, its top {top} go on the podium, and #1 becomes Champion of the week, month or year — an achievement that also gives a title. Everyone tied at #1 becomes Champion, up to {cap}; a bigger tie crowns nobody.",
+  "standings.rules.champions": "When a period ends, everyone placed in the top {top} goes on the podium (a tie can put more than {top} there), and #1 becomes Champion of the week, month or year — an achievement that also gives a title. Everyone tied at #1 becomes Champion, up to {cap}; a bigger tie crowns nobody.",
   "standings.rules.other": "🌟 only counts for these races. 👑 is lifetime wins (/leaderboard) and 🏆 is achievement points (/achievements) — separate scores.",
   "standings.recent.title": "🕑 Recent changes · {label}",
   "standings.recent.when": "When",

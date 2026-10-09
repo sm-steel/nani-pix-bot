@@ -100,17 +100,21 @@ def wrong_before_win(event: LoggedEvent) -> int:
     return max(wrong, 0)
 
 
+def _base_points(event: LoggedEvent) -> int:
+    """The stage (or HARD MODE turn) points; 0 for an unknown stage."""
+    table = HARD_POINTS if event.data["hard_mode"] else WIN_POINTS
+    stage = event.data["stage"]
+    return table[stage - 1] if 1 <= stage <= len(table) else 0
+
+
 def is_clean(event: LoggedEvent) -> bool:
-    return not event.data["hard_mode"] and wrong_before_win(event) == 0
+    """Earns CLEAN_BONUS (and the feed's ✨): a scoring normal-mode win with
+    no wrong guess of the winner's own. An unknown stage earns nothing."""
+    return not event.data["hard_mode"] and _base_points(event) > 0 and wrong_before_win(event) == 0
 
 
 def win_points(event: LoggedEvent) -> int:
-    table = HARD_POINTS if event.data["hard_mode"] else WIN_POINTS
-    stage = event.data["stage"]
-    if not 1 <= stage <= len(table):
-        return 0  # an unknown stage earns nothing, bonus included
-    points = table[stage - 1]
-    return points + CLEAN_BONUS if is_clean(event) else points
+    return _base_points(event) + (CLEAN_BONUS if is_clean(event) else 0)
 
 
 class GainRole(StrEnum):

@@ -93,6 +93,13 @@ def test_an_unknown_stage_earns_nothing_not_even_the_clean_bonus() -> None:
     assert periods.win_points(_won(A, 1, OCT_2, stage=0, winner_wrong=0)) == 0
 
 
+def test_an_unknown_stage_is_never_marked_clean() -> None:
+    won = _won(A, 1, OCT_2, stage=0, winner_wrong=0)
+    assert not periods.is_clean(won)
+    win = next(g for g in periods.gains([won], OCT) if g.role is periods.GainRole.WIN)
+    assert (win.points, win.clean) == (0, False)
+
+
 def test_an_old_win_without_the_wrong_count_counts_as_clean() -> None:
     old = ev(EventType.GAME_WON, A, HOST, game=1, stage=1, hard_mode=False, ended_at="x")
     assert periods.wrong_before_win(old) == 0
@@ -272,10 +279,9 @@ def test_gains_skip_other_periods_and_count_a_refinish_once() -> None:
     ]
 
 
-@pytest.mark.achievements
-def _emit_wins(session: Session, *winners: int, players: tuple[int, ...] = ()) -> None:
+def _emit_wins(session: Session, *winners: int) -> None:
     """One stage-1 win per entry (games 1, 2, ...), all hosted by HOST."""
-    session.add_all([Player(telegram_user_id=u) for u in {*winners, *players, HOST}])
+    session.add_all([Player(telegram_user_id=u) for u in {*winners, HOST}])
     session.flush()
     ended = datetime(2026, 10, 2, tzinfo=UTC).isoformat()
     for game, winner in enumerate(winners, start=1):

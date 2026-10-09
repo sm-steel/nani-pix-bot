@@ -30,6 +30,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Fails with an IntegrityError once a closed period holds a shared rank.
     with op.batch_alter_table("period_results") as batch:
         batch.drop_constraint("uq_period_result_player", type_="unique")
         batch.create_unique_constraint(
