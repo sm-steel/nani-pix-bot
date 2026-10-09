@@ -22,17 +22,21 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     # batch: SQLite (the migration test) can't drop a constraint in place.
+    # Add before drop: MariaDB DDL isn't transactional, so a failure must
+    # leave the previous constraint standing, never no constraint at all.
     with op.batch_alter_table("period_results") as batch:
-        batch.drop_constraint("uq_period_result_rank", type_="unique")
         batch.create_unique_constraint(
             "uq_period_result_player", ["period_type", "period_key", "player_id"]
         )
+        batch.drop_constraint("uq_period_result_rank", type_="unique")
 
 
 def downgrade() -> None:
-    # Fails with an IntegrityError once a closed period holds a shared rank.
+    # Once a closed period holds a shared rank, adding the rank constraint
+    # fails before anything is dropped: the table keeps its player
+    # constraint and the version stays at this revision.
     with op.batch_alter_table("period_results") as batch:
-        batch.drop_constraint("uq_period_result_player", type_="unique")
         batch.create_unique_constraint(
             "uq_period_result_rank", ["period_type", "period_key", "rank"]
         )
+        batch.drop_constraint("uq_period_result_player", type_="unique")
