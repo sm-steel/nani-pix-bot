@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.clue_purchase import CluePurchase
 from nani_pix_bot.models.enums import ClueKind, CurrencyReason, EventType, GameStatus, PixelStage
+from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.game_vote import GameVote
@@ -263,15 +264,18 @@ def test_detail_sums_bounty_per_contributor_without_refunded_ones(session: Sessi
 def test_detail_has_the_stage_timeline_with_readable_reasons(session: Session) -> None:
     _players(session)
     game = _game(session, GameStatus.UNSOLVED, ended=T0)
-    for step, reason in enumerate(("wrong-guess limit reached", "sharpened", "no guesses for 6h")):
-        events.emit(
-            session,
-            EventType.STAGE_ADVANCED,
-            events.Involved(game_id=game.id),
-            from_stage=step + 1,
-            to_stage=step + 2,
-            reason=reason,
+    reasons = ("wrong-guess limit reached", "sharpened", "no guesses for 6h")
+    times = [T0 + timedelta(minutes=10 * step) for step in range(len(reasons))]
+    for step, (reason, at) in enumerate(zip(reasons, times, strict=True)):
+        session.add(
+            EventLog(
+                event_type=EventType.STAGE_ADVANCED,
+                game_id=game.id,
+                occurred_at=at,
+                data={"from_stage": step + 1, "to_stage": step + 2, "reason": reason},
+            )
         )
+    session.flush()
 
     detail = history.game_detail(session, game.id)
 
@@ -281,6 +285,7 @@ def test_detail_has_the_stage_timeline_with_readable_reasons(session: Session) -
         (2, 3, history.StageReason.SHARPENED),
         (3, 4, history.StageReason.INACTIVITY),
     ]
+    assert [s.at for s in detail.stages] == times
 
 
 def test_stage_reasons_map_to_reasons_players_can_read() -> None:

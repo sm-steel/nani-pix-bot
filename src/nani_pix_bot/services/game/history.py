@@ -58,8 +58,7 @@ def unsolved_reason(cause: str) -> UnsolvedReason:
 
 
 class Involvement(StrEnum):
-    """Which finished games a list shows; the values are /history's
-    callback data ("m" is the old "only mine", kept so its buttons parse)."""
+    """Which finished games a list shows."""
 
     ALL = "a"
     PLAYED = "m"  # hosted, won or guessed in

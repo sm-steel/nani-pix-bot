@@ -17,6 +17,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements import render
 from nani_pix_bot.commands.achievements.common import MAX_ID, PREFIX, outsider_refusal
+from nani_pix_bot.commands.helpers.keyboards import tab_button
 from nani_pix_bot.commands.helpers.paging import clamp_page, nav_row, page_count
 from nani_pix_bot.commands.helpers.rich import RichTarget, edit_rich, md_escape, send_rich
 from nani_pix_bot.db import session_scope
@@ -65,8 +66,7 @@ def parse(data: str) -> tuple[str, list[int | str]] | None:
 
 def _tab(view: View, current: View, owner_id: int, lang: str) -> InlineKeyboardButton:
     label = i18n.t(f"achievements.tab.{view.name.lower()}", lang)
-    marker = "● " if view is current else ""
-    return InlineKeyboardButton(marker + label, callback_data=view_data(owner_id, view, 0))
+    return tab_button(label, current=view is current, callback_data=view_data(owner_id, view, 0))
 
 
 def _keyboard(request: Browse, pages: int, lang: str) -> InlineKeyboardMarkup:

@@ -6,7 +6,8 @@ so it is parsed defensively (field count, filter and tab values, int bounds):
                                                      are the list to go back to
 
 A game button from before the tabs (hist:g:<game>:<filter>:<page>:<guess_page>)
-opens the Record tab.
+opens the Record tab. <filter> is an Involvement value; "m" (I played) is
+the value the old "only mine" toggle used, so its buttons still parse.
 """
 
 from dataclasses import dataclass

@@ -12,6 +12,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import outsider_refusal
+from nani_pix_bot.commands.helpers.keyboards import tab_button
 from nani_pix_bot.commands.helpers.paging import clamp_page, nav_row, page_count
 from nani_pix_bot.commands.helpers.rich import RichTarget, edit_rich, md_escape, send_rich
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
@@ -50,14 +51,9 @@ def _list_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
-def _tab(label: str, current: bool, data: str) -> InlineKeyboardButton:
-    """One tab of a row, the current one marked "● " (as in /achievements)."""
-    return InlineKeyboardButton(("● " if current else "") + label, callback_data=data)
-
-
 def _filter_tab(filt: Filter, current: Filter, lang: str) -> InlineKeyboardButton:
     label = i18n.t(f"history.filter.{filt.name.lower()}", lang)
-    return _tab(label, filt is current, list_data(ListRequest(filt, 0)))
+    return tab_button(label, current=filt is current, callback_data=list_data(ListRequest(filt, 0)))
 
 
 def list_view(session: Session, viewer_id: int, request: ListRequest, lang: str) -> Rendered:
@@ -108,7 +104,11 @@ def _game_tabs(request: GameRequest, guess_count: int, lang: str) -> list[Inline
         Tab.GUESSES: i18n.t("history.tab.guesses", lang, count=guess_count),
     }
     return [
-        _tab(label, tab is request.tab, game_data(GameRequest(request.game_id, request.back, tab)))
+        tab_button(
+            label,
+            current=tab is request.tab,
+            callback_data=game_data(GameRequest(request.game_id, request.back, tab)),
+        )
         for tab, label in labels.items()
     ]
 
