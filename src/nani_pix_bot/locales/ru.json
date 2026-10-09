@@ -605,7 +605,7 @@
   "history.detail.stage.sharpened": "кто-то заплатил, чтобы прояснить (/sharpen)",
   "history.detail.stage.inactivity": "6 ч без догадок",
   "history.detail.stage.other": "переход",
-  "history.detail.guessers": "👥 Угадывали игроков: {count}",
+  "history.detail.guessers": "👥 Угадывали: {count}",
   "history.detail.votes": "🗳 Голоса:",
   "standings.button.rules": "📖 Как начисляются очки",
   "standings.button.recent": "🕑 Последние изменения",

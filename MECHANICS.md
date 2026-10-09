@@ -1116,7 +1116,8 @@ A game's record has two tabs, the current one marked ●: **📋 Record**
   were refunded (every one, when the game ended unsolved) don't count.
 - 🎞 the stages: when each stage advance happened and why (the wrong-guess
   limit was reached, someone paid to /sharpen, or 6 hours went by with no
-  guess)
+  guess). Normal games only: a HARD MODE turn change logs no stage
+  advance, so a HARD MODE record has no stages section.
 - 👥 how many players guessed
 - 🗳 HARD MODE: each vote, voter → candidate
 

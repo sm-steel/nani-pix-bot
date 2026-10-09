@@ -19,7 +19,10 @@ from telegram.error import BadRequest, InvalidToken
 
 from nani_pix_bot.services.text import cut_at_line
 
-# Assumed equal to Telegram's text message limit.
+# Assumed equal to Telegram's text message limit. An approximation: fit counts
+# Python code points of the markdown source, Telegram counts UTF-16 units of the
+# parsed text. The markup and escapes that drop out usually outweigh emoji
+# counting double, so it errs on the safe side.
 RICH_LIMIT = 4096
 CUT_MARKER = "\n\n…"
 

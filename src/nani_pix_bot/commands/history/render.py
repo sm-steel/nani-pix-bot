@@ -5,7 +5,7 @@ provider-written. The record's newer sections (clues, bounty, stages,
 participation) are in render_record.py."""
 
 from collections.abc import Sequence
-from datetime import timedelta
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -34,7 +34,7 @@ from nani_pix_bot.services.game.win_facts import stage_number
 UNSOLVED_MARK = "❌"
 
 
-def _when(game: Game):
+def _when(game: Game) -> datetime:
     return game.ended_at or game.created_at
 
 

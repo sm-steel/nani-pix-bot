@@ -328,7 +328,8 @@ def test_the_record_leaves_out_parts_a_game_has_none_of(session: Session) -> Non
     markdown = rendered[0]
     for key in ("history.detail.stages", "history.detail.votes"):
         assert md_escape(i18n.t(key, "en")) not in markdown, key
-    assert md_escape(i18n.t("history.detail.clues", "en", count=0)) not in markdown
+    assert "🛒" not in markdown
+    assert md_escape(i18n.t("history.col.clue", "en")) not in markdown
     assert "💰" not in markdown
     assert "👥" not in markdown
 
