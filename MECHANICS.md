@@ -1086,10 +1086,17 @@ won or unsolved, newest first, 10 per page. A game still being set up,
 running or being voted on never appears, so the history can't spoil a
 round. Each row shows the 🎲 game number, the date it ended, the anime, the
 winner (❌ when unsolved) and the host, and has a `#N` button that opens the
-game's record. **👤 Only mine** narrows the list to games you hosted, won
-or made a guess in; **📜 All games** switches back.
+game's record. A row of four tabs above the list narrows it, the current
+one marked ●:
+- **📜 All**: every finished game
+- **👤 I played**: games you hosted, won or made a guess in
+- **🎲 I hosted**: games you hosted
+- **👑 I won**: games you won
 
-A game's record shows:
+A game's record has two tabs, the current one marked ●: **📋 Record**
+(where it opens) and **💬 Guesses (N)**.
+
+📋 Record shows:
 - its titles
 - the host
 - how the anime was found (provider, or typed in by hand) and where the
@@ -1102,14 +1109,37 @@ A game's record shows:
     to solve, the bounty paid out and the 🌟 the winner got
   - unsolved: why (time ran out, every stage used up, HARD MODE with nobody
     guessing, or a vote with no winner)
-- the full guess log: time, player, guess, stage, ✅/❌, 25 per page
+- 🛒 the clues bought: time, player, clue, the 💠 paid and when the buyer
+  shared it (— if never). A refunded clue is deleted with its refund, so
+  it doesn't appear.
+- 💰 the bounty: what each player put in, added up. Contributions that
+  were refunded (every one, when the game ended unsolved) don't count.
+- 🎞 the stages: when each stage advance happened and why (the wrong-guess
+  limit was reached, someone paid to /sharpen, or 6 hours went by with no
+  guess). Normal games only: a HARD MODE turn change logs no stage
+  advance, so a HARD MODE record has no stages section.
+- 👥 how many players guessed
+- 🗳 HARD MODE: each vote, voter → candidate
 
-◀ Back returns to the same list page.
+Each part is left out when the game has none of it.
+
+💬 Guesses is the full guess log: time, player, guess, stage, ✅/❌, 25 per
+page.
+
+◀ Back, on either tab, returns to the same list page.
+
+Where the parts come from:
+- how a game was won, the bounty paid out, the solve time, how many
+  players guessed, an unsolved game's cause and the stage advances: the
+  event log
+- the clues: the clue purchases, priced from the 💠 charge each one names
+- the bounty contributions: the currency ledger
+- the votes: the HARD MODE ballots
+- the guess log: the guesses table
 
 Games older than the records some parts come from just leave those parts
 out:
-- how a game was won, the bounty, the solve time and an unsolved game's
-  cause come from the event log, which started with achievements
+- the event log started with achievements
 - the guess log started with issue #251
 
 ## Achievements

@@ -1,22 +1,29 @@
 """/history's callback data. Everything after the prefix is client-controlled,
-so it is parsed defensively (field count, filter value, int bounds):
+so it is parsed defensively (field count, filter and tab values, int bounds):
 
-- hist:l:<filter>:<page>                      the list
-- hist:g:<game>:<filter>:<page>:<guess_page>  one game; filter and page are
-                                               the list to go back to
+- hist:l:<filter>:<page>                            the list
+- hist:g:<game>:<filter>:<page>:<tab>:<guess_page>  one game; filter and page
+                                                     are the list to go back to
+
+A game button from before the tabs (hist:g:<game>:<filter>:<page>:<guess_page>)
+opens the Record tab. <filter> is an Involvement value; "m" (I played) is
+the value the old "only mine" toggle used, so its buttons still parse.
 """
 
 from dataclasses import dataclass
 from enum import StrEnum
 
 from nani_pix_bot.commands.achievements.common import MAX_ID
+from nani_pix_bot.services.game.history import Involvement as Filter
 
 PREFIX = "hist:"
+_LEGACY_GAME_FIELDS = 4
+_GAME_FIELDS = 5
 
 
-class Filter(StrEnum):
-    ALL = "a"
-    MINE = "m"
+class Tab(StrEnum):
+    RECORD = "r"
+    GUESSES = "g"
 
 
 @dataclass(frozen=True)
@@ -29,6 +36,7 @@ class ListRequest:
 class GameRequest:
     game_id: int
     back: ListRequest
+    tab: Tab = Tab.RECORD
     guess_page: int = 0
 
 
@@ -38,7 +46,8 @@ def list_data(request: ListRequest) -> str:
 
 def game_data(request: GameRequest) -> str:
     back = request.back
-    return f"{PREFIX}g:{request.game_id}:{back.filt.value}:{back.page}:{request.guess_page}"
+    where = f"{request.game_id}:{back.filt.value}:{back.page}"
+    return f"{PREFIX}g:{where}:{request.tab.value}:{request.guess_page}"
 
 
 def _int(raw: str) -> int | None:
@@ -52,16 +61,24 @@ def _list(filt: str, page: str) -> ListRequest | None:
     return ListRequest(Filter(filt), number)
 
 
+def _game(fields: list[str]) -> GameRequest | None:
+    if len(fields) == _LEGACY_GAME_FIELDS:
+        fields = [*fields[:3], Tab.RECORD.value, "0"]
+    if len(fields) != _GAME_FIELDS or fields[3] not in {tab.value for tab in Tab}:
+        return None
+    game_id, guess_page = _int(fields[0]), _int(fields[4])
+    back = _list(fields[1], fields[2])
+    if game_id is None or guess_page is None or back is None:
+        return None
+    return GameRequest(game_id, back, Tab(fields[3]), guess_page)
+
+
 def parse(data: str) -> ListRequest | GameRequest | None:
     if not data.startswith(PREFIX):
         return None
     action, *fields = data.removeprefix(PREFIX).split(":")
     if action == "l" and len(fields) == 2:
         return _list(*fields)
-    if action == "g" and len(fields) == 4:
-        game_id, guess_page = _int(fields[0]), _int(fields[3])
-        back = _list(fields[1], fields[2])
-        if game_id is None or guess_page is None or back is None:
-            return None
-        return GameRequest(game_id, back, guess_page)
+    if action == "g":
+        return _game(fields)
     return None
