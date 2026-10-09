@@ -332,6 +332,9 @@ src/nani_pix_bot/
                    # log (__init__.py), callback data hist:l:/hist:g:
                    # parsed defensively (data.py), markdown (render.py);
                    # queries in services/game/history.py
+    version.py    # /version — DM or topic: the running version over the
+                   # current release notes as one rich message, paged back
+                   # through earlier releases with ver:<page>
     standings_dm.py  # the DM views behind them: how 🌟 points work
                    # (rendered from periods' constants) and this week's
                    # gains (periods.recent_gains), paged with std:r:<page>
@@ -800,6 +803,10 @@ src/nani_pix_bot/
                    #               price, sharpen)
     i18n.py       # simple dict/JSON t(key, lang, **kwargs) — see
                    # CLAUDE.md's "Language / i18n"
+    release_notes.py  # load(lang): the hand-written notes in release_notes/
+                   # as a list of Release (page 0 the current notes, then
+                   # up to four previous releases split on `## ` headings)
+    version.py    # installed_version() from the package metadata
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,
                    #                    games-enabled flag, autostart-
@@ -826,6 +833,10 @@ src/nani_pix_bot/
                    #                    raises rather than silently
                    #                    returning garbage — callers treat
                    #                    that the same as "never linked"
+  release_notes/  # player-facing release notes per language, shown by
+                   # /version: release-notes-<lang>.md (the release being
+                   # built) and previous-releases-<lang>.md (up to four
+                   # shipped ones) — rules in docs/release-notes.md
   models/         # SQLAlchemy ORM models, one module per table
     base.py       # declarative base
     player.py     # Player
