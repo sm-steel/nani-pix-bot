@@ -30,6 +30,8 @@ PERIOD_OF_CHAMPION: Mapping[str, PeriodType] = MappingProxyType(
     {key: ptype for ptype, key in CHAMPION_KEYS.items()}
 )
 TOP_SIZE = 3
+# Everyone tied at #1 is champion, up to this many; a bigger tie crowns nobody.
+CHAMPION_CAP = 3
 # Index = stage - 1 (normal) or turn - 1 (HARD MODE).
 WIN_POINTS = (5, 4, 3, 2, 1)
 HARD_POINTS = (6, 4)
@@ -308,9 +310,8 @@ def rank_of(session: Session, period: Period, player_id: int) -> int | None:
     return _rank(standings(session, period), player_id)
 
 
-def finalize(session: Session, period: Period) -> list[Standing]:
-    top = standings(session, period)[:TOP_SIZE]
-    for rank, standing in enumerate(top, start=1):
+def _record(session: Session, period: Period, top: list[tuple[int, Standing]]) -> None:
+    for rank, standing in top:
         session.add(
             PeriodResult(
                 period_type=period.type,
@@ -321,17 +322,41 @@ def finalize(session: Session, period: Period) -> list[Standing]:
                 wins=standing.wins,
             )
         )
+
+
+def _crowned(period: Period, top: list[tuple[int, Standing]]) -> list[int]:
+    """Everyone tied at #1, up to CHAMPION_CAP; a bigger tie crowns nobody."""
+    tied = [s.player_id for rank, s in top if rank == 1]
+    if len(tied) <= CHAMPION_CAP:
+        return tied
+    logger.info(
+        "no champion for {period_type} {period_key}: {count}-way tie at #1",
+        period_type=period.type.value,
+        period_key=period.key,
+        count=len(tied),
+    )
+    return []
+
+
+def finalize(session: Session, period: Period) -> list[tuple[int, Standing]]:
+    """Freeze the podium (every place up to TOP_SIZE, so a tie can put more
+    than three on it), queue its summary, then grant the champions."""
+    top = [(rank, s) for rank, s in ranked(standings(session, period)) if rank <= TOP_SIZE]
+    _record(session, period, top)
+    champions = _crowned(period, top)
     if top:
         session.flush()
         outbox.enqueue_period_summary(session, period.type.value, period.key)
-        request = engine.GrantRequest(top[0].player_id, CHAMPION_KEYS[period.type], 1, period.key)
+    for player_id in champions:
+        request = engine.GrantRequest(player_id, CHAMPION_KEYS[period.type], 1, period.key)
         engine.grant(session, request)
+    named = ", ".join(players.describe_player_id(session, p) for p in champions)
     logger.info(
-        "closed {period_type} {period_key}: {count} ranked, champion {champion}",
+        "closed {period_type} {period_key}: {count} ranked, champions {champions}",
         period_type=period.type.value,
         period_key=period.key,
         count=len(top),
-        champion=players.describe_player_id(session, top[0].player_id) if top else "nobody",
+        champions=named or "nobody",
     )
     return top
 

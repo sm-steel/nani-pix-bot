@@ -264,13 +264,12 @@ def test_gains_skip_other_periods_and_count_a_refinish_once() -> None:
 
 
 @pytest.mark.achievements
-def test_finalize_records_the_top_and_grants_the_champion_after_the_summary(
-    session: Session,
-) -> None:
-    session.add_all([Player(telegram_user_id=u) for u in (A, B, HOST)])
+def _emit_wins(session: Session, *winners: int, players: tuple[int, ...] = ()) -> None:
+    """One stage-1 win per entry (games 1, 2, ...), all hosted by HOST."""
+    session.add_all([Player(telegram_user_id=u) for u in {*winners, *players, HOST}])
     session.flush()
     ended = datetime(2026, 10, 2, tzinfo=UTC).isoformat()
-    for game, winner in ((1, A), (2, A), (3, B)):
+    for game, winner in enumerate(winners, start=1):
         events.emit(
             session,
             EventType.GAME_WON,
@@ -282,14 +281,37 @@ def test_finalize_records_the_top_and_grants_the_champion_after_the_summary(
             seconds=None,
             last_slot=False,
             distinct_guessers=1,
-            winner_wrong=0,
+            winner_wrong=1,
             first_guess=False,
             ended_at=ended,
         )
 
+
+def _champions(session: Session) -> list[int]:
+    stmt = select(AchievementGrant.player_id).where(AchievementGrant.key == "champion_month")
+    return sorted(session.scalars(stmt))
+
+
+def _summaries(session: Session) -> list[Any]:
+    return [r for r in outbox.pending(session, 100) if r.kind == OutboxKind.PERIOD_SUMMARY]
+
+
+def _stored(session: Session) -> list[tuple[int, int]]:
+    stmt = select(PeriodResult.rank, PeriodResult.player_id).order_by(
+        PeriodResult.rank, PeriodResult.id
+    )
+    return [(rank, player) for rank, player in session.execute(stmt)]
+
+
+@pytest.mark.achievements
+def test_finalize_records_the_top_and_grants_the_champion_after_the_summary(
+    session: Session,
+) -> None:
+    _emit_wins(session, A, A, B)
+
     top = periods.finalize(session, OCT)
 
-    assert [s.player_id for s in top] == [A, B, HOST]
+    assert [(rank, s.player_id) for rank, s in top] == [(1, A), (2, B), (3, HOST)]
     ranks = session.scalars(select(PeriodResult.player_id).order_by(PeriodResult.rank)).all()
     assert ranks == [A, B, HOST]
     champion = session.scalars(
@@ -302,6 +324,62 @@ def test_finalize_records_the_top_and_grants_the_champion_after_the_summary(
         r for r in outbox.pending(session, 100) if r.payload.get("grant_id") == champion.id
     )
     assert champion_row.id > queued[0].id
+
+
+@pytest.mark.achievements
+def test_everyone_tied_at_first_becomes_champion(session: Session, log_records) -> None:
+    c = 3
+    _emit_wins(session, A, B, c)  # 5 each; the host's 3 is fourth, off the podium
+
+    top = periods.finalize(session, OCT)
+
+    assert [rank for rank, _ in top] == [1, 1, 1]
+    assert _stored(session) == [(1, A), (1, B), (1, c)]
+    assert _champions(session) == [A, B, c]
+    assert len(_summaries(session)) == 1
+    closed = next(r for r in log_records if r.message.startswith("closed month"))
+    assert closed.level == "INFO"
+    assert "champions 1, 2, 3" in closed.message
+
+
+@pytest.mark.achievements
+def test_two_champions_store_two_first_places(session: Session) -> None:
+    _emit_wins(session, A, B)
+
+    periods.finalize(session, OCT)
+
+    assert _stored(session) == [(1, A), (1, B), (3, HOST)]
+    assert _champions(session) == [A, B]
+
+
+@pytest.mark.achievements
+def test_a_tie_on_the_podium_puts_everyone_tied_on_it(session: Session) -> None:
+    c, d = 3, 4
+    _emit_wins(session, A, A, B, c, d)  # A 10; B, c, d and the host 5, the host 0 👑
+
+    top = periods.finalize(session, OCT)
+
+    assert len(top) == periods.TOP_SIZE + 1
+    assert _stored(session) == [(1, A), (2, B), (2, c), (2, d)]
+    assert _champions(session) == [A]
+
+
+@pytest.mark.achievements
+def test_a_tie_too_big_at_first_crowns_nobody_but_still_posts(
+    session: Session, log_records
+) -> None:
+    others = (3, 4)
+    _emit_wins(session, A, B, *others)  # four players on 5, the host on 4
+
+    top = periods.finalize(session, OCT)
+
+    assert len(top) == periods.CHAMPION_CAP + 1
+    assert _stored(session) == [(1, A), (1, B), (1, 3), (1, 4)]
+    assert _champions(session) == []
+    assert len(_summaries(session)) == 1
+    messages = [r.message for r in log_records if r.level == "INFO"]
+    assert "no champion for month 2026-10: 4-way tie at #1" in messages
+    assert any(m.startswith("closed month 2026-10") and "nobody" in m for m in messages)
 
 
 @pytest.mark.achievements

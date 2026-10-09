@@ -176,6 +176,37 @@ async def test_a_period_summary_lists_the_podium(session_factory) -> None:
     assert text.startswith("🌟 ")
 
 
+async def test_a_shared_first_place_posts_two_gold_medals(session_factory) -> None:
+    from nani_pix_bot.models.enums import PeriodType
+    from nani_pix_bot.models.period import PeriodResult
+
+    with session_scope(session_factory) as session:
+        session.add_all([Player(telegram_user_id=i, username=f"p{i}") for i in (1, 2, 3)])
+        session.flush()
+        session.add_all(
+            PeriodResult(
+                period_type=PeriodType.WEEK,
+                period_key="2026-W41",
+                rank=rank,
+                player_id=player,
+                score=score,
+                wins=1,
+            )
+            for player, rank, score in ((3, 3, 2), (1, 1, 6), (2, 1, 6))
+        )
+        outbox.enqueue_period_summary(session, "week", "2026-W41")
+    context = _context(session_factory)
+
+    await _drain(context)
+
+    lines = context.bot.send_photo.await_args.kwargs["caption"].splitlines()
+    assert lines[1:] == [
+        "🥇 @p1 — 6 🌟 · 1 👑",
+        "🥇 @p2 — 6 🌟 · 1 👑",
+        "🥉 @p3 — 2 🌟 · 1 👑",
+    ]
+
+
 async def test_three_unlocks_from_one_event_post_as_one_album(session_factory) -> None:
     with session_scope(session_factory) as session:
         session.add(Player(telegram_user_id=1, username="alice"))

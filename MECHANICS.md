@@ -1334,9 +1334,19 @@ Choose with `/title` (DM only; an earned title or "none").
   start-up closes every missed period, oldest first, exactly once. The very
   first start only arms the periods running at that moment (nothing before
   launch is scored). Coinciding boundaries go week, month, year.
-- **Posting.** The top 3 are posted as a podium card, and only #1 gets the
-  Champion achievement (and title); the summary is immediately followed by
-  that unlock. A period nobody scored in is not posted.
+- **Posting.** Every player placed #1–#3 goes on the podium, so a tie
+  can put more than three there (1, 2, 2, 2). The summary text lists all
+  of them; the podium card has three slots and shows the first three.
+  Everyone at #1 becomes **co-champion** and gets the Champion
+  achievement (and title), up to 3; a tie of four or more at #1 crowns
+  nobody, and the podium is still posted. The summary is immediately
+  followed by the unlocks. A period nobody scored in is not posted.
+- **When the rules changed.** The clean-solve bonus, the ❌/⏱
+  tie-breakers and shared places apply to every period still running when
+  they shipped (the standings are recomputed from the win events on every
+  read, and every win event already carries the wrong count, solve time and
+  how it was won). Periods closed before that keep the podium and Champion
+  grants they were frozen with; nothing is re-scored.
 
 ### Unbroken
 

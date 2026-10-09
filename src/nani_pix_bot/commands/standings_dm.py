@@ -56,7 +56,7 @@ def rules_markdown(lang: str, tz_name: str) -> str:
         _t("standings.rules.setwinner", lang),
         _t("standings.rules.ties", lang),
         _t("standings.rules.periods", lang, tz=tz_name),
-        _t("standings.rules.champions", lang, top=periods.TOP_SIZE),
+        _t("standings.rules.champions", lang, top=periods.TOP_SIZE, cap=periods.CHAMPION_CAP),
         _t("standings.rules.other", lang),
     ]
     return "\n\n".join(paragraphs)
