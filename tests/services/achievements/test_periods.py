@@ -75,13 +75,22 @@ def test_hard_mode_never_gets_the_clean_bonus() -> None:
     assert periods.win_points(won) == periods.HARD_POINTS[0]
 
 
-def test_a_host_confirmed_guess_is_not_one_of_your_wrong_guesses() -> None:
-    # /correct stores the confirmed guess as wrong (the matcher missed it).
-    confirmed = _won(A, 1, OCT_2, how="correct", winner_wrong=1)
-    assert periods.wrong_before_win(confirmed) == 0
-    assert periods.is_clean(confirmed)
-    assert periods.wrong_before_win(_won(A, 2, OCT_2, how="correct", winner_wrong=3)) == 2
-    assert periods.wrong_before_win(_won(A, 3, OCT_2, how="correct", winner_wrong=0)) == 0
+@pytest.mark.parametrize("how", ["correct", "vote", "setwinner"])
+def test_a_win_the_matcher_missed_doesnt_count_the_winning_guess_as_wrong(how: str) -> None:
+    # /correct, a vote and /setwinner all store the winning guess as wrong.
+    won = _won(A, 1, OCT_2, how=how, winner_wrong=1)
+    assert periods.wrong_before_win(won) == 0
+    assert periods.is_clean(won)
+    assert periods.wrong_before_win(_won(A, 2, OCT_2, how=how, winner_wrong=3)) == 2
+    assert periods.wrong_before_win(_won(A, 3, OCT_2, how=how, winner_wrong=0)) == 0
+
+
+def test_a_matched_guess_counts_every_wrong_guess() -> None:
+    assert periods.wrong_before_win(_won(A, 1, OCT_2, how="guess", winner_wrong=2)) == 2
+
+
+def test_an_unknown_stage_earns_nothing_not_even_the_clean_bonus() -> None:
+    assert periods.win_points(_won(A, 1, OCT_2, stage=0, winner_wrong=0)) == 0
 
 
 def test_an_old_win_without_the_wrong_count_counts_as_clean() -> None:

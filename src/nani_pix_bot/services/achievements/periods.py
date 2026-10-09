@@ -90,12 +90,12 @@ def _ended(event: LoggedEvent) -> datetime:
 
 
 def wrong_before_win(event: LoggedEvent) -> int:
-    """The winner's own wrong guesses in the game they won. A host-confirmed
-    win (/correct) stores the confirmed guess as wrong, because the matcher
-    missed it (win_facts._wrong_guesses), so it doesn't count here. A win
-    logged before `winner_wrong` existed counts as 0."""
+    """The winner's own wrong guesses in the game they won. Every win the
+    matcher didn't catch (/correct, a HARD MODE vote, /setwinner) stores the
+    winning guess as wrong (win_facts._wrong_guesses), so it doesn't count
+    here. A win logged before `winner_wrong` existed counts as 0."""
     wrong = event.data.get("winner_wrong") or 0
-    if event.data.get("how") == WinMethod.CORRECT.value:
+    if event.data.get("how", WinMethod.GUESS.value) != WinMethod.GUESS.value:
         wrong -= 1
     return max(wrong, 0)
 
@@ -107,7 +107,9 @@ def is_clean(event: LoggedEvent) -> bool:
 def win_points(event: LoggedEvent) -> int:
     table = HARD_POINTS if event.data["hard_mode"] else WIN_POINTS
     stage = event.data["stage"]
-    points = table[stage - 1] if 1 <= stage <= len(table) else 0
+    if not 1 <= stage <= len(table):
+        return 0  # an unknown stage earns nothing, bonus included
+    points = table[stage - 1]
     return points + CLEAN_BONUS if is_clean(event) else points
 
 

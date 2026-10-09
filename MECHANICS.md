@@ -1296,9 +1296,11 @@ Choose with `/title` (DM only; an earned title or "none").
 - **Score.** A win at stage 1–5 is worth 5/4/3/2/1; a HARD MODE win at
   turn 1/2 is worth 6/4; hosting a game someone solved is +1. A **clean
   solve** (a normal-mode win with no wrong guess of the winner's own in
-  that game) is worth +1 more; a host-confirmed win (`/correct`) doesn't
-  count the confirmed guess as wrong. HARD MODE gets no clean bonus. The
-  recent-changes feed marks a clean win with ✨.
+  that game) is worth +1 more. A win the matcher didn't catch
+  (`/correct`, a HARD MODE vote, `/setwinner`) doesn't count the winning
+  guess as wrong, here or in the ❌ tie-breaker. HARD MODE gets no clean
+  bonus, and a win with an unknown stage earns nothing, bonus included.
+  The recent-changes feed marks a clean win with ✨.
 - **Live view.** `/standings` (topic or DM) shows the running week, month
   and year in one message: each top 5 as a table of the (shared) place,
   🌟 score, 👑 wins and the two tie-breakers, ❌ wrong guesses and ⏱
