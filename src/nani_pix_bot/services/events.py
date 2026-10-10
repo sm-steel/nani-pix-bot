@@ -108,7 +108,7 @@ def to_event(row: EventRow) -> LoggedEvent:
 
 
 def _dispatch(session: Session, event: LoggedEvent) -> None:
-    """Hands the event to its one consumer, in a savepoint: a broken
+    """Hands the event to the achievements consumer, in a savepoint: a broken
     achievement must never roll back the player's own action, so a failure
     discards only the achievement work (nested savepoints cover a reward
     cascade, where this re-enters via wallet.credit). A function-local

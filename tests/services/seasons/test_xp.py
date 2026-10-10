@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 
 from nani_pix_bot.models.enums import EventType, GameStatus, PixelStage, SeasonStatus, XpSource
+from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import Player
@@ -144,10 +145,31 @@ def test_standings_rank_by_xp_with_shared_places(session) -> None:
     ]
 
 
-def test_a_broken_season_consumer_never_rolls_back_the_event(session, monkeypatch) -> None:
+def test_a_broken_season_consumer_never_rolls_back_the_event(
+    session, monkeypatch, log_records
+) -> None:
+    calls = []
+
     def boom(*_a):
+        calls.append(1)
         raise RuntimeError("x")
 
     monkeypatch.setattr(consumer, "on_event", boom)
     event = events.emit(session, EventType.OVERTHROWN, events.Involved())
-    assert event.id is not None
+    assert calls
+    assert any(
+        r.level == "ERROR" and r.message.startswith("seasons failed on event") for r in log_records
+    )
+    assert session.get(EventLog, event.id) is not None
+
+
+def test_emit_runs_the_seasons_consumer(session) -> None:
+    season = _season(session)
+    game = _game(session, season.id)
+    events.emit(
+        session,
+        EventType.GAME_WON,
+        events.Involved(actor_id=ALICE, subject_id=STARTER, game_id=game.id),
+        stage=1,
+    )
+    assert _xp_rows(session) == [(ALICE, 50, "win"), (STARTER, 15, "host")]
