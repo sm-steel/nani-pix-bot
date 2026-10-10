@@ -18,6 +18,7 @@ from nani_pix_bot.models.enums import PeriodType as PeriodType
 from nani_pix_bot.models.enums import PixelStage as PixelStage
 from nani_pix_bot.models.enums import RevealEffect as RevealEffect
 from nani_pix_bot.models.enums import RevealStatus as RevealStatus
+from nani_pix_bot.models.enums import SeasonStatus as SeasonStatus
 from nani_pix_bot.models.event_log import EventLog as EventLog
 from nani_pix_bot.models.game import Game as Game
 from nani_pix_bot.models.game_guess import GameGuess as GameGuess
@@ -28,5 +29,6 @@ from nani_pix_bot.models.period import PeriodResult as PeriodResult
 from nani_pix_bot.models.period import PeriodState as PeriodState
 from nani_pix_bot.models.player import Player as Player
 from nani_pix_bot.models.reveal_video import RevealVideo as RevealVideo
+from nani_pix_bot.models.season import SeasonSchedule as SeasonSchedule
 from nani_pix_bot.models.stage_config import StageConfig as StageConfig
 from nani_pix_bot.models.turn_state import TurnState as TurnState
