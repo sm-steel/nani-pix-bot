@@ -4,10 +4,22 @@ description: How you earn pixels 💠, and how to spend them on clues, bounties,
 sidebar:
   order: 6
 ---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+import stages from '../../../assets/generated/stages.json';
+import stage3 from '../../../assets/generated/stage-3.webp';
+
+export const third = stages[2];
+export const tileGrid = Array.from({ length: 8 }, () => Array(8).fill('⬜'));
 
 **Pixels 💠** are the game's currency. You start with 50, earn more by playing, and
 spend them on private clues and a few public perks. Check your balance any time
-with `/balance`.
+with `/balance`, in the game topic or in a private chat with the bot.
+
+<TelegramChat label="Example: checking your balance">
+  <TgMessage out>/balance</TgMessage>
+  <TgMessage from="nani-pix-bot">Your balance: 140 💠</TgMessage>
+</TelegramChat>
 
 The amounts below are the defaults. Your group's admins can change any of them.
 
@@ -19,25 +31,75 @@ The amounts below are the defaults. Your group's admins can change any of them.
 | The first guess of a round, right or wrong | 5 | whoever guessed first |
 | Winning at stage 1 / 2 / 3 / 4 / 5 | 40 / 30 / 25 / 20 / 15 | the winner |
 | Your round was solved at stage 2, 3 or 4 | 15 | the round's creator |
-| You started your round within an hour of getting the turn | 10 | the round's creator |
+| You started your round within an hour of being handed the turn | 10 | the round's creator |
 | The round's bounty | the whole pot | the winner |
+| You were named the winner by the group vote or by an admin | 30, on top of the normal win | that winner |
+| A HARD MODE round you bought clues for ends unsolved | half of what you spent on its clues | every clue buyer |
 
-A HARD MODE win pays double. Achievements pay pixels too (see
+A few details:
+
+- **The quick-start bonus** only counts when the turn was handed to you, by
+  winning the last round or by someone passing it with `/skip @you`. Starting a
+  round while the turn is open to everyone earns nothing extra.
+- **A HARD MODE win pays double**, but nobody gets the creator's bonuses for it:
+  the bot started that round itself.
+- **The HARD MODE cashback** is half of what you actually paid for that round's
+  clues (after the discount, minus anything refunded). It's paid once, when the
+  round finally ends unsolved, after the vote if there is one.
+
+Achievements pay pixels too (see
 [Achievements and titles](/nani-pix-bot/players/achievements/)). The bot's replies
 show what each guess or win just earned.
 
 ## The clue shop
 
 Clues are **private hints for the round in play**, delivered to you in a private
-message. Open the shop with the 🛒 button under the round's picture, or send
-`/shop` to the bot. Anyone in the group can buy, except the round's creator.
+message. Anyone in the group can buy while a round is being played, except the
+round's creator.
+
+Open the shop with the **🛒 Clues** button under the round's picture (in a HARD
+MODE round, the 🛒 link in the caption), or send `/shop` to the bot. The menu shows
+your balance and only what you can buy right now:
+
+- an item you can't afford yet has a 🔒 on it;
+- a clue you already have, or one that isn't sold in this round, isn't listed;
+- when nothing is left for you, the bot says *Nothing left to buy in this round.*
+
+<TelegramChat label="Example: buying a clue in a private chat with the bot">
+  <TgMessage out>/shop</TgMessage>
+  <TgMessage
+    from="nani-pix-bot"
+    buttons={[
+      ['🔤 Last letter — 60 💠'],
+      ['🔤 First letter — 100 💠'],
+      ['📏 Title shape — 120 💠'],
+      ['🔒 🖼 Extra screenshot — 150 💠'],
+      ['🧩 Reveal a tile — 100 💠'],
+    ]}
+  >
+    🛒 Clue shop — balance: 140 💠
+
+    Clues come to you privately here; you can share any of them with the group for free.
+  </TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['📣 Share with the group']]}>
+    📏 Title shapes:
+
+    English:
+
+    <code>_ _ _ _ _ _ _ &nbsp; _ _ &nbsp; _ _ _ &nbsp; _ _ _ _ _</code> (7, 2, 3, 5)
+
+    romaji:
+
+    <code>_ _ _ _ &nbsp; _ _ &nbsp; _ _ _ _ _ _ _ _</code> (4, 2, 8)
+  </TgMessage>
+</TelegramChat>
 
 | Clue | Default price | What you get |
 |---|---|---|
 | 🔤 Last letter | 60 | the last letter of the title |
 | 🔤 First letter | 100 | the first letter of the title |
 | 📏 Title shape | 120 | the title with every letter hidden as `_`, so you see how many words and letters it has |
-| 🖼 Extra screenshot | 150, then 225, then 300 | another screenshot from the same anime, pixelated to the current stage (up to 3 per round) |
+| 🖼 Extra screenshot | 150, then 225, then 300 | another screenshot from the same anime, pixelated to the current stage (up to 3 per player per round) |
 | 🧩 Reveal a tile | 100 | one square of the picture shown sharp |
 
 A few details:
@@ -45,23 +107,127 @@ A few details:
 - **Letter clues and the title shape** cover several versions of the title (for
   example English and romaji), each one labelled. Numbers and the word "season"
   are skipped, because guessing ignores them anyway.
-- **Reveal a tile**: the first buyer in a round picks which of 64 squares to
-  reveal. Everyone who buys it later in that round gets the same square. It isn't
-  sold in HARD MODE.
-- **The group sees that you bought a clue**, but not what it says. Every clue has
-  a **📣 Share with the group** button if you want to post it for everyone.
-- **You never pay for nothing.** If a clue can't be delivered, or no unused
-  screenshot is left, you're refunded or never charged. If the round is stopped,
-  every clue bought for it is refunded.
+- **The title shape fills in letters you bought.** If you already have the first
+  or last letter, it shows them in place. Buy a letter after the shape and the bot
+  sends you the updated shape as well.
+- **The title shape leaves the shop** once a guess in the round has been
+  [partly right](/nani-pix-bot/players/guessing/#partly-right), since the shape is
+  then public. If you bought it before, you keep it.
+- **Extra screenshots** come only from Shikimori or TMDB, so the clue is offered
+  only when the round's anime is on one of them. Tenrai is never used: its
+  pictures are posters, which can show the title. You never get a picture that's
+  already in play in this round or one you've already bought. The bot finds the
+  screenshot before it charges you, so if none is left you pay nothing.
+- **Reveal a tile** isn't sold in HARD MODE (see below for how it works).
+- **Buttons from an earlier round** do nothing and spend nothing; the bot tells
+  you that round is over.
+
+### Revealing a tile
+
+The first player to buy **🧩 Reveal a tile** in a round chooses which square to
+reveal, on an 8×8 grid laid over the picture. Opening the grid is free: you're
+charged only when you tap a square. Everyone who buys the clue later in that round
+gets the same square straight away, and is charged when they tap the shop button.
+Each player can buy it once per round.
+
+<TelegramChat label="Example: picking the round's tile">
+  <TgMessage from="nani-pix-bot" buttons={tileGrid}>
+    🧩 Pick the round's tile to reveal (everyone gets the same one):
+  </TgMessage>
+  <TgMessage from="nani-pix-bot" image={stage3} buttons={[['📣 Share with the group']]}>
+    🧩 Your unpixelated tile.
+  </TgMessage>
+</TelegramChat>
+
+The picture shows the round's current stage, with your square shown sharp.
+
+### What the group sees
+
+**The group sees that you bought a clue**, but not what it says. Every clue has a
+**📣 Share with the group** button if you want to post it for everyone. Sharing is
+free, works once per clue, and only while the round is still being played. The
+one exception is a title shape that has gained a letter since you shared it: you
+can share that one again. After a share, Telegram shows a short *Shared with the
+group.* note and the button disappears.
+
+<TelegramChat label="Example: the game topic after a purchase and a share">
+  <TgMessage from="nani-pix-bot">🕵️ Mio bought a clue: title shape</TgMessage>
+  <TgMessage from="nani-pix-bot">
+    📢 Mio shared a clue:
+
+    📏 Title shapes:
+
+    English:
+
+    <code>_ _ _ _ _ _ _ &nbsp; _ _ &nbsp; _ _ _ &nbsp; _ _ _ _ _</code> (7, 2, 3, 5)
+
+    romaji:
+
+    <code>_ _ _ _ &nbsp; _ _ &nbsp; _ _ _ _ _ _ _ _</code> (4, 2, 8)
+  </TgMessage>
+</TelegramChat>
+
+### You never pay for nothing
+
+- If a clue can't be delivered to you, you're refunded straight away.
+- If no unused screenshot is left, or one can't be loaded, you're never charged.
+- If the round is stopped, every clue bought for it is refunded.
+- An admin can refund a single clue purchase (see
+  [Fixing a round](/nani-pix-bot/admins/fixing-things/)). The bot sends you a
+  private message when that happens.
 
 ## Spending in public
 
-- **`/bounty <amount>`** adds pixels to the round's pot (at least 30). Anyone can
-  add, any number of times, including the round's creator. The winner takes the
-  whole pot. If nobody wins, or the round is stopped, everyone gets their
-  contribution back. The pot is shown under every stage's picture.
-- **`/sharpen`** pays 250 to move the round to the next, clearer stage straight
-  away. The bot asks you to confirm first. Not available on stage 5, in HARD MODE,
-  or to the round's creator.
-- **`/tip @username <amount>`** gives some of your pixels to another player, in the
-  game topic or in a private message.
+### Bounty
+
+**`/bounty <amount>`** adds pixels to the round's pot (at least 30). It works only
+in the game topic, while a round is being played. Anyone can add, any number of
+times, including the round's creator.
+
+<TelegramChat label="Example: adding to the bounty">
+  <TgMessage out>/bounty 50</TgMessage>
+  <TgMessage from="nani-pix-bot">💰 Yuki adds 50 💠 to the bounty — the pot is now 80 💠.</TgMessage>
+</TelegramChat>
+
+The pot is shown under every stage's picture and in `/status`. The winner takes
+the whole pot, shown as its own line in the win message (*💰 Kenji takes the
+bounty: +80 💠*). If nobody wins, or the round is stopped, everyone gets their
+contribution back.
+
+### Sharpen
+
+**`/sharpen`** pays 250 to move the round to the next, clearer stage straight
+away. Not available on stage 5, in HARD MODE, or to the round's creator.
+
+The bot asks you to confirm first. Only you can press the buttons under your
+request. If the stage changes before you confirm, the button is refused and
+nothing is charged: send `/sharpen` again. Once you confirm, your request turns
+into *🔍 Sharpened.* and the next stage is posted for everyone, saying who paid
+for it.
+
+<TelegramChat label="Example: sharpening the picture">
+  <TgMessage out>/sharpen</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['🔍 Sharpen for 250 💠', 'Cancel']]}>
+    🔍 Sharpen the image to the next stage for 250 💠? Everyone sees the clearer picture.
+  </TgMessage>
+  <TgMessage from="nani-pix-bot" image={stage3} buttons={[['🛒 Clues']]}>
+    🔍 Mio paid 250 💠 to sharpen the image!
+
+    📸 Stage 3/5 (guesses left: {third.wrongGuessLimit}/{third.wrongGuessLimit}) — then it clears further.
+
+    💰 Bounty: 80 💠
+  </TgMessage>
+</TelegramChat>
+
+### Tips
+
+**`/tip @username <amount>`** gives some of your pixels to another player, in the
+game topic or in a private message. The smallest tip is 1. You can't tip yourself
+or the bot, and the bot has to know the player already: if it doesn't, they need
+to send it a private message first. A tip is a plain gift, so it's never
+refunded.
+
+<TelegramChat label="Example: tipping a player">
+  <TgMessage out>/tip @kenji 20</TgMessage>
+  <TgMessage from="nani-pix-bot">💸 Hana tipped @kenji 20 💠.</TgMessage>
+</TelegramChat>
