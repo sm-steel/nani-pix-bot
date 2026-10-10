@@ -24,7 +24,9 @@ step to remember.
 
 The bot's container has a health check that watches for successful contact with
 Telegram, so it's marked unhealthy if the bot stops receiving updates even though
-the process is still running.
+the process is still running. Docker checks every 30 seconds and marks the
+container unhealthy after three checks in a row find no contact with Telegram for
+90 seconds.
 
 `restart: unless-stopped` in `docker-compose.yml` already recovers from most
 failures. The `bot` service also carries `autoheal` labels for anyone running a

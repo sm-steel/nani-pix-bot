@@ -37,15 +37,25 @@ nani-pix-bot ведёт игру в угадайку в одной из тем �
    угадал, бот раскрывает ответ, и раунд остаётся неразгаданным.
 
 <TelegramChat label="Пример: раунд в игровой теме">
-  <TgMessage from="nani-pix-bot" image={stage1}>
-    🎮 @hana начал(а) новый раунд! Угадывайте с помощью /guess &lt;название&gt; в этой теме.
+  <TgMessage from="nani-pix-bot" image={stage1} buttons={[['🛒 Подсказки']]}>
+    🎮 Hana начал(а) новый раунд! Угадывайте с помощью /guess &lt;название&gt; в этой теме.
 
     📸 Этап 1/5 — попыток: {first.wrongGuessLimit}/{first.wrongGuessLimit}
+
+    🎲 Игра #142
   </TgMessage>
   <TgMessage out>/guess ковбой бибоп</TgMessage>
-  <TgMessage from="nani-pix-bot" image={stage2}>📸 Этап 2/5 (попыток: {second.wrongGuessLimit}/{second.wrongGuessLimit}) — потом изображение прояснится ещё.</TgMessage>
+  <TgMessage from="nani-pix-bot" image={stage2} buttons={[['🛒 Подсказки']]}>
+    📸 Этап 2/5 (попыток: {second.wrongGuessLimit}/{second.wrongGuessLimit}) — потом изображение прояснится ещё.
+
+    🎲 Игра #142
+  </TgMessage>
   <TgMessage out>/guess шёпот сердца</TgMessage>
-  <TgMessage from="nani-pix-bot">🎉 @kenji угадал(а)! Это было Шёпот сердца. Ваша очередь начинать следующую игру!</TgMessage>
+  <TgMessage from="nani-pix-bot">
+    🎉 Kenji угадал(а)! Это было Шёпот сердца. Ваша очередь начинать следующую игру!
+
+    🎲 Игра #142
+  </TgMessage>
 </TelegramChat>
 
 ## Что полезно знать

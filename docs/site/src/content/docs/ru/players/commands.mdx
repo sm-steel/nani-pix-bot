@@ -5,6 +5,8 @@ sidebar:
   order: 9
 ---
 import CommandTable from '../../../../components/CommandTable.astro';
+import TelegramChat from '../../../../components/TelegramChat.astro';
+import TgMessage from '../../../../components/TgMessage.astro';
 
 Описания ниже — те же, что Telegram показывает, когда вы набираете `/` в чате с
 ботом. `<…>` — то, что нужно подставить, а `[…]` — необязательная часть.
@@ -34,3 +36,18 @@ import CommandTable from '../../../../components/CommandTable.astro';
 каждая — в разделе [Админам группы](/nani-pix-bot/ru/admins/setup/).
 
 <CommandTable group="admin" />
+
+## Полезно знать
+
+- **На `/help` в игровой теме бот отвечает в личке**, чтобы не засорять тему.
+  Написать вам бот может, только если вы уже начинали с ним чат; если нет, он
+  попросит об этом прямо в теме:
+
+<TelegramChat label="Пример: /help, когда вы ещё не писали боту">
+  <TgMessage out>/help</TgMessage>
+  <TgMessage from="nani-pix-bot">Сначала напишите мне в личные сообщения — @your_bot — а затем повторите /help.</TgMessage>
+</TelegramChat>
+
+- **`/version`** показывает, какая версия бота работает в вашей группе и что в ней
+  изменилось, а кнопки листают более ранние выпуски. Те же заметки есть в разделе
+  [Что нового](/nani-pix-bot/ru/whats-new/).

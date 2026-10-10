@@ -34,8 +34,8 @@ import PixelHero from '../../../components/PixelHero.astro';
   Пришлите боту скриншот в личном чате или наберите `/newgame` и выберите кадр с Shikimori, Tenrai или TMDB. Потом укажите, что это за аниме: найдите его на одном из сайтов, выберите из своего списка MyAnimeList или впишите название сами.
 
   <TelegramChat slot="visual" label="Пример: выбор способа определить аниме">
-    <TgMessage from="nani-pix-bot" buttons={[['Shikimori', 'AniList'], ['Tenrai', 'TMDB'], ['Ввести вручную'], ['My MAL List']]}>
-      Как вы хотите определить аниме?
+    <TgMessage from="nani-pix-bot" buttons={[['Shikimori'], ['AniList'], ['Tenrai'], ['TMDB'], ['Ввести вручную'], ['Мой список MAL']]}>
+      Как вы хотите определить аниме? 💡 Шикимори указан первым — там обычно лучше с русскими названиями и синонимами.
     </TgMessage>
   </TelegramChat>
 </FeatureBand>
@@ -45,9 +45,21 @@ import PixelHero from '../../../components/PixelHero.astro';
 
   <TelegramChat slot="visual" label="Пример: догадки в игровой теме">
     <TgMessage out>/guess frieren the mage</TgMessage>
-    <TgMessage from="nani-pix-bot">🔎 Частично верно: _ _ _ _ _ _ &nbsp; _ _ &nbsp; Frieren</TgMessage>
+    <TgMessage from="nani-pix-bot">
+      ❌ Не угадано! Попыток до следующей подсказки: 1/2 (этап 3/5).
+
+      🔎 Частично верно: _ _ _ _ _ _ &nbsp; _ _ &nbsp; Frieren
+
+      💠 +2 — Kenji
+    </TgMessage>
     <TgMessage out>/guess sousou no frieren</TgMessage>
-    <TgMessage from="nani-pix-bot">🎉 @kenji угадал(а)! Это было Sousou no Frieren. Ваша очередь начинать следующую игру!</TgMessage>
+    <TgMessage from="nani-pix-bot">
+      🎉 Kenji угадал(а)! Это было Sousou no Frieren. Ваша очередь начинать следующую игру!
+
+      🎲 Игра #142
+
+      💠 +25 — Kenji
+    </TgMessage>
   </TelegramChat>
 </FeatureBand>
 
@@ -57,6 +69,8 @@ import PixelHero from '../../../components/PixelHero.astro';
   <TelegramChat slot="visual" label="Пример: магазин подсказок">
     <TgMessage from="nani-pix-bot" buttons={[['🔤 Последняя буква — 60 💠'], ['🔤 Первая буква — 100 💠'], ['📏 Форма названия — 120 💠'], ['🖼 Доп. скриншот — 150 💠'], ['🧩 Открыть тайл — 100 💠']]}>
       🛒 Магазин подсказок — баланс: 340 💠
+
+      Подсказки приходят вам сюда лично; любой можно бесплатно поделиться с группой.
     </TgMessage>
   </TelegramChat>
 </FeatureBand>

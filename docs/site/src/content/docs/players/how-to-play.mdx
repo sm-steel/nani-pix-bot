@@ -36,15 +36,25 @@ sharp, so the first stages are where the real bragging rights are.
    revealed and the round ends unsolved.
 
 <TelegramChat label="Example: a round in the game topic">
-  <TgMessage from="nani-pix-bot" image={stage1}>
-    🎮 @hana started a new round! Guess with /guess &lt;title&gt; in this topic.
+  <TgMessage from="nani-pix-bot" image={stage1} buttons={[['🛒 Clues']]}>
+    🎮 Hana started a new round! Guess with /guess &lt;title&gt; in this topic.
 
     📸 Stage 1/5 — guesses: {first.wrongGuessLimit}/{first.wrongGuessLimit}
+
+    🎲 Game #142
   </TgMessage>
   <TgMessage out>/guess cowboy bebop</TgMessage>
-  <TgMessage from="nani-pix-bot" image={stage2}>📸 Stage 2/5 (guesses left: {second.wrongGuessLimit}/{second.wrongGuessLimit}) — then it clears further.</TgMessage>
+  <TgMessage from="nani-pix-bot" image={stage2} buttons={[['🛒 Clues']]}>
+    📸 Stage 2/5 (guesses left: {second.wrongGuessLimit}/{second.wrongGuessLimit}) — then it clears further.
+
+    🎲 Game #142
+  </TgMessage>
   <TgMessage out>/guess whisper of the heart</TgMessage>
-  <TgMessage from="nani-pix-bot">🎉 @kenji got it! It was Whisper of the Heart. Your turn to start the next game!</TgMessage>
+  <TgMessage from="nani-pix-bot">
+    🎉 Kenji got it! It was Whisper of the Heart. Your turn to start the next game!
+
+    🎲 Game #142
+  </TgMessage>
 </TelegramChat>
 
 ## Things worth knowing

@@ -34,7 +34,7 @@ import PixelHero from '../../components/PixelHero.astro';
   Send the bot a screenshot in a private chat, or type `/newgame` and pick one from Shikimori, Tenrai or TMDB. Then tell the bot which anime it is: search a site, pick it from your MyAnimeList list, or type the title yourself.
 
   <TelegramChat slot="visual" label="Example: choosing how to identify the anime">
-    <TgMessage from="nani-pix-bot" buttons={[['AniList', 'Shikimori'], ['Tenrai', 'TMDB'], ['Manual entry'], ['My MAL List']]}>
+    <TgMessage from="nani-pix-bot" buttons={[['AniList'], ['Shikimori'], ['Tenrai'], ['TMDB'], ['Manual entry'], ['My MAL List']]}>
       How would you like to identify the anime?
     </TgMessage>
   </TelegramChat>
@@ -45,9 +45,21 @@ import PixelHero from '../../components/PixelHero.astro';
 
   <TelegramChat slot="visual" label="Example: guessing in the game topic">
     <TgMessage out>/guess frieren the mage</TgMessage>
-    <TgMessage from="nani-pix-bot">🔎 Partly right: _ _ _ _ _ _ &nbsp; _ _ &nbsp; Frieren</TgMessage>
+    <TgMessage from="nani-pix-bot">
+      ❌ Not quite! Guesses until the next clue: 1/2 (stage 3/5).
+
+      🔎 Partly right: _ _ _ _ _ _ &nbsp; _ _ &nbsp; Frieren
+
+      💠 +2 for Kenji
+    </TgMessage>
     <TgMessage out>/guess sousou no frieren</TgMessage>
-    <TgMessage from="nani-pix-bot">🎉 @kenji got it! It was Sousou no Frieren. Your turn to start the next game!</TgMessage>
+    <TgMessage from="nani-pix-bot">
+      🎉 Kenji got it! It was Sousou no Frieren. Your turn to start the next game!
+
+      🎲 Game #142
+
+      💠 +25 for Kenji
+    </TgMessage>
   </TelegramChat>
 </FeatureBand>
 
@@ -57,6 +69,8 @@ import PixelHero from '../../components/PixelHero.astro';
   <TelegramChat slot="visual" label="Example: the clue shop">
     <TgMessage from="nani-pix-bot" buttons={[['🔤 Last letter — 60 💠'], ['🔤 First letter — 100 💠'], ['📏 Title shape — 120 💠'], ['🖼 Extra screenshot — 150 💠'], ['🧩 Reveal a tile — 100 💠']]}>
       🛒 Clue shop — balance: 340 💠
+
+      Clues come to you privately here; you can share any of them with the group for free.
     </TgMessage>
   </TelegramChat>
 </FeatureBand>

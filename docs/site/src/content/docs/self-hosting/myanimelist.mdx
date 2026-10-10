@@ -43,8 +43,9 @@ same address as `MAL_REDIRECT_URI` in `.env`. Keep the repository name
 
 Players' MyAnimeList tokens are stored encrypted. Generate a key and set it as
 `MAL_TOKEN_ENCRYPTION_KEY`. The comments in `.env.example`, just above the `MAL_*`
-settings, give the exact command, and explain what happens if you ever change or
-lose the key.
+settings, give the exact command. Keep the key secret. If you ever change or
+lose it, nothing breaks: existing links just stop working, and players are asked
+to `/linkmal` again.
 
 ## Check it
 
