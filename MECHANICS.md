@@ -1710,10 +1710,11 @@ round's bounty, tip a player, or pay to sharpen the image.
 ## Seasons
 
 **Status: Implemented (phase 1: the framework, Season XP and the anime
-gate).** Seasons are occasional, time-boxed events that run alongside the
-normal game. Phase 1 ships no playable season: `seasons/runs/` is empty, so
-`/season` has nothing to schedule until a run module is added. Coins, the
-pass, the shop and cosmetics are later phases.
+gate; phase 2: inventory and cosmetics).** Seasons are occasional,
+time-boxed events that run alongside the normal game. No playable season
+ships yet: `seasons/runs/` is empty, so `/season` has nothing to schedule
+until a run module is added. Coins, the pass, the shop and consumables
+(clue tokens) are later phases.
 
 ### Runs and the schedule
 
@@ -1803,3 +1804,44 @@ rule text names every tag.
   pass; tags that can't be fetched reject the attempt. A gate tag with no
   Shikimori id goes straight to the Tenrai pick and check, and a
   genre-filtered Shikimori pick is not re-checked.
+
+### Cosmetics
+
+A run module may offer **items** (`Item`: a `<slot>.<name>` key, its slot, a
+per-slot `look` and a name per language). The full id is `<run_id>/<key>`
+and, because run modules are frozen, it always resolves. A player **owns**
+an item forever (`owned_items`, unique per player and item) and has at most
+**one equipped item per slot** (`equipped_items`). Phase 2 has a single way
+to get one: an admin's `/grantitem` (`ItemSource.ADMIN`). Earning items
+through play, the shop and the pass come later.
+
+`/cosmetics` (DM) lists the slots, then a slot's owned items; tapping an
+item sends its preview with **Equip** / **Unequip**. `/profile` (DM) shows
+the profile card. A season title is picked with `/title`, not in
+`/cosmetics`, which only shows a hint for that slot.
+
+| Slot | `look` | Where it shows |
+|---|---|---|
+| `name_flair` | a short emoji (at most 8 characters, no letters or digits) | appended to your name in every group-facing text. **Text only**: the images (unlock and podium cards, the reveal badge) and the vote ballot buttons keep the plain name |
+| `guess_reaction` | one of the Telegram-allowed reaction emoji | the reaction the bot puts on your winning `/guess` |
+| `host_frame` | a frame key | a border on **every** stage image of games **you** start |
+| `host_transition` | a `RevealEffect` name | the transition of the reveal video of games **you** start |
+| `win_effect` | an overlay key | the overlay in the 2 s ending of the reveal video, when you win with `/guess` or the starter's `/correct`; no equipped overlay, or a failure, falls back to the confetti |
+| `profile_banner` | a banner file in the run's art directory | the background of your `/profile` card |
+| `title` | none (the item id is the title) | next to your name, like an achievement title; chosen with `/title`, stored in `players.title_key` as `item:<item id>` |
+
+Accepted limits:
+
+- A win by **vote** or by an admin's `/setwinner` has no reveal video, so it
+  has no win overlay.
+- **HARD MODE** games are started by the bot, so they have no starter to
+  equip anything: their transition stays random and their images unframed.
+- Frames and transitions follow the **starter** of the game; overlays and
+  reactions follow the **winner**.
+- A title item's id must fit `/title`'s callback data: at most 56 bytes,
+  checked by `looks.problems` (and so by CI for every shipped run).
+- **Stamps** on `/profile` are the ended seasons the player has a
+  `season_results` row in; no stamp is stored per player.
+- Previews are rendered on demand, then cached by Telegram `file_id`
+  (`item_previews`); text previews are never stored. A failed render is
+  reported to the player, not cached.
