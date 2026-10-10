@@ -1,0 +1,58 @@
+---
+title: HARD MODE
+description: The tougher rules the bot plays by when it starts a round itself, and the group vote.
+sidebar:
+  order: 5
+---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+
+Every round the **bot starts by itself** is a HARD MODE round (see
+[How a round ends](/nani-pix-bot/players/how-a-round-ends/#when-the-bot-starts-a-round-itself)).
+Rounds that players start are never HARD MODE.
+
+## The rules
+
+- **Two turns instead of five stages.**
+- **Two screenshots at once.** Each turn shows two different screenshots of the
+  same anime, posted together.
+- **One wrong guess per turn.** One miss on turn 1 moves to turn 2, where both
+  screenshots are clearer. One miss on turn 2 ends the round.
+- **Double reward.** Cracking it counts as **+2** wins on the leaderboard, and the
+  pixel reward is doubled too.
+- **Clues are on sale.** Every clue in the shop is discounted, starting at 20%.
+  The discount grows by 20 points after each HARD MODE round nobody cracks, up to
+  80%, and drops back to 20% once one is solved.
+- **No `/correct` and no `/sharpen`.** Nobody hosts the round, so the vote below
+  replaces `/correct`.
+
+<TelegramChat label="Example: a HARD MODE round starting">
+  <TgMessage from="nani-pix-bot">
+    ⏰ Nobody started a new round in a while, so here's a HARD MODE one from me — two screenshots, two turns, no mercy.
+
+    📸 Turn 1/2 — guesses: 1/1
+  </TgMessage>
+</TelegramChat>
+
+Everything else is the same as a normal round: how guesses are matched, the
+two-day limit, and the winner getting the next turn.
+
+## The vote
+
+The bot's matching is strict, and with one guess per turn a correct answer under
+an unusual name can slip through. So when a HARD MODE round ends without a correct
+guess, but somebody did guess, **the group votes** on whether one of the guessers
+was actually right.
+
+- The bot posts the answer, then a ballot with **one button per guesser**, showing
+  what each of them guessed.
+- Any group member can vote, once, and can change their vote by tapping another
+  button. You can't vote for yourself.
+- The vote closes after **15 minutes**.
+- A guesser wins if they get **the most votes, at least 3, with no tie**. They get
+  a normal HARD MODE win, a small bonus for the trouble, and the next turn.
+- Otherwise the round stays unsolved. Everyone who bought clues for it gets part
+  of what they spent back.
+
+While a vote is open, no new round can start and `/guess` does nothing. An admin
+can also settle it directly (see [Fixing a round](/nani-pix-bot/admins/fixing-things/)).

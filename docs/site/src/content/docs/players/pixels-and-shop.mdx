@@ -1,0 +1,67 @@
+---
+title: Pixels and the clue shop
+description: How you earn pixels 💠, and how to spend them on clues, bounties, sharpening and tips.
+sidebar:
+  order: 6
+---
+
+**Pixels 💠** are the game's currency. You start with 50, earn more by playing, and
+spend them on private clues and a few public perks. Check your balance any time
+with `/balance`.
+
+The amounts below are the defaults. Your group's admins can change any of them.
+
+## Earning pixels
+
+| What happened | Pixels | Who gets them |
+|---|---|---|
+| A wrong guess | 2 each, up to 10 per round | the guesser |
+| The first guess of a round, right or wrong | 5 | whoever guessed first |
+| Winning at stage 1 / 2 / 3 / 4 / 5 | 40 / 30 / 25 / 20 / 15 | the winner |
+| Your round was solved at stage 2, 3 or 4 | 15 | the round's creator |
+| You started your round within an hour of getting the turn | 10 | the round's creator |
+| The round's bounty | the whole pot | the winner |
+
+A HARD MODE win pays double. Achievements pay pixels too (see
+[Achievements and titles](/nani-pix-bot/players/achievements/)). The bot's replies
+show what each guess or win just earned.
+
+## The clue shop
+
+Clues are **private hints for the round in play**, delivered to you in a private
+message. Open the shop with the 🛒 button under the round's picture, or send
+`/shop` to the bot. Anyone in the group can buy, except the round's creator.
+
+| Clue | Default price | What you get |
+|---|---|---|
+| 🔤 Last letter | 60 | the last letter of the title |
+| 🔤 First letter | 100 | the first letter of the title |
+| 📏 Title shape | 120 | the title with every letter hidden as `_`, so you see how many words and letters it has |
+| 🖼 Extra screenshot | 150, then 225, then 300 | another screenshot from the same anime, pixelated to the current stage (up to 3 per round) |
+| 🧩 Reveal a tile | 100 | one square of the picture shown sharp |
+
+A few details:
+
+- **Letter clues and the title shape** cover several versions of the title (for
+  example English and romaji), each one labelled. Numbers and the word "season"
+  are skipped, because guessing ignores them anyway.
+- **Reveal a tile**: the first buyer in a round picks which of 64 squares to
+  reveal. Everyone who buys it later in that round gets the same square. It isn't
+  sold in HARD MODE.
+- **The group sees that you bought a clue**, but not what it says. Every clue has
+  a **📣 Share with the group** button if you want to post it for everyone.
+- **You never pay for nothing.** If a clue can't be delivered, or no unused
+  screenshot is left, you're refunded or never charged. If the round is stopped,
+  every clue bought for it is refunded.
+
+## Spending in public
+
+- **`/bounty <amount>`** adds pixels to the round's pot (at least 30). Anyone can
+  add, any number of times, including the round's creator. The winner takes the
+  whole pot. If nobody wins, or the round is stopped, everyone gets their
+  contribution back. The pot is shown under every stage's picture.
+- **`/sharpen`** pays 250 to move the round to the next, clearer stage straight
+  away. The bot asks you to confirm first. Not available on stage 5, in HARD MODE,
+  or to the round's creator.
+- **`/tip @username <amount>`** gives some of your pixels to another player, in the
+  game topic or in a private message.
