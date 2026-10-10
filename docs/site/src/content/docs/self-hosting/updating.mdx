@@ -20,6 +20,13 @@ How you roll updates out is up to you. Any of these work:
 The bot updates its database by itself on every start, so there's no migration
 step to remember.
 
+## Restarting during a round
+
+You can restart or update the bot at any time, even mid-round. Everything the game
+is waiting on (stage timers, reminders, turn windows, an open vote) is kept in the
+database and picked up again on startup. Anything that fell due while the bot was
+down happens right after it starts.
+
 ## Health checks and auto-restart
 
 The bot's container has a health check that watches for successful contact with

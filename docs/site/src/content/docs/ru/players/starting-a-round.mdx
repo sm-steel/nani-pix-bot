@@ -125,6 +125,8 @@ import stage1 from '../../../../assets/generated/stage-1.webp';
 
     https://myanimelist.net/v1/oauth2/authorize?…
 
+    &nbsp;
+
     Затем пришлите мне код, который там покажут, — и я сразу открою ваш список.
   </TgMessage>
   <TgMessage out>EXAMPLE-CODE-123</TgMessage>
@@ -167,6 +169,8 @@ import stage1 from '../../../../assets/generated/stage-1.webp';
   <TgMessage from="nani-pix-bot" buttons={[['❌ Нет, не учитывать', '✅ Да, учитывать']]}>
     🔢 В названии «91 Days» почти одни цифры. Нужно ли угадывать и их?
 
+    &nbsp;
+
     Нет — хватит одних слов.
 
     Да — цифры обязательны в ответе.
@@ -202,7 +206,14 @@ import stage1 from '../../../../assets/generated/stage-1.webp';
   <TgMessage from="nani-pix-bot" buttons={[['1', '2', '3', '4', '5'], ['Ещё ▶️'], ['❌ Не то аниме? Искать заново'], ['📤 Загрузить свой скриншот']]}>
     Какой из них использовать?
   </TgMessage>
+</TelegramChat>
+
+Кнопка **Ещё ▶️** превращает это сообщение с кнопками в пометку *Скриншоты 6–10*,
+а следом приходят новый альбом из пяти и новые кнопки:
+
+<TelegramChat label="Пример: после нажатия «Ещё ▶️» (картинка изображает альбом из пяти)">
   <TgMessage from="nani-pix-bot">Скриншоты 6–10 из 23 — выберите один ниже.</TgMessage>
+  <TgMessage from="nani-pix-bot" image={original}>6</TgMessage>
   <TgMessage from="nani-pix-bot" buttons={[['6', '7', '8', '9', '10'], ['◀️ Назад', 'Ещё ▶️'], ['❌ Не то аниме? Искать заново'], ['📤 Загрузить свой скриншот']]}>
     Какой из них использовать?
   </TgMessage>
@@ -229,6 +240,8 @@ import stage1 from '../../../../assets/generated/stage-1.webp';
 <TelegramChat label="Пример: личное превью">
   <TgMessage from="nani-pix-bot" image={stage1}>
     Предпросмотр:
+
+    &nbsp;
 
     Название: Шёпот сердца
 
@@ -266,6 +279,8 @@ import stage1 from '../../../../assets/generated/stage-1.webp';
 <TelegramChat label="Пример: выбор способа раскраски блоков">
   <TgMessage from="nani-pix-bot" buttons={[['Ближайший'], ['Среднее'], ['✅ Медиана'], ['⚠️ Мода'], ['Ланцош'], ['⬅️ Назад']]}>
     Как пикселизовать скриншот?
+
+    &nbsp;
 
     **Ближайший** — берёт один пиксель на блок; резко, но с шумом
 

@@ -126,6 +126,8 @@ shown back into the chat. Your list opens straight away.
 
     https://myanimelist.net/v1/oauth2/authorize?…
 
+    &nbsp;
+
     Then paste the code it shows you back here — you'll go straight to your list.
   </TgMessage>
   <TgMessage out>EXAMPLE-CODE-123</TgMessage>
@@ -167,6 +169,8 @@ of numbers, like *22/7*, is never asked about: its numbers always count.
   <TgMessage from="nani-pix-bot" buttons={[['❌ No, ignore them', '✅ Yes, they count']]}>
     🔢 The title “91 Days” is mostly numbers. Do guessers have to get the numbers right too?
 
+    &nbsp;
+
     No — the words alone are enough.
 
     Yes — the numbers must be in the guess.
@@ -202,7 +206,14 @@ still change it.
   <TgMessage from="nani-pix-bot" buttons={[['1', '2', '3', '4', '5'], ['More ▶️'], ['❌ Wrong anime? Search again'], ['📤 Upload my own instead']]}>
     Which one do you want to use?
   </TgMessage>
+</TelegramChat>
+
+Tapping **More ▶️** turns that buttons message into a *Screenshots 6–10* note,
+then a new album of five and new buttons arrive:
+
+<TelegramChat label="Example: after tapping More ▶️ (the picture stands for an album of five)">
   <TgMessage from="nani-pix-bot">Screenshots 6–10 of 23 — pick one below.</TgMessage>
+  <TgMessage from="nani-pix-bot" image={original}>6</TgMessage>
   <TgMessage from="nani-pix-bot" buttons={[['6', '7', '8', '9', '10'], ['◀️ Back', 'More ▶️'], ['❌ Wrong anime? Search again'], ['📤 Upload my own instead']]}>
     Which one do you want to use?
   </TgMessage>
@@ -228,6 +239,8 @@ message right after it.
 <TelegramChat label="Example: the private preview">
   <TgMessage from="nani-pix-bot" image={stage1}>
     Here's a preview:
+
+    &nbsp;
 
     Title: Whisper of the Heart
 
@@ -264,6 +277,8 @@ you can compare.
 <TelegramChat label="Example: choosing how the blocks are coloured">
   <TgMessage from="nani-pix-bot" buttons={[['Nearest'], ['Box'], ['✅ Median'], ['⚠️ Mode'], ['Lanczos'], ['⬅️ Back']]}>
     How should the screenshot be pixelated?
+
+    &nbsp;
 
     **Nearest** — picks one pixel per block; sharp, but speckles
 

@@ -79,8 +79,10 @@ const { label } = Astro.props;
   .tg-msg__text :where(p) {
     margin: 0;
   }
+  /* Each paragraph in a message is one line of the bot's text, with no gap, as in
+     Telegram. A real blank line is written as a paragraph holding only &nbsp;. */
   .tg-msg__text :where(p + p) {
-    margin-top: 0.4em;
+    margin-top: 0;
   }
   .tg-buttons {
     display: flex;

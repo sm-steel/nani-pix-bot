@@ -46,7 +46,12 @@ the win added for the winner and the host.
 
 **The winner starts the next round.** After 15 minutes the bot reminds them in a
 private message. If it can't message them (they've never started a chat with the
-bot), it mentions them in the game topic instead.
+bot), it mentions them in the game topic instead. If it can't even name them
+(they have no @username), it posts this, so anyone can open the turn:
+
+<TelegramChat label="Example: the reminder when the bot can't reach or name the player">
+  <TgMessage from="nani-pix-bot">⏰ It's someone's turn to start a new game, but I can't reach them privately — /skip to open it up to anyone!</TgMessage>
+</TelegramChat>
 
 <TelegramChat label="Example: the turn reminder in a private chat">
   <TgMessage from="nani-pix-bot">⏰ Reminder: it's your turn to start a new game! DM me a screenshot whenever you're ready, or send /newgame to pick one instead.</TgMessage>
