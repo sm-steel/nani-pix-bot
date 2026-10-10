@@ -66,6 +66,7 @@ from nani_pix_bot.jobs import reveal, reveal_pregen
 from nani_pix_bot.jobs.announcements import schedule_outbox_drain
 from nani_pix_bot.jobs.periods import schedule_period_job
 from nani_pix_bot.jobs.reveal import RevealCache, start_worker, stop_worker
+from nani_pix_bot.jobs.seasons import schedule_season_job
 from nani_pix_bot.jobs.timers import rearm_pending_timeouts
 from nani_pix_bot.logging_config import setup_logging
 from nani_pix_bot.models.enums import Provider
@@ -418,6 +419,7 @@ async def _post_init(application: Application) -> None:
     await _start_reveal(application)
     schedule_outbox_drain(application.job_queue)
     schedule_period_job(application.job_queue, 0)
+    schedule_season_job(application.job_queue, 0)
 
     me = await application.bot.get_me()
     application.bot_data["bot_username"] = me.username
