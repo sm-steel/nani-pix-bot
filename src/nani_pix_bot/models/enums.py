@@ -446,3 +446,9 @@ class CosmeticSlot(enum.StrEnum):
     GUESS_REACTION = "guess_reaction"
     PROFILE_BANNER = "profile_banner"
     TITLE = "title"
+
+
+class ItemSource(enum.StrEnum):
+    """How an owned season cosmetic was obtained (seasons spec §3). Plain string."""
+
+    ADMIN = "admin"

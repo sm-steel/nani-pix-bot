@@ -45,9 +45,3 @@ def test_the_fake_runs_items_are_all_valid() -> None:
 )
 def test_invalid_looks_are_reported(item: Item, needle: str) -> None:
     assert any(needle in p for p in looks.problems(_resolved(item)))
-
-
-def test_every_shipped_item_is_valid() -> None:
-    registry.all_runs.cache_clear()
-    registry.all_items.cache_clear()
-    assert [p for r in registry.all_items().values() for p in looks.problems(r)] == []

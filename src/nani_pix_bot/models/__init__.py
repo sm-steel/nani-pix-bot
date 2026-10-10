@@ -7,12 +7,15 @@ from nani_pix_bot.models.announcement import AnnouncementOutbox as AnnouncementO
 from nani_pix_bot.models.base import Base as Base
 from nani_pix_bot.models.bot_settings import BotSettings as BotSettings
 from nani_pix_bot.models.clue_purchase import CluePurchase as CluePurchase
+from nani_pix_bot.models.cosmetics import EquippedItem as EquippedItem
+from nani_pix_bot.models.cosmetics import OwnedItem as OwnedItem
 from nani_pix_bot.models.currency_config import CurrencyConfig as CurrencyConfig
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer as CurrencyTransfer
 from nani_pix_bot.models.enums import CurrencyParty as CurrencyParty
 from nani_pix_bot.models.enums import CurrencyReason as CurrencyReason
 from nani_pix_bot.models.enums import EventType as EventType
 from nani_pix_bot.models.enums import GameStatus as GameStatus
+from nani_pix_bot.models.enums import ItemSource as ItemSource
 from nani_pix_bot.models.enums import OutboxKind as OutboxKind
 from nani_pix_bot.models.enums import PeriodType as PeriodType
 from nani_pix_bot.models.enums import PixelStage as PixelStage
