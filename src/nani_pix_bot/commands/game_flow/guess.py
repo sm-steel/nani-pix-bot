@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from loguru import logger
 from telegram import Message, Update, User
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow.stage_post import (
@@ -19,12 +20,12 @@ from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.jobs.timers.current_image import RevealTarget, RevealWinner
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.enums import CosmeticSlot, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
-from nani_pix_bot.services.cosmetics import flair
+from nani_pix_bot.services.cosmetics import flair, inventory
 from nani_pix_bot.services.economy import earning, settlement
 from nani_pix_bot.services.economy.messages import earnings_suffix
 from nani_pix_bot.services.game import guesses
@@ -249,6 +250,21 @@ class _GuessResult:
     reply_text: str | None
     announcement: Announcement | None
     needs_cleanup_after_send: bool
+    reaction: str | None = None  # the winner's equipped reaction, for a WON guess only
+
+
+async def _react_to_win(message: Message, reaction: str) -> None:
+    """Reacts to the winning /guess; a refused reaction never blocks the win."""
+    try:
+        await message.set_reaction(reaction=reaction)
+    except TelegramError as error:
+        logger.warning(
+            "couldn't react {reaction} to the winning guess: {error}",
+            reaction=reaction,
+            error=str(error),
+        )
+    else:
+        logger.info("reacted {reaction} to the winning guess", reaction=reaction)
 
 
 async def _send_guess_result(
@@ -260,6 +276,8 @@ async def _send_guess_result(
         sent = await send_announcement(context, session_factory, result.announcement)
         if result.needs_cleanup_after_send:
             timeout_module.clear_image_if_sent(session_factory, result.game_id, sent)
+    if result.reaction is not None:
+        await _react_to_win(message, result.reaction)
 
 
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -310,7 +328,8 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             suffix = _partial_reveal_line(session, game, lang) + suffix
         if outcome is game_service.GuessOutcome.WON:
             announcement = _prepare_won_announcement_dispatch(session, context, game, lang, user)
-            result = _GuessResult(game.id, None, with_suffix(announcement, suffix), True)
+            reaction = inventory.look(session, user.id, CosmeticSlot.GUESS_REACTION)
+            result = _GuessResult(game.id, None, with_suffix(announcement, suffix), True, reaction)
         else:
             result = _non_won_result(session, context, game, outcome, suffix)
     # Block closed and committed above — the outcome (and the currency it
