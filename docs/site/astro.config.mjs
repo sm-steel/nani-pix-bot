@@ -35,8 +35,6 @@ export default defineConfig({
       ],
       customCss: [
         '@fontsource-variable/inter',
-        '@fontsource/pixelify-sans/400.css',
-        '@fontsource/pixelify-sans/600.css',
         './src/styles/theme.css',
       ],
       components: { Head: './src/components/overrides/Head.astro' },

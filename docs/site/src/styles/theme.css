@@ -3,7 +3,7 @@
    https://starlight.astro.build/guides/css-and-tailwind/#theming */
 :root {
   --sl-font: 'Inter Variable', system-ui, sans-serif;
-  --guide-font-display: 'Pixelify Sans', var(--sl-font);
+  --guide-font-display: 'Cozette', var(--sl-font);
   --sl-color-accent-low: #3a2a0c;
   --sl-color-accent: #d99a2b;
   --sl-color-accent-high: #fde6b0;
@@ -15,6 +15,21 @@
   --sl-color-gray-5: #3d3856;
   --sl-color-gray-6: #2a2540;
   --sl-color-black: #18152a;
+}
+/* Cozette (MIT, vendored from github.com/slavfox/Cozette v.1.30.0): the
+   pixel display font for headings and the site title. It has full Cyrillic,
+   drawn as cleanly as its Latin. */
+@font-face {
+  font-family: 'Cozette';
+  src: url('../fonts/cozette/CozetteVector.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Cozette';
+  src: url('../fonts/cozette/CozetteVectorBold.woff2') format('woff2');
+  font-weight: 600 700;
+  font-display: swap;
 }
 :root[data-theme='light'] {
   --sl-color-accent-low: #e4dcf7;
