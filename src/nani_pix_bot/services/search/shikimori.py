@@ -44,6 +44,7 @@ from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services import matching
 from nani_pix_bot.services.search import cache, graphql, parsing
 from nani_pix_bot.services.search.base import ScreenshotModule
+from nani_pix_bot.services.search.tags import AnimeTag
 
 SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 SEARCH_RESULT_LIMIT = 5
@@ -310,6 +311,30 @@ async def screenshots(client: httpx.AsyncClient, shikimori_id: int) -> list[str]
 # is a direct-import-only helper (services/game/autostart.py), not part
 # of this.
 service = ScreenshotModule(sys.modules[__name__])
+
+
+_TAGS_QUERY = """
+query ($ids: String) {
+  animes(ids: $ids, limit: 1) {
+    id
+    genres { id name kind }
+  }
+}
+"""
+
+
+async def get_tags(client: httpx.AsyncClient, mal_id: int) -> list[AnimeTag] | None:
+    """Fallback for tenrai.get_tags (seasons spec §5). Shikimori's genre ids
+    aren't MAL's for every tag, so mal_id is left None (matched by name)."""
+    data = await graphql.request(_API, client, query=_TAGS_QUERY, variables={"ids": str(mal_id)})
+    entry = _single_anime(data)
+    if entry is None:
+        return None
+    return [
+        AnimeTag(g["kind"], g["name"], None)
+        for g in entry.get("genres") or []
+        if isinstance(g, dict) and isinstance(g.get("kind"), str) and isinstance(g.get("name"), str)
+    ]
 
 
 def _single_anime(data: dict) -> dict | None:

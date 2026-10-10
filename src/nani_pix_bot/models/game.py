@@ -59,6 +59,9 @@ class Game(Base):
     # reported (or never ran); [] once it found nothing or the creator is
     # done with them. Only meaningful while status is SETUP.
     alias_suggestions: Mapped[list[dict] | None] = mapped_column(JSON, default=None)
+    # The identified anime's MAL genres/themes, fetched only during a gated
+    # season (services/seasons/gate.py).
+    anime_tags: Mapped[list[dict] | None] = mapped_column(JSON, default=None)
     # Provider URL(s) of the image(s) in play — the extra-screenshot clue never
     # sells one of these. None for an uploaded photo.
     shown_screenshot_urls: Mapped[list[str] | None] = mapped_column(JSON, default=None)
