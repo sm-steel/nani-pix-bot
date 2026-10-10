@@ -24,8 +24,8 @@ from nani_pix_bot.models.enums import CosmeticSlot, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
-from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.cosmetics import flair, inventory
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import earning, settlement
 from nani_pix_bot.services.economy.messages import earnings_suffix
 from nani_pix_bot.services.game import guesses
@@ -122,8 +122,8 @@ def _prepare_turn_advanced_announcement(
     done here by record_guess)."""
     image_a, image_b = game_service.hard_mode_reveal_images(game)
     width = game_service.hard_mode_turn_width(game)
-    pixelated_a = pixelate_service.pixelate(image_a, width, game.pixel_algorithm)
-    pixelated_b = pixelate_service.pixelate(image_b, width, game.pixel_algorithm)
+    pixelated_a = stage_cosmetics.stage_png(session, game, image_a, width)
+    pixelated_b = stage_cosmetics.stage_png(session, game, image_b, width)
     progress = game_service.hard_mode_turn_progress(game)
     game_service.reset_inactivity_clock(session, game)
     timeout_module.schedule_inactivity_timers(context.job_queue, game)

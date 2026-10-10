@@ -22,8 +22,8 @@ from nani_pix_bot.models.enums import GameStatus, PixelAlgorithm
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
-from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.cosmetics import flair
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.settings import stage_config
@@ -49,6 +49,7 @@ class _Repost:
     images: tuple[bytes, ...]  # one, or the HARD MODE pair
     width: int
     algorithm: PixelAlgorithm
+    frame: str | None
 
 
 def caption(live: LiveStatus, lang: str) -> str:
@@ -102,7 +103,9 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
         pot=bounty.pot_balance(session, game.id),
         time_left=_time_left(game, now),
     )
-    return _Repost(live, tuple(images), width, game.pixel_algorithm)
+    return _Repost(
+        live, tuple(images), width, game.pixel_algorithm, stage_cosmetics.frame_for(session, game)
+    )
 
 
 def _idle_text(session: Session, game: Game | None, lang: str) -> str:
@@ -124,7 +127,8 @@ def _idle_text(session: Session, game: Game | None, lang: str) -> str:
 
 def _render(repost: _Repost) -> list[bytes]:
     return [
-        pixelate_service.pixelate(image, repost.width, repost.algorithm) for image in repost.images
+        stage_cosmetics.stage_png_with(image, repost.width, repost.algorithm, repost.frame)
+        for image in repost.images
     ]
 
 

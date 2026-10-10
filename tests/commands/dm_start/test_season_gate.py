@@ -22,6 +22,7 @@ from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.search import aliases
 from nani_pix_bot.services.search import tags as anime_tags
 from nani_pix_bot.services.search.tags import AnimeTag
@@ -332,7 +333,7 @@ async def test_confirm_while_catalogues_are_down_alerts_and_keeps_the_preview(
 
 @pytest.mark.usefixtures("active_season")
 async def test_confirm_of_an_on_theme_game_starts_it(session_factory, monkeypatch) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _patch_tags(monkeypatch, ROMANCE)
     game_id = _tenrai_game(session_factory, 4224, "Toradora!")
     update = _callback_update(PREVIEW_CONFIRM_CALLBACK_DATA)

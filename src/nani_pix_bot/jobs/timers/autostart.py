@@ -27,8 +27,8 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import events, i18n, players, quiet_hours, settings
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.cosmetics import flair
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.game import autostart as autostart_service
 from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.seasons import gate as gate_service
@@ -246,8 +246,8 @@ def _build_first_turn_post(
     if game.hard_mode_image_a is None or game.hard_mode_image_b is None:
         raise RuntimeError("game.hard_mode_image_a/_b is None in _build_first_turn_post")
     width = game_service.hard_mode_turn_width(game)
-    pixelated_a = pixelate_service.pixelate(game.hard_mode_image_a, width, game.pixel_algorithm)
-    pixelated_b = pixelate_service.pixelate(game.hard_mode_image_b, width, game.pixel_algorithm)
+    pixelated_a = stage_cosmetics.stage_png(session, game, game.hard_mode_image_a, width)
+    pixelated_b = stage_cosmetics.stage_png(session, game, game.hard_mode_image_b, width)
     progress = game_service.hard_mode_turn_progress(game)
     caption_kwargs = {
         "turn": progress.number,

@@ -64,8 +64,8 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.cosmetics import flair
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty, earning, wallet
 from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.seasons import gate as gate_service
@@ -106,10 +106,8 @@ def _activate_and_stage_first_post(
     original_bytes = game.original_image
     first_stage = game_service.STAGE_ORDER[0]
     first_stage_settings = stage_config.get_stage_config(session, first_stage)
-    pixelated = pixelate_service.pixelate(
-        original_bytes,
-        first_stage_settings.target_width,
-        game.pixel_algorithm,
+    pixelated = stage_cosmetics.stage_png(
+        session, game, original_bytes, first_stage_settings.target_width
     )
     caption = i18n.t(
         "dm_start.game_started_caption",

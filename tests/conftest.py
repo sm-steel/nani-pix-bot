@@ -112,10 +112,11 @@ def pytest_collection_modifyitems(config, items) -> None:
             item.add_marker(skip)
 
 
-@pytest.fixture
-def equip_flair(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
-    """`equip_flair(session, player_id)` gives the player the fake run's
-    blossom name flair (🌸) and equips it."""
+def _equipper(
+    monkeypatch: pytest.MonkeyPatch, item_id: str
+) -> Iterator[Callable[[Session, int], None]]:
+    """Fake season registry patched in; yields `equip(session, player_id)`,
+    which grants and equips the fake item `item_id`."""
     from nani_pix_bot.models.enums import ItemSource
     from nani_pix_bot.seasons import registry
     from nani_pix_bot.services.cosmetics import inventory
@@ -125,9 +126,22 @@ def equip_flair(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, 
     registry.all_items.cache_clear()
 
     def equip(session: Session, player_id: int) -> None:
-        item_id = "demo_1/name_flair.blossom"
         inventory.grant(session, player_id, inventory.ItemGrant(item_id, ItemSource.ADMIN))
         inventory.equip(session, player_id, item_id)
 
     yield equip
     registry.all_items.cache_clear()
+
+
+@pytest.fixture
+def equip_flair(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
+    """`equip_flair(session, player_id)` gives the player the fake run's
+    blossom name flair and equips it."""
+    yield from _equipper(monkeypatch, "demo_1/name_flair.blossom")
+
+
+@pytest.fixture
+def equip_frame(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
+    """`equip_frame(session, player_id)` gives the player the fake run's
+    "simple_border" host frame and equips it."""
+    yield from _equipper(monkeypatch, "demo_1/host_frame.border")

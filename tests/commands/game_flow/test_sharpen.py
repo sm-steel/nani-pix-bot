@@ -7,13 +7,13 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import sharpen as sharpen_module
-from nani_pix_bot.commands.game_flow import stage_post
 from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models import CurrencyTransfer
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import config
 from nani_pix_bot.services.economy.config import EconomyKey
 from tests.conftest import LogLine
@@ -117,7 +117,7 @@ def _state(session_factory) -> tuple[PixelStage | None, int, int]:
 
 @pytest.fixture(autouse=True)
 def _fake_pixelate(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(stage_post.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
 
 
 async def test_command_replies_with_a_confirm_button(session_factory) -> None:
