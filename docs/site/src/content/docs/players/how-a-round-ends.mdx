@@ -4,21 +4,85 @@ description: Winning, unsolved rounds, time limits, stopping a round and passing
 sidebar:
   order: 4
 ---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+import stage1 from '../../../assets/generated/stage-1.webp';
+import stage3 from '../../../assets/generated/stage-3.webp';
+import original from '../../../assets/generated/original.webp';
 
 ## Someone wins
 
 The first correct `/guess` wins the round. The bot posts a short video in which the
 pixelated picture turns into the original screenshot, names the anime, and
-congratulates the winner, whose avatar appears in a gold badge.
+congratulates the winner, whose avatar appears in a gold badge. The same post lists
+what the win paid: the winner's 💠, the round creator's bonus for a well-pitched
+screenshot (for a win on stages 2–4), the [bounty](/nani-pix-bot/players/pixels-and-shop/#spending-in-public)
+if anyone put one up, and the [champion points](/nani-pix-bot/players/achievements/#champions)
+the win added for the winner and the host.
+
+<TelegramChat label="Example: the post when someone wins">
+  <TgMessage from="nani-pix-bot" image={original}>
+    🎉 Kenji got it! It was Whisper of the Heart. Your turn to start the next game!
+
+    🎲 Game #142
+
+    💠 +25 for Kenji
+
+    🎨 @hana gets +15 💠 for a well-pitched screenshot
+
+    💰 Kenji takes the bounty: +40 💠
+
+    🌟 @kenji: +3 points
+
+    &nbsp;&nbsp;&nbsp;• this week — 7 🌟, 1st place (⬆2)
+
+    &nbsp;&nbsp;&nbsp;• this month — 18 🌟, 2nd place
+
+    &nbsp;&nbsp;&nbsp;• this year — 64 🌟, shared 3rd place
+
+    🌟 Host @hana: +1 point
+  </TgMessage>
+</TelegramChat>
 
 **The winner starts the next round.** After 15 minutes the bot reminds them in a
-private message (or with a mention in the topic, if it can't message them). If they
-haven't started within 12 hours, the turn opens to everyone.
+private message. If it can't message them (they've never started a chat with the
+bot), it mentions them in the game topic instead.
+
+<TelegramChat label="Example: the turn reminder in a private chat">
+  <TgMessage from="nani-pix-bot">⏰ Reminder: it's your turn to start a new game! DM me a screenshot whenever you're ready, or send /newgame to pick one instead.</TgMessage>
+</TelegramChat>
+
+If they haven't started within 12 hours, the turn opens to everyone and the bot says
+so in the topic: "⌛ Nobody started a new game in time — it's open to anyone now!"
 
 **When the bot misses a right answer.** If someone gave a correct answer under a
 name the bot didn't recognise, the round's creator can award them the win with
-`/correct @username` in the game topic. It only works while the round is running,
-and the creator can't award it to themselves.
+`/correct @username` in the game topic. It works only while the round is running,
+and only once somebody has guessed: it's for a guess the bot missed, not a way to
+skip to the end. The creator can't award the win to themselves or to the bot, and
+the bot has to know the player: anyone who has ever written to the bot or chatted
+in the topic is fine, otherwise they need to message the bot first.
+
+<TelegramChat label="Example: the round's creator awarding a missed answer">
+  <TgMessage out>/correct @kenji</TgMessage>
+  <TgMessage from="nani-pix-bot" image={original}>
+    🎉 Correct! @kenji got it — it was Whisper of the Heart. Your turn to start the next game!
+
+    🎲 Game #142
+
+    💠 +15 for @kenji
+
+    🌟 @kenji: +1 point
+
+    &nbsp;&nbsp;&nbsp;• this week — 5 🌟, 2nd place
+
+    &nbsp;&nbsp;&nbsp;• this month — 16 🌟, 2nd place
+
+    &nbsp;&nbsp;&nbsp;• this year — 62 🌟, 3rd place
+
+    🌟 Host @hana: +1 point
+  </TgMessage>
+</TelegramChat>
 
 ## Nobody wins
 
@@ -28,20 +92,69 @@ A round ends **unsolved** when:
 - nobody guesses on stage 5 for 6 hours, or
 - **two days** pass since the round went live, however many guesses were made.
 
-The bot reveals the screenshot and the title. An unsolved round doesn't hand the
-turn to anyone: if the turn was open, it stays open.
+If nobody guesses for 3 hours, the bot first nudges the topic. After 6 hours without
+a guess it posts the next, clearer stage by itself, so a round nobody touches still
+ends within 30 hours.
+
+The bot reveals the screenshot and the title with the same kind of video as a win,
+just without the gold badge. If the video can't be made in time, you get the plain
+screenshot instead. Any [bounty](/nani-pix-bot/players/pixels-and-shop/#spending-in-public)
+goes back to the players who put it up, and the reveal says so.
+
+An unsolved round doesn't hand the turn to anyone: if the turn was open, it stays
+open.
+
+<TelegramChat label="Example: a round nobody guesses, ending at the two-day limit">
+  <TgMessage from="nani-pix-bot">👀 Still nobody's guessed! Take a look at the pinned image — /guess &lt;anime title&gt; to try, or it'll clear up further on its own before too long.</TgMessage>
+  <TgMessage from="nani-pix-bot" image={stage3} buttons={[['🛒 Clues']]}>
+    📸 Stage 3/5 — nobody's guessed in a while, so here's a clearer look.
+
+    💰 Bounty: 40 💠
+  </TgMessage>
+  <TgMessage from="nani-pix-bot" image={original}>
+    ⏰ Nobody guessed it in time. It was Whisper of the Heart.
+
+    🎲 Game #142
+
+    💰 Nobody solved it — the 40 💠 bounty went back to its contributors.
+  </TgMessage>
+</TelegramChat>
 
 ## Stopping a round
 
 The round's creator, or any group admin, can stop a round by sending `/stop` to the
-bot in a **private message**. The bot always asks first:
+bot in a **private message**. A round the bot started has no human creator, so only
+an admin can stop it. The bot always asks first:
 
 - **🛑 Yes, stop it** ends the round quietly.
-- **🔎 Stop and reveal** ends it and shows the group what the anime was.
+- **🔎 Stop and reveal** ends it and shows the group what the anime was, with the
+  same reveal video as an unsolved round.
+- **❌ No, keep going** leaves it running.
+
+"Stop and reveal" is offered only for a round that's already live in the topic. A
+round still being set up hasn't shown anything to the group yet, so `/stop` just
+asks yes or no and cancels it.
+
+<TelegramChat label="Example: stopping a round from a private chat">
+  <TgMessage out>/stop</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['🛑 Yes, stop it'], ['🔎 Stop and reveal'], ['❌ No, keep going']]}>Stop the current game (Whisper of the Heart)? This can't be undone — the turn will open up for anyone to start a new game.</TgMessage>
+  <TgMessage from="nani-pix-bot">Game stopped — the answer was posted to the group.</TgMessage>
+</TelegramChat>
+
+<TelegramChat label="Example: what the game topic sees after Stop and reveal">
+  <TgMessage from="nani-pix-bot" image={original}>
+    🛑 The game was stopped. It was Whisper of the Heart.
+
+    Anyone can start a new one now!
+
+    🎲 Game #142
+  </TgMessage>
+</TelegramChat>
 
 A stopped round doesn't count as a win or a loss. Any clues bought and any bounty
-are refunded in full, and the turn opens to everyone. `/stop` also cancels a round
-you're still setting up.
+are refunded in full, and the turn opens to everyone. This includes a
+[HARD MODE](/nani-pix-bot/players/hard-mode/#the-vote) round whose vote is still
+open: stopping it cancels the vote.
 
 ## Passing your turn
 
@@ -50,10 +163,22 @@ topic:
 
 - `/skip` opens the turn to everyone.
 - `/skip @username` hands it to someone specific. They get the same reminder and
-  12-hour window.
+  12-hour window. As with `/correct`, the bot has to know them, and you can't hand
+  the turn to the bot.
 
 `/skip` only works while no round is running, and only for the player whose turn it
-is.
+is. When the turn is already open to everyone, there's nothing to skip, and the bot
+says so.
+
+<TelegramChat label="Example: passing the turn">
+  <TgMessage out>/skip @yuki</TgMessage>
+  <TgMessage from="nani-pix-bot">Turn passed to @yuki.</TgMessage>
+</TelegramChat>
+
+<TelegramChat label="Example: opening the turn to everyone">
+  <TgMessage out>/skip</TgMessage>
+  <TgMessage from="nani-pix-bot">Turn opened up — anyone can start the next game!</TgMessage>
+</TelegramChat>
 
 ## When the bot starts a round itself
 
@@ -62,9 +187,25 @@ If the group's admins have turned it on, the bot can start rounds by itself:
 - **When nobody starts one for 24 hours** after the turn opened up.
 - **Occasionally right after a round ends.** There's a small chance (about 1 in 8)
   that the bot "steals" the next turn. If you've just won, you still keep the win
-  and everything it earned; you just don't get to host the next round.
+  and everything it earned; you just don't get to host the next round. Losing your
+  turn this way does come with a consolation: a hidden
+  [achievement](/nani-pix-bot/players/achievements/).
 
 Rounds the bot starts are always [HARD MODE](/nani-pix-bot/players/hard-mode/).
+
+<TelegramChat label="Example: the bot stealing the winner's turn (the first of its two screenshots)">
+  <TgMessage from="nani-pix-bot" image={stage1}>
+    😈 Nice win, Kenji! But I'm stealing your turn for a HARD MODE round — two screenshots, no mercy.
+
+    📸 Turn 1/2 — guesses: 1/1
+
+    🏷 HARD MODE clue sale: −20% on every clue this round.
+
+    🎲 Game #143
+
+    🛒 https://t.me/your_bot?start=shop
+  </TgMessage>
+</TelegramChat>
 
 ## Quiet hours
 
