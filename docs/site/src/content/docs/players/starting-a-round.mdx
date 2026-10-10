@@ -6,15 +6,36 @@ sidebar:
 ---
 import TelegramChat from '../../../components/TelegramChat.astro';
 import TgMessage from '../../../components/TgMessage.astro';
+import original from '../../../assets/generated/original.webp';
+import stage1 from '../../../assets/generated/stage-1.webp';
 
 Rounds are set up in a **private chat with the bot**, so nobody in the group sees
 the answer. You can start one when it's your turn, or when the turn is open to
 everyone, and only while no other round is running. You also have to be a member
 of the group.
 
+If you can't start right now, the bot tells you why:
+
+- *It's not your turn to start a new game right now.* Someone else has the turn,
+  or another round is being set up or played.
+- *You need to be a member of the group to start a game.*
+- *Starting new games is temporarily paused — try again later.* A group admin
+  has paused new rounds.
+
 When you start, the bot tells the group that you're preparing a round, so nobody
-else tries at the same moment. You then have **one hour** to finish the setup. If
-you don't, the setup is dropped and the turn opens to everyone.
+else tries at the same moment:
+
+<TelegramChat label="Example: the group is told a round is being prepared">
+  <TgMessage from="nani-pix-bot">
+    🎬 Hana is preparing a new game — hang tight!
+
+    🎲 Game #88
+  </TgMessage>
+</TelegramChat>
+
+You then have **one hour** to finish the setup. If you don't, the setup is
+dropped and the bot tells the group: *⌛ Setup timed out without finishing — it's
+open to anyone now!* Changed your mind? Send `/stop` to cancel the setup yourself.
 
 ## Two ways in
 
@@ -23,69 +44,254 @@ you don't, the setup is dropped and the turn opens to everyone.
 - **Send `/newgame`** if you don't have a screenshot to hand. You identify the
   anime first, then pick a real screenshot for it (see below).
 
-## Tell the bot which anime it is
+Either way, the bot then asks how you'd like to identify the anime:
 
-The bot asks how you'd like to identify the anime:
-
-<TelegramChat label="Example: choosing how to identify the anime">
-  <TgMessage from="nani-pix-bot" buttons={[['AniList', 'Shikimori'], ['Tenrai', 'TMDB'], ['Manual entry'], ['My MAL List']]}>
+<TelegramChat label="Example: sending a screenshot to the bot">
+  <TgMessage out image={original}></TgMessage>
+  <TgMessage from="nani-pix-bot" image={stage1}>
+    🔍 This is how your screenshot will look at stage 1, the blockiest.
+  </TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['AniList'], ['Shikimori'], ['Tenrai'], ['TMDB'], ['Manual entry'], ['My MAL List']]}>
     How would you like to identify the anime?
   </TgMessage>
 </TelegramChat>
 
-- **AniList, Shikimori, Tenrai or TMDB**: type the name the way you remember it,
-  then tap the right one of up to five results. **None of these — search again**
-  lets you retry, and **↩ Different search method** brings you back to this menu
-  if the anime isn't on that site. Shikimori usually has the best Russian titles,
-  so when the bot speaks Russian it lists Shikimori first. TMDB only knows English
-  titles.
-- **Manual entry**: for an anime none of the sites know. Type the title, then at
-  least one alternative title. Only what you type will count as a correct guess.
-- **My MAL List**: shown when the group's bot has MyAnimeList linking turned on.
-  You browse your own MyAnimeList list, 10 entries at a time with every status
-  included, and pick from it. The first time, the bot walks you through linking:
-  open the link, log in to MyAnimeList, approve access, and paste the code you're
-  shown back into the chat. You can also link ahead of time with `/linkmal` and
-  unlink with `/unlinkmal`.
+**Lost your place?** Sending `/newgame` (or another photo) while your own setup
+is still open doesn't start a second one: the bot shows you the step you're on
+again. If that step is waiting for a photo or a synonym, it adds *You're already
+setting up a game — send /stop if you'd rather abandon it and start over.*
 
-**More names from other sites.** Once the anime is identified, the bot looks it up
-on the other sites as well, and may offer titles it found there as checkboxes. Tick
-the ones that should also count as a correct guess, then tap **➕ Add selected**,
-or **⏭ Skip**.
+**Old buttons.** Buttons on earlier messages stay on screen after the setup is
+finished, stopped or timed out. Tapping one shows an alert: *That round isn't
+being set up anymore — if it's your turn, DM me a screenshot or send /newgame to
+start a fresh one.*
 
-**Do the numbers matter?** Guessing normally ignores numbers, so `GITS` wins
-*GITS 2026*. When a title is mostly numbers, like *91 Days*, the bot asks you
-whether the numbers should count.
+## Tell the bot which anime it is
+
+### Search a site
+
+**AniList, Shikimori, Tenrai or TMDB**: type the name the way you remember it,
+then tap the right one of up to five results. AniList results show the year.
+**None of these — search again** lets you retry, and **↩ Different search
+method** brings you back to the method menu if the anime isn't on that site.
+Shikimori usually has the best Russian titles, so when the bot speaks Russian it
+lists Shikimori first. TMDB only knows English titles.
+
+<TelegramChat label="Example: searching AniList and picking a result">
+  <TgMessage from="nani-pix-bot" buttons={[['↩ Different search method']]}>
+    Got it! What anime is this from? Type a search query.
+  </TgMessage>
+  <TgMessage out>whisper of the heart</TgMessage>
+  <TgMessage from="nani-pix-bot">🔍 Searching…</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['Whisper of the Heart (1995)'], ['The Cat Returns (2002)'], ['Ocean Waves (1993)'], ['None of these — search again'], ['↩ Different search method']]}>
+    Which one is it?
+  </TgMessage>
+</TelegramChat>
+
+The *🔍 Searching…* message turns into the results once they arrive. If the
+site is down, the bot says so and shows the method menu again so you can try
+another one.
+
+### Type it yourself
+
+**Manual entry** is for an anime none of the sites know. Type the title, then at
+least one alternative title, separated by commas or new lines. Only what you type
+will count as a correct guess.
+
+<TelegramChat label="Example: entering a title by hand">
+  <TgMessage from="nani-pix-bot">Okay — what's the anime's title? Type it out.</TgMessage>
+  <TgMessage out>Whisper of the Heart</TgMessage>
+  <TgMessage from="nani-pix-bot">
+    Got it. Now type at least one alternate title/synonym (comma- or newline-separated) so guesses can match it too.
+  </TgMessage>
+  <TgMessage out>,</TgMessage>
+  <TgMessage from="nani-pix-bot">
+    I need at least one synonym — type one (or a few, separated by commas or new lines).
+  </TgMessage>
+  <TgMessage out>Mimi wo Sumaseba, If You Listen Closely</TgMessage>
+</TelegramChat>
+
+### Pick from your MyAnimeList list
+
+**My MAL List** is shown when the group's bot has MyAnimeList linking turned on.
+You browse your own MyAnimeList list, 10 entries at a time with every status
+included, and pick from it. The first time, the bot walks you through linking:
+open the link, log in to MyAnimeList, approve access, and paste the code you're
+shown back into the chat. Your list opens straight away.
+
+<TelegramChat label="Example: linking MyAnimeList and browsing your list">
+  <TgMessage from="nani-pix-bot">
+    First, link your MyAnimeList account: open this link, log in, and approve access:
+
+    https://myanimelist.net/v1/oauth2/authorize?…
+
+    Then paste the code it shows you back here — you'll go straight to your list.
+  </TgMessage>
+  <TgMessage out>EXAMPLE-CODE-123</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['[Completed] Mimi wo Sumaseba'], ['[Completed] Cowboy Bebop'], ['[Watching] Sousou no Frieren 2nd Season'], ['[Completed] Sousou no Frieren'], ['[Plan to Watch] 91 Days'], ['[On Hold] One Piece'], ['[Completed] Kusuriya no Hitorigoto'], ['[Dropped] Bleach'], ['[Completed] Neon Genesis Evangelion'], ['[Watching] Dandadan'], ['More ▶️']]}>
+    Pick an anime from your MyAnimeList list:
+  </TgMessage>
+</TelegramChat>
+
+- If the code doesn't work, the bot says *That code didn't work — it may be wrong
+  or expired.* Paste it again, or run `/linkmal` for a fresh link.
+- If your list is empty, the bot says so and shows the method menu again.
+- If MyAnimeList stops accepting the link (for example, you revoked access), the
+  bot simply walks you through linking again.
+- You can also link ahead of time with `/linkmal` and unlink with `/unlinkmal`.
+
+### More names from other sites
+
+Once the anime is identified, the bot looks it up on the other sites as well,
+and may offer up to 10 titles it found there as checkboxes. Tick the ones that
+should also count as a correct guess, then tap **➕ Add selected**, or **⏭ Skip**.
+If that lookup is slow or fails, the bot skips this step. You can still add names
+yourself from the preview.
+
+<TelegramChat label="Example: ticking extra accepted names">
+  <TgMessage from="nani-pix-bot" buttons={[['☑ If You Listen Closely'], ['☐ Шёпот сердца'], ['☑ Mimi o Sumaseba'], ['⏭ Skip', '➕ Add selected (2)']]}>
+    🔎 I found more names for this anime on other sites. Tick the ones that should count as a correct guess too:
+  </TgMessage>
+  <TgMessage from="nani-pix-bot">➕ More accepted names added: 2.</TgMessage>
+</TelegramChat>
+
+### Do the numbers matter?
+
+Guessing normally ignores numbers, so `GITS` wins *GITS 2026*. When a title has
+a number and fewer than 5 letters once the numbers are removed, like *91 Days* or
+*11eyes*, the bot asks you whether the numbers should count. A title made only
+of numbers, like *22/7*, is never asked about: its numbers always count.
+
+<TelegramChat label="Example: the bot asks whether the numbers count">
+  <TgMessage from="nani-pix-bot" buttons={[['❌ No, ignore them', '✅ Yes, they count']]}>
+    🔢 The title “91 Days” is mostly numbers. Do guessers have to get the numbers right too?
+
+    No — the words alone are enough.
+
+    Yes — the numbers must be in the guess.
+  </TgMessage>
+  <TgMessage from="nani-pix-bot">🔢 Got it — the numbers count.</TgMessage>
+</TelegramChat>
+
+Your answer sets the **🔢 Numbers count** switch on the preview, where you can
+still change it.
 
 ## Picking a screenshot (after `/newgame`)
 
 1. Choose a source: Shikimori, Tenrai or TMDB. The site you identified the anime
    on comes first. **📤 Upload my own instead** is always there, and you can simply
    send a photo at any point.
-2. Browse the gallery, five numbered screenshots at a time, using **◀️ Back** and
-   **More ▶️**.
-3. If the screenshots are from a different anime, tap **❌ Wrong anime? Search again**.
-4. Tap a number to pick that screenshot.
+2. If you pick a different site from the one you identified the anime on, the bot
+   quietly takes that site's top match for your title. If it finds none, it asks
+   you to type a search for that site.
+3. Browse the gallery, five numbered screenshots at a time, using **◀️ Back** and
+   **More ▶️**. The numbers keep counting across pages, so the second page is
+   *Screenshots 6–10 of 23*.
+4. If the screenshots are from a different anime, tap **❌ Wrong anime? Search
+   again** and type a better search. The button is left off the first page of
+   the site you identified the anime on, since that one can't be the wrong anime.
+5. Tap a number to pick that screenshot.
+
+<TelegramChat label="Example: picking a screenshot from Shikimori after identifying the anime on Tenrai">
+  <TgMessage from="nani-pix-bot" buttons={[['Tenrai'], ['Shikimori'], ['TMDB'], ['📤 Upload my own instead']]}>
+    Where should I get a screenshot from?
+  </TgMessage>
+  <TgMessage from="nani-pix-bot">Here are some screenshots — pick one below.</TgMessage>
+  <TgMessage from="nani-pix-bot" image={original}>1</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['1', '2', '3', '4', '5'], ['More ▶️'], ['❌ Wrong anime? Search again'], ['📤 Upload my own instead']]}>
+    Which one do you want to use?
+  </TgMessage>
+  <TgMessage from="nani-pix-bot">Screenshots 6–10 of 23 — pick one below.</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['6', '7', '8', '9', '10'], ['◀️ Back', 'More ▶️'], ['❌ Wrong anime? Search again'], ['📤 Upload my own instead']]}>
+    Which one do you want to use?
+  </TgMessage>
+</TelegramChat>
 
 If a site is down or has nothing, the bot says so and shows the source menu again
-with that site marked ⚠️. You can try another site, type a different search, or
-upload your own screenshot.
+with that site marked ⚠️. It stays tappable, since outages are often brief. You
+can try another site, type a different search, or upload your own screenshot.
+
+<TelegramChat label="Example: a screenshot site that isn't responding">
+  <TgMessage from="nani-pix-bot" buttons={[['⚠️ Tenrai'], ['Shikimori'], ['TMDB'], ['📤 Upload my own instead']]}>
+    ⚠️ Tenrai isn't responding right now. Pick another source below, or send me your own screenshot.
+  </TgMessage>
+</TelegramChat>
 
 ## The preview
 
 Before anything is posted, the bot shows you privately how the round will play
-out: the screenshot at all five stages, and every answer that will count. From
-there you can:
+out: an album of the screenshot at all five stages, blockiest to clearest, with
+the title and every other answer that will count. The buttons come in a separate
+message right after it.
 
-- **🖼️ Change image**: upload a different screenshot, or pick another one from the
-  same gallery.
-- **🔍 Re-search title**: identify the anime again.
+<TelegramChat label="Example: the private preview">
+  <TgMessage from="nani-pix-bot" image={stage1}>
+    Here's a preview:
+
+    Title: Whisper of the Heart
+
+    Also accepted: Mimi wo Sumaseba, 耳をすませば, If You Listen Closely, Mimi o Sumaseba
+  </TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['✅ Confirm and start'], ['🖼️ Change image'], ['🔍 Re-search title'], ['📝 Add a synonym'], ['🎨 Pixelation: Median'], ['💰 Bounty']]}>
+    Looks good?
+  </TgMessage>
+</TelegramChat>
+
+- **🖼️ Change image**: if you uploaded the screenshot, the bot simply asks you to
+  send the new one. If you picked it from a site, you choose between **📤 Upload a
+  new photo** and **🖼️ Pick a different screenshot** from the same gallery.
+- **🔍 Re-search title**: identify the anime again. This throws away the old
+  titles and synonyms, and a screenshot you picked from a site, since the new
+  anime may be a different one. An uploaded screenshot is kept. If the new title
+  is mostly numbers, the numbers question comes back.
 - **📝 Add a synonym**: add more answers that should count.
 - **🔢 Numbers count**: shown when a title has a number in it. Turn it on if the
-  numbers have to be part of the guess.
-- **🎨 Pixelation**: choose how the blocks are coloured. The default, median,
-  suits most screenshots. The preview is redrawn straight away so you can compare.
-- **💰 Bounty**: put 30, 60 or 100 💠 into the round's pot for whoever solves it.
+  numbers have to be part of the guess. With it on, the
+  [text clues](/nani-pix-bot/players/pixels-and-shop/) hide the title's digits as
+  `_`, like letters, instead of showing them as `X`.
+- **🎨 Pixelation**: choose how the blocks are coloured (see below).
+- **💰 Bounty**: put pixels into the round's pot for whoever solves it (see below).
 - **✅ Confirm and start**: posts stage 1 to the game topic. The round is live.
 
-Changed your mind? Send `/stop` to cancel the setup.
+### Pixelation
+
+The button shows the current choice. It opens a list of all five ways to colour
+the blocks, with what each one does. The choice is for this round only, and
+**Median** is the default. Picking one redraws the whole preview straight away so
+you can compare.
+
+<TelegramChat label="Example: choosing how the blocks are coloured">
+  <TgMessage from="nani-pix-bot" buttons={[['Nearest'], ['Box'], ['✅ Median'], ['⚠️ Mode'], ['Lanczos'], ['⬅️ Back']]}>
+    How should the screenshot be pixelated?
+
+    **Nearest** — picks one pixel per block; sharp, but speckles
+
+    **Box** — averages each block; smooth and even
+
+    **Median** — keeps each block's dominant tone; the default
+
+    **Mode** — most frequent colour per block; speckles badly (worst — not recommended)
+
+    **Lanczos** — sharpest blocks; can ring on hard edges
+  </TgMessage>
+</TelegramChat>
+
+### Bounty
+
+You can put 30, 60 or 100 💠 into the round's pot. Only the amounts you can
+afford are shown, and each tap takes the pixels from your balance straight away.
+The winner gets the whole pot. If you abandon the setup or stop it with `/stop`,
+or nobody solves the round, the pot comes back to you. Other players can add to
+the pot during the round with `/bounty`; see
+[Pixels and the clue shop](/nani-pix-bot/players/pixels-and-shop/).
+
+<TelegramChat label="Example: the bounty menu with a balance of 75 pixels">
+  <TgMessage from="nani-pix-bot" buttons={[['+30 💠'], ['+60 💠'], ['⬅️ Back']]}>
+    💰 Put up a bounty for whoever solves your round — it comes out of your pixels and goes to the winner (refunded if nobody solves it).
+
+    Pot: 0 💠 · your balance: 75 💠
+  </TgMessage>
+</TelegramChat>
+
+If you can't afford even 30 💠, the menu says *You don't have enough pixels for a
+bounty right now.*
