@@ -73,6 +73,11 @@ h1#_top {
   text-align: center;
 }
 
+/* The cards sit as far above the first band's dots as below the banner:
+   PixelHero's 2rem bottom padding plus the 1rem content gap. */
+.card-grid + .feature-band {
+  margin-top: 3rem;
+}
 /* The three home cards sit in one row on wide screens, not 2 + 1. */
 @media (min-width: 72rem) {
   .card-grid:has(> .home-card) {
