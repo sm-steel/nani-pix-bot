@@ -1,0 +1,39 @@
+"""Stage-image frames (seasons spec §3 `host_frame`): a key → a Pillow
+function drawing a border onto the stage image, size unchanged. Season
+frames are added here; "simple_border" is the neutral built-in."""
+
+from collections.abc import Callable, Mapping
+from io import BytesIO
+from types import MappingProxyType
+
+from loguru import logger
+from PIL import Image, ImageDraw
+
+_SIMPLE_WIDTH_RATIO = 0.03
+_SIMPLE_COLOR = (245, 245, 245)
+
+
+def _simple_border(image: Image.Image) -> Image.Image:
+    framed = image.convert("RGB")
+    width = max(2, round(min(framed.size) * _SIMPLE_WIDTH_RATIO))
+    ImageDraw.Draw(framed).rectangle(
+        (0, 0, framed.width - 1, framed.height - 1), outline=_SIMPLE_COLOR, width=width
+    )
+    return framed
+
+
+FRAMES: Mapping[str, Callable[[Image.Image], Image.Image]] = MappingProxyType(
+    {"simple_border": _simple_border}
+)
+
+
+def apply_frame(png: bytes, frame_key: str) -> bytes:
+    draw = FRAMES.get(frame_key)
+    if draw is None:
+        logger.warning(
+            "unknown frame {frame_key!r} — posting the stage unframed", frame_key=frame_key
+        )
+        return png
+    out = BytesIO()
+    draw(Image.open(BytesIO(png))).save(out, format="PNG")
+    return out.getvalue()

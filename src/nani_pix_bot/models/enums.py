@@ -434,3 +434,15 @@ class SeasonStatus(enum.StrEnum):
     CLOSING = "closing"
     ENDED = "ended"
     CANCELLED = "cancelled"
+
+
+class CosmeticSlot(enum.StrEnum):
+    """Where an equipped season cosmetic shows (seasons spec §3). Stored as a plain string."""
+
+    WIN_EFFECT = "win_effect"
+    HOST_TRANSITION = "host_transition"
+    HOST_FRAME = "host_frame"
+    NAME_FLAIR = "name_flair"
+    GUESS_REACTION = "guess_reaction"
+    PROFILE_BANNER = "profile_banner"
+    TITLE = "title"

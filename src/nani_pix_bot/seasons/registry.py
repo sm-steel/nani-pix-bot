@@ -3,10 +3,11 @@
 import importlib
 import pkgutil
 from collections.abc import Mapping
+from dataclasses import dataclass
 from functools import cache
 from types import MappingProxyType
 
-from nani_pix_bot.seasons.definition import SeasonRun
+from nani_pix_bot.seasons.definition import Item, SeasonRun
 
 RUNS_PACKAGE = "nani_pix_bot.seasons.runs"
 
@@ -38,3 +39,24 @@ def all_runs() -> Mapping[str, SeasonRun]:
 
 def get(run_id: str) -> SeasonRun | None:
     return all_runs().get(run_id)
+
+
+@dataclass(frozen=True)
+class ResolvedItem:
+    item_id: str
+    run: SeasonRun
+    item: Item
+
+
+@cache
+def all_items() -> Mapping[str, ResolvedItem]:
+    found = {}
+    for run in all_runs().values():
+        for item in run.items:
+            item_id = f"{run.run_id}/{item.key}"
+            found[item_id] = ResolvedItem(item_id, run, item)
+    return MappingProxyType(found)
+
+
+def item(item_id: str) -> ResolvedItem | None:
+    return all_items().get(item_id)
