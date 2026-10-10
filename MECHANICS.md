@@ -1730,8 +1730,10 @@ pass, the shop and cosmetics are later phases.
   season, the history and the runs not yet held; `/season schedule <run>
   <start> <end>`, `/season start <date>`, `/season end <date>` and
   `/season cancel`. Dates are typed in the admin's `/timezone` (asked for
-  first if unset), stored in UTC. Dates can change any time; an end at or
-  before now on a running season ends it at once (early stop).
+  first if unset), stored in UTC. The start can move only before the
+  season begins; the end can move until the season starts closing, and an
+  end in the past on a running season ends it now (early stop). Date
+  changes before the start re-post the teaser.
 - The `season_boundary` job advances the season at each start/end and
   catches up after downtime. A closing season whose last tagged game was
   deleted by `/stop` is finalized by the job's hourly fallback run.
@@ -1783,8 +1785,8 @@ rule text names every tag.
   setup and stored in `games.anime_tags`.
 - **Checked twice**: when a catalogue result is picked, and again,
   authoritatively, at Confirm, which every identification method passes
-  through. Manual and TMDB entries resolve a MAL id by title; if none is
-  found the game is refused.
+  through. Manual and TMDB entries resolve a MAL id by an exact
+  (normalized) Tenrai title match; if none is found the game is refused.
 - **Three outcomes.** Passed. **Refused**: off-theme, or unidentifiable (no
   MAL id could be found) — the player is told the rule and picks again. A
   refusal also clears a catalogue screenshot and resets setup to the method
@@ -1794,4 +1796,6 @@ rule text names every tag.
 - **Bot-started games** are gated too: the autostart pick queries Shikimori
   on **one randomly chosen** gate tag's id (its filter ANDs several ids, so
   it can't take the whole list), and a Tenrai pick is kept only if its tags
-  pass; tags that can't be fetched reject the attempt.
+  pass; tags that can't be fetched reject the attempt. A gate tag with no
+  Shikimori id goes straight to the Tenrai pick and check, and a
+  genre-filtered Shikimori pick is not re-checked.
