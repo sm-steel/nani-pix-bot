@@ -1,3 +1,8 @@
+## v1.14.2 · 2026-10-09
+
+### 🛠 Fixed
+- The 🌟 top-players summary for a finished week, month or year no longer goes quiet after a bot update — a slow restart could leave it unposted until the next one.
+
 ## v1.14.1 · 2026-10-09
 
 ### 🛠 Fixed
@@ -31,14 +36,3 @@
 ### 🛠 Fixed
 - Milestone Keeper now says it counts the group's solved games (not the 🎲 game number) and shows how far along the group is.
 - Setting up a round no longer loses a step you were already looking at when Telegram or a search is slow, and the preview no longer makes the whole bot stall while it renders.
-
-## v1.12.0 · 2026-10-07
-
-### ✨ New
-- Achievements are here: a whole catalogue of them (some secret) that pay 💠 pixels and 🏆 points, with every unlock announced in the game topic on a card with your avatar.
-- `/achievements` in DM lets you browse yours or anyone's by tabs and pages, and compare two players side by side.
-- `/achievements` in the group shows a summary, and `/achievements top` ranks everyone by 🏆 points.
-- The top tier of an achievement unlocks a title: pick yours with `/title` and it shows next to your name on the `/leaderboard`.
-- Weekly, monthly and yearly champion races: every win scores 🌟 points, and `/standings` shows the live tables.
-- When a race closes, its podium is posted on a card, and the winner becomes Champion of the week, month or year, title included.
-- Every win message shows the 🌟 points it just earned.
