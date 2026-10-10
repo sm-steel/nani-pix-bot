@@ -8,7 +8,8 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import guess as guess_command_module
 from nani_pix_bot.jobs import timers as timers_package
-from nani_pix_bot.jobs.timers.current_image import RevealTarget, RevealWinner
+from nani_pix_bot.jobs.reveal import RevealWinner
+from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -1106,6 +1107,29 @@ async def test_guess_command_won_caption_shows_the_winners_flair(
 
     _, kwargs = context.bot.send_photo.await_args
     assert "Guesser Name 🌸" in kwargs["caption"]
+
+
+async def test_guess_win_passes_the_winners_equipped_win_effect_to_the_reveal(
+    session_factory, equip_win_effect, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="guesser"))
+        session.flush()
+        equip_win_effect(session, 2)
+        session.commit()
+    post_reveal = _patch_reveal(monkeypatch, "post_reveal", MagicMock(message_id=1))
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert post_reveal.await_args is not None
+    assert post_reveal.await_args.kwargs["target"] == RevealTarget(
+        game_id, RevealWinner(2, "@guesser", overlay="confetti")
+    )
 
 
 async def test_stage_advance_posts_the_starters_equipped_frame(

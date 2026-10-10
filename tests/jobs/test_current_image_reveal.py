@@ -6,8 +6,9 @@ from telegram.error import TelegramError, TimedOut
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import reveal
+from nani_pix_bot.jobs.reveal import RevealWinner
 from nani_pix_bot.jobs.timers import current_image
-from nani_pix_bot.jobs.timers.current_image import RevealTarget, RevealWinner
+from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models.enums import RevealEffect
 from nani_pix_bot.services.reveal import store
 
@@ -48,10 +49,25 @@ async def test_video_sent_with_caption_and_slot_finished(session_factory, monkey
     kwargs = context.bot.send_video.await_args.kwargs
     assert (kwargs["video"], kwargs["caption"], kwargs["message_thread_id"]) == (b"mp4", "cap", 5)
     assert render.await_args is not None
-    assert render.await_args.args[1:] == (3, b"png", 9, "@w")
+    assert render.await_args.args[1:] == (3, b"png", RevealWinner(9, "@w"))
     context.bot.send_photo.assert_not_awaited()
     context.bot.pin_chat_message.assert_awaited_once()
     finished.assert_called_once_with(context.application, 3)
+
+
+async def test_the_winners_overlay_reaches_render_reveal(session_factory, monkeypatch) -> None:
+    render = AsyncMock(return_value=b"mp4")
+    monkeypatch.setattr(reveal, "render_reveal", render)
+    monkeypatch.setattr(reveal, "finished", MagicMock())
+    await current_image.post_reveal(
+        _context(session_factory),
+        session_factory,
+        target=RevealTarget(3, RevealWinner(9, "@w", overlay="confetti")),
+        photo=b"png",
+        caption="cap",
+    )
+    assert render.await_args is not None
+    assert render.await_args.args[3] == RevealWinner(9, "@w", overlay="confetti")
 
 
 async def test_unsolved_reveal_passes_no_winner(session_factory, monkeypatch) -> None:
@@ -66,7 +82,7 @@ async def test_unsolved_reveal_passes_no_winner(session_factory, monkeypatch) ->
         caption="c",
     )
     assert render.await_args is not None
-    assert render.await_args.args[3:] == (None, None)
+    assert render.await_args.args[3:] == (None,)
 
 
 async def test_no_video_falls_back_to_photo(session_factory, monkeypatch) -> None:

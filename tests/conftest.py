@@ -141,6 +141,13 @@ def equip_flair(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, 
 
 
 @pytest.fixture
+def equip_win_effect(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
+    """`equip_win_effect(session, player_id)` gives the player the fake run's
+    "confetti" win effect and equips it."""
+    yield from _equipper(monkeypatch, "demo_1/win_effect.confetti")
+
+
+@pytest.fixture
 def equip_frame(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
     """`equip_frame(session, player_id)` gives the player the fake run's
     "simple_border" host frame and equips it."""

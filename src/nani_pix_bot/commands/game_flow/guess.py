@@ -19,7 +19,8 @@ from nani_pix_bot.commands.game_flow.stage_post import (
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.jobs.timers.current_image import RevealTarget, RevealWinner
+from nani_pix_bot.jobs.reveal import RevealWinner
+from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models.enums import CosmeticSlot, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
@@ -48,10 +49,14 @@ def _partial_reveal_line(session, game: Game, lang: str) -> str:
     return "\n" + i18n.t("guess.partial_reveal", lang, reveal=row.partial_reveal)
 
 
-def _reveal_winner(user: User) -> RevealWinner:
+def _reveal_winner(session, user: User) -> RevealWinner:
     """The reveal badge's winner: "@username", or the full name for a
-    player with no username."""
-    return RevealWinner(user.id, f"@{user.username}" if user.username else user.full_name)
+    player with no username, plus their equipped win overlay."""
+    return RevealWinner(
+        user.id,
+        f"@{user.username}" if user.username else user.full_name,
+        inventory.look(session, user.id, CosmeticSlot.WIN_EFFECT),
+    )
 
 
 def _prepare_won_announcement(
@@ -61,7 +66,7 @@ def _prepare_won_announcement(
     lang: str,
     user: User,
 ) -> Announcement:
-    winner = _reveal_winner(user)
+    winner = _reveal_winner(session, user)
     original_bytes = require_original_image(game, "a WON outcome")
     timeout_module.cancel_timeout(context.job_queue, game.id)
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
@@ -91,7 +96,7 @@ def _prepare_hard_mode_won_announcement(
     of a single post_reveal call. Timer/turn-state
     handling is identical to the normal-mode helper; only the reveal
     photos and caption key differ."""
-    winner = _reveal_winner(user)
+    winner = _reveal_winner(session, user)
     photos = game_service.hard_mode_reveal_images(game)
     timeout_module.cancel_timeout(context.job_queue, game.id)
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)

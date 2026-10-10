@@ -9,10 +9,11 @@ import pytest
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import reveal, reveal_pregen, reveal_worker
+from nani_pix_bot.jobs.reveal import RevealWinner
 from nani_pix_bot.models.enums import GameStatus, PixelStage, RevealEffect, RevealStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
-from nani_pix_bot.services.reveal import pipeline, store
+from nani_pix_bot.services.reveal import overlays, pipeline, store
 
 PREGEN = pipeline.Pregen(part1_ts=b"\x47ts", join_offset=1.0, render_ms=12)
 
@@ -129,7 +130,7 @@ async def test_reveal_waits_then_falls_back(session_factory, monkeypatch, log_re
     application.bot_data["reveal_cache"].pending(
         game_id, asyncio.get_running_loop().create_future()
     )
-    assert await reveal.render_reveal(application, game_id, b"png", None, None) is None
+    assert await reveal.render_reveal(application, game_id, b"png", None) is None
     assert any(line.level == "WARNING" for line in log_records)
     assert any("photo" in line.message for line in log_records if line.level == "INFO")
 
@@ -139,9 +140,36 @@ async def test_ready_cache_renders_with_badge(session_factory, monkeypatch) -> N
     monkeypatch.setattr(pipeline, "finish", finish)
     application = _application(session_factory)
     application.bot_data["reveal_cache"].ready(5, PREGEN)
-    assert await reveal.render_reveal(application, 5, b"png", 9, "@w") == b"mp4"
+    assert await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w")) == b"mp4"
     pregen, clear, badge = finish.call_args.args
     assert (pregen, clear, badge) == (PREGEN, b"png", pipeline.Badge(avatar=None, handle="@w"))
+
+
+async def test_the_badge_carries_a_registered_overlay_or_the_default(
+    session_factory, monkeypatch
+) -> None:
+    finish = MagicMock(return_value=b"mp4")
+    monkeypatch.setattr(pipeline, "finish", finish)
+    monkeypatch.setattr(overlays, "WIN_OVERLAYS", {"confetti": MagicMock(), "stars": MagicMock()})
+    application = _application(session_factory)
+    application.bot_data["reveal_cache"].ready(5, PREGEN)
+    for overlay, expected in (("stars", "stars"), (None, "confetti")):
+        await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w", overlay))
+        assert finish.call_args.args[2] == pipeline.Badge(None, "@w", overlay=expected)
+
+
+async def test_an_unknown_overlay_warns_and_uses_confetti(
+    session_factory, monkeypatch, log_records
+) -> None:
+    finish = MagicMock(return_value=b"mp4")
+    monkeypatch.setattr(pipeline, "finish", finish)
+    application = _application(session_factory)
+    application.bot_data["reveal_cache"].ready(5, PREGEN)
+    await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w", "nope"))
+    assert finish.call_args.args[2] == pipeline.Badge(None, "@w", overlay="confetti")
+    warnings = [line for line in log_records if line.level == "WARNING"]
+    assert [line.extra["overlay"] for line in warnings] == ["nope"]
+    assert warnings[0].extra["game_id"] == 5
 
 
 async def test_broken_worker_falls_back_and_is_replaced(session_factory, monkeypatch) -> None:
@@ -159,7 +187,7 @@ async def test_broken_worker_falls_back_and_is_replaced(session_factory, monkeyp
     application = _application(session_factory)
     old_executor = application.bot_data["reveal_executor"]
     application.bot_data["reveal_cache"].ready(5, PREGEN)
-    assert await reveal.render_reveal(application, 5, b"png", None, None) is None
+    assert await reveal.render_reveal(application, 5, b"png", None) is None
     assert replacements == [application.bot_data["reveal_executor"]]
     assert application.bot_data["reveal_executor"] is not old_executor
     old_executor.shutdown()
@@ -343,7 +371,7 @@ async def test_pregeneration_is_a_quiet_noop_without_a_worker(
 
 async def test_render_without_a_worker_falls_back_to_the_photo(log_records) -> None:
     application = MagicMock()
-    assert await reveal.render_reveal(application, 5, b"png", None, None) is None
+    assert await reveal.render_reveal(application, 5, b"png", None) is None
     assert any("photo" in line.message for line in log_records if line.level == "INFO")
 
 
@@ -452,7 +480,7 @@ async def test_avatar_timeout_warns_with_the_winner(
     monkeypatch.setattr(pipeline, "finish", MagicMock(return_value=b"mp4"))
     application = _application(session_factory)
     application.bot_data["reveal_cache"].ready(5, PREGEN)
-    assert await reveal.render_reveal(application, 5, b"png", 9, "@w") == b"mp4"
+    assert await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w")) == b"mp4"
     warnings = [line for line in log_records if line.level == "WARNING"]
     assert [line.extra["winner_id"] for line in warnings] == [9]
     assert [line.extra["winner"] for line in warnings] == ["9 (@w)"]
@@ -484,7 +512,7 @@ async def test_a_slow_render_times_out_and_falls_back(
     monkeypatch.setattr(pipeline, "finish", _slow)
     application = _application(session_factory)
     application.bot_data["reveal_cache"].ready(5, PREGEN)
-    assert await reveal.render_reveal(application, 5, b"png", None, None) is None
+    assert await reveal.render_reveal(application, 5, b"png", None) is None
     assert any(line.level == "WARNING" for line in log_records)
     assert any("photo" in line.message for line in log_records if line.level == "INFO")
     gate.set()
@@ -512,7 +540,7 @@ async def test_the_avatar_fetch_overlaps_the_pre_render_wait(session_factory, mo
     monkeypatch.setattr(pipeline, "finish", finish)
     monkeypatch.setattr(reveal, "AVATAR_TIMEOUT", 30.0)  # a serial run must deadlock, not time out
     application = _application(session_factory)
-    render = reveal.render_reveal(application, 5, b"png", 9, "@w")
+    render = reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"))
     assert await asyncio.wait_for(render, 1) == b"mp4"
     assert finish.call_args.args[2] == pipeline.Badge(avatar=b"avatar", handle="@w")
     application.bot_data["reveal_executor"].shutdown()
@@ -524,7 +552,7 @@ async def test_a_finished_render_logs_its_timing_with_the_game(
     monkeypatch.setattr(pipeline, "finish", MagicMock(return_value=b"mp4"))
     application = _application(session_factory)
     application.bot_data["reveal_cache"].ready(5, PREGEN)
-    assert await reveal.render_reveal(application, 5, b"png", None, None) == b"mp4"
+    assert await reveal.render_reveal(application, 5, b"png", None) == b"mp4"
     [line] = [line for line in log_records if line.message.startswith("reveal rendered")]
     assert line.level == "INFO"
     assert line.extra["game_id"] == 5
@@ -600,7 +628,7 @@ async def test_the_avatar_task_is_cancelled_when_finding_the_pregen_raises(
     monkeypatch.setattr(reveal, "_find_pregen", _boom)
     application = _application(session_factory)
     with pytest.raises(RuntimeError, match="db down"):
-        await reveal.render_reveal(application, 5, b"png", 9, "@w")
+        await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"))
     await asyncio.wait_for(asyncio.wait(tasks), 5)
     assert tasks[0].cancelled()
     application.bot_data["reveal_executor"].shutdown()
@@ -616,7 +644,9 @@ async def test_the_avatar_task_is_cancelled_when_the_render_is_cancelled(
 
     monkeypatch.setattr(reveal, "_find_pregen", _wait_forever)
     application = _application(session_factory)
-    render = asyncio.ensure_future(reveal.render_reveal(application, 5, b"png", 9, "@w"))
+    render = asyncio.ensure_future(
+        reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"))
+    )
     await started.wait()
     render.cancel()
     await asyncio.wait_for(asyncio.wait([render]), 5)

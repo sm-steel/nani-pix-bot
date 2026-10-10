@@ -74,7 +74,7 @@ def test_pregenerate_builds_the_confetti_so_finish_does_not(monkeypatch) -> None
     pregen = pipeline.pregenerate(png, PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS)
     assert pipeline._static is not None
     static = pipeline._static[1]
-    assert celebration.badge_height(static.size) in static.confetti
+    assert ("confetti", celebration.badge_height(static.size)) in static.confetti
 
     def boom(_height):
         raise AssertionError("confetti rebuilt at win time")
