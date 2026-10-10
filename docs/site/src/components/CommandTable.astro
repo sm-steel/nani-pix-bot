@@ -1,0 +1,94 @@
+---
+// Command reference driven by the bot's own locale files, so descriptions
+// match Telegram's "/" menu. Syntax and grouping live here (the locale
+// files only hold descriptions); tests/docs/test_command_table.py checks
+// every registered command is listed.
+import en from '../../../../src/nani_pix_bot/locales/en.json';
+import ru from '../../../../src/nani_pix_bot/locales/ru.json';
+
+type Group = 'topic' | 'dm' | 'both' | 'admin';
+interface Props {
+  group: Group;
+}
+
+const GROUPS: Record<Group, [string, string][]> = {
+  topic: [
+    ['guess', '/guess <title>'],
+    ['correct', '/correct @username'],
+    ['skip', '/skip [@username]'],
+    ['status', '/status'],
+    ['bounty', '/bounty <amount>'],
+    ['sharpen', '/sharpen'],
+  ],
+  dm: [
+    ['start', '/start'],
+    ['help', '/help'],
+    ['newgame', '/newgame'],
+    ['shop', '/shop'],
+    ['title', '/title'],
+    ['linkmal', '/linkmal'],
+    ['unlinkmal', '/unlinkmal'],
+    ['stop', '/stop'],
+  ],
+  both: [
+    ['balance', '/balance'],
+    ['tip', '/tip @username <amount>'],
+    ['achievements', '/achievements [@username | top]'],
+    ['standings', '/standings'],
+    ['leaderboard', '/leaderboard'],
+    ['history', '/history'],
+    ['version', '/version'],
+  ],
+  admin: [
+    ['language', '/language'],
+    ['stageconfig', '/stageconfig'],
+    ['setstageconfig', '/setstageconfig <width:guesses> ×5'],
+    ['setstage', '/setstage <stage 1-5> <width> <guesses>'],
+    ['setgamesenabled', '/setgamesenabled on|off'],
+    ['setautostart', '/setautostart on|off'],
+    ['pixelconfig', '/pixelconfig [<key> <value>]'],
+    ['partialmatch', '/partialmatch [<letters>]'],
+    ['refund', '/refund @username'],
+    ['setwinner', '/setwinner <game id> @username'],
+    ['timezone', '/timezone'],
+    ['quiethours', '/quiethours HH:MM HH:MM | off'],
+  ],
+};
+
+const STRINGS: Record<string, Record<string, string>> = { en, ru };
+const HEADINGS: Record<string, [string, string]> = {
+  en: ['Command', 'What it does'],
+  ru: ['Команда', 'Что делает'],
+};
+
+const lang = (Astro.locals.starlightRoute.lang ?? 'en').slice(0, 2);
+const strings = STRINGS[lang] ?? en;
+const [commandHeading, descriptionHeading] = HEADINGS[lang] ?? HEADINGS.en;
+const rows = GROUPS[Astro.props.group].map(([name, syntax]) => {
+  const description = strings[`commands.${name}`];
+  if (description === undefined) {
+    throw new Error(`CommandTable: commands.${name} is missing from the ${lang} locale`);
+  }
+  return { syntax, description };
+});
+---
+
+<table class="command-table">
+  <thead><tr><th>{commandHeading}</th><th>{descriptionHeading}</th></tr></thead>
+  <tbody>
+    {
+      rows.map(({ syntax, description }) => (
+        <tr>
+          <td><code>{syntax}</code></td>
+          <td>{description}</td>
+        </tr>
+      ))
+    }
+  </tbody>
+</table>
+
+<style>
+  .command-table td:first-child {
+    white-space: nowrap;
+  }
+</style>
