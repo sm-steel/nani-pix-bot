@@ -434,8 +434,8 @@ src/nani_pix_bot/
     cosmetics.py  # /cosmetics — DM-only: slots, owned items, preview +
                    # Equip/Unequip (services/cosmetics); the title slot only
                    # hints at /title — see MECHANICS.md's "Cosmetics"
-    profile.py    # /profile — DM-only: the profile card (banner, stamps,
-                   # equipped looks)
+    profile.py    # /profile — the game topic and DM (members only): the
+                   # profile card (banner, title, stamps, counts)
     grant_item.py # /grantitem — admin-gated: give a player an item
                    # (ItemSource.ADMIN)
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
@@ -899,7 +899,7 @@ src/nani_pix_bot/
                    #                   starter's frame
                    #   reveal_choice.py  effect_for: the starter's
                    #                   transition, else random
-                   #   profile.py      build(): banner, stamps, looks
+                   #   profile.py      build(): banner, title, stamps, counts
                    #   previews.py     render + the item_previews cache
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,
@@ -1259,7 +1259,7 @@ erDiagram
 | `games` season columns | v12 | `season_id` (nullable FK to `season_schedule`): the season that was active when the game was activated (`services/game/state.py::activate_game`), `NULL` outside seasons. A game keeps it when it ends after the season's `end_at`, and its XP still counts. `anime_tags` (nullable JSON list of `{kind, name, mal_id}`): the identified anime's MAL genres/themes, fetched only while a gated season is active and kept for the confirm-time re-check. |
 | `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string, `admin` for now), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
 | `equipped_items` | v12 | The item equipped per slot: primary key (`player_id`, `slot`; `slot` a `CosmeticSlot` as a plain string), `item_id`. One item per slot, so equipping replaces. |
-| `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so each preview is rendered and uploaded once. |
+| `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so each preview is rendered and uploaded once per language. |
 | `players.title_key` item encoding | v12 | Besides an achievement title key, `title_key` may be `item:<item id>`, a season title item (`services/achievements/titles.py`). Title item ids are at most 56 bytes (`looks.problems`) so they fit `/title`'s callback data. |
 
 ### Achievements

@@ -1382,7 +1382,8 @@ before each grant, so a cascade never grants a tier twice.
 A title is shown next to your name on `/leaderboard`, in the achievements
 top and in announcements. The ones that confer a title: the group-unique
 achievements, the champions, and the top *defined* tier of every ladder.
-Choose with `/title` (DM only; an earned title or "none").
+Choose with `/title` (DM only; an earned title, an owned season title
+item, or "none").
 
 ### Champions
 
@@ -1816,7 +1817,7 @@ to get one: an admin's `/grantitem` (`ItemSource.ADMIN`). Earning items
 through play, the shop and the pass come later.
 
 `/cosmetics` (DM) lists the slots, then a slot's owned items; tapping an
-item sends its preview with **Equip** / **Unequip**. `/profile` (DM) shows
+item sends its preview with **Equip** / **Unequip**. `/profile` (the game topic, or DM for members) shows
 the profile card. A season title is picked with `/title`, not in
 `/cosmetics`, which only shows a hint for that slot.
 
@@ -1828,13 +1829,13 @@ the profile card. A season title is picked with `/title`, not in
 | `host_transition` | a `RevealEffect` name | the transition of the reveal video of games **you** start |
 | `win_effect` | an overlay key | the overlay in the 2 s ending of the reveal video, when you win with `/guess` or the starter's `/correct`; no equipped overlay, or a failure, falls back to the confetti |
 | `profile_banner` | a banner file in the run's art directory | the background of your `/profile` card |
-| `title` | none (the item id is the title) | next to your name, like an achievement title; chosen with `/title`, stored in `players.title_key` as `item:<item id>` |
+| `title` | none (the title text is the item's localized names) | next to your name, like an achievement title; chosen with `/title`, stored in `players.title_key` as `item:<item id>` |
 
 Accepted limits:
 
 - A win by **vote** or by an admin's `/setwinner` has no reveal video, so it
   has no win overlay.
-- **HARD MODE** games are started by the bot, so they have no starter to
+- **Bot-started games (including HARD MODE)** have no starter to
   equip anything: their transition stays random and their images unframed.
 - Frames and transitions follow the **starter** of the game; overlays and
   reactions follow the **winner**.
@@ -1843,5 +1844,7 @@ Accepted limits:
 - **Stamps** on `/profile` are the ended seasons the player has a
   `season_results` row in; no stamp is stored per player.
 - Previews are rendered on demand, then cached by Telegram `file_id`
-  (`item_previews`); text previews are never stored. A failed render is
+  (`item_previews`, one row per item and language, since banners and win
+  effects draw text); text previews are never stored. A file_id Telegram
+  rejects is dropped and the preview re-rendered. A failed render is
   reported to the player, not cached.
