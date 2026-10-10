@@ -1,0 +1,124 @@
+---
+// A home-page link card with a pixel-art icon. Starlight's LinkCard takes no
+// icon, and its built-in icon set is line art that clashes with the theme.
+interface Props {
+  title: string;
+  description: string;
+  href: string;
+  icon: keyof typeof ICONS;
+}
+
+// '#' is a filled pixel. Each icon is drawn on its own small grid.
+const ICONS = {
+  // A speech bubble holding a question mark: guessing.
+  play: [
+    '.##########.',
+    '############',
+    '####...#####',
+    '###.###.####',
+    '#######.####',
+    '######.#####',
+    '#####.######',
+    '############',
+    '#####.######',
+    '.##########.',
+    '..###.......',
+    '..#.........',
+  ],
+  // A crown: the group's admins.
+  admin: [
+    '............',
+    '#....##....#',
+    '##..####..##',
+    '###.####.###',
+    '############',
+    '############',
+    '############',
+    '.##########.',
+    '............',
+    '.##########.',
+    '.##########.',
+    '............',
+  ],
+  // A server rack: hosting your own copy.
+  host: [
+    '############',
+    '#.#.######.#',
+    '############',
+    '............',
+    '############',
+    '#.#.######.#',
+    '############',
+    '............',
+    '############',
+    '#.#.######.#',
+    '############',
+    '............',
+  ],
+};
+
+const { title, description, href, icon } = Astro.props;
+const rows = ICONS[icon];
+const path = rows
+  .flatMap((row, y) => [...row].map((c, x) => (c === '#' ? `M${x} ${y}h1v1h-1z` : '')))
+  .join('');
+---
+
+<div class="home-card">
+  <svg
+    class="home-card__icon"
+    viewBox={`0 0 ${rows[0].length} ${rows.length}`}
+    shape-rendering="crispEdges"
+    aria-hidden="true"
+  >
+    <path d={path} fill="currentColor" />
+  </svg>
+  <span class="home-card__text">
+    <a href={href}>{title}</a>
+    <span class="home-card__description">{description}</span>
+  </span>
+</div>
+
+<style>
+  .home-card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 1rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    box-shadow: var(--sl-shadow-sm);
+    position: relative;
+  }
+  .home-card:hover {
+    background: var(--sl-color-gray-7, var(--sl-color-gray-6));
+    border-color: var(--sl-color-accent);
+  }
+  .home-card__icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    color: var(--sl-color-accent);
+  }
+  .home-card__text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  a {
+    color: var(--sl-color-white);
+    font-family: var(--guide-font-display);
+    font-size: var(--sl-text-lg);
+    text-decoration: none;
+  }
+  /* The whole card is the link's hit area. */
+  a::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+  .home-card__description {
+    color: var(--sl-color-gray-3);
+    line-height: 1.5;
+  }
+</style>

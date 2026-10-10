@@ -61,6 +61,8 @@ h1#_top {
   grid-template-columns: 100%;
   justify-items: center;
   text-align: center;
+  /* Starlight's splash pads up to 10rem above the title; the panel's own top padding is enough. */
+  padding-top: 0.5rem;
   padding-bottom: 1.5rem;
 }
 .hero .copy,
@@ -69,4 +71,11 @@ h1#_top {
 }
 .hero .tagline {
   text-align: center;
+}
+
+/* The three home cards sit in one row on wide screens, not 2 + 1. */
+@media (min-width: 72rem) {
+  .card-grid:has(> .home-card) {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
