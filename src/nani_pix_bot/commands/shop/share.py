@@ -18,6 +18,7 @@ from nani_pix_bot.models.enums import ClueKind, EventType
 from nani_pix_bot.services import events, i18n, settings
 from nani_pix_bot.services.clues import shop
 from nani_pix_bot.services.clues.shop import TEXT_KINDS
+from nani_pix_bot.services.cosmetics import flair
 
 
 class SharedContent(TypedDict, total=False):
@@ -90,7 +91,9 @@ def _prepare_share(session_factory, user: User, purchase_id: int) -> _SharePost:
                 game_id=game.id,
             )
             raise _ShareRefusedError(i18n.t("shop.already_shared", lang))
-        header = i18n.t("shop.shared", lang, name=html.escape(user.full_name))
+        header = i18n.t(
+            "shop.shared", lang, name=html.escape(flair.named(session, user.id, user.full_name))
+        )
         content: SharedContent
         if is_image:
             content = {

@@ -23,6 +23,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.settings import stage_config
@@ -106,13 +107,17 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
 
 def _idle_text(session: Session, game: Game | None, lang: str) -> str:
     if game is not None and game.status is GameStatus.SETUP:
-        starter = players.display_name(session, game.starter_id)
+        starter = flair.named(
+            session, game.starter_id, players.display_name(session, game.starter_id)
+        )
         return i18n.t("status.setup", lang, starter=starter)
     if game is not None and game.status is GameStatus.VOTING:
         return i18n.t("status.voting", lang, id=game.id)
     state = turns.get_turn_state(session)
     if state is not None and state.next_starter_id is not None:
-        player = players.display_name(session, state.next_starter_id)
+        player = flair.named(
+            session, state.next_starter_id, players.display_name(session, state.next_starter_id)
+        )
         return i18n.t("status.turn_player", lang, player=player)
     return i18n.t("status.turn_open", lang)
 

@@ -12,6 +12,7 @@ from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.economy import bounty
 
 
@@ -56,7 +57,11 @@ async def bounty_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     bounty.contribute(session, game, player, amount)
                     pot = bounty.pot_balance(session, game.id)
                     reply = i18n.t(
-                        "bounty.added", lang, name=user.full_name, amount=amount, pot=pot
+                        "bounty.added",
+                        lang,
+                        name=flair.named(session, user.id, user.full_name),
+                        amount=amount,
+                        pot=pot,
                     )
     except bounty.BountyRefusedError as error:
         refusal = error.refusal

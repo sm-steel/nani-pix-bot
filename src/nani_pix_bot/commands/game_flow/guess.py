@@ -24,6 +24,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.economy import earning, settlement
 from nani_pix_bot.services.economy.messages import earnings_suffix
 from nani_pix_bot.services.game import guesses
@@ -69,7 +70,7 @@ def _prepare_won_announcement(
     caption = i18n.t(
         "guess.won_caption",
         lang,
-        winner=user.full_name,
+        winner=flair.named(session, user.id, user.full_name),
         title=game_service.display_title(game, lang),
     )
     caption += game_service.game_id_line(game.id, lang)
@@ -99,7 +100,7 @@ def _prepare_hard_mode_won_announcement(
     caption = i18n.t(
         "guess.hard_mode_won_caption",
         lang,
-        winner=user.full_name,
+        winner=flair.named(session, user.id, user.full_name),
         title=game_service.display_title(game, lang),
     )
     caption += game_service.game_id_line(game.id, lang)
@@ -302,7 +303,9 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         earnings = earning.award_guess(
             session, game, guesser_id=user.id, won=outcome is game_service.GuessOutcome.WON
         )
-        suffix = earnings_suffix(session, game, earnings, lang, player_name=user.full_name)
+        suffix = earnings_suffix(
+            session, game, earnings, lang, player_name=flair.named(session, user.id, user.full_name)
+        )
         if outcome not in _NO_PARTIAL_REVEAL:
             suffix = _partial_reveal_line(session, game, lang) + suffix
         if outcome is game_service.GuessOutcome.WON:

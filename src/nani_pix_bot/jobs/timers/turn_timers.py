@@ -15,6 +15,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services.cosmetics import flair
 
 # Singleton names — there's never more than one "pending turn" at a
 # time, unlike the per-game timeout/setup-abandon jobs.
@@ -101,6 +102,7 @@ async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
         target_id = turn_state.next_starter_id
         target = session.get(Player, target_id)
         username = target.username if target is not None else None
+        mention = flair.named(session, target_id, username) if username else None
         target_text = players.describe_player_id(session, target_id)
 
     try:
@@ -112,8 +114,8 @@ async def turn_reminder_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
             player=target_text,
         )
         text = (
-            i18n.t("turn.reminder_group_fallback", lang, username=username)
-            if username
+            i18n.t("turn.reminder_group_fallback", lang, username=mention)
+            if mention
             else i18n.t("turn.reminder_group_fallback_unknown", lang)
         )
         await context.bot.send_message(

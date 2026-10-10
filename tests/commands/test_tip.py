@@ -140,3 +140,16 @@ async def test_refusals_move_nothing(session_factory, args: list[str], expected:
 
     assert expected in _reply(update)
     assert _balances(session_factory) == (50, 10, 0)
+
+
+async def test_tip_message_shows_the_flair_of_both_players(session_factory, equip_flair) -> None:
+    _seed(session_factory)
+    with session_factory() as session:
+        equip_flair(session, ALICE)
+        equip_flair(session, BOB)
+        session.commit()
+
+    reply = _reply(await _run(session_factory, ["@bob", "20"]))
+
+    assert "Alice 🌸" in reply
+    assert "@bob 🌸" in reply

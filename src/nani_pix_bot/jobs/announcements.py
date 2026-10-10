@@ -45,6 +45,7 @@ from nani_pix_bot.services.cards import (
     season_background,
     unlock_slot,
 )
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.events import as_utc
 from nani_pix_bot.services.seasons import podium_text
 
@@ -89,7 +90,7 @@ def _unlock_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post |
     text = i18n.t(
         "achievement.unlocked",
         lang,
-        player=who,
+        player=flair.named(session, granted.player_id, who),
         name=name,
         desc=desc,
         rarity=rarity,

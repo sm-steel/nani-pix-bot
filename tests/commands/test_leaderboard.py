@@ -147,3 +147,14 @@ def test_page_data_round_trips_and_rejects_junk() -> None:
     assert leaderboard.parse_page(leaderboard.page_data(4)) == 4
     for junk in ("lb:", "lb:x", "lb:1:2", "xx:1", f"lb:{2**70}"):
         assert leaderboard.parse_page(junk) is None
+
+
+async def test_a_name_flair_shows_after_the_name(session_factory, equip_flair) -> None:
+    with session_scope(session_factory) as session:
+        session.add(Player(telegram_user_id=1, username="alice", wins=3))
+        session.flush()
+        equip_flair(session, 1)
+
+    sent = await _run(_make_update(), _make_context(session_factory))
+
+    assert md_escape("@alice 🌸") in sent.await_args_list[0].args[2]

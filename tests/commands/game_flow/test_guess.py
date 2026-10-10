@@ -1085,3 +1085,23 @@ async def test_guess_unsolved_posts_the_reveal_without_a_winner(
     kwargs = post_reveal.await_args.kwargs
     assert kwargs["target"] == RevealTarget(game_id, None)
     assert kwargs["photo"] == b"file123"
+
+
+async def test_guess_command_won_caption_shows_the_winners_flair(
+    session_factory, equip_flair
+) -> None:
+    _active_game(session_factory)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="guesser"))
+        session.flush()
+        equip_flair(session, 2)
+        session.commit()
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert "Guesser Name 🌸" in kwargs["caption"]

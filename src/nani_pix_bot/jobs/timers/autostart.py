@@ -28,6 +28,7 @@ from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import events, i18n, players, quiet_hours, settings
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.game import autostart as autostart_service
 from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.seasons import gate as gate_service
@@ -220,6 +221,14 @@ def _roll_overthrow(session_factory, winner_id: int | None) -> bool:
     return hit
 
 
+def _dethroned_label(session: Session, claim: _AutostartClaim) -> str:
+    """The overthrown winner's name for the group caption, with their flair."""
+    name = claim.dethroned_winner_name or ""
+    if claim.expected_next_starter_id is None:
+        return name
+    return flair.named(session, claim.expected_next_starter_id, name)
+
+
 def _build_first_turn_post(
     session: Session,
     context: ContextTypes.DEFAULT_TYPE,
@@ -252,7 +261,7 @@ def _build_first_turn_post(
         caption = i18n.t(
             "dm_start.hard_mode_game_started_caption_overthrow_winner",
             lang,
-            winner=claim.dethroned_winner_name,
+            winner=_dethroned_label(session, claim),
             **caption_kwargs,
         )
     else:

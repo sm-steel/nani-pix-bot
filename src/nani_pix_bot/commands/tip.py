@@ -9,6 +9,7 @@ from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.economy import tips
 
 
@@ -70,8 +71,8 @@ async def tip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     reply = i18n.t(
                         "tip.done",
                         lang,
-                        sender=user.full_name,
-                        recipient=username,
+                        sender=flair.named(session, user.id, user.full_name),
+                        recipient=flair.named(session, recipient.telegram_user_id, username),
                         amount=amount,
                     )
     except tips.TipRefusedError as error:

@@ -12,6 +12,7 @@ from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services.cosmetics import flair
 
 
 async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -87,7 +88,7 @@ def _open_turn(context: ContextTypes.DEFAULT_TYPE, session) -> TurnState:
 async def _pass_turn(
     message, context: ContextTypes.DEFAULT_TYPE, session, lang: str, raw_username: str
 ) -> str | None:
-    """Returns the resolved username on success, or None for an unknown
+    """Returns the resolved username (with the target's flair) on success, or None for an unknown
     username — that failure reply goes out here, inline: no mutation
     happened on this path, so there's nothing for a timeout to roll
     back (unlike the two successful outcomes, whose confirmation the
@@ -125,4 +126,4 @@ async def _pass_turn(
     turn_state = game_service.set_next_starter(session, target.telegram_user_id, reason="/skip")
     timeout_module.cancel_idle_autostart(context.job_queue)
     timeout_module.schedule_turn_timers(context.job_queue, turn_state)
-    return target_username
+    return flair.named(session, target.telegram_user_id, target_username)

@@ -1,5 +1,5 @@
 import shutil
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
@@ -110,3 +110,24 @@ def pytest_collection_modifyitems(config, items) -> None:
     for item in items:
         if "ffmpeg" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture
+def equip_flair(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
+    """`equip_flair(session, player_id)` gives the player the fake run's
+    blossom name flair (🌸) and equips it."""
+    from nani_pix_bot.models.enums import ItemSource
+    from nani_pix_bot.seasons import registry
+    from nani_pix_bot.services.cosmetics import inventory
+
+    runs = registry.discover("tests.seasons.fake_runs")
+    monkeypatch.setattr(registry, "all_runs", lambda: runs)
+    registry.all_items.cache_clear()
+
+    def equip(session: Session, player_id: int) -> None:
+        item_id = "demo_1/name_flair.blossom"
+        inventory.grant(session, player_id, inventory.ItemGrant(item_id, ItemSource.ADMIN))
+        inventory.equip(session, player_id, item_id)
+
+    yield equip
+    registry.all_items.cache_clear()

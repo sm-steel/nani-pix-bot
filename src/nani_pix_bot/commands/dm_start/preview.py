@@ -65,6 +65,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.economy import bounty, earning, wallet
 from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.seasons import gate as gate_service
@@ -274,7 +275,7 @@ async def _handle_confirm_tap(
         # starter and the answer, and this tap is that same action.
         logger.debug("confirmed from preview", game_id=setup_game.id)
         first_stage_post = _activate_and_stage_first_post(
-            session, context, setup_game, lang, user.full_name
+            session, context, setup_game, lang, flair.named(session, user.id, user.full_name)
         )
         game_id = setup_game.id
     # Block closed and committed above — activation is durable now

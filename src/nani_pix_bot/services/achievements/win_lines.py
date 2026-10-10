@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.achievements import periods
 from nani_pix_bot.services.achievements.periods import PeriodGain
+from nani_pix_bot.services.cosmetics import flair
 
 
 def _points(gain: int, lang: str) -> str:
@@ -54,7 +55,7 @@ def _host_line(session: Session, game_id: int, lang: str) -> str:
     won = periods.win_event(session, game_id)
     if won is None or won.data["hard_mode"] or won.subject_id in (None, won.actor_id):
         return ""
-    host = players.display_name(session, won.subject_id)
+    host = flair.named(session, won.subject_id, players.display_name(session, won.subject_id))
     gain = periods.HOST_POINTS
     return i18n.t("champion.win.host", lang, host=host, gain=gain, unit=_points(gain, lang))
 
@@ -66,6 +67,7 @@ def win_lines(session: Session, game_id: int, lang: str, now: datetime) -> list[
     gains = periods.win_gains(session, game_id, now, tz)
     if not gains:
         return []
-    winner = players.display_name(session, gains[0].player_id)
+    winner_id = gains[0].player_id
+    winner = flair.named(session, winner_id, players.display_name(session, winner_id))
     lines = [gain_line(gains, winner, lang), _host_line(session, game_id, lang)]
     return [line for line in lines if line]
