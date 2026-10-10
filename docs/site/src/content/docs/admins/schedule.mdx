@@ -1,0 +1,46 @@
+---
+title: Automatic rounds and quiet hours
+description: Pause new rounds, let the bot start its own, and set a quiet window.
+sidebar:
+  order: 3
+---
+
+## Pausing new rounds
+
+`/setgamesenabled off` stops anyone from starting a new round, which is handy while
+you're retuning the settings. A round already in progress carries on.
+`/setgamesenabled on` lifts the pause.
+
+## Letting the bot start rounds
+
+`/setautostart on` lets the bot start [HARD MODE](/nani-pix-bot/players/hard-mode/)
+rounds by itself (it's **off** by default):
+
+- when nobody has started a round for 24 hours after the turn opened up, and
+- occasionally, right after a round ends, by taking the next turn itself.
+
+The bot picks a random, reasonably well-known TV series or film for these rounds.
+`/setautostart off` turns it off again. While new rounds are paused with
+`/setgamesenabled off`, the bot doesn't start any either.
+
+## Quiet hours
+
+Quiet hours are a daily window, for example overnight, when the bot says nothing
+on its own. They're **off** by default.
+
+1. Send `/timezone` and pick your time zone from the list, or type it, for example
+   `/timezone Europe/Moscow`. Daylight saving time is followed automatically.
+2. Send `/quiethours 23:00 08:00` to set the window in your time zone. It can cross
+   midnight. The bot repeats it back, along with the same window in UTC.
+
+`/quiethours` on its own shows the current window, and `/quiethours off` turns it
+off.
+
+**During quiet hours** the bot holds back everything it would normally do by
+itself: reminders, automatic stage changes, timeouts, turn expiry, the end of a
+vote, champion announcements and rounds of its own. The clocks behind them are
+paused, so quiet time doesn't count. Anything a player does still works
+immediately, including guessing and winning.
+
+The quiet-hours time zone is also the group's time zone for champion weeks, months
+and years. Without one, the bot uses UTC.

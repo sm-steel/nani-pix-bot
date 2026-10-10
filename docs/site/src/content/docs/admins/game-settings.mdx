@@ -1,0 +1,53 @@
+---
+title: Game settings
+description: Tune the pixelation stages, partial-match reveals, and every pixel reward and price.
+sidebar:
+  order: 2
+---
+import stages from '../../../assets/generated/stages.json';
+
+export const example = stages.map((s) => `${s.width}:${s.wrongGuessLimit}`).join(' ');
+
+## Pixelation stages
+
+Each of the five stages has two settings: how **wide** the pixelated picture is (in
+blocks; fewer blocks means a harder picture) and how many **wrong guesses** it
+allows before the next stage. The defaults are:
+
+<table>
+  <thead><tr><th>Stage</th><th>Width</th><th>Wrong guesses</th></tr></thead>
+  <tbody>{stages.map((s) => <tr><td>{s.stage}</td><td>{s.width}</td><td>{s.wrongGuessLimit}</td></tr>)}</tbody>
+</table>
+
+- `/stageconfig` shows the current settings.
+- `/setstageconfig` sets all five stages at once, as `width:guesses` pairs from
+  stage 1 to stage 5. The defaults would be: <code>/setstageconfig {example}</code>
+- `/setstage <stage 1-5> <width> <guesses>` changes just one stage, for example
+  `/setstage 1 48 1` for an even harder start.
+
+After a change, the bot sends example pictures at the new widths so you can see
+the effect. Stage settings can't be changed while a round is being set up or
+played; the bot offers to stop the round instead.
+
+HARD MODE rounds have their own fixed rules and ignore these settings.
+
+## Partial matches
+
+When a wrong guess shares whole words with the answer, the bot reveals those words
+(see [Guessing](/nani-pix-bot/players/guessing/#partly-right)). It only does so once
+the matched words add up to enough letters.
+
+- `/partialmatch` shows the current setting (4 letters by default).
+- `/partialmatch <letters>` changes it. `/partialmatch 0` turns partial reveals off.
+
+## Pixel rewards and prices
+
+Every pixel amount, from the reward for a wrong guess to the price of each clue and
+of `/sharpen`, can be changed:
+
+- `/pixelconfig` lists every setting with its current value and a description.
+- `/pixelconfig <key> <value>` changes one, for example `/pixelconfig clue_tile 80`.
+  A value of 0 turns that reward off.
+
+Unlike the stage settings, these can be changed during a round. A change only
+affects what happens from then on.

@@ -1,0 +1,36 @@
+---
+title: Fixing a round
+description: Name a winner the bot missed, refund a clue, and stop a round.
+sidebar:
+  order: 4
+---
+
+## Naming a winner
+
+The bot's matching is strict, so sometimes a right answer doesn't count. There are
+two fixes:
+
+- **While the round is running**, its creator can use `/correct @username` in the
+  game topic. This doesn't work on HARD MODE rounds, which nobody hosts.
+- **After the round ended unsolved**, or while a HARD MODE vote is open, an admin
+  can send `/setwinner <game id> @username` to the bot. The game id is the 🎲 number
+  on every post about the round, and in `/history`.
+
+`/setwinner` turns the round into a normal win: the winner gets the usual reward
+plus a small bonus, and the bot announces it in the game topic. On an open HARD MODE
+vote, it closes the vote with that winner. It doesn't change whose turn it is, and it
+can't name the bot or the round's creator.
+
+## Refunding a clue
+
+`/refund @username` lists that player's clue purchases, newest first. Pick one to
+refund it in full; the player gets a message saying so. For a HARD MODE round where
+the player already got part of their spend back, the bot only refunds the rest, and
+shows you the amount before you confirm.
+
+## Stopping a round
+
+Any admin can stop the current round, including one the bot started, with `/stop`
+in a private message. You can stop it quietly or reveal the answer. Clues and the
+bounty are refunded, and the turn opens to everyone. See
+[How a round ends](/nani-pix-bot/players/how-a-round-ends/#stopping-a-round).
