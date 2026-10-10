@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from types import MappingProxyType
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -15,6 +16,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.models.turn_state import TurnState
+from nani_pix_bot.seasons.definition import Gate, GateTag
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.game import autostart as autostart_service
@@ -177,7 +179,7 @@ async def test_idle_autostart_job_callback_reschedules_on_a_failed_pick(
         session.commit()
     context = _make_context(session_factory)
 
-    async def failing_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def failing_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return None
 
     monkeypatch.setattr(autostart_service, "gather_pick", failing_gather_pick)
@@ -231,7 +233,7 @@ async def test_maybe_overthrow_claims_the_game_on_a_hit(
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -276,7 +278,7 @@ async def test_a_claimed_overthrow_logs_the_dethroned_winner(
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -307,7 +309,7 @@ async def test_a_failed_overthrow_event_write_is_logged_and_does_not_abort(
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     real_emit = autostart_timers.events.emit
@@ -372,7 +374,7 @@ async def test_run_bot_autostart_cancels_the_idle_autostart_timer_on_success(
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -406,7 +408,7 @@ async def test_run_bot_autostart_aborts_when_a_game_appeared_in_the_meantime(
         session.commit()
     context = _make_context(session_factory)
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -434,7 +436,7 @@ async def test_run_bot_autostart_aborts_when_the_turn_was_claimed_in_the_meantim
         session.commit()
     context = _make_context(session_factory)
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -477,7 +479,7 @@ async def test_run_bot_autostart_creates_a_hard_mode_game_and_posts_both_images(
 
     monkeypatch.setattr("nani_pix_bot.services.pixelate.pixelate", fake_pixelate)
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -540,7 +542,7 @@ async def test_run_bot_autostart_reserves_the_reveal_slot_and_starts_the_pre_ren
         "nani_pix_bot.services.pixelate.pixelate", lambda image, width, algorithm: image
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -578,7 +580,7 @@ async def test_run_bot_autostart_replaces_an_older_reveal_slot(
         "nani_pix_bot.services.pixelate.pixelate", lambda image, width, algorithm: image
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -616,7 +618,7 @@ async def test_run_bot_autostart_uses_the_overthrow_open_caption_when_no_winner_
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -743,3 +745,68 @@ async def test_maybe_overthrow_logs_disabled_autostart_as_the_skip_reason(
     )
 
     assert ("INFO", "overthrow roll skipped after a game ended — autostart is disabled") in records
+
+
+async def test_run_bot_autostart_passes_the_active_seasons_gate_to_the_pick(
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
+) -> None:
+    gate = Gate(
+        any_of=(GateTag("genre", "Romance", 22, 22),),
+        description=MappingProxyType({"EN": "Romance"}),
+    )
+    monkeypatch.setattr(autostart_timers.gate_service, "active_gate", lambda session: gate)
+    seen: dict = {}
+
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, *, gate=None):
+        seen["gate"] = gate
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+    claim = autostart_timers._AutostartClaim(
+        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    )
+
+    started = await autostart_timers.run_bot_autostart(
+        cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory)), session_factory, claim
+    )
+
+    assert started is False
+    assert seen["gate"] is gate
+    assert any(r.extra.get("gated") is True for r in log_records)
+
+
+async def test_run_bot_autostart_gated_lines_carry_the_season(
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
+) -> None:
+    from datetime import UTC, datetime
+
+    from nani_pix_bot.models.enums import SeasonStatus
+    from nani_pix_bot.models.season import SeasonSchedule
+    from nani_pix_bot.seasons import registry
+
+    runs = registry.discover("tests.seasons.fake_runs")
+    monkeypatch.setattr(registry, "all_runs", lambda: runs)
+    now = datetime(2026, 11, 1, tzinfo=UTC)
+    with session_factory() as session:
+        row = SeasonSchedule(
+            run_id="demo_1", start_at=now, end_at=now, status=SeasonStatus.ACTIVE, created_by=7
+        )
+        session.add(row)
+        session.commit()
+        season_id = row.id
+
+    async def no_pick(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(autostart_service, "gather_pick", no_pick)
+    claim = autostart_timers._AutostartClaim(
+        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    )
+
+    await autostart_timers.run_bot_autostart(
+        cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory)), session_factory, claim
+    )
+
+    line = next(r for r in log_records if "found no usable pick" in r.message)
+    assert line.extra["gated"] is True
+    assert line.extra["season_id"] == season_id
+    assert line.extra["run_id"] == "demo_1"

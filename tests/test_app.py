@@ -96,6 +96,7 @@ def test_build_application_registers_every_command() -> None:
         "setautostart",
         "timezone",
         "quiethours",
+        "season",
         "version",
         "linkmal",
         "unlinkmal",

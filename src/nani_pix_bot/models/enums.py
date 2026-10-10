@@ -404,6 +404,9 @@ class OutboxKind(enum.StrEnum):
 
     UNLOCK = "unlock"
     PERIOD_SUMMARY = "period_summary"
+    SEASON_TEASER = "season_teaser"
+    SEASON_START = "season_start"
+    SEASON_END = "season_end"
 
 
 class PeriodType(enum.StrEnum):
@@ -412,3 +415,22 @@ class PeriodType(enum.StrEnum):
     WEEK = "week"
     MONTH = "month"
     YEAR = "year"
+
+
+class XpSource(enum.StrEnum):
+    """Why a season_xp row was written (seasons spec §2). Plain string."""
+
+    WIN = "win"
+    HOST = "host"
+    FIRST_GUESS = "first_guess"
+
+
+class SeasonStatus(enum.StrEnum):
+    """A season_schedule row's lifecycle (seasons spec §1). Stored as a
+    plain string. `closing`: past end_at, waiting for its tagged games."""
+
+    SCHEDULED = "scheduled"
+    ACTIVE = "active"
+    CLOSING = "closing"
+    ENDED = "ended"
+    CANCELLED = "cancelled"

@@ -28,6 +28,7 @@ from loguru import logger
 from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.services.search import cache, parsing, rest
 from nani_pix_bot.services.search.base import ScreenshotModule
+from nani_pix_bot.services.search.tags import AnimeTag
 
 TENRAI_BASE_URL = "https://api.tenrai.org/v1/anime"
 TENRAI_RANDOM_URL = "https://api.tenrai.org/v1/random/anime"
@@ -123,6 +124,31 @@ async def get_by_id(client: httpx.AsyncClient, tenrai_id: int) -> TenraiResult |
     return await rest.fetch_by_id(
         _API, client, f"{TENRAI_BASE_URL}/{tenrai_id}", tenrai_id, _parse_detail_result
     )
+
+
+async def get_tags(client: httpx.AsyncClient, mal_id: int) -> list[AnimeTag] | None:
+    """The anime's MAL genres and themes (seasons spec §5); None if Tenrai
+    has no such anime. Not cached: called once per gated pick."""
+    return await rest.fetch_by_id(_API, client, f"{TENRAI_BASE_URL}/{mal_id}", mal_id, _parse_tags)
+
+
+def _parse_tags(raw: dict) -> list[AnimeTag]:
+    """A 200 without a `data` object is a provider fault, not "no such
+    anime" (only a 404 is — rest.fetch_by_id): raising lets fetch_tags
+    retry and fall back instead of reading it as a refusal."""
+    entry = raw.get("data")
+    if not isinstance(entry, dict):
+        raise RuntimeError(f"Tenrai tags response has no data object: {raw!r}")
+    tags = []
+    for kind, field in (("genre", "genres"), ("theme", "themes")):
+        tags.extend(
+            AnimeTag(kind, item["name"], item["mal_id"])
+            for item in entry.get(field) or []
+            if isinstance(item, dict)
+            and isinstance(item.get("name"), str)
+            and isinstance(item.get("mal_id"), int)
+        )
+    return tags
 
 
 async def random_anime(client: httpx.AsyncClient) -> TenraiResult | None:

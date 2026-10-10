@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.dm_start import season_gate
 from nani_pix_bot.commands.dm_start._shared import (
     _SYNONYM_SPLIT_RE,
     _method_keyboard,
@@ -38,6 +39,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX,
     PREVIEW_RESEARCH_CALLBACK_DATA,
     algorithm_name,
+    back_to_methods_keyboard,
     bounty_keyboard,
     change_image_keyboard,
     pixel_algorithm_keyboard,
@@ -65,6 +67,8 @@ from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.economy import bounty, earning, wallet
 from nani_pix_bot.services.reveal import store as reveal_store
+from nani_pix_bot.services.seasons import gate as gate_service
+from nani_pix_bot.services.seasons.gate import Verdict
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -166,6 +170,11 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
         # takes only one answer per callback query.
         await _handle_bounty_pick_tap(session_factory, query, user)
         return
+    if user is not None and query.data == PREVIEW_CONFIRM_CALLBACK_DATA:
+        # Answers the query itself too: the season gate's "try again" is
+        # an alert (see _handle_gated_confirm).
+        await _handle_gated_confirm(context, session_factory, query, user)
+        return
     await query.answer()
     if user is None:
         return
@@ -211,11 +220,6 @@ async def _handle_posting_tap(
 
     Returns True if this tap was one of them and has been handled."""
     data = str(query.data)
-    if data == PREVIEW_CONFIRM_CALLBACK_DATA:
-        lang = await _handle_confirm_tap(context, session_factory, user)
-        if lang is not None:
-            await query.edit_message_text(text=i18n.t("dm_start.posted", lang))
-        return True
     if data == PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA:
         await _handle_change_image_pick_screenshot_tap(context, session_factory, query, user)
         return True
@@ -223,6 +227,32 @@ async def _handle_posting_tap(
         await _handle_pixel_algorithm_pick_tap(context, session_factory, query, user)
         return True
     return False
+
+
+async def _handle_gated_confirm(
+    context: ContextTypes.DEFAULT_TYPE, session_factory, query, user
+) -> None:
+    """Confirm, behind the running season's gate (seasons spec §5) —
+    authoritative, since every way of identifying a game ends here. A
+    refusal replaces the preview's buttons with why and a way back to the
+    methods; "unavailable" is an alert that leaves the preview as it is,
+    so Confirm can simply be tapped again. Answers the query exactly once."""
+    verdict = await season_gate.run_gate(context, session_factory, user.id)
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+    if verdict is Verdict.UNAVAILABLE:
+        await query.answer(i18n.t("season.gate.unavailable", lang), show_alert=True)
+        return
+    await query.answer()
+    if verdict in gate_service.REFUSED:
+        await query.edit_message_text(
+            season_gate.refusal_text(verdict, season_gate.rule_text(session_factory, lang), lang),
+            reply_markup=back_to_methods_keyboard(lang),
+        )
+        return
+    confirmed_lang = await _handle_confirm_tap(context, session_factory, user)
+    if confirmed_lang is not None:
+        await query.edit_message_text(text=i18n.t("dm_start.posted", confirmed_lang))
 
 
 async def _handle_confirm_tap(

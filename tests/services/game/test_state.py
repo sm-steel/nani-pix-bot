@@ -1461,6 +1461,17 @@ def test_clear_identification_resets_numbers_matter(session: Session) -> None:
     assert game.numbers_matter is None
 
 
+def test_clear_identification_resets_anime_tags(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    game.anime_tags = [{"kind": "genre", "name": "Romance", "mal_id": 22}]
+
+    game_service.clear_identification(game)
+
+    assert game.anime_tags is None
+
+
 def test_record_guess_ignores_numbers_by_default(session: Session) -> None:
     game = _active_game(session)
     game.title_english = "91 Days"

@@ -48,9 +48,11 @@ _BEFORE_PREVIEW = frozenset(
 )
 
 
-def _identity(game: Game) -> tuple:
-    """What the search was for: a re-identification in the meantime makes
-    its results someone else's."""
+def identity_of(game: Game) -> tuple:
+    """Which anime a SETUP game is identified as — what a background
+    lookup (this module's alias search, season_gate.py's gate check) was
+    for: a re-identification in the meantime makes its results someone
+    else's."""
     return (
         game.source,
         game.anilist_id,
@@ -62,7 +64,7 @@ def _identity(game: Game) -> tuple:
     )
 
 
-def _lookup(game: Game) -> aliases.AliasLookup:
+def lookup_for(game: Game) -> aliases.AliasLookup:
     return aliases.AliasLookup(
         source=game.source,
         anilist_id=game.anilist_id,
@@ -116,7 +118,7 @@ async def _search_and_store(
         game = session.get(Game, game_id)
         if game is None or game.status != GameStatus.SETUP:
             return
-        lookup, identity = _lookup(game), _identity(game)
+        lookup, identity = lookup_for(game), identity_of(game)
     logger.info("looking for more names on other providers", game_id=game_id)
     names = await _find(context, lookup)
     album = None
@@ -125,7 +127,7 @@ async def _search_and_store(
         if (
             game is None
             or game.status != GameStatus.SETUP
-            or _identity(game) != identity
+            or identity_of(game) != identity
             or game.setup_step not in _BEFORE_PREVIEW
         ):
             logger.info("alias search finished too late — dropping it", game_id=game_id)

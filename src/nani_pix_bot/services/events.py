@@ -108,7 +108,7 @@ def to_event(row: EventRow) -> LoggedEvent:
 
 
 def _dispatch(session: Session, event: LoggedEvent) -> None:
-    """Hands the event to its one consumer, in a savepoint: a broken
+    """Hands the event to the achievements consumer, in a savepoint: a broken
     achievement must never roll back the player's own action, so a failure
     discards only the achievement work (nested savepoints cover a reward
     cascade, where this re-enters via wallet.credit). A function-local
@@ -122,6 +122,23 @@ def _dispatch(session: Session, event: LoggedEvent) -> None:
     except Exception:
         logger.opt(exception=True).error(
             "achievements failed on event {event_type} (row {event_id}); action kept",
+            event_type=event.event_type.value,
+            event_id=event.id,
+        )
+
+
+def _dispatch_seasons(session: Session, event: LoggedEvent) -> None:
+    """The seasons' consumer, in its own savepoint for the same reason as
+    _dispatch. Separate from it so the tests' "achievements off" fixture
+    leaves seasons on; it's a no-op for games outside a season."""
+    from nani_pix_bot.services.seasons import consumer
+
+    try:
+        with session.begin_nested():
+            consumer.on_event(session, event)
+    except Exception:
+        logger.opt(exception=True).error(
+            "seasons failed on event {event_type} (row {event_id}); action kept",
             event_type=event.event_type.value,
             event_id=event.id,
         )
@@ -143,4 +160,5 @@ def emit(session: Session, event_type: EventType, involved: Involved, **data: An
     )
     event = to_event(row)
     _dispatch(session, event)
+    _dispatch_seasons(session, event)
     return event

@@ -300,6 +300,14 @@ src/nani_pix_bot/
                    #                  like search.py's own picks — see
                    #                  MECHANICS.md's "Linking a personal
                    #                  MyAnimeList account"
+                   #   season_gate.py the season's anime gate on DM setup
+                   #                  (MECHANICS.md's "Seasons"): checks
+                   #                  a staged result's MAL genres/themes
+                   #                  (tags fetched via services/seasons),
+                   #                  and on a refusal also clears a
+                   #                  catalogue screenshot, resets to the
+                   #                  method pick and drops a stale
+                   #                  verdict
     game_flow/    # commands that run during (or between) an in-progress
                    # game — grouped for symmetry with dm_start/, though
                    # none of these four is individually large:
@@ -419,6 +427,10 @@ src/nani_pix_bot/
                    # the admin's own IANA timezone (Player.timezone) and
                    # the bot-wide quiet-hours window entered in it — see
                    # MECHANICS.md's "Quiet hours"
+    season.py     # /season — DM-only, admin-gated: status, history, the
+                   # runs not yet held, and schedule/start/end/cancel, with
+                   # dates typed in the admin's /timezone — see
+                   # MECHANICS.md's "Seasons"
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
                    # `/start ach_<id>`, the achievements one, and
                    # `/start rules`/`/start recent` for standings_dm.py), /help
@@ -532,10 +544,18 @@ src/nani_pix_bot/
                    # of one event (chunked at 10, rendered bytes reused),
                    # avatars cached per drain, a drain stops at the first
                    # failed send, a row is given up after 3 attempts
+                   # (season_teaser/start/end render a banner card; a
+                   # cancelled season's rows are dropped unsent)
     periods.py    # the period boundary job: a one-shot run_once at the
                    # next boundary that closes what ended (catching up
                    # after downtime) and re-arms itself; the first start
                    # only arms the running periods
+    seasons.py    # the season boundary job: the same one-shot run_once
+                   # shape as periods.py, at the next start/end, calling
+                   # services/seasons/lifecycle.advance (which also
+                   # catches up after downtime) and re-arming; with nothing
+                   # on the clock it re-runs hourly, which also finalizes a
+                   # closing season whose last game /stop deleted
     avatars.py    # a player's current profile photo (None on any miss ->
                    # the card draws initials)
     reveal.py     # Telegram side of the animated reveal (#295): the
@@ -830,6 +850,29 @@ src/nani_pix_bot/
                    # as a list of Release (page 0 the current notes, then
                    # up to four previous releases split on `## ` headings)
     version.py    # installed_version() from the package metadata
+    seasons/      # seasons without Telegram — see MECHANICS.md's "Seasons":
+                   #   schedule.py   the season_schedule rules (one open
+                   #                 season, a started run never again,
+                   #                 date changes, early end, cancel),
+                   #                 refusals as ScheduleRefusedError
+                   #   lifecycle.py  scheduled -> active -> closing ->
+                   #                 ended (advance, next_boundary,
+                   #                 on_game_ended, podium); finalizing
+                   #                 freezes the podium and queues the
+                   #                 end post
+                   #   xp.py         Season XP awards for tagged games
+                   #                 (on_event) and standings
+                   #   consumer.py   hooks the above into services/
+                   #                 events.py::emit
+                   #   when.py       date + time parsing in the admin's
+                   #                 timezone
+                   #   tags.py       fetches a MAL id's genres/themes
+                   #                 (Tenrai first, Shikimori fallback;
+                   #                 TagsUnavailableError when neither
+                   #                 answers) over services/search/tags.py
+                   #   gate.py       the Verdict (PASSED / OFF_THEME /
+                   #                 UNIDENTIFIABLE / UNAVAILABLE) and
+                   #                 active_gate
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,
                    #                    games-enabled flag, autostart-
@@ -856,6 +899,12 @@ src/nani_pix_bot/
                    #                    raises rather than silently
                    #                    returning garbage — callers treat
                    #                    that the same as "never linked"
+  seasons/        # season run definitions (pure data, not services):
+                   # definition.py (SeasonRun, XpTable, Gate), registry.py
+                   # (finds runs/<run_id>.py), lock.py + runs.lock (a
+                   # sha256 per shipped run module; a test fails if one is
+                   # edited — a repeat is a new module). runs/ is empty
+                   # until a real run ships
   release_notes/  # player-facing release notes per language, shown by
                    # /version: release-notes-<lang>.md (the release being
                    # built) and previous-releases-<lang>.md (up to four
@@ -886,6 +935,7 @@ src/nani_pix_bot/
     achievement.py  # AchievementGrant, AchievementClaim
     announcement.py  # AnnouncementOutbox
     period.py     # PeriodResult, PeriodState
+    season.py     # SeasonSchedule, SeasonXp, SeasonResult
     enums.py      # GameStatus, PixelStage, SetupStep, PixelReason, and Provider — the
                    # latter also exposes pick_prefix/id_attr_name/
                    # screenshot_module/search_module as properties, the
@@ -1174,6 +1224,10 @@ erDiagram
 | `players` additions | v10 | `title_key` (the title chosen with `/title`) and `first_name` (kept current by `remember_user`, shown when there is no @username). |
 | `games` addition | v10 | `activated_at`: when the game went live (`created_at` is when setup started), used by `win_facts.seconds` (activation to the game's end). |
 | `reveal_video` | v11 | The one pre-rendered animated reveal (#295), at most one row: `slot` PK, always 1. `game_id` (plain column, no FK, because `/stop` deletes the game row before its reveal), `effect` (`RevealEffect`, picked at game start), `image_choice` (`a`/`b`, hard mode only), `status` (`pending`/`ready`/`failed`), `part1_ts` (deferred LONGBLOB, part 1 as MPEG-TS), `join_offset` (the `-output_ts_offset` the ending needs so its first frame lands 1/FPS after part 1's last), `created_at`, `ready_at`. Written only via `services/reveal/store.py`; see "Reveal video". |
+| `season_schedule` | v12 | Every scheduling of a season run, kept as history (`run_id`, `start_at`/`end_at` UTC, `status` a `SeasonStatus` stored as a plain string: `scheduled` -> `active` -> `closing` -> `ended`, or `cancelled`; `created_by`, `created_at`, `started_at`, `ended_at`). `services/seasons/schedule.py` enforces what the DB doesn't: at most one row in `scheduled`/`active`/`closing`, and a run that ever reached `active` (`started_at` set) is never scheduled again; no open row means seasons are off. Moved only by `services/seasons/lifecycle.py` and the `/season` command. See `MECHANICS.md`'s "Seasons". |
+| `season_xp` | v12 | Append-only Season XP: `season_id` (FK), `player_id` (FK), `amount`, `source` (an `XpSource` stored as a plain string: `win`, `host`, `first_guess`), `game_id` (a plain integer with **no** FK, like `currency_transfers.game_id`, so rows outlive a `/stop`ped game), `created_at`. Standings are `SUM(amount)` per player (`services/seasons/xp.py::standings`). Written only by `xp.on_event`, for games tagged to a season. |
+| `season_results` | v12 | A finished season's frozen podium: one row per player with XP (`season_id`, `player_id`, `rank` as a competition rank so ties share it, `xp`), unique on (`season_id`, `player_id`). Written once when the season finalizes (`lifecycle._finalize`), so the end post and any later view read the frozen result, not the live sum. |
+| `games` season columns | v12 | `season_id` (nullable FK to `season_schedule`): the season that was active when the game was activated (`services/game/state.py::activate_game`), `NULL` outside seasons. A game keeps it when it ends after the season's `end_at`, and its XP still counts. `anime_tags` (nullable JSON list of `{kind, name, mal_id}`): the identified anime's MAL genres/themes, fetched only while a gated season is active and kept for the confirm-time re-check. |
 
 ### Achievements
 

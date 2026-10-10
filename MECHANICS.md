@@ -33,6 +33,7 @@ just what's currently built.
 | Public spends — bounty (`/bounty`), `/tip`, `/sharpen` | Implemented |
 | HARD MODE vote when nobody guessed right (15 min, unique plurality of 3+ votes) | Implemented |
 | Quiet hours (`/quiethours`, `/timezone`) — automatic posts held, clocks frozen | Implemented |
+| Seasons, phase 1 (`/season`, schedule, Season XP, anime gate) | Implemented |
 
 ## Game lifecycle
 
@@ -1705,3 +1706,100 @@ round's bounty, tip a player, or pay to sharpen the image.
 - On confirm the player is charged and the round gets the same effects as any
   stage advance: the next stage image is posted, the wrong-guess counter resets
   and the new stage is announced in the group topic.
+
+## Seasons
+
+**Status: Implemented (phase 1: the framework, Season XP and the anime
+gate).** Seasons are occasional, time-boxed events that run alongside the
+normal game. Phase 1 ships no playable season: `seasons/runs/` is empty, so
+`/season` has nothing to schedule until a run module is added. Coins, the
+pass, the shop and cosmetics are later phases.
+
+### Runs and the schedule
+
+- A **run** is one hand-written module in `seasons/runs/<run_id>.py`
+  exporting a `SeasonRun` (names, XP table, optional gate). Shipped modules
+  are frozen: `seasons/runs.lock` holds a sha256 per module and a test fails
+  if one is edited. A repeat is a **new** module, not a rerun.
+- Each scheduling is a `season_schedule` row, kept as history. States:
+  `scheduled` -> `active` at `start_at` -> `closing` at `end_at` -> `ended`,
+  or `cancelled` (only from `scheduled`). At most one season is open
+  (`scheduled`/`active`/`closing`) at a time, and a run that ever became
+  active can't be scheduled again. No open season means seasons are off.
+- **`/season`** (DM, group admins only): shows the current or upcoming
+  season, the history and the runs not yet held; `/season schedule <run>
+  <start> <end>`, `/season start <date>`, `/season end <date>` and
+  `/season cancel`. Dates are typed in the admin's `/timezone` (asked for
+  first if unset), stored in UTC. The start can move only before the
+  season begins; the end can move until the season starts closing, and an
+  end in the past on a running season ends it now (early stop). Date
+  changes before the start re-post the teaser.
+- The `season_boundary` job advances the season at each start/end and
+  catches up after downtime. A closing season whose last tagged game was
+  deleted by `/stop` is finalized by the job's hourly fallback run.
+
+### Tagging and closing
+
+- A game activated while a season is `active` is **tagged** (`games.season_id`)
+  at activation, for as long as the season row is `active`. Games activated
+  before the start are not tagged. The season stops tagging once the
+  boundary job moves it to `closing`, normally right at `end_at`, so a game
+  activated in the gap before that job fires is still tagged. Only tagged
+  games earn Season XP, and none once the season has `ended` or been
+  cancelled.
+- Once `closing`, nothing new is tagged, but the season stays `closing` until
+  every tagged game has ended, so a tagged game that ends late still counts
+  in full. Then it **finalizes**: the standings are frozen into
+  `season_results` (competition ranks, ties share one) and the end post is
+  queued.
+
+### Season XP
+
+Written as append-only `season_xp` rows, for tagged games only, from the
+game's events. Amounts come from the run's XP table.
+
+| Event | Who gets it |
+|---|---|
+| Win | the winner, by the stage (or HARD MODE turn, clamped to 1-5) they won at |
+| Host | the starter, when the game is won or ends unsolved — **not on HARD MODE games**, which only the bot starts |
+| First guess | each player's first guess in a game, once per player per game |
+
+"First guess" is answered from the player's `game_guesses` rows for that
+game (their first), not from a separate ledger. Standings are the sum of XP
+per player.
+
+### Announcements
+
+Three group posts through the announcement outbox (held by quiet hours like
+any other): a **teaser** when a season is scheduled (or its dates change),
+a **start** post (with the gate's rule when there is one) and an **end**
+post with the frozen podium. There is no reminder. A cancelled season posts
+nothing: its queued posts are dropped unsent.
+
+### The anime gate
+
+A run may declare a gate: a list of accepted MAL genres/themes, where a
+game qualifies if its anime has **any** of them (a season about Slice of
+Life, Romance or the School theme accepts all three). The player-facing
+rule text names every tag.
+
+- **Tags** come from the MAL id: Tenrai first (matched by MAL tag id),
+  Shikimori as the fallback (matched by kind + English name, since some of
+  its ids differ from MAL's). Fetched when a result is staged during DM
+  setup and stored in `games.anime_tags`.
+- **Checked twice**: when a catalogue result is picked, and again,
+  authoritatively, at Confirm, which every identification method passes
+  through. Manual and TMDB entries resolve a MAL id by an exact
+  (normalized) Tenrai title match; if none is found the game is refused.
+- **Three outcomes.** Passed. **Refused**: off-theme, or unidentifiable (no
+  MAL id could be found) — the player is told the rule and picks again. A
+  refusal also clears a catalogue screenshot and resets setup to the method
+  pick; a result for a pick that has since changed (a stale verdict) is
+  dropped. **Unavailable**: no provider answered after retries — the player
+  is told to try again, and it is never reported as off-theme.
+- **Bot-started games** are gated too: the autostart pick queries Shikimori
+  on **one randomly chosen** gate tag's id (its filter ANDs several ids, so
+  it can't take the whole list), and a Tenrai pick is kept only if its tags
+  pass; tags that can't be fetched reject the attempt. A gate tag with no
+  Shikimori id goes straight to the Tenrai pick and check, and a
+  genre-filtered Shikimori pick is not re-checked.

@@ -23,6 +23,7 @@ from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
+from nani_pix_bot.services.seasons import schedule as season_schedule
 from nani_pix_bot.services.settings import bot_settings, stage_config
 
 # Blockiest to clearest — see MECHANICS.md's "Pixelation stages" table.
@@ -395,8 +396,8 @@ def set_screenshot_provider_id(
 def clear_identification(game: Game) -> None:
     """Forget which anime a still-SETUP game was identified as: every
     title variant, the synonyms, every provider id, the creator's
-    "numbers matter" answer and any alias suggestions (both were about
-    the old titles).
+    "numbers matter" answer, any alias suggestions (both were about
+    the old titles) and the fetched genre/theme tags.
 
     Each provider's result fills in only its own subset of these (only
     Shikimori has `title_russian`, only AniList/Tenrai/TMDB have
@@ -423,6 +424,7 @@ def clear_identification(game: Game) -> None:
     game.tmdb_id = None
     game.numbers_matter = None
     game.alias_suggestions = None
+    game.anime_tags = None
 
 
 def stage_manual_entry(game: Game, *, title: str, synonyms: list[str]) -> None:
@@ -441,6 +443,7 @@ def activate_game(session: Session, game: Game) -> None:
     designated starter's turn is now consumed)."""
     game.status = GameStatus.ACTIVE
     game.activated_at = datetime.now(UTC)
+    game.season_id = season_schedule.active_id(session)
     if game.hard_mode:
         game.hard_mode_turn = 1
     else:
@@ -458,6 +461,7 @@ def activate_game(session: Session, game: Game) -> None:
         source=game.source,
         answer=display_title(game, "EN"),
         hard_mode=game.hard_mode,
+        season_id=game.season_id,
         game_id=game.id,
     )
     events.emit(

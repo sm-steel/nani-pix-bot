@@ -850,6 +850,32 @@ async def test_random_anime_sends_a_random_order_query() -> None:
     )
 
 
+def _random_capturing_client(captured: dict[str, Any]) -> httpx.AsyncClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json=_animes_payload([]))
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+async def test_random_anime_with_a_genre_id_sends_it_as_a_variable() -> None:
+    captured: dict[str, Any] = {}
+    async with _random_capturing_client(captured) as client:
+        await shikimori.random_anime(client, genre_id=36)
+
+    assert captured["json"]["variables"]["genre"] == "36"
+    assert "$genre: String" in captured["json"]["query"]
+    assert "genre: $genre" in captured["json"]["query"]
+
+
+async def test_random_anime_without_a_genre_id_sends_no_genre_variable() -> None:
+    captured: dict[str, Any] = {}
+    async with _random_capturing_client(captured) as client:
+        await shikimori.random_anime(client)
+
+    assert "genre" not in captured["json"]["variables"]
+
+
 async def test_random_anime_returns_none_when_nothing_comes_back() -> None:
     async with httpx.AsyncClient(transport=_responding(_animes_payload([]))) as client:
         result = await shikimori.random_anime(client)

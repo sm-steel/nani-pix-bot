@@ -30,6 +30,7 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.game import autostart as autostart_service
 from nani_pix_bot.services.reveal import store as reveal_store
+from nani_pix_bot.services.seasons import gate as gate_service
 
 IDLE_AUTOSTART_JOB_NAME = "idle-autostart"
 
@@ -295,13 +296,16 @@ async def run_bot_autostart(
     search_client = context.bot_data["search_client"]
     tmdb_client = context.bot_data["tmdb_client"]
     tenrai_client = context.bot_data["tenrai_client"]
-    pick = await autostart_service.gather_pick(search_client, tmdb_client, tenrai_client)
+    with session_scope(session_factory) as session:
+        gate = gate_service.active_gate(session)
+    pick = await autostart_service.gather_pick(search_client, tmdb_client, tenrai_client, gate=gate)
     if pick is None:
         logger.warning(
             "bot autostart ({trigger}) found no usable pick after {attempts} attempt(s) — "
             "skipping this firing",
             trigger=claim.trigger.value,
             attempts=autostart_service.AUTOSTART_ATTEMPT_LIMIT,
+            gated=gate is not None,
         )
         return False
 
@@ -363,6 +367,7 @@ async def run_bot_autostart(
         trigger=claim.trigger.value,
         source=pick.anime.source,
         provider=pick.screenshot.provider,
+        gated=gate is not None,
         game_id=game_id,
     )
     reveal.start_pregeneration(context.application, game_id)

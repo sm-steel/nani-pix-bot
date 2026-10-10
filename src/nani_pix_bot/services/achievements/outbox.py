@@ -34,6 +34,10 @@ def enqueue_period_summary(
     return _add(session, AnnouncementOutbox(kind=OutboxKind.PERIOD_SUMMARY, payload=payload))
 
 
+def enqueue_season(session: Session, kind: OutboxKind, season_id: int) -> AnnouncementOutbox:
+    return _add(session, AnnouncementOutbox(kind=kind, payload={"season_id": season_id}))
+
+
 def pending(session: Session, limit: int) -> list[AnnouncementOutbox]:
     stmt = (
         select(AnnouncementOutbox)
