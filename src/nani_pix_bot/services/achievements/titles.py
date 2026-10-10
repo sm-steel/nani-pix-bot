@@ -12,14 +12,14 @@ from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services.achievements import catalogue, names
 from nani_pix_bot.services.achievements.definitions import grants_title
-from nani_pix_bot.services.cosmetics import inventory
+from nani_pix_bot.services.cosmetics import inventory, looks
 
 ITEM_PREFIX = "item:"
 # A season title item is stored as `item:<item id>` in Player.title_key (String(96))
 # and offered as `title:i:<item id>` callback data (Telegram: 64 bytes). The tighter
-# bound is the callback: 64 - len("title:i:") = 56. Real ids are `<run_id>/title.<name>`,
-# well under that; longer ones are never offered or accepted.
-MAX_ITEM_ID_LENGTH = 56
+# bound is the callback: 64 - len("title:i:") = 56 bytes. looks.problems fails CI for a
+# shipped id over it; the runtime checks below are a backstop.
+MAX_ITEM_ID_LENGTH = looks.MAX_TITLE_ID_BYTES
 
 
 def _confers(grant: AchievementGrant) -> bool:
@@ -66,15 +66,10 @@ def choose(session: Session, player_id: int, grant_id: int | None) -> bool:
     return True
 
 
-def item_name(resolved: ResolvedItem, lang: str) -> str:
-    """The item's display name; season data keys languages upper-case."""
-    return resolved.item.name(lang.upper())
-
-
 def item_titles(session: Session, player_id: int) -> list[ResolvedItem]:
     """Season title items the player owns and can pick."""
     found = inventory.owned(session, player_id, CosmeticSlot.TITLE)
-    usable = [r for r in found if len(r.item_id) <= MAX_ITEM_ID_LENGTH]
+    usable = [r for r in found if len(r.item_id.encode()) <= MAX_ITEM_ID_LENGTH]
     for r in found:
         if r not in usable:
             logger.warning("title item {item_id} id is too long to offer", item_id=r.item_id)
@@ -85,7 +80,7 @@ def _takeable_item(session: Session, player_id: int, item_id: str) -> bool:
     resolved = registry.item(item_id)
     if resolved is None or resolved.item.slot is not CosmeticSlot.TITLE:
         return False
-    if len(item_id) > MAX_ITEM_ID_LENGTH:
+    if len(item_id.encode()) > MAX_ITEM_ID_LENGTH:
         return False
     return inventory.owns(session, player_id, item_id)
 
@@ -110,10 +105,10 @@ def text(title_key: str | None, lang: str) -> str | None:
         return None
     if title_key.startswith(ITEM_PREFIX):
         resolved = registry.item(title_key.removeprefix(ITEM_PREFIX))
-        if resolved is None:
-            logger.warning("stored title {title_key!r} names no item", title_key=title_key)
+        if resolved is None or resolved.item.slot is not CosmeticSlot.TITLE:
+            logger.warning("stored title {title_key!r} names no title item", title_key=title_key)
             return None
-        return item_name(resolved, lang)
+        return resolved.item.name(lang)
     key, tier, period_key = [*title_key.split(":"), "", "", ""][:3]
     try:
         defn = catalogue.get(key)

@@ -45,3 +45,12 @@ def test_the_fake_runs_items_are_all_valid() -> None:
 )
 def test_invalid_looks_are_reported(item: Item, needle: str) -> None:
     assert any(needle in p for p in looks.problems(_resolved(item)))
+
+
+def test_an_over_long_title_id_is_a_problem() -> None:
+    name = "title." + "x" * looks.MAX_TITLE_ID_BYTES
+    found = looks.problems(_resolved(Item(name, CosmeticSlot.TITLE, "", {"EN": "x", "RU": "x"})))
+
+    assert any("title id too long for /title callbacks" in p for p in found)
+    ok = looks.problems(_resolved(Item("title.ok", CosmeticSlot.TITLE, "", {"EN": "x", "RU": "x"})))
+    assert ok == []

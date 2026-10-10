@@ -38,7 +38,7 @@ async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         rows += [
             [
                 InlineKeyboardButton(
-                    titles.item_name(r, lang), callback_data=f"{TITLE_PREFIX}{_ITEM}{r.item_id}"
+                    r.item.name(lang), callback_data=f"{TITLE_PREFIX}{_ITEM}{r.item_id}"
                 )
             ]
             for r in titles.item_titles(session, user.id)

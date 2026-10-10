@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.cosmetics import ITEM_ID_LENGTH
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services.achievements import engine, titles
+from nani_pix_bot.services.cosmetics import looks
 
 pytestmark = pytest.mark.achievements
 
@@ -73,12 +74,12 @@ def test_choose_item_stores_item_key_and_needs_ownership(session: Session, equip
 
 
 def test_item_title_text_uses_the_item_name(equip_title, session: Session) -> None:
-    assert titles.text(f"item:{DEMO}", "en") == "Demo Star"
-    assert titles.text(f"item:{DEMO}", "ru") == "Демо-звезда"
+    assert titles.text(f"item:{DEMO}", "EN") == "Demo Star"
+    assert titles.text(f"item:{DEMO}", "RU") == "Демо-звезда"
 
 
 def test_an_unresolvable_item_title_renders_as_nothing(equip_title, log_records) -> None:
-    assert titles.text("item:gone_9/title.gone", "en") is None
+    assert titles.text("item:gone_9/title.gone", "EN") is None
     assert any(r.level == "WARNING" for r in log_records)
 
 
@@ -87,3 +88,9 @@ def test_item_title_id_budget_fits_title_key_and_callback_data() -> None:
     assert len("title:i:") + titles.MAX_ITEM_ID_LENGTH <= 64
     assert len("item:") + titles.MAX_ITEM_ID_LENGTH <= 96
     assert titles.MAX_ITEM_ID_LENGTH <= ITEM_ID_LENGTH
+    assert titles.MAX_ITEM_ID_LENGTH == looks.MAX_TITLE_ID_BYTES
+
+
+def test_a_non_title_item_key_renders_as_nothing(equip_flair, log_records) -> None:
+    assert titles.text("item:demo_1/name_flair.blossom", "EN") is None
+    assert any(r.level == "WARNING" for r in log_records)

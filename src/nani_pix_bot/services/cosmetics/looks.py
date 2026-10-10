@@ -11,6 +11,10 @@ from nani_pix_bot.services.reveal.overlays import WIN_OVERLAYS
 
 SEASON_ART_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "seasons"
 MAX_FLAIR_CHARS = 8
+# A title item id rides in /title callback data ("title:i:" + id, Telegram caps it
+# at 64 bytes) and in Player.title_key ("item:" + id, String(96)); the callback is
+# the tighter bound.
+MAX_TITLE_ID_BYTES = 56
 
 # Telegram's allowed reaction emoji (Bot API ReactionTypeEmoji).
 ALLOWED_REACTIONS = frozenset(
@@ -127,7 +131,14 @@ def _banner_problem(resolved: ResolvedItem) -> str | None:
     return None if path.is_file() else f"missing banner file {path}"
 
 
-# A slot with no entry (title) has no look to check.
+def _title_problem(resolved: ResolvedItem) -> str | None:
+    size = len(resolved.item_id.encode())
+    if size <= MAX_TITLE_ID_BYTES:
+        return None
+    return f"title id too long for /title callbacks ({size} bytes > {MAX_TITLE_ID_BYTES})"
+
+
+# A slot with no entry has no look to check.
 _LOOK_CHECKS: Mapping[CosmeticSlot, Callable[[ResolvedItem], str | None]] = MappingProxyType(
     {
         CosmeticSlot.NAME_FLAIR: _flair_problem,
@@ -136,6 +147,7 @@ _LOOK_CHECKS: Mapping[CosmeticSlot, Callable[[ResolvedItem], str | None]] = Mapp
         CosmeticSlot.HOST_TRANSITION: _transition_problem,
         CosmeticSlot.WIN_EFFECT: _overlay_problem,
         CosmeticSlot.PROFILE_BANNER: _banner_problem,
+        CosmeticSlot.TITLE: _title_problem,
     }
 )
 
