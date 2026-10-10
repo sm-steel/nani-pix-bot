@@ -90,7 +90,10 @@ async def _mal_id_by_title(clients: AliasClients, title: str) -> int | None:
     return None
 
 
-async def _mal_id(clients: AliasClients, lookup: AliasLookup) -> int | None:
+async def mal_id(clients: AliasClients, lookup: AliasLookup) -> int | None:
+    """The anime's MyAnimeList id: a Shikimori or Tenrai id as is, AniList's
+    `idMal`, or an exact Tenrai title match. A lookup by AniList id or by
+    title goes over the network and can raise that provider's errors."""
     if lookup.shikimori_id is not None:
         return lookup.shikimori_id
     if lookup.tenrai_id is not None:
@@ -119,11 +122,11 @@ async def find_aliases(clients: AliasClients, lookup: AliasLookup) -> list[str]:
     """Names the other providers know this anime by that aren't accepted
     yet. One provider failing doesn't sink the others; finding the MAL
     id failing does raise, for the caller to treat as "nothing found"."""
-    mal_id = await _mal_id(clients, lookup)
-    if mal_id is None:
+    found_id = await mal_id(clients, lookup)
+    if found_id is None:
         logger.info("no MAL id to look up more names by")
         return []
-    fetches = _fetches(clients, lookup, mal_id)
+    fetches = _fetches(clients, lookup, found_id)
     results = await asyncio.gather(*fetches.values(), return_exceptions=True)
     found: list[str] = []
     for provider, result in zip(fetches, results, strict=True):
@@ -131,10 +134,10 @@ async def find_aliases(clients: AliasClients, lookup: AliasLookup) -> list[str]:
             logger.error(
                 "{provider} lookup of MAL id {mal_id} failed: {error!r}",
                 provider=provider,
-                mal_id=mal_id,
+                mal_id=found_id,
                 error=result,
             )
         elif result is not None:
-            logger.debug("{provider} knows MAL id {mal_id}", provider=provider, mal_id=mal_id)
+            logger.debug("{provider} knows MAL id {mal_id}", provider=provider, mal_id=found_id)
             found.extend(names_of(result))
     return merge_suggestions(lookup.accepted, found)

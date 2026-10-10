@@ -12,6 +12,7 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.dm_start import season_gate
 from nani_pix_bot.commands.dm_start._shared import (
     SEARCH_SERVICE_ERRORS,
     _method_keyboard,
@@ -58,6 +59,7 @@ from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
+from nani_pix_bot.services.seasons import gate as gate_service
 
 
 def _search_prompt_key(*, source: Provider | Literal["manual"], has_image: bool) -> str:
@@ -420,12 +422,33 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     # Block closed and committed above — see _post_preview_album's/
     # send_screenshot_picker_prompt's docstrings for why the sends,
     # this tap's answer included, have to happen after (issue #292).
+    if await _refused_by_season_gate(query, context, user.id, lang):
+        return
     await query.answer()
     start_alias_search(context, game_id, then_preview_in=lang if has_image else None)
     if not has_image:
         await send_screenshot_picker_prompt(context, picker_prompt, lang)
 
     await query.edit_message_text(i18n.t(message_key, lang))
+
+
+async def _refused_by_season_gate(
+    query, context: ContextTypes.DEFAULT_TYPE, starter_id: int, lang: str
+) -> bool:
+    """The running season's gate on a just-staged pick (seasons spec §5).
+    A refusal answers the tap and replaces the results with why, plus a
+    way back to the methods; "unavailable" carries on — Confirm checks
+    again, authoritatively."""
+    session_factory = context.bot_data["session_factory"]
+    verdict = await season_gate.run_gate(context, session_factory, starter_id)
+    if verdict not in gate_service.REFUSED:
+        return False
+    await query.answer()
+    await query.edit_message_text(
+        season_gate.refusal_text(verdict, season_gate.rule_text(session_factory, lang), lang),
+        reply_markup=back_to_methods_keyboard(lang),
+    )
+    return True
 
 
 async def _get_identification_result(
