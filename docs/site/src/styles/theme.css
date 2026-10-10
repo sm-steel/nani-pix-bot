@@ -50,12 +50,15 @@
 .sl-markdown-content :is(h1, h2, h3),
 h1#_top {
   font-family: var(--guide-font-display);
-  font-weight: 600;
+  /* Below the Bold face's 600: its heavier strokes run some glyphs together. */
+  font-weight: 500;
   letter-spacing: 0.01em;
 }
 
 /* Splash home: centre the hero text above the PixelHero banner. */
 .hero {
+  /* Starlight splits the hero 7fr/4fr from 50rem up, for an image this page doesn't use. */
+  grid-template-columns: 100%;
   justify-items: center;
   text-align: center;
   padding-bottom: 1.5rem;
