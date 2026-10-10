@@ -9,8 +9,13 @@ on:
     paths: &docs_paths
       - "docs/site/**"
       - "scripts/gen_docs_stages.py"
+      - "scripts/gen_docs_cards.py"
       - "src/nani_pix_bot/services/pixelate/**"
       - "src/nani_pix_bot/services/settings/stage_config.py"
+      - "src/nani_pix_bot/services/cards/**"
+      - "src/nani_pix_bot/services/achievements/**"
+      - "src/nani_pix_bot/services/economy/config.py"
+      - "src/nani_pix_bot/assets/**"
       - "src/nani_pix_bot/locales/**"
       - "src/nani_pix_bot/release_notes/**"
       - "src/nani_pix_bot/app.py"
@@ -49,7 +54,7 @@ jobs:
           install_args: node
 
       - name: Guide tests (page parity, command table, stage generator)
-        run: uv run pytest -q tests/docs tests/scripts/test_gen_docs_stages.py
+        run: uv run pytest -q tests/docs tests/scripts/test_gen_docs_stages.py tests/scripts/test_gen_docs_cards.py
 
       - name: Install site dependencies
         working-directory: docs/site

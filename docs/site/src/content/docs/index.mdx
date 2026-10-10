@@ -13,7 +13,7 @@ import StageStrip from '../../components/StageStrip.astro';
 import LeaderboardMock from '../../components/LeaderboardMock.astro';
 import TelegramChat from '../../components/TelegramChat.astro';
 import TgMessage from '../../components/TgMessage.astro';
-import unlockGold from '../../assets/cards/unlock-gold.png';
+import unlockCard from '../../assets/generated/unlock-en.png';
 import PixelHero from '../../components/PixelHero.astro';
 
 <PixelHero />
@@ -64,7 +64,7 @@ import PixelHero from '../../components/PixelHero.astro';
 <FeatureBand n={5} kicker="Achievements" title="Collect achievements" href="/nani-pix-bot/players/achievements/" more="Achievements and titles" hue="#e8c547">
   Winning, hosting and playing day after day all unlock achievements. They pay pixels and points, the best ones give you a title to show next to your name, and a few stay secret until someone earns them. Each unlock is announced with its own card.
 
-  <Image slot="visual" class="band-card" src={unlockGold} alt="An achievement card background: a girl in a kimono watching paper lanterns at night" width={720} />
+  <Image slot="visual" class="band-card" src={unlockCard} alt="An example achievement card: @hana unlocked Sharpshooter V, Gold, +200 💠 and +8 🏆" width={720} />
 </FeatureBand>
 
 <FeatureBand n={6} kicker="Leaderboard" title="Climb the board" href="/nani-pix-bot/players/leaderboard-and-history/" more="Leaderboard and history" hue="#4aa3e8" flip>

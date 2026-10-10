@@ -898,7 +898,8 @@ migrations/       # Alembic migrations
 tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
                    # (EN/RU page parity, every command in its command table)
 scripts/          # one-off / operational scripts: qlty_smells_gate.py (pre-commit),
-                   # gen_docs_stages.py (the guide's pixelation-stage images)
+                   # gen_docs_stages.py and gen_docs_cards.py (the guide's
+                   # pixelation-stage images and example achievement cards)
 docs/site/        # the user's guide (Astro Starlight, EN + RU), published to
                    # GitHub Pages by docs.yml together with mal-callback.html
 Dockerfile, docker-compose.yml   # bot + mariadb, see "Infrastructure" above

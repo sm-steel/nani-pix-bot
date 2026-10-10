@@ -13,7 +13,7 @@ import StageStrip from '../../../components/StageStrip.astro';
 import LeaderboardMock from '../../../components/LeaderboardMock.astro';
 import TelegramChat from '../../../components/TelegramChat.astro';
 import TgMessage from '../../../components/TgMessage.astro';
-import unlockGold from '../../../assets/cards/unlock-gold.png';
+import unlockCard from '../../../assets/generated/unlock-ru.png';
 import PixelHero from '../../../components/PixelHero.astro';
 
 <PixelHero />
@@ -64,7 +64,7 @@ import PixelHero from '../../../components/PixelHero.astro';
 <FeatureBand n={5} kicker="Достижения" title="Собирайте достижения" href="/nani-pix-bot/ru/players/achievements/" more="Достижения и титулы" hue="#e8c547">
   Достижения дают за победы, загаданные раунды и игру день за днём. Они приносят пиксели и очки, лучшие открывают титул рядом с вашим именем, а некоторые остаются секретными, пока их кто-нибудь не получит. О каждом бот объявляет своей карточкой.
 
-  <Image slot="visual" class="band-card" src={unlockGold} alt="Фон карточки достижения: девушка в кимоно смотрит на бумажные фонарики в ночи" width={720} />
+  <Image slot="visual" class="band-card" src={unlockCard} alt="Пример карточки достижения: у @hana новое достижение «Снайпер V», Золото, +200 💠 и +8 🏆" width={720} />
 </FeatureBand>
 
 <FeatureBand n={6} kicker="Лидеры" title="Поднимайтесь в таблице" href="/nani-pix-bot/ru/players/leaderboard-and-history/" more="Лидеры, зачёты и история" hue="#4aa3e8" flip>

@@ -3,10 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "stages": "uv run python ../../scripts/gen_docs_stages.py",
-    "predev": "npm run stages",
+    "images": "uv run python ../../scripts/gen_docs_stages.py && uv run python ../../scripts/gen_docs_cards.py",
+    "predev": "npm run images",
     "dev": "astro dev",
-    "prebuild": "npm run stages",
+    "prebuild": "npm run images",
     "build": "astro build",
     "preview": "astro preview"
   },
