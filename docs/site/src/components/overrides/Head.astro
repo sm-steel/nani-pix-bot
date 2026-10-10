@@ -1,0 +1,40 @@
+---
+// Default Starlight <head> plus a first-visit language redirect (issue #365):
+// a browser whose first language is Russian goes to the /ru/ twin of an
+// English page, unless the visitor already chose a language with the picker.
+import Default from '@astrojs/starlight/components/Head.astro';
+
+const isRoot = Astro.locals.starlightRoute.locale === undefined;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<Default><slot /></Default>
+<script is:inline define:vars={{ isRoot, base }}>
+  (() => {
+    const KEY = 'guide-lang';
+    let stored = null;
+    try {
+      stored = localStorage.getItem(KEY);
+    } catch {}
+    const first = (
+      (navigator.languages && navigator.languages[0]) ||
+      navigator.language ||
+      ''
+    ).toLowerCase();
+    if (isRoot && stored === null && first.startsWith('ru')) {
+      const path = location.pathname.startsWith(base)
+        ? location.pathname.slice(base.length)
+        : location.pathname;
+      const rest = path.startsWith('/') ? path : `/${path}`;
+      location.replace(`${base}/ru${rest}${location.search}${location.hash}`);
+      return;
+    }
+    document.addEventListener('change', (event) => {
+      const select = event.target;
+      if (!(select instanceof HTMLSelectElement) || !select.closest('starlight-lang-select')) return;
+      try {
+        localStorage.setItem(KEY, select.value.includes(`${base}/ru/`) ? 'ru' : 'en');
+      } catch {}
+    });
+  })();
+</script>
