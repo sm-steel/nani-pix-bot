@@ -1,0 +1,123 @@
+/* Pixel-anime theme for the user's guide (issue #360), with colours taken
+   from the gold-sunset / violet card art. Starlight tokens:
+   https://starlight.astro.build/guides/css-and-tailwind/#theming */
+:root {
+  --sl-font: 'Inter Variable', system-ui, sans-serif;
+  --guide-font-display: 'Cozette', var(--sl-font);
+  --sl-color-accent-low: #3a2a0c;
+  --sl-color-accent: #d99a2b;
+  --sl-color-accent-high: #fde6b0;
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #eceaf4;
+  --sl-color-gray-2: #c4c0d6;
+  --sl-color-gray-3: #9590ae;
+  --sl-color-gray-4: #5d5878;
+  --sl-color-gray-5: #3d3856;
+  --sl-color-gray-6: #2a2540;
+  --sl-color-black: #18152a;
+}
+/* Cozette (MIT, vendored from github.com/slavfox/Cozette v.1.30.0): the
+   pixel display font for headings and the site title. It has full Cyrillic,
+   drawn as cleanly as its Latin. */
+@font-face {
+  font-family: 'Cozette';
+  src: url('../fonts/cozette/CozetteVector.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Cozette';
+  src: url('../fonts/cozette/CozetteVectorBold.woff2') format('woff2');
+  font-weight: 600 700;
+  font-display: swap;
+}
+:root[data-theme='light'] {
+  --sl-color-accent-low: #e4dcf7;
+  --sl-color-accent: #5b3fa8;
+  --sl-color-accent-high: #2d1b63;
+  --sl-color-white: #18152a;
+  --sl-color-gray-1: #2a2540;
+  --sl-color-gray-2: #3d3856;
+  --sl-color-gray-3: #5d5878;
+  --sl-color-gray-4: #9590ae;
+  --sl-color-gray-5: #c4c0d6;
+  --sl-color-gray-6: #eceaf4;
+  --sl-color-gray-7: #f6f4fb;
+  --sl-color-black: #ffffff;
+}
+
+.site-title,
+.sl-markdown-content :is(h1, h2, h3),
+h1#_top {
+  font-family: var(--guide-font-display);
+  /* Below the Bold face's 600: its heavier strokes run some glyphs together. */
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* Splash home: centre the hero text above the PixelHero banner. */
+.hero {
+  /* Starlight splits the hero 7fr/4fr from 50rem up, for an image this page doesn't use. */
+  grid-template-columns: 100%;
+  justify-items: center;
+  text-align: center;
+  /* Starlight's splash pads up to 10rem above the title; the panel's own top padding is enough. */
+  padding-top: 0.5rem;
+  padding-bottom: 1.5rem;
+}
+.hero .copy,
+.hero .stack {
+  align-items: center;
+}
+.hero .tagline {
+  text-align: center;
+}
+
+/* The cards sit as far above the first band's dots as below the banner:
+   PixelHero's 2rem bottom padding plus the 1rem content gap. */
+.card-grid + .feature-band {
+  margin-top: 3rem;
+}
+/* The three home cards sit in one row on wide screens, not 2 + 1. */
+@media (min-width: 72rem) {
+  .card-grid:has(> .home-card) {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Home feature bands: their tints run past the content column to the window
+   edges, so keep that overflow from adding a sideways scroll. */
+html:has(.feature-band),
+body:has(.feature-band) {
+  overflow-x: clip;
+}
+.feature-band .band-card {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  box-shadow: 0 0 0 4px var(--band-hue);
+}
+.feature-band .band-ctas {
+  display: grid;
+  gap: 1rem;
+}
+.feature-band .tg-chat {
+  margin: 0;
+}
+
+/* The stage examples on the guessing page. Each figure drops the top margin
+   Starlight gives every element after its first, so all three line up. */
+.stage-examples {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+}
+.stage-examples > figure {
+  margin: 0;
+}
+.stage-examples img {
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+}

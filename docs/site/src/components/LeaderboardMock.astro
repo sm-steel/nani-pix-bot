@@ -1,0 +1,28 @@
+---
+// A /leaderboard reply as the bot renders it: the header, then a
+// # | player | 👑 wins | 💠 balance | 🏆 points table.
+import TelegramChat from './TelegramChat.astro';
+import TgMessage from './TgMessage.astro';
+import TgTable from './TgTable.astro';
+
+interface Props {
+  label: string;
+  header: string;
+  player: string;
+}
+
+const { label, header, player } = Astro.props;
+const rows = [
+  ['@hana', 42, 1310, 96],
+  ['@kenji', 37, 980, 81],
+  ['@mio', 21, 640, 55],
+  ['@rei', 12, 415, 30],
+].map((row, index) => [index + 1, ...row]);
+---
+
+<TelegramChat label={label}>
+  <TgMessage out>/leaderboard</TgMessage>
+  <TgMessage from="nani-pix-bot">
+    <TgTable heading={header} columns={['#', player, '👑', '💠', '🏆']} rows={rows} />
+  </TgMessage>
+</TelegramChat>

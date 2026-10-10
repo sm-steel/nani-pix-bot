@@ -1,0 +1,292 @@
+---
+title: Achievements and titles
+description: Achievements, their rewards, titles, and the weekly, monthly and yearly champions.
+sidebar:
+  order: 7
+---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+import TgTable from '../../../components/TgTable.astro';
+
+Playing earns **achievements**. Each one pays pixels 💠 and achievement points 🏆,
+and the best of them unlock a **title** shown next to your name. On top of that,
+every week, month and year crowns its **champions**.
+
+![An example achievement card: @hana unlocked Sharpshooter V, Gold, +200 💠 and +8 🏆](../../../assets/generated/unlock-en.png)
+
+When you unlock something, the bot posts a card like this one, with your avatar on
+it, in the game topic. When one moment unlocks three or more at once, the cards go
+out together as one album. During [quiet hours](/nani-pix-bot/players/how-a-round-ends/#quiet-hours)
+the cards wait and are posted once quiet hours end.
+
+## Rarities and rewards
+
+| Rarity | Pixels (default) | Points |
+|---|---|---|
+| 🥉 Bronze | 25 | 1 |
+| 🥈 Silver | 75 | 3 |
+| 🥇 Gold | 200 | 8 |
+| 💎 Platinum | 500 | 20 |
+
+Most achievements are **ladders**: you climb them tier by tier, and each tier pays
+its own reward. Others are **one-off feats**. A few can only ever be held by one
+person in the group. And some achievements are **secret**: they stay hidden until
+you earn them, so you'll have to find those yourself.
+
+Only what happens after achievements were added to your group counts; older games
+don't.
+
+## Every achievement
+
+These are all the achievements except the secret ones. The medals show each
+tier's rarity.
+
+### Ladders
+
+| Achievement | What counts | Tiers |
+|---|---|---|
+| **Sharpshooter** | Rounds you won, however the win came (a HARD MODE win counts as 1 here) | 🥉1 · 🥉5 · 🥈10 · 🥈25 · 🥇50 · 💎100, then 💎 every 100 more |
+| **Storyteller** | Rounds you hosted that someone solved | 🥉1 · 🥈5 · 🥈10 · 🥇25 · 💎50, then 💎 every 50 more |
+| **Persistent** | Rounds you made at least one guess in | 🥉5 · 🥈25 · 🥈50 · 🥇100 · 💎250 |
+| **Pixel Magnate** | 💠 received in total, tips and achievement rewards included | 🥉500 · 🥈1000 · 🥈2500 · 🥇5000 · 💎10000 |
+| **Big Spender** | 💠 spent on clues, `/sharpen`, and bounties that paid out to a winner | 🥉500 · 🥈2000 · 🥇5000 · 💎10000 |
+| **Clue Collector** | Clues bought | 🥉5 · 🥇25 · 💎100 |
+| **Patron** | 💠 tipped to others | 🥉100 · 🥇500 · 💎2000 |
+| **Regular** | Days you played: guessed, started a round, voted or bought a clue | 🥉7 · 🥈30 · 🥇100 · 💎365 |
+| **Unbroken** | Days in a row you played. A day when nobody in the group played doesn't break it | 🥉7 · 🥇14 · 💎30 |
+| **Hard Mode Hero** | HARD MODE wins | 🥉1 · 🥈5 · 🥇10 · 💎25 |
+| **Civic Duty** | HARD MODE votes you took part in | 🥉1 · 🥇5 · 💎20 |
+| **Eagle Eye** | Wins at the very first stage (or turn 1 in HARD MODE) | 🥉1 · 🥇5 · 💎10 |
+| **Stumper** | Your rounds that ended unsolved after at least 3 players guessed | 🥉1 · 🥇3 · 💎10 |
+| **Hat Trick** | Rounds won in a row. Rounds you hosted are skipped; any other round you didn't win resets it | 🥇3 · 💎5 |
+| **Bounty Hunter** | Collect one bounty of at least this many 💠 | 🥉100 · 🥈250 · 🥇500 |
+| **Purist** | HARD MODE wins without buying a clue yourself (clues others shared are fine) | 🥈1 · 🥇5 |
+| **Wordsmith** | Wrong guesses that revealed new words of the title (a [partly right](/nani-pix-bot/players/guessing/#partly-right) guess) | 🥉1 · 🥇10 · 💎25 |
+| **On Cue** | Rounds you started within an hour of getting the turn | 🥉1 · 🥇10 · 💎25 |
+
+### One-off feats
+
+| Achievement | How to get it | Rarity |
+|---|---|---|
+| **Kingmaker** | Vote for the player the group picks in a HARD MODE vote | 🥉 |
+| **Comeback** | Win after 3 or more wrong guesses of your own in that round | 🥉 |
+| **First Try** | The round's very first `/guess` is yours, and it's right | 🥈 |
+| **Crowd Pleaser** | Host a round that 5 or more players guess in | 🥈 |
+| **People's Champion** | Win a round by the group's vote | 🥈 |
+| **Shopaholic** | Buy every kind of clue in one round | 🥈 |
+| **Explorer** | Host rounds found in each of the 5 ways: AniList, Shikimori, Tenrai, TMDB and typed in by hand (My MAL List counts as Tenrai) | 🥈 |
+| **Clutch** | Win at the last stage with the last guess it allowed | 🥇 |
+| **Speed Demon** | Win within 60 seconds of the round going live | 🥇 |
+
+First Try, Comeback, Clutch and Speed Demon only count in normal rounds, not HARD
+MODE.
+
+### Only one per group
+
+Only one person can ever hold each of these. Once someone has Pioneer, everyone
+else sees it locked, marked **🔒 taken by @them**. Milestone Keeper has one holder
+per milestone, and the list always shows the next one still to be won.
+
+| Achievement | How to get it | Rarity |
+|---|---|---|
+| **Pioneer** | The group's first win after achievements were added | 💎 |
+| **Milestone Keeper** | Win the group's 100th, 250th, 500th or 1000th solved round, then every 500th after that. Each milestone has its own holder | 🥇100 · 🥇250 · 💎500 · 💎1000 and on |
+
+Milestone Keeper counts **solved** rounds since achievements were added, not the 🎲
+game number: that number also counts unsolved and cancelled rounds and older
+games. The full list shows how far the group has got, e.g. *solved so far:
+137/250*.
+
+### Champion achievements
+
+**Champion of the Week** 🥈, **of the Month** 🥇 and **of the Year** 💎 go to
+whoever tops that period's race (see [Champions](#champions) below). You can win
+them again every period.
+
+## Refunds and spending
+
+- **A refund never takes progress away.** Whatever you'd already earned stays
+  earned, and the money coming back doesn't count as income for Pixel Magnate.
+- **A refunded clue still counts** for Clue Collector and Shopaholic, and the 💠
+  you spent on it still counts for Big Spender.
+- **A bounty counts for Big Spender only when it pays out** to a winner. A bounty
+  that came back to you because nobody won never counted.
+
+## Seeing your achievements
+
+- **`/achievements`** in the game topic shows a summary: how many you have, your
+  points, your place, your title and your latest unlocks. Its **📖 Browse in DM**
+  button opens the full list in a private message.
+- **`/achievements @username`** shows someone else's, and **`/achievements top`**
+  the top 10 by points.
+
+<TelegramChat label="Example: /achievements in the game topic">
+  <TgMessage out>/achievements</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['📖 Browse in DM']]}>
+    **🏅 @mio**
+
+    3/35 achievements · 9 🏆 · #4
+
+    Latest: Sharpshooter III, Persistent I, First Try
+  </TgMessage>
+</TelegramChat>
+
+The full list in a private message is one message that changes in place as you
+tap its buttons:
+
+- **All**, **Earned** and **Not yet** tabs, with 8 achievements per page and ◀ ▶
+  to turn pages.
+- A ladder takes one line: the tier you're on and, after it, *next: 12/25*, your
+  progress towards the next tier. Achievements you've started but not finished
+  show your progress too, like *3/5*.
+- **⚖️ Compare** opens a list of the other players, best 🏆 first, to compare
+  yourself with: everything, only what they have, or only what you have. On
+  someone else's list, the button reads **⚖️ Compare with me**.
+- **🏆 Top** shows the top players by 🏆 points.
+
+<TelegramChat label="Example: the full list of achievements in a private message">
+  <TgMessage from="nani-pix-bot" buttons={[['● All', 'Earned', 'Not yet'], ['1/5', '▶'], ['⚖️ Compare', '🏆 Top']]}>
+    **🏅 @mio**
+
+    3/35 achievements · 9 🏆 · #4
+
+    **Earned**
+
+    ☑ 🥈 **Sharpshooter III** — Games won: 10 · 2026-10-08 · *next: 12/25*
+
+    ☑ 🥉 **Persistent I** — Games you guessed in: 5 · 2026-09-30 · *next: 19/25*
+
+    ☑ 🥈 **First Try** — Win with the game's very first guess · 2026-09-21
+
+    **This period**
+
+    ☐ ⏳ **Champion of the Week** — you're #3 right now
+
+    **In progress**
+
+    ☐ **Clue Collector** — Clues bought: 5 · 3/5
+
+    ☐ **Explorer** — Host games with every identification method (5 in all) · 3/5
+
+    ☐ **Patron** — 💠 tipped to others: 100 · 40/100
+
+    **Not started**
+
+    ☐ **Storyteller** — Your hosted games someone solved: 1
+
+    **Hidden**
+
+    ☐ ❔ Hidden achievement
+
+    ☐ ❔ Hidden achievement
+  </TgMessage>
+</TelegramChat>
+
+Secret achievements you haven't found show only as **❔ Hidden achievement**.
+
+In a private message, `/achievements`, `/standings` and `/title` work only for
+members of the group.
+
+## Titles
+
+The top tier of every ladder, each one-per-group achievement and every champion
+win unlock a title. Choose which one appears next to your name with `/title` in a
+private message, or choose **No title**. Titles show on the leaderboard, in the
+achievements top and in your `/achievements` summary.
+
+<TelegramChat label="Example: choosing a title, and the reply after tapping one">
+  <TgMessage out>/title</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['Champion of week 40 (2026)'], ['Eagle Eye III'], ['No title']]}>
+    Pick a title to show next to your name:
+  </TgMessage>
+  <TgMessage from="nani-pix-bot">
+    Your title is now «Eagle Eye III».
+  </TgMessage>
+</TelegramChat>
+
+## Champions
+
+![An example champions card: the top three players of 2025 on a podium](../../../assets/generated/podium-en.png)
+
+Every week, month and year is a race for 🌟 points, earned from wins in that period:
+
+| How you won | 🌟 |
+|---|---|
+| At stage 1 / 2 / 3 / 4 / 5 | 5 / 4 / 3 / 2 / 1 |
+| HARD MODE, turn 1 / turn 2 | 6 / 4 |
+| A clean solve: a normal round won with no wrong guess of your own in it | +1 |
+| Hosting a round someone solved | +1 |
+
+An unsolved round gives nobody 🌟.
+
+- **Periods** follow the group's time zone: weeks start on Monday at 00:00,
+  months on the 1st and years on 1 January.
+- **A round counts in the period it ended in.** If an admin names a winner later
+  with `/setwinner`, the win counts on the day the round originally ended.
+- **Ties** go to more wins in the period, then fewer wrong guesses in the rounds
+  you won, then less total time to solve. Players still equal share the place.
+- **When a period ends**, the bot posts the podium with everyone placed 1st to 3rd
+  (a tie can put more than three people there). Whoever is in first place becomes
+  champion and gets the Champion achievement and its title. If two or three people
+  share first place, they all become champion; if **four or more** share it,
+  nobody is crowned that period, though the podium is still posted. A period in
+  which nobody scored isn't posted at all. Like achievement cards, these posts wait
+  out quiet hours.
+
+### The standings
+
+**`/standings`** works in the game topic and in a private message. It shows the
+running week, month and year in one message: the top 5 of each, with 🌟 points, 👑
+wins in the period, ❌ wrong guesses and ⏱ total time to solve (the last two are
+the tie-breakers). Below each table is your own place if you're not in the top 5,
+or a note that you haven't scored yet. The "ends" time is in the group's time zone
+too (UTC if admins haven't set one for quiet hours).
+
+<TelegramChat label="Example: /standings, the week part (the month and the year follow in the same message)">
+  <TgMessage out>/standings</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['📖 How points work'], ['🕑 Recent changes']]}>
+    <TgTable
+      heading="🌟 Week 41 (2026) · ends 12.10 00:00"
+      columns={['#', 'Player', '🌟', '👑', '❌', '⏱']}
+      rows={[
+        [1, '@hana', 14, 3, 1, '4:12'],
+        [2, '@kenji', 9, 2, 0, '2:47'],
+        [3, '@mio', 9, 2, 2, '6:30'],
+        [4, '@yuki', 4, 1, 0, '0:58'],
+        [5, '@rei', 3, 1, 1, '11:05'],
+      ]}
+    />
+
+    You: #6 · 2 🌟 · 1 👑 · 2 ❌ · 9:41 ⏱
+  </TgMessage>
+</TelegramChat>
+
+Its two buttons open a private message with the bot:
+
+- **📖 How points work** explains the scoring.
+- **🕑 Recent changes** lists this week's 🌟 gains, newest first, 10 per page:
+  when, who, how many points, why (which round they won and at which stage, or
+  which round they hosted; ✨ marks a clean solve) and how their place in the week
+  changed.
+
+### In win messages
+
+Every win message also shows the 🌟 it earned and where that puts the winner in
+each race, plus the host's point:
+
+<TelegramChat label="Example: the 🌟 part of a win message">
+  <TgMessage from="nani-pix-bot">
+    🌟 @hana: +4 points
+
+    • this week — 14 🌟, 1st place (⬆1)
+
+    • this month — 31 🌟, 2nd place
+
+    • this year — 120 🌟, shared 1st place
+
+    🌟 Host @kenji: +1 point
+  </TgMessage>
+</TelegramChat>
+
+*(⬆1)* means places gained, and *(new on the board)* marks a first score in that
+period.

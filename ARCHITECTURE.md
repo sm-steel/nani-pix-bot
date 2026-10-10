@@ -39,7 +39,8 @@ involvement) — this bot is Telegram-only.
   proxy instead, configured via the optional `TELEGRAM_PROXY_URL` env var
   (`http://<user>:<pass>@<proxy-host>:<proxy-port>`), applied to
   `ApplicationBuilder`'s `proxy` and `get_updates_proxy`. See
-  README.md's Self-hosting section for setup.
+  the user's guide's Self-hosting pages
+  (`docs/site/src/content/docs/self-hosting/`) for setup.
 - **AniList/Shikimori connectivity:** both are reached
   directly, no proxy needed — `services/search/shikimori.py`'s
   `SHIKIMORI_GRAPHQL_URL` points at `shikimori.io`. (Shikimori's older
@@ -105,20 +106,22 @@ involvement) — this bot is Telegram-only.
   keys; `app.py` logs a `WARNING` at startup when it sees some-but-not-all
   of them, so a half-configured deploy says so at boot instead of
   stranding the first player who tries to link.
-- **OAuth redirect page (`docs/mal-callback.html`):** MyAnimeList's
+- **OAuth redirect page (`docs/site/public/mal-callback.html`):** MyAnimeList's
   OAuth flow needs somewhere to send the player's browser back to once
   they approve access, and this bot has no web-facing component of its
-  own to serve one (see "Overview" above). `docs/mal-callback.html` is
+  own to serve one (see "Overview" above). `docs/site/public/mal-callback.html` is
   a static, dependency-free page — reads the `code` MyAnimeList
   appended to its own URL's query string, displays it, offers a copy
   button — meant to be served via **this repo's own GitHub Pages**
-  rather than by the bot. `MAL_REDIRECT_URI` (`.env`) must point at
+  rather than by the bot: Astro copies it unchanged into the user's
+  guide site, which `docs.yml` deploys. `MAL_REDIRECT_URI` (`.env`) must point at
   wherever that page ends up served and must exactly match the
-  redirect URI registered with the MAL app. **Enabling GitHub Pages
-  (Settings → Pages, source: branch `master`, folder `/docs`) is a
-  manual, one-time repo-settings step the maintainer must still do
-  themselves** — nothing in this codebase or its CI automates it. See
-  README.md's Self-hosting section.
+  redirect URI registered with the MAL app. **Setting GitHub Pages'
+  source to GitHub Actions (Settings → Pages → Source: GitHub Actions)
+  is a manual, one-time repo-settings step the maintainer must still do
+  themselves** — `docs.yml` deploys, but can't switch that setting on. See
+  the user's guide's MyAnimeList linking page
+  (`docs/site/src/content/docs/self-hosting/myanimelist.mdx`).
 - **Group admin permission:** the bot needs the group's "Pin messages"
   admin permission for the pinned-current-image behavior (see
   `MECHANICS.md`'s "Pixelation stages" section) to actually take effect.
@@ -892,10 +895,15 @@ assets/          # fonts/ (bundled Noto Sans, OFL) and backgrounds/
                    # <unlock/rarity | podium/period>/n.png, optional card
                    # backgrounds (prompts: docs/card-backgrounds.md)
 migrations/       # Alembic migrations
-tests/            # mirrors src/ layout
-scripts/          # one-off / operational scripts, if any turn out to be needed
+tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
+                   # (EN/RU page parity, every command in its command table)
+scripts/          # one-off / operational scripts: qlty_smells_gate.py (pre-commit),
+                   # gen_docs_stages.py and gen_docs_cards.py (the guide's
+                   # pixelation-stage images and example achievement cards)
+docs/site/        # the user's guide (Astro Starlight, EN + RU), published to
+                   # GitHub Pages by docs.yml together with mal-callback.html
 Dockerfile, docker-compose.yml   # bot + mariadb, see "Infrastructure" above
-mise.toml, mise.lock  # pinned machine tools (static ffmpeg) + their sha256s, for local dev, CI and the image
+mise.toml, mise.lock  # pinned machine tools (static ffmpeg, Node for docs/site) + their sha256s, for local dev, CI and the image
 ```
 
 `Provider.screenshot_module`/`search_module` resolve to real

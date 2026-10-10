@@ -1,0 +1,18 @@
+---
+interface Props {
+  rows: string[][];
+}
+const { rows } = Astro.props;
+---
+
+<div class="tg-buttons">
+  {
+    rows.map((row) => (
+      <div class="tg-buttons__row">
+        {row.map((label) => (
+          <span class="tg-buttons__btn">{label}</span>
+        ))}
+      </div>
+    ))
+  }
+</div>

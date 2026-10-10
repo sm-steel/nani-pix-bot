@@ -6,6 +6,10 @@ GitHub release body: that one is semantic-release's raw commit list (every
 `fix:` subject, PR numbers, hashes, fixes of bugs that never shipped), which
 is for developers. These notes are for the group.
 
+The same PR that adds a note also updates the user's guide in `docs/site/`
+when the change is something its pages describe: see CLAUDE.md's "User's
+guide" section.
+
 ## Files
 
 They live in the package, so the Docker image carries them:

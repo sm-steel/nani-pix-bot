@@ -1,0 +1,16 @@
+---
+// Renders the bot's own /version notes (src/nani_pix_bot/release_notes) —
+// imported, never copied.
+import { Content as LatestEn } from '../../../../src/nani_pix_bot/release_notes/release-notes-en.md';
+import { Content as PreviousEn } from '../../../../src/nani_pix_bot/release_notes/previous-releases-en.md';
+import { Content as LatestRu } from '../../../../src/nani_pix_bot/release_notes/release-notes-ru.md';
+import { Content as PreviousRu } from '../../../../src/nani_pix_bot/release_notes/previous-releases-ru.md';
+
+const ru = (Astro.locals.starlightRoute.lang ?? 'en').startsWith('ru');
+const Latest = ru ? LatestRu : LatestEn;
+const Previous = ru ? PreviousRu : PreviousEn;
+---
+
+<h2>{ru ? 'Последний релиз' : 'Latest release'}</h2>
+<Latest />
+<Previous />

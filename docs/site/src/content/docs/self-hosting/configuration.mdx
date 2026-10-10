@@ -1,0 +1,40 @@
+---
+title: Configuration
+description: Every setting in the bot's .env file.
+sidebar:
+  order: 2
+---
+
+All settings live in the `.env` file next to `docker-compose.yml`. Start from the
+example, which explains every setting in its comments:
+
+```sh
+cp .env.example .env
+```
+
+## Required
+
+| Setting | What it is |
+|---|---|
+| `BOT_TOKEN` | The token from @BotFather. |
+| `GROUP_CHAT_ID` | Your group's id (a negative number). |
+| `GAME_TOPIC_ID` | The id of the topic the game is played in. |
+| `DATABASE_URL` | How the bot reaches MariaDB. Keep the password in it the same as `MARIADB_PASSWORD`. |
+| `MARIADB_ROOT_PASSWORD`, `MARIADB_DATABASE`, `MARIADB_USER`, `MARIADB_PASSWORD` | The database's own settings. Choose your own passwords. |
+
+See [Run your own bot](/nani-pix-bot/self-hosting/) for how to find the group and
+topic ids.
+
+Who counts as an admin isn't configured here: the bot asks Telegram, so the
+group's own admins and owner can use the admin commands. `.env.example` still has
+an `ADMIN_USER_IDS=` line; the bot ignores it, so leave it empty.
+
+## Optional
+
+| Setting | What it does |
+|---|---|
+| `TMDB_READ_ACCESS_TOKEN` | Turns on TMDB as a way to find anime and screenshots. Use the **API Read Access Token** from your TMDB account's API settings, not the older "API Key". Without it, TMDB is still listed, but every TMDB search and screenshot fails with "looks like it's down", so set it or tell your players to pick another site. |
+| `TELEGRAM_PROXY_URL` | Sends the bot's traffic through an HTTP proxy, for hosts that can't reach Telegram directly. TMDB, Tenrai and MyAnimeList requests use it too. |
+| `MAL_CLIENT_ID`, `MAL_CLIENT_SECRET`, `MAL_REDIRECT_URI`, `MAL_TOKEN_ENCRYPTION_KEY` | MyAnimeList linking. All four together, or none. See [MyAnimeList linking](/nani-pix-bot/self-hosting/myanimelist/). |
+| `LOG_LEVEL` | How much the bot logs: `INFO` by default, `DEBUG` for more. |
+| `LOG_FORMAT` | `text` by default. `json` writes one JSON object per line, with the game id, the user, the chat and the bot version as fields, for log collectors such as Loki or Vector. Any other value stops the bot at startup with an error. |

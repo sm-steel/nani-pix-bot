@@ -1,0 +1,114 @@
+---
+// One home-page feature band: a numbered heading, a few sentences, a link to
+// the guide page and a picture, on a full-width tinted background. Bands are
+// split by a dotted row of pixel squares and alternate sides with `flip`.
+interface Props {
+  n: number;
+  kicker: string;
+  title: string;
+  href: string;
+  more: string;
+  hue: string;
+  flip?: boolean;
+}
+
+const { n, kicker, title, href, more, hue, flip = false } = Astro.props;
+const number = String(n).padStart(2, '0');
+---
+
+<section class:list={['feature-band', 'not-content', { 'feature-band--flip': flip }]} style={`--band-hue: ${hue}`}>
+  <div class="feature-band__text">
+    <p class="feature-band__kicker">{number} · {kicker}</p>
+    <h2>{title}</h2>
+    <div class="feature-band__body"><slot /></div>
+    <a class="feature-band__more" href={href}>{more} →</a>
+  </div>
+  <div class="feature-band__visual"><slot name="visual" /></div>
+</section>
+
+<style>
+  .feature-band {
+    --band-tint: color-mix(in oklab, var(--band-hue) 20%, transparent);
+    --band-ink: var(--band-hue);
+    position: relative;
+    isolation: isolate;
+    display: grid;
+    gap: 1.5rem;
+    align-items: center;
+    padding-block: 3.5rem;
+  }
+  /* Amber and gold are too faint as text on white. */
+  :global(:root[data-theme='light']) .feature-band {
+    --band-ink: color-mix(in oklab, var(--band-hue) 55%, black);
+  }
+  /* The tint and the dotted separator run the full width of the window. */
+  .feature-band::before,
+  .feature-band::after {
+    content: '';
+    position: absolute;
+    inset-inline: calc(50% - 50vw);
+    z-index: -1;
+  }
+  .feature-band::before {
+    inset-block: 0;
+    background: radial-gradient(110% 100% at 0% 0%, var(--band-tint), transparent 65%);
+  }
+  .feature-band--flip::before {
+    background: radial-gradient(110% 100% at 100% 0%, var(--band-tint), transparent 65%);
+  }
+  .feature-band::after {
+    top: 0;
+    height: 6px;
+    background: repeating-linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--band-hue) 70%, transparent) 0 6px,
+      transparent 6px 18px
+    );
+  }
+  .feature-band__kicker {
+    margin: 0;
+    color: var(--band-ink);
+    font-family: var(--guide-font-display);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  h2 {
+    margin: 0.25rem 0 0.75rem;
+    color: var(--sl-color-white);
+    font-family: var(--guide-font-display);
+    font-weight: 500;
+    font-size: var(--sl-text-3xl);
+    line-height: 1.1;
+  }
+  .feature-band__body {
+    color: var(--sl-color-gray-2);
+    line-height: 1.6;
+  }
+  .feature-band__body :global(p) {
+    margin: 0 0 0.75rem;
+  }
+  .feature-band__body :global(code) {
+    font-size: 0.9em;
+  }
+  .feature-band__more {
+    color: var(--band-ink);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .feature-band__more:hover {
+    text-decoration: underline;
+  }
+  .feature-band__visual {
+    min-width: 0;
+  }
+  @media (min-width: 50rem) {
+    .feature-band {
+      grid-template-columns: 1fr 1fr;
+      gap: 3rem;
+      padding-block: 4.5rem;
+    }
+    .feature-band--flip .feature-band__text {
+      order: 2;
+    }
+  }
+</style>

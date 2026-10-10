@@ -1,0 +1,141 @@
+---
+title: Game settings
+description: Tune the pixelation stages, partial-match reveals, and every pixel reward and price.
+sidebar:
+  order: 2
+---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+import stage1 from '../../../assets/generated/stage-1.webp';
+import stages from '../../../assets/generated/stages.json';
+
+export const example = stages.map((s) => `${s.width}:${s.wrongGuessLimit}`).join(' ');
+
+## Pixelation stages
+
+Each of the five stages has two settings: how **wide** the pixelated picture is (in
+blocks; fewer blocks means a harder picture) and how many **wrong guesses** it
+allows before the next stage. The defaults are:
+
+<table>
+  <thead><tr><th>Stage</th><th>Width</th><th>Wrong guesses</th></tr></thead>
+  <tbody>{stages.map((s) => <tr><td>{s.stage}</td><td>{s.width}</td><td>{s.wrongGuessLimit}</td></tr>)}</tbody>
+</table>
+
+- `/stageconfig` shows the current settings.
+- `/setstageconfig` sets all five stages at once, as `width:guesses` pairs from
+  stage 1 to stage 5. The defaults would be: <code>/setstageconfig {example}</code>
+- `/setstage <stage 1-5> <width> <guesses>` changes just one stage, for example
+  `/setstage 1 48 1` for an even harder start.
+
+After a change, the bot replies with the updated table, then sends two example
+pictures for each stage you changed, pixelated to the new width. The first one is
+captioned with the stage's name, width and wrong-guess limit:
+
+<TelegramChat label="Example: changing stage 1">
+  <TgMessage out>/setstage 1 48 1</TgMessage>
+  <TgMessage from="nani-pix-bot" image={stage1}>STAGE_1 — 48px, 1 wrong guesses allowed</TgMessage>
+</TelegramChat>
+
+Stage settings **can't be changed while a round is being set up, played or voted
+on**. The bot refuses and offers the same buttons as `/stop` right there. Once the
+round is stopped, send the command again.
+
+<TelegramChat label="Example: changing a stage while a round is running">
+  <TgMessage out>/setstage 1 48 1</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['🛑 Yes, stop it'], ['🔎 Stop and reveal'], ['❌ No, keep going']]}>
+    A game is currently running — stop it before editing stage config.
+  </TgMessage>
+</TelegramChat>
+
+**🔎 Stop and reveal** only appears while a round is being played; for a round
+still being set up, or one being voted on, the choice is just yes or no, side by
+side.
+
+How the colour of each block is picked isn't an admin setting. Whoever starts a
+round chooses it in the preview, round by round (see
+[Starting a round](/nani-pix-bot/players/starting-a-round/#the-preview)). The
+example pictures above use the default.
+
+HARD MODE rounds have their own fixed rules and ignore these settings.
+
+## Partial matches
+
+When a wrong guess shares whole words with the answer, the bot reveals those words
+(see [Guessing](/nani-pix-bot/players/guessing/#partly-right)). It only does so once
+the matched words add up to enough letters.
+
+- `/partialmatch` shows the current setting (4 letters by default).
+- `/partialmatch <letters>` changes it. `/partialmatch 0` turns partial reveals off.
+
+<TelegramChat label="Example: raising the partial-match threshold">
+  <TgMessage out>/partialmatch 5</TgMessage>
+  <TgMessage from="nani-pix-bot">✅ Partial matches now reveal from 5 matched letters (0 = off).</TgMessage>
+</TelegramChat>
+
+## Pixel rewards and prices
+
+Every pixel amount, from the reward for a wrong guess to the price of each clue and
+of `/sharpen`, can be changed:
+
+- `/pixelconfig` lists every setting as `key — value — description`, for example
+  `clue_tile — 100 — Clue: one unpixelated tile`.
+- `/pixelconfig <key> <value>` changes one. The value is a whole number.
+
+<TelegramChat label="Example: making the tile clue cheaper">
+  <TgMessage out>/pixelconfig clue_tile 80</TgMessage>
+  <TgMessage from="nani-pix-bot">✅ clue_tile set to 80.</TgMessage>
+</TelegramChat>
+
+Not every value is allowed for every key:
+
+- A **reward** can be set to 0, which turns that reward off.
+- A **price** must be at least 1. The bot refuses anything lower with "Prices must
+  be at least 1 💠."
+- `clue_cashback_percent` is a percentage from 0 to 100. Anything above 100 gets
+  "Percentages must be between 0 and 100."
+- `clue_screenshot_step` can be 0, which makes every extra screenshot cost the same.
+
+Unlike the stage settings, these can be changed during a round. A change only
+affects what happens from then on.
+
+### Every key
+
+**Rewards** (0 turns one off):
+
+| Key | Default | What it is |
+|---|---|---|
+| `starting_balance` | 50 | Starting balance for a new player |
+| `wrong_guess` | 2 | Per wrong guess |
+| `wrong_guess_cap` | 10 | Max wrong-guess earnings per player per game |
+| `first_guess` | 5 | First guess of a game |
+| `win_stage_1` | 40 | Correct guess at stage 1 |
+| `win_stage_2` | 30 | Correct guess at stage 2 |
+| `win_stage_3` | 25 | Correct guess at stage 3 |
+| `win_stage_4` | 20 | Correct guess at stage 4 |
+| `win_stage_5` | 15 | Correct guess at stage 5 |
+| `setter` | 15 | Setter, when their game is solved at stage 2–4 |
+| `prompt_turn` | 10 | Setter, for starting within 1h of getting the turn |
+| `disputed_win_bonus` | 30 | Bonus for a winner picked by the group vote or an admin's `/setwinner` |
+| `achievement_bronze` | 25 | Reward for a Bronze achievement |
+| `achievement_silver` | 75 | Reward for a Silver achievement |
+| `achievement_gold` | 200 | Reward for a Gold achievement |
+| `achievement_platinum` | 500 | Reward for a Platinum achievement |
+
+**Prices** (at least 1):
+
+| Key | Default | What it is |
+|---|---|---|
+| `clue_last_letter` | 60 | Clue: last letter |
+| `clue_first_letter` | 100 | Clue: first letter |
+| `clue_title_shape` | 120 | Clue: title shape |
+| `clue_screenshot` | 150 | Clue: first extra screenshot |
+| `clue_tile` | 100 | Clue: one unpixelated tile |
+| `sharpen` | 250 | Sharpen the image one stage (`/sharpen`) |
+
+**Other:**
+
+| Key | Default | What it is |
+|---|---|---|
+| `clue_screenshot_step` | 75 | Clue: price increase per further extra screenshot |
+| `clue_cashback_percent` | 50 | % of their clue spend each buyer gets back when a HARD MODE round ends unsolved (0–100) |

@@ -1,0 +1,146 @@
+---
+title: Leaderboard, standings and history
+description: The all-time leaderboard, the live champion standings and the archive of past rounds.
+sidebar:
+  order: 8
+---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+import TgTable from '../../../components/TgTable.astro';
+import LeaderboardMock from '../../../components/LeaderboardMock.astro';
+
+## Leaderboard
+
+`/leaderboard` is the all-time table of everyone who has won at least one round, 10
+players per page. For each player it shows their title (in «» after the name), 👑
+wins, 💠 pixel balance and 🏆 achievement points. Players are ranked by wins, then
+points; if both are equal, a fixed order decides, so no two players ever share a
+place.
+
+<LeaderboardMock label="Example: the leaderboard" header="👑 Leaderboard" player="Player" />
+
+When there's more than one page, the **◀ 1/3 ▶** buttons under it turn the page
+in the same message instead of posting a new one.
+
+It works in the game topic at any time, and in a private message with the bot for
+members of the group. In a private message it also shows your own place when
+you're not on the page shown, e.g. *You: #14 · 3 👑 · 220 💠 · 12 🏆*.
+
+A HARD MODE win counts as 2 wins here.
+
+## Standings
+
+`/standings` shows this week's, month's and year's champion races. See
+[Champions](/nani-pix-bot/players/achievements/#champions) for how they're scored
+and what the message looks like.
+
+## History
+
+`/history` works in a private message, for members of the group. It lists the
+group's finished rounds, newest first, 10 per page. Rounds still being set up,
+played or voted on never appear, so the history can't spoil anything. Dates and
+times are in the group's time zone: the one admins set for
+[quiet hours](/nani-pix-bot/admins/schedule/#quiet-hours), or UTC if none is set.
+
+Each row shows the 🎲 game number, the date it ended, the anime, the winner (❌ if
+nobody won) and who hosted it. Under the list there's a button for each round's
+number, ◀ ▶ to turn pages, and four tabs that narrow the list (the current one is
+marked ●):
+
+- **📜 All**: every finished round
+- **👤 I played**: rounds you hosted, won or guessed in
+- **🎲 I hosted**: rounds you hosted
+- **👑 I won**: rounds you won
+
+<TelegramChat label="Example: /history in a private message">
+  <TgMessage out>/history</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['#212', '#211', '#210', '#209', '#208'], ['1/9', '▶'], ['● 📜 All', '👤 I played', '🎲 I hosted', '👑 I won']]}>
+    <TgTable
+      heading="📜 Game history"
+      columns={['#', 'Date', 'Anime', 'Winner', 'Host']}
+      rows={[
+        [212, '09.10.26', "Frieren: Beyond Journey's End", '@hana', '@kenji'],
+        [211, '08.10.26', 'Mob Psycho 100', '❌', '@mio'],
+        [210, '07.10.26', 'Cowboy Bebop', '@yuki', '@hana'],
+        [209, '06.10.26', 'Steins;Gate', '@kenji', '@yuki'],
+        [208, '05.10.26', 'Haikyu!!', '@mio', '@kenji'],
+      ]}
+    />
+  </TgMessage>
+</TelegramChat>
+
+Tap a round's number to open its record. It has two tabs:
+
+- **📋 Record**, where it opens:
+  - the titles, the host, how the anime was found and where the screenshot came
+    from, and whether it was HARD MODE
+  - when it started and ended, and how long it lasted
+  - how it ended: who won, at which stage (or turn), and how (with `/guess`,
+    confirmed by the host with `/correct`, by the group's vote, or named by an
+    admin), how long it took to solve, the bounty paid out and the 🌟 standings
+    points the winner got. For an unsolved round, why nobody won.
+  - 🛒 the clues bought: when, by whom, which clue, what it cost and when the buyer
+    shared it (— if they never did). A refunded clue isn't listed.
+  - 💰 the bounty: what each player put in
+  - 🎞 the stages: when each new stage came and why (the wrong-guess limit was
+    reached, someone paid to `/sharpen`, or 6 hours passed with no guess). A HARD
+    MODE round has turns instead, so it has no stages section.
+  - 👥 how many players guessed
+  - 🗳 in a HARD MODE round that went to a vote, every vote: who voted for whom
+
+  Anything a round didn't have is left out.
+- **💬 Guesses**, with the count on the tab: every guess made in the round, with
+  the time, who made it, the guess, the stage and whether it was right (✅/❌), 25
+  per page. Very old rounds from before guesses were recorded show *No guess log
+  for this game — guesses weren't recorded yet back then.*
+
+**◀ Back to the list**, on either tab, returns to the page of the list you came
+from.
+
+<TelegramChat label="Example: the record of a round in /history">
+  <TgMessage from="nani-pix-bot" buttons={[['● 📋 Record', '💬 Guesses (7)'], ['◀ Back to the list']]}>
+    **🎲 Game #212 · Frieren: Beyond Journey's End**
+
+    Also known as: Провожающая в последний путь Фрирен / Sousou no Frieren / 葬送のフリーレン
+
+    • Host: @kenji
+
+    • Anime found via Shikimori
+
+    • Screenshot from Shikimori
+
+    • Started 09.10.2026 19:02
+
+    • Ended 09.10.2026 20:15 (lasted 1h 13m)
+
+    ✅ Won by @hana at stage 3/5 with /guess
+
+    Solved in 1h 13m
+
+    Bounty paid out: 60 💠
+
+    Standings: +3 🌟 to the winner
+
+    <TgTable
+      heading="🛒 Clues (1)"
+      columns={['Time', 'Player', 'Clue', '💠', '📣']}
+      rows={[['09.10 19:40', '@mio', 'first letter', 100, '—']]}
+    />
+
+    💰 Bounty: @yuki 40 💠, @mio 20 💠
+
+    <TgTable
+      heading="🎞 Stages"
+      columns={['Time', 'Stage', 'Why']}
+      rows={[
+        ['09.10 19:20', '1 → 2/5', 'wrong-guess limit reached'],
+        ['09.10 19:51', '2 → 3/5', 'someone paid to sharpen it (/sharpen)'],
+      ]}
+    />
+
+    👥 Players who guessed: 4
+  </TgMessage>
+</TelegramChat>
+
+The 🎲 game number also appears on every post about a round, so you can look one up
+or mention it to an admin.

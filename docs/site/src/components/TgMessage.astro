@@ -1,0 +1,32 @@
+---
+import type { ImageMetadata } from 'astro';
+import TgButtons from './TgButtons.astro';
+
+interface Props {
+  from?: string;
+  out?: boolean;
+  image?: ImageMetadata;
+  buttons?: string[][];
+}
+const { from, out = false, image, buttons } = Astro.props;
+---
+
+<div class:list={['tg-msg', { 'tg-msg--out': out }]}>
+  <div class="tg-msg__bubble">
+    {from && !out && <div class="tg-msg__from">{from}</div>}
+    {
+      image && (
+        <img
+          class="tg-msg__image"
+          src={image.src}
+          width={image.width}
+          height={image.height}
+          alt=""
+          loading="lazy"
+        />
+      )
+    }
+    <div class="tg-msg__text"><slot /></div>
+  </div>
+  {buttons && <TgButtons rows={buttons} />}
+</div>
