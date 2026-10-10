@@ -6,7 +6,7 @@ import pytest
 from PIL import Image
 
 from nani_pix_bot.models.enums import PixelAlgorithm, RevealEffect
-from nani_pix_bot.services.reveal import celebration, pipeline
+from nani_pix_bot.services.reveal import celebration, overlays, pipeline
 from tests.services.reveal.ffprobe_helpers import decode_clean, probe_frames
 
 WIDTHS = (64, 80, 128, 192, 512)
@@ -79,7 +79,7 @@ def test_pregenerate_builds_the_confetti_so_finish_does_not(monkeypatch) -> None
     def boom(_height):
         raise AssertionError("confetti rebuilt at win time")
 
-    monkeypatch.setattr(celebration, "confetti_clip", boom)
+    monkeypatch.setattr(overlays, "WIN_OVERLAYS", {"confetti": boom})
     assert decode_clean(pipeline.finish(pregen, png, pipeline.Badge(None, "@w")))
 
 
