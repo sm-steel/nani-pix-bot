@@ -208,7 +208,7 @@ arbitrary code on one, including reading secrets):
   history and, when a release actually cuts, tags it and builds/pushes a
   versioned image to `ghcr.io/sm-steel/nani-pix-bot`. This repo has no
   deploy step of its own — rolling a released image out to your own
-  instance is up to you (see README.md's Self-hosting section). `bot`'s
+  instance is up to you (see the user's guide's Self-hosting pages). `bot`'s
   own Dockerfile `CMD` runs `alembic upgrade head` before starting the
   bot process, so migrating is automatic and no longer a manual step
   whoever deploys it needs to remember — its startup queries the `games`

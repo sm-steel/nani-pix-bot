@@ -5,6 +5,13 @@ template: splash
 hero:
   tagline: Guess the anime from a pixelated screenshot. It gets clearer with every wrong guess.
 ---
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 import PixelHero from '../../components/PixelHero.astro';
 
 <PixelHero />
+
+<CardGrid>
+  <LinkCard title="Play" description="How a round works, guessing, pixels and achievements." href="/nani-pix-bot/players/how-to-play/" />
+  <LinkCard title="Run a group" description="Settings and commands for the group's admins." href="/nani-pix-bot/admins/setup/" />
+  <LinkCard title="Host it" description="Run your own copy of the bot with Docker." href="/nani-pix-bot/self-hosting/" />
+</CardGrid>

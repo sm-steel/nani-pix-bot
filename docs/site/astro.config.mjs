@@ -31,6 +31,7 @@ export default defineConfig({
         { label: 'Players', translations: { ru: 'Игрокам' }, items: [{ autogenerate: { directory: 'players' } }] },
         { label: 'Group admins', translations: { ru: 'Админам группы' }, items: [{ autogenerate: { directory: 'admins' } }] },
         { label: 'Self-hosting', translations: { ru: 'Свой сервер' }, items: [{ autogenerate: { directory: 'self-hosting' } }] },
+        { label: "What's new", translations: { ru: 'Что нового' }, link: '/whats-new/' },
       ],
       customCss: [
         '@fontsource-variable/inter',

@@ -39,7 +39,8 @@ involvement) — this bot is Telegram-only.
   proxy instead, configured via the optional `TELEGRAM_PROXY_URL` env var
   (`http://<user>:<pass>@<proxy-host>:<proxy-port>`), applied to
   `ApplicationBuilder`'s `proxy` and `get_updates_proxy`. See
-  README.md's Self-hosting section for setup.
+  the user's guide's Self-hosting pages
+  (`docs/site/src/content/docs/self-hosting/`) for setup.
 - **AniList/Shikimori connectivity:** both are reached
   directly, no proxy needed — `services/search/shikimori.py`'s
   `SHIKIMORI_GRAPHQL_URL` points at `shikimori.io`. (Shikimori's older
@@ -119,7 +120,8 @@ involvement) — this bot is Telegram-only.
   source to GitHub Actions (Settings → Pages → Source: GitHub Actions)
   is a manual, one-time repo-settings step the maintainer must still do
   themselves** — `docs.yml` deploys, but can't switch that setting on. See
-  README.md's Self-hosting section.
+  the user's guide's MyAnimeList linking page
+  (`docs/site/src/content/docs/self-hosting/myanimelist.mdx`).
 - **Group admin permission:** the bot needs the group's "Pin messages"
   admin permission for the pinned-current-image behavior (see
   `MECHANICS.md`'s "Pixelation stages" section) to actually take effect.

@@ -1,0 +1,54 @@
+---
+title: MyAnimeList linking
+description: Optional — let players start rounds by picking from their own MyAnimeList list.
+sidebar:
+  order: 3
+---
+
+With MyAnimeList linking, each player can link their own MyAnimeList account and
+start a round by picking straight from their own list (the **My MAL List** option).
+It's optional: without it everything else works the same, and the option just
+doesn't appear.
+
+## 1. Register a MyAnimeList app
+
+Register a free app on MyAnimeList's [API config page](https://myanimelist.net/apiconfig):
+App Type **web**, Authorization Code Grant with PKCE. This gives you
+`MAL_CLIENT_ID` and `MAL_CLIENT_SECRET`.
+
+## 2. Publish the callback page
+
+After a player approves access, MyAnimeList sends their browser to a small page
+that shows them a code to paste back to the bot. That page,
+`docs/site/public/mal-callback.html`, is published to GitHub Pages together with
+this guide by the repository's `docs.yml` workflow.
+
+On your fork:
+
+1. Go to **Settings → Pages** and set **Source** to **GitHub Actions**.
+2. On the **Actions** tab, enable workflows for the fork.
+3. Run the **Docs** workflow from the `master` branch (or push to `master`).
+
+The page is then at:
+
+```
+https://<your-github-username>.github.io/nani-pix-bot/mal-callback.html
+```
+
+Register that exact address as your MyAnimeList app's redirect URL, and set the
+same address as `MAL_REDIRECT_URI` in `.env`. Keep the repository name
+`nani-pix-bot`, since the address depends on it.
+
+## 3. Create an encryption key
+
+Players' MyAnimeList tokens are stored encrypted. Generate a key and set it as
+`MAL_TOKEN_ENCRYPTION_KEY`. The comments in `.env.example`, just above the `MAL_*`
+settings, give the exact command, and explain what happens if you ever change or
+lose the key.
+
+## Check it
+
+All four `MAL_*` settings must be set together. If only some are, the bot logs a
+warning at startup naming the missing ones and leaves linking off. An invalid
+encryption key is reported at startup as well. Once everything is set, the
+**My MAL List** option appears for every player, and `/linkmal` works.

@@ -5,6 +5,13 @@ template: splash
 hero:
   tagline: Угадай аниме по пикселизированному скриншоту. С каждой ошибкой он становится чётче.
 ---
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 import PixelHero from '../../../components/PixelHero.astro';
 
 <PixelHero />
+
+<CardGrid>
+  <LinkCard title="Играть" description="Как устроен раунд, догадки, пиксели и достижения." href="/nani-pix-bot/ru/players/how-to-play/" />
+  <LinkCard title="Вести группу" description="Настройки и команды для админов группы." href="/nani-pix-bot/ru/admins/setup/" />
+  <LinkCard title="Свой сервер" description="Запустите свою копию бота в Docker." href="/nani-pix-bot/ru/self-hosting/" />
+</CardGrid>
