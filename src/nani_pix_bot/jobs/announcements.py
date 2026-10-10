@@ -27,7 +27,7 @@ from nani_pix_bot.jobs.avatars import fetch_avatar
 from nani_pix_bot.jobs.timers._shared import job_log_scope
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.announcement import AnnouncementOutbox
-from nani_pix_bot.models.enums import OutboxKind, Rarity
+from nani_pix_bot.models.enums import OutboxKind, Rarity, SeasonStatus
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import SeasonRun
@@ -169,6 +169,14 @@ def _season_post(
         season = session.get(SeasonSchedule, row.payload["season_id"])
         run = registry.get(season.run_id) if season is not None else None
         if season is None or run is None:
+            return None
+        if season.status == SeasonStatus.CANCELLED:
+            logger.info(
+                "skipped {kind} for cancelled season {run_id}",
+                kind=kind.value,
+                run_id=season.run_id,
+                season_id=season.id,
+            )
             return None
         tz = settings.get_group_timezone(session)
         banner = SeasonBanner(

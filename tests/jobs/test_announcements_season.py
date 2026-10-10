@@ -8,7 +8,9 @@ from nani_pix_bot.models.enums import OutboxKind, SeasonStatus
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
 from nani_pix_bot.seasons import registry
+from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.cards import SeasonBanner
+from nani_pix_bot.services.seasons import schedule
 
 
 @pytest.fixture(autouse=True)
@@ -64,3 +66,17 @@ def test_end_post_lists_the_podium(session) -> None:
 def test_banner_draws_without_a_background_file(session) -> None:
     post = _render(session, OutboxKind.SEASON_TEASER)
     assert announcements._draw(post, [])[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_a_cancelled_season_posts_nothing(session) -> None:
+    now = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
+    request = schedule.ScheduleRequest(
+        run_id="demo_1",
+        start_at=now + timedelta(days=1),
+        end_at=now + timedelta(days=5),
+        admin_id=7,
+    )
+    schedule.schedule(session, request, now)
+    schedule.cancel(session, now)
+    row = outbox.pending(session, 10)[0]
+    assert announcements.RENDERERS[OutboxKind.SEASON_TEASER](session, row, "EN") is None
