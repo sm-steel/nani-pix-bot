@@ -1,0 +1,81 @@
+---
+title: Guessing and stages
+description: How /guess works, what counts as a match, and how the picture sharpens over five stages.
+sidebar:
+  order: 3
+---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+import stages from '../../../assets/generated/stages.json';
+import stage1 from '../../../assets/generated/stage-1.webp';
+import stage3 from '../../../assets/generated/stage-3.webp';
+import stage5 from '../../../assets/generated/stage-5.webp';
+
+export const third = stages[2];
+
+## Making a guess
+
+Guess with **`/guess <title>`** in the group's game topic. Ordinary messages are
+never treated as guesses, so you can chat freely. Anyone in the group can guess,
+except the player who set up the round.
+
+The bot is forgiving about how you write the title:
+
+- **Case and punctuation don't matter**: `re zero` matches *Re:Zero*.
+- **Numbers and seasons are ignored**: `shingeki no kyojin` wins *Shingeki no
+  Kyojin Season 2*, and `GITS` wins *GITS 2026*. The round's creator can switch
+  this off for titles where the numbers matter.
+- **Any accepted title works**: English, romaji, Japanese, Russian, or any synonym
+  the creator added.
+- **Small typos are fine**: the bot accepts titles that are close enough.
+
+A wrong guess gets a reply telling you how many tries are left on this stage:
+
+<TelegramChat label="Example: a wrong guess">
+  <TgMessage out>/guess tokyo story</TgMessage>
+  <TgMessage from="nani-pix-bot">❌ Not quite! Guesses until the next clue: {third.wrongGuessLimit - 1}/{third.wrongGuessLimit} (stage 3/5).</TgMessage>
+</TelegramChat>
+
+### Partly right
+
+If your wrong guess shares whole words with the answer, the bot shows the title
+with just those words spelled out:
+
+<TelegramChat label="Example: a partly right guess">
+  <TgMessage out>/guess frieren the mage</TgMessage>
+  <TgMessage from="nani-pix-bot">🔎 Partly right: _ _ _ _ _ _ &nbsp; _ _ &nbsp; Frieren</TgMessage>
+</TelegramChat>
+
+Only words of three letters or more count, and the bot never reveals the whole
+title this way. It's still a wrong guess and still uses up a try.
+
+## The five stages
+
+Each round starts at stage 1, the blockiest version of the screenshot. Every stage
+allows a set number of wrong guesses. Once they're used up, the bot posts the next,
+clearer stage. If the last try on stage 5 is wrong, the round ends unsolved.
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.75rem;">
+  <figure><img src={stage1.src} alt="Stage 1" style="width: 100%; height: auto; image-rendering: pixelated;" /><figcaption>Stage 1</figcaption></figure>
+  <figure><img src={stage3.src} alt="Stage 3" style="width: 100%; height: auto; image-rendering: pixelated;" /><figcaption>Stage 3</figcaption></figure>
+  <figure><img src={stage5.src} alt="Stage 5" style="width: 100%; height: auto; image-rendering: pixelated;" /><figcaption>Stage 5</figcaption></figure>
+</div>
+
+With the default settings, the wrong guesses allowed per stage are:
+
+<table>
+  <thead><tr><th>Stage</th><th>Wrong guesses before it sharpens</th></tr></thead>
+  <tbody>{stages.map((s) => <tr><td>{s.stage}</td><td>{s.wrongGuessLimit}</td></tr>)}</tbody>
+</table>
+
+So the round starts unforgiving and loosens as the picture gets clearer. Your
+group's admins can change these numbers. The bot's replies always show the
+current stage's tries as *left/allowed*.
+
+**The picture also sharpens on its own.** If nobody guesses for 3 hours the bot
+sends a reminder, and after 6 hours without a guess it moves to the next stage by
+itself. Any guess resets that clock. Players can also pay to sharpen the picture
+early with `/sharpen` (see [Pixels and the clue shop](/nani-pix-bot/players/pixels-and-shop/)).
+
+**Lost track of the round?** The current picture is always pinned in the game
+topic, and `/status` shows it again along with where the round stands.

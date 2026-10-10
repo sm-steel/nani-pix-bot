@@ -1,0 +1,82 @@
+---
+title: Догадки и этапы
+description: Как работает /guess, что засчитывается как ответ и как картинка проясняется за пять этапов.
+sidebar:
+  order: 3
+---
+import TelegramChat from '../../../../components/TelegramChat.astro';
+import TgMessage from '../../../../components/TgMessage.astro';
+import stages from '../../../../assets/generated/stages.json';
+import stage1 from '../../../../assets/generated/stage-1.webp';
+import stage3 from '../../../../assets/generated/stage-3.webp';
+import stage5 from '../../../../assets/generated/stage-5.webp';
+
+export const third = stages[2];
+
+## Как угадывать
+
+Угадывайте командой **`/guess <название>`** в игровой теме группы. Обычные
+сообщения никогда не считаются ответами, так что общаться можно свободно.
+Угадывать может кто угодно из группы, кроме того, кто подготовил раунд.
+
+Бот снисходителен к тому, как вы пишете название:
+
+- **Регистр и знаки препинания не важны**: `re zero` подходит к *Re:Zero*.
+- **Цифры и сезоны не учитываются**: `shingeki no kyojin` побеждает
+  *Shingeki no Kyojin Season 2*, а `GITS` — *GITS 2026*. Тот, кто создал раунд,
+  может это отключить, если в названии важны цифры.
+- **Подходит любое принятое название**: английское, ромадзи, японское, русское
+  или любой синоним, который добавил создатель раунда.
+- **Небольшие опечатки прощаются**: бот принимает достаточно близкие названия.
+
+На неверную догадку бот отвечает, сколько попыток осталось на этом этапе:
+
+<TelegramChat label="Пример: неверная догадка">
+  <TgMessage out>/guess токийская повесть</TgMessage>
+  <TgMessage from="nani-pix-bot">❌ Не угадано! Попыток до следующей подсказки: {third.wrongGuessLimit - 1}/{third.wrongGuessLimit} (этап 3/5).</TgMessage>
+</TelegramChat>
+
+### Частично верно
+
+Если в неверной догадке есть целые слова из ответа, бот покажет название, где
+открыты только эти слова:
+
+<TelegramChat label="Пример: частично верная догадка">
+  <TgMessage out>/guess frieren the mage</TgMessage>
+  <TgMessage from="nani-pix-bot">🔎 Частично верно: _ _ _ _ _ _ &nbsp; _ _ &nbsp; Frieren</TgMessage>
+</TelegramChat>
+
+Считаются только слова от трёх букв, и так бот никогда не раскроет название
+целиком. Это всё равно неверная догадка, и попытка тратится.
+
+## Пять этапов
+
+Каждый раунд начинается с первого этапа — самой пиксельной версии скриншота. На
+каждом этапе есть определённое число неверных попыток. Когда они заканчиваются,
+бот публикует следующий, более чёткий этап. Если последняя попытка на пятом этапе
+неверна, раунд остаётся неразгаданным.
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.75rem;">
+  <figure><img src={stage1.src} alt="Этап 1" style="width: 100%; height: auto; image-rendering: pixelated;" /><figcaption>Этап 1</figcaption></figure>
+  <figure><img src={stage3.src} alt="Этап 3" style="width: 100%; height: auto; image-rendering: pixelated;" /><figcaption>Этап 3</figcaption></figure>
+  <figure><img src={stage5.src} alt="Этап 5" style="width: 100%; height: auto; image-rendering: pixelated;" /><figcaption>Этап 5</figcaption></figure>
+</div>
+
+С настройками по умолчанию на каждом этапе можно ошибиться столько раз:
+
+<table>
+  <thead><tr><th>Этап</th><th>Неверных попыток до прояснения</th></tr></thead>
+  <tbody>{stages.map((s) => <tr><td>{s.stage}</td><td>{s.wrongGuessLimit}</td></tr>)}</tbody>
+</table>
+
+То есть в начале права на ошибку почти нет, а по мере прояснения картинки его
+становится больше. Админы группы могут изменить эти числа. В ответах бота
+попытки текущего этапа всегда показаны как *осталось/всего*.
+
+**Картинка проясняется и сама.** Если никто не угадывает 3 часа, бот напомнит о
+раунде, а через 6 часов без догадок сам перейдёт к следующему этапу. Любая
+догадка сбрасывает этот отсчёт. Кроме того, картинку можно прояснить раньше за
+пиксели командой `/sharpen` (см. [Пиксели и магазин подсказок](/nani-pix-bot/ru/players/pixels-and-shop/)).
+
+**Потеряли нить?** Текущая картинка всегда закреплена в игровой теме, а `/status`
+покажет её снова вместе с состоянием раунда.

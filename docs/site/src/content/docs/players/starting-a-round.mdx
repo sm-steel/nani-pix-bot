@@ -1,0 +1,91 @@
+---
+title: Starting a round
+description: Send a screenshot or use /newgame, identify the anime, check the preview and go live.
+sidebar:
+  order: 2
+---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+
+Rounds are set up in a **private chat with the bot**, so nobody in the group sees
+the answer. You can start one when it's your turn, or when the turn is open to
+everyone, and only while no other round is running. You also have to be a member
+of the group.
+
+When you start, the bot tells the group that you're preparing a round, so nobody
+else tries at the same moment. You then have **one hour** to finish the setup. If
+you don't, the setup is dropped and the turn opens to everyone.
+
+## Two ways in
+
+- **Send a screenshot.** The bot first shows it back to you at stage 1, the
+  blockiest stage, so you can judge whether it makes a good puzzle.
+- **Send `/newgame`** if you don't have a screenshot to hand. You identify the
+  anime first, then pick a real screenshot for it (see below).
+
+## Tell the bot which anime it is
+
+The bot asks how you'd like to identify the anime:
+
+<TelegramChat label="Example: choosing how to identify the anime">
+  <TgMessage from="nani-pix-bot" buttons={[['AniList', 'Shikimori'], ['Tenrai', 'TMDB'], ['Manual entry'], ['My MAL List']]}>
+    How would you like to identify the anime?
+  </TgMessage>
+</TelegramChat>
+
+- **AniList, Shikimori, Tenrai or TMDB**: type the name the way you remember it,
+  then tap the right one of up to five results. **None of these — search again**
+  lets you retry, and **↩ Different search method** brings you back to this menu
+  if the anime isn't on that site. Shikimori usually has the best Russian titles,
+  so when the bot speaks Russian it lists Shikimori first. TMDB only knows English
+  titles.
+- **Manual entry**: for an anime none of the sites know. Type the title, then at
+  least one alternative title. Only what you type will count as a correct guess.
+- **My MAL List**: shown when the group's bot has MyAnimeList linking turned on.
+  You browse your own MyAnimeList list, 10 entries at a time with every status
+  included, and pick from it. The first time, the bot walks you through linking:
+  open the link, log in to MyAnimeList, approve access, and paste the code you're
+  shown back into the chat. You can also link ahead of time with `/linkmal` and
+  unlink with `/unlinkmal`.
+
+**More names from other sites.** Once the anime is identified, the bot looks it up
+on the other sites as well, and may offer titles it found there as checkboxes. Tick
+the ones that should also count as a correct guess, then tap **➕ Add selected**,
+or **⏭ Skip**.
+
+**Do the numbers matter?** Guessing normally ignores numbers, so `GITS` wins
+*GITS 2026*. When a title is mostly numbers, like *91 Days*, the bot asks you
+whether the numbers should count.
+
+## Picking a screenshot (after `/newgame`)
+
+1. Choose a source: Shikimori, Tenrai or TMDB. The site you identified the anime
+   on comes first. **📤 Upload my own instead** is always there, and you can simply
+   send a photo at any point.
+2. Browse the gallery, five numbered screenshots at a time, using **◀️ Back** and
+   **More ▶️**.
+3. If the screenshots are from a different anime, tap **❌ Wrong anime? Search again**.
+4. Tap a number to pick that screenshot.
+
+If a site is down or has nothing, the bot says so and shows the source menu again
+with that site marked ⚠️. You can try another site, type a different search, or
+upload your own screenshot.
+
+## The preview
+
+Before anything is posted, the bot shows you privately how the round will play
+out: the screenshot at all five stages, and every answer that will count. From
+there you can:
+
+- **🖼️ Change image**: upload a different screenshot, or pick another one from the
+  same gallery.
+- **🔍 Re-search title**: identify the anime again.
+- **📝 Add a synonym**: add more answers that should count.
+- **🔢 Numbers count**: shown when a title has a number in it. Turn it on if the
+  numbers have to be part of the guess.
+- **🎨 Pixelation**: choose how the blocks are coloured. The default, median,
+  suits most screenshots. The preview is redrawn straight away so you can compare.
+- **💰 Bounty**: put 30, 60 or 100 💠 into the round's pot for whoever solves it.
+- **✅ Confirm and start**: posts stage 1 to the game topic. The round is live.
+
+Changed your mind? Send `/stop` to cancel the setup.

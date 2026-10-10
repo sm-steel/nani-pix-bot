@@ -1,0 +1,61 @@
+---
+title: How to play
+description: A round of nani-pix-bot in one page — from the screenshot to the winner.
+sidebar:
+  order: 1
+---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+import stage1 from '../../../assets/generated/stage-1.webp';
+import stage2 from '../../../assets/generated/stage-2.webp';
+import stages from '../../../assets/generated/stages.json';
+
+export const [first, second] = stages;
+
+nani-pix-bot runs a guessing game in one topic of your Telegram group. One player
+picks an anime screenshot, the bot posts it **heavily pixelated**, and everyone
+else tries to name the anime. Every wrong guess brings the picture closer to
+sharp, so the first stages are where the real bragging rights are.
+
+## A round, step by step
+
+1. **It's your turn** — after you win a round, when someone hands you the turn,
+   or whenever the turn is open to everyone.
+2. **Start a round in a private chat with the bot.** Send it a screenshot, or send
+   `/newgame` and pick a real screenshot from the bot's sources instead. See
+   [Starting a round](/nani-pix-bot/players/starting-a-round/).
+3. **Tell the bot which anime it is** by searching AniList, Shikimori, Tenrai or
+   TMDB, picking from your MyAnimeList list, or typing the title yourself.
+4. **Check the private preview** of all five stages and confirm. The bot posts
+   stage 1 to the group's game topic.
+5. **Everyone guesses** with `/guess <title>` in the game topic. A wrong guess
+   uses up one of the stage's tries; when they run out, the next, clearer stage
+   is posted. See [Guessing and stages](/nani-pix-bot/players/guessing/).
+6. **The first correct guess wins.** The bot reveals the original screenshot, and
+   the winner gets the next turn. If nobody gets it after stage 5, the answer is
+   revealed and the round ends unsolved.
+
+<TelegramChat label="Example: a round in the game topic">
+  <TgMessage from="nani-pix-bot" image={stage1}>
+    🎮 @hana started a new round! Guess with /guess &lt;title&gt; in this topic.
+
+    📸 Stage 1/5 — guesses: {first.wrongGuessLimit}/{first.wrongGuessLimit}
+  </TgMessage>
+  <TgMessage out>/guess cowboy bebop</TgMessage>
+  <TgMessage from="nani-pix-bot" image={stage2}>📸 Stage 2/5 (guesses left: {second.wrongGuessLimit}/{second.wrongGuessLimit}) — then it clears further.</TgMessage>
+  <TgMessage out>/guess whisper of the heart</TgMessage>
+  <TgMessage from="nani-pix-bot">🎉 @kenji got it! It was Whisper of the Heart. Your turn to start the next game!</TgMessage>
+</TelegramChat>
+
+## Things worth knowing
+
+- **You can't guess on your own round** — you already know the answer.
+- **Guesses earn pixels 💠**, the game's currency. Spend them on private clues in
+  the shop. See [Pixels and the clue shop](/nani-pix-bot/players/pixels-and-shop/).
+- **Sometimes the bot starts a round itself.** Those rounds are
+  [HARD MODE](/nani-pix-bot/players/hard-mode/): two screenshots, two turns, one
+  try per turn.
+- **Playing earns achievements and titles**, and every week, month and year has
+  its champions. See [Achievements and titles](/nani-pix-bot/players/achievements/).
+- Lost? Send `/help` to the bot at any time, or see the full
+  [command list](/nani-pix-bot/players/commands/).
