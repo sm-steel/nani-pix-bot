@@ -80,3 +80,29 @@ def test_a_cancelled_season_posts_nothing(session) -> None:
     schedule.cancel(session, now)
     row = outbox.pending(session, 10)[0]
     assert announcements.RENDERERS[OutboxKind.SEASON_TEASER](session, row, "EN") is None
+
+
+def test_end_post_keeps_everyone_tied_for_third(session) -> None:
+    row = _row(session, OutboxKind.SEASON_END)
+    season_id = row.payload["season_id"]
+    standings = [(1, 1, 100), (2, 2, 80), (3, 3, 60), (4, 3, 60), (5, 5, 10)]
+    for user, _rank, _xp in standings:
+        session.add(Player(telegram_user_id=user, username=f"user{user}"))
+    session.add_all(
+        SeasonResult(season_id=season_id, player_id=user, rank=rank, xp=xp)
+        for user, rank, xp in standings
+    )
+    session.flush()
+    post = announcements.RENDERERS[OutboxKind.SEASON_END](session, row, "EN")
+    assert post is not None
+    for user in (1, 2, 3, 4):
+        assert f"@user{user}" in post.text
+    assert "@user5" not in post.text
+
+
+@pytest.mark.parametrize(("lang", "line"), [("EN", "Nobody earned"), ("RU", "никто не заработал")])
+def test_end_post_says_when_nobody_scored(session, lang, line) -> None:
+    row = _row(session, OutboxKind.SEASON_END)
+    post = announcements.RENDERERS[OutboxKind.SEASON_END](session, row, lang)
+    assert post is not None
+    assert line in post.text

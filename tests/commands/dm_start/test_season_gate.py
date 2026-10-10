@@ -194,6 +194,8 @@ async def test_passing_pick_stores_tags(session_factory, monkeypatch, log_record
     assert line.level == "INFO"
     assert line.extra["verdict"] == "passed"
     assert line.extra["game_id"] == game_id
+    assert line.extra["run_id"] == "demo_1"
+    assert isinstance(line.extra["season_id"], int)
 
 
 @pytest.mark.usefixtures("active_season")
@@ -421,3 +423,19 @@ async def test_a_result_for_a_changed_identification_is_dropped(
     assert game.tenrai_id == 999
     assert game.anime_tags is None
     assert game.setup_step == SetupStep.CONFIRMING
+
+
+@pytest.mark.usefixtures("active_season")
+async def test_stale_result_line_carries_the_season(
+    session_factory, monkeypatch, log_records
+) -> None:
+    game_id = _tenrai_game(session_factory, 2001, "Gurren Lagann")
+    monkeypatch.setattr(
+        gate_service, "fetch_tags", _restaging_fetch(session_factory, game_id, GURREN)
+    )
+
+    await _run(session_factory)
+
+    line = next(r for r in log_records if "is stale" in r.message)
+    assert line.extra["run_id"] == "demo_1"
+    assert isinstance(line.extra["season_id"], int)

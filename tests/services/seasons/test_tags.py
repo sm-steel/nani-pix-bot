@@ -81,3 +81,17 @@ async def test_both_failing_raises_tags_unavailable(monkeypatch, clients) -> Non
     with pytest.raises(TagsUnavailableError):
         await fetch_tags(clients, 4224)
     assert calls == ["tenrai", "tenrai", "shikimori"]
+
+
+async def test_malformed_tenrai_body_is_retried_then_falls_back(monkeypatch, clients) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": None})
+
+    broken = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    calls: list[str] = []
+    monkeypatch.setattr(shikimori, "get_tags", _fake(calls, "shikimori", [_SHIKIMORI_TAGS]))
+
+    result = await fetch_tags(TagClients(shikimori=clients.shikimori, tenrai=broken), 4224)
+
+    assert result == _SHIKIMORI_TAGS
+    assert calls == ["shikimori"]

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from nani_pix_bot import log_context
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import Gate, GateTag
 from nani_pix_bot.services.search.tags import AnimeTag
@@ -67,6 +68,13 @@ async def check(
 
 
 def active_gate(session: Session) -> Gate | None:
+    """The running season's gate. Also binds that season's `season_id` and
+    `run_id` into the log context, so every gate decision that follows in
+    this unit of work (the verdict, a stale result, a gated bot pick) is
+    traceable to the season (spec §6)."""
     season = schedule.active(session)
     run = registry.get(season.run_id) if season is not None else None
-    return None if run is None else run.gate
+    if season is None or run is None:
+        return None
+    log_context.bind(season_id=season.id, run_id=season.run_id)
+    return run.gate

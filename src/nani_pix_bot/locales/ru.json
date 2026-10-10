@@ -703,6 +703,7 @@
   "season.post.season_end": "🎬 Сезон «{name}» завершён. Лучшие по сезонному опыту:",
   "season.post.gate": "В этом сезоне играем только аниме, которые {rule}.",
   "season.post.podium_line": "{rank}. {player} — {xp} XP",
+  "season.post.no_scores": "В этот раз сезонный опыт никто не заработал.",
   "card.season.season_teaser": "Скоро",
   "card.season.season_start": "Сезон начался",
   "card.season.season_end": "Сезон завершён"

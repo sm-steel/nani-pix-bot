@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select
 
 from nani_pix_bot.models.enums import EventType, GameStatus, PixelStage, SeasonStatus, XpSource
@@ -171,5 +172,30 @@ def test_emit_runs_the_seasons_consumer(session) -> None:
         EventType.GAME_WON,
         events.Involved(actor_id=ALICE, subject_id=STARTER, game_id=game.id),
         stage=1,
+    )
+    assert _xp_rows(session) == [(ALICE, 50, "win"), (STARTER, 15, "host")]
+
+
+@pytest.mark.parametrize("status", [SeasonStatus.ENDED, SeasonStatus.CANCELLED])
+def test_a_finished_seasons_games_earn_nothing_more(session, status, log_records) -> None:
+    season = _season(session, status)
+    game = _game(session, season.id)
+    consumer.on_event(
+        session,
+        _event(EventType.GAME_WON, actor=ALICE, subject=STARTER, game_id=game.id, stage=1),
+    )
+    assert _xp_rows(session) == []
+    skipped = [r for r in log_records if "already over" in r.message]
+    assert skipped
+    assert skipped[0].extra["season_id"] == season.id
+    assert skipped[0].extra["game_id"] == game.id
+
+
+def test_a_closing_seasons_late_game_still_pays(session) -> None:
+    season = _season(session, SeasonStatus.CLOSING)
+    game = _game(session, season.id)
+    consumer.on_event(
+        session,
+        _event(EventType.GAME_WON, actor=ALICE, subject=STARTER, game_id=game.id, stage=1),
     )
     assert _xp_rows(session) == [(ALICE, 50, "win"), (STARTER, 15, "host")]

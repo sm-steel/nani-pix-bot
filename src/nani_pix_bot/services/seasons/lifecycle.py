@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.enums import EventType, GameStatus, OutboxKind, SeasonStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
+from nani_pix_bot.services import players
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.events import LoggedEvent, as_utc
 from nani_pix_bot.services.seasons import schedule, xp
@@ -43,8 +44,34 @@ def _move(row: SeasonSchedule, status: SeasonStatus) -> Transition:
     return Transition(row.id, row.run_id, status)
 
 
+def _log_frozen(session: Session, row: SeasonSchedule, standings: list[xp.Placed]) -> None:
+    """One line on what the podium froze: how many results, and who is #1
+    (everyone tied for it; `winner_id` is a single id, or a list on a tie)."""
+    top = [p for p in standings if p.rank == 1]
+    if not top:
+        logger.info(
+            "season {run_id} froze 0 results — nobody scored",
+            run_id=row.run_id,
+            results=0,
+            season_id=row.id,
+        )
+        return
+    winner = ", ".join(players.describe_player_id(session, p.player_id) for p in top)
+    winner_id = top[0].player_id if len(top) == 1 else [p.player_id for p in top]
+    logger.info(
+        "season {run_id} froze {results} result(s) — #1: {winner} with {xp} XP",
+        run_id=row.run_id,
+        results=len(standings),
+        winner=winner,
+        winner_id=winner_id,
+        xp=top[0].xp,
+        season_id=row.id,
+    )
+
+
 def _finalize(session: Session, row: SeasonSchedule, now: datetime) -> Transition:
-    for placed in xp.standings(session, row.id):
+    standings = xp.standings(session, row.id)
+    for placed in standings:
         session.add(
             SeasonResult(
                 season_id=row.id, player_id=placed.player_id, rank=placed.rank, xp=placed.xp
@@ -52,6 +79,7 @@ def _finalize(session: Session, row: SeasonSchedule, now: datetime) -> Transitio
         )
     row.ended_at = now
     session.flush()
+    _log_frozen(session, row, standings)
     outbox.enqueue_season(session, OutboxKind.SEASON_END, row.id)
     return _move(row, SeasonStatus.ENDED)
 

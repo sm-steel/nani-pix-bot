@@ -1741,9 +1741,13 @@ pass, the shop and cosmetics are later phases.
 ### Tagging and closing
 
 - A game activated while a season is `active` is **tagged** (`games.season_id`)
-  at activation. Games activated before the start or after `end_at` are not
-  tagged. Only tagged games earn Season XP.
-- After `end_at` nothing new is tagged, but the season stays `closing` until
+  at activation, for as long as the season row is `active`. Games activated
+  before the start are not tagged. The season stops tagging once the
+  boundary job moves it to `closing`, normally right at `end_at`, so a game
+  activated in the gap before that job fires is still tagged. Only tagged
+  games earn Season XP, and none once the season has `ended` or been
+  cancelled.
+- Once `closing`, nothing new is tagged, but the season stays `closing` until
   every tagged game has ended, so a tagged game that ends late still counts
   in full. Then it **finalizes**: the standings are frozen into
   `season_results` (competition ranks, ties share one) and the end post is

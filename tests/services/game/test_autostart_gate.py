@@ -155,3 +155,35 @@ async def test_without_a_gate_nothing_is_filtered_or_checked(calls: dict) -> Non
     assert pick is not None
     assert calls["shiki"] == [{"genre_id": None}]
     assert calls["tags"] == []
+
+
+async def test_gated_pick_lines_carry_the_season(
+    monkeypatch: pytest.MonkeyPatch, calls: dict, log_records: list[LogLine], session
+) -> None:
+    # The season is bound where the gate is resolved (active_gate), the
+    # way run_bot_autostart does it just before gather_pick.
+    from datetime import UTC, datetime
+
+    from nani_pix_bot.models.enums import SeasonStatus
+    from nani_pix_bot.models.season import SeasonSchedule
+    from nani_pix_bot.seasons import registry
+    from nani_pix_bot.services.seasons import gate as gate_service
+
+    runs = registry.discover("tests.seasons.fake_runs")
+    monkeypatch.setattr(registry, "all_runs", lambda: runs)
+    now = datetime(2026, 11, 1, tzinfo=UTC)
+    row = SeasonSchedule(
+        run_id="demo_1", start_at=now, end_at=now, status=SeasonStatus.ACTIVE, created_by=7
+    )
+    session.add(row)
+    session.flush()
+    assert gate_service.active_gate(session) is not None
+
+    monkeypatch.setattr(autostart.secrets, "choice", lambda _seq: NO_SHIKI_ID)
+    calls["tags_result"] = OFF_THEME
+    assert await _gather(NO_SHIKI_GATE) is None
+
+    for line in (r for r in log_records if "off this season's theme" in r.message):
+        assert line.extra["season_id"] == row.id
+        assert line.extra["run_id"] == "demo_1"
+    assert any("off this season's theme" in r.message for r in log_records)

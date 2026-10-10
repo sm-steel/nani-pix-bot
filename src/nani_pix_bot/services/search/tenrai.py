@@ -132,10 +132,13 @@ async def get_tags(client: httpx.AsyncClient, mal_id: int) -> list[AnimeTag] | N
     return await rest.fetch_by_id(_API, client, f"{TENRAI_BASE_URL}/{mal_id}", mal_id, _parse_tags)
 
 
-def _parse_tags(raw: dict) -> list[AnimeTag] | None:
+def _parse_tags(raw: dict) -> list[AnimeTag]:
+    """A 200 without a `data` object is a provider fault, not "no such
+    anime" (only a 404 is — rest.fetch_by_id): raising lets fetch_tags
+    retry and fall back instead of reading it as a refusal."""
     entry = raw.get("data")
     if not isinstance(entry, dict):
-        return None
+        raise RuntimeError(f"Tenrai tags response has no data object: {raw!r}")
     tags = []
     for kind, field in (("genre", "genres"), ("theme", "themes")):
         tags.extend(

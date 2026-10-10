@@ -772,3 +772,41 @@ async def test_run_bot_autostart_passes_the_active_seasons_gate_to_the_pick(
     assert started is False
     assert seen["gate"] is gate
     assert any(r.extra.get("gated") is True for r in log_records)
+
+
+async def test_run_bot_autostart_gated_lines_carry_the_season(
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
+) -> None:
+    from datetime import UTC, datetime
+
+    from nani_pix_bot.models.enums import SeasonStatus
+    from nani_pix_bot.models.season import SeasonSchedule
+    from nani_pix_bot.seasons import registry
+
+    runs = registry.discover("tests.seasons.fake_runs")
+    monkeypatch.setattr(registry, "all_runs", lambda: runs)
+    now = datetime(2026, 11, 1, tzinfo=UTC)
+    with session_factory() as session:
+        row = SeasonSchedule(
+            run_id="demo_1", start_at=now, end_at=now, status=SeasonStatus.ACTIVE, created_by=7
+        )
+        session.add(row)
+        session.commit()
+        season_id = row.id
+
+    async def no_pick(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(autostart_service, "gather_pick", no_pick)
+    claim = autostart_timers._AutostartClaim(
+        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    )
+
+    await autostart_timers.run_bot_autostart(
+        cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory)), session_factory, claim
+    )
+
+    line = next(r for r in log_records if "found no usable pick" in r.message)
+    assert line.extra["gated"] is True
+    assert line.extra["season_id"] == season_id
+    assert line.extra["run_id"] == "demo_1"

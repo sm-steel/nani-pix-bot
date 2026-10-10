@@ -46,7 +46,7 @@ from nani_pix_bot.services.cards import (
     unlock_slot,
 )
 from nani_pix_bot.services.events import as_utc
-from nani_pix_bot.services.seasons import lifecycle
+from nani_pix_bot.services.seasons import podium_text
 
 OUTBOX_JOB_NAME = "announcement_outbox"
 OUTBOX_POLL_SECONDS = 20
@@ -149,16 +149,7 @@ def _season_lines(
         rule = run.gate.description.get(lang) or run.gate.description["EN"]
         lines.append(i18n.t("season.post.gate", lang, rule=rule))
     if kind is OutboxKind.SEASON_END:
-        lines.extend(
-            i18n.t(
-                "season.post.podium_line",
-                lang,
-                rank=placed.rank,
-                player=players.display_name(session, placed.player_id),
-                xp=placed.xp,
-            )
-            for placed in lifecycle.podium(session, season.id)[:3]
-        )
+        lines.extend(podium_text.lines(session, season.id, lang))
     return lines
 
 

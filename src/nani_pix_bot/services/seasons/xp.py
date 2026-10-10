@@ -17,7 +17,7 @@ from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import EventType, XpSource
+from nani_pix_bot.models.enums import EventType, SeasonStatus, XpSource
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.season import SeasonSchedule, SeasonXp
@@ -93,6 +93,17 @@ def on_event(session: Session, event: LoggedEvent) -> None:
         logger.error(
             "game tagged to season {season_id} with no loadable run — no XP",
             season_id=game.season_id,
+            game_id=game.id,
+        )
+        return
+    if season.status in (SeasonStatus.ENDED, SeasonStatus.CANCELLED):
+        # e.g. /setwinner re-finishing a tagged game after the podium froze:
+        # paying now would make the ledger disagree with season_results.
+        logger.info(
+            "season {run_id} is already over — no XP for this {event_type} event",
+            run_id=season.run_id,
+            event_type=event.event_type.value,
+            season_id=season.id,
             game_id=game.id,
         )
         return

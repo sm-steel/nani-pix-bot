@@ -93,3 +93,47 @@ def test_finalize_freezes_the_standings(session) -> None:
         (1, 2, 50),
         (2, 1, 10),
     ]
+
+
+def _finalize_season(session, xps: dict[int, int]) -> SeasonSchedule:
+    row = _season(
+        session,
+        start=NOW - timedelta(days=3),
+        end=NOW - timedelta(minutes=1),
+        status=SeasonStatus.ACTIVE,
+    )
+    session.add_all([Player(telegram_user_id=u) for u in (1, 2, 3)])
+    session.add_all(
+        SeasonXp(season_id=row.id, player_id=p, amount=a, source=XpSource.WIN)
+        for p, a in xps.items()
+    )
+    session.flush()
+    lifecycle.advance(session, NOW)
+    return row
+
+
+def _frozen(log_records):
+    return [r for r in log_records if "froze" in r.message]
+
+
+def test_finalize_logs_the_frozen_results_and_the_winner(session, log_records) -> None:
+    row = _finalize_season(session, {1: 10, 2: 50})
+    (line,) = _frozen(log_records)
+    assert line.level == "INFO"
+    assert line.extra["results"] == 2
+    assert line.extra["winner_id"] == 2
+    assert line.extra["season_id"] == row.id
+    assert line.extra["run_id"] == "demo_1"
+
+
+def test_finalize_logs_every_player_tied_for_first(session, log_records) -> None:
+    _finalize_season(session, {1: 50, 2: 50, 3: 5})
+    (line,) = _frozen(log_records)
+    assert line.extra["winner_id"] == [1, 2]
+
+
+def test_finalize_logs_when_nobody_scored(session, log_records) -> None:
+    _finalize_season(session, {})
+    (line,) = _frozen(log_records)
+    assert line.extra["results"] == 0
+    assert "nobody scored" in line.message

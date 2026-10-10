@@ -703,6 +703,7 @@
   "season.post.season_end": "🎬 Season «{name}» has ended. Top Season XP:",
   "season.post.gate": "This season only anime that are {rule} can be played.",
   "season.post.podium_line": "{rank}. {player} — {xp} XP",
+  "season.post.no_scores": "Nobody earned Season XP this time.",
   "card.season.season_teaser": "Coming soon",
   "card.season.season_start": "Season started",
   "card.season.season_end": "Season over"

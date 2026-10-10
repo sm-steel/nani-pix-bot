@@ -36,9 +36,13 @@ async def test_tenrai_get_tags_skips_malformed_entries() -> None:
     assert tags == [AnimeTag("genre", "Ok", 1)]
 
 
-async def test_tenrai_get_tags_without_data_is_none() -> None:
-    async with _client(200, {"data": None}) as client:
-        assert await tenrai.get_tags(client, 1) is None
+@pytest.mark.parametrize("body", [{"data": None}, {"data": "oops"}, {}])
+async def test_tenrai_get_tags_malformed_body_raises_not_none(body: dict) -> None:
+    # None means "no such anime" (a refusal upstream); a 200 without an
+    # entry is a provider fault, so it must reach fetch_tags' retry.
+    async with _client(200, body) as client:
+        with pytest.raises(RuntimeError):
+            await tenrai.get_tags(client, 1)
 
 
 async def test_tenrai_get_tags_404_is_none() -> None:
