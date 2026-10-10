@@ -79,7 +79,10 @@ same `.pre-commit-config.yaml` the local pre-commit hook uses) and **Tests**
 repo's default and release branch (see `CLAUDE.md`'s "Branching &
 workflow" section): it cuts a semantic-release
 version and, when a release actually happens, builds and pushes a
-versioned image to `ghcr.io/sm-steel/nani-pix-bot`. There is no deploy
-workflow in this repo —
+versioned image to `ghcr.io/sm-steel/nani-pix-bot`. **Docs**
+(`.github/workflows/docs.yml`) builds the user's guide (`docs/site/`) on every
+PR that touches it, and on a push to `master` publishes it to GitHub Pages
+together with the MyAnimeList callback page. There is no workflow that deploys
+the bot itself —
 see the guide's [Updating](https://sm-steel.github.io/nani-pix-bot/self-hosting/updating/)
 page for how to roll a release out to your own instance. See `CLAUDE.md` for details.
