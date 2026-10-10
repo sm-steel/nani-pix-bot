@@ -78,6 +78,12 @@ PREVIEW_ADD_SYNONYM_CALLBACK_DATA = "preview:add_synonym"
 PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA = "preview:algo"
 PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA = "preview:algo:back"
 PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX = "preview:algo:pick:"
+# The "numbers count" switch on the preview (issue #344), and the two
+# answers to the question asked before the preview for a number-heavy
+# title (issue #345).
+PREVIEW_NUMBERS_CALLBACK_DATA = "preview:numbers"
+NUMBERS_YES_CALLBACK_DATA = "numbers:yes"
+NUMBERS_NO_CALLBACK_DATA = "numbers:no"
 PREVIEW_BOUNTY_CALLBACK_DATA = "preview:bounty"
 PREVIEW_BOUNTY_BACK_CALLBACK_DATA = "preview:bounty:back"
 PREVIEW_BOUNTY_PICK_PREFIX = "preview:bounty:pick:"
@@ -391,12 +397,15 @@ def algorithm_name(algorithm: PixelAlgorithm, lang: str) -> str:
     return i18n.t(f"dm_start.algo_name_{algorithm.value}", lang)
 
 
-def preview_keyboard(lang: str, algorithm: PixelAlgorithm) -> InlineKeyboardMarkup:
+def preview_keyboard(
+    lang: str, algorithm: PixelAlgorithm, numbers_matter: bool | None = None
+) -> InlineKeyboardMarkup:
     """Buttons on the private preview shown before a game is posted to
     the group — see MECHANICS.md's "Starting a game" section. The
     pixelation button shows the game's current algorithm rather than a
     static label, so the starter can see what they'd be changing without
-    opening the submenu."""
+    opening the submenu. `numbers_matter` is the "numbers count" switch's
+    state, or None to leave the switch out (no title has a number)."""
     confirm = InlineKeyboardButton(
         i18n.t("keyboards.preview_confirm", lang), callback_data=PREVIEW_CONFIRM_CALLBACK_DATA
     )
@@ -418,8 +427,33 @@ def preview_keyboard(lang: str, algorithm: PixelAlgorithm) -> InlineKeyboardMark
     bounty = InlineKeyboardButton(
         i18n.t("keyboards.preview_bounty", lang), callback_data=PREVIEW_BOUNTY_CALLBACK_DATA
     )
+    rows = [[confirm], [change_image], [research], [add_synonym]]
+    if numbers_matter is not None:
+        state = "on" if numbers_matter else "off"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    i18n.t(f"keyboards.preview_numbers_{state}", lang),
+                    callback_data=PREVIEW_NUMBERS_CALLBACK_DATA,
+                )
+            ]
+        )
+    return InlineKeyboardMarkup([*rows, [pixel_algorithm], [bounty]])
+
+
+def numbers_question_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """The two answers to "do the numbers in this title matter?"."""
     return InlineKeyboardMarkup(
-        [[confirm], [change_image], [research], [add_synonym], [pixel_algorithm], [bounty]]
+        [
+            [
+                InlineKeyboardButton(
+                    i18n.t("keyboards.numbers_no", lang), callback_data=NUMBERS_NO_CALLBACK_DATA
+                ),
+                InlineKeyboardButton(
+                    i18n.t("keyboards.numbers_yes", lang), callback_data=NUMBERS_YES_CALLBACK_DATA
+                ),
+            ]
+        ]
     )
 
 

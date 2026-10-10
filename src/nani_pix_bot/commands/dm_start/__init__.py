@@ -59,6 +59,7 @@ from nani_pix_bot.commands.dm_start.mal_browse import (
     mal_list_pick_callback_handler,
 )
 from nani_pix_bot.commands.dm_start.newgame import newgame_command
+from nani_pix_bot.commands.dm_start.numbers import numbers_callback_handler
 from nani_pix_bot.commands.dm_start.preview import preview_callback_handler
 from nani_pix_bot.commands.dm_start.screenshot_gallery import (
     screenshot_gallery_callback_handler,
@@ -80,6 +81,7 @@ __all__ = [
     "mal_list_pick_callback_handler",
     "method_pick_callback_handler",
     "newgame_command",
+    "numbers_callback_handler",
     "photo_handler",
     "pick_callback_handler",
     "preview_callback_handler",

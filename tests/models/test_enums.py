@@ -57,7 +57,7 @@ def test_provider_display_names_are_the_brand_spellings() -> None:
 def test_every_provider_has_a_display_name() -> None:
     # `display_name`'s final branch is `assert_never`, so a fifth member
     # added without a label fails type-checking — this catches it at
-    # runtime too, the same belt-and-braces `_current_setup_screen` uses.
+    # runtime too.
     assert all(provider.display_name for provider in Provider)
 
 

@@ -165,7 +165,10 @@ def _has_screenshot_provider(game: Game) -> bool:
 
 def _available(session: Session, game: Game, buyer: Player, kind: ClueKind, lang: str) -> bool:
     if kind in _LETTER_KINDS:
-        return any(text.first_char(title) for _, title in game_service.clue_titles(game, lang))
+        return any(
+            text.first_char(title, numbers_matter=bool(game.numbers_matter))
+            for _, title in game_service.clue_titles(game, lang)
+        )
     if kind is ClueKind.TITLE_SHAPE and guesses.has_partial_reveal(session, game.id):
         return False
     if kind in TEXT_KINDS:

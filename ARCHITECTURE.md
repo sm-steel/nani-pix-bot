@@ -260,8 +260,11 @@ src/nani_pix_bot/
                    #                  screenshots.py for the same reason
                    #   preview.py     the confirmation preview (show/
                    #                  confirm/change-image/research/
-                   #                  add-synonym) + the final post to
-                   #                  the group
+                   #                  add-synonym/numbers-count) + the
+                   #                  final post to the group
+                   #   numbers.py     the "do the numbers matter?"
+                   #                  answer asked before the preview
+                   #                  for a number-heavy title (#345)
                    #   keyboards.py   inline-keyboard builders +
                    #                  callback-data constants for all of
                    #                  the above

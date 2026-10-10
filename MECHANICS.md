@@ -58,6 +58,9 @@ stateDiagram-v2
         AwaitingPhotoChange --> Confirming: new photo sent
         Confirming --> AwaitingSynonym: tap "Add a synonym"
         AwaitingSynonym --> Confirming: synonym typed
+        PickingMethod --> AskingNumbers: number-heavy title\n("91 Days"), not yet answered
+        PickingScreenshot --> AskingNumbers: same
+        AskingNumbers --> Confirming: Yes / No tapped
     }
 
     SETUP --> [*]: 1h setup-abandon timer fires\n(row deleted, turn opens)\n— or /stop confirmed
@@ -375,6 +378,23 @@ before it goes live:
   of the old anime survives into the new one's accepted answers.
 - **Add a synonym** — type one more (or several); appended to the
   list, repeatable.
+- **🔢 Numbers count** ✅/⬜ — only when one of the titles has a digit.
+  Off by default: guessing ignores numbers (see "Guess matching"), so
+  `GITS` wins *GITS 2026*. On, the numbers are part of the answer for
+  this game — digits, ordinals and roman numerals all have to be in the
+  guess (fuzzily, like the rest), and the text clues hide digits as
+  letters (`_`) instead of showing them as `X`.
+
+**Do the numbers matter?** Right before the preview, a title that has a
+number and fewer than 5 letters once its numbers are gone (*91 Days*,
+*11eyes*, *18if*, *GITS 2026*) makes the bot ask the creator outright:
+**No, ignore them** (`days` wins *91 Days*) or **Yes, they count**
+(`91 days` is needed). The answer sets the switch above, which can still
+be flipped on the preview. It's asked once per identification —
+re-searching the title clears the answer, and the question comes back if
+the new title qualifies. A title made only of numbers (*22/7*) never
+asks: its numbers always count. Only the title fields are checked, not
+synonyms.
 - **Confirm and start game** — pixelates the (possibly updated)
   screenshot at **stage 1** and posts it into the group's game topic
   with a caption naming the starter and reminding everyone how to
@@ -429,6 +449,11 @@ row for the rest of that round:
    are compared with their numbers kept instead (the season word still
    goes). So `22/7`, `22 7` and `227` win *22/7*, while `2026` alone
    never wins *GITS 2026*.
+
+   A game's creator can make the numbers count instead (the preview's
+   **🔢 Numbers count** switch, see "Starting a game"): then digits,
+   ordinals and roman numerals stay on both sides, so `days` no longer
+   wins *91 Days* but `91 days` does.
 2. Fuzzy-match the normalized guess against that normalized list with
    `rapidfuzz`, above a fixed similarity threshold defined as a named
    constant in `services/matching.py`.
@@ -1550,7 +1575,9 @@ player's balance.
   and the word *season* never count — the first letter of
   *86: Eighty-Six* is **E**, the last of *Re:Zero 2nd Season* is **o**.
   A title made only of numbers (*22/7*) is the exception: its digits
-  are what's guessed, so they count like letters (**2** and **7**).
+  are what's guessed, so they count like letters (**2** and **7**) —
+  and so do every title's digits when the game's creator switched
+  **🔢 Numbers count** on.
   Spaces and punctuation are not hidden. A title with nothing that
   counts gets no line in the letter clues.
 - *Title shape* shows each title with every letter hidden as `_`, every

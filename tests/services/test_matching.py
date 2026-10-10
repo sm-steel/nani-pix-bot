@@ -8,6 +8,7 @@ from nani_pix_bot.services.matching import (
     normalize_for_match,
     partial_match,
     rank_by_similarity,
+    should_ask_if_numbers_matter,
 )
 
 _TITLES = ["Sousou no Frieren", "Frieren: Beyond Journey's End"]
@@ -281,3 +282,51 @@ def test_partial_match_never_counts_number_or_season_words() -> None:
 def test_partial_match_numbers_never_count_as_hidden_words() -> None:
     # Every letter-bearing word guessed names the title, even with "2026" left out.
     assert partial_match("ghost stories", ["Ghost Stories 2026"], min_letters=4) is None
+
+
+# --- The per-game "numbers matter" switch (issue #344)
+
+
+@pytest.mark.parametrize(
+    ("guess", "title", "expected"),
+    [
+        ("days", "91 Days", False),
+        ("91 days", "91 Days", True),
+        ("gits", "GITS 2026", False),
+        ("gits 2026", "GITS 2026", True),
+        ("overlord", "Overlord II", False),
+        ("re zero 2nd", "Re:Zero 2nd Season", True),
+        ("22 7", "22/7", True),
+    ],
+)
+def test_is_match_keeps_numbers_when_they_matter(guess, title, expected) -> None:
+    assert is_match(guess, [title], numbers_matter=True) is expected
+
+
+def test_best_score_keeps_numbers_when_they_matter() -> None:
+    assert best_score("days", ["91 Days"], numbers_matter=True) < 85.0
+
+
+def test_partial_match_can_hide_number_words_when_they_matter() -> None:
+    # "100" is part of the answer now: guessing every other word still
+    # leaves it hidden, so the matched words are revealed.
+    assert partial_match(
+        "mob psycho", ["Mob Psycho 100"], min_letters=4, numbers_matter=True
+    ) == PartialMatch("Mob Psycho 100", (0, 1))
+
+
+@pytest.mark.parametrize(
+    ("titles", "expected"),
+    [
+        (["91 Days"], True),
+        (["GITS 2026"], True),
+        (["11eyes"], True),
+        (["Frieren", "18if"], True),
+        (["Mob Psycho 100"], False),
+        (["22/7"], False),
+        (["Frieren"], False),
+        ([None, "", "Steins;Gate 0"], False),
+    ],
+)
+def test_numbers_question_is_asked_only_for_number_heavy_titles(titles, expected) -> None:
+    assert should_ask_if_numbers_matter(titles) is expected

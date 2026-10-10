@@ -122,13 +122,34 @@ def normalize_for_match(text: str, *, keep_numbers: bool = False) -> str:
     )
 
 
-def _comparable(guess: str, candidate: str) -> tuple[str, str]:
-    """Both sides normalized for matching. When either has nothing left
-    without its numbers ("22/7", or a guess of just "2026"), both keep
-    their numbers instead — a title made only of numbers stays guessable,
-    and a bare number never matches a title that has letters."""
-    normalized_guess = normalize_for_match(guess)
-    normalized_candidate = normalize_for_match(candidate)
+# A title with a number in it and fewer letters than this once its
+# numbers are gone ("91 Days" -> "days") is one where the bare word may
+# not be enough of an answer — the bot asks the game's creator whether
+# its numbers matter (issue #345).
+NUMBERS_ASK_MAX_LETTERS = 5
+
+
+def should_ask_if_numbers_matter(titles: Iterable[str | None]) -> bool:
+    """Whether any of a game's titles is number-heavy enough to ask its
+    creator if the numbers matter. A title made only of numbers ("22/7")
+    isn't: its numbers always count anyway."""
+    for title in titles:
+        if not title or not _DIGIT_RE.search(unicodedata.normalize("NFKC", title)):
+            continue
+        letters = sum(char.isalpha() for char in normalize_for_match(title))
+        if 0 < letters < NUMBERS_ASK_MAX_LETTERS:
+            return True
+    return False
+
+
+def _comparable(guess: str, candidate: str, *, numbers_matter: bool) -> tuple[str, str]:
+    """Both sides normalized for matching. Numbers are kept when the game's
+    creator said they matter, or when either side has nothing left without
+    them ("22/7", or a guess of just "2026") — a title made only of
+    numbers stays guessable, and a bare number never matches a title that
+    has letters."""
+    normalized_guess = "" if numbers_matter else normalize_for_match(guess)
+    normalized_candidate = "" if numbers_matter else normalize_for_match(candidate)
     if normalized_guess and normalized_candidate:
         return normalized_guess, normalized_candidate
     return (
@@ -143,17 +164,23 @@ def _ratio(normalized_guess: str, normalized_candidate: str) -> float:
     return fuzz.ratio(normalized_guess, normalized_candidate)
 
 
-def best_score(guess: str, candidates: Sequence[str | None]) -> float:
+def best_score(
+    guess: str, candidates: Sequence[str | None], *, numbers_matter: bool = False
+) -> float:
     """The best fuzz ratio `guess` reaches against any candidate (0 when the
     guess normalizes to nothing) — recorded on every wrong guess so a near
     miss can be told apart from a wild one."""
-    return max((_ratio(*_comparable(guess, c)) for c in candidates if c), default=0.0)
+    return max(
+        (_ratio(*_comparable(guess, c, numbers_matter=numbers_matter)) for c in candidates if c),
+        default=0.0,
+    )
 
 
-def is_match(guess: str, candidates: Sequence[str | None]) -> bool:
+def is_match(guess: str, candidates: Sequence[str | None], *, numbers_matter: bool = False) -> bool:
     """True if `guess` fuzzy-matches any of `candidates` (a game's cached
     title variants + synonyms) above MATCH_THRESHOLD, once both sides are
-    normalized by normalize_for_match."""
+    normalized by normalize_for_match — numbers dropped unless
+    `numbers_matter` (the game's own switch, see MECHANICS.md)."""
     if not normalize_for_match(guess, keep_numbers=True):
         logger.debug("guess {guess!r} normalized to empty string — no match possible", guess=guess)
         return False
@@ -165,7 +192,9 @@ def is_match(guess: str, candidates: Sequence[str | None]) -> bool:
     for candidate in candidates:
         if not candidate:
             continue
-        normalized_guess, normalized_candidate = _comparable(guess, candidate)
+        normalized_guess, normalized_candidate = _comparable(
+            guess, candidate, numbers_matter=numbers_matter
+        )
         score = _ratio(normalized_guess, normalized_candidate)
         logger.debug(
             "{guess!r} (normalized {normalized!r}) vs {candidate!r}"
@@ -219,21 +248,23 @@ def _letters(word: str) -> int:
     return sum(char.isalpha() for char in word)
 
 
-def _hideable(word: str) -> bool:
-    """Whether a title word can stay hidden at all: not just punctuation,
-    a number, a roman numeral or "season" — all of which matching ignores."""
-    return bool(normalize_for_match(word))
-
-
-def _fully_named(title: str, guess_tokens: set[str]) -> bool:
-    """Whether the guess contains every hideable word of `title`, short
-    particles included — revealing any of it would then give the whole
-    title away."""
-    return all(normalize(word) in guess_tokens for word in title.split() if _hideable(word))
+def _hideable_words(title: str, *, numbers_matter: bool) -> list[tuple[int, str]]:
+    """The (index, word) pairs of `title` that can stay hidden at all: not
+    just punctuation, "season", or — unless numbers matter — a number or
+    roman numeral, all of which matching ignores."""
+    return [
+        (index, word)
+        for index, word in enumerate(title.split())
+        if normalize_for_match(word, keep_numbers=numbers_matter)
+    ]
 
 
 def partial_match(
-    guess: str, candidates: Sequence[str | None], *, min_letters: int
+    guess: str,
+    candidates: Sequence[str | None],
+    *,
+    min_letters: int,
+    numbers_matter: bool = False,
 ) -> PartialMatch | None:
     """The candidate a wrong guess shares the most whole words with, by
     letter count, if that's at least `min_letters` and at least one of its
@@ -249,15 +280,18 @@ def partial_match(
     best: PartialMatch | None = None
     best_letters = 0
     for candidate in candidates:
-        if not candidate or _fully_named(candidate, all_tokens):
+        if not candidate:
             continue
-        words = candidate.split()
-        indices = tuple(
-            i for i, word in enumerate(words) if _hideable(word) and normalize(word) in guess_words
-        )
-        if not indices:
+        hideable = _hideable_words(candidate, numbers_matter=numbers_matter)
+        # A guess naming every hideable word, short particles included,
+        # would give the whole title away: reveal nothing.
+        if not hideable or all(normalize(word) in all_tokens for _, word in hideable):
             continue
-        letters = sum(_letters(words[i]) for i in indices)
+        matched = [(i, word) for i, word in hideable if normalize(word) in guess_words]
+        if not matched:
+            continue
+        indices = tuple(i for i, _ in matched)
+        letters = sum(_letters(word) for _, word in matched)
         if letters > best_letters:
             best, best_letters = PartialMatch(candidate, indices), letters
     if best is None or best_letters < min_letters:

@@ -4,7 +4,7 @@ import asyncio
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TypeVar, assert_never, cast
+from typing import TypeVar, cast
 
 import httpx
 from loguru import logger
@@ -14,6 +14,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start.keyboards import (
     method_selection_keyboard,
+    numbers_question_keyboard,
     preview_keyboard,
     screenshot_source_keyboard,
 )
@@ -234,11 +235,57 @@ def _stored_provider(stored: str) -> Provider:
     return Provider(stored)
 
 
+_SetupScreen = tuple[str, InlineKeyboardMarkup | None]
+
+
+def _picking_method_screen(
+    _game: Game, lang: str, context: ContextTypes.DEFAULT_TYPE
+) -> _SetupScreen:
+    return (
+        i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
+        _method_keyboard(context, lang),
+    )
+
+
+def _picking_screenshot_screen(game: Game, lang: str, _context) -> _SetupScreen:
+    return (
+        i18n.t("dm_start.pick_screenshot_source_prompt", lang),
+        screenshot_source_keyboard(game_service.screenshot_capable_providers(game), lang),
+    )
+
+
+def _confirming_screen(game: Game, lang: str, _context) -> _SetupScreen:
+    return (
+        i18n.t("dm_start.preview_confirm_prompt", lang),
+        preview_keyboard(lang, game.pixel_algorithm, numbers_toggle(game)),
+    )
+
+
+def _asking_numbers_screen(game: Game, lang: str, _context) -> _SetupScreen:
+    return numbers_question_text(game, lang), numbers_question_keyboard(lang)
+
+
+def _prompt_only(key: str) -> Callable[..., _SetupScreen]:
+    return lambda _game, lang, _context: (i18n.t(key, lang), None)
+
+
+# Every SetupStep has an entry — tests/commands/dm_start/test_shared.py
+# checks it, the job assert_never used to do here.
+_SETUP_SCREENS: dict[SetupStep, Callable[..., _SetupScreen]] = {
+    SetupStep.PICKING_METHOD: _picking_method_screen,
+    SetupStep.PICKING_SCREENSHOT: _picking_screenshot_screen,
+    SetupStep.CONFIRMING: _confirming_screen,
+    SetupStep.ASKING_NUMBERS: _asking_numbers_screen,
+    SetupStep.AWAITING_PHOTO_CHANGE: _prompt_only("dm_start.ask_new_photo"),
+    SetupStep.AWAITING_SYNONYM: _prompt_only("dm_start.ask_extra_synonym"),
+}
+
+
 def _current_setup_screen(
     game: Game, lang: str, context: ContextTypes.DEFAULT_TYPE
 ) -> tuple[str, InlineKeyboardMarkup | None]:
-    """The screen `game`'s own starter is already looking at, as the i18n
-    key and keyboard to re-send it with — see `_resume_setup`.
+    """The screen `game`'s own starter is already looking at, as the
+    text and keyboard to re-send it with — see `_resume_setup`.
 
     Every step is covered, and each returns the same prompt/keyboard
     pair the step's own handler sends, so re-showing one can never
@@ -256,27 +303,13 @@ def _current_setup_screen(
     "I'm stuck" is asking for anyway — and both are screens the flow
     already produces there.
 
-    The final branch is spelled out rather than left as a fall-through,
-    with `assert_never` behind it: a sixth SetupStep would otherwise be
-    handed the synonym prompt in silence. It fails at type-check time
-    now, and loudly at runtime if one is ever added dynamically."""
-    if game.setup_step == SetupStep.PICKING_METHOD:
-        return (
-            _method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)),
-            _method_keyboard(context, lang),
-        )
-    if game.setup_step == SetupStep.PICKING_SCREENSHOT:
-        return (
-            "dm_start.pick_screenshot_source_prompt",
-            screenshot_source_keyboard(game_service.screenshot_capable_providers(game), lang),
-        )
-    if game.setup_step == SetupStep.CONFIRMING:
-        return "dm_start.preview_confirm_prompt", preview_keyboard(lang, game.pixel_algorithm)
-    if game.setup_step == SetupStep.AWAITING_PHOTO_CHANGE:
-        return "dm_start.ask_new_photo", None
-    if game.setup_step == SetupStep.AWAITING_SYNONYM:
-        return "dm_start.ask_extra_synonym", None
-    assert_never(game.setup_step)
+    Each step's screen is an entry in _SETUP_SCREENS; a step missing
+    from it fails loudly here (and in test_shared.py's coverage check)
+    rather than being handed some other step's prompt in silence."""
+    screen = _SETUP_SCREENS.get(game.setup_step)
+    if screen is None:
+        raise AssertionError(f"no setup screen for {game.setup_step}")
+    return screen(game, lang, context)
 
 
 async def _resume_setup(message, game: Game, lang: str, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -299,8 +332,7 @@ async def _resume_setup(message, game: Game, lang: str, context: ContextTypes.DE
     Genuinely starting over is still `/stop`, unchanged; this only stops
     the bot from denying the setup exists — and says so, on the two steps
     where the screen alone cannot (issue #79, routed from #73)."""
-    key, keyboard = _current_setup_screen(game, lang, context)
-    text = i18n.t(key, lang)
+    text, keyboard = _current_setup_screen(game, lang, context)
     if keyboard is None:
         # AWAITING_PHOTO_CHANGE and AWAITING_SYNONYM: the two steps whose
         # route forward is the photo or text being asked for, so there is
@@ -486,6 +518,27 @@ class _PreviewAlbum:
     # Read off the game row here so the network phase can render and label
     # the keyboard without reaching back into a closed session.
     algorithm: PixelAlgorithm
+    numbers_matter: bool | None  # see numbers_toggle
+
+
+@dataclass(frozen=True)
+class _NumbersQuestion:
+    """What _post_preview_album sends instead of the album when the
+    creator is first asked whether the title's numbers matter (issue
+    #345) — the album follows once they answer."""
+
+    starter_id: int
+    text: str
+
+
+def numbers_toggle(game: Game) -> bool | None:
+    """The preview's "numbers count" switch state, or None to leave the
+    switch out because no title has a number (issue #344)."""
+    return bool(game.numbers_matter) if game_service.titles_have_numbers(game) else None
+
+
+def numbers_question_text(game: Game, lang: str) -> str:
+    return i18n.t("dm_start.numbers_question", lang, title=game_service.display_title(game, lang))
 
 
 def _render_preview(album: _PreviewAlbum) -> list[InputMediaPhoto]:
@@ -499,7 +552,7 @@ def _render_preview(album: _PreviewAlbum) -> list[InputMediaPhoto]:
     ]
 
 
-def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum:
+def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum | _NumbersQuestion:
     """DB-phase half of showing the starter a private preview of every
     pixelation stage for the staged title/synonyms: builds the album
     (blockiest to clearest, see MECHANICS.md) and moves the game to
@@ -513,9 +566,22 @@ def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum:
     game" — the traditional upload flow (intake.py, manual.py,
     preview.py's own add-synonym step), and the screenshot-picker flow
     (screenshot_gallery.py's pick), hence living here rather than in
-    preview.py."""
+    preview.py.
+
+    For a number-heavy title whose creator hasn't been asked yet, it
+    stops one step short: the game moves to ASKING_NUMBERS and the
+    question comes back instead of the album (issue #345); answering it
+    (numbers.py) runs this again."""
     if game.original_image is None:
         raise RuntimeError("game.original_image is None in _stage_preview")
+    if game_service.should_ask_if_numbers_matter(game):
+        game.setup_step = SetupStep.ASKING_NUMBERS
+        logger.info(
+            "asking whether the numbers in {title!r} matter",
+            title=game_service.display_title(game, lang),
+            game_id=game.id,
+        )
+        return _NumbersQuestion(starter_id=game.starter_id, text=numbers_question_text(game, lang))
     original_bytes = game.original_image
     config = stage_config.get_stage_configs(session)
     title = game_service.display_title(game, lang)
@@ -546,11 +612,12 @@ def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum:
         widths=widths,
         caption=caption,
         algorithm=game.pixel_algorithm,
+        numbers_matter=numbers_toggle(game),
     )
 
 
 async def _post_preview_album(
-    context: ContextTypes.DEFAULT_TYPE, album: _PreviewAlbum, lang: str
+    context: ContextTypes.DEFAULT_TYPE, album: _PreviewAlbum | _NumbersQuestion, lang: str
 ) -> None:
     """Network-phase half: no DB access, safe to call after the caller's
     session_scope has committed and closed. Renders the five stages in a
@@ -571,10 +638,17 @@ async def _post_preview_album(
     principle). Letting it raise keeps the already-committed mutation
     intact either way and surfaces the failure the normal way, via PTB's
     own error handler."""
+    if isinstance(album, _NumbersQuestion):
+        await context.bot.send_message(
+            chat_id=album.starter_id,
+            text=album.text,
+            reply_markup=numbers_question_keyboard(lang),
+        )
+        return
     media = await asyncio.to_thread(_render_preview, album)
     await context.bot.send_media_group(chat_id=album.starter_id, media=media)
     await context.bot.send_message(
         chat_id=album.starter_id,
         text=i18n.t("dm_start.preview_confirm_prompt", lang),
-        reply_markup=preview_keyboard(lang, album.algorithm),
+        reply_markup=preview_keyboard(lang, album.algorithm, album.numbers_matter),
     )

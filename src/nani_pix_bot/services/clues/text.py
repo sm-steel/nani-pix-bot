@@ -41,34 +41,35 @@ def _word_kinds(word: str, *, digits_count: bool) -> list[_Kind]:
     return [_plain_kind(char, digits_count=digits_count) for char in word]
 
 
-def _words(title: str) -> list[tuple[int, str, list[_Kind]]]:
+def _words(title: str, *, numbers_matter: bool) -> list[tuple[int, str, list[_Kind]]]:
     """Each whitespace-separated word: its start offset, text and the kind
-    of each of its characters."""
+    of each of its characters. Digits count like letters when the game's
+    creator said numbers matter, or when the title has no letter at all."""
     found = [(match.start(), match.group()) for match in _WORD_RE.finditer(title)]
-    letterless = all(
+    digits_count = numbers_matter or all(
         kind is not _Kind.LETTER
         for _, word in found
         for kind in _word_kinds(word, digits_count=False)
     )
-    return [(start, word, _word_kinds(word, digits_count=letterless)) for start, word in found]
+    return [(start, word, _word_kinds(word, digits_count=digits_count)) for start, word in found]
 
 
-def _letter_positions(title: str) -> list[int]:
+def _letter_positions(title: str, *, numbers_matter: bool) -> list[int]:
     return [
         start + offset
-        for start, _, kinds in _words(title)
+        for start, _, kinds in _words(title, numbers_matter=numbers_matter)
         for offset, kind in enumerate(kinds)
         if kind is _Kind.LETTER
     ]
 
 
-def first_char(title: str) -> str | None:
-    positions = _letter_positions(title)
+def first_char(title: str, *, numbers_matter: bool = False) -> str | None:
+    positions = _letter_positions(title, numbers_matter=numbers_matter)
     return title[positions[0]] if positions else None
 
 
-def last_char(title: str) -> str | None:
-    positions = _letter_positions(title)
+def last_char(title: str, *, numbers_matter: bool = False) -> str | None:
+    positions = _letter_positions(title, numbers_matter=numbers_matter)
     return title[positions[-1]] if positions else None
 
 
@@ -85,12 +86,14 @@ def _render(word: str, kinds: list[_Kind], shown: Collection[int] = ()) -> str:
     )
 
 
-def title_shape(title: str, *, reveal_first: bool, reveal_last: bool) -> str:
+def title_shape(
+    title: str, *, reveal_first: bool, reveal_last: bool, numbers_matter: bool = False
+) -> str:
     """Each letter becomes MASK, except a revealed first/last one, and each
     ignored digit DIGIT; characters within a word are space-separated and
     words are separated by WORD_GAP, so the shape reads cleanly in a
     monospace block."""
-    positions = _letter_positions(title)
+    positions = _letter_positions(title, numbers_matter=numbers_matter)
     shown = set()
     if positions and reveal_first:
         shown.add(positions[0])
@@ -98,20 +101,23 @@ def title_shape(title: str, *, reveal_first: bool, reveal_last: bool) -> str:
         shown.add(positions[-1])
     return WORD_GAP.join(
         _render(word, kinds, {index - start for index in shown})
-        for start, word, kinds in _words(title)
+        for start, word, kinds in _words(title, numbers_matter=numbers_matter)
     )
 
 
-def word_lengths(title: str) -> list[int]:
+def word_lengths(title: str, *, numbers_matter: bool = False) -> list[int]:
     """How many hidden letters each word has, for words that have any."""
-    counts = (sum(kind is _Kind.LETTER for kind in kinds) for _, _, kinds in _words(title))
+    counts = (
+        sum(kind is _Kind.LETTER for kind in kinds)
+        for _, _, kinds in _words(title, numbers_matter=numbers_matter)
+    )
     return [count for count in counts if count]
 
 
-def words_shape(title: str, shown: Collection[int]) -> str:
+def words_shape(title: str, shown: Collection[int], *, numbers_matter: bool = False) -> str:
     """The partial-match reveal (issue #250): words at the `shown` indices
     (whitespace-split) as-is, every other word masked like title_shape."""
     return WORD_GAP.join(
         word if index in shown else _render(word, kinds)
-        for index, (_, word, kinds) in enumerate(_words(title))
+        for index, (_, word, kinds) in enumerate(_words(title, numbers_matter=numbers_matter))
     )

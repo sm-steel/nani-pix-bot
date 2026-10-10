@@ -46,6 +46,13 @@ class Game(Base):
     title_native: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
     title_russian: Mapped[str | None] = mapped_column(String(TITLE_LENGTH), default=None)
     synonyms: Mapped[list[str] | None] = mapped_column(JSON, default=None)
+    # The creator's "numbers matter" switch (issues #344/#345): when True,
+    # guess matching and the text clues keep this game's digits, ordinals
+    # and roman numerals instead of ignoring them. None means the creator
+    # hasn't answered yet — treated as False, but it's what tells setup
+    # the "do the numbers matter?" question is still to be asked. See
+    # MECHANICS.md's "Guess matching" and "Starting a game".
+    numbers_matter: Mapped[bool | None] = mapped_column(default=None)
     # Provider URL(s) of the image(s) in play — the extra-screenshot clue never
     # sells one of these. None for an uploaded photo.
     shown_screenshot_urls: Mapped[list[str] | None] = mapped_column(JSON, default=None)

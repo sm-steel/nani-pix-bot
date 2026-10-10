@@ -53,9 +53,9 @@ class Provider(enum.StrEnum):
         A property with an exhaustive if/elif rather than a dict, for the
         same reason this enum exists: a same-shaped external dict would
         just be one more restatement of the mapping. The `assert_never`
-        tail matches `_shared.py::_current_setup_screen`'s precedent — a
-        fifth member added without a label fails type-checking rather
-        than silently falling through to someone else's name."""
+        tail means a fifth member added without a label fails
+        type-checking rather than silently falling through to someone
+        else's name."""
         if self is Provider.ANILIST:
             return "AniList"
         if self is Provider.SHIKIMORI:
@@ -308,6 +308,10 @@ class SetupStep(enum.Enum):
     PICKING_SCREENSHOT = "picking_screenshot"
     AWAITING_PHOTO_CHANGE = "awaiting_photo_change"  # preview's "Change image" tapped
     AWAITING_SYNONYM = "awaiting_synonym"  # preview's "Add a synonym" tapped
+    # Right before the preview, for a number-heavy title ("91 Days"): the
+    # bot asks whether its numbers matter (issue #345). Exited by either
+    # answer, straight to CONFIRMING.
+    ASKING_NUMBERS = "asking_numbers"
     CONFIRMING = "confirming"  # showing the preview, waiting for a button tap
 
 

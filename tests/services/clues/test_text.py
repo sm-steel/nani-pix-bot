@@ -92,3 +92,15 @@ def test_words_shape_masks_numbers_like_title_shape() -> None:
     assert text.words_shape("Mob Psycho 100 Season 2", {1}) == (
         "_ _ _   Psycho   X X X   S e a s o n   X"
     )
+
+
+def test_when_numbers_matter_digits_are_hidden_and_counted_like_letters() -> None:
+    assert text.title_shape(
+        "GITS 2026", reveal_first=False, reveal_last=True, numbers_matter=True
+    ) == ("_ _ _ _   _ _ _ 6")
+    assert text.last_char("Re:Zero 2nd Season", numbers_matter=True) == "d"
+    assert text.first_char("91 Days", numbers_matter=True) == "9"
+    assert text.word_lengths("91 Days", numbers_matter=True) == [2, 4]
+    assert text.words_shape("Mob Psycho 100", {1}, numbers_matter=True) == (
+        "_ _ _   Psycho   _ _ _"
+    )
