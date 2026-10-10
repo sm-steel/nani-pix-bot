@@ -33,8 +33,8 @@ an `ADMIN_USER_IDS=` line; the bot ignores it, so leave it empty.
 
 | Setting | What it does |
 |---|---|
-| `TMDB_READ_ACCESS_TOKEN` | Turns on TMDB as a way to find anime and screenshots. Use the **API Read Access Token** from your TMDB account's API settings, not the older "API Key". Without it, TMDB simply isn't offered. |
-| `TELEGRAM_PROXY_URL` | Sends the bot's traffic through an HTTP proxy, for hosts that can't reach Telegram directly. TMDB and Tenrai requests use it too. |
+| `TMDB_READ_ACCESS_TOKEN` | Turns on TMDB as a way to find anime and screenshots. Use the **API Read Access Token** from your TMDB account's API settings, not the older "API Key". Without it, TMDB is still listed, but every TMDB search and screenshot fails with "looks like it's down", so set it or tell your players to pick another site. |
+| `TELEGRAM_PROXY_URL` | Sends the bot's traffic through an HTTP proxy, for hosts that can't reach Telegram directly. TMDB, Tenrai and MyAnimeList requests use it too. |
 | `MAL_CLIENT_ID`, `MAL_CLIENT_SECRET`, `MAL_REDIRECT_URI`, `MAL_TOKEN_ENCRYPTION_KEY` | MyAnimeList linking. All four together, or none. See [MyAnimeList linking](/nani-pix-bot/self-hosting/myanimelist/). |
 | `LOG_LEVEL` | How much the bot logs: `INFO` by default, `DEBUG` for more. |
 | `LOG_FORMAT` | `text` by default. `json` writes one JSON object per line, with the game id, the user, the chat and the bot version as fields, for log collectors such as Loki or Vector. Any other value stops the bot at startup with an error. |
