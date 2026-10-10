@@ -294,3 +294,19 @@ async def test_the_vote_opening_posts_the_reveal_pair_without_a_winner(
     assert kwargs["target"] == RevealTarget(game_id, None)
     assert kwargs["photos"] == (b"a", b"b")
     assert "Frieren" in kwargs["caption"]
+
+
+async def test_a_flaired_vote_winner_is_flaired_in_the_result_only_not_in_the_final(
+    session_factory, equip_flair
+) -> None:
+    game_id = _voting_game(session_factory, votes={3: A, 4: A, 5: A})
+    with session_factory() as session:
+        equip_flair(session, A)
+        session.commit()
+    context = _job_context(session_factory, game_id)
+
+    final = await vote_module.finalize_vote(context, session_factory, game_id)
+
+    assert final is not None
+    assert final.winner_name == str(A)  # the overthrow caption adds the flair itself
+    assert f"{A} 🌸" in context.bot.send_message.await_args.kwargs["text"]

@@ -39,10 +39,10 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             turn_state = _open_turn(context, session)
             reply_key, reply_kwargs = "skip.opened", {}
         else:
-            target_username = await _pass_turn(message, context, session, lang, context.args[0])
-            if target_username is None:
+            target_label = await _pass_turn(message, context, session, lang, context.args[0])
+            if target_label is None:
                 return
-            reply_key, reply_kwargs = "skip.passed", {"username": target_username}
+            reply_key, reply_kwargs = "skip.passed", {"username": target_label}
     # Block closed and committed above — the turn-state change is durable
     # now regardless of whether the confirmation below actually reaches
     # the group (see jobs/timers/current_image.py's post_current_image
@@ -88,7 +88,7 @@ def _open_turn(context: ContextTypes.DEFAULT_TYPE, session) -> TurnState:
 async def _pass_turn(
     message, context: ContextTypes.DEFAULT_TYPE, session, lang: str, raw_username: str
 ) -> str | None:
-    """Returns the resolved username (with the target's flair) on success, or None for an unknown
+    """Returns the target's label (username plus flair) on success, or None for an unknown
     username — that failure reply goes out here, inline: no mutation
     happened on this path, so there's nothing for a timeout to roll
     back (unlike the two successful outcomes, whose confirmation the

@@ -173,11 +173,12 @@ def _settle(session: Session, context, game: Game, lang: str, forced_winner_id: 
         text += settlement.settle_unsolved(session, game, lang)
         game_service.mark_turn_open_if_unassigned(session)
         return VoteFinal(None, None), text
-    winner_name = flair.named(session, winner_id, _handle(session, winner_id))
+    winner_name = _handle(session, winner_id)
+    shown_name = flair.named(session, winner_id, winner_name)
     earnings = settlement.settle_disputed_win(session, game, winner_id)
     key = "vote.won" if forced_winner_id is None else "vote.admin_won"
-    text = i18n.t(key, lang, winner=winner_name, title=title)
-    text += messages.earnings_suffix(session, game, earnings, lang, player_name=winner_name)
+    text = i18n.t(key, lang, winner=shown_name, title=title)
+    text += messages.earnings_suffix(session, game, earnings, lang, player_name=shown_name)
     turn_state = game_service.get_turn_state(session)
     if turn_state is not None:
         schedule_turn_timers(context.job_queue, turn_state)
