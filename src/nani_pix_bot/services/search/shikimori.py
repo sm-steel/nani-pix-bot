@@ -127,8 +127,8 @@ query ($ids: String) {
 """
 
 _RANDOM_QUERY = """
-query ($minScore: Int, $kind: AnimeKindString) {
-  animes(order: random, limit: 1, score: $minScore, censored: true, kind: $kind) {
+query ($minScore: Int, $kind: AnimeKindString, $genre: String) {
+  animes(order: random, limit: 1, score: $minScore, censored: true, kind: $kind, genre: $genre) {
     id
     name
     russian
@@ -223,7 +223,9 @@ async def get_by_id(client: httpx.AsyncClient, shikimori_id: int) -> ShikimoriRe
     return parsing.parse_entry(_API_NAME, entry, _parse_detail_result)
 
 
-async def random_anime(client: httpx.AsyncClient) -> ShikimoriResult | None:
+async def random_anime(
+    client: httpx.AsyncClient, *, genre_id: int | None = None
+) -> ShikimoriResult | None:
     """One anime, uniformly at random via Shikimori's own `order: random`
     (confirmed against the published GraphQL schema — also has
     `ranked_random`), filtered to `score >= RANDOM_PICK_MIN_SCORE` and
@@ -251,12 +253,21 @@ async def random_anime(client: httpx.AsyncClient) -> ShikimoriResult | None:
     against Jikan's old, unfiltered fallback:
     https://github.com/sm-steel/nani-pix-bot/issues/165.
 
+    `genre_id` restricts the pick to one Shikimori genre/theme (a season
+    gate's tag). Exactly one id: Shikimori ANDs several ids together, so a
+    comma-list would match almost nothing (seasons spec §5, P0).
+
     Deliberately NOT `@cache.cached()` — see test_random_anime_is_not_cached_across_calls."""
-    variables = {"minScore": RANDOM_PICK_MIN_SCORE, "kind": ",".join(RANDOM_PICK_KINDS)}
+    variables: dict[str, str | int] = {
+        "minScore": RANDOM_PICK_MIN_SCORE,
+        "kind": ",".join(RANDOM_PICK_KINDS),
+    }
+    if genre_id is not None:
+        variables["genre"] = str(genre_id)
     data = await graphql.request(_API, client, query=_RANDOM_QUERY, variables=variables)
     entry = _single_anime(data)
     if entry is None:
-        logger.debug("Shikimori random pick returned nothing")
+        logger.debug("Shikimori random pick returned nothing (genre {genre_id})", genre_id=genre_id)
         return None
     parsed = parsing.parse_entry(_API_NAME, entry, _parse_detail_result)
     if parsed is None:

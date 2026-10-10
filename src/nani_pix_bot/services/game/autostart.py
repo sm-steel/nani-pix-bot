@@ -11,6 +11,7 @@ import httpx
 from loguru import logger
 
 from nani_pix_bot.models.enums import Provider
+from nani_pix_bot.seasons.definition import Gate
 from nani_pix_bot.services.game.state import (
     SCREENSHOT_CAPABLE_PROVIDERS,
     TitleVariants,
@@ -19,6 +20,8 @@ from nani_pix_bot.services.game.state import (
 from nani_pix_bot.services.search import shikimori, tenrai
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
+from nani_pix_bot.services.seasons.gate import matches
+from nani_pix_bot.services.seasons.tags import TagClients, TagsUnavailableError, fetch_tags
 
 # ~12%, within the 10-15% range this feature was designed to — see the
 # design doc for issue #159. Tune here if it feels wrong in practice.
@@ -89,6 +92,8 @@ async def gather_pick(
     search_client: httpx.AsyncClient,
     tmdb_client: httpx.AsyncClient,
     tenrai_client: httpx.AsyncClient,
+    *,
+    gate: Gate | None = None,
 ) -> GatheredPick | None:
     """Up to AUTOSTART_ATTEMPT_LIMIT different-anime attempts: a random
     anime (Shikimori, falling back to Tenrai on any failure or empty
@@ -96,10 +101,13 @@ async def gather_pick(
     the existing fallback order). Never writes to a DB — a caller only
     gets a GatheredPick once a full, valid (anime + downloaded
     screenshot bytes) pick is in hand, which is what keeps a failed
-    attempt from ever leaving a partial/broken Game row."""
+    attempt from ever leaving a partial/broken Game row.
+
+    With a season `gate`, every pick must be on-theme (see
+    _pick_random_anime)."""
     clients = SearchClients(search=search_client, tmdb=tmdb_client, tenrai=tenrai_client)
     for attempt in range(1, AUTOSTART_ATTEMPT_LIMIT + 1):
-        anime = await _pick_random_anime(search_client, tenrai_client)
+        anime = await _pick_random_anime(search_client, tenrai_client, gate)
         if anime is None:
             logger.warning(
                 "bot autostart pick attempt {attempt}/{attempts}: no random anime available",
@@ -138,11 +146,14 @@ def _is_explicit(result: TenraiResult) -> bool:
     return result.rating is not None and result.rating.startswith("Rx")
 
 
-async def _pick_random_anime(
-    search_client: httpx.AsyncClient, tenrai_client: httpx.AsyncClient
+async def _shikimori_pick(
+    search_client: httpx.AsyncClient, genre_id: int | None
 ) -> AnimePick | None:
     try:
-        shikimori_result = await shikimori.random_anime(search_client)
+        if genre_id is None:
+            shikimori_result = await shikimori.random_anime(search_client)
+        else:
+            shikimori_result = await shikimori.random_anime(search_client, genre_id=genre_id)
     except _AUTOSTART_SERVICE_ERRORS as exc:
         logger.warning(
             "Shikimori random-anime pick failed, falling back to Tenrai: {error}", error=exc
@@ -150,7 +161,10 @@ async def _pick_random_anime(
         shikimori_result = None
     if shikimori_result is not None:
         return AnimePick(result=shikimori_result, source=Provider.SHIKIMORI)
+    return None
 
+
+async def _tenrai_pick(tenrai_client: httpx.AsyncClient) -> AnimePick | None:
     try:
         tenrai_result = await tenrai.random_anime(tenrai_client)
     except _AUTOSTART_SERVICE_ERRORS as exc:
@@ -166,6 +180,48 @@ async def _pick_random_anime(
         )
         return None
     return AnimePick(result=tenrai_result, source=Provider.TENRAI)
+
+
+async def _gated_tenrai_pick(
+    tenrai_client: httpx.AsyncClient, search_client: httpx.AsyncClient, gate: Gate
+) -> AnimePick | None:
+    """The Tenrai pick, kept only if its tags pass the season gate. Tags
+    that can't be fetched reject the attempt (never assume on-theme)."""
+    pick = await _tenrai_pick(tenrai_client)
+    if pick is None:
+        return None
+    clients = TagClients(shikimori=search_client, tenrai=tenrai_client)
+    try:
+        tags = await fetch_tags(clients, getattr(pick.result, Provider.TENRAI.id_attr_name))
+    except TagsUnavailableError:
+        logger.warning(
+            "bot pick {pick!r}: couldn't check the season gate — rejecting", pick=pick.result
+        )
+        return None
+    if not tags or not matches(gate, tags):
+        logger.info("bot pick {pick!r} is off this season's theme — rejecting", pick=pick.result)
+        return None
+    return pick
+
+
+async def _pick_random_anime(
+    search_client: httpx.AsyncClient, tenrai_client: httpx.AsyncClient, gate: Gate | None
+) -> AnimePick | None:
+    """Shikimori first, Tenrai on failure/empty. Under a gate, Shikimori is
+    filtered on ONE randomly chosen gate tag's id (the filter ANDs several),
+    and a Tenrai pick must pass the gate; a tag Shikimori has no id for
+    skips straight to Tenrai."""
+    genre_id = None
+    if gate is not None:
+        genre_id = secrets.choice(gate.any_of).shikimori_id
+        if genre_id is None:
+            return await _gated_tenrai_pick(tenrai_client, search_client, gate)
+    pick = await _shikimori_pick(search_client, genre_id)
+    if pick is not None:
+        return pick
+    if gate is not None:
+        return await _gated_tenrai_pick(tenrai_client, search_client, gate)
+    return await _tenrai_pick(tenrai_client)
 
 
 def _screenshot_provider_order(identified_by: Provider) -> list[Provider]:

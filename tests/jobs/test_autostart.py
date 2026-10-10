@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from types import MappingProxyType
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -15,6 +16,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.models.turn_state import TurnState
+from nani_pix_bot.seasons.definition import Gate, GateTag
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.game import autostart as autostart_service
@@ -743,3 +745,30 @@ async def test_maybe_overthrow_logs_disabled_autostart_as_the_skip_reason(
     )
 
     assert ("INFO", "overthrow roll skipped after a game ended — autostart is disabled") in records
+
+
+async def test_run_bot_autostart_passes_the_active_seasons_gate_to_the_pick(
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
+) -> None:
+    gate = Gate(
+        any_of=(GateTag("genre", "Romance", 22, 22),),
+        description=MappingProxyType({"EN": "Romance"}),
+    )
+    monkeypatch.setattr(autostart_timers.gate_service, "active_gate", lambda session: gate)
+    seen: dict = {}
+
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, *, gate=None):
+        seen["gate"] = gate
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+    claim = autostart_timers._AutostartClaim(
+        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    )
+
+    started = await autostart_timers.run_bot_autostart(
+        cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory)), session_factory, claim
+    )
+
+    assert started is False
+    assert seen["gate"] is gate
+    assert any(r.extra.get("gated") is True for r in log_records)
