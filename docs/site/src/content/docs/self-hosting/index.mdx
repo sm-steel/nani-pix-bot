@@ -1,0 +1,95 @@
+---
+title: Run your own bot
+description: Set up your own nani-pix-bot with Docker, from creating the Telegram bot to the first round.
+sidebar:
+  order: 1
+---
+
+nani-pix-bot runs entirely in Docker: the bot plus a MariaDB database, wired
+together by the repository's `docker-compose.yml`. This page walks through setting
+up your own copy from nothing.
+
+## What you need
+
+- A machine with **Docker** and the **Docker Compose plugin**
+  (`docker compose version` should work).
+- A **Telegram account**.
+
+Nothing else is installed on the host. The Docker image already contains the
+`ffmpeg` build the bot uses to render its end-of-round reveal videos.
+
+## 1. Create a Telegram bot
+
+1. Open a chat with [@BotFather](https://t.me/BotFather) and send `/newbot`.
+2. Follow the prompts to pick a name and a username ending in `bot`.
+3. BotFather replies with a token such as `123456789:AAExampleTokenTextHere`. This
+   is your `BOT_TOKEN`. Keep it secret: anyone with it can control your bot.
+
+## 2. Set up your group and topic
+
+1. Create a Telegram group, or use an existing one, and turn on **Topics**
+   (Group settings → Topics). The bot posts into one specific topic, not the main
+   chat.
+2. Add your bot to the group and make it an **admin** with at least the
+   **Pin messages** permission. The bot pins the current round's picture; without
+   the permission it simply skips pinning.
+3. Create or pick the topic the game will be played in.
+
+## 3. Find your group and topic ids
+
+Before starting the bot (so nothing else is reading its updates), send any
+**command** in the game topic, for example `/start`. It's fine that nothing
+answers yet. Then open this address in a browser, with your real token:
+
+```
+https://api.telegram.org/bot<BOT_TOKEN>/getUpdates
+```
+
+In the JSON response, find that message and read:
+
+- `result[].message.chat.id`: your `GROUP_CHAT_ID`, a negative number such as
+  `-1001234567890`.
+- `result[].message.message_thread_id`: your `GAME_TOPIC_ID`.
+
+It has to be a command: by default, bots in groups only receive commands, replies
+to themselves and mentions.
+
+## 4. Configure
+
+Copy the example settings file and fill it in (see
+[Configuration](/nani-pix-bot/self-hosting/configuration/) for every setting):
+
+```sh
+cp .env.example .env
+```
+
+## 5. Run it
+
+Build from source:
+
+```sh
+docker compose build
+docker compose up -d
+docker compose logs -f bot
+```
+
+Or use a ready-made image: in `docker-compose.yml`, replace the `bot` service's
+`build: .` with `image: ghcr.io/sm-steel/nani-pix-bot:X.Y.Z` (the available
+versions are on the [Releases](https://github.com/sm-steel/nani-pix-bot/releases)
+page), and run the same commands without `docker compose build`.
+
+The bot updates its database by itself every time it starts, after MariaDB is
+ready, so there's no separate migration step. Once it's up, the logs show it
+polling Telegram. Send `/version` in your topic to check that it answers.
+
+The database keeps its data in a Docker volume named `mariadb_data`. The bot
+reaches it over the Compose network as `mariadb:3306`, not `localhost`.
+
+## Next steps
+
+- [Configuration](/nani-pix-bot/self-hosting/configuration/): every setting in `.env`.
+- [MyAnimeList linking](/nani-pix-bot/self-hosting/myanimelist/): optional, lets
+  players pick from their own MyAnimeList list.
+- [Updating and health checks](/nani-pix-bot/self-hosting/updating/).
+- [Setting up the group](/nani-pix-bot/admins/setup/): what the group's admins can
+  do once the bot is running.

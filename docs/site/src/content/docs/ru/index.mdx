@@ -1,0 +1,109 @@
+---
+title: nani-pix-bot
+description: Угадай аниме по пикселизированному скриншоту — игра для групповых чатов Telegram.
+template: splash
+hero:
+  tagline: Угадай аниме по пикселизированному скриншоту. С каждой ошибкой он становится чётче.
+---
+import { CardGrid } from '@astrojs/starlight/components';
+import HomeCard from '../../../components/HomeCard.astro';
+import { Image } from 'astro:assets';
+import FeatureBand from '../../../components/FeatureBand.astro';
+import StageStrip from '../../../components/StageStrip.astro';
+import LeaderboardMock from '../../../components/LeaderboardMock.astro';
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+import unlockCard from '../../../assets/generated/unlock-ru.png';
+import PixelHero from '../../../components/PixelHero.astro';
+
+<PixelHero />
+
+<CardGrid>
+  <HomeCard icon="play" title="Играть" description="Как устроен раунд, догадки, пиксели и достижения." href="/nani-pix-bot/ru/players/how-to-play/" />
+  <HomeCard icon="admin" title="Вести группу" description="Настройки и команды для админов группы." href="/nani-pix-bot/ru/admins/setup/" />
+  <HomeCard icon="host" title="Свой сервер" description="Запустите свою копию бота в Docker." href="/nani-pix-bot/ru/self-hosting/" />
+</CardGrid>
+
+<FeatureBand n={1} kicker="Этапы" title="Картинка проясняется" href="/nani-pix-bot/ru/players/guessing/" more="Догадки и этапы" hue="#d99a2b">
+  Каждый раунд начинается с горстки крупных пикселей. На каждом этапе можно несколько раз ошибиться; когда попытки кончаются, бот присылает картинку чётче. За пять этапов размытое пятно превращается в настоящий скриншот.
+
+  <StageStrip slot="visual" caption="Сколько ошибок допускает каждый этап по умолчанию" />
+</FeatureBand>
+
+<FeatureBand n={2} kicker="Начать раунд" title="Любое аниме, любая сцена" href="/nani-pix-bot/ru/players/starting-a-round/" more="Как начать раунд" hue="#8b6cf0" flip>
+  Пришлите боту скриншот в личном чате или наберите `/newgame` и выберите кадр с Shikimori, Tenrai или TMDB. Потом укажите, что это за аниме: найдите его на одном из сайтов, выберите из своего списка MyAnimeList или впишите название сами.
+
+  <TelegramChat slot="visual" label="Пример: выбор способа определить аниме">
+    <TgMessage from="nani-pix-bot" buttons={[['Shikimori'], ['AniList'], ['Tenrai'], ['TMDB'], ['Ввести вручную'], ['Мой список MAL']]}>
+      Как вы хотите определить аниме? 💡 Шикимори указан первым — там обычно лучше с русскими названиями и синонимами.
+    </TgMessage>
+  </TelegramChat>
+</FeatureBand>
+
+<FeatureBand n={3} kicker="Угадывать" title="Угадываем вместе" href="/nani-pix-bot/ru/players/how-a-round-ends/" more="Чем заканчивается раунд" hue="#26b3a3">
+  Вся группа угадывает командой `/guess` в игровой теме. Регистр, знаки препинания и мелкие опечатки не важны, а почти верная догадка показывает слова, которые вы угадали. Побеждает первый верный ответ, и победитель начинает следующий раунд.
+
+  <TelegramChat slot="visual" label="Пример: догадки в игровой теме">
+    <TgMessage out>/guess frieren the mage</TgMessage>
+    <TgMessage from="nani-pix-bot">
+      ❌ Не угадано! Попыток до следующей подсказки: 1/2 (этап 3/5).
+
+      🔎 Частично верно: _ _ _ _ _ _ &nbsp; _ _ &nbsp; Frieren
+
+      💠 +2 — Kenji
+    </TgMessage>
+    <TgMessage out>/guess sousou no frieren</TgMessage>
+    <TgMessage from="nani-pix-bot">
+      🎉 Kenji угадал(а)! Это было Sousou no Frieren. Ваша очередь начинать следующую игру!
+
+      🎲 Игра #142
+
+      💠 +25 — Kenji
+
+      🎨 @hana получает +15 💠 за удачно подобранный скриншот
+
+      🌟 @kenji: +3 очка
+
+      &nbsp;&nbsp;&nbsp;• за неделю — 7 🌟, 1-е место (⬆2)
+
+      &nbsp;&nbsp;&nbsp;• за месяц — 18 🌟, 2-е место
+
+      &nbsp;&nbsp;&nbsp;• за год — 64 🌟, делит 3-е место
+
+      🌟 Ведущий @hana: +1 очко
+    </TgMessage>
+  </TelegramChat>
+</FeatureBand>
+
+<FeatureBand n={4} kicker="Пиксели" title="Копите пиксели, покупайте подсказки" href="/nani-pix-bot/ru/players/pixels-and-shop/" more="Пиксели и магазин подсказок" hue="#e0609e" flip>
+  Пиксели приносят ошибки, быстрый старт раунда и победы. Тратьте их на личные подсказки, например букву, форму названия или дополнительный скриншот, или добавляйте в награду за раунд. Победа в хардмоде приносит вдвое больше.
+
+  <TelegramChat slot="visual" label="Пример: магазин подсказок">
+    <TgMessage from="nani-pix-bot" buttons={[['🔤 Последняя буква — 60 💠'], ['🔤 Первая буква — 100 💠'], ['📏 Форма названия — 120 💠'], ['🖼 Доп. скриншот — 150 💠'], ['🧩 Открыть тайл — 100 💠']]}>
+      🛒 Магазин подсказок — баланс: 340 💠
+
+      Подсказки приходят вам сюда лично; любой можно бесплатно поделиться с группой.
+    </TgMessage>
+  </TelegramChat>
+</FeatureBand>
+
+<FeatureBand n={5} kicker="Достижения" title="Собирайте достижения" href="/nani-pix-bot/ru/players/achievements/" more="Достижения и титулы" hue="#e8c547">
+  Достижения дают за победы, загаданные раунды и игру день за днём. Они приносят пиксели и очки, лучшие открывают титул рядом с вашим именем, а некоторые остаются секретными, пока их кто-нибудь не получит. О каждом бот объявляет своей карточкой.
+
+  <Image slot="visual" class="band-card" src={unlockCard} alt="Пример карточки достижения: у @hana новое достижение «Снайпер V», Золото, +200 💠 и +8 🏆" width={720} />
+</FeatureBand>
+
+<FeatureBand n={6} kicker="Лидеры" title="Поднимайтесь в таблице" href="/nani-pix-bot/ru/players/leaderboard-and-history/" more="Лидеры, зачёты и история" hue="#4aa3e8" flip>
+  Таблица лидеров за всё время упорядочена по победам. Недельные, месячные и годовые зачёты выбирают своих чемпионов, а `/history` хранит каждый завершённый раунд со всеми догадками.
+
+  <LeaderboardMock slot="visual" label="Пример: таблица лидеров" header="👑 Таблица лидеров" player="Игрок" />
+</FeatureBand>
+
+<FeatureBand n={7} kicker="Под вашу группу" title="Настройте под себя" href="/nani-pix-bot/ru/admins/game-settings/" more="Настройки игры" hue="#e8794a">
+  Админы решают, сколько ошибок прощает каждый этап, на каком языке говорит бот, когда у него тихие часы и начинает ли он раунды сам. Нужна своя копия бота? Он запускается как стек Docker Compose.
+
+  <div slot="visual" class="band-ctas">
+    <HomeCard icon="admin" title="Вести группу" description="Настройки и команды для админов группы." href="/nani-pix-bot/ru/admins/setup/" />
+    <HomeCard icon="host" title="Свой сервер" description="Запустите свою копию бота в Docker." href="/nani-pix-bot/ru/self-hosting/" />
+  </div>
+</FeatureBand>

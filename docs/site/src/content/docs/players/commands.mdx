@@ -1,0 +1,53 @@
+---
+title: Commands
+description: Every nani-pix-bot command, where it works and what it does.
+sidebar:
+  order: 9
+---
+import CommandTable from '../../../components/CommandTable.astro';
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+
+The descriptions below are the same ones Telegram shows when you type `/` in a
+chat with the bot. `<…>` is something you fill in, and `[…]` is optional.
+
+## In the game topic
+
+These work in the group's game topic, where the round is played.
+
+<CommandTable group="topic" />
+
+## In a private message with the bot
+
+Send these to the bot directly. Setting up a round always happens here, so the
+group never sees the answer.
+
+<CommandTable group="dm" />
+
+## Anywhere
+
+These work both in the game topic and in a private message.
+
+<CommandTable group="both" />
+
+## For group admins
+
+Only the group's admins and owner can use these, in a private message with the
+bot. See [Group admins](/nani-pix-bot/admins/setup/) for what each one does.
+
+<CommandTable group="admin" />
+
+## Good to know
+
+- **`/help` in the game topic is answered privately**, so the topic stays clean.
+  The bot can only message you if you've started a chat with it first; if you
+  haven't, it asks you to in the topic:
+
+<TelegramChat label="Example: /help before you've messaged the bot">
+  <TgMessage out>/help</TgMessage>
+  <TgMessage from="nani-pix-bot">Please message me privately first — @your_bot — then try /help again.</TgMessage>
+</TelegramChat>
+
+- **`/version`** shows which version of the bot your group is running and what
+  changed in it, with buttons to page back through earlier releases. The same
+  notes are in [What's new](/nani-pix-bot/whats-new/).

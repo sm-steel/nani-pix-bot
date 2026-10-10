@@ -188,7 +188,7 @@ To skip in a genuine emergency: `git commit --no-verify` — but fix what it
 would have caught before the next real commit, don't make a habit of it.
 
 **CI (`.github/workflows/`) runs the exact same checks as the local
-pre-commit hook — never a separate copy of them.** Four workflows,
+pre-commit hook — never a separate copy of them.** Five workflows,
 GitHub-hosted runners only (never self-hosted — GitHub explicitly warns
 against self-hosted runners on public repos, since any fork PR can run
 arbitrary code on one, including reading secrets):
@@ -208,7 +208,7 @@ arbitrary code on one, including reading secrets):
   history and, when a release actually cuts, tags it and builds/pushes a
   versioned image to `ghcr.io/sm-steel/nani-pix-bot`. This repo has no
   deploy step of its own — rolling a released image out to your own
-  instance is up to you (see README.md's Self-hosting section). `bot`'s
+  instance is up to you (see the user's guide's Self-hosting pages). `bot`'s
   own Dockerfile `CMD` runs `alembic upgrade head` before starting the
   bot process, so migrating is automatic and no longer a manual step
   whoever deploys it needs to remember — its startup queries the `games`
@@ -229,6 +229,13 @@ arbitrary code on one, including reading secrets):
   protected branch. Requires "Allow GitHub Actions to create pull
   requests" enabled under repo Settings → Actions → General (off by
   default) — without it `gh pr create` fails on a permissions error.
+- **`docs.yml`** — the user's guide (`docs/site/`, see "User's guide"
+  below). On every push/PR touching the guide or what it's generated from,
+  runs the guide's own pytest checks (`tests/docs/`, the image generators'
+  tests) and an `astro build` with link validation. Only on a push to
+  `master` (or a manual run) does it publish the site, together with
+  `mal-callback.html`, to GitHub Pages — which needs Settings → Pages →
+  Source set to **GitHub Actions**.
 
 If a local pre-commit pass ever disagrees with `checks.yml`'s result on the
 same commit, that's a bug in the CI setup worth fixing directly, not
@@ -437,6 +444,21 @@ release PR only reviews them, and nothing is committed to these files during
 or after a release. The rules (what qualifies, the voice, condensing, not
 capping) and the rotation into `previous-releases-*.md` are in
 [`docs/release-notes.md`](docs/release-notes.md).
+
+## User's guide
+
+The player/admin/self-hoster guide lives in `docs/site/` (Astro Starlight,
+published to https://sm-steel.github.io/nani-pix-bot/ from `master` by
+`docs.yml`). **Every PR into `develop` that changes behavior a player, admin
+or self-hoster could notice updates the matching guide pages in
+`docs/site/src/content/docs/` (English) and `…/docs/ru/` (Russian) in that
+same PR**, the same rule as release notes. `MECHANICS.md` stays the
+developer spec; the guide is its player-language counterpart.
+`tests/docs/` fails CI when a page exists in one language only or a
+registered command is missing from the command reference. Content links are
+absolute and include the `/nani-pix-bot/` base (the links validator rejects
+relative ones). Preview with `npm run dev` in `docs/site/` (Node comes from
+`mise.toml`); `npm run build` also validates every internal link.
 
 ## Coding practices
 

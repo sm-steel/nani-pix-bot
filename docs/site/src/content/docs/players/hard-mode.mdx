@@ -1,0 +1,134 @@
+---
+title: HARD MODE
+description: The tougher rules the bot plays by when it starts a round itself, and the group vote.
+sidebar:
+  order: 5
+---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+import stage1 from '../../../assets/generated/stage-1.webp';
+import original from '../../../assets/generated/original.webp';
+
+Every round the **bot starts by itself** is a HARD MODE round (see
+[How a round ends](/nani-pix-bot/players/how-a-round-ends/#when-the-bot-starts-a-round-itself)).
+Rounds that players start are never HARD MODE.
+
+## The rules
+
+- **Two turns instead of five stages.**
+- **Two screenshots at once.** Each turn shows two different screenshots of the
+  same anime, posted together as an album.
+- **Turn 1 isn't blurrier than usual.** It's as blocky as stage 1 of a normal
+  round with the default settings; turn 2 is noticeably clearer. What makes HARD
+  MODE hard is the guess limit.
+- **One wrong guess per turn.** One miss on turn 1 moves to turn 2, where both
+  screenshots are clearer. One miss on turn 2 ends the round.
+- **Double reward.** Cracking it counts as **+2** wins on the leaderboard, and the
+  pixel reward is doubled too.
+- **Clues are on sale.** Every clue in the shop is discounted, starting at 20%.
+  The discount grows by 20 points after each HARD MODE round nobody cracks, up to
+  80%, and drops back to 20% once one is solved. The round's first post states the
+  discount, and the shop shows it under your balance: *🏷 HARD MODE sale: −20% on
+  every clue.*
+- **The shop is a link.** An album can't carry buttons, so instead of the
+  🛒 Clues button, a HARD MODE post ends with a link that opens the shop in a
+  private chat with the bot.
+- **No `/correct` and no `/sharpen`.** Nobody hosts the round, so the vote below
+  replaces `/correct`.
+
+<TelegramChat label="Example: a HARD MODE round starting (the first of its two screenshots)">
+  <TgMessage from="nani-pix-bot" image={stage1}>
+    ⏰ Nobody started a new round in a while, so here's a HARD MODE one from me — two screenshots, two turns, no mercy.
+
+    📸 Turn 1/2 — guesses: 1/1
+
+    🏷 HARD MODE clue sale: −20% on every clue this round.
+
+    🎲 Game #143
+
+    🛒 https://t.me/your_bot?start=shop
+  </TgMessage>
+</TelegramChat>
+
+Everything else is the same as a normal round: how guesses are matched, the
+two-day limit, and the winner getting the next turn.
+
+## The vote
+
+The bot's matching is strict, and with one guess per turn a correct answer under
+an unusual name can slip through. So when a HARD MODE round ends without a correct
+guess, but somebody did guess, **the group votes** on whether one of the guessers
+was actually right.
+
+- The bot posts the answer, then a ballot with **one button per guesser**, showing
+  what each of them guessed and how many votes they have so far. The counts update
+  as people vote.
+- Any group member can vote, once, and can change their vote by tapping another
+  button. You can't vote for yourself.
+- The vote closes after **15 minutes**, and the buttons disappear. If the group
+  has [quiet hours](/nani-pix-bot/players/how-a-round-ends/#quiet-hours), they
+  push the close back like any other timer.
+- A guesser wins if they get **the most votes, at least 3, with no tie**. They get
+  a normal HARD MODE win, **+30 💠** for the wait (by default), and the next turn.
+- Otherwise the round stays unsolved.
+
+<TelegramChat label="Example: a HARD MODE vote that picks a winner">
+  <TgMessage from="nani-pix-bot" image={original}>
+    🗳 Nobody survived HARD MODE this time. It was Natsume's Book of Friends.
+
+    🎲 Game #143
+  </TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['@yuki: nyanko sensei show — 3'], ['@mio: mushishi — 1']]}>
+    🗳 Was anyone actually right? Vote for the guess that really counts — you can't vote for yourself. Closes in 15 min; a winner needs at least 3 votes and no tie. Votes so far: 4.
+
+    🎲 Game #143
+  </TgMessage>
+  <TgMessage from="nani-pix-bot">✅ Vote counted.</TgMessage>
+  <TgMessage from="nani-pix-bot">
+    🎉 The group decided: @yuki was right! It was Natsume's Book of Friends — that's a HARD MODE win (+2 to the score). Your turn to start the next game!
+
+    💠 +60 for @yuki
+
+    🤝 @yuki gets +30 💠 for the wait.
+
+    🌟 @yuki: +4 points
+
+    &nbsp;&nbsp;&nbsp;• this week — 9 🌟, 1st place (⬆1)
+
+    &nbsp;&nbsp;&nbsp;• this month — 21 🌟, 2nd place
+
+    &nbsp;&nbsp;&nbsp;• this year — 70 🌟, 2nd place
+
+    🎲 Game #143
+  </TgMessage>
+</TelegramChat>
+
+"✅ Vote counted." is the short pop-up you see when you tap a button; it isn't
+posted to the topic.
+
+<TelegramChat label="Example: a HARD MODE vote that picks nobody">
+  <TgMessage from="nani-pix-bot">
+    🗳 The vote didn't pick anyone, so this one stays unsolved. It was Natsume's Book of Friends.
+
+    💸 HARD MODE cashback: 48 💠 went back to the clue buyers.
+
+    🎲 Game #143
+  </TgMessage>
+</TelegramChat>
+
+While a vote is open, no new round can start, and `/guess` only points you to the
+ballot. An admin
+can also settle it directly (see [Fixing a round](/nani-pix-bot/admins/fixing-things/)),
+and an admin's [`/stop`](/nani-pix-bot/players/how-a-round-ends/#stopping-a-round)
+cancels it and refunds every clue and the bounty.
+
+## Clue cashback
+
+When a HARD MODE round finally ends unsolved, everyone who bought clues for it gets
+**half of what they spent** back (admins can change the share). That's true however
+it ends unsolved: after a vote that picks nobody, or with no vote at all because
+nobody guessed. Any bounty is refunded in full, as in a normal round. You keep the
+cashback even if an admin later names you the winner.
+
+A winner chosen by the vote or by an admin also gets **+30 💠** (by default) on
+top of the normal HARD MODE win, for having had to wait for it.

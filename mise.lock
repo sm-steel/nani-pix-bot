@@ -27,3 +27,16 @@ asset_pattern = "ffmpeg-n7.1.1-*-linux64-gpl-7.1.tar.xz"
 checksum = "sha256:7a4dcf07bc7c89a33970c5c0f524fc1662ea4e2f342c9d10a6a9f307cdc03f6c"
 url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2025-08-31-13-00/ffmpeg-n7.1.1-57-g1b48158a23-linux64-gpl-7.1.tar.xz"
 url_api = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/assets/288112634"
+
+[[tools.node]]
+version = "24.21.0"
+backend = "core:node"
+specifiers = ["24.21.0"]
+
+[tools.node."platforms.linux-x64"]
+checksum = "sha256:6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.gz"
+
+[tools.node."platforms.windows-x64"]
+checksum = "sha256:158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip"

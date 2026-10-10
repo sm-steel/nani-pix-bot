@@ -1,0 +1,66 @@
+---
+title: Setting up the group
+description: What a group admin needs to do so the bot can run games, and how to set its language.
+sidebar:
+  order: 1
+---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+
+This section is for the **admins and owner** of the group the bot plays in. Every
+admin command is sent to the bot in a **private message**, and the bot checks with
+Telegram that you really are an admin of the group each time.
+
+Hosting your own copy of the bot? Start with [Self-hosting](/nani-pix-bot/self-hosting/);
+this page covers the group side.
+
+## The group and its game topic
+
+1. The group must be a **supergroup with Topics turned on** (Group settings →
+   Topics). The bot plays in one specific topic, not in the main chat.
+2. Add the bot to the group and make it an **admin with the "Pin messages"
+   permission**. The bot keeps the current round's picture pinned in the topic.
+   Without that permission everything still works, just without the pin.
+3. Pick the topic the game is played in. Whoever runs the bot configures which
+   topic that is.
+
+Players need to be **members of the group** for most of what the bot does for
+them. Someone who isn't a member can't:
+
+- start a round (by sending a screenshot or with `/newgame`),
+- open the clue shop or buy clues, including from the 🛒 button under a stage,
+- see `/achievements`, `/history`, `/title`, or `/leaderboard` and `/standings` in
+  a private message,
+- follow a link that opens achievements or standings in a private chat with the
+  bot.
+
+`/leaderboard` and `/standings` sent in the game topic itself work for anyone who
+can read it. Players should also send the bot `/start` once, so it can message
+them privately (for clues, reminders and the shop).
+
+## Language
+
+The bot speaks **English or Russian**, the same language for the whole group: the
+game topic, private messages and the bot's command menu. To switch, send
+`/language` to the bot and tap a language. The two buttons are always labelled in
+their own language.
+
+<TelegramChat label="Example: switching the bot from Russian to English">
+  <TgMessage out>/language</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['🇷🇺 Русский'], ['🇬🇧 English']]}>Выберите язык бота:</TgMessage>
+  <TgMessage from="nani-pix-bot">Language set to English.</TgMessage>
+</TelegramChat>
+
+The prompt is in the bot's current language, and after the tap it turns into the
+confirmation, in the new one. Only a group admin or the owner can change the
+language; anyone else gets "Only a group admin can change the bot's language."
+The other admin commands answer non-admins with "Admins only."
+
+## Where to go next
+
+- [Game settings](/nani-pix-bot/admins/game-settings/): stage difficulty, partial
+  matches and pixel prices.
+- [Automatic rounds and quiet hours](/nani-pix-bot/admins/schedule/): pausing new
+  rounds, letting the bot start its own, and a quiet window at night.
+- [Fixing a round](/nani-pix-bot/admins/fixing-things/): naming a winner the bot
+  missed, refunds and stopping rounds.
