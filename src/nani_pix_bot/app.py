@@ -303,6 +303,12 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(dm_start.preview_callback_handler, pattern=r"^preview:")
     )
     application.add_handler(
+        CallbackQueryHandler(dm_start.numbers_callback_handler, pattern=r"^numbers:")
+    )
+    application.add_handler(
+        CallbackQueryHandler(dm_start.aliases_callback_handler, pattern=r"^aliases:")
+    )
+    application.add_handler(
         CallbackQueryHandler(
             language.language_callback_handler, pattern=rf"^{re.escape(SET_LANGUAGE_PREFIX)}"
         )

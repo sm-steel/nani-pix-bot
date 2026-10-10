@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 import httpx
@@ -653,3 +654,44 @@ async def test_search_keeps_a_legitimately_sparse_entry_with_one_title_variant()
         results = await anilist.search(client, "frieren")
 
     assert [result.anilist_id for result in results] == [1]
+
+
+# --- MAL-id linking (issue #346)
+
+_FRIEREN_WITH_MAL = {
+    "id": 154587,
+    "idMal": 52991,
+    "title": {"romaji": "Sousou no Frieren", "english": None, "native": None},
+    "synonyms": [],
+    "startDate": {"year": 2023},
+}
+
+
+async def test_results_carry_the_mal_id() -> None:
+    async with httpx.AsyncClient(
+        transport=_responding(_media_payload([_FRIEREN_WITH_MAL]))
+    ) as client:
+        results = await anilist.search(client, "frieren")
+
+    assert results[0].mal_id == 52991
+
+
+async def test_get_by_mal_id_queries_by_id_mal() -> None:
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"data": {"Media": _FRIEREN_WITH_MAL}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await anilist.get_by_mal_id(client, 52991)
+
+    assert result is not None
+    assert result.anilist_id == 154587
+    assert sent[0]["variables"] == {"idMal": 52991}
+    assert "idMal: $idMal" in sent[0]["query"]
+
+
+async def test_get_by_mal_id_returns_none_when_anilist_has_no_such_entry() -> None:
+    async with httpx.AsyncClient(transport=_responding({"data": {"Media": None}})) as client:
+        assert await anilist.get_by_mal_id(client, 1) is None

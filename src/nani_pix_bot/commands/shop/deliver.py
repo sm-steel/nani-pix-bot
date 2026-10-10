@@ -18,12 +18,16 @@ from nani_pix_bot.services.game import TitleField
 
 
 def _letter_lines(
-    titles: list[tuple[TitleField, str]], pick: Callable[[str], str | None], lang: str
+    titles: list[tuple[TitleField, str]],
+    pick: Callable[..., str | None],
+    lang: str,
+    *,
+    numbers_matter: bool,
 ) -> list[str]:
-    """One bullet per title that has a letter or digit at all."""
+    """One bullet per title that has a letter at all."""
     lines = []
     for field, title in titles:
-        letter = pick(title)
+        letter = pick(title, numbers_matter=numbers_matter)
         if letter is None:
             continue
         field_name = i18n.t(f"title_field.{field.value}", lang)
@@ -32,7 +36,7 @@ def _letter_lines(
 
 
 def _shape_entries(
-    titles: list[tuple[TitleField, str]], owned: set[ClueKind], lang: str
+    titles: list[tuple[TitleField, str]], owned: set[ClueKind], lang: str, *, numbers_matter: bool
 ) -> list[str]:
     """One shape block per title, with the letters the buyer owns filled in."""
     return [
@@ -45,9 +49,10 @@ def _shape_entries(
                     title,
                     reveal_first=ClueKind.FIRST_LETTER in owned,
                     reveal_last=ClueKind.LAST_LETTER in owned,
+                    numbers_matter=numbers_matter,
                 )
             ),
-            lengths=", ".join(map(str, text.word_lengths(title))),
+            lengths=", ".join(map(str, text.word_lengths(title, numbers_matter=numbers_matter))),
         )
         for field, title in titles
     ]
@@ -62,10 +67,10 @@ def text_clue_message(game: Game, kind: ClueKind, owned: set[ClueKind], lang: st
         logger.error("no title for a {kind} clue", kind=kind.value, game_id=game.id)
         return i18n.t("shop.stale", lang)
     if kind is ClueKind.TITLE_SHAPE:
-        body = _shape_entries(titles, owned, lang)
+        body = _shape_entries(titles, owned, lang, numbers_matter=bool(game.numbers_matter))
     else:
         pick = text.first_char if kind is ClueKind.FIRST_LETTER else text.last_char
-        body = _letter_lines(titles, pick, lang)
+        body = _letter_lines(titles, pick, lang, numbers_matter=bool(game.numbers_matter))
     return "\n".join([i18n.t(f"clue.{kind.value}", lang), *body])
 
 

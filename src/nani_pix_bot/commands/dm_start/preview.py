@@ -20,6 +20,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _prefer_shikimori,
     _reject_stale_tap,
     _stage_preview,
+    numbers_toggle,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     BOUNTY_PRESETS,
@@ -31,6 +32,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA,
     PREVIEW_CHANGE_IMAGE_UPLOAD_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
+    PREVIEW_NUMBERS_CALLBACK_DATA,
     PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA,
     PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA,
     PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX,
@@ -405,8 +407,21 @@ def _back_to_preview(tap: _Tap) -> _Edit:
     """The same prompt and buttons the album's follow-up message started with."""
     return _Edit(
         i18n.t("dm_start.preview_confirm_prompt", tap.lang),
-        preview_keyboard(tap.lang, tap.game.pixel_algorithm),
+        preview_keyboard(tap.lang, tap.game.pixel_algorithm, numbers_toggle(tap.game)),
     )
+
+
+def _preview_numbers(tap: _Tap) -> _Edit:
+    """Flip the "numbers count" switch (issue #344) and redraw the buttons."""
+    game = tap.game
+    game.numbers_matter = not game.numbers_matter
+    logger.info(
+        "switched numbers to {state}",
+        state="counting" if game.numbers_matter else "ignored",
+        numbers_matter=game.numbers_matter,
+        game_id=game.id,
+    )
+    return _back_to_preview(tap)
 
 
 def _preview_pixel_algorithm_back(tap: _Tap) -> _Edit:
@@ -499,6 +514,7 @@ _BRANCHES: Mapping[str, Callable[[_Tap], _Edit]] = MappingProxyType(
         PREVIEW_PIXEL_ALGORITHM_BACK_CALLBACK_DATA: _preview_pixel_algorithm_back,
         PREVIEW_BOUNTY_CALLBACK_DATA: _preview_bounty,
         PREVIEW_BOUNTY_BACK_CALLBACK_DATA: _preview_bounty_back,
+        PREVIEW_NUMBERS_CALLBACK_DATA: _preview_numbers,
     }
 )
 

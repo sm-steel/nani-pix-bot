@@ -1448,3 +1448,64 @@ def test_activate_game_stamps_activated_at(session: Session) -> None:
 
     assert game.activated_at is not None
     assert game.activated_at >= before
+
+
+def test_clear_identification_resets_numbers_matter(session: Session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.commit()
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    game.numbers_matter = True
+
+    game_service.clear_identification(game)
+
+    assert game.numbers_matter is None
+
+
+def test_record_guess_ignores_numbers_by_default(session: Session) -> None:
+    game = _active_game(session)
+    game.title_english = "91 Days"
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+
+    outcome = game_service.record_guess(session, game, guesser_id=2, guess_text="days")
+
+    assert outcome is game_service.GuessOutcome.WON
+
+
+def test_record_guess_keeps_numbers_when_they_matter(session: Session) -> None:
+    game = _active_game(session)
+    game.title_english = "91 Days"
+    game.numbers_matter = True
+    session.add(Player(telegram_user_id=2))
+    session.commit()
+
+    assert (
+        game_service.record_guess(session, game, guesser_id=2, guess_text="days")
+        is not game_service.GuessOutcome.WON
+    )
+    assert (
+        game_service.record_guess(session, game, guesser_id=2, guess_text="91 days")
+        is game_service.GuessOutcome.WON
+    )
+
+
+def test_numbers_question_is_asked_once_for_a_number_heavy_title(session: Session) -> None:
+    game = _active_game(session)
+    game.title_english = "91 Days"
+    assert game_service.should_ask_if_numbers_matter(game)
+    game.numbers_matter = False
+    assert not game_service.should_ask_if_numbers_matter(game)
+
+
+def test_numbers_question_is_not_asked_for_titles_with_enough_letters(session: Session) -> None:
+    game = _active_game(session)
+    game.title_english = "Mob Psycho 100"
+    assert not game_service.should_ask_if_numbers_matter(game)
+    assert game_service.titles_have_numbers(game)
+
+
+def test_synonyms_alone_never_count_as_numbered_titles(session: Session) -> None:
+    game = _active_game(session)
+    game.synonyms = ["MP100"]
+    assert not game_service.titles_have_numbers(game)
+    assert not game_service.should_ask_if_numbers_matter(game)

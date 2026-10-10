@@ -58,6 +58,13 @@ stateDiagram-v2
         AwaitingPhotoChange --> Confirming: new photo sent
         Confirming --> AwaitingSynonym: tap "Add a synonym"
         AwaitingSynonym --> Confirming: synonym typed
+        PickingMethod --> PickingAliases: photo-first pick, more names\nfound on other providers
+        PickingScreenshot --> PickingAliases: same, found while\npicking the screenshot
+        PickingAliases --> AskingNumbers: Add / Skip,\nnumber-heavy title
+        PickingAliases --> Confirming: Add / Skip
+        PickingMethod --> AskingNumbers: number-heavy title\n("91 Days"), not yet answered
+        PickingScreenshot --> AskingNumbers: same
+        AskingNumbers --> Confirming: Yes / No tapped
     }
 
     SETUP --> [*]: 1h setup-abandon timer fires\n(row deleted, turn opens)\n— or /stop confirmed
@@ -375,6 +382,40 @@ before it goes live:
   of the old anime survives into the new one's accepted answers.
 - **Add a synonym** — type one more (or several); appended to the
   list, repeatable.
+- **🔢 Numbers count** ✅/⬜ — only when one of the titles has a digit.
+  Off by default: guessing ignores numbers (see "Guess matching"), so
+  `GITS` wins *GITS 2026*. On, the numbers are part of the answer for
+  this game — digits, ordinals and roman numerals all have to be in the
+  guess (fuzzily, like the rest), and the text clues hide digits as
+  letters (`_`) instead of showing them as `X`.
+
+**More names from other sites.** As soon as the anime is identified,
+the bot looks it up on the other providers too — linked by its
+MyAnimeList id (a Shikimori or Tenrai id is one; AniList reports its
+own), or, for a TMDB pick or manual entry, by a Tenrai entry whose title
+matches exactly (numbers included, so a different season is never
+taken). Every title and synonym they know that isn't accepted yet (at
+most 10) is offered right before the preview as checkboxes ☐/☑:
+**Add selected** makes the ticked ones accepted answers too, **Skip**
+adds none. The search runs in the background and never holds anything
+up: on the photo-first path the preview simply follows it (at most 5
+seconds later); on `/newgame` it runs while the creator picks a
+screenshot. If it fails for any reason, takes longer than that, finds
+nothing, or finishes after the preview is already up, the step is
+skipped and the preview shows as usual. Re-searching the title throws
+any suggestions away. "Add a synonym" on the preview still works for
+anything the search missed.
+
+**Do the numbers matter?** Right before the preview, a title that has a
+number and fewer than 5 letters once its numbers are gone (*91 Days*,
+*11eyes*, *18if*, *GITS 2026*) makes the bot ask the creator outright:
+**No, ignore them** (`days` wins *91 Days*) or **Yes, they count**
+(`91 days` is needed). The answer sets the switch above, which can still
+be flipped on the preview. It's asked once per identification —
+re-searching the title clears the answer, and the question comes back if
+the new title qualifies. A title made only of numbers (*22/7*) never
+asks: its numbers always count. Only the title fields are checked, not
+synonyms.
 - **Confirm and start game** — pixelates the (possibly updated)
   screenshot at **stage 1** and posts it into the group's game topic
   with a caption naming the starter and reminding everyone how to
@@ -412,8 +453,28 @@ consulted once, and its result (title variants — including the Russian
 title, if Shikimori was used — plus synonyms) is cached on the `Game`
 row for the rest of that round:
 
-1. Normalize both the guess and every cached title/synonym: lowercase,
-   strip punctuation and extra whitespace.
+1. Normalize both the guess and every cached title/synonym the same way:
+   - lowercase, with full-width characters folded to plain ones;
+   - every punctuation or symbol character (`: ; - × « » ・ ☆ °`…)
+     becomes a space, except apostrophes, which are dropped
+     (`Journey’s` → `journeys`);
+   - **numbers are ignored**: digits, ordinals as a whole (`2nd`,
+     `2-й`), standalone roman numerals I–XX, and the word *season*
+     (`season`/`сезон` in any form) are removed — so `GITS` is a correct
+     guess for *GITS 2026* and `GITS 2026` for *GITS*, and
+     `shingeki no kyojin` for *Shingeki no Kyojin Season 2*;
+   - extra whitespace collapsed.
+
+   If either side has nothing left once its numbers are gone — a title
+   made only of numbers like *22/7*, or a guess of just `2026` — both
+   are compared with their numbers kept instead (the season word still
+   goes). So `22/7`, `22 7` and `227` win *22/7*, while `2026` alone
+   never wins *GITS 2026*.
+
+   A game's creator can make the numbers count instead (the preview's
+   **🔢 Numbers count** switch, see "Starting a game"): then digits,
+   ordinals and roman numerals stay on both sides, so `days` no longer
+   wins *91 Days* but `91 days` does.
 2. Fuzzy-match the normalized guess against that normalized list with
    `rapidfuzz`, above a fixed similarity threshold defined as a named
    constant in `services/matching.py`.
@@ -441,6 +502,9 @@ with one of the round's titles/synonyms, the bot shows that title with
 only the matched words spelled out and every other word masked, e.g.
 `🔎 Partly right: _ _ _ _ _ _   _ _   Frieren`:
 
+- Numbers, ordinals, roman numerals and the word *season* are never
+  words to reveal or keep hidden — matching ignores them — and are masked
+  in the reveal like the title shape does (`X` for a digit).
 - Only guess words of at least 3 letters count (`of`, `no`, `to` never
   reveal anything), and the matched words must add up to at least the
   `/partialmatch` threshold in letters (default 4; `0` turns it off).
@@ -1527,11 +1591,22 @@ player's balance.
   title appears only when it is the fallback display title. Each line
   or block names its source (for example the English, romaji or Russian
   title), so a clue taken from a romanised title is not mistaken for the
-  Russian one. A letter or digit counts (so Cyrillic and kana work);
-  spaces and punctuation are not hidden. A title with no letter or digit
-  gets no line in the letter clues.
-- *Title shape* shows each title with every letter hidden as `_`, words
-  separated, plus the length of each word. It also shows the first and
+  Russian one. Only a **letter** counts (so Cyrillic and kana work);
+  since guessing ignores numbers, digits, an ordinal's suffix (`2nd`)
+  and the word *season* never count — the first letter of
+  *86: Eighty-Six* is **E**, the last of *Re:Zero 2nd Season* is **o**.
+  A title made only of numbers (*22/7*) is the exception: its digits
+  are what's guessed, so they count like letters (**2** and **7**) —
+  and so do every title's digits when the game's creator switched
+  **🔢 Numbers count** on.
+  Spaces and punctuation are not hidden. A title with nothing that
+  counts gets no line in the letter clues.
+- *Title shape* shows each title with every letter hidden as `_`, every
+  ignored digit as `X`, the word *season* and an ordinal's suffix
+  spelled out, punctuation as-is, words separated, plus the number of
+  hidden letters in each word: *GITS 2026* is `_ _ _ _   X X X X`,
+  *Re:Zero 2nd Season* is `_ _ : _ _ _ _   X n d   S e a s o n`, and
+  *22/7* is `_ _ / _` (its digits counting as letters). It also shows the first and
   last letter if the player has already bought them. Buying a letter
   *after* the shape re-sends the updated shape, so the player never has
   to piece the two together.

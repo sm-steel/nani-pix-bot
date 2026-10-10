@@ -53,12 +53,14 @@ Split across submodules by flow stage:
 This __init__ re-exports only the PTB handler entrypoints app.py
 registers — not a blanket re-export of every submodule's internals."""
 
+from nani_pix_bot.commands.dm_start.aliases import aliases_callback_handler
 from nani_pix_bot.commands.dm_start.intake import photo_handler
 from nani_pix_bot.commands.dm_start.mal_browse import (
     mal_list_page_callback_handler,
     mal_list_pick_callback_handler,
 )
 from nani_pix_bot.commands.dm_start.newgame import newgame_command
+from nani_pix_bot.commands.dm_start.numbers import numbers_callback_handler
 from nani_pix_bot.commands.dm_start.preview import preview_callback_handler
 from nani_pix_bot.commands.dm_start.screenshot_gallery import (
     screenshot_gallery_callback_handler,
@@ -76,10 +78,12 @@ from nani_pix_bot.commands.dm_start.search import (
 from nani_pix_bot.commands.dm_start.source_pick import screenshot_source_callback_handler
 
 __all__ = [
+    "aliases_callback_handler",
     "mal_list_page_callback_handler",
     "mal_list_pick_callback_handler",
     "method_pick_callback_handler",
     "newgame_command",
+    "numbers_callback_handler",
     "photo_handler",
     "pick_callback_handler",
     "preview_callback_handler",

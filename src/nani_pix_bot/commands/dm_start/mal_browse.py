@@ -37,13 +37,12 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start._shared import (
     SEARCH_SERVICE_ERRORS,
     _method_keyboard,
-    _post_preview_album,
     _reject_stale_tap,
     _reply_service_down,
     _reply_service_unavailable,
-    _stage_preview,
     client_for_source,
 )
+from nani_pix_bot.commands.dm_start.aliases import start_alias_search
 from nani_pix_bot.commands.dm_start.keyboards import (
     MalListPage,
     mal_list_keyboard,
@@ -428,7 +427,8 @@ async def mal_list_pick_callback_handler(
 
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
-        album = None
+        game_id = setup_game.id if setup_game is not None else None
+        has_image = False
         picker_prompt = None
         message_key = None
         if setup_game is not None:
@@ -444,8 +444,9 @@ async def mal_list_pick_callback_handler(
                 # only then identified it from their list, so sending them
                 # to "pick a screenshot source" would sideline the image
                 # they already gave us. Straight to the preview instead —
-                # exactly pick_callback_handler's has_image branch.
-                album = _stage_preview(session, setup_game, lang)
+                # exactly pick_callback_handler's has_image branch (the
+                # preview follows the alias search, see aliases.py).
+                has_image = True
                 message_key = "dm_start.preview_sent"
             else:
                 # Screenshot-less /newgame entry — pick a screenshot next.
@@ -456,13 +457,12 @@ async def mal_list_pick_callback_handler(
     # _post_preview_album's/send_screenshot_picker_prompt's docstrings
     # for why. `message_key` is None only on the stale-row path, where
     # nothing was staged at all.
-    if message_key is None:
+    if message_key is None or game_id is None:
         await _reject_stale_tap(query, lang)
         return
     await query.answer()
-    if album is not None:
-        await _post_preview_album(context, album, lang)
-    elif picker_prompt is not None:
+    start_alias_search(context, game_id, then_preview_in=lang if has_image else None)
+    if picker_prompt is not None:
         await send_screenshot_picker_prompt(context, picker_prompt, lang)
     await query.edit_message_text(i18n.t(message_key, lang))
 

@@ -7,9 +7,8 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
     _SYNONYM_SPLIT_RE,
-    _post_preview_album,
-    _stage_preview,
 )
+from nani_pix_bot.commands.dm_start.aliases import start_alias_search
 from nani_pix_bot.commands.dm_start.screenshots import (
     send_screenshot_picker_prompt,
     stage_screenshot_picker,
@@ -63,10 +62,11 @@ async def _manual_synonyms_step(
             title=title,
             game_id=setup_game.id,
         )
+        game_id = setup_game.id
         has_image = setup_game.original_image is not None
         if has_image:
-            # Traditional photo-first entry — image already in hand.
-            album = _stage_preview(session, setup_game, lang)
+            # Traditional photo-first entry — image already in hand. The
+            # preview follows the alias search (aliases.py).
             message_key = "dm_start.preview_sent"
         else:
             # Screenshot-less /newgame entry — no image in hand yet.
@@ -83,9 +83,8 @@ async def _manual_synonyms_step(
     # Block closed and committed above — see _post_preview_album's/
     # send_screenshot_picker_prompt's docstrings for why the send has to
     # happen after.
-    if has_image:
-        await _post_preview_album(context, album, lang)
-    else:
+    start_alias_search(context, game_id, then_preview_in=lang if has_image else None)
+    if not has_image:
         await send_screenshot_picker_prompt(context, picker_prompt, lang)
 
     await message.reply_text(i18n.t(message_key, lang))
