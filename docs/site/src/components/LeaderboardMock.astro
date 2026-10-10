@@ -1,0 +1,61 @@
+---
+// A /leaderboard reply as the bot renders it: the header, then a
+// # | player | 👑 wins | 💠 balance | 🏆 points table.
+import TelegramChat from './TelegramChat.astro';
+import TgMessage from './TgMessage.astro';
+
+interface Props {
+  label: string;
+  header: string;
+  player: string;
+}
+
+const { label, header, player } = Astro.props;
+const rows = [
+  ['hana', 42, 1310, 96],
+  ['kenji', 37, 980, 81],
+  ['mio', 21, 640, 55],
+  ['rei', 12, 415, 30],
+];
+---
+
+<TelegramChat label={label}>
+  <TgMessage out>/leaderboard</TgMessage>
+  <TgMessage from="nani-pix-bot">
+    <strong class="lb-header">{header}</strong>
+    <table class="lb-table">
+      <thead><tr><th>#</th><th>{player}</th><th>👑</th><th>💠</th><th>🏆</th></tr></thead>
+      <tbody>
+        {
+          rows.map((row, index) => (
+            <tr>
+              <td>{index + 1}</td>
+              {row.map((cell) => <td>{cell}</td>)}
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </TgMessage>
+</TelegramChat>
+
+<style>
+  .lb-header {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 1.1em;
+  }
+  .lb-table {
+    border-collapse: collapse;
+    font-size: 0.9em;
+  }
+  .lb-table th,
+  .lb-table td {
+    padding: 0.15rem 0.6rem;
+    border-bottom: 1px solid color-mix(in oklab, currentColor 20%, transparent);
+    text-align: end;
+  }
+  .lb-table :is(th, td):nth-child(2) {
+    text-align: start;
+  }
+</style>

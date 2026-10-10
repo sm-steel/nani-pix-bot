@@ -7,6 +7,13 @@ hero:
 ---
 import { CardGrid } from '@astrojs/starlight/components';
 import HomeCard from '../../components/HomeCard.astro';
+import { Image } from 'astro:assets';
+import FeatureBand from '../../components/FeatureBand.astro';
+import StageStrip from '../../components/StageStrip.astro';
+import LeaderboardMock from '../../components/LeaderboardMock.astro';
+import TelegramChat from '../../components/TelegramChat.astro';
+import TgMessage from '../../components/TgMessage.astro';
+import unlockGold from '../../assets/cards/unlock-gold.png';
 import PixelHero from '../../components/PixelHero.astro';
 
 <PixelHero />
@@ -16,3 +23,61 @@ import PixelHero from '../../components/PixelHero.astro';
   <HomeCard icon="admin" title="Run a group" description="Settings and commands for the group's admins." href="/nani-pix-bot/admins/setup/" />
   <HomeCard icon="host" title="Host it" description="Run your own copy of the bot with Docker." href="/nani-pix-bot/self-hosting/" />
 </CardGrid>
+
+<FeatureBand n={1} kicker="Stages" title="Watch it sharpen" href="/nani-pix-bot/players/guessing/" more="Guessing and stages" hue="#d99a2b">
+  Every round starts as a handful of chunky pixels. Each stage allows a few wrong guesses; once they're used up, the bot posts a clearer picture. Five stages take it from a blur to the real screenshot.
+
+  <StageStrip slot="visual" caption="Wrong guesses each stage allows, by default" />
+</FeatureBand>
+
+<FeatureBand n={2} kicker="Start a round" title="Any anime, any scene" href="/nani-pix-bot/players/starting-a-round/" more="Starting a round" hue="#8b6cf0" flip>
+  Send the bot a screenshot in a private chat, or type `/newgame` and pick one from Shikimori, Tenrai or TMDB. Then tell the bot which anime it is: search a site, pick it from your MyAnimeList list, or type the title yourself.
+
+  <TelegramChat slot="visual" label="Example: choosing how to identify the anime">
+    <TgMessage from="nani-pix-bot" buttons={[['AniList', 'Shikimori'], ['Tenrai', 'TMDB'], ['Manual entry'], ['My MAL List']]}>
+      How would you like to identify the anime?
+    </TgMessage>
+  </TelegramChat>
+</FeatureBand>
+
+<FeatureBand n={3} kicker="Guess" title="Guess together" href="/nani-pix-bot/players/how-a-round-ends/" more="How a round ends" hue="#26b3a3">
+  The whole group guesses with `/guess` in the game topic. Case, punctuation and small typos don't matter, and a near miss shows the words you got right. The first right answer wins, and the winner starts the next round.
+
+  <TelegramChat slot="visual" label="Example: guessing in the game topic">
+    <TgMessage out>/guess frieren the mage</TgMessage>
+    <TgMessage from="nani-pix-bot">🔎 Partly right: _ _ _ _ _ _ &nbsp; _ _ &nbsp; Frieren</TgMessage>
+    <TgMessage out>/guess sousou no frieren</TgMessage>
+    <TgMessage from="nani-pix-bot">🎉 @kenji got it! It was Sousou no Frieren. Your turn to start the next game!</TgMessage>
+  </TelegramChat>
+</FeatureBand>
+
+<FeatureBand n={4} kicker="Pixels" title="Earn pixels, buy clues" href="/nani-pix-bot/players/pixels-and-shop/" more="Pixels and the clue shop" hue="#e0609e" flip>
+  Wrong guesses, quick starts and wins all pay pixels. Spend them on private clues, like a letter, the title's shape or an extra screenshot, or add them to a round's bounty. A HARD MODE win pays double.
+
+  <TelegramChat slot="visual" label="Example: the clue shop">
+    <TgMessage from="nani-pix-bot" buttons={[['🔤 Last letter — 60 💠'], ['🔤 First letter — 100 💠'], ['📏 Title shape — 120 💠'], ['🖼 Extra screenshot — 150 💠'], ['🧩 Reveal a tile — 100 💠']]}>
+      🛒 Clue shop — balance: 340 💠
+    </TgMessage>
+  </TelegramChat>
+</FeatureBand>
+
+<FeatureBand n={5} kicker="Achievements" title="Collect achievements" href="/nani-pix-bot/players/achievements/" more="Achievements and titles" hue="#e8c547">
+  Winning, hosting and playing day after day all unlock achievements. They pay pixels and points, the best ones give you a title to show next to your name, and a few stay secret until someone earns them. Each unlock is announced with its own card.
+
+  <Image slot="visual" class="band-card" src={unlockGold} alt="An achievement card background: a girl in a kimono watching paper lanterns at night" width={720} />
+</FeatureBand>
+
+<FeatureBand n={6} kicker="Leaderboard" title="Climb the board" href="/nani-pix-bot/players/leaderboard-and-history/" more="Leaderboard and history" hue="#4aa3e8" flip>
+  The all-time leaderboard ranks everyone by wins. Weekly, monthly and yearly races crown their own champions, and `/history` keeps every finished round with all of its guesses.
+
+  <LeaderboardMock slot="visual" label="Example: the leaderboard" header="👑 Leaderboard" player="Player" />
+</FeatureBand>
+
+<FeatureBand n={7} kicker="Yours to tune" title="Make it your group's" href="/nani-pix-bot/admins/game-settings/" more="Game settings" hue="#e8794a">
+  Admins decide how forgiving each stage is, which language the bot speaks, when its quiet hours are and whether it starts rounds by itself. Want your own copy of the bot? It runs as a Docker Compose stack.
+
+  <div slot="visual" class="band-ctas">
+    <HomeCard icon="admin" title="Run a group" description="Settings and commands for the group's admins." href="/nani-pix-bot/admins/setup/" />
+    <HomeCard icon="host" title="Host it" description="Run your own copy of the bot with Docker." href="/nani-pix-bot/self-hosting/" />
+  </div>
+</FeatureBand>

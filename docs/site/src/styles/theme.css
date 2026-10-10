@@ -79,3 +79,24 @@ h1#_top {
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+/* Home feature bands: their tints run past the content column to the window
+   edges, so keep that overflow from adding a sideways scroll. */
+html:has(.feature-band),
+body:has(.feature-band) {
+  overflow-x: clip;
+}
+.feature-band .band-card {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  box-shadow: 0 0 0 4px var(--band-hue);
+}
+.feature-band .band-ctas {
+  display: grid;
+  gap: 1rem;
+}
+.feature-band .tg-chat {
+  margin: 0;
+}
