@@ -196,7 +196,7 @@
   "timezone.current": "Ваш часовой пояс: {tz}. Выберите другой ниже или отправьте /timezone <название IANA>, например /timezone Asia/Novosibirsk.",
   "timezone.unset": "Вы ещё не указали часовой пояс. Выберите его ниже или отправьте /timezone <название IANA>, например /timezone Asia/Novosibirsk.",
   "timezone.invalid": "Неизвестный часовой пояс «{tz}». Используйте название IANA, например Europe/Moscow или Asia/Novosibirsk.",
-  "timezone.set": "Часовой пояс: {tz} (сейчас там {local_time}). Время в /quiethours будет считаться по нему.",
+  "timezone.set": "Часовой пояс: {tz} (сейчас там {local_time}). Время в /quiethours и /season будет считаться по нему.",
   "quiethours.off": "🌙 Тихие часы выключены. Включить: /quiethours ЧЧ:ММ ЧЧ:ММ по вашему времени, например /quiethours 23:00 08:00.",
   "quiethours.status": "🌙 Тихие часы: {start}–{end} {tz} ({utc_start}–{utc_end} UTC). В это время бот не публикует автоматические сообщения, а игровые таймеры стоят на паузе. Выключить: /quiethours off.",
   "quiethours.set": "🌙 Тихие часы установлены: {start}–{end} {tz} ({utc_start}–{utc_end} UTC). В это время бот не публикует автоматические сообщения, а игровые таймеры стоят на паузе.",

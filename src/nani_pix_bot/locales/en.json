@@ -196,7 +196,7 @@
   "timezone.current": "Your timezone: {tz}. Pick another below, or send /timezone <IANA name>, e.g. /timezone Asia/Novosibirsk.",
   "timezone.unset": "You haven't set a timezone yet. Pick one below, or send /timezone <IANA name>, e.g. /timezone Asia/Novosibirsk.",
   "timezone.invalid": "Unknown timezone “{tz}”. Use an IANA name like Europe/Moscow or Asia/Novosibirsk.",
-  "timezone.set": "Timezone set to {tz} (it's {local_time} there now). /quiethours times you enter will use it.",
+  "timezone.set": "Timezone set to {tz} (it's {local_time} there now). Times you enter in /quiethours and /season will use it.",
   "quiethours.off": "🌙 Quiet hours are off. Set them with /quiethours HH:MM HH:MM in your own timezone, e.g. /quiethours 23:00 08:00.",
   "quiethours.status": "🌙 Quiet hours: {start}–{end} {tz} ({utc_start}–{utc_end} UTC). During them the bot holds back its automatic posts and game clocks are paused. Turn off with /quiethours off.",
   "quiethours.set": "🌙 Quiet hours set: {start}–{end} {tz} ({utc_start}–{utc_end} UTC). During them the bot holds back its automatic posts and game clocks are paused.",
