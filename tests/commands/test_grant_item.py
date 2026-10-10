@@ -113,6 +113,42 @@ async def test_non_admin_is_refused(session_factory) -> None:
     assert _reply_text(update) == i18n.t("commands.admins_only", "EN")
 
 
+def _warnings(log_records) -> list:
+    return [r for r in log_records if r.level == "WARNING"]
+
+
+async def test_usage_refusal_logs_a_warning(session_factory, log_records) -> None:
+    await _run(session_factory, ["@bob"])
+    (line,) = _warnings(log_records)
+    assert line.extra["args"] == ["@bob"]
+
+
+async def test_unknown_player_logs_a_warning(session_factory, log_records) -> None:
+    await _run(session_factory, ["@ghost", ITEM_ID])
+    (line,) = _warnings(log_records)
+    assert line.extra["target_username"] == "ghost"
+
+
+async def test_unknown_item_logs_a_warning(session_factory, log_records) -> None:
+    await _run(session_factory, ["@bob", "demo_1/name_flair.nope"])
+    (line,) = _warnings(log_records)
+    assert line.extra["item_id"] == "demo_1/name_flair.nope"
+
+
+async def test_already_owned_logs_a_warning(session_factory, log_records) -> None:
+    await _run(session_factory, ["@bob", ITEM_ID])
+    log_records.clear()
+    await _run(session_factory, ["@bob", ITEM_ID])
+    (line,) = _warnings(log_records)
+    assert line.extra["item_id"] == ITEM_ID
+    assert line.extra["target_id"] == TARGET
+
+
+async def test_non_admin_logs_a_warning(session_factory, log_records) -> None:
+    await _run(session_factory, ["@bob", ITEM_ID], admin=False)
+    assert len(_warnings(log_records)) == 1
+
+
 @pytest.mark.parametrize("args", [[], ["@bob"], ["@bob", ITEM_ID, "extra"]])
 async def test_bad_argument_count_shows_usage(session_factory, args) -> None:
     update = await _run(session_factory, args)

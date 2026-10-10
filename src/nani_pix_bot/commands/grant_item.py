@@ -21,7 +21,7 @@ async def grant_item_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     lang = gate.lang
     args = context.args or []
     if len(args) != 2:
-        logger.info("sent /grantitem with bad args {args!r} — replied with usage", args=args)
+        logger.warning("sent /grantitem with bad args {args!r} — replied with usage", args=args)
         await gate.message.reply_text(i18n.t("grant_item.usage", lang))
         return
     username, item_id = args[0].lstrip("@"), args[1]
@@ -43,6 +43,13 @@ async def grant_item_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 session, player.telegram_user_id, ItemGrant(item_id, ItemSource.ADMIN)
             )
             key = "grant_item.granted" if created else "grant_item.already_owned"
+            if not created:
+                logger.warning(
+                    "/grantitem refused: {target} already owns {item_id}",
+                    target=players.describe_player_id(session, player.telegram_user_id),
+                    target_id=player.telegram_user_id,
+                    item_id=item_id,
+                )
             text = i18n.t(
                 key,
                 lang,

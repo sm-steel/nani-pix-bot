@@ -406,7 +406,7 @@
   "grant_item.usage": "Использование: /grantitem @username <id предмета>, например /grantitem @bob sakura_1/name_flair.blossom",
   "grant_item.unknown_player": "Я пока не знаю @{username}.",
   "grant_item.unknown_item": "Предмета {item_id} не существует.",
-  "grant_item.granted": "Выдано: {item} ({item_id}) — {player}.",
+  "grant_item.granted": "Выдан предмет {item} ({item_id}) игроку {player}.",
   "grant_item.already_owned": "У {player} уже есть {item} ({item_id}).",
   "refund.none": "У @{username} нет покупок подсказок для возврата.",
   "refund.list_header": "Покупки подсказок @{username} — нажмите, чтобы вернуть (стр. {page}/{pages}):",
