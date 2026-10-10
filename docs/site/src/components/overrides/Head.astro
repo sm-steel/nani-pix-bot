@@ -4,7 +4,10 @@
 // English page, unless the visitor already chose a language with the picker.
 import Default from '@astrojs/starlight/components/Head.astro';
 
-const isRoot = Astro.locals.starlightRoute.locale === undefined;
+// Never redirect from the 404 page: it is built once, at the root, and GitHub
+// Pages serves it for every missing path, /ru/ ones included.
+const { locale, entry } = Astro.locals.starlightRoute;
+const isRoot = locale === undefined && entry.id !== '404';
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 ---
 
@@ -21,7 +24,8 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
       navigator.language ||
       ''
     ).toLowerCase();
-    if (isRoot && stored === null && first.startsWith('ru')) {
+    const underRu = location.pathname.startsWith(`${base}/ru/`);
+    if (isRoot && !underRu && stored === null && first.startsWith('ru')) {
       const path = location.pathname.startsWith(base)
         ? location.pathname.slice(base.length)
         : location.pathname;
