@@ -1,8 +1,11 @@
+import pytest
+
 from nani_pix_bot.services.matching import (
     PartialMatch,
     best_score,
     is_match,
     normalize,
+    normalize_for_match,
     partial_match,
     rank_by_similarity,
 )
@@ -108,7 +111,7 @@ def test_is_match_names_the_guess_on_every_per_candidate_line(log_records) -> No
         assert line.message.startswith("'Mai Otome Zwei' (normalized 'mai otome zwei') vs ")
         assert line.extra["guess"] == "Mai Otome Zwei"
         assert line.extra["normalized"] == "mai otome zwei"
-        assert line.extra["candidate_normalized"] in {"maiotome 0 sifr", "maiotome zero"}
+        assert line.extra["candidate_normalized"] in {"mai otome s ifr", "mai otome zero"}
 
 
 TITLES = ["Buddy Complex: Kanketsu-hen", "Buddy Complex: Into the Skies of Tomorrow"]
@@ -173,3 +176,108 @@ def test_best_score_is_the_highest_ratio_against_any_candidate() -> None:
 def test_best_score_is_zero_for_an_empty_guess_or_no_candidates() -> None:
     assert best_score("   ", ["Frieren"]) == 0.0
     assert best_score("frieren", [None, ""]) == 0.0
+
+
+# --- Numbers, ordinals, roman numerals, season words, symbols (issues #341, #342)
+
+# Built with chr() so the look-alike characters stay explicit in the source.
+_TIMES = chr(0xD7)  # multiplication sign, as in "Spy x Family"
+_RIGHT_QUOTE = chr(0x2019)  # typographic apostrophe
+
+
+def _fullwidth(text: str) -> str:
+    return "".join(chr(0x3000) if c == " " else chr(ord(c) + 0xFEE0) for c in text)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("GITS 2026", "gits"),
+        (_fullwidth("GITS 2026"), "gits"),
+        ("Mob Psycho 100 III", "mob psycho"),
+        ("Re:Zero 2nd Season", "re zero"),
+        ("Ghost in the Shell: S.A.C. 2nd GIG", "ghost in the shell s a c gig"),
+        ("«Атака титанов» 2-й сезон", "атака титанов"),
+        ("Атака титанов: Сезона 3", "атака титанов"),
+        (f"Spy{_TIMES}Family", "spy family"),
+        (f"Frieren: Beyond Journey{_RIGHT_QUOTE}s End", "frieren beyond journeys end"),
+        ("Gintama°", "gintama"),
+        ("Hunter x Hunter (2011)", "hunter hunter"),
+        ("5-toubun no Hanayome", "toubun no hanayome"),
+        ("Ranma ½", "ranma"),
+        ("86 -エイティシックス-", "エイティシックス"),
+        ("22/7", ""),
+    ],
+)
+def test_normalize_for_match_drops_numbers_season_words_and_symbols(text, expected) -> None:
+    assert normalize_for_match(text) == expected
+
+
+def test_normalize_for_match_can_keep_numbers() -> None:
+    assert normalize_for_match("22/7", keep_numbers=True) == "22 7"
+    assert normalize_for_match("Overlord II Season 2", keep_numbers=True) == "overlord ii 2"
+
+
+@pytest.mark.parametrize(
+    ("guess", "title"),
+    [
+        ("GITS", "GITS 2026"),
+        ("GITS 2026", "GITS"),
+        ("gits 2025", "GITS 2026"),
+        ("mob psycho", "Mob Psycho 100"),
+        ("mob psycho 100", "Mob Psycho 100 III"),
+        ("steins gate", "Steins;Gate 0"),
+        ("steinsgate", "Steins;Gate 0"),
+        ("ghost in the shell sac 2nd gig", "Ghost in the Shell: S.A.C. 2nd GIG"),
+        ("re zero", "Re:Zero 2nd Season"),
+        ("hunter x hunter", "Hunter x Hunter (2011)"),
+        ("gundam", "Gundam 00"),
+        ("overlord", "Overlord II"),
+        ("code geass r", "Code Geass R2"),
+        ("spy family", f"Spy{_TIMES}Family"),
+        ("spyfamily", f"Spy{_TIMES}Family"),
+        ("frieren beyond journeys end", f"Frieren: Beyond Journey{_RIGHT_QUOTE}s End"),
+        ("shingeki no kyojin", "Shingeki no Kyojin Season 2"),
+        ("атака титанов", "Атака титанов 2 сезон"),
+        ("атака титанов", "«Атака титанов» 2-й сезон"),
+        ("gits", _fullwidth("GITS 2026")),
+        ("22/7", "22/7"),
+        ("22 7", "22/7"),
+        ("227", "22/7"),
+        ("86", "86"),
+    ],
+)
+def test_is_match_ignores_numbers(guess, title) -> None:
+    assert is_match(guess, [title])
+
+
+@pytest.mark.parametrize(
+    ("guess", "title"),
+    [
+        ("2026", "GITS 2026"),
+        ("season", "Shingeki no Kyojin Season 2"),
+        ("22/8", "22/7"),
+        ("gits", "22/7"),
+        ("mob psycho", "Mob Talker 100"),
+    ],
+)
+def test_is_match_still_rejects_wrong_guesses_around_numbers(guess, title) -> None:
+    assert not is_match(guess, [title])
+
+
+def test_best_score_ignores_numbers_too() -> None:
+    assert best_score("GITS", ["GITS 2026"]) == 100.0
+    assert best_score("2026", ["GITS 2026"]) < 85.0
+
+
+def test_partial_match_never_counts_number_or_season_words() -> None:
+    # "100" is not a word to reveal; "psycho" alone is 6 letters.
+    assert partial_match("psycho 100", ["Mob Psycho 100"], min_letters=4) == PartialMatch(
+        "Mob Psycho 100", (1,)
+    )
+    assert partial_match("season 2026", ["Shingeki no Kyojin Season 2"], min_letters=1) is None
+
+
+def test_partial_match_numbers_never_count_as_hidden_words() -> None:
+    # Every letter-bearing word guessed names the title, even with "2026" left out.
+    assert partial_match("ghost stories", ["Ghost Stories 2026"], min_letters=4) is None
