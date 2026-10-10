@@ -4,6 +4,8 @@ description: Name a winner the bot missed, refund a clue, and stop a round.
 sidebar:
   order: 4
 ---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
 
 ## Naming a winner
 
@@ -17,20 +19,85 @@ two fixes:
   on every post about the round, and in `/history`.
 
 `/setwinner` turns the round into a normal win: the winner gets the usual reward
-plus a small bonus, and the bot announces it in the game topic. On an open HARD MODE
-vote, it closes the vote with that winner. It doesn't change whose turn it is, and it
-can't name the bot or the round's creator.
+for the stage the round ended at, plus a bonus for the wait (`disputed_win_bonus`,
+30 💠 by default, see [Game settings](/nani-pix-bot/admins/game-settings/#every-key)),
+and the bot announces it in the game topic.
+
+<TelegramChat label="Example: naming the winner of an unsolved round, in a private message">
+  <TgMessage out>/setwinner 142 @kenji</TgMessage>
+  <TgMessage from="nani-pix-bot">✅ @kenji is now the winner of game #142.</TgMessage>
+</TelegramChat>
+
+<TelegramChat label="Example: the announcement in the game topic">
+  <TgMessage from="nani-pix-bot">
+    🛠 An admin reviewed game #142: @kenji was right after all — it was Whisper of the Heart.
+
+    💠 +15 for @kenji
+
+    🤝 @kenji gets +30 💠 for the wait.
+  </TgMessage>
+</TelegramChat>
+
+What happens next depends on the round:
+
+- **An unsolved round** stays where the turn already is: `/setwinner` doesn't hand
+  the winner the turn. There's no bounty to pay either, because the bounty went
+  back to its contributors when the round ended. HARD MODE cashback that clue
+  buyers already got stays theirs.
+- **An open HARD MODE vote** closes right away with that winner, just as if the
+  group had voted for them. The winner gets the HARD MODE reward, the bonus, the
+  whole bounty and the next turn, and the bot posts "🛠 An admin closed the vote:
+  @kenji was right! It was Whisper of the Heart — that's a HARD MODE win (+2 to
+  the score). Your turn to start the next game!"
+
+The bot refuses when it can't do it:
+
+| Situation | The bot's reply |
+|---|---|
+| No round with that number | There's no game #142. |
+| The round didn't end unsolved and has no open vote (it was won, or is still running) | Game #142 isn't unsolved (or open for a vote), so it can't be re-finished. |
+| You named the bot | The bot can't be the winner. |
+| You named the player who started the round | The game's own starter can't be its winner. |
+| The bot hasn't seen that player yet | I don't know @kenji yet. |
 
 ## Refunding a clue
 
-`/refund @username` lists that player's clue purchases, newest first. Pick one to
-refund it in full; the player gets a message saying so. For a HARD MODE round where
-the player already got part of their spend back, the bot only refunds the rest, and
-shows you the amount before you confirm.
+`/refund @username` lists that player's clue purchases, newest first, five to a
+page, with ◀ and ▶ to page through. Each button shows the game number, the clue,
+what the player paid for it and the date. Tap one, check the amount, and confirm.
+
+<TelegramChat label="Example: refunding a clue">
+  <TgMessage out>/refund @yuki</TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['#142 · title shape · 120 💠 · 2026-10-08'], ['#139 · first letter · 100 💠 · 2026-10-05'], ['#139 · last letter · 60 💠 · 2026-10-05']]}>
+    Clue purchases of @yuki — tap one to refund (page 1/1):
+  </TgMessage>
+  <TgMessage from="nani-pix-bot" buttons={[['✅ Refund', 'Cancel']]}>
+    Refund 120 💠 to @yuki for their title shape clue in game #142?
+  </TgMessage>
+  <TgMessage from="nani-pix-bot">✅ Refunded 120 💠 to @yuki.</TgMessage>
+</TelegramChat>
+
+The list, the question and the result are all the same message, which changes as
+you tap. **Cancel** leaves the purchase alone ("Refund canceled."). The player
+gets a private message from the bot:
+
+<TelegramChat label="Example: what the player receives">
+  <TgMessage from="nani-pix-bot">💠 You were refunded 120 💠 for your title shape clue in game #142.</TgMessage>
+</TelegramChat>
+
+A purchase can only be refunded once. If it was refunded in the meantime (by
+another admin, or by tapping an old list), the bot answers "That purchase was
+already refunded." For a HARD MODE round where the player already got part of
+their spend back as cashback, the bot only refunds the rest, and the question
+names the amount kept back before you confirm.
 
 ## Stopping a round
 
-Any admin can stop the current round, including one the bot started, with `/stop`
-in a private message. You can stop it quietly or reveal the answer. Clues and the
-bounty are refunded, and the turn opens to everyone. See
+Any admin can stop the current round with `/stop` in a private message. You can
+stop it quietly or, while the round is being played, reveal the answer. Clues and
+the bounty are refunded, and the turn opens to everyone. See
 [How a round ends](/nani-pix-bot/players/how-a-round-ends/#stopping-a-round).
+
+- **A round the bot started** has no host, so only an admin can stop it.
+- **During a HARD MODE vote**, `/stop` cancels the vote too. Nobody wins, and the
+  clues and the bounty go back to whoever paid for them.
