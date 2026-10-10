@@ -5,3 +5,4 @@
 - 🔎 When you set up a game, the bot looks the anime up on the other sites too and offers any names it's missing as checkboxes — tick the ones that should also count as a correct guess.
 - 📖 There's now an illustrated guide, in English and Russian, covering how to play, every command and how to run your own bot: https://sm-steel.github.io/nani-pix-bot/
 - 👮 Admins can schedule and manage seasons with `/season` (seasons themselves arrive in a later update).
+- 🎁 Admins can hand out season cosmetics with `/grantitem`.

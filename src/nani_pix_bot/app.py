@@ -32,6 +32,7 @@ from nani_pix_bot.commands import (
     dm_start,
     game_flow,
     gamesenabled,
+    grant_item,
     history,
     language,
     leaderboard,
@@ -373,6 +374,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("timezone", quiet_hours.timezone_command))
     application.add_handler(CommandHandler("quiethours", quiet_hours.quiethours_command))
     application.add_handler(CommandHandler("season", season.season_command))
+    application.add_handler(CommandHandler("grantitem", grant_item.grant_item_command))
     application.add_handler(CommandHandler("version", version.version_command))
     application.add_handler(CommandHandler("achievements", achievements.achievements_command))
     application.add_handler(CommandHandler("standings", standings.standings_command))
