@@ -196,6 +196,30 @@ async def test_preview_confirm_reserves_the_reveal_slot_and_starts_the_pre_rende
         assert slot.image_choice is None
 
 
+async def test_preview_confirm_reserves_the_starters_equipped_transition(
+    session_factory, equip_transition, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(preview.reveal, "start_pregeneration", MagicMock())
+    monkeypatch.setattr(reveal_store, "pick_effect", lambda: RevealEffect.GLITCH)
+    _staged_setup_game(session_factory)
+    with session_factory() as session:
+        equip_transition(session, 1)
+        session.commit()
+    update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_callback_context(session_factory)
+    context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        slot = reveal_store.load(session)
+        assert slot is not None
+        assert slot.effect == RevealEffect.IRIS
+
+
 async def test_preview_confirm_replaces_an_older_reveal_slot(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:

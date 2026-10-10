@@ -145,3 +145,10 @@ def equip_frame(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, 
     """`equip_frame(session, player_id)` gives the player the fake run's
     "simple_border" host frame and equips it."""
     yield from _equipper(monkeypatch, "demo_1/host_frame.border")
+
+
+@pytest.fixture
+def equip_transition(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
+    """`equip_transition(session, player_id)` gives the player the fake run's
+    "iris" host transition and equips it."""
+    yield from _equipper(monkeypatch, "demo_1/host_transition.iris")

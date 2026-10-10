@@ -27,6 +27,7 @@ from nani_pix_bot.models.enums import GameStatus, RevealStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services.cosmetics import reveal_choice
 from nani_pix_bot.services.players import describe_person
 from nani_pix_bot.services.reveal import pipeline, store
 
@@ -210,7 +211,9 @@ def _restore_plan(session: Session) -> _Restore | None:
     if live is None or live.status != GameStatus.ACTIVE:
         return None
     image_choice = store.pick_image() if live.hard_mode else None
-    store.reserve(session, live.id, store.pick_effect(), image_choice)
+    store.reserve(
+        session, live.id, reveal_choice.effect_for(session, live.starter_id), image_choice
+    )
     logger.info("backfilled the reveal of the running game", game_id=live.id)
     return _Restore(live.id)
 

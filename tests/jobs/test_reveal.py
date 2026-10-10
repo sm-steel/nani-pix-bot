@@ -251,6 +251,22 @@ async def test_reload_backfills_a_game_that_was_already_running(
     assert [(r.level, r.extra.get("game_id")) for r in backfill] == [("INFO", game_id)]
 
 
+async def test_reload_backfills_with_the_starters_equipped_transition(
+    session_factory, equip_transition, monkeypatch
+) -> None:
+    monkeypatch.setattr(pipeline, "pregenerate", MagicMock(return_value=PREGEN))
+    monkeypatch.setattr(store, "pick_effect", lambda: RevealEffect.GLITCH)
+    _game(session_factory)
+    with session_factory() as session:
+        equip_transition(session, 1)
+        session.commit()
+    await reveal.reload_on_startup(_application(session_factory))
+    with session_scope(session_factory) as session:
+        row = store.load(session)
+        assert row is not None
+        assert row.effect == RevealEffect.IRIS
+
+
 async def test_reload_backfills_a_hard_mode_game_with_an_image_choice(
     session_factory, monkeypatch
 ) -> None:

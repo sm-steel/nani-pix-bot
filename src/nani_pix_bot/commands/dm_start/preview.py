@@ -64,7 +64,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.cosmetics import flair
+from nani_pix_bot.services.cosmetics import flair, reveal_choice
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty, earning, wallet
 from nani_pix_bot.services.reveal import store as reveal_store
@@ -120,7 +120,7 @@ def _activate_and_stage_first_post(
     )
     caption += game_service.game_id_line(game.id, lang)
     game_service.activate_game(session, game)
-    reveal_store.reserve(session, game.id, reveal_store.pick_effect(), None)
+    reveal_store.reserve(session, game.id, reveal_choice.effect_for(session, game.starter_id), None)
     prompt_bonus = earning.award_prompt_start(session, game)
     if prompt_bonus:
         caption += "\n" + i18n.t(
