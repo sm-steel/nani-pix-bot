@@ -394,8 +394,9 @@ def set_screenshot_provider_id(
 
 def clear_identification(game: Game) -> None:
     """Forget which anime a still-SETUP game was identified as: every
-    title variant, the synonyms, every provider id, and the creator's
-    "numbers matter" answer (it was about the old titles).
+    title variant, the synonyms, every provider id, the creator's
+    "numbers matter" answer and any alias suggestions (both were about
+    the old titles).
 
     Each provider's result fills in only its own subset of these (only
     Shikimori has `title_russian`, only AniList/Tenrai/TMDB have
@@ -421,6 +422,7 @@ def clear_identification(game: Game) -> None:
     game.tenrai_id = None
     game.tmdb_id = None
     game.numbers_matter = None
+    game.alias_suggestions = None
 
 
 def stage_manual_entry(game: Game, *, title: str, synonyms: list[str]) -> None:

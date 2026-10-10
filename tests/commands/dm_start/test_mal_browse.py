@@ -29,6 +29,7 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, mal_link
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.search.tenrai import TenraiResult
+from tests.commands.dm_start.conftest import run_background
 
 _ENCRYPTION_KEY = Fernet.generate_key().decode()
 
@@ -497,7 +498,7 @@ async def test_pick_rejects_a_stale_tap_with_no_setup_game_left(
 
 
 async def test_pick_shows_the_preview_when_a_screenshot_was_already_uploaded(
-    session_factory, monkeypatch: pytest.MonkeyPatch
+    session_factory, monkeypatch: pytest.MonkeyPatch, background_tasks
 ) -> None:
     """Photo-first entry: the starter uploaded a screenshot and only then
     identified it from their MAL list. Sending them to "pick a screenshot
@@ -515,6 +516,7 @@ async def test_pick_shows_the_preview_when_a_screenshot_was_already_uploaded(
     await mal_browse.mal_list_pick_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
+    await run_background(background_tasks)
 
     context.bot.send_media_group.assert_awaited_once()
     assert update.callback_query.edit_message_text.await_args.args[0] == i18n.t(

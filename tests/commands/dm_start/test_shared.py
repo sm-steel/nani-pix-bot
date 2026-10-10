@@ -5,6 +5,7 @@ import pytest
 
 from nani_pix_bot.commands.dm_start import _shared
 from nani_pix_bot.commands.dm_start._shared import _search_and_build_keyboard
+from nani_pix_bot.commands.dm_start.keyboards import numbers_question_keyboard
 from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
@@ -108,7 +109,7 @@ def test_a_number_heavy_title_asks_whether_numbers_matter_first(session) -> None
     staged = _shared._stage_preview(session, game, "en")
 
     assert game.setup_step is SetupStep.ASKING_NUMBERS
-    assert isinstance(staged, _shared._NumbersQuestion)
+    assert isinstance(staged, _shared._SetupQuestion)
     assert "91 Days" in staged.text
 
 
@@ -136,7 +137,8 @@ async def test_the_numbers_question_is_sent_instead_of_the_album() -> None:
     context.bot.send_media_group = AsyncMock()
     context.bot.send_message = AsyncMock()
 
-    await _shared._post_preview_album(context, _shared._NumbersQuestion(1, "question?"), "en")
+    question = _shared._SetupQuestion(1, "question?", numbers_question_keyboard("en"))
+    await _shared._post_preview_album(context, question, "en")
 
     context.bot.send_media_group.assert_not_awaited()
     sent = context.bot.send_message.await_args_list[0].kwargs
@@ -158,3 +160,25 @@ def test_resuming_on_the_numbers_question_reshows_it(session) -> None:
 
 def test_every_setup_step_has_a_screen_to_resume_on() -> None:
     assert set(_shared._SETUP_SCREENS) == set(SetupStep)
+
+
+def test_found_names_are_offered_before_the_numbers_question(session) -> None:
+    game = _setup_game(session)
+    game.title_english = "91 Days"
+    game.alias_suggestions = [{"text": "Ninety-One Days", "selected": False}]
+
+    staged = _shared._stage_preview(session, game, "en")
+
+    assert game.setup_step is SetupStep.PICKING_ALIASES
+    assert isinstance(staged, _shared._SetupQuestion)
+    labels = [b.text for row in staged.reply_markup.inline_keyboard for b in row]
+    assert "☐ Ninety-One Days" in labels
+
+
+def test_no_suggestions_left_goes_on_to_the_preview(session) -> None:
+    game = _setup_game(session)
+    game.alias_suggestions = []
+
+    staged = _shared._stage_preview(session, game, "en")
+
+    assert isinstance(staged, _shared._PreviewAlbum)

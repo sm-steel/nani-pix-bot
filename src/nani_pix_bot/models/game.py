@@ -53,6 +53,12 @@ class Game(Base):
     # the "do the numbers matter?" question is still to be asked. See
     # MECHANICS.md's "Guess matching" and "Starting a game".
     numbers_matter: Mapped[bool | None] = mapped_column(default=None)
+    # More names for the anime found on the other providers during setup
+    # (issues #347/#348), as [{"text": ..., "selected": bool}] for the
+    # creator's checkbox step. None while the background search hasn't
+    # reported (or never ran); [] once it found nothing or the creator is
+    # done with them. Only meaningful while status is SETUP.
+    alias_suggestions: Mapped[list[dict] | None] = mapped_column(JSON, default=None)
     # Provider URL(s) of the image(s) in play — the extra-screenshot clue never
     # sells one of these. None for an uploaded photo.
     shown_screenshot_urls: Mapped[list[str] | None] = mapped_column(JSON, default=None)

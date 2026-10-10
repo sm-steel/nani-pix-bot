@@ -58,6 +58,10 @@ stateDiagram-v2
         AwaitingPhotoChange --> Confirming: new photo sent
         Confirming --> AwaitingSynonym: tap "Add a synonym"
         AwaitingSynonym --> Confirming: synonym typed
+        PickingMethod --> PickingAliases: photo-first pick, more names\nfound on other providers
+        PickingScreenshot --> PickingAliases: same, found while\npicking the screenshot
+        PickingAliases --> AskingNumbers: Add / Skip,\nnumber-heavy title
+        PickingAliases --> Confirming: Add / Skip
         PickingMethod --> AskingNumbers: number-heavy title\n("91 Days"), not yet answered
         PickingScreenshot --> AskingNumbers: same
         AskingNumbers --> Confirming: Yes / No tapped
@@ -384,6 +388,23 @@ before it goes live:
   this game — digits, ordinals and roman numerals all have to be in the
   guess (fuzzily, like the rest), and the text clues hide digits as
   letters (`_`) instead of showing them as `X`.
+
+**More names from other sites.** As soon as the anime is identified,
+the bot looks it up on the other providers too — linked by its
+MyAnimeList id (a Shikimori or Tenrai id is one; AniList reports its
+own), or, for a TMDB pick or manual entry, by a Tenrai entry whose title
+matches exactly (numbers included, so a different season is never
+taken). Every title and synonym they know that isn't accepted yet (at
+most 10) is offered right before the preview as checkboxes ☐/☑:
+**Add selected** makes the ticked ones accepted answers too, **Skip**
+adds none. The search runs in the background and never holds anything
+up: on the photo-first path the preview simply follows it (at most 5
+seconds later); on `/newgame` it runs while the creator picks a
+screenshot. If it fails for any reason, takes longer than that, finds
+nothing, or finishes after the preview is already up, the step is
+skipped and the preview shows as usual. Re-searching the title throws
+any suggestions away. "Add a synonym" on the preview still works for
+anything the search missed.
 
 **Do the numbers matter?** Right before the preview, a title that has a
 number and fewer than 5 letters once its numbers are gone (*91 Days*,

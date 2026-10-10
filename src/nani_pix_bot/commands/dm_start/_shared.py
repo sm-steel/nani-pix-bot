@@ -13,6 +13,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start.keyboards import (
+    aliases_keyboard,
     method_selection_keyboard,
     numbers_question_keyboard,
     preview_keyboard,
@@ -265,6 +266,13 @@ def _asking_numbers_screen(game: Game, lang: str, _context) -> _SetupScreen:
     return numbers_question_text(game, lang), numbers_question_keyboard(lang)
 
 
+def _picking_aliases_screen(game: Game, lang: str, _context) -> _SetupScreen:
+    return (
+        i18n.t("dm_start.alias_prompt", lang),
+        aliases_keyboard(lang, game.alias_suggestions or []),
+    )
+
+
 def _prompt_only(key: str) -> Callable[..., _SetupScreen]:
     return lambda _game, lang, _context: (i18n.t(key, lang), None)
 
@@ -276,6 +284,7 @@ _SETUP_SCREENS: dict[SetupStep, Callable[..., _SetupScreen]] = {
     SetupStep.PICKING_SCREENSHOT: _picking_screenshot_screen,
     SetupStep.CONFIRMING: _confirming_screen,
     SetupStep.ASKING_NUMBERS: _asking_numbers_screen,
+    SetupStep.PICKING_ALIASES: _picking_aliases_screen,
     SetupStep.AWAITING_PHOTO_CHANGE: _prompt_only("dm_start.ask_new_photo"),
     SetupStep.AWAITING_SYNONYM: _prompt_only("dm_start.ask_extra_synonym"),
 }
@@ -522,13 +531,15 @@ class _PreviewAlbum:
 
 
 @dataclass(frozen=True)
-class _NumbersQuestion:
+class _SetupQuestion:
     """What _post_preview_album sends instead of the album when the
-    creator is first asked whether the title's numbers matter (issue
-    #345) — the album follows once they answer."""
+    creator has something to answer first — which suggested names to
+    accept too (issue #348), or whether the title's numbers matter
+    (issue #345). The album follows once they answer."""
 
     starter_id: int
     text: str
+    reply_markup: InlineKeyboardMarkup
 
 
 def numbers_toggle(game: Game) -> bool | None:
@@ -539,6 +550,35 @@ def numbers_toggle(game: Game) -> bool | None:
 
 def numbers_question_text(game: Game, lang: str) -> str:
     return i18n.t("dm_start.numbers_question", lang, title=game_service.display_title(game, lang))
+
+
+def _pending_question(game: Game, lang: str) -> _SetupQuestion | None:
+    """The question the creator still has to answer before the preview,
+    moving the game to its step — or None if there's none left."""
+    if game.alias_suggestions:
+        game.setup_step = SetupStep.PICKING_ALIASES
+        logger.info(
+            "offering {count} more name(s) found on other providers: {names}",
+            count=len(game.alias_suggestions),
+            names=[suggestion["text"] for suggestion in game.alias_suggestions],
+            game_id=game.id,
+        )
+        return _SetupQuestion(
+            game.starter_id,
+            i18n.t("dm_start.alias_prompt", lang),
+            aliases_keyboard(lang, game.alias_suggestions),
+        )
+    if game_service.should_ask_if_numbers_matter(game):
+        game.setup_step = SetupStep.ASKING_NUMBERS
+        logger.info(
+            "asking whether the numbers in {title!r} matter",
+            title=game_service.display_title(game, lang),
+            game_id=game.id,
+        )
+        return _SetupQuestion(
+            game.starter_id, numbers_question_text(game, lang), numbers_question_keyboard(lang)
+        )
+    return None
 
 
 def _render_preview(album: _PreviewAlbum) -> list[InputMediaPhoto]:
@@ -552,7 +592,7 @@ def _render_preview(album: _PreviewAlbum) -> list[InputMediaPhoto]:
     ]
 
 
-def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum | _NumbersQuestion:
+def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum | _SetupQuestion:
     """DB-phase half of showing the starter a private preview of every
     pixelation stage for the staged title/synonyms: builds the album
     (blockiest to clearest, see MECHANICS.md) and moves the game to
@@ -568,20 +608,16 @@ def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum | _NumbersQu
     (screenshot_gallery.py's pick), hence living here rather than in
     preview.py.
 
-    For a number-heavy title whose creator hasn't been asked yet, it
-    stops one step short: the game moves to ASKING_NUMBERS and the
-    question comes back instead of the album (issue #345); answering it
-    (numbers.py) runs this again."""
+    When the creator still has something to answer first — suggested
+    names from other providers (aliases.py), or whether a number-heavy
+    title's numbers matter (numbers.py) — it stops one step short: the
+    game moves to that step and the question comes back instead of the
+    album (_pending_question). Answering it runs this again."""
     if game.original_image is None:
         raise RuntimeError("game.original_image is None in _stage_preview")
-    if game_service.should_ask_if_numbers_matter(game):
-        game.setup_step = SetupStep.ASKING_NUMBERS
-        logger.info(
-            "asking whether the numbers in {title!r} matter",
-            title=game_service.display_title(game, lang),
-            game_id=game.id,
-        )
-        return _NumbersQuestion(starter_id=game.starter_id, text=numbers_question_text(game, lang))
+    question = _pending_question(game, lang)
+    if question is not None:
+        return question
     original_bytes = game.original_image
     config = stage_config.get_stage_configs(session)
     title = game_service.display_title(game, lang)
@@ -617,7 +653,7 @@ def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum | _NumbersQu
 
 
 async def _post_preview_album(
-    context: ContextTypes.DEFAULT_TYPE, album: _PreviewAlbum | _NumbersQuestion, lang: str
+    context: ContextTypes.DEFAULT_TYPE, album: _PreviewAlbum | _SetupQuestion, lang: str
 ) -> None:
     """Network-phase half: no DB access, safe to call after the caller's
     session_scope has committed and closed. Renders the five stages in a
@@ -638,11 +674,9 @@ async def _post_preview_album(
     principle). Letting it raise keeps the already-committed mutation
     intact either way and surfaces the failure the normal way, via PTB's
     own error handler."""
-    if isinstance(album, _NumbersQuestion):
+    if isinstance(album, _SetupQuestion):
         await context.bot.send_message(
-            chat_id=album.starter_id,
-            text=album.text,
-            reply_markup=numbers_question_keyboard(lang),
+            chat_id=album.starter_id, text=album.text, reply_markup=album.reply_markup
         )
         return
     media = await asyncio.to_thread(_render_preview, album)

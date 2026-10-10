@@ -84,6 +84,13 @@ PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX = "preview:algo:pick:"
 PREVIEW_NUMBERS_CALLBACK_DATA = "preview:numbers"
 NUMBERS_YES_CALLBACK_DATA = "numbers:yes"
 NUMBERS_NO_CALLBACK_DATA = "numbers:no"
+# The alias-suggestion checkboxes (issue #348). A toggle carries the
+# suggestion's index, not its text: callback data is capped at 64 bytes.
+ALIASES_TOGGLE_PREFIX = "aliases:toggle:"
+ALIASES_DONE_CALLBACK_DATA = "aliases:done"
+ALIASES_SKIP_CALLBACK_DATA = "aliases:skip"
+# Longest suggestion shown whole on its button.
+ALIAS_LABEL_MAX = 40
 PREVIEW_BOUNTY_CALLBACK_DATA = "preview:bounty"
 PREVIEW_BOUNTY_BACK_CALLBACK_DATA = "preview:bounty:back"
 PREVIEW_BOUNTY_PICK_PREFIX = "preview:bounty:pick:"
@@ -439,6 +446,38 @@ def preview_keyboard(
             ]
         )
     return InlineKeyboardMarkup([*rows, [pixel_algorithm], [bounty]])
+
+
+def _alias_label(suggestion: dict) -> str:
+    text = str(suggestion["text"])
+    if len(text) > ALIAS_LABEL_MAX:
+        text = text[: ALIAS_LABEL_MAX - 1] + "…"
+    return f"{'☑' if suggestion['selected'] else '☐'} {text}"
+
+
+def aliases_keyboard(lang: str, suggestions: list[dict]) -> InlineKeyboardMarkup:
+    """One checkbox row per suggested name, then "Add selected" and "Skip"."""
+    rows = [
+        [
+            InlineKeyboardButton(
+                _alias_label(suggestion), callback_data=f"{ALIASES_TOGGLE_PREFIX}{index}"
+            )
+        ]
+        for index, suggestion in enumerate(suggestions)
+    ]
+    selected = sum(1 for suggestion in suggestions if suggestion["selected"])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                i18n.t("keyboards.aliases_skip", lang), callback_data=ALIASES_SKIP_CALLBACK_DATA
+            ),
+            InlineKeyboardButton(
+                i18n.t("keyboards.aliases_add", lang, count=selected),
+                callback_data=ALIASES_DONE_CALLBACK_DATA,
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(rows)
 
 
 def numbers_question_keyboard(lang: str) -> InlineKeyboardMarkup:

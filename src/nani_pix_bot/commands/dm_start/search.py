@@ -16,15 +16,14 @@ from nani_pix_bot.commands.dm_start._shared import (
     SEARCH_SERVICE_ERRORS,
     _method_keyboard,
     _method_prompt_key,
-    _post_preview_album,
     _prefer_shikimori,
     _reject_stale_tap,
     _reply_service_down,
     _search_and_build_keyboard,
-    _stage_preview,
     _stored_provider,
     client_for_source,
 )
+from nani_pix_bot.commands.dm_start.aliases import start_alias_search
 from nani_pix_bot.commands.dm_start.keyboards import (
     METHOD_BACK_CALLBACK_DATA,
     SEARCH_RETRY_CALLBACK_DATA,
@@ -408,10 +407,11 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             provider_id=external_id,
             game_id=setup_game.id,
         )
+        game_id = setup_game.id
         has_image = setup_game.original_image is not None
         if has_image:
-            # Traditional photo-first entry — image already in hand.
-            album = _stage_preview(session, setup_game, lang)
+            # Traditional photo-first entry — image already in hand. The
+            # preview follows the alias search (aliases.py).
             message_key = "dm_start.preview_sent"
         else:
             # Screenshot-less /newgame entry — pick a screenshot next.
@@ -421,9 +421,8 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     # send_screenshot_picker_prompt's docstrings for why the sends,
     # this tap's answer included, have to happen after (issue #292).
     await query.answer()
-    if has_image:
-        await _post_preview_album(context, album, lang)
-    else:
+    start_alias_search(context, game_id, then_preview_in=lang if has_image else None)
+    if not has_image:
         await send_screenshot_picker_prompt(context, picker_prompt, lang)
 
     await query.edit_message_text(i18n.t(message_key, lang))

@@ -312,6 +312,10 @@ class SetupStep(enum.Enum):
     # bot asks whether its numbers matter (issue #345). Exited by either
     # answer, straight to CONFIRMING.
     ASKING_NUMBERS = "asking_numbers"
+    # Right before the preview (and the numbers question), when the
+    # background search found more names on other providers: the creator
+    # ticks which to accept too (issue #348). Exited by "Add" or "Skip".
+    PICKING_ALIASES = "picking_aliases"
     CONFIRMING = "confirming"  # showing the preview, waiting for a button tap
 
 
