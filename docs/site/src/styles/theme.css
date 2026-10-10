@@ -1,0 +1,54 @@
+/* Pixel-anime theme for the user's guide (issue #360), with colours taken
+   from the gold-sunset / violet card art. Starlight tokens:
+   https://starlight.astro.build/guides/css-and-tailwind/#theming */
+:root {
+  --sl-font: 'Inter Variable', system-ui, sans-serif;
+  --guide-font-display: 'Pixelify Sans', var(--sl-font);
+  --sl-color-accent-low: #3a2a0c;
+  --sl-color-accent: #d99a2b;
+  --sl-color-accent-high: #fde6b0;
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #eceaf4;
+  --sl-color-gray-2: #c4c0d6;
+  --sl-color-gray-3: #9590ae;
+  --sl-color-gray-4: #5d5878;
+  --sl-color-gray-5: #3d3856;
+  --sl-color-gray-6: #2a2540;
+  --sl-color-black: #18152a;
+}
+:root[data-theme='light'] {
+  --sl-color-accent-low: #e4dcf7;
+  --sl-color-accent: #5b3fa8;
+  --sl-color-accent-high: #2d1b63;
+  --sl-color-white: #18152a;
+  --sl-color-gray-1: #2a2540;
+  --sl-color-gray-2: #3d3856;
+  --sl-color-gray-3: #5d5878;
+  --sl-color-gray-4: #9590ae;
+  --sl-color-gray-5: #c4c0d6;
+  --sl-color-gray-6: #eceaf4;
+  --sl-color-gray-7: #f6f4fb;
+  --sl-color-black: #ffffff;
+}
+
+.site-title,
+.sl-markdown-content :is(h1, h2, h3),
+h1#_top {
+  font-family: var(--guide-font-display);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* Splash home: centre the hero text above the PixelHero banner. */
+.hero {
+  justify-items: center;
+  text-align: center;
+  padding-bottom: 1.5rem;
+}
+.hero .copy,
+.hero .stack {
+  align-items: center;
+}
+.hero .tagline {
+  text-align: center;
+}

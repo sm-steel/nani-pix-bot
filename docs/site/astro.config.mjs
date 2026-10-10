@@ -32,6 +32,12 @@ export default defineConfig({
         { label: 'Group admins', translations: { ru: 'Админам группы' }, items: [{ autogenerate: { directory: 'admins' } }] },
         { label: 'Self-hosting', translations: { ru: 'Свой сервер' }, items: [{ autogenerate: { directory: 'self-hosting' } }] },
       ],
+      customCss: [
+        '@fontsource-variable/inter',
+        '@fontsource/pixelify-sans/400.css',
+        '@fontsource/pixelify-sans/600.css',
+        './src/styles/theme.css',
+      ],
       components: { Head: './src/components/overrides/Head.astro' },
       plugins: [starlightLinksValidator()],
     }),
