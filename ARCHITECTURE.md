@@ -895,10 +895,14 @@ assets/          # fonts/ (bundled Noto Sans, OFL) and backgrounds/
                    # <unlock/rarity | podium/period>/n.png, optional card
                    # backgrounds (prompts: docs/card-backgrounds.md)
 migrations/       # Alembic migrations
-tests/            # mirrors src/ layout
-scripts/          # one-off / operational scripts, if any turn out to be needed
+tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
+                   # (EN/RU page parity, every command in its command table)
+scripts/          # one-off / operational scripts: qlty_smells_gate.py (pre-commit),
+                   # gen_docs_stages.py (the guide's pixelation-stage images)
+docs/site/        # the user's guide (Astro Starlight, EN + RU), published to
+                   # GitHub Pages by docs.yml together with mal-callback.html
 Dockerfile, docker-compose.yml   # bot + mariadb, see "Infrastructure" above
-mise.toml, mise.lock  # pinned machine tools (static ffmpeg) + their sha256s, for local dev, CI and the image
+mise.toml, mise.lock  # pinned machine tools (static ffmpeg, Node for docs/site) + their sha256s, for local dev, CI and the image
 ```
 
 `Provider.screenshot_module`/`search_module` resolve to real

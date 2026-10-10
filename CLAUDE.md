@@ -438,6 +438,21 @@ or after a release. The rules (what qualifies, the voice, condensing, not
 capping) and the rotation into `previous-releases-*.md` are in
 [`docs/release-notes.md`](docs/release-notes.md).
 
+## User's guide
+
+The player/admin/self-hoster guide lives in `docs/site/` (Astro Starlight,
+published to https://sm-steel.github.io/nani-pix-bot/ from `master` by
+`docs.yml`). **Every PR into `develop` that changes behavior a player, admin
+or self-hoster could notice updates the matching guide pages in
+`docs/site/src/content/docs/` (English) and `…/docs/ru/` (Russian) in that
+same PR**, the same rule as release notes. `MECHANICS.md` stays the
+developer spec; the guide is its player-language counterpart.
+`tests/docs/` fails CI when a page exists in one language only or a
+registered command is missing from the command reference. Content links are
+absolute and include the `/nani-pix-bot/` base (the links validator rejects
+relative ones). Preview with `npm run dev` in `docs/site/` (Node comes from
+`mise.toml`); `npm run build` also validates every internal link.
+
 ## Coding practices
 
 - **KISS.** This is a small social game for one group chat, not a
