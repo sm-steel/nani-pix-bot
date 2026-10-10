@@ -4,6 +4,11 @@
 [settings]
 locked = true
 
+# Node runs the user's guide site build in docs/site (issue #357). The
+# Dockerfile installs ffmpeg alone, so Node never enters the bot image.
+[tools]
+node = "24.21.0"
+
 # ffmpeg/ffprobe: BtbN's static GPL build of ffmpeg 7.1.1 (libx264 built in).
 [tools."github:BtbN/FFmpeg-Builds"]
 version = "autobuild-2025-08-31-13-00"

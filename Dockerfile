@@ -3,6 +3,7 @@
 # local dev and CI install. This stage installs it with a pinned,
 # checksum-verified mise in locked mode, which fails on any download that
 # doesn't match the lockfile; only the two static binaries leave the stage.
+# Only ffmpeg is installed here; mise.toml's Node is for the docs site.
 FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim AS ffmpeg
 
 # Bump MISE_VERSION and the sha256 together (from the release's SHASUMS256.txt).
@@ -15,7 +16,7 @@ WORKDIR /tools
 ENV MISE_DATA_DIR=/opt/mise \
     MISE_TRUSTED_CONFIG_PATHS=/tools
 COPY mise.toml mise.lock ./
-RUN mise install --locked \
+RUN mise install --locked github:BtbN/FFmpeg-Builds \
     && mkdir /out \
     && cp "$(mise where github:BtbN/FFmpeg-Builds)/bin/ffmpeg" \
           "$(mise where github:BtbN/FFmpeg-Builds)/bin/ffprobe" /out/
