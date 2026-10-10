@@ -30,6 +30,7 @@ from nani_pix_bot.models.period import PeriodResult as PeriodResult
 from nani_pix_bot.models.period import PeriodState as PeriodState
 from nani_pix_bot.models.player import Player as Player
 from nani_pix_bot.models.reveal_video import RevealVideo as RevealVideo
+from nani_pix_bot.models.season import SeasonResult as SeasonResult
 from nani_pix_bot.models.season import SeasonSchedule as SeasonSchedule
 from nani_pix_bot.models.season import SeasonXp as SeasonXp
 from nani_pix_bot.models.stage_config import StageConfig as StageConfig

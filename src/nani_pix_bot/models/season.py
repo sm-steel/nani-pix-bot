@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import BigInteger, ForeignKey, String
+from sqlalchemy import BigInteger, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nani_pix_bot.models.base import Base
@@ -44,3 +44,17 @@ class SeasonXp(Base):
     source: Mapped[XpSource] = mapped_column(String(XP_SOURCE_LENGTH))
     game_id: Mapped[int | None] = mapped_column(default=None, index=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+
+class SeasonResult(Base):
+    """A finished season's frozen standings (seasons spec §2), one row per
+    player with XP, written when the season finalizes."""
+
+    __tablename__ = "season_results"
+    __table_args__ = (UniqueConstraint("season_id", "player_id", name="uq_season_result_player"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    season_id: Mapped[int] = mapped_column(ForeignKey("season_schedule.id"), index=True)
+    player_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("players.telegram_user_id"))
+    rank: Mapped[int]
+    xp: Mapped[int]
