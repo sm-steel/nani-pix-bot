@@ -404,6 +404,9 @@ class OutboxKind(enum.StrEnum):
 
     UNLOCK = "unlock"
     PERIOD_SUMMARY = "period_summary"
+    SEASON_TEASER = "season_teaser"
+    SEASON_START = "season_start"
+    SEASON_END = "season_end"
 
 
 class PeriodType(enum.StrEnum):

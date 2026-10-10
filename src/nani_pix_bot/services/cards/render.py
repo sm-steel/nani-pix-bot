@@ -481,3 +481,41 @@ def render_podium_card(card: PodiumCard, background: bytes | None = None) -> byt
     for slot in podium_slots(tuple(entry.rank for entry in card.entries)):
         _podium_entry(image, card.entries[slot.entry], slot)
     return _png(image)
+
+
+@dataclass(frozen=True)
+class SeasonBanner:
+    headline: str
+    title: str
+    subtitle: str
+
+
+def render_season_banner(card: SeasonBanner, background: bytes | None = None) -> bytes:
+    """A season's teaser/start/end card: the run's key visual (when it has
+    one) under the podium veil, headline, season name, dates."""
+    image = _canvas(background, _podium_shade())
+    draw = ImageDraw.Draw(image)
+    width = _WIDTH - 2 * _MARGIN
+    draw.text(
+        (_WIDTH / 2, 70),
+        _fit(draw, card.headline, font(40), width),
+        font=font(40),
+        fill=_MUTED,
+        anchor="mm",
+    )
+    title_font = font(84, bold=True)
+    draw.text(
+        (_WIDTH / 2, _HEIGHT / 2),
+        _fit(draw, card.title, title_font, width),
+        font=title_font,
+        fill=_TEXT,
+        anchor="mm",
+    )
+    draw.text(
+        (_WIDTH / 2, _HEIGHT - 90),
+        _fit(draw, card.subtitle, font(40), width),
+        font=font(40),
+        fill=_TEXT,
+        anchor="mm",
+    )
+    return _png(image)

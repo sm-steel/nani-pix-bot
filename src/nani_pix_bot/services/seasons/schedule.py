@@ -10,10 +10,11 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import SeasonStatus
+from nani_pix_bot.models.enums import OutboxKind, SeasonStatus
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import SeasonRun
+from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.events import as_utc
 
 OPEN_STATUSES = (SeasonStatus.SCHEDULED, SeasonStatus.ACTIVE, SeasonStatus.CLOSING)
@@ -108,6 +109,7 @@ def schedule(session: Session, request: ScheduleRequest, now: datetime) -> Seaso
     )
     session.add(row)
     session.flush()
+    outbox.enqueue_season(session, OutboxKind.SEASON_TEASER, row.id)
     logger.info(
         "scheduled season {run_id} for {start} to {end}",
         run_id=run_id,
@@ -124,6 +126,7 @@ def set_start(session: Session, start_at: datetime, now: datetime) -> SeasonSche
         raise ScheduleRefusedError(Refusal.NOT_SCHEDULED)
     _check_window(start_at, as_utc(row.end_at), now)
     row.start_at = start_at
+    outbox.enqueue_season(session, OutboxKind.SEASON_TEASER, row.id)
     logger.info(
         "moved season start to {start}",
         start=start_at.isoformat(),
@@ -139,6 +142,7 @@ def set_end(session: Session, end_at: datetime, now: datetime) -> SeasonSchedule
         raise ScheduleRefusedError(Refusal.ALREADY_ENDING)
     if row.status == SeasonStatus.SCHEDULED:
         _check_window(as_utc(row.start_at), end_at, now)
+        outbox.enqueue_season(session, OutboxKind.SEASON_TEASER, row.id)
     else:
         end_at = max(end_at, now)  # running: an end in the past means "now"
     row.end_at = end_at

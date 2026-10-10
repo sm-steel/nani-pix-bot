@@ -385,3 +385,12 @@ def test_a_six_entry_podium_renders() -> None:
     assert _open(cards.render_podium_card(cards.PodiumCard("Champions", entries))).size == (
         cards.CARD_SIZE
     )
+
+
+def test_season_banner_renders_a_png_with_and_without_background() -> None:
+    from nani_pix_bot.services.cards import SeasonBanner, render_season_banner
+
+    card = SeasonBanner(
+        headline="Season starts", title="Demo Season", subtitle="01.11 \u2013 11.11"
+    )
+    assert render_season_banner(card)[:8] == b"\x89PNG\r\n\x1a\n"

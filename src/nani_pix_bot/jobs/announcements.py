@@ -14,6 +14,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from itertools import groupby
 from typing import TypedDict
+from zoneinfo import ZoneInfo
 
 from loguru import logger
 from sqlalchemy.orm import Session, sessionmaker
@@ -27,17 +28,25 @@ from nani_pix_bot.jobs.timers._shared import job_log_scope
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.announcement import AnnouncementOutbox
 from nani_pix_bot.models.enums import OutboxKind, Rarity
+from nani_pix_bot.models.season import SeasonSchedule
+from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.services import i18n, players, quiet_hours, settings
 from nani_pix_bot.services.achievements import catalogue, names, outbox, podium
 from nani_pix_bot.services.cards import (
     PodiumCard,
+    SeasonBanner,
     UnlockCard,
     load_background,
     podium_slot,
     render_podium_card,
+    render_season_banner,
     render_unlock_card,
+    season_background,
     unlock_slot,
 )
+from nani_pix_bot.services.events import as_utc
+from nani_pix_bot.services.seasons import lifecycle
 
 OUTBOX_JOB_NAME = "announcement_outbox"
 OUTBOX_POLL_SECONDS = 20
@@ -55,10 +64,11 @@ class _Where(TypedDict):
 class Post:
     row_ids: tuple[int, ...]
     text: str
-    card: UnlockCard | PodiumCard | None = None
+    card: UnlockCard | PodiumCard | SeasonBanner | None = None
     avatar_ids: tuple[int, ...] = ()
     batch_id: int | None = None
     background_slot: str | None = None
+    background: bytes | None = None
 
 
 def _card_text(text: str) -> str:
@@ -125,9 +135,63 @@ def _period_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post |
     )
 
 
+def _local(at: datetime, tz: ZoneInfo) -> str:
+    return as_utc(at).astimezone(tz).strftime("%d.%m %H:%M")
+
+
+def _season_lines(
+    session: Session, kind: OutboxKind, season: SeasonSchedule, run: SeasonRun, lang: str
+) -> list[str]:
+    tz = settings.get_group_timezone(session)
+    when = {"start": _local(season.start_at, tz), "end": _local(season.end_at, tz), "tz": tz.key}
+    lines = [i18n.t(f"season.post.{kind.value}", lang, name=run.name(lang), **when)]
+    if kind is OutboxKind.SEASON_START and run.gate is not None:
+        rule = run.gate.description.get(lang) or run.gate.description["EN"]
+        lines.append(i18n.t("season.post.gate", lang, rule=rule))
+    if kind is OutboxKind.SEASON_END:
+        lines.extend(
+            i18n.t(
+                "season.post.podium_line",
+                lang,
+                rank=placed.rank,
+                player=players.display_name(session, placed.player_id),
+                xp=placed.xp,
+            )
+            for placed in lifecycle.podium(session, season.id)[:3]
+        )
+    return lines
+
+
+def _season_post(
+    kind: OutboxKind,
+) -> Callable[[Session, AnnouncementOutbox, str], Post | None]:
+    def render(session: Session, row: AnnouncementOutbox, lang: str) -> Post | None:
+        season = session.get(SeasonSchedule, row.payload["season_id"])
+        run = registry.get(season.run_id) if season is not None else None
+        if season is None or run is None:
+            return None
+        tz = settings.get_group_timezone(session)
+        banner = SeasonBanner(
+            headline=i18n.t(f"card.season.{kind.value}", lang),
+            title=run.name(lang),
+            subtitle=f"{_local(season.start_at, tz)} \u2013 {_local(season.end_at, tz)} ({tz.key})",
+        )
+        return Post(
+            (row.id,),
+            "\n".join(_season_lines(session, kind, season, run, lang)),
+            banner,
+            background=season_background(season.run_id),
+        )
+
+    return render
+
+
 RENDERERS: dict[OutboxKind, Callable[[Session, AnnouncementOutbox, str], Post | None]] = {
     OutboxKind.UNLOCK: _unlock_post,
     OutboxKind.PERIOD_SUMMARY: _period_post,
+    OutboxKind.SEASON_TEASER: _season_post(OutboxKind.SEASON_TEASER),
+    OutboxKind.SEASON_START: _season_post(OutboxKind.SEASON_START),
+    OutboxKind.SEASON_END: _season_post(OutboxKind.SEASON_END),
 }
 
 
@@ -194,10 +258,14 @@ def _draw(post: Post, faces: list[bytes | None]) -> bytes:
     """Render the post's card on a worker thread: background lookup included."""
     slot = post.background_slot
     seed = post.avatar_ids[0] if post.avatar_ids else 0
-    background = load_background(slot, seed) if slot else None
+    background = post.background
+    if background is None and slot:
+        background = load_background(slot, seed)
     card = post.card
     if isinstance(card, UnlockCard):
         return render_unlock_card(card, faces[0] if faces else None, background)
+    if isinstance(card, SeasonBanner):
+        return render_season_banner(card, background)
     if isinstance(card, PodiumCard):
         entries = tuple(replace(e, avatar=a) for e, a in zip(card.entries, faces, strict=False))
         return render_podium_card(replace(card, entries=entries), background)

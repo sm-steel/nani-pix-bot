@@ -670,5 +670,13 @@
   "champion.win.period.week": "this week",
   "champion.win.period.month": "this month",
   "champion.win.period.year": "this year",
-  "champion.win.host": "🌟 Host {host}: +{gain} {unit}"
+  "champion.win.host": "🌟 Host {host}: +{gain} {unit}",
+  "season.post.season_teaser": "📅 Season «{name}» is coming: {start} – {end} ({tz}).",
+  "season.post.season_start": "🌸 Season «{name}» has started! It runs until {end} ({tz}).",
+  "season.post.season_end": "🎬 Season «{name}» has ended. Top Season XP:",
+  "season.post.gate": "This season only anime that are {rule} can be played.",
+  "season.post.podium_line": "{rank}. {player} — {xp} XP",
+  "card.season.season_teaser": "Coming soon",
+  "card.season.season_start": "Season started",
+  "card.season.season_end": "Season over"
 }

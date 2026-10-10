@@ -670,5 +670,13 @@
   "champion.win.period.week": "за неделю",
   "champion.win.period.month": "за месяц",
   "champion.win.period.year": "за год",
-  "champion.win.host": "🌟 Ведущий {host}: +{gain} {unit}"
+  "champion.win.host": "🌟 Ведущий {host}: +{gain} {unit}",
+  "season.post.season_teaser": "📅 Скоро сезон «{name}»: {start} – {end} ({tz}).",
+  "season.post.season_start": "🌸 Сезон «{name}» начался! Он идёт до {end} ({tz}).",
+  "season.post.season_end": "🎬 Сезон «{name}» завершён. Лучшие по сезонному опыту:",
+  "season.post.gate": "В этом сезоне играем только аниме, которые {rule}.",
+  "season.post.podium_line": "{rank}. {player} — {xp} XP",
+  "card.season.season_teaser": "Скоро",
+  "card.season.season_start": "Сезон начался",
+  "card.season.season_end": "Сезон завершён"
 }

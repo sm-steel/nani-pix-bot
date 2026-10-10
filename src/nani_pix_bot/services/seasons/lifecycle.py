@@ -10,9 +10,10 @@ from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import EventType, GameStatus, SeasonStatus
+from nani_pix_bot.models.enums import EventType, GameStatus, OutboxKind, SeasonStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
+from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.events import LoggedEvent, as_utc
 from nani_pix_bot.services.seasons import schedule, xp
 
@@ -51,6 +52,7 @@ def _finalize(session: Session, row: SeasonSchedule, now: datetime) -> Transitio
         )
     row.ended_at = now
     session.flush()
+    outbox.enqueue_season(session, OutboxKind.SEASON_END, row.id)
     return _move(row, SeasonStatus.ENDED)
 
 
@@ -62,6 +64,7 @@ def advance(session: Session, now: datetime) -> list[Transition]:
     if row.status == SeasonStatus.SCHEDULED and as_utc(row.start_at) <= now:
         row.started_at = now
         done.append(_move(row, SeasonStatus.ACTIVE))
+        outbox.enqueue_season(session, OutboxKind.SEASON_START, row.id)
     if row.status == SeasonStatus.ACTIVE and as_utc(row.end_at) <= now:
         done.append(_move(row, SeasonStatus.CLOSING))
     if row.status == SeasonStatus.CLOSING:
