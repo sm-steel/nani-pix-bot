@@ -40,6 +40,7 @@ from nani_pix_bot.commands import (
     partialmatch,
     quiet_hours,
     refund,
+    season,
     setautostart,
     setwinner,
     shop,
@@ -371,6 +372,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("setautostart", setautostart.setautostart_command))
     application.add_handler(CommandHandler("timezone", quiet_hours.timezone_command))
     application.add_handler(CommandHandler("quiethours", quiet_hours.quiethours_command))
+    application.add_handler(CommandHandler("season", season.season_command))
     application.add_handler(CommandHandler("version", version.version_command))
     application.add_handler(CommandHandler("achievements", achievements.achievements_command))
     application.add_handler(CommandHandler("standings", standings.standings_command))

@@ -1,0 +1,50 @@
+---
+title: Scheduling seasons
+description: Plan, move and cancel a season with /season.
+sidebar:
+  order: 5
+---
+
+A season is a limited-time event with its own rules and standings. The full
+player-facing page comes later; this page is for scheduling one.
+
+`/season` works in a DM with the bot, for group admins only.
+
+## Your time zone
+
+Dates are typed in **your own time zone**, the one you set with `/timezone` (see
+[Automatic rounds and quiet hours](/nani-pix-bot/admins/schedule/)). Without one, `/season`
+asks you to set it first. Every reply shows the dates back in that zone.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `/season` | Shows the current season, the seasons held before it and the ones you can still schedule |
+| `/season schedule <run> <YYYY-MM-DD> <HH:MM> <YYYY-MM-DD> <HH:MM>` | Schedules a season: its id, then start, then end |
+| `/season start <YYYY-MM-DD> <HH:MM>` | Moves the start of a season that hasn't started yet |
+| `/season end <YYYY-MM-DD> <HH:MM>` | Moves the end |
+| `/season end now` | Ends a running season right away |
+| `/season cancel` | Cancels a season that hasn't started yet |
+
+For example:
+
+```
+/season schedule sakura_1 2026-11-20 18:00 2026-11-30 18:00
+```
+
+The status view also shows who scheduled each season.
+
+## Rules
+
+- Only one season can be scheduled or running at a time.
+- Each run can be held once. A run that has started is never offered again; one
+  that was cancelled before starting can be scheduled again.
+- The end has to come after the start, and in the future.
+- The start can only be moved before the season begins, and so can cancelling.
+
+## What the group sees
+
+The bot posts a teaser to the group when a season is scheduled (and again if its
+dates move), an announcement when it starts and another when it ends. A season
+that is ended while games are still running finishes once those games are done.

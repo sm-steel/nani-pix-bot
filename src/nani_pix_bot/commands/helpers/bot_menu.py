@@ -45,6 +45,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("setwinner", i18n.t("commands.setwinner", lang)),
         BotCommand("timezone", i18n.t("commands.timezone", lang)),
         BotCommand("quiethours", i18n.t("commands.quiethours", lang)),
+        BotCommand("season", i18n.t("commands.season", lang)),
         BotCommand("version", i18n.t("commands.version", lang)),
     ]
     group_commands = [
