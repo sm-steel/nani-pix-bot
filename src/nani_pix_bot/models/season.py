@@ -1,13 +1,14 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import BigInteger, String
+from sqlalchemy import BigInteger, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nani_pix_bot.models.base import Base
-from nani_pix_bot.models.enums import SeasonStatus
+from nani_pix_bot.models.enums import SeasonStatus, XpSource
 
 RUN_ID_LENGTH = 48
 SEASON_STATUS_LENGTH = 16
+XP_SOURCE_LENGTH = 16
 
 
 class SeasonSchedule(Base):
@@ -26,3 +27,20 @@ class SeasonSchedule(Base):
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     started_at: Mapped[datetime | None] = mapped_column(default=None)
     ended_at: Mapped[datetime | None] = mapped_column(default=None)
+
+
+class SeasonXp(Base):
+    """One Season XP award (seasons spec §2), append-only. Standings are
+    SUM(amount) per player within a season."""
+
+    __tablename__ = "season_xp"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    season_id: Mapped[int] = mapped_column(ForeignKey("season_schedule.id"), index=True)
+    player_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("players.telegram_user_id"), index=True
+    )
+    amount: Mapped[int]
+    source: Mapped[XpSource] = mapped_column(String(XP_SOURCE_LENGTH))
+    game_id: Mapped[int | None] = mapped_column(default=None, index=True)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))

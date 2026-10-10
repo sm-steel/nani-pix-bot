@@ -127,6 +127,23 @@ def _dispatch(session: Session, event: LoggedEvent) -> None:
         )
 
 
+def _dispatch_seasons(session: Session, event: LoggedEvent) -> None:
+    """The seasons' consumer, in its own savepoint for the same reason as
+    _dispatch. Separate from it so the tests' "achievements off" fixture
+    leaves seasons on; it's a no-op for games outside a season."""
+    from nani_pix_bot.services.seasons import consumer
+
+    try:
+        with session.begin_nested():
+            consumer.on_event(session, event)
+    except Exception:
+        logger.opt(exception=True).error(
+            "seasons failed on event {event_type} (row {event_id}); action kept",
+            event_type=event.event_type.value,
+            event_id=event.id,
+        )
+
+
 def emit(session: Session, event_type: EventType, involved: Involved, **data: Any) -> LoggedEvent:
     row = EventLog(
         event_type=event_type,
@@ -143,4 +160,5 @@ def emit(session: Session, event_type: EventType, involved: Involved, **data: An
     )
     event = to_event(row)
     _dispatch(session, event)
+    _dispatch_seasons(session, event)
     return event

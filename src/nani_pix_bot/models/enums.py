@@ -414,6 +414,14 @@ class PeriodType(enum.StrEnum):
     YEAR = "year"
 
 
+class XpSource(enum.StrEnum):
+    """Why a season_xp row was written (seasons spec §2). Plain string."""
+
+    WIN = "win"
+    HOST = "host"
+    FIRST_GUESS = "first_guess"
+
+
 class SeasonStatus(enum.StrEnum):
     """A season_schedule row's lifecycle (seasons spec §1). Stored as a
     plain string. `closing`: past end_at, waiting for its tagged games."""
