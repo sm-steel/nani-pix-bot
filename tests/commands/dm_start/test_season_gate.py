@@ -115,6 +115,7 @@ def _game(session_factory, game_id: int) -> Game:
     with session_factory() as session:
         game = session.get(Game, game_id)
         assert game is not None
+        _ = game.original_image  # deferred column: load it before detaching
         session.expunge(game)
         return game
 
@@ -345,3 +346,78 @@ async def test_confirm_of_an_on_theme_game_starts_it(session_factory, monkeypatc
     )
     context.bot.send_photo.assert_awaited_once()
     assert _game(session_factory, game_id).status == GameStatus.ACTIVE
+
+
+@pytest.mark.usefixtures("active_season")
+async def test_confirm_refusal_drops_a_catalogue_screenshot(session_factory, monkeypatch) -> None:
+    _patch_tags(monkeypatch, GURREN)
+    game_id = _setup_game(
+        session_factory,
+        source="manual",
+        title_english="Gurren Lagann",
+        tenrai_id=2001,
+        original_image=b"catalogue-shot",
+        screenshot_source=Provider.TENRAI,
+        shown_screenshot_urls=["https://example.invalid/1.jpg"],
+    )
+    monkeypatch.setattr(aliases, "mal_id", AsyncMock(return_value=2001))
+    update = _callback_update(PREVIEW_CONFIRM_CALLBACK_DATA)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _context(session_factory))
+    )
+
+    game = _game(session_factory, game_id)
+    assert game.original_image is None
+    assert game.screenshot_source is None
+    assert game.shown_screenshot_urls is None
+
+
+@pytest.mark.usefixtures("active_season")
+async def test_confirm_refusal_keeps_an_uploaded_photo(session_factory, monkeypatch) -> None:
+    _patch_tags(monkeypatch, GURREN)
+    game_id = _tenrai_game(session_factory, 2001, "Gurren Lagann")
+    update = _callback_update(PREVIEW_CONFIRM_CALLBACK_DATA)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _context(session_factory))
+    )
+
+    game = _game(session_factory, game_id)
+    assert game.title_english is None
+    assert game.original_image == b"file123"
+
+
+def _restaging_fetch(session_factory, game_id: int, tags):
+    """A fetch during which the starter re-identifies the game."""
+
+    async def fetch(*_a):
+        with session_factory() as session:
+            game = session.get(Game, game_id)
+            assert game is not None
+            game_service.clear_identification(game)
+            game.tenrai_id = 999
+            game.title_english = "Another Anime"
+            session.commit()
+        return tags
+
+    return fetch
+
+
+@pytest.mark.parametrize("tags", [GURREN, ROMANCE], ids=["refusal", "pass"])
+@pytest.mark.usefixtures("active_season")
+async def test_a_result_for_a_changed_identification_is_dropped(
+    session_factory, monkeypatch, tags
+) -> None:
+    game_id = _tenrai_game(session_factory, 2001, "Gurren Lagann")
+    monkeypatch.setattr(
+        gate_service, "fetch_tags", _restaging_fetch(session_factory, game_id, tags)
+    )
+
+    assert await _run(session_factory) is Verdict.UNAVAILABLE
+
+    game = _game(session_factory, game_id)
+    assert game.title_english == "Another Anime"
+    assert game.tenrai_id == 999
+    assert game.anime_tags is None
+    assert game.setup_step == SetupStep.CONFIRMING

@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import client_for_source
-from nani_pix_bot.commands.dm_start.aliases import lookup_for
+from nani_pix_bot.commands.dm_start.aliases import identity_of, lookup_for
+from nani_pix_bot.commands.dm_start.screenshots import clear_screenshot_selection
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.models.game import Game
@@ -27,6 +28,7 @@ from nani_pix_bot.services.seasons.tags import TAG_ERRORS, TagClients
 @dataclass(frozen=True)
 class _Pending:
     game_id: int
+    identity: tuple  # identity_of(game) when read: what the verdict is about
     gate: Gate
     lookup: AliasLookup
     known: list[anime_tags.AnimeTag] | None
@@ -38,7 +40,7 @@ def _pending(session: Session, starter_id: int) -> _Pending | None:
     if game is None or gate is None:
         return None
     known = anime_tags.from_json(game.anime_tags) if game.anime_tags is not None else None
-    return _Pending(game.id, gate, lookup_for(game), known)
+    return _Pending(game.id, identity_of(game), gate, lookup_for(game), known)
 
 
 async def _verdict(
@@ -66,18 +68,27 @@ async def _verdict(
     )
 
 
-def _apply(session: Session, game_id: int, result: gate_service.GateResult) -> None:
+def _apply(session: Session, pending: _Pending, result: gate_service.GateResult) -> bool:
     """Keep fetched tags (so Confirm doesn't refetch after a pick passed);
-    on a refusal, forget the identification and send the setup back to
-    picking a method, where the refusal's "different method" button works."""
-    game = session.get(Game, game_id)
+    on a refusal, forget the identification — and a catalogue screenshot
+    of the refused anime, as the preview's Re-search does — and send the
+    setup back to picking a method, where the refusal's "different
+    method" button works. An uploaded photo stays.
+
+    False, writing nothing, when the game was re-identified while the
+    check was in flight: the verdict is about an anime it no longer is."""
+    game = session.get(Game, pending.game_id)
     if game is None:
-        return
+        return True
+    if identity_of(game) != pending.identity:
+        return False
     if result.tags:
         game.anime_tags = anime_tags.to_json(result.tags)
     if result.verdict in gate_service.REFUSED:
         game_service.clear_identification(game)
+        clear_screenshot_selection(game)
         game.setup_step = SetupStep.PICKING_METHOD
+    return True
 
 
 async def run_gate(
@@ -92,7 +103,16 @@ async def run_gate(
         return Verdict.PASSED
     result = await _verdict(context, pending)
     with session_scope(session_factory) as session:
-        _apply(session, pending.game_id, result)
+        applied = _apply(session, pending, result)
+    if not applied:
+        # Neither refuse nor store: Confirm can be tapped again, and the
+        # new pick runs its own gate.
+        logger.info(
+            "season gate result for {title!r} is stale — identification changed",
+            title=pending.lookup.title,
+            game_id=pending.game_id,
+        )
+        return Verdict.UNAVAILABLE
     logger.info(
         "season gate: {verdict} for {title!r}",
         verdict=result.verdict.value,
