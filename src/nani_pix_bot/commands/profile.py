@@ -8,6 +8,7 @@ from telegram import Update, User
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.achievements.common import outsider_refusal
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.avatars import fetch_avatar
@@ -87,6 +88,11 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
     if not (in_topic or is_private_chat(update)):
         return
+    if not in_topic:
+        refusal = await outsider_refusal(context, user.id, "/profile")
+        if refusal is not None:
+            await message.reply_text(refusal)
+            return
 
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)

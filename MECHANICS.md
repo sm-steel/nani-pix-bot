@@ -1222,8 +1222,8 @@ lifetime `players.wins`, where a HARD MODE win adds 2; in `/standings` and
 on the period podium it is the number of games won in that period, 1 each
 (HARD MODE included).
 
-In DM, `/achievements` (with its deep link and buttons), `/standings` and
-`/title` are for group members only — anyone can DM the bot, and these
+In DM, `/achievements` (with its deep link and buttons), `/standings`,
+`/title`, `/cosmetics` and `/profile` are for group members only — anyone can DM the bot, and these
 show members' names and activity. A non-member gets the same "not a
 member" reply the shop gives.
 

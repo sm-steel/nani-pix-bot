@@ -5,12 +5,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from PIL import Image
 from telegram import Update
-from telegram.constants import ChatType
+from telegram.constants import ChatMemberStatus, ChatType
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import profile as profile_module
+from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons import registry
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.cards import CARD_SIZE
 
 
@@ -51,8 +53,10 @@ def _update(*, chat_type: str = ChatType.SUPERGROUP, thread_id: int | None = 7) 
     return update
 
 
-def _context(session_factory, args: list[str]) -> MagicMock:
+def _context(session_factory, args: list[str], *, member: bool = True) -> MagicMock:
     context = MagicMock()
+    joined = ChatMemberStatus.MEMBER if member else ChatMemberStatus.LEFT
+    context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=joined))
     context.bot_data = {
         "session_factory": session_factory,
         "group_chat_id": 555,
@@ -62,10 +66,12 @@ def _context(session_factory, args: list[str]) -> MagicMock:
     return context
 
 
-async def _run(session_factory, update: MagicMock, args: list[str] | None = None) -> None:
+async def _run(
+    session_factory, update: MagicMock, args: list[str] | None = None, *, member: bool = True
+) -> None:
     await profile_module.profile_command(
         cast(Update, update),
-        cast(ContextTypes.DEFAULT_TYPE, _context(session_factory, args or [])),
+        cast(ContextTypes.DEFAULT_TYPE, _context(session_factory, args or [], member=member)),
     )
 
 
@@ -101,3 +107,43 @@ async def test_profile_outside_the_topic_is_ignored(session_factory) -> None:
 
     update.message.reply_photo.assert_not_awaited()
     update.message.reply_text.assert_not_awaited()
+
+
+async def test_dm_profile_of_a_non_member_is_refused_and_creates_no_player(
+    session_factory,
+) -> None:
+    with session_scope(session_factory) as session:
+        session.delete(session.get(Player, 1))
+    update = _update(chat_type=ChatType.PRIVATE, thread_id=None)
+    await _run(session_factory, update, member=False)
+
+    assert update.message.reply_text.await_args.args[0] == i18n.t("dm_start.not_a_member", "EN")
+    update.message.reply_photo.assert_not_awaited()
+    with session_scope(session_factory) as session:
+        assert session.get(Player, 1) is None
+
+
+async def test_dm_profile_of_a_member_by_a_non_member_is_refused(session_factory) -> None:
+    update = _update(chat_type=ChatType.PRIVATE, thread_id=None)
+    await _run(session_factory, update, ["@bob"], member=False)
+
+    assert update.message.reply_text.await_args.args[0] == i18n.t("dm_start.not_a_member", "EN")
+    update.message.reply_photo.assert_not_awaited()
+
+
+async def test_dm_profile_of_a_member_still_gets_the_card(session_factory) -> None:
+    update = _update(chat_type=ChatType.PRIVATE, thread_id=None)
+    await _run(session_factory, update)
+
+    update.message.reply_photo.assert_awaited_once()
+
+
+async def test_topic_profile_does_not_check_membership(session_factory) -> None:
+    update = _update()
+    context = _context(session_factory, [], member=False)
+    await profile_module.profile_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.message.reply_photo.assert_awaited_once()
+    context.bot.get_chat_member.assert_not_awaited()
