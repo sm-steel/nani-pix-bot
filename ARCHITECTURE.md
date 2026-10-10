@@ -105,19 +105,20 @@ involvement) — this bot is Telegram-only.
   keys; `app.py` logs a `WARNING` at startup when it sees some-but-not-all
   of them, so a half-configured deploy says so at boot instead of
   stranding the first player who tries to link.
-- **OAuth redirect page (`docs/mal-callback.html`):** MyAnimeList's
+- **OAuth redirect page (`docs/site/public/mal-callback.html`):** MyAnimeList's
   OAuth flow needs somewhere to send the player's browser back to once
   they approve access, and this bot has no web-facing component of its
-  own to serve one (see "Overview" above). `docs/mal-callback.html` is
+  own to serve one (see "Overview" above). `docs/site/public/mal-callback.html` is
   a static, dependency-free page — reads the `code` MyAnimeList
   appended to its own URL's query string, displays it, offers a copy
   button — meant to be served via **this repo's own GitHub Pages**
-  rather than by the bot. `MAL_REDIRECT_URI` (`.env`) must point at
+  rather than by the bot: Astro copies it unchanged into the user's
+  guide site, which `docs.yml` deploys. `MAL_REDIRECT_URI` (`.env`) must point at
   wherever that page ends up served and must exactly match the
-  redirect URI registered with the MAL app. **Enabling GitHub Pages
-  (Settings → Pages, source: branch `master`, folder `/docs`) is a
-  manual, one-time repo-settings step the maintainer must still do
-  themselves** — nothing in this codebase or its CI automates it. See
+  redirect URI registered with the MAL app. **Setting GitHub Pages'
+  source to GitHub Actions (Settings → Pages → Source: GitHub Actions)
+  is a manual, one-time repo-settings step the maintainer must still do
+  themselves** — `docs.yml` deploys, but can't switch that setting on. See
   README.md's Self-hosting section.
 - **Group admin permission:** the bot needs the group's "Pin messages"
   admin permission for the pinned-current-image behavior (see
