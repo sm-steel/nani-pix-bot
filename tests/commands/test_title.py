@@ -150,3 +150,47 @@ async def test_a_non_member_is_refused(session_factory, log_records: list[LogLin
 
     update.message.reply_text.assert_awaited_once_with(i18n.t("dm_start.not_a_member", "en"))
     assert any(r.level == "WARNING" and "not a group member" in r.message for r in log_records)
+
+
+async def test_owned_title_item_is_listed_and_choosable(session_factory, equip_title) -> None:
+    _seed(session_factory)
+    with session_factory() as session:
+        equip_title(session, ME)
+        session.commit()
+
+    update = await _command(session_factory)
+    markup = update.message.reply_text.await_args.kwargs["reply_markup"]
+    buttons = [row[0] for row in markup.inline_keyboard]
+    assert [b.callback_data for b in buttons][-2:] == ["title:i:demo_1/title.demo", "title:none"]
+    assert "Demo Star" in [b.text for b in buttons]
+    assert all(len(b.callback_data.encode()) <= 64 for b in buttons)
+
+    tapped = await _tap(session_factory, "title:i:demo_1/title.demo")
+    with session_factory() as session:
+        assert session.get(Player, ME).title_key == "item:demo_1/title.demo"
+    assert _edited(tapped) == i18n.t("title.set", "en", title="Demo Star")
+
+
+async def test_item_title_only_player_gets_a_keyboard(session_factory, equip_title) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=ME))
+        session.flush()
+        equip_title(session, ME)
+        session.commit()
+
+    update = await _command(session_factory)
+
+    assert "reply_markup" in update.message.reply_text.await_args.kwargs
+
+
+async def test_an_unowned_item_tap_is_stale(
+    session_factory, equip_title, log_records: list[LogLine]
+) -> None:
+    _seed(session_factory)
+
+    update = await _tap(session_factory, "title:i:demo_1/title.demo")
+
+    with session_factory() as session:
+        assert session.get(Player, ME).title_key is None
+    assert _edited(update) == i18n.t("title.stale", "en")
+    assert any(r.level == "WARNING" for r in log_records)

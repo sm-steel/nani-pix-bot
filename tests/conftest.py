@@ -155,6 +155,13 @@ def equip_frame(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, 
 
 
 @pytest.fixture
+def equip_title(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
+    """`equip_title(session, player_id)` gives the player the fake run's
+    "Demo Star" title item (the fake registry stays patched in)."""
+    yield from _equipper(monkeypatch, "demo_1/title.demo")
+
+
+@pytest.fixture
 def equip_transition(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
     """`equip_transition(session, player_id)` gives the player the fake run's
     "iris" host transition and equips it."""

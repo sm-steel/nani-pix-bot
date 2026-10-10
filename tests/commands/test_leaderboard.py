@@ -158,3 +158,16 @@ async def test_a_name_flair_shows_after_the_name(session_factory, equip_flair) -
     sent = await _run(_make_update(), _make_context(session_factory))
 
     assert md_escape("@alice 🌸") in sent.await_args_list[0].args[2]
+
+
+async def test_an_item_title_shows_next_to_the_name(session_factory, equip_title) -> None:
+    with session_scope(session_factory) as session:
+        session.add(
+            Player(telegram_user_id=1, username="alice", wins=3, title_key="item:demo_1/title.demo")
+        )
+        session.flush()
+        equip_title(session, 1)
+
+    sent = await _run(_make_update(), _make_context(session_factory))
+
+    assert md_escape("@alice «Demo Star»") in sent.await_args_list[0].args[2]
