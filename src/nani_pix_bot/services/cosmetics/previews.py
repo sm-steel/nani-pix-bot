@@ -1,6 +1,6 @@
 """What an item looks like before you equip it (seasons spec §3): a line of text, an image
 or a short reveal clip, drawn by the same code that shows the item in a game. Images and
-clips are uploaded once; `item_previews` keeps their Telegram file_id."""
+clips are uploaded once; `item_previews` keeps their Telegram file_id, per language."""
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -128,14 +128,22 @@ def render(resolved: ResolvedItem, lang: str) -> Preview:
     return Preview(PreviewKind.TEXT, text=_text(resolved, lang))
 
 
-def cached(session: Session, item_id: str) -> ItemPreview | None:
-    return session.get(ItemPreview, item_id)
+def cached(session: Session, item_id: str, lang: str) -> ItemPreview | None:
+    return session.get(ItemPreview, (item_id, lang))
 
 
-def remember(session: Session, item_id: str, kind: PreviewKind, file_id: str) -> None:
-    row = session.get(ItemPreview, item_id)
+def forget(session: Session, item_id: str, lang: str) -> None:
+    """Drops a cached preview Telegram no longer accepts."""
+    row = session.get(ItemPreview, (item_id, lang))
+    if row is not None:
+        session.delete(row)
+        session.flush()
+
+
+def remember(session: Session, item_id: str, lang: str, kind: PreviewKind, file_id: str) -> None:
+    row = session.get(ItemPreview, (item_id, lang))
     if row is None:
-        session.add(ItemPreview(item_id=item_id, kind=kind, file_id=file_id))
+        session.add(ItemPreview(item_id=item_id, lang=lang, kind=kind, file_id=file_id))
     else:
         row.kind, row.file_id = kind, file_id
     session.flush()

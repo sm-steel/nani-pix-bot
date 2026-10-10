@@ -11,6 +11,7 @@ SLOT_LENGTH = 24
 SOURCE_LENGTH = 16
 PREVIEW_KIND_LENGTH = 8
 FILE_ID_LENGTH = 256
+PREVIEW_LANG_LENGTH = 8
 
 
 class OwnedItem(Base):
@@ -44,11 +45,13 @@ class EquippedItem(Base):
 
 class ItemPreview(Base):
     """The Telegram file_id of an item's rendered preview (seasons spec §3), so
-    each preview is rendered and uploaded once. Text previews aren't stored."""
+    each preview is rendered and uploaded once per language (banners and win effects draw
+    text). Text previews aren't stored."""
 
     __tablename__ = "item_previews"
 
     item_id: Mapped[str] = mapped_column(String(ITEM_ID_LENGTH), primary_key=True)
+    lang: Mapped[str] = mapped_column(String(PREVIEW_LANG_LENGTH), primary_key=True)
     kind: Mapped[PreviewKind] = mapped_column(String(PREVIEW_KIND_LENGTH))
     file_id: Mapped[str] = mapped_column(String(FILE_ID_LENGTH))
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))

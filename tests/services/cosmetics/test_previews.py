@@ -138,22 +138,41 @@ def test_clip_job_args_are_picklable() -> None:
 
 
 def test_nothing_cached_yet(session) -> None:
-    assert previews.cached(session, "demo_1/host_frame.border") is None
+    assert previews.cached(session, "demo_1/host_frame.border", "EN") is None
 
 
 def test_remember_then_cached_roundtrip(session) -> None:
-    previews.remember(session, "demo_1/host_frame.border", PreviewKind.PHOTO, "file-1")
-    row = previews.cached(session, "demo_1/host_frame.border")
+    previews.remember(session, "demo_1/host_frame.border", "EN", PreviewKind.PHOTO, "file-1")
+    row = previews.cached(session, "demo_1/host_frame.border", "EN")
     assert isinstance(row, ItemPreview)
     assert (row.kind, row.file_id) == (PreviewKind.PHOTO, "file-1")
 
 
 def test_remember_replaces_an_older_file_id(session) -> None:
-    previews.remember(session, "demo_1/host_frame.border", PreviewKind.PHOTO, "file-1")
-    previews.remember(session, "demo_1/host_frame.border", PreviewKind.PHOTO, "file-2")
-    row = previews.cached(session, "demo_1/host_frame.border")
+    previews.remember(session, "demo_1/host_frame.border", "EN", PreviewKind.PHOTO, "file-1")
+    previews.remember(session, "demo_1/host_frame.border", "EN", PreviewKind.PHOTO, "file-2")
+    row = previews.cached(session, "demo_1/host_frame.border", "EN")
     assert row is not None
     assert row.file_id == "file-2"
+
+
+def test_cached_previews_are_kept_per_language(session) -> None:
+    previews.remember(session, "demo_1/host_frame.border", "EN", PreviewKind.PHOTO, "file-en")
+    assert previews.cached(session, "demo_1/host_frame.border", "RU") is None
+    previews.remember(session, "demo_1/host_frame.border", "RU", PreviewKind.PHOTO, "file-ru")
+    en = previews.cached(session, "demo_1/host_frame.border", "EN")
+    ru = previews.cached(session, "demo_1/host_frame.border", "RU")
+    assert en is not None
+    assert ru is not None
+    assert (en.file_id, ru.file_id) == ("file-en", "file-ru")
+
+
+def test_forget_drops_only_that_language(session) -> None:
+    previews.remember(session, "demo_1/host_frame.border", "EN", PreviewKind.PHOTO, "file-en")
+    previews.remember(session, "demo_1/host_frame.border", "RU", PreviewKind.PHOTO, "file-ru")
+    previews.forget(session, "demo_1/host_frame.border", "EN")
+    assert previews.cached(session, "demo_1/host_frame.border", "EN") is None
+    assert previews.cached(session, "demo_1/host_frame.border", "RU") is not None
 
 
 @pytest.mark.ffmpeg

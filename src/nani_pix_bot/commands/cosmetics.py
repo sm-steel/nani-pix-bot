@@ -11,7 +11,7 @@ from types import MappingProxyType
 from loguru import logger
 from sqlalchemy.orm import Session
 from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
-from telegram.error import TelegramError
+from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import MAX_ID, outsider_refusal
@@ -228,8 +228,8 @@ async def _render(
 ) -> previews.Preview:
     """The preview, rendered off the event loop: a clip in the reveal worker, the rest in a
     thread. No worker, or a render that fails, gives a short "can't show it now" text."""
-    job = previews.clip_job(resolved, lang)
     try:
+        job = previews.clip_job(resolved, lang)
         if job is None:
             return await asyncio.to_thread(previews.render, resolved, lang)
         if reveal_worker.runtime(context.application) is not None:
@@ -276,7 +276,27 @@ async def _send_fresh(
         )
         return
     with session_scope(context.bot_data["session_factory"]) as session:
-        previews.remember(session, resolved.item_id, preview.kind, file_id)
+        previews.remember(session, resolved.item_id, lang, preview.kind, file_id)
+
+
+async def _send_cached(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    resolved: ResolvedItem,
+    lang: str,
+    cached: tuple[PreviewKind, str],
+) -> None:
+    """Sends the remembered file_id; one Telegram refuses is forgotten and re-rendered."""
+    try:
+        await _send_media(context, chat_id, *cached)
+    except BadRequest:
+        logger.warning(
+            "Telegram rejected the cached preview of {item_id} — re-rendering",
+            item_id=resolved.item_id,
+        )
+        with session_scope(context.bot_data["session_factory"]) as session:
+            previews.forget(session, resolved.item_id, lang)
+        await _send_fresh(context, chat_id, resolved, lang)
 
 
 async def _send_preview(
@@ -290,7 +310,7 @@ async def _send_preview(
         if cached is None:
             await _send_fresh(context, chat_id, resolved, lang)
         else:
-            await _send_media(context, chat_id, *cached)
+            await _send_cached(context, chat_id, resolved, lang, cached)
     except TelegramError:
         logger.opt(exception=True).error(
             "failed to send the preview of {item_id}", item_id=resolved.item_id
@@ -305,12 +325,12 @@ class _ItemTap:
     cached: tuple[PreviewKind, str] | None
 
 
-def _load_item(session: Session, user_id: int, owned_id: int | None) -> _ItemTap | None:
+def _load_item(session: Session, user_id: int, owned_id: int | None, lang: str) -> _ItemTap | None:
     """The tapped row's item with its state; None when that row isn't the tapper's."""
     resolved = None if owned_id is None else inventory.owned_by(session, user_id, owned_id)
     if owned_id is None or resolved is None:
         return None
-    row = previews.cached(session, resolved.item_id)
+    row = previews.cached(session, resolved.item_id, lang)
     return _ItemTap(
         owned_id,
         resolved,
@@ -323,7 +343,7 @@ async def _on_item(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, arg
     user_id = query.from_user.id
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
-        tap = _load_item(session, user_id, _owned_id(arg))
+        tap = _load_item(session, user_id, _owned_id(arg), lang)
     if tap is None:
         await _refuse(query, context, str(query.data))
         return

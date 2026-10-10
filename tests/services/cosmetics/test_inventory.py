@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from nani_pix_bot.models.cosmetics import EquippedItem, OwnedItem
 from nani_pix_bot.models.enums import CosmeticSlot, ItemSource
 from nani_pix_bot.models.player import Player
-from nani_pix_bot.services.cosmetics import inventory
+from nani_pix_bot.services.cosmetics import frames, inventory, looks
 from nani_pix_bot.services.cosmetics.inventory import ItemGrant
 
 ALICE = 2
@@ -70,6 +70,22 @@ def test_equipped_with_unresolvable_item_is_none(session, alice, log_records) ->
     session.flush()
     assert inventory.look(session, alice, CosmeticSlot.NAME_FLAIR) is None
     assert any(r.level == "WARNING" for r in log_records)
+
+
+def test_equipped_item_whose_look_no_longer_validates_is_none(
+    session, alice, log_records, monkeypatch
+) -> None:
+    frame = "demo_1/host_frame.border"
+    inventory.grant(session, alice, ItemGrant(frame, ItemSource.ADMIN))
+    inventory.equip(session, alice, frame)
+    assert inventory.equipped(session, alice, CosmeticSlot.HOST_FRAME) is not None
+
+    monkeypatch.setattr(
+        frames, "FRAMES", {k: v for k, v in frames.FRAMES.items() if k != "simple_border"}
+    )
+    monkeypatch.setattr(looks, "FRAMES", frames.FRAMES)
+    assert inventory.equipped(session, alice, CosmeticSlot.HOST_FRAME) is None
+    assert any(r.level == "WARNING" and r.extra["item_id"] == frame for r in log_records)
 
 
 def test_grant_is_logged(session, alice, log_records) -> None:

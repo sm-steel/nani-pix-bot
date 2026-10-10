@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from telegram import InlineKeyboardMarkup, Update
 from telegram.constants import ChatMemberStatus
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import cosmetics as cosmetics_module
@@ -11,7 +12,7 @@ from nani_pix_bot.models.cosmetics import EquippedItem, OwnedItem
 from nani_pix_bot.models.enums import CosmeticSlot, ItemSource, PreviewKind
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.services import i18n
+from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.cosmetics import previews
 from nani_pix_bot.services.reveal import pipeline
 from tests.conftest import LogLine
@@ -195,7 +196,7 @@ async def test_item_tap_renders_sends_and_remembers_the_preview(session_factory)
     photo = context.bot.send_photo.await_args.kwargs["photo"]
     assert isinstance(photo, bytes)
     with session_factory() as session:
-        row = previews.cached(session, FRAME)
+        row = previews.cached(session, FRAME, "EN")
         assert row is not None
         assert (row.kind, row.file_id) == (PreviewKind.PHOTO, "photo-id")
     item_message = context.bot.send_message.await_args
@@ -210,7 +211,7 @@ async def test_item_tap_reuses_a_cached_file_id_without_rendering(
 ) -> None:
     owned_id = _own(session_factory, ME, FRAME)
     with session_factory() as session:
-        previews.remember(session, FRAME, PreviewKind.PHOTO, "cached-id")
+        previews.remember(session, FRAME, "EN", PreviewKind.PHOTO, "cached-id")
         session.commit()
 
     def boom(*_args):
@@ -235,7 +236,7 @@ async def test_text_preview_is_sent_as_text_and_not_cached(session_factory) -> N
         "cos:u:name_flair",
     )
     with session_factory() as session:
-        assert previews.cached(session, FLAIR) is None
+        assert previews.cached(session, FLAIR, "EN") is None
 
 
 async def test_video_preview_without_the_worker_falls_back_to_text(session_factory) -> None:
@@ -260,7 +261,7 @@ async def test_video_preview_renders_in_the_worker(session_factory, monkeypatch)
     assert call.args[1] is pipeline.preview_clip
     assert context.bot.send_video.await_args.kwargs["video"] == b"mp4"
     with session_factory() as session:
-        row = previews.cached(session, IRIS)
+        row = previews.cached(session, IRIS, "EN")
         assert row is not None
         assert (row.kind, row.file_id) == (PreviewKind.VIDEO, "video-id")
 
@@ -372,3 +373,58 @@ async def test_a_still_preview_that_fails_to_render_says_so_and_still_offers_equ
     assert first.kwargs["text"] == i18n.t("cosmetics.preview_unavailable", "EN")
     assert _buttons(item_message.kwargs["reply_markup"])[0][1] == f"cos:e:{owned_id}"
     assert any(r.level == "ERROR" for r in log_records)
+
+
+async def test_a_transition_whose_look_is_gone_falls_back_and_still_offers_equip(
+    session_factory, monkeypatch, log_records: list[LogLine]
+) -> None:
+    owned_id = _own(session_factory, ME, IRIS)
+    monkeypatch.setattr(previews, "RevealEffect", {})  # RevealEffect[look] -> KeyError
+    context = _context(session_factory)
+    await _tap(session_factory, f"cos:i:{owned_id}", context)
+
+    first, item_message = context.bot.send_message.await_args_list
+    assert first.kwargs["text"] == i18n.t("cosmetics.preview_unavailable", "EN")
+    assert _buttons(item_message.kwargs["reply_markup"])[0][1] == f"cos:e:{owned_id}"
+    assert any(r.level == "ERROR" for r in log_records)
+
+
+async def test_a_rejected_cached_file_id_is_dropped_and_the_preview_re_rendered(
+    session_factory, log_records: list[LogLine]
+) -> None:
+    owned_id = _own(session_factory, ME, FRAME)
+    with session_factory() as session:
+        previews.remember(session, FRAME, "EN", PreviewKind.PHOTO, "stale-id")
+        session.commit()
+    context = _context(session_factory)
+    fresh = context.bot.send_photo.return_value
+    context.bot.send_photo = AsyncMock(side_effect=[BadRequest("wrong file identifier"), fresh])
+    await _tap(session_factory, f"cos:i:{owned_id}", context)
+
+    stale_call, fresh_call = context.bot.send_photo.await_args_list
+    assert stale_call.kwargs["photo"] == "stale-id"
+    assert isinstance(fresh_call.kwargs["photo"], bytes)
+    with session_factory() as session:
+        row = previews.cached(session, FRAME, "EN")
+        assert row is not None
+        assert row.file_id == "photo-id"
+    assert any(r.level == "WARNING" and r.extra.get("item_id") == FRAME for r in log_records)
+    assert context.bot.send_message.await_args.kwargs["reply_markup"] is not None
+
+
+async def test_switching_the_language_renders_the_preview_again(session_factory) -> None:
+    owned_id = _own(session_factory, ME, FRAME)
+    context = _context(session_factory)
+    await _tap(session_factory, f"cos:i:{owned_id}", context)
+    with session_factory() as session:
+        settings.set_language(session, "RU")
+        session.commit()
+    await _tap(session_factory, f"cos:i:{owned_id}", context)
+
+    assert [c.kwargs["photo"].__class__ for c in context.bot.send_photo.await_args_list] == [
+        bytes,
+        bytes,
+    ]
+    with session_factory() as session:
+        assert previews.cached(session, FRAME, "EN") is not None
+        assert previews.cached(session, FRAME, "RU") is not None

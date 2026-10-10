@@ -22,10 +22,11 @@ def upgrade() -> None:
     op.create_table(
         "item_previews",
         sa.Column("item_id", sa.String(length=96), nullable=False),
+        sa.Column("lang", sa.String(length=8), nullable=False),
         sa.Column("kind", sa.String(length=8), nullable=False),
         sa.Column("file_id", sa.String(length=256), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.PrimaryKeyConstraint("item_id", name=op.f("pk_item_previews")),
+        sa.PrimaryKeyConstraint("item_id", "lang", name=op.f("pk_item_previews")),
     )
 
 
