@@ -188,7 +188,7 @@ To skip in a genuine emergency: `git commit --no-verify` — but fix what it
 would have caught before the next real commit, don't make a habit of it.
 
 **CI (`.github/workflows/`) runs the exact same checks as the local
-pre-commit hook — never a separate copy of them.** Four workflows,
+pre-commit hook — never a separate copy of them.** Five workflows,
 GitHub-hosted runners only (never self-hosted — GitHub explicitly warns
 against self-hosted runners on public repos, since any fork PR can run
 arbitrary code on one, including reading secrets):
@@ -229,6 +229,13 @@ arbitrary code on one, including reading secrets):
   protected branch. Requires "Allow GitHub Actions to create pull
   requests" enabled under repo Settings → Actions → General (off by
   default) — without it `gh pr create` fails on a permissions error.
+- **`docs.yml`** — the user's guide (`docs/site/`, see "User's guide"
+  below). On every push/PR touching the guide or what it's generated from,
+  runs the guide's own pytest checks (`tests/docs/`, the image generators'
+  tests) and an `astro build` with link validation. Only on a push to
+  `master` (or a manual run) does it publish the site, together with
+  `mal-callback.html`, to GitHub Pages — which needs Settings → Pages →
+  Source set to **GitHub Actions**.
 
 If a local pre-commit pass ever disagrees with `checks.yml`'s result on the
 same commit, that's a bug in the CI setup worth fixing directly, not
