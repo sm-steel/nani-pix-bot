@@ -26,6 +26,10 @@ from nani_pix_bot.services.game.hard_mode import (
     next_clue_discount,
     record_hard_mode_guess,
 )
+from nani_pix_bot.services.game.numbers import (
+    should_ask_if_numbers_matter,
+    titles_have_numbers,
+)
 from nani_pix_bot.services.game.refinish import RefinishRefusal, refinish, refinish_refusal
 from nani_pix_bot.services.game.state import (
     INACTIVITY_ADVANCE_DELAY,
@@ -161,10 +165,12 @@ __all__ = [
     "set_next_starter",
     "set_screenshot_provider_id",
     "setup_games",
+    "should_ask_if_numbers_matter",
     "stage_label",
     "stage_manual_entry",
     "stage_progress",
     "stage_result",
+    "titles_have_numbers",
     "vote_counts",
     "voting_games",
 ]

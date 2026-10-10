@@ -40,6 +40,7 @@ query ($search: String, $perPage: Int) {
   Page(page: 1, perPage: $perPage) {
     media(search: $search, type: ANIME) {
       id
+      idMal
       title { romaji english native }
       synonyms
       startDate { year }
@@ -52,6 +53,23 @@ _BY_ID_QUERY = """
 query ($id: Int) {
   Media(id: $id, type: ANIME) {
     id
+    idMal
+    title { romaji english native }
+    synonyms
+    startDate { year }
+  }
+}
+"""
+
+
+# The same entry looked up by its MyAnimeList id — how the alias
+# suggestions link a Shikimori/Tenrai pick (whose ids are MAL ids) to
+# AniList (issue #346).
+_BY_MAL_ID_QUERY = """
+query ($idMal: Int) {
+  Media(idMal: $idMal, type: ANIME) {
+    id
+    idMal
     title { romaji english native }
     synonyms
     startDate { year }
@@ -68,6 +86,10 @@ class AniListResult:
     title_native: str | None
     synonyms: list[str]
     year: int | None
+    # The MyAnimeList id AniList links this entry to, if any — Shikimori's
+    # and Tenrai's own ids. Defaults to None so every existing keyword
+    # construction stays valid.
+    mal_id: int | None = None
 
 
 @cache.cached()
@@ -111,6 +133,18 @@ async def get_by_id(client: httpx.AsyncClient, anilist_id: int) -> AniListResult
     return parsing.parse_entry(_API_NAME, media, _parse_result)
 
 
+@cache.cached()
+async def get_by_mal_id(client: httpx.AsyncClient, mal_id: int) -> AniListResult | None:
+    """The AniList entry linked to a MyAnimeList id, or None if AniList
+    has none — the same parse-or-None contract as get_by_id."""
+    data = await graphql.request(_API, client, query=_BY_MAL_ID_QUERY, variables={"idMal": mal_id})
+    media = data.get("Media")
+    if media is None:
+        logger.debug("AniList has no entry for MAL id {mal_id}", mal_id=mal_id)
+        return None
+    return parsing.parse_entry(_API_NAME, media, _parse_result)
+
+
 # Provider.search_module's value for Provider.ANILIST — see
 # services/search/base.py's module docstring.
 service = SearchModule(sys.modules[__name__])
@@ -148,6 +182,7 @@ def _parse_result(raw: dict) -> AniListResult | None:
         return None
     start_date = raw.get("startDate") or {}
     year = None if start_date.get("year") is None else parsing.require_int(start_date, "year")
+    mal_id = None if raw.get("idMal") is None else parsing.require_int(raw, "idMal")
     return AniListResult(
         anilist_id=anilist_id,
         title_romaji=title_romaji,
@@ -155,4 +190,5 @@ def _parse_result(raw: dict) -> AniListResult | None:
         title_native=title_native,
         synonyms=synonyms,
         year=year,
+        mal_id=mal_id,
     )

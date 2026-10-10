@@ -27,6 +27,7 @@ from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
+from tests.commands.dm_start.conftest import run_background
 from tests.conftest import LogLine
 
 _FRIEREN = AniListResult(
@@ -559,7 +560,7 @@ async def test_pick_callback_handler_says_so_when_the_setup_row_is_gone(
 
 
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
-    session_factory, monkeypatch: pytest.MonkeyPatch
+    session_factory, monkeypatch: pytest.MonkeyPatch, background_tasks
 ) -> None:
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     monkeypatch.setattr(search.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
@@ -571,6 +572,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
     await search.pick_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
+    await run_background(background_tasks)
 
     context.bot.send_media_group.assert_awaited_once()
     _, kwargs = context.bot.send_media_group.await_args
@@ -605,7 +607,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_anilist_pick(
 
 
 async def test_pick_callback_handler_keeps_the_staged_result_when_the_preview_album_times_out(
-    session_factory, monkeypatch: pytest.MonkeyPatch
+    session_factory, monkeypatch: pytest.MonkeyPatch, background_tasks
 ) -> None:
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     monkeypatch.setattr(search.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
@@ -615,10 +617,11 @@ async def test_pick_callback_handler_keeps_the_staged_result_when_the_preview_al
     context = _make_callback_context(session_factory)
     context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
 
+    await search.pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
     with pytest.raises(TimedOut):
-        await search.pick_callback_handler(
-            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-        )
+        await run_background(background_tasks)
 
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
@@ -627,7 +630,7 @@ async def test_pick_callback_handler_keeps_the_staged_result_when_the_preview_al
 
 
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(
-    session_factory, monkeypatch: pytest.MonkeyPatch
+    session_factory, monkeypatch: pytest.MonkeyPatch, background_tasks
 ) -> None:
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     get_by_id_mock = AsyncMock(return_value=_FRIEREN_SHIKIMORI)
@@ -640,6 +643,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(
     await search.pick_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
+    await run_background(background_tasks)
 
     get_by_id_mock.assert_awaited_once_with(context.bot_data["search_client"], 52991)
     context.bot.send_media_group.assert_awaited_once()
@@ -653,7 +657,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_shikimori_pick(
 
 
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_tenrai_pick(
-    session_factory, monkeypatch: pytest.MonkeyPatch
+    session_factory, monkeypatch: pytest.MonkeyPatch, background_tasks
 ) -> None:
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     get_by_id_mock = AsyncMock(return_value=_FRIEREN_TENRAI)
@@ -666,6 +670,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_tenrai_pick(
     await search.pick_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
+    await run_background(background_tasks)
 
     get_by_id_mock.assert_awaited_once_with(context.bot_data["tenrai_client"], 52991)
     context.bot.send_media_group.assert_awaited_once()
@@ -678,7 +683,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_tenrai_pick(
 
 
 async def test_pick_callback_handler_shows_a_preview_on_a_valid_tmdb_pick(
-    session_factory, monkeypatch: pytest.MonkeyPatch
+    session_factory, monkeypatch: pytest.MonkeyPatch, background_tasks
 ) -> None:
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     get_by_id_mock = AsyncMock(return_value=_FRIEREN_TMDB)
@@ -691,6 +696,7 @@ async def test_pick_callback_handler_shows_a_preview_on_a_valid_tmdb_pick(
     await search.pick_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
+    await run_background(background_tasks)
 
     get_by_id_mock.assert_awaited_once_with(context.bot_data["tmdb_client"], 209867)
     context.bot.send_media_group.assert_awaited_once()
@@ -731,7 +737,7 @@ async def test_pick_callback_handler_reshows_method_keyboard_when_get_by_id_erro
 
 
 async def test_pick_callback_handler_survives_a_restart_between_search_and_pick(
-    session_factory, monkeypatch: pytest.MonkeyPatch
+    session_factory, monkeypatch: pytest.MonkeyPatch, background_tasks
 ) -> None:
     # No cached search results anywhere — get_by_id re-fetches from AniList
     # using only the anilist_id embedded in the button's callback_data,
@@ -747,13 +753,14 @@ async def test_pick_callback_handler_survives_a_restart_between_search_and_pick(
     await search.pick_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
+    await run_background(background_tasks)
 
     get_by_id_mock.assert_awaited_once_with(context.bot_data["search_client"], 99)
     context.bot.send_media_group.assert_awaited_once()
 
 
 async def test_pick_callback_handler_preview_lists_every_accepted_answer(
-    session_factory, monkeypatch: pytest.MonkeyPatch
+    session_factory, monkeypatch: pytest.MonkeyPatch, background_tasks
 ) -> None:
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     monkeypatch.setattr(search.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
@@ -765,6 +772,7 @@ async def test_pick_callback_handler_preview_lists_every_accepted_answer(
     await search.pick_callback_handler(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
+    await run_background(background_tasks)
 
     _, media_kwargs = context.bot.send_media_group.await_args
     caption = media_kwargs["media"][0].caption

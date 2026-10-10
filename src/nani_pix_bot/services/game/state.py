@@ -394,7 +394,9 @@ def set_screenshot_provider_id(
 
 def clear_identification(game: Game) -> None:
     """Forget which anime a still-SETUP game was identified as: every
-    title variant, the synonyms, and every provider id.
+    title variant, the synonyms, every provider id, the creator's
+    "numbers matter" answer and any alias suggestions (both were about
+    the old titles).
 
     Each provider's result fills in only its own subset of these (only
     Shikimori has `title_russian`, only AniList/Tenrai/TMDB have
@@ -419,6 +421,8 @@ def clear_identification(game: Game) -> None:
     game.shikimori_id = None
     game.tenrai_id = None
     game.tmdb_id = None
+    game.numbers_matter = None
+    game.alias_suggestions = None
 
 
 def stage_manual_entry(game: Game, *, title: str, synonyms: list[str]) -> None:
@@ -466,16 +470,34 @@ def activate_game(session: Session, game: Game) -> None:
     )
 
 
+def is_correct_guess(game: Game, guess_text: str) -> bool:
+    """Whether a guess names this game's anime — see MECHANICS.md's
+    "Guess matching"."""
+    return matching.is_match(
+        guess_text, match_candidates(game), numbers_matter=bool(game.numbers_matter)
+    )
+
+
+def guess_score(game: Game, guess_text: str) -> float:
+    """How close a wrong guess came (matching.best_score)."""
+    return matching.best_score(
+        guess_text, match_candidates(game), numbers_matter=bool(game.numbers_matter)
+    )
+
+
 def partial_reveal_text(session: Session, game: Game, guess_text: str) -> str | None:
     """The masked title a wrong guess partly matched (issue #250), or None."""
     match = matching.partial_match(
         guess_text,
         match_candidates(game),
         min_letters=bot_settings.get_partial_match_min_letters(session),
+        numbers_matter=bool(game.numbers_matter),
     )
     if match is None:
         return None
-    return clue_text.words_shape(match.candidate, match.word_indices)
+    return clue_text.words_shape(
+        match.candidate, match.word_indices, numbers_matter=bool(game.numbers_matter)
+    )
 
 
 def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: str) -> GuessOutcome:
@@ -507,7 +529,7 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
 
     # The guesser is the update's own user (the /guess handler is the only
     # caller), so the log context already names them; see log_context.py.
-    correct = matching.is_match(guess_text, match_candidates(game))
+    correct = is_correct_guess(game, guess_text)
     reveal = None if correct else partial_reveal_text(session, game, guess_text)
     if reveal is not None:
         logger.info("partial match revealed {reveal!r}", reveal=reveal, game_id=game.id)
@@ -520,7 +542,7 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
             stage=STAGE_ORDER.index(game.current_stage) + 1,
             correct=correct,
             partial_reveal=reveal,
-            score=None if correct else matching.best_score(guess_text, match_candidates(game)),
+            score=None if correct else guess_score(game, guess_text),
         ),
     )
     if correct:

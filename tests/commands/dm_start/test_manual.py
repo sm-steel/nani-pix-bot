@@ -12,6 +12,7 @@ from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from tests.commands.dm_start.conftest import run_background
 from tests.conftest import LogLine
 
 
@@ -148,7 +149,7 @@ async def test_manual_entry_without_an_image_offers_every_screenshot_source(
 
 
 async def test_manual_entry_second_message_stages_and_shows_a_preview(
-    session_factory, monkeypatch: pytest.MonkeyPatch
+    session_factory, monkeypatch: pytest.MonkeyPatch, background_tasks
 ) -> None:
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _create_setup_game(session_factory, starter_id=1, source="manual")
@@ -163,6 +164,7 @@ async def test_manual_entry_second_message_stages_and_shows_a_preview(
     context = _make_callback_context(session_factory)
 
     await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+    await run_background(background_tasks)
 
     context.bot.send_media_group.assert_awaited_once()
     _, kwargs = context.bot.send_media_group.await_args
@@ -182,7 +184,7 @@ async def test_manual_entry_second_message_stages_and_shows_a_preview(
 
 
 async def test_manual_entry_second_message_keeps_the_staged_entry_when_the_album_times_out(
-    session_factory, monkeypatch: pytest.MonkeyPatch
+    session_factory, monkeypatch: pytest.MonkeyPatch, background_tasks
 ) -> None:
     monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _create_setup_game(session_factory, starter_id=1, source="manual")
@@ -195,10 +197,9 @@ async def test_manual_entry_second_message_keeps_the_staged_entry_when_the_album
     context = _make_callback_context(session_factory)
     context.bot.send_media_group = AsyncMock(side_effect=TimedOut())
 
+    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
     with pytest.raises(TimedOut):
-        await search.search_text_handler(
-            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-        )
+        await run_background(background_tasks)
 
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()

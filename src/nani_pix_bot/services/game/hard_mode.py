@@ -26,7 +26,6 @@ from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import GameStatus, WinMethod
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.services import matching
 from nani_pix_bot.services.game import guesses, state
 from nani_pix_bot.services.game.state import GuessOutcome
 
@@ -102,7 +101,7 @@ def record_hard_mode_guess(
     STAGE_ORDER/stage_config."""
     game.total_guess_count += 1
 
-    correct = matching.is_match(guess_text, state.match_candidates(game))
+    correct = state.is_correct_guess(game, guess_text)
     reveal = None if correct else state.partial_reveal_text(session, game, guess_text)
     if reveal is not None:
         logger.info("partial match revealed {reveal!r}", reveal=reveal, game_id=game.id)
@@ -115,9 +114,7 @@ def record_hard_mode_guess(
             stage=_current_turn(game),
             correct=correct,
             partial_reveal=reveal,
-            score=None
-            if correct
-            else matching.best_score(guess_text, state.match_candidates(game)),
+            score=None if correct else state.guess_score(game, guess_text),
         ),
     )
     if correct:
