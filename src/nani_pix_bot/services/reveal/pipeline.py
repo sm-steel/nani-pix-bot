@@ -165,6 +165,23 @@ def finish(pregen: Pregen, clear: bytes, badge: Badge | None) -> bytes:
     )
 
 
+def preview_clip(
+    image: bytes,
+    algorithm: PixelAlgorithm,
+    widths: tuple[int, ...],
+    effect: RevealEffect,
+    badge: Badge | None,
+) -> bytes:
+    """A whole reveal MP4 in one go, for a cosmetic's preview (seasons spec §3). Unlike
+    `pregenerate`, it leaves the static cache alone: that entry belongs to the game in
+    progress, whose win must not pay to rebuild it."""
+    original, stages = prep(image, algorithm, widths)
+    part1_ts, join_offset = encode.to_ts(EFFECTS[effect](original, stages))
+    static = _new_static(original)
+    overlay = None if badge is None else _overlay(static, badge)
+    return encode.ending_and_join(part1_ts, join_offset, static.clear_yuv, static.size, overlay)
+
+
 def warm_up() -> None:
     """No-op submit target: importing this module in a fresh worker is the whole point, so the
     first real job doesn't pay for the PIL/effects imports."""

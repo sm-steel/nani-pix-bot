@@ -68,14 +68,35 @@ def grant(session: Session, player_id: int, request: ItemGrant) -> bool:
     return True
 
 
-def owned(session: Session, player_id: int, slot: CosmeticSlot | None = None) -> list[ResolvedItem]:
-    ids = session.scalars(
-        select(OwnedItem.item_id)
+def owned_rows(
+    session: Session, player_id: int, slot: CosmeticSlot | None = None
+) -> list[tuple[int, ResolvedItem]]:
+    """(OwnedItem.id, item) of everything the player owns, in acquisition order.
+    The row id is what /cosmetics buttons carry: an item id may not fit a callback."""
+    rows = session.execute(
+        select(OwnedItem.id, OwnedItem.item_id)
         .where(OwnedItem.player_id == player_id)
         .order_by(OwnedItem.acquired_at, OwnedItem.id)
     )
-    found = [r for r in (registry.item(i) for i in ids) if r is not None]
-    return [r for r in found if slot is None or r.item.slot is slot]
+    found = [(row_id, registry.item(item_id)) for row_id, item_id in rows]
+    return [
+        (row_id, r)
+        for row_id, r in found
+        if r is not None and (slot is None or r.item.slot is slot)
+    ]
+
+
+def owned(session: Session, player_id: int, slot: CosmeticSlot | None = None) -> list[ResolvedItem]:
+    return [r for _, r in owned_rows(session, player_id, slot)]
+
+
+def owned_by(session: Session, player_id: int, owned_id: int) -> ResolvedItem | None:
+    """The item of OwnedItem row `owned_id`, only when that row is `player_id`'s —
+    a forged button carrying someone else's row id gets None."""
+    row = session.get(OwnedItem, owned_id)
+    if row is None or row.player_id != player_id:
+        return None
+    return registry.item(row.item_id)
 
 
 def equip(session: Session, player_id: int, item_id: str) -> ResolvedItem:

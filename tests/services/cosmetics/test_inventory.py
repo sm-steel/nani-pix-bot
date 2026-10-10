@@ -87,3 +87,24 @@ def test_owned_comes_back_in_acquisition_order(session, alice) -> None:
     older.acquired_at = datetime(2000, 1, 1, tzinfo=UTC)
     session.flush()
     assert [r.item_id for r in inventory.owned(session, alice)] == [FLAIR, "demo_1/title.demo"]
+
+
+def test_owned_rows_carry_the_row_id_and_filter_by_slot(session, alice) -> None:
+    inventory.grant(session, alice, ItemGrant(FLAIR, ItemSource.ADMIN))
+    inventory.grant(session, alice, ItemGrant("demo_1/title.demo", ItemSource.ADMIN))
+    row_id = session.scalar(select(OwnedItem.id).where(OwnedItem.item_id == FLAIR))
+    rows = inventory.owned_rows(session, alice, CosmeticSlot.NAME_FLAIR)
+    assert [(i, r.item_id) for i, r in rows] == [(row_id, FLAIR)]
+    assert len(inventory.owned_rows(session, alice)) == 2
+
+
+def test_owned_by_resolves_only_the_players_own_row(session, alice) -> None:
+    session.add(Player(telegram_user_id=7))
+    inventory.grant(session, alice, ItemGrant(FLAIR, ItemSource.ADMIN))
+    row_id = session.scalar(select(OwnedItem.id))
+    assert row_id is not None
+    resolved = inventory.owned_by(session, alice, row_id)
+    assert resolved is not None
+    assert resolved.item_id == FLAIR
+    assert inventory.owned_by(session, 7, row_id) is None
+    assert inventory.owned_by(session, alice, row_id + 100) is None

@@ -83,6 +83,22 @@ def test_pregenerate_builds_the_confetti_so_finish_does_not(monkeypatch) -> None
     assert decode_clean(pipeline.finish(pregen, png, pipeline.Badge(None, "@w")))
 
 
+@pytest.mark.ffmpeg
+def test_preview_clip_renders_a_whole_reveal_and_leaves_the_game_cache_alone() -> None:
+    png = _png()
+    pipeline.pregenerate(png, PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS)
+    cached = pipeline._static
+    clip = pipeline.preview_clip(
+        _png((160, 90)),
+        PixelAlgorithm.MEDIAN,
+        WIDTHS,
+        RevealEffect.IRIS,
+        pipeline.Badge(None, "@you"),
+    )
+    assert decode_clean(clip)
+    assert pipeline._static is cached
+
+
 def test_nothing_run_by_the_worker_imports_loguru() -> None:
     """The spawned worker never runs setup_logging, so its log lines would carry no game context
     (and break LOG_FORMAT=json); timings are logged bot-side. store.py runs bot-side only."""

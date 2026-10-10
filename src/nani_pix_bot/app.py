@@ -28,6 +28,7 @@ from nani_pix_bot import db, heartbeat
 from nani_pix_bot.commands import (
     achievements,
     balance,
+    cosmetics,
     currency_config,
     dm_start,
     game_flow,
@@ -334,6 +335,9 @@ def build_application(config: Config) -> Application:
     application.add_handler(CallbackQueryHandler(shop.shop_callback_handler, pattern=r"^shop:"))
     application.add_handler(CallbackQueryHandler(title.title_callback, pattern=r"^title:"))
     application.add_handler(
+        CallbackQueryHandler(cosmetics.cosmetics_callback, pattern=rf"^{cosmetics.PREFIX}")
+    )
+    application.add_handler(
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
     )
     application.add_handler(CallbackQueryHandler(standings_dm.standings_callback, pattern=r"^std:"))
@@ -362,6 +366,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("partialmatch", partialmatch.partialmatch_command))
     application.add_handler(CommandHandler("refund", refund.refund_command))
     application.add_handler(CommandHandler("title", title.title_command))
+    application.add_handler(CommandHandler("cosmetics", cosmetics.cosmetics_command))
     application.add_handler(CommandHandler("setwinner", setwinner.setwinner_command))
     application.add_handler(CommandHandler("language", language.language_command))
     application.add_handler(CommandHandler("linkmal", mal_link.linkmal_command))

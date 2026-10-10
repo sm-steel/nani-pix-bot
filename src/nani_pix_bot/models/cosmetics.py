@@ -4,11 +4,13 @@ from sqlalchemy import BigInteger, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nani_pix_bot.models.base import Base
-from nani_pix_bot.models.enums import CosmeticSlot, ItemSource
+from nani_pix_bot.models.enums import CosmeticSlot, ItemSource, PreviewKind
 
 ITEM_ID_LENGTH = 96
 SLOT_LENGTH = 24
 SOURCE_LENGTH = 16
+PREVIEW_KIND_LENGTH = 8
+FILE_ID_LENGTH = 256
 
 
 class OwnedItem(Base):
@@ -38,3 +40,15 @@ class EquippedItem(Base):
     )
     slot: Mapped[CosmeticSlot] = mapped_column(String(SLOT_LENGTH), primary_key=True)
     item_id: Mapped[str] = mapped_column(String(ITEM_ID_LENGTH))
+
+
+class ItemPreview(Base):
+    """The Telegram file_id of an item's rendered preview (seasons spec §3), so
+    each preview is rendered and uploaded once. Text previews aren't stored."""
+
+    __tablename__ = "item_previews"
+
+    item_id: Mapped[str] = mapped_column(String(ITEM_ID_LENGTH), primary_key=True)
+    kind: Mapped[PreviewKind] = mapped_column(String(PREVIEW_KIND_LENGTH))
+    file_id: Mapped[str] = mapped_column(String(FILE_ID_LENGTH))
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))

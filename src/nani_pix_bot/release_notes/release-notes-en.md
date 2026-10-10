@@ -7,3 +7,4 @@
 - 👮 Admins can schedule and manage seasons with `/season` (seasons themselves arrive in a later update).
 - 🎁 Admins can hand out season cosmetics with `/grantitem`.
 - 🪪 `/profile [@username]` shows a player's profile card: avatar, title, a stamp for every season played and how many cosmetics they own.
+- 🎨 `/cosmetics` (in a private chat) lists the season cosmetics you own by slot, previews each one — as an image, a short clip or a line of text — and lets you equip it: a win effect, a reveal transition and a stage frame for your rounds, a name flair emoji after your name in the group, a reaction on your winning guess, a profile banner and season titles.

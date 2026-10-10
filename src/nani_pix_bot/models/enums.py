@@ -452,3 +452,12 @@ class ItemSource(enum.StrEnum):
     """How an owned season cosmetic was obtained (seasons spec §3). Plain string."""
 
     ADMIN = "admin"
+
+
+class PreviewKind(enum.StrEnum):
+    """What an item's preview is (seasons spec §3): a line of text, an image or a clip.
+    Plain string."""
+
+    TEXT = "text"
+    PHOTO = "photo"
+    VIDEO = "video"
