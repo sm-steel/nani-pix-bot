@@ -1,0 +1,86 @@
+---
+title: Achievements and titles
+description: Achievements, their rewards, titles, and the weekly, monthly and yearly champions.
+sidebar:
+  order: 7
+---
+
+Playing earns **achievements**. Each one pays pixels 💠 and achievement points 🏆,
+and the best of them unlock a **title** shown next to your name. On top of that,
+every week, month and year crowns its **champions**.
+
+![An achievement card background: an anime girl cheering at a golden sunset](../../../assets/cards/unlock-gold.png)
+
+When you unlock something, the bot posts a card like this one, with your avatar on
+it, in the game topic.
+
+## Rarities and rewards
+
+| Rarity | Pixels (default) | Points |
+|---|---|---|
+| Bronze | 25 | 1 |
+| Silver | 75 | 3 |
+| Gold | 200 | 8 |
+| Platinum | 500 | 20 |
+
+Most achievements are **ladders**: you climb them tier by tier, and each tier pays
+its own reward. A few examples:
+
+- **Sharpshooter**: rounds you've won.
+- **Storyteller**: rounds you hosted that someone solved.
+- **Persistent**: rounds you guessed in at all.
+- **Regular** and **Unbroken**: days you played, and days in a row.
+- **Eagle Eye**: wins at the very first stage.
+- **Stumper**: rounds you hosted that stumped at least three guessers.
+- **Hard Mode Hero**: HARD MODE wins.
+
+Others are **one-off feats**, like **First Try** (the round's very first guess is
+yours, and it's right) or **Speed Demon** (winning within a minute of the round
+starting). A couple can only ever be held by one person in the group, such as
+**Pioneer**. And some achievements are **secret**: they stay hidden until
+someone earns them, so you'll have to find those yourself.
+
+Only what happens after achievements were added to your group counts; older games
+don't.
+
+## Seeing your achievements
+
+- **`/achievements`** in the game topic shows a summary: how many you have, your
+  points, rank, title and latest unlocks. Its **📖 Browse in DM** button opens the
+  full list.
+- **`/achievements @username`** shows someone else's, and **`/achievements top`**
+  the top 10 by points.
+- The full list, in a private message, can show everything, only what you've
+  earned, or only what you haven't, with your progress towards the next tier. You
+  can also **compare** your achievements with another player's.
+
+## Titles
+
+The top tier of every ladder, every one-person achievement and every champion win
+unlock a title. Choose which one appears next to your name with `/title` in a
+private message, or choose none. Titles show on the leaderboard and in the bot's
+announcements.
+
+## Champions
+
+![A podium card background](../../../assets/cards/podium-year.png)
+
+Every week, month and year is a race for 🌟 points, earned from wins in that period:
+
+| How you won | 🌟 |
+|---|---|
+| At stage 1 / 2 / 3 / 4 / 5 | 5 / 4 / 3 / 2 / 1 |
+| HARD MODE, turn 1 / turn 2 | 6 / 4 |
+| A clean solve: a normal round won with no wrong guess of your own in it | +1 |
+| Hosting a round someone solved | +1 |
+
+- **Ties** go to more wins in the period, then fewer wrong guesses in the rounds
+  you won, then less total time to solve. Players still equal share the place.
+- **`/standings`** shows the running week, month and year: the top 5 of each, plus
+  your own place. Its buttons explain the scoring and list this week's changes.
+- **When a period ends** (at midnight in the group's time zone), the bot posts the
+  podium. Everyone in first place becomes champion and gets the Champion
+  achievement and title.
+
+Every win message also shows the 🌟 it earned and where that puts the winner in
+each race.
