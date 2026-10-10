@@ -153,5 +153,5 @@ async def test_without_a_gate_nothing_is_filtered_or_checked(calls: dict) -> Non
     pick = await _gather(None)
 
     assert pick is not None
-    assert calls["shiki"] == [{}]  # no genre_id passed at all: today's call shape
+    assert calls["shiki"] == [{"genre_id": None}]
     assert calls["tags"] == []

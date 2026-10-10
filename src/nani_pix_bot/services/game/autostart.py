@@ -150,10 +150,7 @@ async def _shikimori_pick(
     search_client: httpx.AsyncClient, genre_id: int | None
 ) -> AnimePick | None:
     try:
-        if genre_id is None:
-            shikimori_result = await shikimori.random_anime(search_client)
-        else:
-            shikimori_result = await shikimori.random_anime(search_client, genre_id=genre_id)
+        shikimori_result = await shikimori.random_anime(search_client, genre_id=genre_id)
     except _AUTOSTART_SERVICE_ERRORS as exc:
         logger.warning(
             "Shikimori random-anime pick failed, falling back to Tenrai: {error}", error=exc

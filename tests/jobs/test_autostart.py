@@ -179,7 +179,7 @@ async def test_idle_autostart_job_callback_reschedules_on_a_failed_pick(
         session.commit()
     context = _make_context(session_factory)
 
-    async def failing_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def failing_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return None
 
     monkeypatch.setattr(autostart_service, "gather_pick", failing_gather_pick)
@@ -233,7 +233,7 @@ async def test_maybe_overthrow_claims_the_game_on_a_hit(
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -278,7 +278,7 @@ async def test_a_claimed_overthrow_logs_the_dethroned_winner(
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -309,7 +309,7 @@ async def test_a_failed_overthrow_event_write_is_logged_and_does_not_abort(
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     real_emit = autostart_timers.events.emit
@@ -374,7 +374,7 @@ async def test_run_bot_autostart_cancels_the_idle_autostart_timer_on_success(
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -408,7 +408,7 @@ async def test_run_bot_autostart_aborts_when_a_game_appeared_in_the_meantime(
         session.commit()
     context = _make_context(session_factory)
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -436,7 +436,7 @@ async def test_run_bot_autostart_aborts_when_the_turn_was_claimed_in_the_meantim
         session.commit()
     context = _make_context(session_factory)
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -479,7 +479,7 @@ async def test_run_bot_autostart_creates_a_hard_mode_game_and_posts_both_images(
 
     monkeypatch.setattr("nani_pix_bot.services.pixelate.pixelate", fake_pixelate)
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -542,7 +542,7 @@ async def test_run_bot_autostart_reserves_the_reveal_slot_and_starts_the_pre_ren
         "nani_pix_bot.services.pixelate.pixelate", lambda image, width, algorithm: image
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -580,7 +580,7 @@ async def test_run_bot_autostart_replaces_an_older_reveal_slot(
         "nani_pix_bot.services.pixelate.pixelate", lambda image, width, algorithm: image
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
@@ -618,7 +618,7 @@ async def test_run_bot_autostart_uses_the_overthrow_open_caption_when_no_winner_
         lambda image_bytes, target_width, algorithm: b"pixelated",
     )
 
-    async def fake_gather_pick(search_client, tmdb_client, tenrai_client):
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)

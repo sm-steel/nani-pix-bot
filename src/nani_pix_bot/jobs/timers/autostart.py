@@ -298,12 +298,7 @@ async def run_bot_autostart(
     tenrai_client = context.bot_data["tenrai_client"]
     with session_scope(session_factory) as session:
         gate = gate_service.active_gate(session)
-    if gate is None:
-        pick = await autostart_service.gather_pick(search_client, tmdb_client, tenrai_client)
-    else:
-        pick = await autostart_service.gather_pick(
-            search_client, tmdb_client, tenrai_client, gate=gate
-        )
+    pick = await autostart_service.gather_pick(search_client, tmdb_client, tenrai_client, gate=gate)
     if pick is None:
         logger.warning(
             "bot autostart ({trigger}) found no usable pick after {attempts} attempt(s) — "
