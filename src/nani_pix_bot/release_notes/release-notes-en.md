@@ -6,3 +6,4 @@
 - 📖 There's now an illustrated guide, in English and Russian, covering how to play, every command and how to run your own bot: https://sm-steel.github.io/nani-pix-bot/
 - 👮 Admins can schedule and manage seasons with `/season` (seasons themselves arrive in a later update).
 - 🎁 Admins can hand out season cosmetics with `/grantitem`.
+- 🪪 `/profile [@username]` shows a player's profile card: avatar, title, a stamp for every season played and how many cosmetics they own.

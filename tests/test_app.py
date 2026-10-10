@@ -102,6 +102,7 @@ def test_build_application_registers_every_command() -> None:
         "linkmal",
         "unlinkmal",
         "balance",
+        "profile",
         "shop",
         "tip",
         "pixelconfig",

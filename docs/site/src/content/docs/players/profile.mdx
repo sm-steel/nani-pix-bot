@@ -1,0 +1,35 @@
+---
+title: Your profile
+description: The /profile card with your season stamps, title and cosmetics.
+sidebar:
+  order: 8.5
+---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+
+`/profile` shows your profile as an image card. It works in the game topic and in a
+private chat with the bot. Add a username to look at someone else's card:
+`/profile @username`.
+
+<TelegramChat label="Example: asking for a profile card">
+  <TgMessage out>/profile</TgMessage>
+  <TgMessage from="nani-pix-bot">
+    @alice 🌸 · Demo Star
+    Seasons played: 2
+    Cosmetics owned: 5
+  </TgMessage>
+</TelegramChat>
+
+The card shows:
+
+- your avatar, your name and the [title](/nani-pix-bot/players/achievements/#titles) you chose;
+- a **stamp** for every finished season you earned Season XP in (up to six on the card,
+  the newest first);
+- how many seasons you have played and how many cosmetics you own.
+
+The caption under the card also shows your name flair, if you equipped one.
+
+The card's background is your equipped **profile banner**. Without one, it is the key
+visual of the last season you played.
+
+If the username isn't known to the bot, it answers that it doesn't know that player.

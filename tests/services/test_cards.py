@@ -4,6 +4,7 @@ from io import BytesIO
 from itertools import pairwise
 from typing import Any, cast
 
+import pytest
 from PIL import Image, ImageChops
 
 from nani_pix_bot.models.enums import Rarity
@@ -394,3 +395,31 @@ def test_season_banner_renders_a_png_with_and_without_background() -> None:
         headline="Season starts", title="Demo Season", subtitle="01.11 \u2013 11.11"
     )
     assert render_season_banner(card)[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def _profile_card(stamps: int) -> cards.ProfileCard:
+    return cards.ProfileCard(
+        name="@alice",
+        title="Demo Star",
+        stamps=tuple(cards.StampEntry(f"Season {i}", gold=i == 0) for i in range(stamps)),
+        stats_line="Seasons: 3 · Cosmetics: 4",
+        seed=1,
+    )
+
+
+@pytest.mark.parametrize("stamps", [0, 1, 7])
+def test_profile_card_is_a_png_of_the_card_size(stamps: int) -> None:
+    png = cards.render_profile_card(_profile_card(stamps), None, None)
+    assert Image.open(BytesIO(png)).size == cards.CARD_SIZE
+
+
+def test_profile_card_shows_at_most_six_stamps() -> None:
+    six = cards.render_profile_card(_profile_card(6), None, None)
+    seven = cards.render_profile_card(_profile_card(7), None, None)
+    assert six == seven
+
+
+def test_profile_card_takes_an_avatar_and_a_background() -> None:
+    plain = cards.render_profile_card(_profile_card(1), None, None)
+    full = cards.render_profile_card(_profile_card(1), _red_avatar(), _busy_background())
+    assert full != plain

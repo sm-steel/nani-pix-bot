@@ -39,6 +39,7 @@ from nani_pix_bot.commands import (
     mal_link,
     onboarding,
     partialmatch,
+    profile,
     quiet_hours,
     refund,
     season,
@@ -354,6 +355,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
     application.add_handler(CommandHandler("status", status.status_command))
     application.add_handler(CommandHandler("balance", balance.balance_command))
+    application.add_handler(CommandHandler("profile", profile.profile_command))
     application.add_handler(CommandHandler("shop", shop.shop_command))
     application.add_handler(CommandHandler("tip", tip.tip_command))
     application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))

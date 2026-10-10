@@ -519,3 +519,81 @@ def render_season_banner(card: SeasonBanner, background: bytes | None = None) ->
         anchor="mm",
     )
     return _png(image)
+
+
+PROFILE_STAMPS_MAX = 6
+_STAMP_SIZE = 84
+_STAMP_GAP = 24
+_STAMP_Y = 380
+
+
+@dataclass(frozen=True)
+class StampEntry:
+    label: str
+    gold: bool = False
+
+
+@dataclass(frozen=True)
+class ProfileCard:
+    name: str
+    title: str | None
+    stamps: tuple[StampEntry, ...]
+    stats_line: str
+    seed: int
+
+
+def _stamp(image: Image.Image, entry: StampEntry, left: int) -> None:
+    """One season stamp: an initials disc (a gold ring when the pass was completed)
+    with the season's name underneath."""
+    draw = ImageDraw.Draw(image)
+    seed = int.from_bytes(hashlib.sha256(entry.label.encode()).digest()[:4], "big")
+    disc = avatar_disc(None, entry.label, seed, _STAMP_SIZE)
+    image.paste(disc, (left, _STAMP_Y), disc)
+    ring = RARITY_COLORS[Rarity.GOLD] if entry.gold else _MUTED
+    draw.ellipse(
+        (left - 4, _STAMP_Y - 4, left + _STAMP_SIZE + 3, _STAMP_Y + _STAMP_SIZE + 3),
+        outline=ring,
+        width=4,
+    )
+    label_font = font(20)
+    label = _fit(draw, entry.label, label_font, _STAMP_SIZE + _STAMP_GAP)
+    draw.text(
+        (left + _STAMP_SIZE / 2, _STAMP_Y + _STAMP_SIZE + 26),
+        label,
+        font=label_font,
+        fill=_MUTED,
+        anchor="mm",
+    )
+
+
+def render_profile_card(
+    card: ProfileCard, avatar: bytes | None, background: bytes | None = None
+) -> bytes:
+    """A player's profile: avatar, name, title, a row of season stamps (at most
+    PROFILE_STAMPS_MAX) and a stats line, over the equipped banner when there is one."""
+    image = _canvas(background, _unlock_shade())
+    draw = ImageDraw.Draw(image)
+    color = RARITY_COLORS[Rarity.GOLD]
+    draw.rectangle((0, 0, _WIDTH - 1, _HEIGHT - 1), outline=color, width=10)
+    badge = badge_ring(
+        avatar_disc(avatar, card.name, card.seed, _AVATAR * SUPERSAMPLE), color, Rarity.GOLD
+    )
+    radius = _AVATAR // 2 + _RING_TOTAL
+    _paste_badge(image, badge, (_MARGIN + radius, _HEIGHT // 2))
+    x = 2 * _MARGIN + 2 * radius
+    width = _WIDTH - x - _MARGIN
+    name_font = _name_font(draw, card.name, width)
+    draw.text((x, 100), _fit(draw, card.name, name_font, width), font=name_font, fill=_TEXT)
+    if card.title:
+        title_font = font(36)
+        draw.text((x, 200), _fit(draw, card.title, title_font, width), font=title_font, fill=color)
+    for i, entry in enumerate(card.stamps[:PROFILE_STAMPS_MAX]):
+        _stamp(image, entry, x + 4 + i * (_STAMP_SIZE + _STAMP_GAP))
+    stats_font = font(32, bold=True)
+    draw.text(
+        (x, _HEIGHT - 110),
+        _fit(draw, card.stats_line, stats_font, width),
+        font=stats_font,
+        fill=_TEXT,
+    )
+    return _png(image)
