@@ -11,9 +11,9 @@ from nani_pix_bot.models.enums import CosmeticSlot, SeasonStatus
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.services import players
+from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import titles
-from nani_pix_bot.services.cards import season_background
+from nani_pix_bot.services.cards import StatEntry, season_background
 from nani_pix_bot.services.cosmetics import inventory, looks
 
 
@@ -33,6 +33,14 @@ class ProfileView:
     stamps: tuple[Stamp, ...]  # newest season first
     seasons_played: int
     cosmetics_owned: int
+
+
+def stats(seasons: int, owned: int, lang: str) -> tuple[StatEntry, ...]:
+    """The profile card's stats line: seasons played, cosmetics owned."""
+    return (
+        StatEntry("medal", i18n.t("profile.stat_seasons", lang, seasons=seasons)),
+        StatEntry("gift", i18n.t("profile.stat_cosmetics", lang, owned=owned)),
+    )
 
 
 def _played_run_ids(session: Session, player_id: int) -> list[str]:

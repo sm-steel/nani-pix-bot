@@ -121,3 +121,11 @@ def test_title_text_is_resolved(session, alice, art) -> None:
     session.flush()
     assert profile.build(session, alice, "EN").title == "Demo Star"
     assert profile.build(session, alice, "RU").title == "Демо-звезда"
+
+
+def test_stats_are_seasons_with_a_medal_and_cosmetics_with_a_gift() -> None:
+    assert [(e.icon, e.text) for e in profile.stats(2, 9, "EN")] == [
+        ("medal", "Seasons: 2"),
+        ("gift", "Cosmetics: 9"),
+    ]
+    assert [e.text for e in profile.stats(2, 9, "RU")] == ["Сезонов: 2", "Предметов: 9"]

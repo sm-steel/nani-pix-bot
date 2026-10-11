@@ -809,7 +809,9 @@ src/nani_pix_bot/
     cards/        # Pillow image cards, no Telegram: render.py (unlock and
                    # podium cards), icons.py (the drawn diamond, trophy and
                    # star), backgrounds.py (optional per-slot anime
-                   # backgrounds)
+                   # backgrounds), profile_card.py (the /profile card:
+                   # stamps, achievement chips, stats line), glass.py (its
+                   # default gradient and glass-pixel grid)
     economy/      # the currency economy (shown as 💠 pixels) — see MECHANICS.md's "Pixels".
                    # __init__.py deliberately re-exports nothing (import
                    # submodules directly): players.py imports
@@ -1337,7 +1339,14 @@ for 💠, trophy for achievement points and star for the champion score, an
 anti-aliased avatar badge (solid inner ring, a conic sweep-gradient outer
 ring in a per-rarity palette, a glow), initials (letters only) when there is
 no avatar, and an optional anime background per slot that is picked
-deterministically by player and placed under a dark overlay.
+deterministically by player and placed under a dark overlay. The profile card
+adds two committed colour PNGs from Noto Emoji (`assets/icons/`, 🏅 and 🎁 on
+its stats line), since the font has no emoji. It also adds achievement chips
+(a rarity medal and the name on a translucent pill, at most four in two rows,
+with smaller text for a long name so all four fit) and season stamps, drawn
+supersampled with the full name wrapped onto two lines. Behind it all is the
+banner, or a diagonal gradient, with `glass.py`'s grid of faint glass pixels
+fading from the top-left corner to the middle.
 
 **Testing.** Evaluating achievements on every emitted event would change
 balances in the ~500 existing economy tests, so an autouse fixture in

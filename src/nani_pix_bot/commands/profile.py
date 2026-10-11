@@ -26,12 +26,7 @@ def _card(view: profile.ProfileView, lang: str) -> ProfileCard:
         name=view.name,
         title=view.title,
         stamps=tuple(StampEntry(s.label, s.gold) for s in view.stamps),
-        stats_line=i18n.t(
-            "profile.stats",
-            lang,
-            seasons=view.seasons_played,
-            owned=view.cosmetics_owned,
-        ),
+        stats=profile.stats(view.seasons_played, view.cosmetics_owned, lang),
         seed=view.player_id,
     )
 
