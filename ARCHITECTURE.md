@@ -713,6 +713,8 @@ src/nani_pix_bot/
                    #   overlays.py     WIN_OVERLAYS: overlay key -> clip
                    #                   renderer for the ending
                    #                   (DEFAULT_OVERLAY = confetti)
+                   #   petals.py       the Sakura win overlays: sakura
+                   #                   petals over the badge (petal_drift)
                    #   store.py        the single reveal_video slot: reserve,
                    #                   mark_ready/mark_failed (guarded by
                    #                   game_id), load, clear
@@ -782,6 +784,8 @@ src/nani_pix_bot/
                    # DB/Telegram; DST-correct via zoneinfo
     text.py       # cut_at_line: cut text to a length at a line break,
                    # with a marker (release notes, rich.py's fit)
+    shapes.py     # pure vector shapes shared by the stage frames and the
+                   # reveal overlays (the sakura petal outline)
     players.py    # Player lookup/creation, win-count bookkeeping,
                    # leaderboard query — everything that touches only
                    # the Player table (win increments themselves happen

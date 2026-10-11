@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
+from nani_pix_bot.services.shapes import petal_outline
+
 Color = tuple[int, int, int]
 
 SEED = 7
@@ -45,25 +47,6 @@ _PRESSED_VEIN = (190, 70, 110, 170)
 _UNRYU = (255, 250, 252, 170)  # the white "cloud dragon" fibres
 _UNRYU_STEPS = 14
 _PETAL_SS = 3
-
-
-def petal_outline(
-    base: tuple[float, float], length: float, width: float, angle: float
-) -> list[tuple[float, float]]:
-    """One sakura petal from `base` along `angle`: widening, rounded, with the
-    notch at its tip."""
-    half_lobe, notch_depth = 0.38, 0.84
-    side = [
-        (length * t, width * math.sin(math.pi * t) ** 0.6)
-        for t in (0.04 + 0.88 * i / 14 for i in range(15))
-    ]
-    local = [(u, -v) for u, v in side]
-    local += [(length, -width * half_lobe), (length * notch_depth, 0.0)]
-    local += [(length, width * half_lobe)]
-    local += [(u, v) for u, v in reversed(side)]
-    cos, sin = math.cos(angle), math.sin(angle)
-    x, y = base
-    return [(x + u * cos - v * sin, y + u * sin + v * cos) for u, v in local]
 
 
 def border_for(size: tuple[int, int]) -> int:

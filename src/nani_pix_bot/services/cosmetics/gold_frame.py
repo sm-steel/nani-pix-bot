@@ -10,6 +10,7 @@ import random
 from PIL import Image, ImageDraw, ImageFilter
 
 from nani_pix_bot.services.cosmetics import paper_frames
+from nani_pix_bot.services.shapes import petal_outline
 
 Color = tuple[int, int, int]
 
@@ -102,7 +103,7 @@ def _blossom(diameter: int, rotation: float) -> Image.Image:
     outline = max(2, big // 36)
     for i in range(5):
         angle = rotation + i * math.tau / 5
-        petal = paper_frames.petal_outline((centre, centre), big * 0.47, big * 0.2, angle)
+        petal = petal_outline((centre, centre), big * 0.47, big * 0.2, angle)
         draw.polygon(petal, fill=_PETAL, outline=_PETAL_EDGE, width=outline)
     core = big * 0.08
     draw.ellipse((centre - core, centre - core, centre + core, centre + core), fill=_PETAL_CENTRE)
