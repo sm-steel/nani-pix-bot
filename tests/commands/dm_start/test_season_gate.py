@@ -255,6 +255,7 @@ def test_unidentifiable_advice_names_the_catalogues() -> None:
     )
     advice_ru = i18n.t("season.gate.unidentifiable", "RU")
     assert "мне нужно знать жанр аниме" in advice_ru
+    assert "для этого аниме я" in advice_ru
     assert advice_ru.endswith("найдите это по названию в поиске Shikimori или Tenrai.")
 
 
