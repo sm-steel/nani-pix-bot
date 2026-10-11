@@ -10,7 +10,7 @@ from types import MappingProxyType
 from loguru import logger
 from PIL import Image, ImageDraw
 
-from nani_pix_bot.services.cosmetics import paper_frames
+from nani_pix_bot.services.cosmetics import gold_frame, paper_frames
 
 _SIMPLE_WIDTH_RATIO = 0.03
 _SIMPLE_COLOR = (245, 245, 245)
@@ -26,7 +26,11 @@ def _simple_border(image: Image.Image) -> Image.Image:
 
 
 FRAMES: Mapping[str, Callable[[Image.Image], Image.Image]] = MappingProxyType(
-    {"simple_border": _simple_border, "paper": paper_frames.paper}
+    {
+        "simple_border": _simple_border,
+        "paper": paper_frames.paper,
+        "gold_washi": gold_frame.gold_washi,
+    }
 )
 
 
