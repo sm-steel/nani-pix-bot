@@ -28,7 +28,14 @@ export default defineConfig({
         { icon: 'github', label: 'GitHub', href: 'https://github.com/sm-steel/nani-pix-bot' },
       ],
       sidebar: [
-        { label: 'Players', translations: { ru: 'Игрокам' }, items: [{ autogenerate: { directory: 'players' } }] },
+        {
+          label: 'Players',
+          translations: { ru: 'Игрокам' },
+          items: [
+            { autogenerate: { directory: 'players' } },
+            { label: 'Seasons', translations: { ru: 'Сезоны' }, items: [{ autogenerate: { directory: 'seasons' } }] },
+          ],
+        },
         { label: 'Group admins', translations: { ru: 'Админам группы' }, items: [{ autogenerate: { directory: 'admins' } }] },
         { label: 'Self-hosting', translations: { ru: 'Свой сервер' }, items: [{ autogenerate: { directory: 'self-hosting' } }] },
         { label: "What's new", translations: { ru: 'Что нового' }, link: '/whats-new/' },
