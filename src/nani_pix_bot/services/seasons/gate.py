@@ -10,8 +10,11 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from nani_pix_bot import log_context
+from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import Gate, GateTag
+from nani_pix_bot.services.search import tags as anime_tags
 from nani_pix_bot.services.search.tags import AnimeTag
 from nani_pix_bot.services.seasons import schedule
 from nani_pix_bot.services.seasons.tags import TagClients, TagsUnavailableError, fetch_tags
@@ -39,6 +42,10 @@ def _same_tag(want: GateTag, tag: AnimeTag) -> bool:
     if tag.mal_id is not None:
         return tag.mal_id == want.mal_id
     return tag.name.casefold() == want.name.casefold()
+
+
+def matches_one(want: GateTag, tags: Sequence[AnimeTag]) -> bool:
+    return any(_same_tag(want, tag) for tag in tags)
 
 
 def matches(gate: Gate, tags: Sequence[AnimeTag]) -> bool:
@@ -78,3 +85,21 @@ def active_gate(session: Session) -> Gate | None:
         return None
     log_context.bind(season_id=season.id, run_id=season.run_id)
     return run.gate
+
+
+def tag_key(tag: GateTag) -> str:
+    """Stable across providers: a gate tag always has a MAL id."""
+    return f"{tag.kind}:{tag.mal_id}"
+
+
+def won_tags(session: Session, game: Game) -> list[str]:
+    """The gate tags of the game's season this game was on (seasons spec §6,
+    Genre Explorer) — read once at the win and stored in its GAME_WON facts."""
+    if game.season_id is None or not game.anime_tags:
+        return []
+    season = session.get(SeasonSchedule, game.season_id)
+    run = registry.get(season.run_id) if season is not None else None
+    if run is None or run.gate is None:
+        return []
+    tags = anime_tags.from_json(game.anime_tags)
+    return sorted({tag_key(want) for want in run.gate.any_of if matches_one(want, tags)})
