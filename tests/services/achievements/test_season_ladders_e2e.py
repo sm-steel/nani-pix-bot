@@ -4,16 +4,26 @@ import pytest
 from sqlalchemy import select
 
 from nani_pix_bot.models.achievement import AchievementGrant
-from nani_pix_bot.models.enums import CurrencyReason, EventType, ItemSource
-from nani_pix_bot.models.season import SeasonXp
+from nani_pix_bot.models.enums import (
+    CurrencyReason,
+    EventType,
+    GameStatus,
+    ItemSource,
+    PixelStage,
+    SeasonStatus,
+)
+from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.season import SeasonSchedule, SeasonXp
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import events
 from nani_pix_bot.services.achievements import catalogue
 from nani_pix_bot.services.cosmetics.inventory import ItemGrant, grant
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.economy.wallet import LedgerEntry
+from nani_pix_bot.services.game import state
+from nani_pix_bot.services.search import tags
 from nani_pix_bot.services.seasons import season_pass
-from tests.seasons_fixtures import STARTER, WINNER
+from tests.seasons_fixtures import NOW, STARTER, WINNER
 
 pytestmark = pytest.mark.achievements
 
@@ -106,4 +116,40 @@ def test_winning_in_two_gated_genres_earns_the_explorer(session, tagged_game) ->
     win("Romance")
     assert _grants(session, "season_genre_explorer") == []
     win("Action")
+    assert _grants(session, "season_genre_explorer") == [(WINNER, 1)]
+
+
+def _demo_2_game(session) -> Game:
+    season = SeasonSchedule(
+        run_id="demo_2",
+        start_at=NOW - timedelta(days=1),
+        end_at=NOW + timedelta(days=9),
+        status=SeasonStatus.ACTIVE,
+        created_by=9,
+    )
+    session.add(season)
+    session.flush()
+    game = Game(
+        starter_id=STARTER,
+        status=GameStatus.ACTIVE,
+        current_stage=PixelStage.STAGE_2,
+        title_english="Naruto",
+        season_id=season.id,
+    )
+    session.add(game)
+    session.flush()
+    return game
+
+
+def test_real_wins_in_two_gated_genres_earn_the_explorer(session, tagged_game) -> None:
+    """Through state's real win, which reads the gate tags into win_facts."""
+    tagged_game.anime_tags = tags.to_json([tags.AnimeTag("genre", "Romance", 22)])
+    session.flush()
+    state.force_win(session, tagged_game, winner_id=WINNER)
+    assert _grants(session, "season_genre_explorer") == []
+
+    action_game = _demo_2_game(session)
+    action_game.anime_tags = tags.to_json([tags.AnimeTag("genre", "Action", 1)])
+    session.flush()
+    state.force_win(session, action_game, winner_id=WINNER)
     assert _grants(session, "season_genre_explorer") == [(WINNER, 1)]

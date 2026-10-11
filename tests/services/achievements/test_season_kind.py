@@ -197,14 +197,14 @@ def test_an_unearned_one_is_untouched_with_no_open_season(
     assert (item.state, item.value) == (State.UNTOUCHED, 0)
 
 
-def test_a_run_bound_one_is_untouched_in_another_runs_season(
+def test_a_run_bound_one_is_not_listed_in_another_runs_season(
     session, tagged_game, emit_win, monkeypatch
 ) -> None:
     bound = replace(TWO_WINS, run_id="demo_2")
     monkeypatch.setattr(catalogue, "_run_definitions", lambda: (bound,))
     emit_win(winner=WINNER, stage=2)
 
-    assert _status_of(session, TWO_WINS.key).state is State.UNTOUCHED
+    assert TWO_WINS.key not in [s.defn.key for s in status.build(session, WINNER, NOW)]
 
 
 def test_a_hidden_unearned_one_stays_hidden(session, tagged_game, monkeypatch) -> None:

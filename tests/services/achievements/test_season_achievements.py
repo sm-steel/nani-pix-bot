@@ -3,22 +3,26 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import func, select
 
+from nani_pix_bot.jobs import announcements
 from nani_pix_bot.models.achievement import AchievementGrant
+from nani_pix_bot.models.announcement import AnnouncementOutbox
 from nani_pix_bot.models.enums import (
     CurrencyReason,
     EventType,
     GameStatus,
+    OutboxKind,
     SeasonStatus,
 )
 from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonXp
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.services.achievements import catalogue, names
-from nani_pix_bot.services.achievements.definitions import grants_title
+from nani_pix_bot.services import events
+from nani_pix_bot.services.achievements import catalogue, names, season_eval, status
+from nani_pix_bot.services.achievements.definitions import Kind, grants_title
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.economy.wallet import LedgerEntry
-from nani_pix_bot.services.seasons import lifecycle, season_pass, season_shop
+from nani_pix_bot.services.seasons import conversion, lifecycle, season_pass, season_shop
 from tests.seasons_fixtures import NOW, STARTER, WINNER
 
 pytestmark = pytest.mark.achievements
@@ -97,6 +101,76 @@ def test_the_podium_is_granted_at_finalize(session, active_season, tagged_game) 
     assert _grants(session, "season_podium_3") == []
 
 
+def _unlocked_keys_after(session, row_id: int) -> list[str]:
+    rows = session.scalars(
+        select(AnnouncementOutbox).where(
+            AnnouncementOutbox.kind == OutboxKind.UNLOCK, AnnouncementOutbox.id > row_id
+        )
+    )
+    return [session.get(AchievementGrant, r.payload["grant_id"]).key for r in rows]
+
+
+def test_the_season_end_post_is_queued_before_the_podium_unlocks(
+    session, active_season, tagged_game
+) -> None:
+    session.add(SeasonXp(season_id=active_season.id, player_id=WINNER, amount=50, source="win"))
+    _credit_coins(session, active_season, 9)
+    session.flush()
+    _finalize(session, tagged_game, active_season)
+
+    end = session.scalars(
+        select(AnnouncementOutbox).where(AnnouncementOutbox.kind == OutboxKind.SEASON_END)
+    ).one()
+    later = _unlocked_keys_after(session, end.id)
+    assert {"season_podium_1", "season_veteran"} <= set(later)
+    post = announcements.RENDERERS[OutboxKind.SEASON_END](session, end, "EN")
+    assert post is not None
+    assert "2 🪙 = 1 💠" in post.text  # the conversion still makes the end post
+
+
+def test_the_last_games_win_finalizes_with_podium_veteran_and_conversion(
+    session, active_season, tagged_game
+) -> None:
+    session.add(SeasonXp(season_id=active_season.id, player_id=WINNER, amount=50, source="win"))
+    _credit_coins(session, active_season, 9)
+    tagged_game.status = GameStatus.WON
+    active_season.status = SeasonStatus.CLOSING
+    session.flush()
+
+    events.emit(
+        session,
+        EventType.GAME_WON,
+        events.Involved(actor_id=WINNER, subject_id=STARTER, game_id=tagged_game.id),
+        stage=2,
+        hard_mode=False,
+    )
+
+    assert active_season.status == SeasonStatus.ENDED
+    assert _grants(session, "season_podium_1") == [(WINNER, 1, "demo_1")]
+    # The win's host XP ranks the starter too, so both are veterans.
+    assert sorted(_grants(session, "season_veteran")) == [(WINNER, 1, ""), (STARTER, 1, "")]
+    assert conversion.summary(session, active_season.id).players == 2
+
+
+def test_the_achievement_list_scopes_the_open_season_once(
+    session, tagged_game, emit_guess, monkeypatch
+) -> None:
+    emit_guess(player=STARTER)  # a guess from someone else: WINNER's debut stays open
+    calls = []
+    real = season_eval.scoped_history
+
+    def counting(*args):
+        calls.append(args)
+        return real(*args)
+
+    monkeypatch.setattr(season_eval, "scoped_history", counting)
+    items = {s.defn.key: s for s in status.build(session, WINNER, NOW)}
+
+    assert len(calls) == 1
+    assert items["season_debut"].state is status.State.UNTOUCHED
+    assert items["season_on_theme"].target == 5
+
+
 def test_the_champion_title_names_the_season(session, active_season, tagged_game) -> None:
     defn = catalogue.get("season_podium_1")
     assert grants_title(defn, 1) is True
@@ -151,8 +225,24 @@ def test_five_season_wins_earn_on_theme(session, tagged_game, emit_win) -> None:
     assert _grants(session, "season_on_theme") == [(WINNER, 1, "demo_1")]
 
 
-def test_the_eleven_season_definitions_close_the_static_catalogue() -> None:
-    keys = [d.key for d in STATIC if d.key.startswith("season_")][:11]
-    assert keys[0] == "season_debut"
-    assert keys[-1] == "season_on_theme"
-    assert EventType.SEASON_ENDED in catalogue.get("season_podium_1").triggers
+PER_SEASON_KEYS = (
+    "season_debut",
+    "season_opening_act",
+    "season_curtain_call",
+    "season_pass_complete",
+    "season_pass_premium",
+    "season_window_shopper",
+    "season_collector",
+    "season_podium_3",
+    "season_podium_2",
+    "season_podium_1",
+    "season_on_theme",
+)
+
+
+def test_the_eleven_per_season_achievements_are_season_kind_in_order() -> None:
+    by_key = {d.key: d for d in STATIC}
+    assert all(by_key[key].kind is Kind.SEASON for key in PER_SEASON_KEYS)
+    positions = [list(by_key).index(key) for key in PER_SEASON_KEYS]
+    assert positions == sorted(positions)
+    assert EventType.SEASON_ENDED in by_key["season_podium_1"].triggers

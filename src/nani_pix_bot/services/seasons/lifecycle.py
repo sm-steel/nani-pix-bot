@@ -121,9 +121,11 @@ def _finalize(session: Session, row: SeasonSchedule, now: datetime) -> Transitio
     row.ended_at = now
     session.flush()
     _log_frozen(session, row, standings)
+    # Queued before SEASON_ENDED so the end post leads its podium/Veteran
+    # unlocks; it reads the conversion back from the ledger when it's posted.
+    outbox.enqueue_season(session, OutboxKind.SEASON_END, row.id)
     _announce_end(session, row, standings)
     _convert_coins(session, row)
-    outbox.enqueue_season(session, OutboxKind.SEASON_END, row.id)
     return _move(row, SeasonStatus.ENDED)
 
 

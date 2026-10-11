@@ -131,32 +131,41 @@ CATALOGUE: tuple[Definition, ...] = (
 )
 
 
-# One slot: (the runs mapping it was built from, the definitions).
-_run_cache: list[tuple[Mapping[str, SeasonRun], tuple[Definition, ...]]] = []
-
-
-def _run_definitions() -> tuple[Definition, ...]:
-    """Every registered run's own achievements. `definitions()` runs on every
-    event, so this is rebuilt only when the registry's runs mapping changes
-    (it is cached; tests swap it)."""
-    runs = registry.all_runs()
-    if not _run_cache or _run_cache[0][0] is not runs:
-        built = tuple(
-            Definition(
-                f"{run.run_id}.{a.key}",
-                Kind.SEASON,
-                (1,),
-                (a.rarity,),
-                a.triggers,
-                a.progress,
-                hidden=a.hidden,
-                run_id=run.run_id,
-            )
-            for run in runs.values()
-            for a in run.achievements
+def _build_run_definitions(runs: Mapping[str, SeasonRun]) -> tuple[Definition, ...]:
+    return tuple(
+        Definition(
+            f"{run.run_id}.{a.key}",
+            Kind.SEASON,
+            (1,),
+            (a.rarity,),
+            a.triggers,
+            a.progress,
+            hidden=a.hidden,
+            run_id=run.run_id,
         )
-        _run_cache[:] = [(runs, built)]
-    return _run_cache[0][1]
+        for run in runs.values()
+        for a in run.achievements
+    )
+
+
+class _RunDefinitions:
+    """Every registered run's own achievements. `definitions()` runs on every
+    event, so they are rebuilt only when the registry hands back a different
+    runs mapping (it is cached; tests swap it). Holding the mapping keeps the
+    identity check sound."""
+
+    def __init__(self) -> None:
+        self._runs: Mapping[str, SeasonRun] | None = None
+        self._built: tuple[Definition, ...] = ()
+
+    def __call__(self) -> tuple[Definition, ...]:
+        runs = registry.all_runs()
+        if runs is not self._runs:
+            self._runs, self._built = runs, _build_run_definitions(runs)
+        return self._built
+
+
+_run_definitions = _RunDefinitions()
 
 
 def definitions() -> tuple[Definition, ...]:

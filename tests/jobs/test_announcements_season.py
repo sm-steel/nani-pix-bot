@@ -8,8 +8,8 @@ from nani_pix_bot.models.enums import CurrencyReason, OutboxKind, SeasonStatus
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.services.achievements import outbox
-from nani_pix_bot.services.cards import SeasonBanner
+from nani_pix_bot.services.achievements import engine, outbox
+from nani_pix_bot.services.cards import SeasonBanner, UnlockCard
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.seasons import conversion, schedule
 
@@ -123,3 +123,27 @@ def test_end_post_reports_the_coin_conversion(session) -> None:
     assert post is not None
     assert "4 💠" in post.text
     assert "2 🪙 = 1 💠" in post.text
+
+
+def _unlock_row(session, key: str) -> AnnouncementOutbox:
+    session.add(Player(telegram_user_id=1, username="alice"))
+    session.flush()
+    granted = engine.grant(session, engine.GrantRequest(1, key, 1, "demo_1"))
+    return AnnouncementOutbox(kind=OutboxKind.UNLOCK, payload={"grant_id": granted.id})
+
+
+@pytest.mark.parametrize(
+    ("key", "shown"),
+    [("season_debut", "Season Debut"), ("demo_1.double_date", "Double Date")],
+)
+def test_an_untitled_season_unlock_posts_its_name_not_a_raw_key(
+    session, records, key: str, shown: str
+) -> None:
+    post = announcements._unlock_post(session, _unlock_row(session, key), "EN")
+
+    assert post is not None
+    assert shown in post.text
+    assert "achievement." not in post.text
+    assert isinstance(post.card, UnlockCard)
+    assert post.card.name == shown
+    assert not [message for level, message in records if level == "ERROR"]

@@ -929,7 +929,11 @@ src/nani_pix_bot/
                    #                 (style_for, apply_style); watercolor.py
                    #                 is the watercolor drawing
                    #   season_history.py  the History one season's objectives
-                   #                 read (its games + tips in its dates)
+                   #                 and season achievements read (its games
+                   #                 + tips in its dates); season-owned events
+                   #                 (item_gained/pass_completed/season_ended)
+                   #                 are admitted by type, so readers filter
+                   #                 them by data.season_id
                    #   pass_completion.py  a pass track finishing: stamps
                    #                 season_pass.free_completed_at, queues the
                    #                 topic line, emits pass_completed (first)

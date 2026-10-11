@@ -2,6 +2,7 @@
 description (with its threshold), and the title it confers."""
 
 from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.definition import RunAchievement
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.achievements.definitions import Definition, Kind, threshold
 
@@ -30,29 +31,38 @@ def _tiered(defn: Definition) -> bool:
     return len(defn.tiers) > 1 or defn.endless_step is not None
 
 
-def _run_text(defn: Definition, field: str, lang: str) -> str | None:
-    """A run achievement's own text (run module maps, EN fallback), or None for
-    a definition that isn't one."""
+def _run_own(defn: Definition) -> RunAchievement | None:
+    """The run module's own entry behind a run definition, if its run still loads."""
+    run = registry.get(defn.run_id) if defn.run_id is not None else None
+    if run is None:
+        return None
+    return next((a for a in run.achievements if f"{run.run_id}.{a.key}" == defn.key), None)
+
+
+def _run_name(defn: Definition, lang: str) -> str | None:
+    """A run achievement's own name (EN fallback), its key if the run is gone,
+    or None for a definition that isn't a run's."""
     if defn.run_id is None:
         return None
-    run = registry.get(defn.run_id)
-    own = (
-        next((a for a in run.achievements if f"{run.run_id}.{a.key}" == defn.key), None)
-        if run
-        else None
-    )
-    if own is None:
-        return defn.key
-    return own.name(lang) if field == "name" else own.description(lang)
+    own = _run_own(defn)
+    return own.name(lang) if own is not None else defn.key
+
+
+def _run_description(defn: Definition, lang: str) -> str | None:
+    """Like _run_name, for the description."""
+    if defn.run_id is None:
+        return None
+    own = _run_own(defn)
+    return own.description(lang) if own is not None else defn.key
 
 
 def name(defn: Definition, tier: int, lang: str) -> str:
-    base = _run_text(defn, "name", lang) or i18n.t(f"achievement.{defn.key}.name", lang)
+    base = _run_name(defn, lang) or i18n.t(f"achievement.{defn.key}.name", lang)
     return f"{base} {roman(tier)}" if tier > 0 and _tiered(defn) else base
 
 
 def description(defn: Definition, tier: int, lang: str) -> str:
-    own = _run_text(defn, "desc", lang)
+    own = _run_description(defn, lang)
     if own is not None:
         return own
     return i18n.t(f"achievement.{defn.key}.desc", lang, n=threshold(defn, max(tier, 1)))
@@ -80,7 +90,7 @@ def title(defn: Definition, tier: int, period_key: str, lang: str) -> str:
     if defn.kind is Kind.PERIOD and period_key:
         label = period_label(period_key, lang)
         return i18n.t(f"achievement.{defn.key}.title", lang, period=label)
-    if defn.kind is Kind.SEASON and period_key:
+    if defn.kind is Kind.SEASON and defn.titled and period_key:
         label = season_label(period_key, lang)
         return i18n.t(f"achievement.{defn.key}.title", lang, season=label)
     return name(defn, tier, lang)

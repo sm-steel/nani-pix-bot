@@ -103,3 +103,16 @@ def test_the_compare_cell_counts_seasons() -> None:
     earned = Status(_season_def(), State.EARNED, tier=3, period_key="demo_1")
 
     assert compare._cell(earned) == "✅ \N{MULTIPLICATION SIGN}3"
+
+
+def test_the_summary_latest_line_names_an_untitled_season_achievement(
+    session: Session, fake_runs
+) -> None:
+    session.add(Player(telegram_user_id=1, username="a_b"))
+    session.flush()
+    engine.grant(session, engine.GrantRequest(1, "season_debut", 1, "demo_1"))
+
+    text = render.summary(session, 1, "en", datetime.now(UTC))
+
+    assert "Latest: Season Debut" in text
+    assert "achievement.season_debut" not in text

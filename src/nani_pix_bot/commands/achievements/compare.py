@@ -77,8 +77,9 @@ def _table(
 
 def compare_view(session: Session, request: CompareRequest, lang: str) -> browser.Rendered:
     now = datetime.now(UTC)
-    mine = status.build(session, request.viewer_id, now)
-    pairs = status.compare(mine, status.build(session, request.other_id, now), request.filt)
+    mine = status.build(session, request.viewer_id, now, alongside=request.other_id)
+    theirs = status.build(session, request.other_id, now, alongside=request.viewer_id)
+    pairs = status.compare(mine, theirs, request.filt)
     page = paging.clamp_page(request.page, total=len(pairs), size=COMPARE_PAGE_SIZE)
     pages = paging.page_count(len(pairs), COMPARE_PAGE_SIZE)
     shown = pairs[page * COMPARE_PAGE_SIZE : (page + 1) * COMPARE_PAGE_SIZE]
