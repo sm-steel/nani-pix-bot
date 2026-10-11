@@ -1,6 +1,5 @@
-"""/profile [@username] — a player's profile card (seasons spec §5), in DM or the game topic."""
-
-import asyncio
+"""/profile [@username] — a player's profile card (seasons spec §5), in DM or the
+game topic, with ◀ ▶ and a player list on the card (browse.py)."""
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -10,43 +9,15 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import outsider_refusal
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
+from nani_pix_bot.commands.profile import browse, card
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs.avatars import fetch_avatar
 from nani_pix_bot.services import i18n, players, settings
-from nani_pix_bot.services.cards import (
-    ProfileCard,
-    StampEntry,
-    render_profile_card,
-)
-from nani_pix_bot.services.cosmetics import flair, profile
-
-
-def _card(view: profile.ProfileView, lang: str) -> ProfileCard:
-    return ProfileCard(
-        name=view.name,
-        title=view.title,
-        stamps=tuple(StampEntry(s.label, s.gold) for s in view.stamps),
-        stats=profile.stats(view.seasons_played, view.cosmetics_owned, lang),
-        seed=view.player_id,
-    )
-
-
-def _caption(view: profile.ProfileView, headline: str, lang: str) -> str:
-    if view.title:
-        headline = f"{headline} · {view.title}"
-    return i18n.t(
-        "profile.caption",
-        lang,
-        headline=headline,
-        seasons=view.seasons_played,
-        owned=view.cosmetics_owned,
-    )
+from nani_pix_bot.services.cosmetics import profile
 
 
 def _target_id(session: Session, user: User, args: list[str]) -> int | None:
     """Whose profile: the caller's, or the @username's; None for an unknown name."""
     if not args:
-        players.get_or_create_player(session, user.id, username=user.username)
         return user.id
     username = args[0].lstrip("@")
     target = players.find_player_by_username(session, username)
@@ -57,18 +28,6 @@ def _target_id(session: Session, user: User, args: list[str]) -> int | None:
         )
         return None
     return target.telegram_user_id
-
-
-def _load(
-    session: Session, user: User, args: list[str], lang: str
-) -> tuple[profile.ProfileView, str] | str:
-    """The profile and its caption headline (the name with flair), or the
-    "no such player" reply."""
-    target_id = _target_id(session, user, args)
-    if target_id is None:
-        return i18n.t("profile.unknown", lang, username=args[0].lstrip("@"))
-    view = profile.build(session, target_id, lang)
-    return view, flair.named(session, target_id, view.name)
 
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -89,18 +48,24 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await message.reply_text(refusal)
             return
 
+    args = context.args or []
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
-        found = _load(session, user, context.args or [], lang)
-    if isinstance(found, str):
-        await message.reply_text(found)
+        # The caller is in the roster even when looking at someone else, so the
+        # card's "my card" button always has somewhere to go.
+        players.get_or_create_player(session, user.id, username=user.username)
+        target_id = _target_id(session, user, args)
+        if target_id is None:
+            unknown = i18n.t("profile.unknown", lang, username=args[0].lstrip("@"))
+        else:
+            view, headline = card.load(session, target_id, lang)
+            keyboard = browse.card_keyboard(profile.roster(session), user.id, target_id, lang)
+    if target_id is None:
+        await message.reply_text(unknown)
         return
-    view, headline = found
-    target_id = view.player_id
-    avatar = await fetch_avatar(context.bot, target_id)
-    card = await asyncio.to_thread(render_profile_card, _card(view, lang), avatar, view.banner)
+    png, caption = await card.photo(context, view, headline, lang)
     try:
-        await message.reply_photo(photo=card, caption=_caption(view, headline, lang))
+        await message.reply_photo(photo=png, caption=caption, reply_markup=keyboard)
     except TelegramError:
         logger.opt(exception=True).error(
             "failed to send the profile card of {target}",

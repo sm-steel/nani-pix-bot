@@ -43,6 +43,25 @@ def stats(seasons: int, owned: int, lang: str) -> tuple[StatEntry, ...]:
     )
 
 
+def roster(session: Session) -> list[int]:
+    """Every known player, in the order the /profile list and ◀ ▶ walk them:
+    by display name (no "@", case ignored), then by id."""
+    ids = session.scalars(select(Player.telegram_user_id))
+
+    def key(player_id: int) -> tuple[str, int]:
+        return players.display_name(session, player_id).lstrip("@").casefold(), player_id
+
+    return sorted(ids, key=key)
+
+
+def neighbour(order: list[int], current: int, step: int) -> int:
+    """The player `step` places from `current` in `order`, wrapping at both ends;
+    the first one when `current` is no longer listed."""
+    if current not in order:
+        return order[0]
+    return order[(order.index(current) + step) % len(order)]
+
+
 def _played_run_ids(session: Session, player_id: int) -> list[str]:
     """The run ids of the ended seasons the player has a result in, newest first."""
     stmt = (

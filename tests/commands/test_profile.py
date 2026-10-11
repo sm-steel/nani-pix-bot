@@ -9,6 +9,8 @@ from telegram.constants import ChatMemberStatus, ChatType
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import profile as profile_module
+from nani_pix_bot.commands.profile import browse
+from nani_pix_bot.commands.profile import card as card_module
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons import registry
@@ -28,7 +30,7 @@ def fake_runs(monkeypatch):
 @pytest.fixture(autouse=True)
 def avatar(monkeypatch) -> AsyncMock:
     fetch = AsyncMock(return_value=None)
-    monkeypatch.setattr(profile_module, "fetch_avatar", fetch)
+    monkeypatch.setattr(card_module, "fetch_avatar", fetch)
     return fetch
 
 
@@ -83,6 +85,29 @@ async def test_profile_in_the_topic_sends_a_card_photo_with_a_caption(session_fa
     assert Image.open(BytesIO(kwargs["photo"])).size == CARD_SIZE
     assert "@me" in kwargs["caption"]
     update.message.reply_text.assert_not_awaited()
+
+
+async def test_the_card_has_prev_next_and_players_buttons(session_factory) -> None:
+    update = _update()
+    await _run(session_factory, update)
+
+    rows = update.message.reply_photo.await_args.kwargs["reply_markup"].inline_keyboard
+    data = [[button.callback_data for button in row] for row in rows]
+    # Roster by name: Bob (7), me (1). Both neighbours of "me" are Bob.
+    assert data == [
+        [browse.card_data(1, 7, "p"), browse.card_data(1, 7, "n")],
+        [browse.list_data(1, 0)],
+    ]
+
+
+async def test_looking_at_someone_else_adds_the_caller_to_the_roster(session_factory) -> None:
+    with session_scope(session_factory) as session:
+        session.delete(session.get(Player, 1))
+    update = _update()
+    await _run(session_factory, update, ["@bob"])
+
+    with session_scope(session_factory) as session:
+        assert session.get(Player, 1) is not None
 
 
 async def test_profile_of_another_player_by_username(session_factory, avatar) -> None:

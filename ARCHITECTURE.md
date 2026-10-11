@@ -434,8 +434,12 @@ src/nani_pix_bot/
     cosmetics.py  # /cosmetics — DM-only: slots, owned items, preview +
                    # Equip/Unequip (services/cosmetics); the title slot only
                    # hints at /title — see MECHANICS.md's "Cosmetics"
-    profile.py    # /profile — the game topic and DM (members only): the
-                   # profile card (banner, title, stamps, counts)
+    profile/      # /profile — the game topic and DM (members only): the
+                   # profile card (banner, title, stamps, counts).
+                   # __init__.py the command; card.py the photo +
+                   # caption; browse.py the card's ◀ ▶ (roster order,
+                   # wrapping) and 👥 Players list, edited in place,
+                   # tappable only by whoever sent /profile (prof:…)
     grant_item.py # /grantitem — admin-gated: give a player an item
                    # (ItemSource.ADMIN)
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
@@ -901,7 +905,8 @@ src/nani_pix_bot/
                    #                   starter's frame
                    #   reveal_choice.py  effect_for: the starter's
                    #                   transition, else random
-                   #   profile.py      build(): banner, title, stamps, counts
+                   #   profile.py      build(): banner, title, stamps, counts;
+                   #                   roster()/neighbour() for ◀ ▶
                    #   previews.py     render + the item_previews cache
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,

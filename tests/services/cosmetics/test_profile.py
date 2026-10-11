@@ -129,3 +129,44 @@ def test_stats_are_seasons_with_a_medal_and_cosmetics_with_a_gift() -> None:
         ("gift", "Cosmetics: 9"),
     ]
     assert [e.text for e in profile.stats(2, 9, "RU")] == ["Сезонов: 2", "Предметов: 9"]
+
+
+def test_roster_is_every_player_by_name_ignoring_case_and_the_at(session) -> None:
+    session.add_all(
+        [
+            Player(telegram_user_id=30, username="zed"),
+            Player(telegram_user_id=10, username="Bob"),
+            Player(telegram_user_id=20, first_name="amy"),
+            Player(telegram_user_id=40),  # no name at all: shown and sorted by id
+        ]
+    )
+    session.flush()
+    assert profile.roster(session) == [40, 20, 10, 30]
+
+
+def test_roster_breaks_name_ties_by_id(session) -> None:
+    session.add_all(
+        [Player(telegram_user_id=9, first_name="Kim"), Player(telegram_user_id=3, first_name="kim")]
+    )
+    session.flush()
+    assert profile.roster(session) == [3, 9]
+
+
+def test_roster_of_nobody_is_empty(session) -> None:
+    assert profile.roster(session) == []
+
+
+@pytest.mark.parametrize(
+    ("current", "step", "expected"),
+    [(2, 1, 3), (2, -1, 1), (3, 1, 1), (1, -1, 3)],
+)
+def test_neighbour_wraps_around(current: int, step: int, expected: int) -> None:
+    assert profile.neighbour([1, 2, 3], current, step) == expected
+
+
+def test_neighbour_of_someone_no_longer_listed_is_the_first() -> None:
+    assert profile.neighbour([1, 2, 3], 99, 1) == 1
+
+
+def test_neighbour_of_the_only_player_is_themselves() -> None:
+    assert profile.neighbour([5], 5, 1) == 5

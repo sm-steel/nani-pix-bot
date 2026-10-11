@@ -340,6 +340,9 @@ def build_application(config: Config) -> Application:
     application.add_handler(
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
     )
+    application.add_handler(
+        CallbackQueryHandler(profile.browse.profile_callback, pattern=rf"^{profile.browse.PREFIX}")
+    )
     application.add_handler(CallbackQueryHandler(standings_dm.standings_callback, pattern=r"^std:"))
     application.add_handler(CallbackQueryHandler(leaderboard.leaderboard_callback, pattern=r"^lb:"))
     application.add_handler(CallbackQueryHandler(history.history_callback, pattern=r"^hist:"))
