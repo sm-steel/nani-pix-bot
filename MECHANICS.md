@@ -1714,11 +1714,11 @@ round's bounty, tip a player, or pay to sharpen the image.
 
 **Status: Implemented (phase 1: the framework, Season XP and the anime
 gate; phase 2: inventory and cosmetics; phase 3: Season Coins, the
-Season Pass, Premium and clue tokens).** Seasons are occasional,
+Season Pass, Premium and clue tokens; phase 4: the Season Shop, rule
+modifiers, the visual style and objectives).** Seasons are occasional,
 time-boxed events that run alongside the normal game. No playable season
 ships yet: `seasons/runs/` is empty, so `/season` has nothing to schedule
-until a run module is added. The season shop and objectives are later
-phases.
+until a run module is added.
 
 ### Runs and the schedule
 
@@ -1816,6 +1816,57 @@ with 🎟.
 emptied and paid out as `coins // run.coins_per_currency` 💠 (default 2 🪙 =
 1 💠; the remainder is dropped). The end post states how many players'
 coins became how much 💠, and the rate.
+
+### Season Shop
+
+`/seasonshop` (DM, group members only) lists the run's `shop` offers, bought
+with 🪙 and only while the season is `active`. Tapping an offer shows its
+preview (an item's usual preview; the clue token's is a golden-ticket icon),
+then **Buy** or **Back**. An offer is an item or a clue token with a
+per-season `limit`; an item is also refused when the player already owns it
+(no refunds). The purchase is one `season_shop_purchases` row tied to its 🪙
+`currency_transfers` row, and the limit is the count of a player's rows for
+that offer in that season. Refusals: closed, unknown offer, owned, sold out,
+insufficient 🪙. Items are put on in `/cosmetics`.
+
+### Rule modifiers
+
+A run may set `modifiers`; only what a run uses is built. Today that is
+`CLUE_DISCOUNT_PCT` (at most 90): in a game tagged to that season, every clue's
+price is discounted by that percent. It **stacks** with the HARD MODE clue sale
+(`Game.hard_mode_clue_discount`) through `services/clues/discount.py::apply`:
+each positive percent is applied in turn to the base price, the result is
+rounded down **once**, and it is never below 1 💠. The shop menu states the
+season discount.
+
+### Season style
+
+A run may name a `style` (`plain` or `watercolor`). For a game tagged to that
+season it is drawn on the **pixelated** stage image and under the host's
+frame, so the order is **pixelate -> style -> frame**
+(`services/cosmetics/stage.py`). It applies to stage posts and the `/status`
+repost. It does not apply to the reveal video, the host's DM preview or clue
+images.
+
+### Objectives
+
+A run may list `objectives`: one-time goals with a key, a `Goal`, Season XP and
+optionally 🪙. A goal's kind is one of: hosted games (not HARD MODE), wins
+(optionally `max_stage`: a win at that stage or earlier, HARD MODE wins
+excluded), games guessed in (distinct games), clues shared, tips, and days
+played (days with a guess or a hosted game).
+
+- **Scope.** Progress is read from the season's history
+  (`services/seasons/season_history.py`): the events of the games tagged to the
+  season, plus game-less events (tips) during its dates. A game outside the
+  season never counts. A tagged game's events count while the season still
+  grants (`active`/`closing`); a tip counts only while it is running.
+- **Completion** is checked after each event of the actor. A completed
+  objective writes a `season_objectives` row (so it pays once), an
+  `XpSource.OBJECTIVE` Season XP row and, with coins, a 🪙 credit
+  (`CurrencyReason.SEASON_OBJECTIVE`), syncs the pass and queues a DM. Progress
+  is shown capped at the target; a finished objective shows its date.
+- `/seasonpass` lists each objective with `progress/target` and its reward.
 
 ### Announcements
 

@@ -427,6 +427,9 @@ src/nani_pix_bot/
                    # the admin's own IANA timezone (Player.timezone) and
                    # the bot-wide quiet-hours window entered in it — see
                    # MECHANICS.md's "Quiet hours"
+    season_shop.py  # /seasonshop — DM-only, group members: the offers,
+                   # a preview per offer, then Buy/Back (see MECHANICS.md's
+                   # "Season Shop")
     season_pass.py  # /seasonpass — DM-only, group members: the pass view,
                    # the ⭐ Buy Premium button and its confirm (see
                    # MECHANICS.md's "Season Coins, Pass and Premium")
@@ -450,7 +453,8 @@ src/nani_pix_bot/
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
                    # `/start ach_<id>`, the achievements one, and
                    # `/start rules`/`/start recent` for standings_dm.py), /help
-    helpers/      # shared Telegram-aware plumbing — topic/DM scoping
+    helpers/      # shared Telegram-aware plumbing (item_preview.py: an item's
+                   # preview send, shared by /cosmetics and /seasonshop) — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
                    # (membership.py), Telegram rich messages (headings,
                    # checklists, tables) sent or edited from markdown,
@@ -909,6 +913,17 @@ src/nani_pix_bot/
                    #                 priced by the run's CoinTable
                    #   season_pass.py  the pass: reached/sync (auto-grant in
                    #                 tier order), describe, buy_premium
+                   #   season_shop.py  the Season Shop: stock, buy (🪙 charge +
+                   #                 SeasonShopPurchase), ShopRefusedError
+                   #   modifiers.py  season_of / for_game: a game's season run
+                   #                 and its rule modifiers (clue discount)
+                   #   styles.py     season visual styles on a stage image
+                   #                 (style_for, apply_style); watercolor.py
+                   #                 is the watercolor drawing
+                   #   season_history.py  the History one season's objectives
+                   #                 read (its games + tips in its dates)
+                   #   goals.py      progress toward and wording of a Goal
+                   #   objectives.py check (complete + pay + DM), status
                    #   pass_view.py  the /seasonpass text and its tier lines
                    #   conversion.py leftover 🪙 -> 💠 at the season's end
                    #                 (called from lifecycle._finalize)
@@ -1322,6 +1337,8 @@ erDiagram
 | `currency_transfers` season columns | v12 | `currency` (`base` = the 💠 balance, `season` = 🪙, a `Currency` stored as a plain string, default `base`) and a nullable `season_id`: a 🪙 movement is tagged with its season. New `CurrencyReason`s: `season_win`, `season_host`, `season_first_guess`, `pass_reward`, `premium_pass`, `season_conversion`. |
 | `season_balances` | v12 | A player's 🪙 balance in one season (`season_id`, `player_id`, `balance`): a cache of the `currency = season` ledger rows, written only via `wallet`. Emptied by the season-end conversion. |
 | `season_pass` | v12 | A player's pass progress in one season: `free_claimed` / `premium_claimed` (counts, since tiers are granted in order) and `premium_transfer_id` (the 💠 charge that bought Premium, `NULL` = no Premium). Written only by `services/seasons/season_pass.py`. |
+| `season_shop_purchases` | Phase 4 | One Season Shop purchase: `season_id`, `player_id`, `offer_key`, `transfer_id` (unique, the 🪙 charge) and `created_at`. A player's per-season count per offer enforces its limit. Written only by `services/seasons/season_shop.py`. |
+| `season_objectives` | Phase 4 | A completed objective: primary key (`season_id`, `player_id`, `objective_key`) and `completed_at`, so it pays once. Written only by `services/seasons/objectives.py`. |
 | `consumables` | v12 | `player_id`, `kind` (a `ConsumableKind`, stored `clue_token`) and `count`: the clue tokens a player holds. Written only by `services/cosmetics/consumables.py`. |
 | `clue_purchases` token columns | v12 | `token_used` (the clue was paid with a clue token) and `transfer_id` now nullable: a token purchase has no ledger charge. A failed token delivery gives the token back. |
 | `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string: `admin`, or `pass` for a pass reward), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
