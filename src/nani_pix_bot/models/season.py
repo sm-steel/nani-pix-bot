@@ -80,7 +80,8 @@ class SeasonBalance(Base):
 class SeasonPass(Base):
     """A player's progress through one season's pass (seasons spec §2): how
     many free and premium tiers have been granted (tiers are granted in order,
-    so a count is enough), and the 💠 charge that bought Premium, if any."""
+    so a count is enough), the 💠 charge that bought Premium, if any, and when
+    the free track was finished (Front-runner orders by it)."""
 
     __tablename__ = "season_pass"
 
@@ -93,6 +94,7 @@ class SeasonPass(Base):
     premium_transfer_id: Mapped[int | None] = mapped_column(
         ForeignKey("currency_transfers.id"), unique=True, default=None
     )
+    free_completed_at: Mapped[datetime | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
 
 

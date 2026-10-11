@@ -8,10 +8,12 @@ from nani_pix_bot.models.currency_transfer import REASON_LENGTH
 from nani_pix_bot.models.enums import (
     ConsumableKind,
     CurrencyReason,
+    EventType,
     ItemSource,
     OutboxKind,
     XpSource,
 )
+from nani_pix_bot.models.event_log import EVENT_TYPE_LENGTH
 from nani_pix_bot.models.season import XP_SOURCE_LENGTH
 
 
@@ -23,6 +25,7 @@ from nani_pix_bot.models.season import XP_SOURCE_LENGTH
         (CurrencyReason, REASON_LENGTH),
         (ConsumableKind, CONSUMABLE_KIND_LENGTH),
         (XpSource, XP_SOURCE_LENGTH),
+        (EventType, EVENT_TYPE_LENGTH),
     ],
 )
 def test_every_stored_value_fits_its_column(enum, length: int) -> None:

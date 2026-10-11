@@ -401,6 +401,10 @@ class EventType(enum.StrEnum):
     CLUE_REFUNDED = "clue_refunded"
     CLUE_SHARED = "clue_shared"
     BOUNTY_SETTLED = "bounty_settled"
+    # Seasons (Phase 5): emitted by season services so achievements can react.
+    ITEM_GAINED = "item_gained"  # a season cosmetic was granted (any source)
+    TRACK_COMPLETED = "pass_completed"  # a pass track finished; data["first"] for the free one
+    SEASON_ENDED = "season_ended"  # one per ranked player when a season finalizes
 
 
 class WinMethod(enum.StrEnum):
