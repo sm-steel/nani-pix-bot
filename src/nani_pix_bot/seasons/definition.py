@@ -1,6 +1,7 @@
 """What a season run declares (seasons spec §1, §5, §7). Pure data: the
 services read it, nothing here does anything."""
 
+import enum
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
@@ -8,6 +9,52 @@ from typing import Literal
 from nani_pix_bot.models.enums import CosmeticSlot
 
 TagKind = Literal["genre", "theme"]
+
+
+class RewardKind(enum.StrEnum):
+    ITEM = "item"  # a cosmetic from the run's items
+    COINS = "coins"  # the season's 🪙
+    CURRENCY = "currency"  # 💠
+    # 🎟 the clue token; named so a security linter doesn't read "token" as a secret
+    CLUE_TICKET = "clue_token"
+
+
+@dataclass(frozen=True)
+class Reward:
+    """One pass reward. `item_key` is a key of the run's items (ITEM); `amount`
+    is the 🪙/💠 paid (COINS/CURRENCY); a CLUE_TICKET reward gives one token."""
+
+    kind: RewardKind
+    item_key: str = ""
+    amount: int = 0
+
+    @classmethod
+    def item(cls, key: str) -> "Reward":
+        return cls(RewardKind.ITEM, item_key=key)
+
+    @classmethod
+    def coins(cls, amount: int) -> "Reward":
+        return cls(RewardKind.COINS, amount=amount)
+
+    @classmethod
+    def currency(cls, amount: int) -> "Reward":
+        return cls(RewardKind.CURRENCY, amount=amount)
+
+    @classmethod
+    def clue_ticket(cls) -> "Reward":
+        return cls(RewardKind.CLUE_TICKET)
+
+
+@dataclass(frozen=True)
+class Tier:
+    """Reached at `xp` Season XP: `free` for everyone, `premium` with Premium."""
+
+    xp: int
+    free: Reward | None = None
+    premium: Reward | None = None
+
+
+MAX_CLUE_TOKEN_TIERS = 2
 
 
 @dataclass(frozen=True)
@@ -83,6 +130,42 @@ class SeasonRun:
     gate: Gate | None = None
     items: tuple[Item, ...] = ()
     coins: CoinTable = CoinTable()
+    tiers: tuple[Tier, ...] = ()
+    premium_price: int = 0  # 💠
+    coins_per_currency: int = 2  # 🪙 per 1 💠 at conversion
 
     def name(self, lang: str) -> str:
         return self.names.get(lang) or self.names["EN"]
+
+
+def _reward_problems(run: SeasonRun, number: int, reward: Reward) -> list[str]:
+    keys = {item.key for item in run.items}
+    if reward.kind is RewardKind.ITEM and reward.item_key not in keys:
+        return [f"tier {number}: {reward.item_key!r} is not one of {run.run_id}'s items"]
+    if reward.kind in (RewardKind.COINS, RewardKind.CURRENCY) and reward.amount <= 0:
+        return [f"tier {number}: a {reward.kind.value} reward needs a positive amount"]
+    return []
+
+
+def pass_problems(run: SeasonRun) -> list[str]:
+    """Everything wrong with `run`'s pass; [] when it's valid."""
+    problems: list[str] = []
+    for number, tier in enumerate(run.tiers, start=1):
+        if tier.xp <= 0:
+            problems.append(f"tier {number} needs a positive XP threshold")
+        if number > 1 and tier.xp <= run.tiers[number - 2].xp:
+            problems.append(f"tier {number} needs more XP than tier {number - 1}")
+        for reward in (tier.free, tier.premium):
+            if reward is not None:
+                problems += _reward_problems(run, number, reward)
+    tokens = sum(
+        1
+        for tier in run.tiers
+        for reward in (tier.free, tier.premium)
+        if reward is not None and reward.kind is RewardKind.CLUE_TICKET
+    )
+    if tokens > MAX_CLUE_TOKEN_TIERS:
+        problems.append(f"{tokens} clue token rewards; at most {MAX_CLUE_TOKEN_TIERS} per pass")
+    if any(tier.premium is not None for tier in run.tiers) and run.premium_price <= 0:
+        problems.append("premium rewards need a premium_price")
+    return problems

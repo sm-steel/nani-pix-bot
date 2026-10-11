@@ -26,6 +26,21 @@ def test_a_module_whose_run_id_differs_from_its_name_is_rejected(tmp_path, monke
         registry.discover("bad_runs")
 
 
+def test_a_run_with_an_invalid_pass_is_rejected(tmp_path, monkeypatch) -> None:
+    pkg = tmp_path / "bad_pass_runs"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "bad_pass_1.py").write_text(
+        "from dataclasses import replace\n"
+        "from nani_pix_bot.seasons.definition import Tier\n"
+        "from tests.seasons.fake_runs.demo_1 import RUN as DEMO\n"
+        "RUN = replace(DEMO, run_id='bad_pass_1', tiers=(Tier(0),))\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    with pytest.raises(registry.RunModuleError, match="invalid season pass"):
+        registry.discover("bad_pass_runs")
+
+
 def test_get_reads_the_shipped_registry(monkeypatch) -> None:
     runs = registry.discover("tests.seasons.fake_runs")
     monkeypatch.setattr(registry, "all_runs", lambda: runs)

@@ -1,7 +1,16 @@
 from types import MappingProxyType
 
 from nani_pix_bot.models.enums import CosmeticSlot
-from nani_pix_bot.seasons.definition import CoinTable, Gate, GateTag, Item, SeasonRun, XpTable
+from nani_pix_bot.seasons.definition import (
+    CoinTable,
+    Gate,
+    GateTag,
+    Item,
+    Reward,
+    SeasonRun,
+    Tier,
+    XpTable,
+)
 
 
 def _names(en: str, ru: str):
@@ -29,4 +38,10 @@ RUN = SeasonRun(
     ),
     items=ITEMS,
     coins=CoinTable(win=25, host_solved=15, host_unsolved=5, first_guess=5),
+    tiers=(
+        Tier(20, Reward.item("name_flair.blossom"), Reward.coins(40)),
+        Tier(60, Reward.coins(60), Reward.item("guess_reaction.love")),
+        Tier(120, Reward.clue_ticket(), Reward.currency(50)),
+    ),
+    premium_price=150,
 )
