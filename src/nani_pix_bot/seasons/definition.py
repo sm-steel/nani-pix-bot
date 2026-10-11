@@ -3,12 +3,14 @@ services read it, nothing here does anything."""
 
 import enum
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Literal
+from typing import Any, Literal
 
-from nani_pix_bot.models.enums import CosmeticSlot
+from nani_pix_bot.models.achievement import KEY_LENGTH as ACHIEVEMENT_KEY_LENGTH
+from nani_pix_bot.models.achievement import PERIOD_KEY_LENGTH
+from nani_pix_bot.models.enums import CosmeticSlot, EventType, Rarity
 from nani_pix_bot.models.season import OBJECTIVE_KEY_LENGTH
 
 TagKind = Literal["genre", "theme"]
@@ -191,6 +193,32 @@ class Objective:
         return self.names.get(lang) or self.names["EN"]
 
 
+MAX_RUN_ACHIEVEMENTS = 4
+MAX_RUN_ID_LENGTH = PERIOD_KEY_LENGTH  # the run id is the per-season grant period_key
+
+
+@dataclass(frozen=True)
+class RunAchievement:
+    """An achievement a run module declares for its own season (spec §6). It is
+    merged into the catalogue as `"{run_id}.{key}"`. `progress` takes a
+    SeasonHistory and returns the number reached; the text comes from these
+    EN/RU maps (EN is the fallback), and descriptions take no placeholders."""
+
+    key: str
+    names: Mapping[str, str]
+    descriptions: Mapping[str, str]
+    rarity: Rarity
+    triggers: frozenset[EventType]
+    progress: Callable[[Any], int]
+    hidden: bool = False
+
+    def name(self, lang: str) -> str:
+        return self.names.get(lang) or self.names["EN"]
+
+    def description(self, lang: str) -> str:
+        return self.descriptions.get(lang) or self.descriptions["EN"]
+
+
 MIN_OBJECTIVES = 4
 MAX_OBJECTIVES = 8
 _STAGES = 5
@@ -212,6 +240,7 @@ class SeasonRun:
     modifiers: Mapping[Modifier, int] = field(default_factory=lambda: MappingProxyType({}))
     style: str | None = None  # a key into services.seasons.styles.STYLES
     objectives: tuple[Objective, ...] = ()
+    achievements: tuple[RunAchievement, ...] = ()
 
     def name(self, lang: str) -> str:
         return self.names.get(lang) or self.names["EN"]
@@ -327,8 +356,37 @@ def objective_problems(run: SeasonRun) -> list[str]:
     return problems
 
 
+def _achievement_problems(run: SeasonRun, achievement: RunAchievement) -> list[str]:
+    where = f"achievement {achievement.key!r}"
+    problems = []
+    longest = ACHIEVEMENT_KEY_LENGTH - len(run.run_id) - 1
+    if not _KEY_SHAPE.fullmatch(achievement.key) or len(achievement.key) > longest:
+        problems.append(f"{where}: key must be snake_case, ≤{longest} chars")
+    for label, texts in (("names", achievement.names), ("descriptions", achievement.descriptions)):
+        if not all(texts.get(lang) for lang in ("EN", "RU")):
+            problems.append(f"{where}: {label} need EN and RU text")
+    if not achievement.triggers:
+        problems.append(f"{where}: needs at least one trigger event")
+    return problems
+
+
+def achievement_problems(run: SeasonRun) -> list[str]:
+    count = len(run.achievements)
+    problems = [p for a in run.achievements for p in _achievement_problems(run, a)]
+    if count > MAX_RUN_ACHIEVEMENTS:
+        problems.append(f"achievements: at most {MAX_RUN_ACHIEVEMENTS} per run, got {count}")
+    keys = [a.key for a in run.achievements]
+    if len(keys) != len(set(keys)):
+        problems.append("achievements: a key appears twice")
+    return problems
+
+
 def run_problems(run: SeasonRun) -> list[str]:
     """Everything wrong with a run module's data — checked when the registry loads it."""
     return (
-        pass_problems(run) + shop_problems(run) + modifier_problems(run) + objective_problems(run)
+        pass_problems(run)
+        + shop_problems(run)
+        + modifier_problems(run)
+        + objective_problems(run)
+        + achievement_problems(run)
     )

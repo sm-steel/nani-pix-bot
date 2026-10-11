@@ -1,11 +1,13 @@
 """Every achievement, in display order (spec §4): the static catalogue, then
 the registered runs' own."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import cast
 
 from nani_pix_bot.models.enums import EventType, Rarity
+from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.services.achievements import conditions as c
 from nani_pix_bot.services.achievements import ladders as ld
 from nani_pix_bot.services.achievements import season_progress as sp
@@ -129,8 +131,32 @@ CATALOGUE: tuple[Definition, ...] = (
 )
 
 
+# One slot: (the runs mapping it was built from, the definitions).
+_run_cache: list[tuple[Mapping[str, SeasonRun], tuple[Definition, ...]]] = []
+
+
 def _run_definitions() -> tuple[Definition, ...]:
-    return ()  # Task 7: every registered run's achievements
+    """Every registered run's own achievements. `definitions()` runs on every
+    event, so this is rebuilt only when the registry's runs mapping changes
+    (it is cached; tests swap it)."""
+    runs = registry.all_runs()
+    if not _run_cache or _run_cache[0][0] is not runs:
+        built = tuple(
+            Definition(
+                f"{run.run_id}.{a.key}",
+                Kind.SEASON,
+                (1,),
+                (a.rarity,),
+                a.triggers,
+                a.progress,
+                hidden=a.hidden,
+                run_id=run.run_id,
+            )
+            for run in runs.values()
+            for a in run.achievements
+        )
+        _run_cache[:] = [(runs, built)]
+    return _run_cache[0][1]
 
 
 def definitions() -> tuple[Definition, ...]:

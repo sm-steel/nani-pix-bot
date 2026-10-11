@@ -30,12 +30,31 @@ def _tiered(defn: Definition) -> bool:
     return len(defn.tiers) > 1 or defn.endless_step is not None
 
 
+def _run_text(defn: Definition, field: str, lang: str) -> str | None:
+    """A run achievement's own text (run module maps, EN fallback), or None for
+    a definition that isn't one."""
+    if defn.run_id is None:
+        return None
+    run = registry.get(defn.run_id)
+    own = (
+        next((a for a in run.achievements if f"{run.run_id}.{a.key}" == defn.key), None)
+        if run
+        else None
+    )
+    if own is None:
+        return defn.key
+    return own.name(lang) if field == "name" else own.description(lang)
+
+
 def name(defn: Definition, tier: int, lang: str) -> str:
-    base = i18n.t(f"achievement.{defn.key}.name", lang)
+    base = _run_text(defn, "name", lang) or i18n.t(f"achievement.{defn.key}.name", lang)
     return f"{base} {roman(tier)}" if tier > 0 and _tiered(defn) else base
 
 
 def description(defn: Definition, tier: int, lang: str) -> str:
+    own = _run_text(defn, "desc", lang)
+    if own is not None:
+        return own
     return i18n.t(f"achievement.{defn.key}.desc", lang, n=threshold(defn, max(tier, 1)))
 
 
