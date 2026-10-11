@@ -115,7 +115,7 @@ OBJECTIVES = (
     ),
     Objective(
         "first_bloom",
-        _names("First Bloom", "Первый цвет"),
+        _names("First Bloom", "Первое цветение"),
         Goal(GoalKind.WINS, 1, max_stage=2),
         xp=60,
         coins=40,
@@ -163,13 +163,21 @@ _ITEM_IDS = frozenset(f"{RUN_ID}/{item.key}" for item in ITEMS)
 
 
 def _two_wins_one_day(history) -> int:
-    days = [e.occurred_at.astimezone(history.tz).date() for e in history.mine(EventType.GAME_WON)]
+    """Two games won on one local day; a re-finished game counts once."""
+    wins = {
+        (e.occurred_at.astimezone(history.tz).date(), e.game_id)
+        for e in history.mine(EventType.GAME_WON)
+    }
+    days = [day for day, _game in wins]
     return 1 if any(days.count(day) >= 2 for day in set(days)) else 0
 
 
 def _party_game(history) -> int:
+    """A game guessed in, won (a /setwinner or vote winner may not have
+    guessed) or hosted, that ended with enough guessers. HARD MODE counts."""
     guessed = {e.game_id for e in history.mine(EventType.GUESS)}
-    ends = [e for e in history.group(*_ENDS) if e.game_id in guessed] + history.about_me(*_ENDS)
+    ends = [e for e in history.group(*_ENDS) if e.game_id in guessed]
+    ends += history.mine(*_ENDS) + history.about_me(*_ENDS)
     return 1 if any(e.data.get("distinct_guessers", 0) >= _PARTY_GUESSERS for e in ends) else 0
 
 
@@ -192,7 +200,7 @@ ACHIEVEMENTS = (
         _names("Hanami Party", "Ханами-вечеринка"),
         _names(
             "Play a season game with 4 or more guessers",
-            "Сыграйте в игру сезона, где угадывали 4 и больше игроков",
+            "Сыграйте в игру сезона, в которой угадывали 4 и более игроков",
         ),
         Rarity.BRONZE,
         frozenset(_ENDS),

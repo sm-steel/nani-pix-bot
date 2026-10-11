@@ -15,12 +15,12 @@ RUN = discover("nani_pix_bot.seasons.runs")["sakura_1"]
 SNAPSHOT = Path(__file__).with_name("gate_snapshot.json")
 
 
-def _xp_and_coins(*, games, wins, win_stage, hosted, solved, objectives):
-    """One player's season: first guess in every game guessed in, wins at one
-    stage, hosting with `solved` solved, the given objectives done."""
-    xp = games * RUN.xp.first_guess + wins * RUN.xp.win_by_stage[win_stage - 1]
+def _xp_and_coins(*, games, win_stages, hosted, solved, objectives):
+    """One player's season: first guess in every game guessed in, a win at each
+    of `win_stages`, hosting with `solved` solved, the given objectives done."""
+    xp = games * RUN.xp.first_guess + sum(RUN.xp.win_by_stage[s - 1] for s in win_stages)
     xp += solved * RUN.xp.host_solved + (hosted - solved) * RUN.xp.host_unsolved
-    coins = games * RUN.coins.first_guess + wins * RUN.coins.win
+    coins = games * RUN.coins.first_guess + len(win_stages) * RUN.coins.win
     coins += solved * RUN.coins.host_solved + (hosted - solved) * RUN.coins.host_unsolved
     xp += sum(o.xp for o in objectives)
     coins += sum(o.coins for o in objectives)
@@ -36,10 +36,19 @@ def _six_of_seven():
     return sorted(RUN.objectives, key=lambda o: o.coins)[1:]  # skips the cheapest
 
 
+def _objective(key: str):
+    return next(o for o in RUN.objectives if o.key == key)
+
+
 def test_a_conservative_free_player_can_afford_the_whole_shop() -> None:
-    xp, coins = _xp_and_coins(
-        games=12, wins=3, win_stage=3, hosted=3, solved=2, objectives=_six_of_seven()
-    )
+    win_stages = (2, 3, 3)
+    done = _six_of_seven()
+    # Internally consistent: First Bloom is among the objectives, so a win is early enough.
+    bloom = _objective("first_bloom")
+    assert bloom in done
+    assert bloom.goal.max_stage is not None
+    assert min(win_stages) <= bloom.goal.max_stage
+    xp, coins = _xp_and_coins(games=12, win_stages=win_stages, hosted=3, solved=2, objectives=done)
     total = coins + _free_coins_reached(xp)
     shop = sum(o.price * o.limit for o in RUN.shop)
     assert shop == 540
@@ -48,9 +57,17 @@ def test_a_conservative_free_player_can_afford_the_whole_shop() -> None:
 
 def test_a_typical_regular_finishes_the_pass() -> None:
     xp, _ = _xp_and_coins(
-        games=15, wins=5, win_stage=2, hosted=5, solved=4, objectives=_six_of_seven()
+        games=15, win_stages=(2,) * 5, hosted=5, solved=4, objectives=_six_of_seven()
     )
     assert xp >= RUN.tiers[-1].xp
+
+
+def test_the_russian_texts() -> None:
+    assert _objective("first_bloom").names["RU"] == "Первое цветение"
+    party = next(a for a in RUN.achievements if a.key == "hanami_party")
+    assert party.descriptions["RU"] == (
+        "Сыграйте в игру сезона, в которой угадывали 4 и более игроков"
+    )
 
 
 def test_the_run_is_valid_and_the_registry_loads_it() -> None:
