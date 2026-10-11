@@ -50,6 +50,7 @@ class _Repost:
     width: int
     algorithm: PixelAlgorithm
     frame: str | None
+    style: str | None
 
 
 def caption(live: LiveStatus, lang: str) -> str:
@@ -104,7 +105,12 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
         time_left=_time_left(game, now),
     )
     return _Repost(
-        live, tuple(images), width, game.pixel_algorithm, stage_cosmetics.frame_for(session, game)
+        live,
+        tuple(images),
+        width,
+        game.pixel_algorithm,
+        stage_cosmetics.frame_for(session, game),
+        stage_cosmetics.season_style(session, game),
     )
 
 
@@ -127,7 +133,9 @@ def _idle_text(session: Session, game: Game | None, lang: str) -> str:
 
 def _render(repost: _Repost) -> list[bytes]:
     return [
-        stage_cosmetics.stage_png_with(image, repost.width, repost.algorithm, repost.frame)
+        stage_cosmetics.stage_png_with(
+            image, repost.width, repost.algorithm, repost.frame, repost.style
+        )
         for image in repost.images
     ]
 

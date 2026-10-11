@@ -55,6 +55,8 @@ def _queue(session_factory, *kinds: OutboxKind) -> None:
                     {"tier": 2, "premium": False, "new": False},
                 ]
                 outbox.enqueue_tier(session, season.id, 1, granted)
+            elif kind is OutboxKind.SEASON_OBJECTIVE:
+                outbox.enqueue_objective(session, season.id, 1, "first_bloom")
             else:
                 outbox.enqueue_pass_done(session, season.id, 1)
 
@@ -96,3 +98,13 @@ async def test_pass_done_is_a_topic_line(session_factory, context) -> None:
     assert kwargs["chat_id"] == context.bot_data["group_chat_id"]
     assert kwargs["message_thread_id"] == 7
     assert "@alice" in kwargs["text"]
+
+
+async def test_an_objective_notice_goes_to_the_players_dm(session_factory, context) -> None:
+    _queue(session_factory, OutboxKind.SEASON_OBJECTIVE)
+    await _drain(context)
+    kwargs = context.bot.send_message.await_args.kwargs
+    assert kwargs["chat_id"] == 1
+    assert "message_thread_id" not in kwargs
+    assert "First Bloom" in kwargs["text"]
+    assert "+60 XP" in kwargs["text"]

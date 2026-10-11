@@ -51,6 +51,14 @@ def enqueue_pass_done(session: Session, season_id: int, player_id: int) -> Annou
     return _add(session, AnnouncementOutbox(kind=OutboxKind.SEASON_COMPLETE, payload=payload))
 
 
+def enqueue_objective(
+    session: Session, season_id: int, player_id: int, key: str
+) -> AnnouncementOutbox:
+    """The DM for one completed season objective (services/seasons/objectives.py)."""
+    payload = {"season_id": season_id, "player_id": player_id, "objective": key}
+    return _add(session, AnnouncementOutbox(kind=OutboxKind.SEASON_OBJECTIVE, payload=payload))
+
+
 def pending(session: Session, limit: int) -> list[AnnouncementOutbox]:
     stmt = (
         select(AnnouncementOutbox)

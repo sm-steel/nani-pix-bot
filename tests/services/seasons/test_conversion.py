@@ -10,7 +10,7 @@ from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.seasons import conversion, lifecycle
-from tests.services.seasons.conftest import NOW
+from tests.seasons_fixtures import NOW
 
 
 def _coins(season_id: int) -> wallet.LedgerEntry:

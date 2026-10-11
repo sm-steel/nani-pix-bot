@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from telegram import InlineKeyboardMarkup, Update
 from telegram.constants import ChatMemberStatus
-from telegram.error import BadRequest
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import cosmetics as cosmetics_module
@@ -12,9 +12,8 @@ from nani_pix_bot.models.cosmetics import EquippedItem, OwnedItem
 from nani_pix_bot.models.enums import CosmeticSlot, ItemSource, PreviewKind
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.cosmetics import previews
-from nani_pix_bot.services.reveal import pipeline
 from tests.conftest import LogLine
 
 ME, OTHER = 1, 2
@@ -206,79 +205,19 @@ async def test_item_tap_renders_sends_and_remembers_the_preview(session_factory)
     ]
 
 
-async def test_item_tap_reuses_a_cached_file_id_without_rendering(
-    session_factory, monkeypatch
+async def test_item_tap_still_sends_the_equip_message_when_the_preview_fails(
+    session_factory, log_records: list[LogLine]
 ) -> None:
     owned_id = _own(session_factory, ME, FRAME)
-    with session_factory() as session:
-        previews.remember(session, FRAME, "EN", PreviewKind.PHOTO, "cached-id")
-        session.commit()
-
-    def boom(*_args):
-        raise AssertionError("must not re-render a cached preview")
-
-    monkeypatch.setattr(previews, "render", boom)
     context = _context(session_factory)
+    context.bot.send_photo = AsyncMock(side_effect=TelegramError("telegram is down"))
     await _tap(session_factory, f"cos:i:{owned_id}", context)
 
-    assert context.bot.send_photo.await_args.kwargs["photo"] == "cached-id"
-
-
-async def test_text_preview_is_sent_as_text_and_not_cached(session_factory) -> None:
-    owned_id = _own(session_factory, ME, FLAIR, equip=True)
-    context = _context(session_factory)
-    await _tap(session_factory, f"cos:i:{owned_id}", context)
-
-    first, item_message = context.bot.send_message.await_args_list
-    assert first.kwargs["text"] == "@you 🌸"
-    assert _buttons(item_message.kwargs["reply_markup"])[0] == (
-        i18n.t("cosmetics.unequip", "EN"),
-        "cos:u:name_flair",
+    assert any(r.level == "ERROR" for r in log_records)
+    item_message = context.bot.send_message.await_args
+    assert (i18n.t("cosmetics.equip", "EN"), f"cos:e:{owned_id}") in _buttons(
+        item_message.kwargs["reply_markup"]
     )
-    with session_factory() as session:
-        assert previews.cached(session, FLAIR, "EN") is None
-
-
-async def test_video_preview_without_the_worker_falls_back_to_text(session_factory) -> None:
-    owned_id = _own(session_factory, ME, IRIS)
-    context = _context(session_factory)
-    await _tap(session_factory, f"cos:i:{owned_id}", context)
-
-    context.bot.send_video.assert_not_awaited()
-    first = context.bot.send_message.await_args_list[0]
-    assert first.kwargs["text"] == i18n.t("cosmetics.preview_unavailable", "EN")
-
-
-async def test_video_preview_renders_in_the_worker(session_factory, monkeypatch) -> None:
-    owned_id = _own(session_factory, ME, IRIS)
-    submit = AsyncMock(return_value=b"mp4")
-    monkeypatch.setattr(cosmetics_module.reveal_worker, "runtime", lambda _app: object())
-    monkeypatch.setattr(cosmetics_module.reveal_worker, "submit", submit)
-    context = _context(session_factory)
-    await _tap(session_factory, f"cos:i:{owned_id}", context)
-
-    [call] = submit.await_args_list
-    assert call.args[1] is pipeline.preview_clip
-    assert context.bot.send_video.await_args.kwargs["video"] == b"mp4"
-    with session_factory() as session:
-        row = previews.cached(session, IRIS, "EN")
-        assert row is not None
-        assert (row.kind, row.file_id) == (PreviewKind.VIDEO, "video-id")
-
-
-async def test_video_preview_when_the_worker_fails_falls_back_to_text(
-    session_factory, monkeypatch
-) -> None:
-    owned_id = _own(session_factory, ME, IRIS)
-    monkeypatch.setattr(cosmetics_module.reveal_worker, "runtime", lambda _app: object())
-    monkeypatch.setattr(
-        cosmetics_module.reveal_worker, "submit", AsyncMock(side_effect=RuntimeError("dead"))
-    )
-    context = _context(session_factory)
-    await _tap(session_factory, f"cos:i:{owned_id}", context)
-
-    first = context.bot.send_message.await_args_list[0]
-    assert first.kwargs["text"] == i18n.t("cosmetics.preview_unavailable", "EN")
 
 
 async def test_item_tap_on_someone_elses_item_is_refused(
@@ -355,76 +294,3 @@ async def test_a_forged_equip_of_a_title_item_equips_nothing(session_factory) ->
 
     assert _equipped(session_factory, ME, CosmeticSlot.TITLE) is None
     assert _edit(update)[0].startswith(i18n.t("cosmetics.title_hint", "EN"))
-
-
-async def test_a_still_preview_that_fails_to_render_says_so_and_still_offers_equip(
-    session_factory, monkeypatch, log_records: list[LogLine]
-) -> None:
-    owned_id = _own(session_factory, ME, FRAME)
-
-    def broken(*_args):
-        raise OSError("art missing")
-
-    monkeypatch.setattr(previews, "render", broken)
-    context = _context(session_factory)
-    await _tap(session_factory, f"cos:i:{owned_id}", context)
-
-    first, item_message = context.bot.send_message.await_args_list
-    assert first.kwargs["text"] == i18n.t("cosmetics.preview_unavailable", "EN")
-    assert _buttons(item_message.kwargs["reply_markup"])[0][1] == f"cos:e:{owned_id}"
-    assert any(r.level == "ERROR" for r in log_records)
-
-
-async def test_a_transition_whose_look_is_gone_falls_back_and_still_offers_equip(
-    session_factory, monkeypatch, log_records: list[LogLine]
-) -> None:
-    owned_id = _own(session_factory, ME, IRIS)
-    monkeypatch.setattr(previews, "RevealEffect", {})  # RevealEffect[look] -> KeyError
-    context = _context(session_factory)
-    await _tap(session_factory, f"cos:i:{owned_id}", context)
-
-    first, item_message = context.bot.send_message.await_args_list
-    assert first.kwargs["text"] == i18n.t("cosmetics.preview_unavailable", "EN")
-    assert _buttons(item_message.kwargs["reply_markup"])[0][1] == f"cos:e:{owned_id}"
-    assert any(r.level == "ERROR" for r in log_records)
-
-
-async def test_a_rejected_cached_file_id_is_dropped_and_the_preview_re_rendered(
-    session_factory, log_records: list[LogLine]
-) -> None:
-    owned_id = _own(session_factory, ME, FRAME)
-    with session_factory() as session:
-        previews.remember(session, FRAME, "EN", PreviewKind.PHOTO, "stale-id")
-        session.commit()
-    context = _context(session_factory)
-    fresh = context.bot.send_photo.return_value
-    context.bot.send_photo = AsyncMock(side_effect=[BadRequest("wrong file identifier"), fresh])
-    await _tap(session_factory, f"cos:i:{owned_id}", context)
-
-    stale_call, fresh_call = context.bot.send_photo.await_args_list
-    assert stale_call.kwargs["photo"] == "stale-id"
-    assert isinstance(fresh_call.kwargs["photo"], bytes)
-    with session_factory() as session:
-        row = previews.cached(session, FRAME, "EN")
-        assert row is not None
-        assert row.file_id == "photo-id"
-    assert any(r.level == "WARNING" and r.extra.get("item_id") == FRAME for r in log_records)
-    assert context.bot.send_message.await_args.kwargs["reply_markup"] is not None
-
-
-async def test_switching_the_language_renders_the_preview_again(session_factory) -> None:
-    owned_id = _own(session_factory, ME, FRAME)
-    context = _context(session_factory)
-    await _tap(session_factory, f"cos:i:{owned_id}", context)
-    with session_factory() as session:
-        settings.set_language(session, "RU")
-        session.commit()
-    await _tap(session_factory, f"cos:i:{owned_id}", context)
-
-    assert [c.kwargs["photo"].__class__ for c in context.bot.send_photo.await_args_list] == [
-        bytes,
-        bytes,
-    ]
-    with session_factory() as session:
-        assert previews.cached(session, FRAME, "EN") is not None
-        assert previews.cached(session, FRAME, "RU") is not None

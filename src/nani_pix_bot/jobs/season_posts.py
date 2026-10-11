@@ -1,5 +1,6 @@
 """The season announcements' posts: the teaser/start/end banners, a
-player's tier notice (a DM) and the pass-complete line (seasons spec §2, §6)."""
+player's tier and objective notices (DMs) and the pass-complete line
+(seasons spec §2, §5, §6)."""
 
 from collections.abc import Callable
 from datetime import datetime
@@ -18,7 +19,7 @@ from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.cards import SeasonBanner, season_background
 from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.events import as_utc
-from nani_pix_bot.services.seasons import conversion, podium_text, season_pass
+from nani_pix_bot.services.seasons import conversion, objectives, podium_text, season_pass
 
 
 def _local(at: datetime, tz: ZoneInfo) -> str:
@@ -104,10 +105,27 @@ def _pass_done_post(session: Session, row: AnnouncementOutbox, lang: str) -> Pos
     return Post((row.id,), i18n.t("season_pass.done", lang, player=who, season=run.name(lang)))
 
 
+def _objective_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post | None:
+    run = _run_of(session, row)
+    key = row.payload["objective"]
+    objective = next((o for o in run.objectives if o.key == key), None) if run else None
+    if run is None or objective is None:
+        return None
+    text = i18n.t(
+        "season_objective.notice",
+        lang,
+        name=objective.name(lang),
+        reward=objectives.reward_text(objective, lang),
+        season=run.name(lang),
+    )
+    return Post((row.id,), text, dm_to=row.payload["player_id"])
+
+
 RENDERERS: dict[OutboxKind, Callable[[Session, AnnouncementOutbox, str], Post | None]] = {
     OutboxKind.SEASON_TEASER: _season_post(OutboxKind.SEASON_TEASER),
     OutboxKind.SEASON_START: _season_post(OutboxKind.SEASON_START),
     OutboxKind.SEASON_END: _season_post(OutboxKind.SEASON_END),
     OutboxKind.SEASON_TIER: _tier_post,
     OutboxKind.SEASON_COMPLETE: _pass_done_post,
+    OutboxKind.SEASON_OBJECTIVE: _objective_post,
 }

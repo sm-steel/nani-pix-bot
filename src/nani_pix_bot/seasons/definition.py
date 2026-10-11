@@ -2,11 +2,14 @@
 services read it, nothing here does anything."""
 
 import enum
+import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Literal
 
 from nani_pix_bot.models.enums import CosmeticSlot
+from nani_pix_bot.models.season import OBJECTIVE_KEY_LENGTH
 
 TagKind = Literal["genre", "theme"]
 
@@ -55,6 +58,31 @@ class Tier:
 
 
 MAX_CLUE_TOKEN_TIERS = 2
+MAX_SHOP_CLUE_TOKENS = 2
+_SHOP_KINDS = (RewardKind.ITEM, RewardKind.CLUE_TICKET)
+
+
+@dataclass(frozen=True)
+class ShopOffer:
+    """One Season Shop line (spec §4): a cosmetic sold once, or the clue
+    token sold up to `limit` times per season, priced in 🪙."""
+
+    kind: RewardKind
+    item_key: str = ""
+    price: int = 0
+    limit: int = 1
+
+    @classmethod
+    def item(cls, key: str, price: int) -> "ShopOffer":
+        return cls(RewardKind.ITEM, item_key=key, price=price)
+
+    @classmethod
+    def clue_ticket(cls, price: int, limit: int) -> "ShopOffer":
+        return cls(RewardKind.CLUE_TICKET, price=price, limit=limit)
+
+    @property
+    def key(self) -> str:
+        return self.item_key if self.kind is RewardKind.ITEM else self.kind.value
 
 
 @dataclass(frozen=True)
@@ -122,6 +150,53 @@ class Item:
         return self.names.get(lang) or self.names["EN"]
 
 
+class Modifier(enum.StrEnum):
+    """Rule modifiers a run may set (spec §5). Only what a run uses is built."""
+
+    CLUE_DISCOUNT_PCT = "clue_discount_pct"
+
+
+MAX_CLUE_DISCOUNT_PCT = 90
+
+
+class GoalKind(enum.StrEnum):
+    """What an objective counts (spec §5). Progress lives in services/seasons/goals.py."""
+
+    HOSTED = "hosted"
+    WINS = "wins"
+    GUESSED_IN = "guessed_in"
+    SHARED_CLUES = "shared_clues"
+    TIPS = "tips"
+    DAYS_PLAYED = "days_played"
+
+
+@dataclass(frozen=True)
+class Goal:
+    kind: GoalKind
+    target: int
+    max_stage: int | None = None  # WINS only: count wins by this stage
+
+
+@dataclass(frozen=True)
+class Objective:
+    """A one-time season objective (spec §5): reaching `goal` pays `xp` Season XP and `coins` 🪙."""
+
+    key: str
+    names: Mapping[str, str]
+    goal: Goal
+    xp: int
+    coins: int = 0
+
+    def name(self, lang: str) -> str:
+        return self.names.get(lang) or self.names["EN"]
+
+
+MIN_OBJECTIVES = 4
+MAX_OBJECTIVES = 8
+_STAGES = 5
+_KEY_SHAPE = re.compile(r"[a-z0-9_]+")
+
+
 @dataclass(frozen=True)
 class SeasonRun:
     run_id: str
@@ -133,6 +208,10 @@ class SeasonRun:
     tiers: tuple[Tier, ...] = ()
     premium_price: int = 0  # 💠
     coins_per_currency: int = 2  # 🪙 per 1 💠 at conversion
+    shop: tuple[ShopOffer, ...] = ()
+    modifiers: Mapping[Modifier, int] = field(default_factory=lambda: MappingProxyType({}))
+    style: str | None = None  # a key into services.seasons.styles.STYLES
+    objectives: tuple[Objective, ...] = ()
 
     def name(self, lang: str) -> str:
         return self.names.get(lang) or self.names["EN"]
@@ -171,3 +250,85 @@ def pass_problems(run: SeasonRun) -> list[str]:
     if any(tier.premium is not None for tier in run.tiers) and run.premium_price <= 0:
         problems.append("premium rewards need a premium_price")
     return problems
+
+
+def _pass_item_keys(run: SeasonRun) -> set[str]:
+    """The items the pass gives on either track."""
+    return {
+        reward.item_key
+        for tier in run.tiers
+        for reward in (tier.free, tier.premium)
+        if reward is not None and reward.kind is RewardKind.ITEM
+    }
+
+
+def _offer_problems(run: SeasonRun, offer: ShopOffer) -> list[str]:
+    where = f"shop offer {offer.key!r}"
+    problems = []
+    if offer.kind not in _SHOP_KINDS:
+        problems.append(f"{where}: only items and the clue token are sold")
+    if offer.price <= 0:
+        problems.append(f"{where}: price must be positive")
+    if offer.kind is RewardKind.ITEM:
+        if offer.item_key not in {item.key for item in run.items}:
+            problems.append(f"{where}: no such item")
+        if offer.item_key in _pass_item_keys(run):
+            problems.append(f"{where}: already a pass reward; an item is shop- or pass-only")
+        if offer.limit != 1:
+            problems.append(f"{where}: an item sells once")
+    if offer.kind is RewardKind.CLUE_TICKET and not 1 <= offer.limit <= MAX_SHOP_CLUE_TOKENS:
+        problems.append(f"{where}: limit must be 1..{MAX_SHOP_CLUE_TOKENS}")
+    return problems
+
+
+def shop_problems(run: SeasonRun) -> list[str]:
+    problems = [p for offer in run.shop for p in _offer_problems(run, offer)]
+    keys = [offer.key for offer in run.shop]
+    if len(keys) != len(set(keys)):
+        problems.append("shop: an offer appears twice")
+    return problems
+
+
+def modifier_problems(run: SeasonRun) -> list[str]:
+    discount = run.modifiers.get(Modifier.CLUE_DISCOUNT_PCT)
+    if discount is not None and not 1 <= discount <= MAX_CLUE_DISCOUNT_PCT:
+        return [f"modifier clue_discount_pct must be 1..{MAX_CLUE_DISCOUNT_PCT}"]
+    return []
+
+
+def _goal_problems(where: str, goal: Goal) -> list[str]:
+    problems = []
+    if goal.target < 1:
+        problems.append(f"{where}: target must be positive")
+    stage = goal.max_stage
+    if stage is not None and (goal.kind is not GoalKind.WINS or not 1 <= stage <= _STAGES):
+        problems.append(f"{where}: max_stage only for wins, 1..{_STAGES}")
+    return problems
+
+
+def _objective_problems(objective: Objective) -> list[str]:
+    where = f"objective {objective.key!r}"
+    problems = _goal_problems(where, objective.goal)
+    if not _KEY_SHAPE.fullmatch(objective.key) or len(objective.key) > OBJECTIVE_KEY_LENGTH:
+        problems.append(f"{where}: key must be snake_case, ≤{OBJECTIVE_KEY_LENGTH} chars")
+    if objective.xp < 1 or objective.coins < 0:
+        problems.append(f"{where}: xp must be positive, coins not negative")
+    return problems
+
+
+def objective_problems(run: SeasonRun) -> list[str]:
+    count = len(run.objectives)
+    problems = [p for o in run.objectives for p in _objective_problems(o)]
+    if count and not MIN_OBJECTIVES <= count <= MAX_OBJECTIVES:
+        problems.append(f"objectives: {MIN_OBJECTIVES}..{MAX_OBJECTIVES} per run, got {count}")
+    keys = [o.key for o in run.objectives]
+    if len(keys) != len(set(keys)):
+        problems.append("objectives: a key appears twice")
+    return problems
+
+
+def run_problems(run: SeasonRun) -> list[str]:
+    """Everything wrong with a run module's data — checked when the registry loads it."""
+    return (
+        pass_problems(run) + shop_problems(run) + modifier_problems(run) + objective_problems(run)
+    )

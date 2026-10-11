@@ -4,11 +4,14 @@ from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, String, UniqueCo
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nani_pix_bot.models.base import Base
+from nani_pix_bot.models.cosmetics import ITEM_ID_LENGTH
 from nani_pix_bot.models.enums import SeasonStatus, XpSource
 
 RUN_ID_LENGTH = 48
 SEASON_STATUS_LENGTH = 16
 XP_SOURCE_LENGTH = 16
+# An objective's key in its run module (seasons/definition.py validates it).
+OBJECTIVE_KEY_LENGTH = 32
 
 
 class SeasonSchedule(Base):
@@ -91,3 +94,33 @@ class SeasonPass(Base):
         ForeignKey("currency_transfers.id"), unique=True, default=None
     )
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+
+class SeasonShopPurchase(Base):
+    """One Season Shop purchase (seasons spec §4) and the 🪙 charge that paid
+    for it. Counts per (season, player, offer) enforce the per-season limits."""
+
+    __tablename__ = "season_shop_purchases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    season_id: Mapped[int] = mapped_column(ForeignKey("season_schedule.id"), index=True)
+    player_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("players.telegram_user_id"), index=True
+    )
+    offer_key: Mapped[str] = mapped_column(String(ITEM_ID_LENGTH))
+    transfer_id: Mapped[int] = mapped_column(ForeignKey("currency_transfers.id"), unique=True)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+
+class SeasonObjective(Base):
+    """A season objective a player has completed (seasons spec §5) — one row
+    each, so it pays once."""
+
+    __tablename__ = "season_objectives"
+
+    season_id: Mapped[int] = mapped_column(ForeignKey("season_schedule.id"), primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("players.telegram_user_id"), primary_key=True
+    )
+    objective_key: Mapped[str] = mapped_column(String(OBJECTIVE_KEY_LENGTH), primary_key=True)
+    completed_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))

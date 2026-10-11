@@ -427,6 +427,9 @@ src/nani_pix_bot/
                    # the admin's own IANA timezone (Player.timezone) and
                    # the bot-wide quiet-hours window entered in it — see
                    # MECHANICS.md's "Quiet hours"
+    season_shop.py  # /seasonshop — DM-only, group members: the offers,
+                   # a preview per offer, then Buy/Back (see MECHANICS.md's
+                   # "Season Shop")
     season_pass.py  # /seasonpass — DM-only, group members: the pass view,
                    # the ⭐ Buy Premium button and its confirm (see
                    # MECHANICS.md's "Season Coins, Pass and Premium")
@@ -469,7 +472,9 @@ src/nani_pix_bot/
                    # DM-only/admin-gated on/off
                    # toggle-command factory (admin_toggle.py — built to
                    # de-duplicate /setgamesenabled and /setautostart, see
-                   # its own docstring), and the one update callback here
+                   # its own docstring), the shared DM reply for /seasonpass and
+                   # /seasonshop (dm_view.py), an item's preview send shared by
+                   # /cosmetics and /seasonshop (item_preview.py), and the one update callback here
                    # that app.py does register — player_tracking.py's
                    # remember_user (see "Handler groups" below). (Rendering an
                    # Earnings value into reply text lives in
@@ -880,6 +885,8 @@ src/nani_pix_bot/
                    #             the charge (through economy/wallet.py) plus
                    #             CluePurchase bookkeeping; Refusal and
                    #             ShopRefusedError for the rejected cases
+                   #   discount.py  stacking of percentage clue discounts (HARD
+                   #             MODE sale + the season's): apply
                    #   (economy/) bounty.py   the pot: contribute, pay_out,
                    #               refund_pot, refund_note; BOUNTY_MIN. The
                    #               pot is derived from currency_transfers
@@ -909,6 +916,17 @@ src/nani_pix_bot/
                    #                 priced by the run's CoinTable
                    #   season_pass.py  the pass: reached/sync (auto-grant in
                    #                 tier order), describe, buy_premium
+                   #   season_shop.py  the Season Shop: stock, buy (🪙 charge +
+                   #                 SeasonShopPurchase), ShopRefusedError
+                   #   modifiers.py  season_of / for_game: a game's season run
+                   #                 and its rule modifiers (clue discount)
+                   #   styles.py     season visual styles on a stage image
+                   #                 (style_for, apply_style); watercolor.py
+                   #                 is the watercolor drawing
+                   #   season_history.py  the History one season's objectives
+                   #                 read (its games + tips in its dates)
+                   #   goals.py      progress toward and wording of a Goal
+                   #   objectives.py check (complete + pay + DM), status
                    #   pass_view.py  the /seasonpass text and its tier lines
                    #   conversion.py leftover 🪙 -> 💠 at the season's end
                    #                 (called from lifecycle._finalize)
@@ -950,6 +968,7 @@ src/nani_pix_bot/
                    #                   ≤4 achievements, tick order), else the
                    #                   newest seasons / rarest achievements
                    #   previews.py     render + the item_previews cache
+                   #   clue_token_icon.py  the clue token's golden-ticket picture
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,
                    #                    games-enabled flag, autostart-
@@ -1316,15 +1335,17 @@ erDiagram
 | `games` addition | v10 | `activated_at`: when the game went live (`created_at` is when setup started), used by `win_facts.seconds` (activation to the game's end). |
 | `reveal_video` | v11 | The one pre-rendered animated reveal (#295), at most one row: `slot` PK, always 1. `game_id` (plain column, no FK, because `/stop` deletes the game row before its reveal), `effect` (`RevealEffect`, picked at game start), `image_choice` (`a`/`b`, hard mode only), `status` (`pending`/`ready`/`failed`), `part1_ts` (deferred LONGBLOB, part 1 as MPEG-TS), `join_offset` (the `-output_ts_offset` the ending needs so its first frame lands 1/FPS after part 1's last), `created_at`, `ready_at`. Written only via `services/reveal/store.py`; see "Reveal video". |
 | `season_schedule` | v12 | Every scheduling of a season run, kept as history (`run_id`, `start_at`/`end_at` UTC, `status` a `SeasonStatus` stored as a plain string: `scheduled` -> `active` -> `closing` -> `ended`, or `cancelled`; `created_by`, `created_at`, `started_at`, `ended_at`). `services/seasons/schedule.py` enforces what the DB doesn't: at most one row in `scheduled`/`active`/`closing`, and a run that ever reached `active` (`started_at` set) is never scheduled again; no open row means seasons are off. Moved only by `services/seasons/lifecycle.py` and the `/season` command. See `MECHANICS.md`'s "Seasons". |
-| `season_xp` | v12 | Append-only Season XP: `season_id` (FK), `player_id` (FK), `amount`, `source` (an `XpSource` stored as a plain string: `win`, `host`, `first_guess`), `game_id` (a plain integer with **no** FK, like `currency_transfers.game_id`, so rows outlive a `/stop`ped game), `created_at`. Standings are `SUM(amount)` per player (`services/seasons/xp.py::standings`). Written only by `xp.on_event`, for games tagged to a season. |
+| `season_xp` | v12 | Append-only Season XP: `season_id` (FK), `player_id` (FK), `amount`, `source` (an `XpSource` stored as a plain string: `win`, `host`, `first_guess`, or `objective` for a completed season objective), `game_id` (a plain integer with **no** FK, like `currency_transfers.game_id`, so rows outlive a `/stop`ped game; for an objective, the game whose event completed it), `created_at`. Standings are `SUM(amount)` per player (`services/seasons/xp.py::standings`). Written by `services/seasons/xp.py::pay` (game XP, for games tagged to a season) and `services/seasons/objectives.py` (objective XP). |
 | `season_results` | v12 | A finished season's frozen podium: one row per player with XP (`season_id`, `player_id`, `rank` as a competition rank so ties share it, `xp`), unique on (`season_id`, `player_id`). Written once when the season finalizes (`lifecycle._finalize`), so the end post and any later view read the frozen result, not the live sum. |
 | `games` season columns | v12 | `season_id` (nullable FK to `season_schedule`): the season that was active when the game was activated (`services/game/state.py::activate_game`), `NULL` outside seasons. A game keeps it when it ends after the season's `end_at`, and its XP still counts. `anime_tags` (nullable JSON list of `{kind, name, mal_id}`): the identified anime's MAL genres/themes, fetched only while a gated season is active and kept for the confirm-time re-check. |
-| `currency_transfers` season columns | v12 | `currency` (`base` = the 💠 balance, `season` = 🪙, a `Currency` stored as a plain string, default `base`) and a nullable `season_id`: a 🪙 movement is tagged with its season. New `CurrencyReason`s: `season_win`, `season_host`, `season_first_guess`, `pass_reward`, `premium_pass`, `season_conversion`. |
+| `currency_transfers` season columns | v12 | `currency` (`base` = the 💠 balance, `season` = 🪙, a `Currency` stored as a plain string, default `base`) and a nullable `season_id`: a 🪙 movement is tagged with its season. New `CurrencyReason`s: `season_win`, `season_host`, `season_first_guess`, `pass_reward`, `premium_pass`, `season_conversion`, and from Phase 4 `season_shop` (🪙 spent in the Season Shop) and `season_objective` (🪙 paid for a completed objective). |
 | `season_balances` | v12 | A player's 🪙 balance in one season (`season_id`, `player_id`, `balance`): a cache of the `currency = season` ledger rows, written only via `wallet`. Emptied by the season-end conversion. |
 | `season_pass` | v12 | A player's pass progress in one season: `free_claimed` / `premium_claimed` (counts, since tiers are granted in order) and `premium_transfer_id` (the 💠 charge that bought Premium, `NULL` = no Premium). Written only by `services/seasons/season_pass.py`. |
+| `season_shop_purchases` | Phase 4 | One Season Shop purchase: `season_id`, `player_id`, `offer_key`, `transfer_id` (unique, the 🪙 charge) and `created_at`. A player's per-season count per offer enforces its limit. Written only by `services/seasons/season_shop.py`. |
+| `season_objectives` | Phase 4 | A completed objective: primary key (`season_id`, `player_id`, `objective_key`) and `completed_at`, so it pays once. Written only by `services/seasons/objectives.py`. |
 | `consumables` | v12 | `player_id`, `kind` (a `ConsumableKind`, stored `clue_token`) and `count`: the clue tokens a player holds. Written only by `services/cosmetics/consumables.py`. |
 | `clue_purchases` token columns | v12 | `token_used` (the clue was paid with a clue token) and `transfer_id` now nullable: a token purchase has no ledger charge. A failed token delivery gives the token back. |
-| `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string: `admin`, or `pass` for a pass reward), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
+| `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string: `admin`, `pass` for a pass reward, or `shop` for a Season Shop purchase), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
 | `equipped_items` | v12 | The item equipped per slot: primary key (`player_id`, `slot`; `slot` a `CosmeticSlot` as a plain string), `item_id`. One item per slot, so equipping replaces. |
 | `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so each preview is rendered and uploaded once per language. |
 | `players.title_key` item encoding | v12 | Besides an achievement title key, `title_key` may be `item:<item id>`, a season title item (`services/achievements/titles.py`). Title item ids are at most 56 bytes (`looks.problems`) so they fit `/title`'s callback data. |

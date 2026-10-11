@@ -24,13 +24,15 @@ from nani_pix_bot.models.enums import (
 )
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.seasons.definition import Modifier
 from nani_pix_bot.services import events, players
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services.clues import text, token_clues
+from nani_pix_bot.services.clues import discount, text, token_clues
 from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.economy import config, earning, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
 from nani_pix_bot.services.game import guesses
+from nani_pix_bot.services.seasons import modifiers
 
 MAX_EXTRA_SCREENSHOTS = 3
 TILE_GRID = 8
@@ -130,24 +132,54 @@ def _screenshot_count(session: Session, game: Game, buyer: Player) -> int:
     return len(owned_screenshot_urls(session, game.id, buyer.telegram_user_id))
 
 
-def price(session: Session, game: Game, buyer: Player, kind: ClueKind) -> int:
+@dataclass(frozen=True)
+class _Quote:
+    """A clue's price and how it was reached: the configured `base`, then
+    HARD MODE's and the season's discount percentages."""
+
+    base: int
+    hard_mode_pct: int
+    season_pct: int
+    cost: int
+
+    def log_fields(self) -> dict[str, object]:
+        """Purchase-line kwargs: the discount as structured fields plus its
+        text as `discount`, empty when neither discount applies."""
+        if not (self.hard_mode_pct or self.season_pct):
+            return {"discount": ""}
+        return {
+            "discount": (
+                f", discounted from {self.base} 💠 "
+                f"(HARD MODE {self.hard_mode_pct}%, season {self.season_pct}%)"
+            ),
+            "base_price": self.base,
+            "hard_mode_pct": self.hard_mode_pct,
+            "season_pct": self.season_pct,
+        }
+
+
+def _base_price(session: Session, game: Game, buyer: Player, kind: ClueKind) -> int:
     amounts = config.get_amounts(session)
     if kind is ClueKind.SCREENSHOT:
         already = _screenshot_count(session, game, buyer)
-        base = (
+        return (
             amounts[EconomyKey.CLUE_SCREENSHOT] + amounts[EconomyKey.CLUE_SCREENSHOT_STEP] * already
         )
-    else:
-        base = amounts[_PRICE_KEYS[kind]]
-    return _discounted(game, base)
+    return amounts[_PRICE_KEYS[kind]]
 
 
-def _discounted(game: Game, base: int) -> int:
-    """HARD MODE's clue sale (issue #254) — rounded down, never below 1 💠."""
-    percent = game.hard_mode_clue_discount if game.hard_mode else 0
-    if percent <= 0:
-        return base
-    return max(1, base * (100 - percent) // 100)
+def price(session: Session, game: Game, buyer: Player, kind: ClueKind) -> int:
+    return _quote(session, game, _base_price(session, game, buyer, kind)).cost
+
+
+def _quote(session: Session, game: Game, base: int) -> _Quote:
+    """HARD MODE's clue sale (issue #254) and the season's clue discount
+    (seasons spec §5), stacked by `discount.apply`."""
+    hard_mode = game.hard_mode_clue_discount if game.hard_mode else 0
+    season = modifiers.for_game(session, game).get(Modifier.CLUE_DISCOUNT_PCT, 0)
+    cost = discount.apply(base, hard_mode, season)
+    logger.debug("clue price {base} -> {cost}", base=base, cost=cost, game_id=game.id)
+    return _Quote(base=base, hard_mode_pct=hard_mode or 0, season_pct=season, cost=cost)
 
 
 def clue_screenshot_providers(game: Game) -> list[Provider]:
@@ -275,7 +307,8 @@ def _detail(request: PurchaseRequest) -> dict[str, object]:
 def _pay_with_currency(
     session: Session, game: Game, buyer: Player, request: PurchaseRequest
 ) -> CluePurchase:
-    cost = price(session, game, buyer, request.kind)
+    quote = _quote(session, game, _base_price(session, game, buyer, request.kind))
+    cost = quote.cost
     try:
         charge = wallet.debit(
             session,
@@ -303,11 +336,12 @@ def _pay_with_currency(
     session.add(bought)
     session.flush()
     logger.info(
-        "bought the {kind} clue{detail} for {price} 💠 (purchase {purchase_id})",
+        "bought the {kind} clue{detail} for {price} 💠{discount} (purchase {purchase_id})",
         price=cost,
         purchase_id=bought.id,
         game_id=game.id,
         **_detail(request),
+        **quote.log_fields(),
     )
     return bought
 

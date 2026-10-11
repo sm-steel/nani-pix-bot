@@ -102,7 +102,10 @@ def _game(session, season_id) -> Game:
 
 
 def _xp_rows(session) -> list[tuple[int, int, str]]:
-    rows = session.scalars(select(SeasonXp).order_by(SeasonXp.id))
+    """Game XP only: an objective a win completes adds its own row (test_objectives.py)."""
+    rows = session.scalars(
+        select(SeasonXp).where(SeasonXp.source != XpSource.OBJECTIVE).order_by(SeasonXp.id)
+    )
     return [(r.player_id, r.amount, r.source) for r in rows]
 
 

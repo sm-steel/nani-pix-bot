@@ -37,7 +37,7 @@ def test_a_run_with_an_invalid_pass_is_rejected(tmp_path, monkeypatch) -> None:
         "RUN = replace(DEMO, run_id='bad_pass_1', tiers=(Tier(0),))\n"
     )
     monkeypatch.syspath_prepend(str(tmp_path))
-    with pytest.raises(registry.RunModuleError, match="invalid season pass"):
+    with pytest.raises(registry.RunModuleError, match="invalid season run"):
         registry.discover("bad_pass_runs")
 
 

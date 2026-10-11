@@ -5,9 +5,14 @@ from nani_pix_bot.seasons.definition import (
     CoinTable,
     Gate,
     GateTag,
+    Goal,
+    GoalKind,
     Item,
+    Modifier,
+    Objective,
     Reward,
     SeasonRun,
+    ShopOffer,
     Tier,
     XpTable,
 )
@@ -25,7 +30,39 @@ ITEMS = (
     Item(
         "win_effect.confetti", CosmeticSlot.WIN_EFFECT, "confetti", _names("Confetti", "Конфетти")
     ),
+    Item("name_flair.dango", CosmeticSlot.NAME_FLAIR, "🍡", _names("Dango", "Данго")),
     Item("title.demo", CosmeticSlot.TITLE, "", _names("Demo Star", "Демо-звезда")),
+)
+
+OBJECTIVES = (
+    Objective(
+        "hanami_host",
+        _names("Hanami Host", "Хозяин ханами"),
+        Goal(GoalKind.HOSTED, 2),
+        xp=40,
+        coins=30,
+    ),
+    Objective(
+        "first_bloom",
+        _names("First Bloom", "Первый цвет"),
+        Goal(GoalKind.WINS, 1, max_stage=2),
+        xp=60,
+        coins=40,
+    ),
+    Objective(
+        "study_group",
+        _names("Study Group", "Учебная группа"),
+        Goal(GoalKind.SHARED_CLUES, 1),
+        xp=30,
+        coins=20,
+    ),
+    Objective(
+        "senpai_notice",
+        _names("Senpai Notice", "Сэмпай заметил"),
+        Goal(GoalKind.TIPS, 1),
+        xp=20,
+        coins=20,
+    ),
 )
 
 RUN = SeasonRun(
@@ -44,4 +81,12 @@ RUN = SeasonRun(
         Tier(120, Reward.clue_ticket(), Reward.currency(50)),
     ),
     premium_price=150,
+    shop=(
+        ShopOffer.item("name_flair.dango", 40),
+        ShopOffer.item("host_frame.border", 80),
+        ShopOffer.clue_ticket(30, 2),
+    ),
+    modifiers=MappingProxyType({Modifier.CLUE_DISCOUNT_PCT: 25}),
+    style="plain",
+    objectives=OBJECTIVES,
 )

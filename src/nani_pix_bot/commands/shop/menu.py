@@ -13,9 +13,11 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.seasons.definition import Modifier
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.clues import shop
+from nani_pix_bot.services.seasons import modifiers as season_modifiers
 
 
 def render_shop(
@@ -26,6 +28,12 @@ def render_shop(
     text = i18n.t("shop.menu", lang, balance=buyer.currency)
     if game.hard_mode and game.hard_mode_clue_discount:
         text += "\n" + i18n.t("shop.hard_mode_discount", lang, percent=game.hard_mode_clue_discount)
+    season_run = season_modifiers.season_of(session, game)
+    percent = season_run.modifiers.get(Modifier.CLUE_DISCOUNT_PCT) if season_run else None
+    if season_run is not None and percent:
+        text += "\n" + i18n.t(
+            "shop.season_discount", lang, season=season_run.name(lang), percent=percent
+        )
     offers = shop.offers(session, game, buyer, lang)
     if not offers:
         return f"{text}\n{i18n.t('shop.nothing_left', lang)}", None
