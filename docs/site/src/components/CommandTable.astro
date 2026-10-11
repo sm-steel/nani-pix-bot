@@ -24,7 +24,10 @@ const GROUPS: Record<Group, [string, string][]> = {
     ['start', '/start'],
     ['newgame', '/newgame'],
     ['shop', '/shop'],
+    ['seasonpass', '/seasonpass'],
+    ['seasonshop', '/seasonshop'],
     ['title', '/title'],
+    ['cosmetics', '/cosmetics'],
     ['linkmal', '/linkmal'],
     ['unlinkmal', '/unlinkmal'],
     ['history', '/history'],
@@ -32,6 +35,7 @@ const GROUPS: Record<Group, [string, string][]> = {
   ],
   both: [
     ['balance', '/balance'],
+    ['profile', '/profile [@username]'],
     ['tip', '/tip @username <amount>'],
     ['achievements', '/achievements [@username | top]'],
     ['standings', '/standings'],
@@ -52,6 +56,8 @@ const GROUPS: Record<Group, [string, string][]> = {
     ['setwinner', '/setwinner <game id> @username'],
     ['timezone', '/timezone'],
     ['quiethours', '/quiethours HH:MM HH:MM | off'],
+    ['season', '/season [schedule | start | end | cancel]'],
+    ['grantitem', '/grantitem @username <item id>'],
   ],
 };
 

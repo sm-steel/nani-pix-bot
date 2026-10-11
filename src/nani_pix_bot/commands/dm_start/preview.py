@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.dm_start import season_gate
 from nani_pix_bot.commands.dm_start._shared import (
     _SYNONYM_SPLIT_RE,
     _method_keyboard,
@@ -38,6 +39,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX,
     PREVIEW_RESEARCH_CALLBACK_DATA,
     algorithm_name,
+    back_to_methods_keyboard,
     bounty_keyboard,
     change_image_keyboard,
     pixel_algorithm_keyboard,
@@ -62,9 +64,12 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.cosmetics import flair, reveal_choice
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty, earning, wallet
 from nani_pix_bot.services.reveal import store as reveal_store
+from nani_pix_bot.services.seasons import gate as gate_service
+from nani_pix_bot.services.seasons.gate import Verdict
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -94,18 +99,15 @@ def _activate_and_stage_first_post(
     come from the stage config this function is already loading for the
     pixelation width. Read straight off STAGE_ORDER[0] rather than through
     game_service.stage_progress(), which needs an already-ACTIVE game;
-    activate_game() only runs a couple of lines below."""
+    activate_game() only runs a couple of lines below. The image itself is
+    rendered after activate_game(), which sets the season tag its style
+    depends on."""
     timeout_module.cancel_setup_abandon(context.job_queue, game.id)
     if game.original_image is None:
         raise RuntimeError("game.original_image is None in _activate_and_stage_first_post")
     original_bytes = game.original_image
     first_stage = game_service.STAGE_ORDER[0]
     first_stage_settings = stage_config.get_stage_config(session, first_stage)
-    pixelated = pixelate_service.pixelate(
-        original_bytes,
-        first_stage_settings.target_width,
-        game.pixel_algorithm,
-    )
     caption = i18n.t(
         "dm_start.game_started_caption",
         lang,
@@ -117,7 +119,12 @@ def _activate_and_stage_first_post(
     )
     caption += game_service.game_id_line(game.id, lang)
     game_service.activate_game(session, game)
-    reveal_store.reserve(session, game.id, reveal_store.pick_effect(), None)
+    # Rendered only after activation: activate_game() tags the game with the
+    # running season, which picks the stage style (styles.style_for).
+    pixelated = stage_cosmetics.stage_png(
+        session, game, original_bytes, first_stage_settings.target_width
+    )
+    reveal_store.reserve(session, game.id, reveal_choice.effect_for(session, game.starter_id), None)
     prompt_bonus = earning.award_prompt_start(session, game)
     if prompt_bonus:
         caption += "\n" + i18n.t(
@@ -166,6 +173,11 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
         # takes only one answer per callback query.
         await _handle_bounty_pick_tap(session_factory, query, user)
         return
+    if user is not None and query.data == PREVIEW_CONFIRM_CALLBACK_DATA:
+        # Answers the query itself too, before the season gate's catalogue
+        # lookups (see _handle_gated_confirm).
+        await _handle_gated_confirm(context, session_factory, query, user)
+        return
     await query.answer()
     if user is None:
         return
@@ -211,11 +223,6 @@ async def _handle_posting_tap(
 
     Returns True if this tap was one of them and has been handled."""
     data = str(query.data)
-    if data == PREVIEW_CONFIRM_CALLBACK_DATA:
-        lang = await _handle_confirm_tap(context, session_factory, user)
-        if lang is not None:
-            await query.edit_message_text(text=i18n.t("dm_start.posted", lang))
-        return True
     if data == PREVIEW_CHANGE_IMAGE_PICK_SCREENSHOT_CALLBACK_DATA:
         await _handle_change_image_pick_screenshot_tap(context, session_factory, query, user)
         return True
@@ -223,6 +230,36 @@ async def _handle_posting_tap(
         await _handle_pixel_algorithm_pick_tap(context, session_factory, query, user)
         return True
     return False
+
+
+async def _handle_gated_confirm(
+    context: ContextTypes.DEFAULT_TYPE, session_factory, query, user
+) -> None:
+    """Confirm, behind the running season's gate (seasons spec §5) —
+    authoritative, since every way of identifying a game ends here. The
+    tap is answered first: the gate may look the anime's tags up in the
+    catalogues, and Telegram's callback window can run out meanwhile. A
+    refusal replaces the preview's buttons with why and a way back to the
+    methods; "unavailable" says so in a message of its own and leaves the
+    preview as it is, so Confirm can simply be tapped again."""
+    await query.answer()
+    verdict = await season_gate.run_gate(context, session_factory, user.id)
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+    if verdict is Verdict.UNAVAILABLE:
+        await context.bot.send_message(
+            chat_id=user.id, text=i18n.t("season.gate.unavailable", lang)
+        )
+        return
+    if verdict in gate_service.REFUSED:
+        await query.edit_message_text(
+            season_gate.refusal_text(verdict, season_gate.rule_text(session_factory, lang), lang),
+            reply_markup=back_to_methods_keyboard(lang),
+        )
+        return
+    confirmed_lang = await _handle_confirm_tap(context, session_factory, user)
+    if confirmed_lang is not None:
+        await query.edit_message_text(text=i18n.t("dm_start.posted", confirmed_lang))
 
 
 async def _handle_confirm_tap(
@@ -244,7 +281,7 @@ async def _handle_confirm_tap(
         # starter and the answer, and this tap is that same action.
         logger.debug("confirmed from preview", game_id=setup_game.id)
         first_stage_post = _activate_and_stage_first_post(
-            session, context, setup_game, lang, user.full_name
+            session, context, setup_game, lang, flair.named(session, user.id, user.full_name)
         )
         game_id = setup_game.id
     # Block closed and committed above — activation is durable now

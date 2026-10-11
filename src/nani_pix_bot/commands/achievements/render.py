@@ -14,6 +14,7 @@ from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import names, status, titles
 from nani_pix_bot.services.achievements.definitions import Kind, rarity_of, reached
 from nani_pix_bot.services.achievements.status import State, Status
+from nani_pix_bot.services.cosmetics import flair
 
 MEDALS: Mapping[Rarity, str] = MappingProxyType(
     {Rarity.BRONZE: "🥉", Rarity.SILVER: "🥈", Rarity.GOLD: "🥇", Rarity.PLATINUM: "💎"}
@@ -31,11 +32,20 @@ def heading(state: State, lang: str) -> str:
     return "## " + _t(f"achievements.section.{state.value}", lang)
 
 
+def _latest(item: Status, lang: str) -> str:
+    """The latest period won: a champion's titled period, a season's name
+    (its title only when the achievement confers one)."""
+    defn = item.defn
+    if defn.kind is Kind.SEASON and not defn.titled:
+        return names.season_label(item.period_key, lang)
+    return names.title(defn, 1, item.period_key, lang)
+
+
 def _earned_row(item: Status, lang: str, _holder: str | None) -> str:
     defn = item.defn
     medal = MEDALS[rarity_of(defn, max(item.tier, 1))]
-    if defn.kind is Kind.PERIOD:
-        latest = md_escape(names.title(defn, 1, item.period_key, lang))
+    if defn.kind in (Kind.PERIOD, Kind.SEASON):
+        latest = md_escape(_latest(item, lang))
         times = _t("achievements.times", lang, count=item.tier)
         if item.rank is not None:
             times += " · " + _t("achievements.race_now", lang, rank=item.rank)
@@ -136,7 +146,8 @@ def header_line(session: Session, owner_id: int, items: Sequence[Status], lang: 
 def summary(session: Session, owner_id: int, lang: str, now: datetime) -> str:
     items = status.build(session, owner_id, now)
     lines = [
-        "## 🏅 " + md_escape(players.display_name(session, owner_id)),
+        "## 🏅 "
+        + md_escape(flair.named(session, owner_id, players.display_name(session, owner_id))),
         header_line(session, owner_id, items, lang),
     ]
     owner = session.get(Player, owner_id)
@@ -166,7 +177,11 @@ def top_table(session: Session, rows: Sequence[status.TopRow], lang: str, offset
         "|---|---|---|---|",
     ]
     for rank, top_row in enumerate(rows, start=offset + 1):
-        name = md_escape(players.display_name(session, top_row.player_id))
+        name = md_escape(
+            flair.named(
+                session, top_row.player_id, players.display_name(session, top_row.player_id)
+            )
+        )
         holder = session.get(Player, top_row.player_id)
         title = titles.text(holder.title_key, lang) if holder else None
         if title:

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from loguru import logger
 from telegram import Message, Update, User
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow.stage_post import (
@@ -18,12 +19,14 @@ from nani_pix_bot.commands.game_flow.stage_post import (
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.jobs.timers.current_image import RevealTarget, RevealWinner
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.jobs.reveal import RevealWinner
+from nani_pix_bot.jobs.timers.current_image import RevealTarget
+from nani_pix_bot.models.enums import CosmeticSlot, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
-from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.cosmetics import flair, inventory
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import earning, settlement
 from nani_pix_bot.services.economy.messages import earnings_suffix
 from nani_pix_bot.services.game import guesses
@@ -46,10 +49,14 @@ def _partial_reveal_line(session, game: Game, lang: str) -> str:
     return "\n" + i18n.t("guess.partial_reveal", lang, reveal=row.partial_reveal)
 
 
-def _reveal_winner(user: User) -> RevealWinner:
+def _reveal_winner(session, user: User) -> RevealWinner:
     """The reveal badge's winner: "@username", or the full name for a
-    player with no username."""
-    return RevealWinner(user.id, f"@{user.username}" if user.username else user.full_name)
+    player with no username, plus their equipped win overlay."""
+    return RevealWinner(
+        user.id,
+        f"@{user.username}" if user.username else user.full_name,
+        inventory.look(session, user.id, CosmeticSlot.WIN_EFFECT),
+    )
 
 
 def _prepare_won_announcement(
@@ -59,7 +66,7 @@ def _prepare_won_announcement(
     lang: str,
     user: User,
 ) -> Announcement:
-    winner = _reveal_winner(user)
+    winner = _reveal_winner(session, user)
     original_bytes = require_original_image(game, "a WON outcome")
     timeout_module.cancel_timeout(context.job_queue, game.id)
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
@@ -69,7 +76,7 @@ def _prepare_won_announcement(
     caption = i18n.t(
         "guess.won_caption",
         lang,
-        winner=user.full_name,
+        winner=flair.named(session, user.id, user.full_name),
         title=game_service.display_title(game, lang),
     )
     caption += game_service.game_id_line(game.id, lang)
@@ -89,7 +96,7 @@ def _prepare_hard_mode_won_announcement(
     of a single post_reveal call. Timer/turn-state
     handling is identical to the normal-mode helper; only the reveal
     photos and caption key differ."""
-    winner = _reveal_winner(user)
+    winner = _reveal_winner(session, user)
     photos = game_service.hard_mode_reveal_images(game)
     timeout_module.cancel_timeout(context.job_queue, game.id)
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
@@ -99,7 +106,7 @@ def _prepare_hard_mode_won_announcement(
     caption = i18n.t(
         "guess.hard_mode_won_caption",
         lang,
-        winner=user.full_name,
+        winner=flair.named(session, user.id, user.full_name),
         title=game_service.display_title(game, lang),
     )
     caption += game_service.game_id_line(game.id, lang)
@@ -120,8 +127,8 @@ def _prepare_turn_advanced_announcement(
     done here by record_guess)."""
     image_a, image_b = game_service.hard_mode_reveal_images(game)
     width = game_service.hard_mode_turn_width(game)
-    pixelated_a = pixelate_service.pixelate(image_a, width, game.pixel_algorithm)
-    pixelated_b = pixelate_service.pixelate(image_b, width, game.pixel_algorithm)
+    pixelated_a = stage_cosmetics.stage_png(session, game, image_a, width)
+    pixelated_b = stage_cosmetics.stage_png(session, game, image_b, width)
     progress = game_service.hard_mode_turn_progress(game)
     game_service.reset_inactivity_clock(session, game)
     timeout_module.schedule_inactivity_timers(context.job_queue, game)
@@ -248,6 +255,21 @@ class _GuessResult:
     reply_text: str | None
     announcement: Announcement | None
     needs_cleanup_after_send: bool
+    reaction: str | None = None  # the winner's equipped reaction, for a WON guess only
+
+
+async def _react_to_win(message: Message, reaction: str) -> None:
+    """Reacts to the winning /guess; a refused reaction never blocks the win."""
+    try:
+        await message.set_reaction(reaction=reaction)
+    except TelegramError as error:
+        logger.warning(
+            "couldn't react {reaction} to the winning guess: {error}",
+            reaction=reaction,
+            error=str(error),
+        )
+    else:
+        logger.info("reacted {reaction} to the winning guess", reaction=reaction)
 
 
 async def _send_guess_result(
@@ -259,6 +281,8 @@ async def _send_guess_result(
         sent = await send_announcement(context, session_factory, result.announcement)
         if result.needs_cleanup_after_send:
             timeout_module.clear_image_if_sent(session_factory, result.game_id, sent)
+    if result.reaction is not None:
+        await _react_to_win(message, result.reaction)
 
 
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -302,12 +326,15 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         earnings = earning.award_guess(
             session, game, guesser_id=user.id, won=outcome is game_service.GuessOutcome.WON
         )
-        suffix = earnings_suffix(session, game, earnings, lang, player_name=user.full_name)
+        suffix = earnings_suffix(
+            session, game, earnings, lang, player_name=flair.named(session, user.id, user.full_name)
+        )
         if outcome not in _NO_PARTIAL_REVEAL:
             suffix = _partial_reveal_line(session, game, lang) + suffix
         if outcome is game_service.GuessOutcome.WON:
             announcement = _prepare_won_announcement_dispatch(session, context, game, lang, user)
-            result = _GuessResult(game.id, None, with_suffix(announcement, suffix), True)
+            reaction = inventory.look(session, user.id, CosmeticSlot.GUESS_REACTION)
+            result = _GuessResult(game.id, None, with_suffix(announcement, suffix), True, reaction)
         else:
             result = _non_won_result(session, context, game, outcome, suffix)
     # Block closed and committed above — the outcome (and the currency it

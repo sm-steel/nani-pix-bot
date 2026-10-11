@@ -12,6 +12,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 )
 from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from tests.commands.dm_start.test_preview import (
     _make_callback_context,
     _make_preview_callback_update,
@@ -36,7 +37,7 @@ async def _answer(session_factory, data: str):
 
 @pytest.fixture(autouse=True)
 def _no_pixelation(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
 
 
 @pytest.mark.parametrize(

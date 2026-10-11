@@ -4,16 +4,15 @@ the admin's own saved timezone (/timezone), and every reply echoes the
 window back with its UTC equivalent so there's no doubt which zone it's
 in."""
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from loguru import logger
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.admin_dm import AdminDm, admin_dm
 from nani_pix_bot.commands.helpers.membership import is_group_admin
-from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, players, quiet_hours, settings
 from nani_pix_bot.services.quiet_hours import QuietHours
@@ -29,16 +28,6 @@ COMMON_TIMEZONES = (
 )
 
 
-@dataclass(frozen=True)
-class _AdminDm:
-    """A DM from a verified group admin — everything a handler needs to
-    act and reply, once the shared gate in _admin_dm() has passed."""
-
-    message: Message
-    user_id: int
-    lang: str
-
-
 def _timezone_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -46,24 +35,6 @@ def _timezone_keyboard() -> InlineKeyboardMarkup:
             for tz in COMMON_TIMEZONES
         ]
     )
-
-
-async def _admin_dm(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, command: str
-) -> _AdminDm | None:
-    """Shared DM + admin gate: None after replying "admins only" (or
-    silently, outside a DM)."""
-    message = update.message
-    user = update.effective_user
-    if not is_private_chat(update) or message is None or user is None:
-        return None
-    with session_scope(context.bot_data["session_factory"]) as session:
-        lang = settings.get_language(session)
-    if not await is_group_admin(context.bot, context.bot_data["group_chat_id"], user.id):
-        logger.warning("non-admin tried /{command}", command=command)
-        await message.reply_text(i18n.t("commands.admins_only", lang))
-        return None
-    return _AdminDm(message=message, user_id=user.id, lang=lang)
 
 
 def _describe(key: str, qh: QuietHours, lang: str) -> str:
@@ -85,7 +56,7 @@ def _timezone_set_text(tz: ZoneInfo, lang: str) -> str:
 
 
 async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    dm = await _admin_dm(update, context, "timezone")
+    dm = await admin_dm(update, context, "timezone")
     if dm is None:
         return
     session_factory = context.bot_data["session_factory"]
@@ -136,7 +107,7 @@ async def timezone_callback_handler(update: Update, context: ContextTypes.DEFAUL
 
 
 async def quiethours_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    dm = await _admin_dm(update, context, "quiethours")
+    dm = await admin_dm(update, context, "quiethours")
     if dm is None:
         return
     session_factory = context.bot_data["session_factory"]
@@ -169,7 +140,7 @@ async def quiethours_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _set_quiet_hours(dm, session_factory, args)
 
 
-async def _set_quiet_hours(dm: _AdminDm, session_factory, args: list[str]) -> None:
+async def _set_quiet_hours(dm: AdminDm, session_factory, args: list[str]) -> None:
     start = quiet_hours.parse_hhmm(args[0]) if len(args) == 2 else None
     end = quiet_hours.parse_hhmm(args[1]) if len(args) == 2 else None
     if start is None or end is None:

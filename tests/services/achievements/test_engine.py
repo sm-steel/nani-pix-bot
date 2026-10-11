@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.achievement import AchievementClaim, AchievementGrant
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
 from nani_pix_bot.models.enums import CurrencyReason, EventType, Rarity
+from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import events
 from nani_pix_bot.services.achievements import engine
@@ -183,3 +185,47 @@ def test_a_reward_cascade_crossing_two_tiers_grants_each_once(session: Session) 
     tiers = _grants(session)["pixel_magnate"]
     assert len(tiers) == len(set(tiers))
     assert {1, 2} <= set(tiers)
+
+
+GUESSER, NO_ROW = 5, 404
+_AT = datetime(2026, 10, 7, 12, tzinfo=UTC)
+
+
+def _guessed(session: Session, game_id: int, *players: int) -> None:
+    session.add_all(
+        GameGuess(game_id=game_id, player_id=p, text="x", stage=1, correct=False) for p in players
+    )
+    session.flush()
+
+
+def _ended(event_type: EventType, game_id: int, actor: int | None) -> events.LoggedEvent:
+    return events.LoggedEvent(1, event_type, actor, HOST, game_id, {}, _AT)
+
+
+def test_a_win_involves_every_guesser_after_the_winner_and_host(session: Session) -> None:
+    _players(session)
+    session.add(Player(telegram_user_id=GUESSER))
+    _guessed(session, 7, GUESSER, NO_ROW, ME, GUESSER, OTHER)
+    _guessed(session, 8, 6)  # another game's guesser
+
+    involved = engine._involved(session, _ended(EventType.GAME_WON, 7, ME))
+
+    assert involved == [ME, HOST, GUESSER, OTHER]
+
+
+def test_an_unsolved_end_involves_the_host_then_every_guesser(session: Session) -> None:
+    _players(session)
+    _guessed(session, 7, OTHER, ME)
+
+    involved = engine._involved(session, _ended(EventType.GAME_UNSOLVED, 7, None))
+
+    assert involved == [HOST, OTHER, ME]
+
+
+def test_other_events_involve_only_their_actor_and_subject(session: Session) -> None:
+    _players(session)
+    _guessed(session, 7, OTHER)
+
+    involved = engine._involved(session, _ended(EventType.GUESS, 7, ME))
+
+    assert involved == [ME, HOST]

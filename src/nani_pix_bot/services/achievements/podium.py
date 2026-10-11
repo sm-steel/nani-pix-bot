@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.period import PeriodResult
 from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.cards import PodiumCard, PodiumEntry
+from nani_pix_bot.services.cosmetics import flair
 
 _MEDALS = ("🥇", "🥈", "🥉")
 
@@ -26,7 +27,7 @@ def lines(session: Session, placed: list[PeriodResult], lang: str) -> list[str]:
             "period.summary.row",
             lang,
             medal=_MEDALS[r.rank - 1],
-            player=players.display_name(session, r.player_id),
+            player=flair.named(session, r.player_id, players.display_name(session, r.player_id)),
             score=r.score,
             wins=r.wins,
         )

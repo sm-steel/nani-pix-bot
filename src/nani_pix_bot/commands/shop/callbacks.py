@@ -6,11 +6,11 @@ from dataclasses import dataclass, replace
 from loguru import logger
 from sqlalchemy.orm import Session
 from telegram import CallbackQuery, Update, User
-from telegram.error import BadRequest, TelegramError
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.membership import is_group_member
-from nani_pix_bot.commands.shop import images, parsing, share
+from nani_pix_bot.commands.shop import images, parsing, share, tile_grid
 from nani_pix_bot.commands.shop.deliver import (
     deliver_image_clue,
     deliver_text_clue,
@@ -22,7 +22,6 @@ from nani_pix_bot.commands.shop.keyboards import (
     SHOP_SHARE_PREFIX,
     SHOP_TILE_PREFIX,
     share_keyboard,
-    tile_keyboard,
 )
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models import CluePurchase
@@ -36,6 +35,7 @@ from nani_pix_bot.services.clues.shop import (
     Refusal,
     ShopRefusedError,
 )
+from nani_pix_bot.services.cosmetics import flair
 
 _LETTER_KINDS = frozenset({ClueKind.FIRST_LETTER, ClueKind.LAST_LETTER})
 
@@ -60,6 +60,7 @@ class _Bought:
     message: str
     followup: str | None
     followup_purchase_id: int | None
+    buyer: str
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,7 @@ class _ImageBought:
     amount: int
     photo: bytes
     caption_key: str
+    buyer: str
 
 
 async def _route_buy(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, user: User) -> bool:
@@ -178,7 +180,8 @@ def _charge(
         )
         raise ShopRefusedError(Refusal.NO_GAME)
     amount = shop.price(session, game, buyer, request.kind)
-    return game, shop.purchase(session, game, buyer, request), amount
+    bought = shop.purchase(session, game, buyer, request)
+    return game, bought, 0 if bought.token_used else amount
 
 
 def _purchase(session_factory, tap: _BuyTap) -> _Bought:
@@ -200,7 +203,14 @@ def _purchase(session_factory, tap: _BuyTap) -> _Bought:
             message=text_clue_message(game, tap.kind, owned, lang),
             followup=followup,
             followup_purchase_id=followup_purchase_id,
+            buyer=_buyer_label(session, tap),
         )
+
+
+def _buyer_label(session: Session, tap: _BuyTap) -> str:
+    """The buyer's name for the topic notice, with their flair (read in the
+    purchase's own transaction)."""
+    return flair.named(session, tap.user.id, tap.user.full_name)
 
 
 def _refusal_text(session_factory, tap: _BuyTap, refusal: Refusal) -> str:
@@ -217,15 +227,16 @@ async def _fail_delivery(
 ) -> None:
     """Refund a purchase whose clue Telegram would not take, and say so."""
     _refund(context.bot_data["session_factory"], bought.purchase_id)
-    await tap.query.answer(
-        i18n.t("shop.delivery_failed", bought.lang, amount=bought.amount), show_alert=True
-    )
+    key = "shop.delivery_failed" if bought.amount else "shop.delivery_failed_token"
+    await tap.query.answer(i18n.t(key, bought.lang, amount=bought.amount), show_alert=True)
 
 
-async def _announce(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, lang: str) -> None:
+async def _announce(
+    context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, bought: _Bought | _ImageBought
+) -> None:
     """Post the topic notice, then answer the tap — in that order, so a
     callback that timed out (BadRequest on the answer) skips nothing."""
-    await post_bought_notice(context, tap.game_id, tap.user.full_name, tap.kind, lang)
+    await post_bought_notice(context, tap.game_id, bought.buyer, tap.kind, bought.lang)
     try:
         await tap.query.answer()
     except BadRequest:
@@ -243,7 +254,7 @@ async def _deliver(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, bought: _Bo
     if bought.followup is not None and bought.followup_purchase_id is not None:
         followup_markup = share_keyboard(bought.followup_purchase_id, bought.lang)
         await deliver_text_clue(context, tap.user, bought.followup, followup_markup)
-    await _announce(context, tap, bought.lang)
+    await _announce(context, tap, bought)
 
 
 def _log_delivered(tap: _BuyTap, purchase_id: int) -> None:
@@ -304,13 +315,18 @@ async def _buy_screenshot(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> N
             request = PurchaseRequest(tap.kind, screenshot_url=fetched.url)
             _, row, amount = _charge(session, tap, request)
             bought = _ImageBought(
-                plan.lang, row.id, amount, fetched.pixelated, "clue.screenshot_caption"
+                plan.lang,
+                row.id,
+                amount,
+                fetched.pixelated,
+                "clue.screenshot_caption",
+                _buyer_label(session, tap),
             )
     except ShopRefusedError as refused:
         await _alert_refusal(context, tap, refused)
         return
     if await _send_image(context, tap, bought):
-        await _announce(context, tap, bought.lang)
+        await _announce(context, tap, bought)
 
 
 async def _tile_button(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> None:
@@ -327,43 +343,32 @@ async def _tile_button(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> None
         await _alert_refusal(context, tap, refused)
         return
     if chosen is None:
-        await _open_tile_grid(context, tap, lang)
-    elif await _buy_and_send_tile(context, replace(tap, tile_index=chosen)):
-        await _announce(context, tap, lang)
-
-
-async def _open_tile_grid(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap, lang: str) -> None:
-    """No charge: just show the 8x8 grid to pick the round's tile."""
-    logger.info("opened the tile grid to pick the round's tile", game_id=tap.game_id)
-    try:
-        await context.bot.send_message(
-            chat_id=tap.user.id,
-            text=i18n.t("shop.tile_pick", lang),
-            reply_markup=tile_keyboard(tap.game_id),
-        )
-    except TelegramError:
-        logger.exception("could not DM the tile grid", game_id=tap.game_id)
-    await tap.query.answer()
+        await tile_grid.open_grid(context, tap.query, tap.user.id, tap.game_id, lang)
+    elif (bought := await _buy_and_send_tile(context, replace(tap, tile_index=chosen))) is not None:
+        await _announce(context, tap, bought)
 
 
 async def _buy_tile(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> None:
     """A tap on a grid cell; a forged or stale one is refused by the shop."""
     if not await _member_ok(context, tap):
         return
-    if not await _buy_and_send_tile(context, tap):
+    bought = await _buy_and_send_tile(context, tap)
+    if bought is None:
         return
-    await _clear_grid(tap)
-    await _announce(context, tap, _language(context))
+    await tile_grid.clear_grid(tap.query)
+    await _announce(context, tap, bought)
 
 
-async def _buy_and_send_tile(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> bool:
-    """Charge and DM the tile; False if refused, or if the DM failed (refunded)."""
+async def _buy_and_send_tile(
+    context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap
+) -> _ImageBought | None:
+    """Charge and DM the tile; None if refused, or if the DM failed (refunded)."""
     try:
         bought = _purchase_tile(context.bot_data["session_factory"], tap)
     except ShopRefusedError as refused:
         await _alert_refusal(context, tap, refused)
-        return False
-    return await _send_image(context, tap, bought)
+        return None
+    return bought if await _send_image(context, tap, bought) else None
 
 
 def _purchase_tile(session_factory, tap: _BuyTap) -> _ImageBought:
@@ -376,7 +381,9 @@ def _purchase_tile(session_factory, tap: _BuyTap) -> _ImageBought:
         if row.tile_index is None:
             raise RuntimeError("a bought tile has no tile_index")
         photo = images.render_tile_clue(session, game, row.tile_index)
-        return _ImageBought(lang, row.id, amount, photo, "clue.tile_caption")
+        return _ImageBought(
+            lang, row.id, amount, photo, "clue.tile_caption", _buyer_label(session, tap)
+        )
 
 
 async def _send_image(
@@ -400,15 +407,3 @@ async def _send_image(
         if row is not None:
             row.telegram_file_id = file_id
     return True
-
-
-async def _clear_grid(tap: _BuyTap) -> None:
-    """Take the buttons off the grid message the buyer tapped: the round's
-    tile is chosen, so its other cells are no longer valid."""
-    try:
-        await tap.query.edit_message_reply_markup(reply_markup=None)
-    except BadRequest as error:
-        if "not modified" not in str(error).lower():
-            logger.warning("could not clear the tile grid: {error}", error=error)
-    except TelegramError:
-        logger.opt(exception=True).warning("could not clear the tile grid")

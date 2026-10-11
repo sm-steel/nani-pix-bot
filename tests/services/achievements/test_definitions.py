@@ -65,6 +65,18 @@ def test_group_unique_and_period_definitions_always_grant_titles() -> None:
         assert grants_title(Definition("x", kind, (1,), (P,), frozenset(), _zero), 1)
 
 
+def test_a_season_definition_grants_a_title_only_when_titled() -> None:
+    plain = Definition("x", Kind.SEASON, (1,), (S,), frozenset(), _zero)
+    titled = Definition("y", Kind.SEASON, (1,), (S,), frozenset(), _zero, titled=True)
+    assert (grants_title(plain, 1), grants_title(titled, 1)) == (False, True)
+
+
+def test_titled_is_refused_outside_season_definitions() -> None:
+    for kind in (Kind.ONE_SHOT, Kind.LADDER, Kind.GROUP_UNIQUE, Kind.PERIOD):
+        with pytest.raises(ValueError, match="only season achievements"):
+            Definition("x", kind, (1,), (S,), frozenset(), _zero, titled=True)
+
+
 def test_one_shots_never_grant_titles() -> None:
     assert not grants_title(Definition("x", Kind.ONE_SHOT, (1,), (S,), frozenset(), _zero), 1)
 

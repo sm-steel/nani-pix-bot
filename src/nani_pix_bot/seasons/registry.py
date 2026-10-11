@@ -1,0 +1,69 @@
+"""Finds the run modules (seasons spec §1)."""
+
+import importlib
+import pkgutil
+from collections.abc import Mapping
+from dataclasses import dataclass
+from functools import cache
+from types import MappingProxyType
+
+from nani_pix_bot.seasons.definition import MAX_RUN_ID_LENGTH, Item, SeasonRun, run_problems
+
+RUNS_PACKAGE = "nani_pix_bot.seasons.runs"
+
+
+class RunModuleError(RuntimeError):
+    """A run module that doesn't declare a usable RUN."""
+
+
+def discover(package: str) -> dict[str, SeasonRun]:
+    root = importlib.import_module(package)
+    runs: dict[str, SeasonRun] = {}
+    for info in sorted(pkgutil.iter_modules(root.__path__), key=lambda i: i.name):
+        module = importlib.import_module(f"{package}.{info.name}")
+        run = getattr(module, "RUN", None)
+        if not isinstance(run, SeasonRun):
+            msg = f"{module.__name__} has no RUN = SeasonRun(...)"
+            raise RunModuleError(msg)
+        if run.run_id != info.name:
+            msg = f"{module.__name__}: run_id {run.run_id!r} must equal the module name"
+            raise RunModuleError(msg)
+        if len(run.run_id) > MAX_RUN_ID_LENGTH:
+            msg = f"{module.__name__}: run_id must be at most {MAX_RUN_ID_LENGTH} characters"
+            raise RunModuleError(msg)
+        problems = run_problems(run)
+        if problems:
+            msg = f"{module.__name__}: invalid season run: " + "; ".join(problems)
+            raise RunModuleError(msg)
+        runs[run.run_id] = run
+    return runs
+
+
+@cache
+def all_runs() -> Mapping[str, SeasonRun]:
+    return MappingProxyType(discover(RUNS_PACKAGE))
+
+
+def get(run_id: str) -> SeasonRun | None:
+    return all_runs().get(run_id)
+
+
+@dataclass(frozen=True)
+class ResolvedItem:
+    item_id: str
+    run: SeasonRun
+    item: Item
+
+
+@cache
+def all_items() -> Mapping[str, ResolvedItem]:
+    found = {}
+    for run in all_runs().values():
+        for item in run.items:
+            item_id = f"{run.run_id}/{item.key}"
+            found[item_id] = ResolvedItem(item_id, run, item)
+    return MappingProxyType(found)
+
+
+def item(item_id: str) -> ResolvedItem | None:
+    return all_items().get(item_id)

@@ -14,10 +14,19 @@ from nani_pix_bot.models.reveal_video import RevealVideo
 
 SLOT = 1
 _IMAGES = ("a", "b")
+# The effects a game without an equipped transition picks from; the season ones
+# are cosmetics, earned or bought, so they never come up at random.
+RANDOM_EFFECTS: tuple[RevealEffect, ...] = (
+    RevealEffect.IRIS,
+    RevealEffect.TILE_FLIP,
+    RevealEffect.RIPPLE,
+    RevealEffect.GLITCH,
+    RevealEffect.SHATTER,
+)
 
 
 def pick_effect(rng: random.Random | None = None) -> RevealEffect:
-    return (rng or random).choice(list(RevealEffect))
+    return (rng or random).choice(RANDOM_EFFECTS)
 
 
 def pick_image(rng: random.Random | None = None) -> str:

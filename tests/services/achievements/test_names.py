@@ -32,3 +32,17 @@ def test_period_labels_and_champion_titles() -> None:
     month = catalogue.get("champion_month")
     assert names.title(month, 1, "2026-10", "EN") == "Champion of October 2026"
     assert names.title(catalogue.get("pioneer"), 1, "", "EN") == "Pioneer"
+
+
+def test_front_runner_reads_apart_from_pioneer_in_russian() -> None:
+    front_runner = catalogue.get("season_front_runner")
+    assert names.name(front_runner, 0, "RU") == "Лидер забега"
+    assert names.name(front_runner, 0, "RU") != names.name(catalogue.get("pioneer"), 0, "RU")
+    assert names.description(front_runner, 1, "RU") == "Первых прохождений пропуска сезона: 1"
+
+
+def test_an_untitled_season_achievement_titles_as_its_name(records) -> None:
+    defn = catalogue.get("season_debut")
+
+    assert names.title(defn, 1, "demo_1", "EN") == "Season Debut"
+    assert not [message for level, message in records if level == "ERROR"]

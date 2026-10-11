@@ -7,6 +7,7 @@ from nani_pix_bot.models.enums import Rarity
 
 BACKGROUND_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "backgrounds"
 _SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
+SEASON_ART_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "seasons"
 
 
 def unlock_slot(rarity: Rarity) -> str:
@@ -27,3 +28,19 @@ def load_background(slot: str, seed: int) -> bytes | None:
     if not files:
         return None
     return files[seed % len(files)].read_bytes()
+
+
+def season_stamp(run_id: str, *, plus: bool) -> bytes | None:
+    """The run's season-stamp art (`stamp_plus.png` for the Sakura+ gold one,
+    else `stamp.png`), or None before the art lands."""
+    path = SEASON_ART_DIR / run_id / ("stamp_plus.png" if plus else "stamp.png")
+    return path.read_bytes() if path.is_file() else None
+
+
+def season_background(run_id: str) -> bytes | None:
+    """The run's committed key visual (seasons spec §6), or None before its art lands."""
+    for suffix in sorted(_SUFFIXES):
+        path = SEASON_ART_DIR / run_id / f"key_visual{suffix}"
+        if path.is_file():
+            return path.read_bytes()
+    return None

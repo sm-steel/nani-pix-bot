@@ -12,12 +12,13 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.dm_start import season_gate
 from nani_pix_bot.commands.dm_start._shared import (
     SEARCH_SERVICE_ERRORS,
     _method_keyboard,
     _method_prompt_key,
     _prefer_shikimori,
-    _reject_stale_tap,
+    _reject_stale_tap_answered,
     _reply_service_down,
     _search_and_build_keyboard,
     _stored_provider,
@@ -58,6 +59,7 @@ from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
+from nani_pix_bot.services.seasons import gate as gate_service
 
 
 def _search_prompt_key(*, source: Provider | Literal["manual"], has_image: bool) -> str:
@@ -362,13 +364,16 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     if query is None or query.data is None:
         return
+    # Answered first and exactly once, on every path below: the provider
+    # lookup and the season gate's tag lookup are network round-trips,
+    # and Telegram rejects a late answer ("query is too old"), which
+    # would skip the edit that follows (#418). Anything that used to be
+    # an alert is therefore an edit or a message of its own.
+    await query.answer()
     user = query.from_user
     if user is None:
-        # Never acknowledged on this branch, unlike before the reorder
-        # below: Telegram marks `from_user` required on a CallbackQuery,
-        # so this is unreachable in practice — same shape as the
-        # equivalent guard in screenshot_gallery.py's handlers, none of
-        # which answer here either.
+        # Telegram marks `from_user` required on a CallbackQuery, so this
+        # is unreachable in practice.
         return
 
     session_factory = context.bot_data["session_factory"]
@@ -379,25 +384,15 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         game_id = setup_game.id if setup_game is not None else None
 
-    # Deliberately not acknowledged yet: _resolve_picked_result runs a
-    # provider round-trip, and the SETUP row can vanish while it's in
-    # flight — the lookup below is a stale-row site (issue #95, the one
-    # remaining silent one from #79's sweep), and a query id can only be
-    # answered once (see _reject_stale_tap). Every already-handled
-    # outcome inside _resolve_picked_result replies via
-    # `query.edit_message_text` instead of `query.answer`, so the bare
-    # answer just below still lands as this handler's one acknowledgement
-    # for those paths.
     resolved = await _resolve_picked_result(query, context, lang, game_id)
     if resolved is None:
-        await query.answer()
         return
     source, external_id, result = resolved
 
     with session_scope(session_factory) as session:
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         if setup_game is None:
-            await _reject_stale_tap(query, lang)
+            await _reject_stale_tap_answered(context, user.id, query.data, lang)
             return
         game_service.stage_result(setup_game, result, source=source)
         logger.info(
@@ -420,12 +415,31 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     # Block closed and committed above — see _post_preview_album's/
     # send_screenshot_picker_prompt's docstrings for why the sends,
     # this tap's answer included, have to happen after (issue #292).
-    await query.answer()
+    if await _refused_by_season_gate(query, context, user.id, lang):
+        return
     start_alias_search(context, game_id, then_preview_in=lang if has_image else None)
     if not has_image:
         await send_screenshot_picker_prompt(context, picker_prompt, lang)
 
     await query.edit_message_text(i18n.t(message_key, lang))
+
+
+async def _refused_by_season_gate(
+    query, context: ContextTypes.DEFAULT_TYPE, starter_id: int, lang: str
+) -> bool:
+    """The running season's gate on a just-staged pick (seasons spec §5).
+    A refusal replaces the results with why, plus a way back to the
+    methods (the tap is already answered); "unavailable" carries on — Confirm checks
+    again, authoritatively."""
+    session_factory = context.bot_data["session_factory"]
+    verdict = await season_gate.run_gate(context, session_factory, starter_id)
+    if verdict not in gate_service.REFUSED:
+        return False
+    await query.edit_message_text(
+        season_gate.refusal_text(verdict, season_gate.rule_text(session_factory, lang), lang),
+        reply_markup=back_to_methods_keyboard(lang),
+    )
+    return True
 
 
 async def _get_identification_result(

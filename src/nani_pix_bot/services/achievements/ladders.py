@@ -5,7 +5,7 @@ Pure: no DB, no clock."""
 from collections.abc import Iterable
 from datetime import date, timedelta
 
-from nani_pix_bot.models.enums import CurrencyReason, EventType
+from nani_pix_bot.models.enums import Currency, CurrencyReason, EventType
 from nani_pix_bot.services.achievements.definitions import History
 from nani_pix_bot.services.events import LoggedEvent
 
@@ -24,8 +24,14 @@ def _games(events: Iterable[LoggedEvent]) -> int:
 
 
 def _money(history: History, *, incoming: bool) -> list[LoggedEvent]:
+    """💠 movements, refunds and cashback left out. A season's 🪙 never counts
+    (events logged before currencies existed carry no `currency`: 💠)."""
     moved = history.about_me(E.CURRENCY_MOVED) if incoming else history.mine(E.CURRENCY_MOVED)
-    return [e for e in moved if not e.data["reversal"]]
+    return [
+        e
+        for e in moved
+        if not e.data["reversal"] and e.data.get("currency", Currency.BASE) == Currency.BASE
+    ]
 
 
 def _amounts(events: Iterable[LoggedEvent], reasons: frozenset[str]) -> list[int]:
@@ -142,3 +148,38 @@ def warm_guesses(history: History) -> int:
 
 def prompt_starts(history: History) -> int:
     return len(_amounts(_money(history, incoming=True), frozenset({_PROMPT_TURN})))
+
+
+def seasons_scored(history: History) -> int:
+    return len({e.data["season_id"] for e in history.mine(E.SEASON_ENDED)})
+
+
+def _free_completions(history: History) -> list[LoggedEvent]:
+    return [e for e in history.mine(E.TRACK_COMPLETED) if not e.data["premium"]]
+
+
+def passes_completed(history: History) -> int:
+    return len({e.data["season_id"] for e in _free_completions(history)})
+
+
+def front_runs(history: History) -> int:
+    return len({e.data["season_id"] for e in _free_completions(history) if e.data["first"]})
+
+
+def season_cosmetics(history: History) -> int:
+    return len({e.data["item_id"] for e in history.mine(E.ITEM_GAINED)})
+
+
+def premiums_bought(history: History) -> int:
+    premium = CurrencyReason.PREMIUM.value
+    return len(
+        {
+            e.data.get("season_id")
+            for e in history.mine(E.CURRENCY_MOVED)
+            if e.data.get("reason") == premium and not e.data["reversal"]
+        }
+    )
+
+
+def gated_genres_won(history: History) -> int:
+    return len({tag for e in history.mine(E.GAME_WON) for tag in e.data.get("gate_tags", ())})

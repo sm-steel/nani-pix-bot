@@ -6,7 +6,8 @@ per (kind, types) for the instance's lifetime: a /guess asks for the same
 GUESS rows from several definitions. Histories built together by
 for_players() also share their group-wide reads, which are the same for
 everyone (a reward cascade only appends currency_moved rows, which no
-group-wide read asks for)."""
+group-wide read asks for). An optional `scope` narrows every read to a
+subset of the log, such as one season's events."""
 
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, time, timedelta
@@ -37,10 +38,17 @@ _COLUMNS = (
 
 
 class DbHistory:
-    def __init__(self, session: Session, player_id: int, tz: ZoneInfo) -> None:
+    def __init__(
+        self,
+        session: Session,
+        player_id: int,
+        tz: ZoneInfo,
+        scope: ColumnElement[bool] | None = None,
+    ) -> None:
         self._session = session
         self.player_id = player_id
         self.tz = tz
+        self._scope = scope
         self._memo: dict[tuple[str, _Types], Any] = {}
         self._group_memo: dict[tuple[str, _Types], Any] = {}
 
@@ -59,6 +67,11 @@ class DbHistory:
             memo[key] = load()
         return memo[key]
 
+    def _scoped(self, stmt: Select[Any]) -> Select[Any]:
+        """Phase 4 seasons: a season's objectives read only that season's
+        events (services/seasons/season_history.py)."""
+        return stmt if self._scope is None else stmt.where(self._scope)
+
     def _party(self, kind: str) -> ColumnElement[bool] | None:
         if kind == "mine":
             return EventLog.actor_id == self.player_id
@@ -71,7 +84,7 @@ class DbHistory:
         party = self._party(kind)
         if party is not None:
             stmt = stmt.where(party)
-        rows = self._session.execute(stmt.order_by(EventLog.id))
+        rows = self._session.execute(self._scoped(stmt).order_by(EventLog.id))
         return [to_event(row) for row in rows]
 
     def mine(self, *types: EventType) -> list[LoggedEvent]:
@@ -102,10 +115,10 @@ class DbHistory:
         mine = EventLog.actor_id == self.player_id
         plain = tuple(t for t in types if t is not EventType.GAME_ACTIVATED)
         stmt = select(EventLog.occurred_at).where(EventLog.event_type.in_(plain), mine)
-        days = {self._local(at) for at in self._session.scalars(stmt)}
+        days = {self._local(at) for at in self._session.scalars(self._scoped(stmt))}
         if EventType.GAME_ACTIVATED in types:
             hosted = select(EventLog.occurred_at, EventLog.data)
-            days |= self._hosted_days(hosted.where(_HOSTED, mine))
+            days |= self._hosted_days(self._scoped(hosted.where(_HOSTED, mine)))
         return days
 
     def my_days(self, *types: EventType) -> set[date]:
@@ -119,9 +132,9 @@ class DbHistory:
         within = and_(EventLog.occurred_at >= start, EventLog.occurred_at < end)
         plain = tuple(t for t in types if t is not EventType.GAME_ACTIVATED)
         probe = select(EventLog.id).where(EventLog.event_type.in_(plain), within).limit(1)
-        if self._session.scalar(probe) is not None:
+        if self._session.scalar(self._scoped(probe)) is not None:
             return True
         if EventType.GAME_ACTIVATED not in types:
             return False
         hosted = select(EventLog.occurred_at, EventLog.data).where(_HOSTED, within)
-        return bool(self._hosted_days(hosted))
+        return bool(self._hosted_days(self._scoped(hosted)))

@@ -28,18 +28,24 @@ from nani_pix_bot import db, heartbeat
 from nani_pix_bot.commands import (
     achievements,
     balance,
+    cosmetics,
     currency_config,
     dm_start,
     game_flow,
     gamesenabled,
+    grant_item,
     history,
     language,
     leaderboard,
     mal_link,
     onboarding,
     partialmatch,
+    profile,
     quiet_hours,
     refund,
+    season,
+    season_pass,
+    season_shop,
     setautostart,
     setwinner,
     shop,
@@ -60,12 +66,14 @@ from nani_pix_bot.commands.helpers import log_scope, paging, player_tracking
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
+from nani_pix_bot.commands.profile.data import PREFIX as PROFILE_PREFIX
 from nani_pix_bot.commands.quiet_hours import SET_TIMEZONE_PREFIX
 from nani_pix_bot.config import Config, load_config
 from nani_pix_bot.jobs import reveal, reveal_pregen
 from nani_pix_bot.jobs.announcements import schedule_outbox_drain
 from nani_pix_bot.jobs.periods import schedule_period_job
 from nani_pix_bot.jobs.reveal import RevealCache, start_worker, stop_worker
+from nani_pix_bot.jobs.seasons import schedule_season_job
 from nani_pix_bot.jobs.timers import rearm_pending_timeouts
 from nani_pix_bot.logging_config import setup_logging
 from nani_pix_bot.models.enums import Provider
@@ -330,7 +338,19 @@ def build_application(config: Config) -> Application:
     application.add_handler(CallbackQueryHandler(shop.shop_callback_handler, pattern=r"^shop:"))
     application.add_handler(CallbackQueryHandler(title.title_callback, pattern=r"^title:"))
     application.add_handler(
+        CallbackQueryHandler(cosmetics.cosmetics_callback, pattern=rf"^{cosmetics.PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(season_pass.season_pass_callback, pattern=rf"^{season_pass.PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(season_shop.season_shop_callback, pattern=rf"^{season_shop.PREFIX}")
+    )
+    application.add_handler(
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
+    )
+    application.add_handler(
+        CallbackQueryHandler(profile.browse.profile_callback, pattern=rf"^{PROFILE_PREFIX}")
     )
     application.add_handler(CallbackQueryHandler(standings_dm.standings_callback, pattern=r"^std:"))
     application.add_handler(CallbackQueryHandler(leaderboard.leaderboard_callback, pattern=r"^lb:"))
@@ -351,12 +371,16 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
     application.add_handler(CommandHandler("status", status.status_command))
     application.add_handler(CommandHandler("balance", balance.balance_command))
+    application.add_handler(CommandHandler("profile", profile.profile_command))
     application.add_handler(CommandHandler("shop", shop.shop_command))
+    application.add_handler(CommandHandler("seasonpass", season_pass.season_pass_command))
+    application.add_handler(CommandHandler("seasonshop", season_shop.season_shop_command))
     application.add_handler(CommandHandler("tip", tip.tip_command))
     application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))
     application.add_handler(CommandHandler("partialmatch", partialmatch.partialmatch_command))
     application.add_handler(CommandHandler("refund", refund.refund_command))
     application.add_handler(CommandHandler("title", title.title_command))
+    application.add_handler(CommandHandler("cosmetics", cosmetics.cosmetics_command))
     application.add_handler(CommandHandler("setwinner", setwinner.setwinner_command))
     application.add_handler(CommandHandler("language", language.language_command))
     application.add_handler(CommandHandler("linkmal", mal_link.linkmal_command))
@@ -370,6 +394,8 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("setautostart", setautostart.setautostart_command))
     application.add_handler(CommandHandler("timezone", quiet_hours.timezone_command))
     application.add_handler(CommandHandler("quiethours", quiet_hours.quiethours_command))
+    application.add_handler(CommandHandler("season", season.season_command))
+    application.add_handler(CommandHandler("grantitem", grant_item.grant_item_command))
     application.add_handler(CommandHandler("version", version.version_command))
     application.add_handler(CommandHandler("achievements", achievements.achievements_command))
     application.add_handler(CommandHandler("standings", standings.standings_command))
@@ -418,6 +444,7 @@ async def _post_init(application: Application) -> None:
     await _start_reveal(application)
     schedule_outbox_drain(application.job_queue)
     schedule_period_job(application.job_queue, 0)
+    schedule_season_job(application.job_queue, 0)
 
     me = await application.bot.get_me()
     application.bot_data["bot_username"] = me.username

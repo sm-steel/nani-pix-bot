@@ -236,6 +236,22 @@ def test_detail_lists_clues_in_order_with_their_price_and_share_time(session: Se
     assert [c.shared_at is not None for c in detail.clues] == [True, False]
 
 
+def test_detail_lists_a_token_clue_without_a_price(session: Session) -> None:
+    _players(session)
+    game = _game(session, GameStatus.WON, ended=T0, winner_id=ALICE)
+    session.add(
+        CluePurchase(
+            game_id=game.id, player_id=BOB, kind=ClueKind.TILE, tile_index=1, token_used=True
+        )
+    )
+    session.flush()
+
+    detail = history.game_detail(session, game.id)
+
+    assert detail is not None
+    assert [(c.kind, c.price, c.token) for c in detail.clues] == [(ClueKind.TILE, 0, True)]
+
+
 def test_detail_sums_bounty_per_contributor_without_refunded_ones(session: Session) -> None:
     _players(session)
     game = _game(session, GameStatus.ACTIVE, ended=None)

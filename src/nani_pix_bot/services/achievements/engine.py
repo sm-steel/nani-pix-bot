@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.achievement import AchievementClaim, AchievementGrant
 from nani_pix_bot.models.enums import CurrencyReason, EventType
+from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import players, settings
-from nani_pix_bot.services.achievements import catalogue, outbox, rewards
+from nani_pix_bot.services.achievements import catalogue, outbox, rewards, season_eval
 from nani_pix_bot.services.achievements.definitions import (
     Definition,
     Kind,
@@ -21,6 +22,8 @@ from nani_pix_bot.services.achievements.definitions import (
 from nani_pix_bot.services.achievements.history import DbHistory
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.events import LoggedEvent
+
+_GAME_ENDS = frozenset({EventType.GAME_WON, EventType.GAME_UNSOLVED})
 
 
 @dataclass(frozen=True)
@@ -125,6 +128,8 @@ def _evaluate(
 ) -> list[AchievementGrant]:
     if defn.kind is Kind.GROUP_UNIQUE:
         return _evaluate_group_unique(session, defn, history, event)
+    if defn.kind is Kind.SEASON:
+        return season_eval.evaluate(session, defn, event, history.player_id)
     top = reached(defn, defn.progress(history))
     granted: list[AchievementGrant] = []
     for tier in range(1, top + 1):
@@ -141,9 +146,19 @@ def _ignored(event: LoggedEvent) -> bool:
     return event.event_type is EventType.CURRENCY_MOVED and bool(event.data.get("reversal"))
 
 
+def _guessers(session: Session, game_id: int) -> list[int]:
+    """Everyone who guessed in the game, in order of their first guess."""
+    stmt = select(GameGuess.player_id).where(GameGuess.game_id == game_id).order_by(GameGuess.id)
+    return list(dict.fromkeys(session.scalars(stmt)))
+
+
 def _involved(session: Session, event: LoggedEvent) -> list[int]:
-    ids = dict.fromkeys(p for p in (event.actor_id, event.subject_id) if p is not None)
-    return [p for p in ids if session.get(Player, p) is not None]
+    """The event's actor and subject; for a game's end, every guesser in it too,
+    so what a game earns its players (a run's party achievement) reaches each."""
+    ids = [p for p in (event.actor_id, event.subject_id) if p is not None]
+    if event.event_type in _GAME_ENDS and event.game_id is not None:
+        ids += _guessers(session, event.game_id)
+    return [p for p in dict.fromkeys(ids) if session.get(Player, p) is not None]
 
 
 def on_event(session: Session, event: LoggedEvent) -> list[AchievementGrant]:

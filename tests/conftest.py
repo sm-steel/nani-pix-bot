@@ -1,5 +1,5 @@
 import shutil
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
@@ -13,6 +13,8 @@ from nani_pix_bot import log_context
 from nani_pix_bot.db import make_session_factory
 from nani_pix_bot.models.base import Base
 from nani_pix_bot.services.quiet_hours import QuietHours
+
+pytest_plugins = ["tests.seasons_fixtures"]
 
 
 @pytest.fixture
@@ -110,3 +112,59 @@ def pytest_collection_modifyitems(config, items) -> None:
     for item in items:
         if "ffmpeg" in item.keywords:
             item.add_marker(skip)
+
+
+def _equipper(
+    monkeypatch: pytest.MonkeyPatch, item_id: str
+) -> Iterator[Callable[[Session, int], None]]:
+    """Fake season registry patched in; yields `equip(session, player_id)`,
+    which grants and equips the fake item `item_id`."""
+    from nani_pix_bot.models.enums import ItemSource
+    from nani_pix_bot.seasons import registry
+    from nani_pix_bot.services.cosmetics import inventory
+
+    runs = registry.discover("tests.seasons.fake_runs")
+    monkeypatch.setattr(registry, "all_runs", lambda: runs)
+    registry.all_items.cache_clear()
+
+    def equip(session: Session, player_id: int) -> None:
+        inventory.grant(session, player_id, inventory.ItemGrant(item_id, ItemSource.ADMIN))
+        inventory.equip(session, player_id, item_id)
+
+    yield equip
+    registry.all_items.cache_clear()
+
+
+@pytest.fixture
+def equip_flair(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
+    """`equip_flair(session, player_id)` gives the player the fake run's
+    blossom name flair and equips it."""
+    yield from _equipper(monkeypatch, "demo_1/name_flair.blossom")
+
+
+@pytest.fixture
+def equip_win_effect(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
+    """`equip_win_effect(session, player_id)` gives the player the fake run's
+    "confetti" win effect and equips it."""
+    yield from _equipper(monkeypatch, "demo_1/win_effect.confetti")
+
+
+@pytest.fixture
+def equip_frame(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
+    """`equip_frame(session, player_id)` gives the player the fake run's
+    "simple_border" host frame and equips it."""
+    yield from _equipper(monkeypatch, "demo_1/host_frame.border")
+
+
+@pytest.fixture
+def equip_title(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
+    """`equip_title(session, player_id)` gives the player the fake run's
+    "Demo Star" title item (the fake registry stays patched in)."""
+    yield from _equipper(monkeypatch, "demo_1/title.demo")
+
+
+@pytest.fixture
+def equip_transition(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Session, int], None]]:
+    """`equip_transition(session, player_id)` gives the player the fake run's
+    "iris" host transition and equips it."""
+    yield from _equipper(monkeypatch, "demo_1/host_transition.iris")

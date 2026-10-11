@@ -23,6 +23,7 @@ from nani_pix_bot.models.enums import PeriodType
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.achievements import names, periods
 from nani_pix_bot.services.achievements.periods import Period, Placed, Standing
+from nani_pix_bot.services.cosmetics import flair
 
 TOP_SIZE = 5
 PERIODS = (PeriodType.WEEK, PeriodType.MONTH, PeriodType.YEAR)
@@ -74,7 +75,9 @@ def table(session: Session, rows: Sequence[Placed], lang: str) -> list[str]:
         "|---|---|---|---|---|---|",
     ]
     for rank, row in rows:
-        name = md_escape(players.display_name(session, row.player_id))
+        name = md_escape(
+            flair.named(session, row.player_id, players.display_name(session, row.player_id))
+        )
         cells = [str(rank), name, str(row.score), str(row.wins), str(row.wrong)]
         cells.append(md_escape(solve_time(row)))
         lines.append("| " + " | ".join(cells) + " |")

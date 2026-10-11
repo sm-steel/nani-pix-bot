@@ -1,14 +1,17 @@
 import colorsys
 import math
+from dataclasses import replace
 from io import BytesIO
 from itertools import pairwise
 from typing import Any, cast
 
-from PIL import Image, ImageChops
+import pytest
+from PIL import Image, ImageChops, ImageDraw
 
 from nani_pix_bot.models.enums import Rarity
-from nani_pix_bot.services import cards
-from nani_pix_bot.services.cards import backgrounds, icons, render
+from nani_pix_bot.services import cards, i18n
+from nani_pix_bot.services.achievements import names
+from nani_pix_bot.services.cards import backgrounds, icons, profile_card, render
 
 
 def _card(**overrides) -> cards.UnlockCard:
@@ -385,3 +388,127 @@ def test_a_six_entry_podium_renders() -> None:
     assert _open(cards.render_podium_card(cards.PodiumCard("Champions", entries))).size == (
         cards.CARD_SIZE
     )
+
+
+def test_season_banner_renders_a_png_with_and_without_background() -> None:
+    from nani_pix_bot.services.cards import SeasonBanner, render_season_banner
+
+    card = SeasonBanner(
+        headline="Season starts", title="Demo Season", subtitle="01.11 \u2013 11.11"
+    )
+    assert render_season_banner(card)[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def _profile_card(stamps: int) -> cards.ProfileCard:
+    return cards.ProfileCard(
+        name="@alice",
+        title="Demo Star",
+        stamps=tuple(cards.StampEntry(f"Season {i}", gold=i == 0) for i in range(stamps)),
+        stats=(
+            cards.StatEntry("medal", "Seasons: 3"),
+            cards.StatEntry("gift", "Cosmetics: 4"),
+        ),
+        seed=1,
+    )
+
+
+@pytest.mark.parametrize("stamps", [0, 1, 7])
+def test_profile_card_is_a_png_of_the_card_size(stamps: int) -> None:
+    png = cards.render_profile_card(_profile_card(stamps), None, None)
+    assert Image.open(BytesIO(png)).size == cards.CARD_SIZE
+
+
+def test_profile_card_shows_at_most_six_stamps() -> None:
+    six = cards.render_profile_card(_profile_card(6), None, None)
+    seven = cards.render_profile_card(_profile_card(7), None, None)
+    assert six == seven
+
+
+def test_profile_card_takes_an_avatar_and_a_background() -> None:
+    plain = cards.render_profile_card(_profile_card(1), None, None)
+    full = cards.render_profile_card(_profile_card(1), _red_avatar(), _busy_background())
+    assert full != plain
+
+
+def _measure(text: str, font) -> float:
+    return ImageDraw.Draw(Image.new("RGB", (1, 1))).textlength(text, font=font)
+
+
+_STAMP_LABEL_WIDTH = profile_card._STAMP_SIZE + profile_card._STAMP_GAP - 4
+
+
+@pytest.mark.parametrize(
+    "label", ["Sakura Season I", "Сезон сакуры I", "Midsummer Neon Festival", "Mecha"]
+)
+def test_stamp_labels_wrap_in_full_never_cut(label: str) -> None:
+    draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    label_font, lines = profile_card._label_lines(draw, label, _STAMP_LABEL_WIDTH)
+    assert " ".join(lines) == label
+    assert len(lines) <= profile_card._STAMP_LABEL_LINES
+    assert all(_measure(line, label_font) <= _STAMP_LABEL_WIDTH for line in lines)
+
+
+def test_a_long_stamp_label_gets_smaller_text() -> None:
+    draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    short_font, _ = profile_card._label_lines(draw, "Mecha Week", _STAMP_LABEL_WIDTH)
+    long_font, _ = profile_card._label_lines(draw, "Midsummer Neon Festival", _STAMP_LABEL_WIDTH)
+    assert long_font.size < short_font.size
+
+
+def test_stamp_disc_is_smooth() -> None:
+    """Drawn supersampled: the ring's edge has in-between alpha, not just 0 and 255."""
+    disc = profile_card._stamp_disc(cards.StampEntry("Sakura Season I", gold=True))
+    histogram = disc.getchannel("A").histogram()
+    assert any(histogram[1:255])
+
+
+# The widest achievement names in either language (measured), at a high tier.
+WIDE_BADGES = tuple(
+    cards.BadgeEntry(f"{i18n.t(f'achievement.{key}.name', lang)} {names.roman(8)}", rarity)
+    for key, lang, rarity in (
+        ("champion_month", "EN", Rarity.PLATINUM),
+        ("clutch", "RU", Rarity.BRONZE),
+        ("clue_collector", "RU", Rarity.GOLD),
+        ("champion_week", "EN", Rarity.SILVER),
+    )
+)
+
+
+@pytest.mark.parametrize("badge", WIDE_BADGES)
+def test_any_chip_fits_two_to_a_row(badge: cards.BadgeEntry) -> None:
+    assert profile_card._badge_chip(badge).width <= profile_card._CHIP_MAX_WIDTH
+
+
+def test_a_short_chip_keeps_the_full_text_size() -> None:
+    assert profile_card._chip_font("Hat Trick").size == profile_card._CHIP_LABEL_SIZES[0]
+
+
+def test_four_of_the_widest_chips_all_land_on_two_rows(monkeypatch) -> None:
+    canvas = Image.new("RGB", cards.CARD_SIZE)
+    spots: list[tuple[int, int]] = []
+    real_paste = canvas.paste
+
+    def record(im, box: tuple[int, int], mask=None) -> None:
+        spots.append(box)
+        real_paste(im, box, mask)
+
+    monkeypatch.setattr(canvas, "paste", record)
+    profile_card._badges(
+        canvas, WIDE_BADGES, profile_card._PROFILE_TEXT_X, profile_card._PROFILE_TEXT_WIDTH
+    )
+    assert len(spots) == 4
+    assert len({y for _, y in spots}) == 2
+
+
+def test_profile_card_draws_badges_and_caps_them() -> None:
+    def png(count: int) -> bytes:
+        chips = tuple(cards.BadgeEntry(f"Badge {i}", Rarity.GOLD) for i in range(count))
+        return cards.render_profile_card(replace(_profile_card(1), badges=chips), None, None)
+
+    assert png(0) != png(1)
+    assert png(profile_card.PROFILE_BADGES_MAX) == png(profile_card.PROFILE_BADGES_MAX + 1)
+
+
+def test_every_stats_icon_exists() -> None:
+    for entry in _profile_card(0).stats:
+        assert (profile_card.ICON_DIR / f"{entry.icon}.png").is_file()

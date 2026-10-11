@@ -33,6 +33,7 @@ just what's currently built.
 | Public spends — bounty (`/bounty`), `/tip`, `/sharpen` | Implemented |
 | HARD MODE vote when nobody guessed right (15 min, unique plurality of 3+ votes) | Implemented |
 | Quiet hours (`/quiethours`, `/timezone`) — automatic posts held, clocks frozen | Implemented |
+| Seasons (`/season`, schedule, Season XP, anime gate, cosmetics, pass, `/seasonshop`, objectives) | Implemented |
 
 ## Game lifecycle
 
@@ -712,8 +713,10 @@ way to play it once.
 | Unsolved: stage 5 exhausted, 2-day timeout, inactivity on stage 5, `/stop` with reveal | the same effect, then the clear image held, no badge |
 | HARD MODE (any of the above) and the vote opening | the album as before, but the screenshot picked at game start is the reveal video (a badge on a win, none on the vote opening or an unsolved ending) and the other one stays a photo |
 
-The effect is picked uniformly at random **at game start** from `iris`,
-`tile_flip`, `ripple`, `glitch` and `shatter`. For HARD MODE the animated
+The effect is picked **at game start**: the starter's equipped reveal
+transition (see "Cosmetics"), else uniformly at random from `iris`,
+`tile_flip`, `ripple`, `glitch` and `shatter`. The season transitions
+(`spring_breeze`, `blossom_branch`) are cosmetics and never come up at random. For HARD MODE the animated
 screenshot (`a` or `b`) is picked then too. The effect part is rendered in
 the background right after the game goes live, so the reveal itself only
 renders the ending and never delays a game's start.
@@ -1221,8 +1224,8 @@ lifetime `players.wins`, where a HARD MODE win adds 2; in `/standings` and
 on the period podium it is the number of games won in that period, 1 each
 (HARD MODE included).
 
-In DM, `/achievements` (with its deep link and buttons), `/standings` and
-`/title` are for group members only — anyone can DM the bot, and these
+In DM, `/achievements` (with its deep link and buttons), `/standings`,
+`/title`, `/cosmetics` and `/profile` are for group members only — anyone can DM the bot, and these
 show members' names and activity. A non-member gets the same "not a
 member" reply the shop gives.
 
@@ -1359,6 +1362,10 @@ game once. A reward that unlocks another achievement (Pixel Magnate) is
 granted in order, and the engine re-reads what a player already holds
 before each grant, so a cascade never grants a tier twice.
 
+When a game ends (won or unsolved), **every player who guessed in it** is
+evaluated, not only the winner and the host, so an achievement that depends
+on a game they only guessed in (Sakura Season's Hanami Party) reaches them.
+
 ### Money rules
 
 - **Reversals never count and never take anything away.** Refunds
@@ -1381,7 +1388,8 @@ before each grant, so a cascade never grants a tier twice.
 A title is shown next to your name on `/leaderboard`, in the achievements
 top and in announcements. The ones that confer a title: the group-unique
 achievements, the champions, and the top *defined* tier of every ladder.
-Choose with `/title` (DM only; an earned title or "none").
+Choose with `/title` (DM only; an earned title, an owned season title
+item, or "none").
 
 ### Champions
 
@@ -1705,3 +1713,339 @@ round's bounty, tip a player, or pay to sharpen the image.
 - On confirm the player is charged and the round gets the same effects as any
   stage advance: the next stage image is posted, the wrong-guess counter resets
   and the new stage is announced in the group topic.
+
+## Seasons
+
+**Status: Implemented (phase 1: the framework, Season XP and the anime
+gate; phase 2: inventory and cosmetics; phase 3: Season Coins, the
+Season Pass, Premium and clue tokens; phase 4: the Season Shop, rule
+modifiers, the visual style and objectives; phase 5: season achievements).** Seasons are occasional,
+time-boxed events that run alongside the normal game. No playable season
+ships yet: `seasons/runs/` is empty, so `/season` has nothing to schedule
+until a run module is added.
+
+### Runs and the schedule
+
+- A **run** is one hand-written module in `seasons/runs/<run_id>.py`
+  exporting a `SeasonRun` (names, XP table, optional gate). Shipped modules
+  are frozen: `seasons/runs.lock` holds a sha256 per module and a test fails
+  if one is edited. A repeat is a **new** module, not a rerun.
+- Each scheduling is a `season_schedule` row, kept as history. States:
+  `scheduled` -> `active` at `start_at` -> `closing` at `end_at` -> `ended`,
+  or `cancelled` (only from `scheduled`). At most one season is open
+  (`scheduled`/`active`/`closing`) at a time, and a run that ever became
+  active can't be scheduled again. No open season means seasons are off.
+- **`/season`** (DM, group admins only): shows the current or upcoming
+  season, the history and the runs not yet held; `/season schedule <run>
+  <start> <end>`, `/season start <date>`, `/season end <date>` and
+  `/season cancel`. Dates are typed in the admin's `/timezone` (asked for
+  first if unset), stored in UTC. The start can move only before the
+  season begins; the end can move until the season starts closing, and an
+  end in the past on a running season ends it now (early stop). Date
+  changes before the start re-post the teaser — unless a teaser for that
+  season is still waiting in the outbox: it reads the dates when it posts,
+  so quick edits share one post.
+- The `season_boundary` job advances the season at each start/end and
+  catches up after downtime. A closing season whose last tagged game was
+  deleted by `/stop` is finalized by the job's hourly fallback run.
+
+### Tagging and closing
+
+- A game activated while a season is `active` is **tagged** (`games.season_id`)
+  at activation, for as long as the season row is `active`. Games activated
+  before the start are not tagged. The season stops tagging once the
+  boundary job moves it to `closing`, normally right at `end_at`, so a game
+  activated in the gap before that job fires is still tagged. Only tagged
+  games earn Season XP, and none once the season has `ended` or been
+  cancelled.
+- Once `closing`, nothing new is tagged, but the season stays `closing` until
+  every tagged game has ended, so a tagged game that ends late still counts
+  in full. Then it **finalizes**: the standings are frozen into
+  `season_results` (competition ranks, ties share one) and the end post is
+  queued.
+
+### Season XP
+
+Written as append-only `season_xp` rows. Game XP comes from the events of
+tagged games only, with amounts from the run's XP table. Completed objectives
+add their own rows (source `objective`, see "Objectives" below).
+
+| Event | Who gets it |
+|---|---|
+| Win | the winner, by the stage (or HARD MODE turn, clamped to 1-5) they won at |
+| Host | the starter, when the game is won or ends unsolved — **not on HARD MODE games**, which only the bot starts |
+| First guess | each player's first guess in a game, once per player per game |
+| Objective | the player who completes a season objective, once (see "Objectives") |
+
+"First guess" is answered from the player's `game_guesses` rows for that
+game (their first), not from a separate ledger. Standings are the sum of XP
+per player.
+
+**`/setwinner` on a game that ended unsolved** (it has an earlier
+`game_unsolved` event) already paid the host `host_unsolved`, so its win
+pays the host only `host_solved - host_unsolved` (never below 0), in XP and
+in 🪙 alike: the host ends with exactly a solved game's award. The winner's
+own award is the usual one.
+
+### Season Coins, Pass and Premium
+
+**Season Coins (🪙)** are a per-season balance (`season_balances`), separate
+from the 💠 balance. Every credit and debit still writes a `currency_transfers`
+row, tagged `currency = season` and the `season_id`. They are paid for the
+same events and by the same rules as Season XP (tagged games only; no hosting
+on HARD MODE games; the first guess is the player's first `game_guesses` row in that game),
+priced by the run's `CoinTable`: a win pays the same at every stage,
+`host_solved`, `host_unsolved`, `first_guess`. Pass rewards can pay 🪙 too.
+
+**The pass.** A run lists `tiers`; each has a free reward and an optional
+premium reward, reached by the player's Season XP total. A reward is an
+item, 🪙, 💠 or a clue token. `season_pass.sync` runs after XP changes and
+grants, in tier order and once each, every reward the XP has reached
+(`free_claimed` / `premium_claimed` are counts, since tiers go in order). It
+runs while the season is `active` or `closing`, never once it has `ended`.
+An item the player already owns is "already yours" (no second copy). A
+grant queues a DM (`OutboxKind.SEASON_TIER`) listing the rewards; finishing
+the free track queues one topic line (`OutboxKind.SEASON_COMPLETE`). A
+consumable reward is capped at two tiers per run (checked by
+`pass_problems`).
+
+**Premium** costs `run.premium_price` 💠 and is bought from `/seasonpass`
+(⭐ button, then a confirm) only while the season is `active`. It is
+refused when already bought, unaffordable, or when the run has no premium
+rewards. It grants every premium reward already reached at once; later ones
+as they are reached.
+
+**`/seasonpass`** (DM, group members only) shows XP, tier n/N, XP to the next
+tier, the 🪙 balance, the Premium state and every tier (free ✅/▫️,
+premium ✅/🔒 ⭐).
+
+**Clue tokens** are a consumable (`consumables`, a count per player and
+kind). While a player holds one, their next clue purchase in the shop uses
+it instead of 💠 (any clue kind): the purchase row has `token_used` and no
+`transfer_id`, and the shop shows 🎟 in place of the price. A clue that
+cannot be delivered returns the token. The game history marks a token clue
+with 🎟.
+
+**Conversion.** When a season finalizes, every positive 🪙 balance is
+emptied and paid out as `coins // run.coins_per_currency` 💠 (default 2 🪙 =
+1 💠; the remainder is dropped). The end post states how many players'
+coins became how much 💠, and the rate.
+
+### Season Shop
+
+`/seasonshop` (DM, group members only) lists the run's `shop` offers, bought
+with 🪙 and only while the season is `active`. Tapping an offer shows its
+preview (an item's usual preview; the clue token's is a golden-ticket icon),
+then **Buy** or **Back**. An offer is an item or a clue token with a
+per-season `limit`; an item is also refused when the player already owns it
+(no refunds). The purchase is one `season_shop_purchases` row tied to its 🪙
+`currency_transfers` row, and the limit is the count of a player's rows for
+that offer in that season. Refusals: closed, unknown offer, owned, sold out,
+insufficient 🪙. Items are put on in `/cosmetics`. An item sold in the shop
+is never also a pass reward (free or premium); the run loader rejects a run
+that does both.
+
+### Rule modifiers
+
+A run may set `modifiers`; only what a run uses is built. Today that is
+`CLUE_DISCOUNT_PCT` (at most 90): in a game tagged to that season, every clue's
+price is discounted by that percent. It **stacks** with the HARD MODE clue sale
+(`Game.hard_mode_clue_discount`) through `services/clues/discount.py::apply`:
+each positive percent is applied in turn to the base price, the result is
+rounded down **once**, and it is never below 1 💠. The shop menu states the
+season discount.
+
+### Season style
+
+A run may name a `style` (`plain` or `watercolor`). For a game tagged to that
+season it is drawn on the **pixelated** stage image and under the host's
+frame, so the order is **pixelate -> style -> frame**
+(`services/cosmetics/stage.py`). It applies to stage posts and the `/status`
+repost. It does not apply to the reveal video, the host's DM preview or clue
+images.
+
+### Objectives
+
+A run may list `objectives`: one-time goals with a key, a `Goal`, Season XP and
+optionally 🪙. A goal's kind is one of: hosted games (not HARD MODE), wins
+(optionally `max_stage`: a win at that stage or earlier, HARD MODE wins
+excluded), games guessed in (distinct games), clues shared, tips, and days
+played (days with a guess or a hosted game).
+
+- **Scope.** Progress is read from the season's history
+  (`services/seasons/season_history.py`): the events of the games tagged to the
+  season, plus game-less events (tips) during its dates. A game outside the
+  season never counts. A tagged game's events count while the season still
+  grants (`active`/`closing`). A tip counts only inside the tip window,
+  which starts at the season's actual start (`started_at`, falling back to the
+  scheduled `start_at`) and runs until its `end_at`.
+- **Completion** is checked after each event of the actor. A completed
+  objective writes a `season_objectives` row (so it pays once), an
+  `XpSource.OBJECTIVE` Season XP row and, with coins, a 🪙 credit
+  (`CurrencyReason.SEASON_OBJECTIVE`), syncs the pass and queues a DM. Progress
+  is shown capped at the target; a finished objective shows its date.
+- `/seasonpass` lists each objective with `progress/target` and its reward.
+
+### Announcements
+
+Three group posts through the announcement outbox (held by quiet hours like
+any other): a **teaser** when a season is scheduled (or its dates change),
+a **start** post (with the gate's rule when there is one) and an **end**
+post with the frozen podium. There is no reminder. A cancelled season posts
+nothing: its queued posts are dropped unsent.
+
+### The anime gate
+
+A run may declare a gate: a list of accepted MAL genres/themes, where a
+game qualifies if its anime has **any** of them (a season about Slice of
+Life, Romance or the School theme accepts all three). The player-facing
+rule text names every tag, in one fixed shape (the `Gate` docstring): a
+plural noun phrase slotted into "This season only {rule} can be played."
+(EN, e.g. "slice-of-life, romance or school anime") and «В этом сезоне можно
+играть только в {rule}.» (RU, accusative after «в»).
+
+- **Tags** come from the MAL id: Tenrai first (matched by MAL tag id),
+  Shikimori as the fallback (matched by kind + English name, since some of
+  its ids differ from MAL's). Fetched when a result is staged during DM
+  setup and stored in `games.anime_tags`.
+- **Checked twice**: when a catalogue result is picked, and again,
+  authoritatively, at Confirm, which every identification method passes
+  through. Manual and TMDB entries resolve a MAL id by an exact
+  (normalized) Tenrai title match; if none is found the game is refused.
+- **Three outcomes.** Passed. **Refused**: off-theme, or unidentifiable (no
+  MAL id could be found) — the player is told the rule and picks again. A
+  refusal also clears a catalogue screenshot and resets setup to the method
+  pick; a result for a pick that has since changed (a stale verdict) is
+  dropped. **Unavailable**: no provider answered after retries — the player
+  is told to try again, and it is never reported as off-theme. Confirm
+  answers the tap before the gate's catalogue lookups (Telegram's callback
+  window is short), so "unavailable" there arrives as a DM message of its
+  own, the preview left as it is for another tap.
+- **Bot-started games** are gated too: the autostart pick queries Shikimori
+  on **one randomly chosen** gate tag's id (its filter ANDs several ids, so
+  it can't take the whole list), and a Tenrai pick is kept only if its tags
+  pass; tags that can't be fetched reject the attempt. A gate tag with no
+  Shikimori id goes straight to the Tenrai pick and check, and a
+  genre-filtered Shikimori pick is not re-checked.
+
+### Cosmetics
+
+A run module may offer **items** (`Item`: a `<slot>.<name>` key, its slot, a
+per-slot `look` and a name per language). The full id is `<run_id>/<key>`
+and, because run modules are frozen, it always resolves. A player **owns**
+an item forever (`owned_items`, unique per player and item) and has at most
+**one equipped item per slot** (`equipped_items`). There are three ways to
+get one: an admin's `/grantitem` (`ItemSource.ADMIN`), a Season Pass reward
+(`ItemSource.TIER`, see "Season Coins, Pass and Premium") and a Season Shop
+purchase (`ItemSource.SHOP`, see "Season Shop"). A run's item is either
+shop-only or pass-only, never both.
+
+`/cosmetics` (DM) lists the slots, then a slot's owned items; tapping an
+item sends its preview with **Equip** / **Unequip**. `/profile` (the game topic, or DM for members) shows
+the profile card. A season title is picked with `/title`, not in
+`/cosmetics`, which only shows a hint for that slot.
+
+| Slot | `look` | Where it shows |
+|---|---|---|
+| `name_flair` | a short emoji (at most 8 characters, no letters or digits) | appended to your name in every group-facing text. **Text only**: the images (unlock and podium cards, the reveal badge) and the vote ballot buttons keep the plain name |
+| `guess_reaction` | one of the Telegram-allowed reaction emoji | the reaction the bot puts on your winning `/guess` |
+| `host_frame` | a frame key | a border on **every** stage image of games **you** start |
+| `host_transition` | a `RevealEffect` name | the transition of the reveal video of games **you** start |
+| `win_effect` | an overlay key | the overlay in the 2 s ending of the reveal video, when you win with `/guess` or the starter's `/correct`; no equipped overlay, or a failure, falls back to the confetti |
+| `profile_banner` | a banner file in the run's art directory | the background of your `/profile` card |
+| `title` | none (the title text is the item's localized names) | next to your name, like an achievement title; chosen with `/title`, stored in `players.title_key` as `item:<item id>` |
+
+Accepted limits:
+
+- A win by **vote** or by an admin's `/setwinner` has no reveal video, so it
+  has no win overlay.
+- **Bot-started games (including HARD MODE)** have no starter to
+  equip anything: their transition stays random and their images unframed.
+- Frames and transitions follow the **starter** of the game; overlays and
+  reactions follow the **winner**.
+- A title item's id must fit `/title`'s callback data: at most 56 bytes,
+  checked by `looks.problems` (and so by CI for every shipped run).
+- **Stamps** on `/profile` are the ended seasons the player has a
+  `season_results` row in; no stamp is stored per player. A run's art lives
+  in `assets/seasons/<run_id>/` (`stamp.png`, `stamp_plus.png`); every
+  stamp draws `stamp.png` inside its ring. The ring is **gold** once the
+  free track's `RewardKind.STAMP` tier is claimed (`free_claimed` reaches
+  that tier), and the art becomes `stamp_plus.png` once the premium track's
+  `RewardKind.STAMP_PLUS` tier is claimed (`premium_claimed`). Both are read
+  from the player's `season_pass` row when the card is built, so nothing
+  extra is stored. A run may use each kind at most once, `STAMP` only on the
+  free track and `STAMP_PLUS` only on the premium one. A missing or broken
+  art file falls back to the initials disc (`season_stamp` returns None;
+  the card logs a warning). The season's post draws `stamp.png` as a seal.
+- Previews are rendered on demand, then cached by Telegram `file_id`
+  (`item_previews`, one row per item and language, since banners and win
+  effects draw text); text previews are never stored. A file_id Telegram
+  rejects is dropped and the preview re-rendered. A failed render is
+  reported to the player, not cached.
+
+### Season achievements
+
+Phase 5. The 11 per-season achievements and the 6 lifetime ladders live in
+`services/achievements/` (`catalogue.py`, `season_progress.py`, `ladders.py`)
+and are evaluated by `season_eval.py`. A run may add its own.
+
+**`Kind.SEASON`.** A definition of this kind is earned **once per season**.
+Its grant's `period_key` is the season's `run_id` (so the unique key
+(`player_id`, `key`, `tier`, `period_key`) holds one grant per season), which
+is why a run id is at most 16 characters. A season is evaluated against **its
+own** scope only: the event's season, with the first and last local day taken
+in the group's time zone. `/achievements` shows the grant count as ×N.
+
+| Key | Earned when | Rarity |
+|---|---|---|
+| `season_debut` | a guess in a season game, or hosting a non-HARD MODE one | B |
+| `season_opening_act` | played on the season's first local day | S |
+| `season_curtain_call` | played on its last local day | S |
+| `season_pass_complete` | finished the free track (`pass_completed`, not premium) | G |
+| `season_pass_premium` | finished the premium track | P |
+| `season_window_shopper` | bought anything in the Season Shop | B |
+| `season_collector` | owns every cosmetic the shop sells | G |
+| `season_podium_3` / `_2` | finished 3rd / 2nd | S / G |
+| `season_podium_1` | won the season; also grants the title "Champion of {season}" | P |
+| `season_on_theme` | won 5 season games, only in a gated season | S |
+
+**Lifetime ladders** (plain `Kind.LADDER`, read over all of a player's
+history):
+
+| Key | Counts | Tiers |
+|---|---|---|
+| `season_veteran` | distinct seasons with a `season_ended` event | 1·3·5·10 |
+| `season_completionist` | free passes completed | 1·3·5 |
+| `season_front_runner` | `pass_completed` events with `first` | 1·3·5 |
+| `season_hoarder` | distinct `item_gained` items | 5·15·30 |
+| `season_patron` | Premium passes bought | 1·3·5 |
+| `season_genre_explorer` | distinct `gate_tags` across the player's `game_won` events | 2·4·6 |
+
+**New events.**
+- `item_gained`: `cosmetics/inventory.py::grant` emits it for every new
+  cosmetic, whatever the source (admin, pass, shop).
+- `pass_completed` (`premium`, `first`): emitted by `seasons/pass_completion.py`
+  when a track is fully granted. `first` is true when no one else has stamped
+  `season_pass.free_completed_at` in that season yet, so Front-runner reads
+  `first` instead of comparing timestamps. The free track also stamps
+  `free_completed_at` and queues the topic line.
+- `season_ended`: one per ranked player when the season finalizes.
+
+**Scope.** The season history (`season_history.py`) admits the season-owned
+events (`item_gained`, `pass_completed`, `season_ended`) **by type**, because
+they have no game of the season. A reader therefore filters by `data.season_id`
+(`season_progress._own`). Lifetime ladders read the unscoped history.
+
+**`gate_tags`.** `game_won` facts carry `gate_tags`: the won game's anime tags
+that match the season's gate (empty outside a gated season). Genre Explorer
+counts the distinct ones. A HARD MODE pick made under a gate keeps the tags it
+matched in `games.anime_tags`, so its wins count too.
+
+**Run-specific achievements.** A run module may list `RunAchievement`s (key,
+names and descriptions in EN and RU, rarity, trigger events, a `progress`
+function over the season's history). They are merged into the catalogue as
+`<run_id>.<key>` and earned once in that season. `/achievements` lists one
+only while its season is the open one (`active`/`closing`), or for a player
+who holds it; it is left out of everyone else's list and summary total
+(`status.build`). A comparison lists it when either player would see it.
+No run ships one yet.

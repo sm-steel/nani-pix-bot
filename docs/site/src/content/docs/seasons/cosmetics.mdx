@@ -1,0 +1,57 @@
+---
+title: Cosmetics
+description: Browse, preview and equip your season cosmetics with /cosmetics.
+sidebar:
+  order: 4
+---
+import TelegramChat from '../../../components/TelegramChat.astro';
+import TgMessage from '../../../components/TgMessage.astro';
+
+Seasons reward **cosmetics**: items that change how you and your games look. Owning one
+is permanent. Send `/cosmetics` to the bot in a private chat to see what you own, preview
+it and equip it.
+
+<TelegramChat label="Example: the /cosmetics menu">
+  <TgMessage out>/cosmetics</TgMessage>
+  <TgMessage from="nani-pix-bot">
+    🎨 Your cosmetics:
+    🖼 Stage frame: 1 owned · equipped: Border
+    🌸 Name flair: 1 owned · equipped: nothing
+    …
+  </TgMessage>
+</TelegramChat>
+
+Tap a slot to list its items (the equipped one is marked ✅), then tap an item: the bot
+sends its preview, followed by **Equip** or **Unequip**. You can equip one item per slot.
+
+## Slots
+
+| Slot | Where it shows | Preview |
+|---|---|---|
+| 🎉 Win effect | the celebration over your name at the end of the reveal video, when you win with `/guess` or the starter's `/correct` | a short clip |
+| 🎬 Reveal transition | the reveal video of the rounds you start | a short clip |
+| 🖼 Stage frame | the border on the pixelated images of the rounds you start | an image |
+| 🌸 Name flair | an emoji after your name in the group's messages | a line of text |
+| 💬 Guess reaction | the reaction the bot puts on your winning `/guess` | a line of text |
+| 🪪 Profile banner | the background of your [profile card](/nani-pix-bot/players/profile/) | an image |
+| 🏷 Title | shown next to your name — pick it with [`/title`](/nani-pix-bot/players/achievements/#titles) | a line of text |
+
+A few limits:
+
+- A win by a vote or by an admin's `/setwinner` has no reveal video, so it has no win effect.
+- Rounds the bot starts by itself (HARD MODE) never use the starter's transition or frame.
+- Flair is text only: images such as the profile card and the reveal video show your
+  plain name.
+
+Besides the pass, a season may sell cosmetics in the [Season Shop](/nani-pix-bot/seasons/season-shop/).
+[Sakura Season](/nani-pix-bot/seasons/sakura-season/) has 20 of them, and three profile
+banners, shown on a profile card here:
+
+![A profile card over the Night Hanami banner](../../../assets/generated/profile-night-hanami-en.webp)
+
+![A profile card over the Blossom Avenue banner](../../../assets/generated/profile-blossom-avenue-en.webp)
+
+![A profile card over the School Rooftop banner](../../../assets/generated/profile-school-rooftop-en.webp)
+
+Previews are drawn on demand. If the bot can't show one right now, it says so instead —
+try again later.

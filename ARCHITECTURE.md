@@ -300,6 +300,14 @@ src/nani_pix_bot/
                    #                  like search.py's own picks — see
                    #                  MECHANICS.md's "Linking a personal
                    #                  MyAnimeList account"
+                   #   season_gate.py the season's anime gate on DM setup
+                   #                  (MECHANICS.md's "Seasons"): checks
+                   #                  a staged result's MAL genres/themes
+                   #                  (tags fetched via services/seasons),
+                   #                  and on a refusal also clears a
+                   #                  catalogue screenshot, resets to the
+                   #                  method pick and drops a stale
+                   #                  verdict
     game_flow/    # commands that run during (or between) an in-progress
                    # game — grouped for symmetry with dm_start/, though
                    # none of these four is individually large:
@@ -419,6 +427,29 @@ src/nani_pix_bot/
                    # the admin's own IANA timezone (Player.timezone) and
                    # the bot-wide quiet-hours window entered in it — see
                    # MECHANICS.md's "Quiet hours"
+    season_shop.py  # /seasonshop — DM-only, group members: the offers,
+                   # a preview per offer, then Buy/Back (see MECHANICS.md's
+                   # "Season Shop")
+    season_pass.py  # /seasonpass — DM-only, group members: the pass view,
+                   # the ⭐ Buy Premium button and its confirm (see
+                   # MECHANICS.md's "Season Coins, Pass and Premium")
+    season.py     # /season — DM-only, admin-gated: status, history, the
+                   # runs not yet held, and schedule/start/end/cancel, with
+                   # dates typed in the admin's /timezone — see
+                   # MECHANICS.md's "Seasons"
+    cosmetics.py  # /cosmetics — DM-only: slots, owned items, preview +
+                   # Equip/Unequip (services/cosmetics); the title slot only
+                   # hints at /title — see MECHANICS.md's "Cosmetics"
+    profile/      # /profile — the game topic and DM (members only): the
+                   # profile card (banner, title, stamps, counts).
+                   # __init__.py the command; card.py the photo +
+                   # caption; browse.py the card's ◀ ▶ (roster order,
+                   # wrapping) and 👥 Players list, edited in place,
+                   # tappable only by whoever sent /profile; edit.py the
+                   # ✏️ editor (own card, DM only) for what the card
+                   # shows; data.py the prof:… callback data
+    grant_item.py # /grantitem — admin-gated: give a player an item
+                   # (ItemSource.ADMIN)
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
                    # `/start ach_<id>`, the achievements one, and
                    # `/start rules`/`/start recent` for standings_dm.py), /help
@@ -441,7 +472,9 @@ src/nani_pix_bot/
                    # DM-only/admin-gated on/off
                    # toggle-command factory (admin_toggle.py — built to
                    # de-duplicate /setgamesenabled and /setautostart, see
-                   # its own docstring), and the one update callback here
+                   # its own docstring), the shared DM reply for /seasonpass and
+                   # /seasonshop (dm_view.py), an item's preview send shared by
+                   # /cosmetics and /seasonshop (item_preview.py), and the one update callback here
                    # that app.py does register — player_tracking.py's
                    # remember_user (see "Handler groups" below). (Rendering an
                    # Earnings value into reply text lives in
@@ -526,16 +559,32 @@ src/nani_pix_bot/
                    #                      read (and deletes what it finds
                    #                      expired). This job is cleanup,
                    #                      not the guarantee
+    post.py       # Post: one announcement as it will be sent (text, card,
+                   # and dm_to for a player's DM instead of the topic)
+    season_posts.py  # turns the season pass rows (SEASON_TIER DMs,
+                   # SEASON_COMPLETE topic line) into Posts
     announcements.py  # the announcement outbox drain: a repeating 20s
                    # job, id order, nothing during quiet hours (rows wait),
                    # cards with the text as caption, albums for 3-10 rows
                    # of one event (chunked at 10, rendered bytes reused),
                    # avatars cached per drain, a drain stops at the first
                    # failed send, a row is given up after 3 attempts
+                   # (season_teaser/start/end render a banner card; a
+                   # cancelled season's rows are dropped unsent). A Post
+                   # may be a DM (`dm_to`, the season pass notices): a DM
+                   # the bot can't send (the player never started it, or
+                   # blocked it) is given up with a WARNING, so it never
+                   # blocks the topic posts behind it
     periods.py    # the period boundary job: a one-shot run_once at the
                    # next boundary that closes what ended (catching up
                    # after downtime) and re-arms itself; the first start
                    # only arms the running periods
+    seasons.py    # the season boundary job: the same one-shot run_once
+                   # shape as periods.py, at the next start/end, calling
+                   # services/seasons/lifecycle.advance (which also
+                   # catches up after downtime) and re-arming; with nothing
+                   # on the clock it re-runs hourly, which also finalizes a
+                   # closing season whose last game /stop deleted
     avatars.py    # a player's current profile photo (None on any miss ->
                    # the card draws initials)
     reveal.py     # Telegram side of the animated reveal (#295): the
@@ -666,14 +715,29 @@ src/nani_pix_bot/
                    #                   parts share (part 1, TS remux, the
                    #                   ending, the stream-copy join)
                    #   effects/        one module per effect (iris,
-                   #                   tile_flip, ripple, glitch, shatter)
+                   #                   tile_flip, ripple, glitch, shatter;
+                   #                   the Sakura spring_breeze and
+                   #                   blossom_branch, never
+                   #                   random: store.RANDOM_EFFECTS;
+                   #                   sakura_sprites.py draws the
+                   #                   branch, blossom and leaf once)
                    #                   with shared helpers in _common.py;
                    #                   EFFECTS maps RevealEffect to them
                    #   celebration.py  the winner's badge, shine and
                    #                   confetti frames (reuses
                    #                   services/cards/render.py)
                    #   pipeline.py     the picklable worker entry points,
-                   #                   pregenerate and finish
+                   #                   pregenerate and finish, plus
+                   #                   preview_clip (a whole reveal in one
+                   #                   go for a cosmetic preview, leaving
+                   #                   the static cache alone)
+                   #   overlays.py     WIN_OVERLAYS: overlay key -> clip
+                   #                   renderer for the ending
+                   #                   (DEFAULT_OVERLAY = confetti)
+                   #   petals.py       the Sakura win overlays: sakura
+                   #                   petals over the badge (petal_drift,
+                   #                   sakura_storm), fading out at the
+                   #                   edges of their area (edge_fade)
                    #   store.py        the single reveal_video slot: reserve,
                    #                   mark_ready/mark_failed (guarded by
                    #                   game_id), load, clear
@@ -743,6 +807,8 @@ src/nani_pix_bot/
                    # DB/Telegram; DST-correct via zoneinfo
     text.py       # cut_at_line: cut text to a length at a line break,
                    # with a marker (release notes, rich.py's fit)
+    shapes.py     # pure vector shapes shared by the stage frames and the
+                   # reveal overlays (the sakura petal outline)
     players.py    # Player lookup/creation, win-count bookkeeping,
                    # leaderboard query — everything that touches only
                    # the Player table (win increments themselves happen
@@ -762,7 +828,7 @@ src/nani_pix_bot/
                    # achievements.on_event
     achievements/ # the achievement engine, no Telegram — see
                    # "Achievements" below. definitions.py (what a
-                   # Definition is + tier math), catalogue.py (all 33,
+                   # Definition is + tier math), catalogue.py (all 33 plus the 17 season ones,
                    # in display order), ladders.py / conditions.py (pure
                    # progress functions over a History), history.py (the
                    # event_log-backed History), engine.py (on_event:
@@ -771,12 +837,20 @@ src/nani_pix_bot/
                    # name/description), status.py (the view model behind
                    # /achievements, plus the top), periods.py (period
                    # math, scoring, freezing a closed period),
+                   # season_eval.py (per-season achievements, Kind.SEASON:
+                   # a SeasonHistory scoped to one season, period_key =
+                   # run_id), season_progress.py (their progress
+                   # functions), RunAchievement hooks for a run's own
+                   # (seasons/definition.py, merged by catalogue.py),
                    # podium.py (a finished period as lines/a card),
                    # outbox.py (queue/list/settle)
     cards/        # Pillow image cards, no Telegram: render.py (unlock and
                    # podium cards), icons.py (the drawn diamond, trophy and
                    # star), backgrounds.py (optional per-slot anime
-                   # backgrounds)
+                   # backgrounds), profile_card.py (the /profile card:
+                   # stamps, achievement chips, stats chips), glass.py (its
+                   # default gradient and adaptive glass-pixel grid),
+                   # season_card.py (the season teaser/start/end card)
     economy/      # the currency economy (shown as 💠 pixels) — see MECHANICS.md's "Pixels".
                    # __init__.py deliberately re-exports nothing (import
                    # submodules directly): players.py imports
@@ -817,6 +891,8 @@ src/nani_pix_bot/
                    #             the charge (through economy/wallet.py) plus
                    #             CluePurchase bookkeeping; Refusal and
                    #             ShopRefusedError for the rejected cases
+                   #   discount.py  stacking of percentage clue discounts (HARD
+                   #             MODE sale + the season's): apply
                    #   (economy/) bounty.py   the pot: contribute, pay_out,
                    #               refund_pot, refund_note; BOUNTY_MIN. The
                    #               pot is derived from currency_transfers
@@ -830,6 +906,82 @@ src/nani_pix_bot/
                    # as a list of Release (page 0 the current notes, then
                    # up to four previous releases split on `## ` headings)
     version.py    # installed_version() from the package metadata
+    seasons/      # seasons without Telegram — see MECHANICS.md's "Seasons":
+                   #   schedule.py   the season_schedule rules (one open
+                   #                 season, a started run never again,
+                   #                 date changes, early end, cancel),
+                   #                 refusals as ScheduleRefusedError
+                   #   lifecycle.py  scheduled -> active -> closing ->
+                   #                 ended (advance, next_boundary,
+                   #                 on_game_ended, podium); finalizing
+                   #                 freezes the podium and queues the
+                   #                 end post
+                   #   xp.py         Season XP awards for tagged games
+                   #                 (on_event) and standings
+                   #   coins.py      Season Coins 🪙 for the same events,
+                   #                 priced by the run's CoinTable
+                   #   season_pass.py  the pass: reached/sync (auto-grant in
+                   #                 tier order), describe, buy_premium
+                   #   season_shop.py  the Season Shop: stock, buy (🪙 charge +
+                   #                 SeasonShopPurchase), ShopRefusedError
+                   #   modifiers.py  season_of / for_game: a game's season run
+                   #                 and its rule modifiers (clue discount)
+                   #   styles.py     season visual styles on a stage image
+                   #                 (style_for, apply_style); watercolor.py
+                   #                 is the watercolor drawing
+                   #   season_history.py  the History one season's objectives
+                   #                 and season achievements read (its games
+                   #                 + tips in its dates); season-owned events
+                   #                 (item_gained/pass_completed/season_ended)
+                   #                 are admitted by type, so readers filter
+                   #                 them by data.season_id
+                   #   pass_completion.py  a pass track finishing: stamps
+                   #                 season_pass.free_completed_at, queues the
+                   #                 topic line, emits pass_completed (first)
+                   #   goals.py      progress toward and wording of a Goal
+                   #   objectives.py check (complete + pay + DM), status
+                   #   pass_view.py  the /seasonpass text and its tier lines
+                   #   conversion.py leftover 🪙 -> 💠 at the season's end
+                   #                 (called from lifecycle._finalize)
+                   #   consumer.py   hooks the above into services/
+                   #                 events.py::emit
+                   #   when.py       date + time parsing in the admin's
+                   #                 timezone
+                   #   tags.py       fetches a MAL id's genres/themes
+                   #                 (Tenrai first, Shikimori fallback;
+                   #                 TagsUnavailableError when neither
+                   #                 answers) over services/search/tags.py
+                   #   gate.py       the Verdict (PASSED / OFF_THEME /
+                   #                 UNIDENTIFIABLE / UNAVAILABLE) and
+                   #                 active_gate
+    cosmetics/    # season cosmetics without Telegram — see MECHANICS.md's
+                   # "Cosmetics":
+                   #   looks.py        per-slot look validation (problems),
+                   #                   allowed reactions, banner_path,
+                   #                   MAX_TITLE_ID_BYTES
+                   #   inventory.py    owns/grant/equip/unequip/equipped and
+                   #                   look(session, player, slot)
+                   #   flair.py        named(): a name plus its flair emoji
+                   #   frames.py       FRAMES and apply_frame
+                   #   paper_frames.py the Sakura paper frames, "paper" and
+                   #                   "washi" (pink, unryū fibres, pressed
+                   #                   petals): deckled edge, soft shadow;
+                   #                   seeded
+                   #   gold_frame.py   "gold_washi": metallic gold leaf,
+                   #                   seigaiha emboss, sakura corners
+                   #   stage.py        stage_png: a stage image with the
+                   #                   starter's frame
+                   #   reveal_choice.py  effect_for: the starter's
+                   #                   transition, else random
+                   #   profile.py      build(): banner, title, stamps, counts;
+                   #                   roster()/neighbour() for ◀ ▶
+                   #   consumables.py  counts of consumables a player holds
+                   #                   (clue tokens): count/add/take
+                   #   showcase.py     what the card shows: picks (≤6 stamps,
+                   #                   ≤4 achievements, tick order), else the
+                   #                   newest seasons / rarest achievements
+                   #   previews.py     render + the item_previews cache
+                   #   clue_token_icon.py  the clue token's golden-ticket picture
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,
                    #                    games-enabled flag, autostart-
@@ -856,6 +1008,16 @@ src/nani_pix_bot/
                    #                    raises rather than silently
                    #                    returning garbage — callers treat
                    #                    that the same as "never linked"
+  seasons/        # season run definitions (pure data, not services):
+                   # definition.py (SeasonRun, XpTable, Gate), registry.py
+                   # (finds runs/<run_id>.py), lock.py + runs.lock (a
+                   # sha256 per shipped run module; a test fails if one is
+                   # edited — a repeat is a new module). runs/sakura_1.py
+                   # is the first real run (Sakura Season): its items,
+                   # 12-tier pass, shop, objectives, run achievements,
+                   # gate and watercolor style. Its art (key visual,
+                   # stamp.png, stamp_plus.png, banners/) is in
+                   # assets/seasons/sakura_1/
   release_notes/  # player-facing release notes per language, shown by
                    # /version: release-notes-<lang>.md (the release being
                    # built) and previous-releases-<lang>.md (up to four
@@ -886,12 +1048,28 @@ src/nani_pix_bot/
     achievement.py  # AchievementGrant, AchievementClaim
     announcement.py  # AnnouncementOutbox
     period.py     # PeriodResult, PeriodState
+    season.py     # SeasonSchedule, SeasonXp, SeasonResult, SeasonBalance, SeasonPass
+    cosmetics.py  # OwnedItem, EquippedItem, ItemPreview, Consumable
     enums.py      # GameStatus, PixelStage, SetupStep, PixelReason, and Provider — the
                    # latter also exposes pick_prefix/id_attr_name/
                    # screenshot_module/search_module as properties, the
                    # single source of truth for what used to be four
                    # hand-maintained Provider-keyed dicts (issue #114)
-assets/          # fonts/ (bundled Noto Sans, OFL) and backgrounds/
+                   # Naming rule for the season pass enums: a security linter
+                   # reads "pass"/"token" in names as secrets, so the code
+                   # names differ from the stored values on purpose:
+                   # ConsumableKind.CLUE_TICKET and RewardKind.CLUE_TICKET
+                   # (value "clue_token"), ItemSource.TIER ("pass"),
+                   # CurrencyReason.TIER_REWARD ("pass_reward") and
+                   # .PREMIUM ("premium_pass"), OutboxKind.SEASON_TIER and
+                   # .SEASON_COMPLETE ("season_pass_done")
+                   # RewardKind.STAMP / STAMP_PLUS are the free track's gold
+                   # ring and the premium track's Sakura+ art on the season
+                   # stamp (services/cosmetics/profile.py reads the claimed
+                   # tiers; services/cards/backgrounds.py::season_stamp
+                   # loads the run's art)
+assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's key
+                   # visual, stamps and banners) and backgrounds/
                    # <unlock/rarity | podium/period>/n.png, optional card
                    # backgrounds (prompts: docs/card-backgrounds.md)
 migrations/       # Alembic migrations
@@ -952,7 +1130,12 @@ flowchart LR
 ```
 
 - **Two parts.** `pipeline.pregenerate` renders part 1 (the pixelated
-  stages and the effect) as MPEG-TS right after activation.
+  stages and the effect) as MPEG-TS right after activation. It also draws
+  the win overlay clips ahead: the default confetti, plus every overlay a
+  player has equipped (`reveal_choice.overlays_in_use`, read by
+  `jobs/reveal_pregen.py`). A Sakura overlay costs ~0.5 s to draw, and
+  drawing it then keeps that off the win. One equipped later is drawn at
+  the win instead.
   `pipeline.finish` renders the ending (the clear image, with the
   celebration badge on a win) and joins it to part 1 by stream copy,
   which only works because `services/reveal/encode.py` is the one place
@@ -1165,7 +1348,7 @@ erDiagram
 | `clue_purchases` | v8 | One clue a player bought in one game (`kind` is a `ClueKind` stored as a plain string: first/last letter, title shape, screenshot, tile). `game_id` is a real FK with `ON DELETE CASCADE`, so a game deletion drops its purchases (the ledger rows stay); `/stop` refunds them first via `shop.refund_game`, and setup-abandon only deletes `SETUP` games, which cannot have any; `player_id` FKs `players`. `tile_index` (0-63, row-major on the 8x8 grid) is set for a tile (one per game: the first tile purchase's index, via `shop.round_tile`, is the round's tile and every later buyer's row repeats it; one tile per player) and `screenshot_url` for an extra screenshot, so *what* was bought lives here and never in the ledger. `telegram_file_id` is the delivered image's file_id, kept so sharing re-posts it without re-rendering; `shared_at` is set once when the player shares it with the group (free, once per clue). `transfer_id` (FK, unique) is the `currency_transfers` charge that paid for it; a failed delivery is refunded through a `reverses_id` ledger row and the purchase row is deleted. Written only via `services/clues/shop.py`. |
 | `game_votes` | v9 | One current vote in a hard-mode vote (#252): `game_id` (real FK, `ON DELETE CASCADE`), `voter_id`, `candidate_id` (both FK `players`). Unique on (`game_id`, `voter_id`): changing a vote updates the row in place. Candidates are every player with a `game_guesses` row for the game, and nobody can vote for themselves (`services/game/vote.py`). |
 | `game_guesses` | v9 | Every /guess: game, player, text, stage/turn, correct, partial reveal. `game_id` is a real FK with `ON DELETE CASCADE`, so it cascades with its game; `player_id` FKs `players`. `stage` is the PixelStage number (1-5) or the hard-mode turn (1-2); `text` is truncated to 255 characters. Written only via `services/game/guesses.py::log_guess`, from `state.record_guess` and `hard_mode.record_hard_mode_guess`. |
-| `event_log` | v10 | Append-only domain events, the data source for achievements and deliberately not achievement-specific. `event_type` is an `EventType` stored as a plain string (a new type needs no migration), `actor_id`/`subject_id` are plain bigints (no FK) and `game_id` a plain int with **no** FK like `currency_transfers.game_id`, so rows outlive a `/stop`ped game. `data` is type-specific JSON. Indexed on `(event_type, actor_id)`, `(event_type, subject_id)`, `game_id` and `occurred_at`. It starts empty on deploy, which is the no-backfill rule. Written only through `services/events.py::emit`. |
+| `event_log` | v10 | Append-only domain events, the data source for achievements and deliberately not achievement-specific. `event_type` is an `EventType` stored as a plain string (a new type needs no migration), `actor_id`/`subject_id` are plain bigints (no FK) and `game_id` a plain int with **no** FK like `currency_transfers.game_id`, so rows outlive a `/stop`ped game. `data` is type-specific JSON. Indexed on `(event_type, actor_id)`, `(event_type, subject_id)`, `game_id` and `occurred_at`. It starts empty on deploy, which is the no-backfill rule. Written only through `services/events.py::emit`. Season Phase 5 adds three types: `item_gained` (a cosmetic granted, any source), `pass_completed` (a pass track finished; `premium`, and `first` for the first free completion in a season) and `season_ended` (one per ranked player when a season finalizes). `game_won` facts also carry `gate_tags`. The three season-owned types have no season game, so the season history scope admits them by type and readers filter on `data.season_id`. |
 | `achievement_grants` | v10 | One achievement tier a player unlocked: `key`, `tier`, `rarity`, `reward`, `points`, the ledger `transfer_id` and `granted_at`. Unique on (`player_id`, `key`, `tier`, `period_key`). `period_key` is `NOT NULL DEFAULT ''` (`''` = not a period grant) because MariaDB treats NULLs as distinct in a unique index, which would let a champion tier be granted twice. |
 | `achievement_claims` | v10 | The single holder of a group-unique tier (Pioneer, Milestone Keeper N). The primary key (`key`, `tier`) is what makes a second holder impossible. There is no timestamp: the grant row has it. |
 | `announcement_outbox` | v10 | A group post owed but not yet sent (`kind` `unlock`/`period_summary`, JSON `payload`), written in the same transaction as what it announces. `batch_id` (the causing event) groups unlocks into one album, `attempts` counts failed sends (given up at 3), `posted_at` is NULL until delivered. Posted in id order by `jobs/announcements.py`. |
@@ -1174,6 +1357,22 @@ erDiagram
 | `players` additions | v10 | `title_key` (the title chosen with `/title`) and `first_name` (kept current by `remember_user`, shown when there is no @username). |
 | `games` addition | v10 | `activated_at`: when the game went live (`created_at` is when setup started), used by `win_facts.seconds` (activation to the game's end). |
 | `reveal_video` | v11 | The one pre-rendered animated reveal (#295), at most one row: `slot` PK, always 1. `game_id` (plain column, no FK, because `/stop` deletes the game row before its reveal), `effect` (`RevealEffect`, picked at game start), `image_choice` (`a`/`b`, hard mode only), `status` (`pending`/`ready`/`failed`), `part1_ts` (deferred LONGBLOB, part 1 as MPEG-TS), `join_offset` (the `-output_ts_offset` the ending needs so its first frame lands 1/FPS after part 1's last), `created_at`, `ready_at`. Written only via `services/reveal/store.py`; see "Reveal video". |
+| `season_schedule` | v12 | Every scheduling of a season run, kept as history (`run_id`, `start_at`/`end_at` UTC, `status` a `SeasonStatus` stored as a plain string: `scheduled` -> `active` -> `closing` -> `ended`, or `cancelled`; `created_by`, `created_at`, `started_at`, `ended_at`). `services/seasons/schedule.py` enforces what the DB doesn't: at most one row in `scheduled`/`active`/`closing`, and a run that ever reached `active` (`started_at` set) is never scheduled again; no open row means seasons are off. Moved only by `services/seasons/lifecycle.py` and the `/season` command. See `MECHANICS.md`'s "Seasons". |
+| `season_xp` | v12 | Append-only Season XP: `season_id` (FK), `player_id` (FK), `amount`, `source` (an `XpSource` stored as a plain string: `win`, `host`, `first_guess`, or `objective` for a completed season objective), `game_id` (a plain integer with **no** FK, like `currency_transfers.game_id`, so rows outlive a `/stop`ped game; for an objective, the game whose event completed it), `created_at`. Standings are `SUM(amount)` per player (`services/seasons/xp.py::standings`). Written by `services/seasons/xp.py::pay` (game XP, for games tagged to a season) and `services/seasons/objectives.py` (objective XP). |
+| `season_results` | v12 | A finished season's frozen podium: one row per player with XP (`season_id`, `player_id`, `rank` as a competition rank so ties share it, `xp`), unique on (`season_id`, `player_id`). Written once when the season finalizes (`lifecycle._finalize`), so the end post and any later view read the frozen result, not the live sum. |
+| `games` season columns | v12 | `season_id` (nullable FK to `season_schedule`): the season that was active when the game was activated (`services/game/state.py::activate_game`), `NULL` outside seasons. A game keeps it when it ends after the season's `end_at`, and its XP still counts. `anime_tags` (nullable JSON list of `{kind, name, mal_id}`): the identified anime's MAL genres/themes, fetched only while a gated season is active and kept for the confirm-time re-check. |
+| `currency_transfers` season columns | v12 | `currency` (`base` = the 💠 balance, `season` = 🪙, a `Currency` stored as a plain string, default `base`) and a nullable `season_id`: a 🪙 movement is tagged with its season. New `CurrencyReason`s: `season_win`, `season_host`, `season_first_guess`, `pass_reward`, `premium_pass`, `season_conversion`, and from Phase 4 `season_shop` (🪙 spent in the Season Shop) and `season_objective` (🪙 paid for a completed objective). |
+| `season_balances` | v12 | A player's 🪙 balance in one season (`season_id`, `player_id`, `balance`): a cache of the `currency = season` ledger rows, written only via `wallet`. Emptied by the season-end conversion. |
+| `season_pass` | v12 | A player's pass progress in one season: `free_claimed` / `premium_claimed` (counts, since tiers are granted in order) and `premium_transfer_id` (the 💠 charge that bought Premium, `NULL` = no Premium), plus `free_completed_at` (Phase 5: when the free track was fully granted, `NULL` until then; it is how the first player to finish is known, see `pass_completed`'s `first`). Written by `services/seasons/season_pass.py` and `services/seasons/pass_completion.py`. |
+| `season_shop_purchases` | Phase 4 | One Season Shop purchase: `season_id`, `player_id`, `offer_key`, `transfer_id` (unique, the 🪙 charge) and `created_at`. A player's per-season count per offer enforces its limit. Written only by `services/seasons/season_shop.py`. |
+| `season_objectives` | Phase 4 | A completed objective: primary key (`season_id`, `player_id`, `objective_key`) and `completed_at`, so it pays once. Written only by `services/seasons/objectives.py`. |
+| `consumables` | v12 | `player_id`, `kind` (a `ConsumableKind`, stored `clue_token`) and `count`: the clue tokens a player holds. Written only by `services/cosmetics/consumables.py`. |
+| `clue_purchases` token columns | v12 | `token_used` (the clue was paid with a clue token) and `transfer_id` now nullable: a token purchase has no ledger charge. A failed token delivery gives the token back. |
+| `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string: `admin`, `pass` for a pass reward, or `shop` for a Season Shop purchase), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
+| `equipped_items` | v12 | The item equipped per slot: primary key (`player_id`, `slot`; `slot` a `CosmeticSlot` as a plain string), `item_id`. One item per slot, so equipping replaces. |
+| `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so each preview is rendered and uploaded once per language. |
+| `players.title_key` item encoding | v12 | Besides an achievement title key, `title_key` may be `item:<item id>`, a season title item (`services/achievements/titles.py`). Title item ids are at most 56 bytes (`looks.problems`) so they fit `/title`'s callback data. |
+| `profile_showcase` | v12 | What a player picked to show on their `/profile` card (#413): `player_id` + `kind` (`ShowcaseKind`: `stamp` or `achievement`) + `ref` PK (a season run id, or an `achievement_grants.id` as text) and `position` (tick order). At most 6 stamps and 4 achievements (`services/cosmetics/showcase.py`). A pick that no longer resolves is skipped. With no pick resolving, the card shows the newest seasons and rarest achievements. |
 
 ### Achievements
 
@@ -1250,7 +1449,20 @@ for 💠, trophy for achievement points and star for the champion score, an
 anti-aliased avatar badge (solid inner ring, a conic sweep-gradient outer
 ring in a per-rarity palette, a glow), initials (letters only) when there is
 no avatar, and an optional anime background per slot that is picked
-deterministically by player and placed under a dark overlay.
+deterministically by player and placed under a dark overlay. The profile card
+adds committed colour PNGs from Noto Emoji (`assets/icons/`, 🏅 and 🎁 on
+its stats chips), since the font has no emoji. It also adds achievement chips
+(a rarity medal and the name on a translucent pill, at most four in two rows,
+with smaller text for a long name so all four fit) and season stamps (the
+run's stamp art in a ring, drawn supersampled, with the full name wrapped onto
+two lines). Behind it all is the banner, unshaded, or a diagonal gradient,
+with `glass.py`'s grid of faint glass pixels fading from the top-left corner
+to the middle; each block reads the brightness under it and turns from white
+glass over a dark picture to a faint dark tint with a two-tone bevel over a
+light one. Every text on the card has a thin black outline instead. The
+season card (`season_card.py`) shows the run's key visual unshaded under a
+pink ribbon tag, the season name in a pink-to-gold gradient beside the run's
+stamp tilted like a seal, and the dates with the 🗓 icon in a frosted pill.
 
 **Testing.** Evaluating achievements on every emitted event would change
 balances in the ~500 existing economy tests, so an autouse fixture in

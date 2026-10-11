@@ -53,7 +53,7 @@ Asia/Yekaterinburg, Europe/Berlin, Europe/London и UTC. Нажмите на с�
   <TgMessage from="nani-pix-bot" buttons={[['Europe/Kaliningrad'], ['Europe/Moscow'], ['Asia/Yekaterinburg'], ['Europe/Berlin'], ['Europe/London'], ['UTC']]}>
     Сначала укажите свой часовой пояс, чтобы я понял, какое 23:00 вы имеете в виду, — а потом отправьте команду ещё раз:
   </TgMessage>
-  <TgMessage from="nani-pix-bot">Часовой пояс: Europe/Moscow (сейчас там 22:41). Время в /quiethours будет считаться по нему.</TgMessage>
+  <TgMessage from="nani-pix-bot">Часовой пояс: Europe/Moscow (сейчас там 22:41). Время в /quiethours и /season будет считаться по нему.</TgMessage>
   <TgMessage out>/quiethours 23:00 08:00</TgMessage>
   <TgMessage from="nani-pix-bot">🌙 Тихие часы установлены: 23:00–08:00 Europe/Moscow (20:00–05:00 UTC). В это время бот не публикует автоматические сообщения, а игровые таймеры стоят на паузе.</TgMessage>
 </TelegramChat>
@@ -78,4 +78,5 @@ Asia/Yekaterinburg, Europe/Berlin, Europe/London и UTC. Нажмите на с�
 ставятся на паузу как положено.
 
 Часовой пояс тихих часов — это ещё и часовой пояс группы для недель, месяцев и
-лет в зачёте чемпионов. Если он не задан, бот использует UTC.
+лет в зачёте чемпионов. Если он не задан, бот использует UTC. Даты, которые вы
+вводите в `/season`, тоже считаются по вашему часовому поясу.

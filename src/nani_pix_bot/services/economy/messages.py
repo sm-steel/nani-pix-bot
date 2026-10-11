@@ -12,13 +12,14 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.achievements.win_lines import win_lines
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.economy.earning import Earnings
 
 
 def _setter_name(session: Session, game: Game, lang: str) -> str:
     setter = session.get(Player, game.starter_id)
     if setter is not None and setter.username:
-        return f"@{setter.username}"
+        return flair.named(session, setter.telegram_user_id, f"@{setter.username}")
     return i18n.t("economy.setter_fallback_name", lang)
 
 

@@ -1,7 +1,8 @@
 """Achievement and podium cards (spec §7): pure Pillow, no Telegram. The
 caller fetches avatars and localizes every string; this only draws. No
-emoji — Pillow can't reliably render colour glyphs — so rarity is a colour
-and a drawn medal, and 💠 a drawn diamond."""
+emoji glyphs — Pillow can't reliably render colour fonts — so rarity is a
+colour and a drawn medal, and 💠 a drawn diamond. The profile card lives in
+profile_card.py."""
 
 import hashlib
 import math

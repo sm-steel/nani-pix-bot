@@ -10,7 +10,7 @@ at-least-once: a crash between the send and mark_posted re-posts that row."""
 import asyncio
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import UTC, datetime
 from itertools import groupby
 from typing import TypedDict
@@ -18,11 +18,13 @@ from typing import TypedDict
 from loguru import logger
 from sqlalchemy.orm import Session, sessionmaker
 from telegram import InputMediaPhoto
-from telegram.error import TelegramError
+from telegram.error import Forbidden, TelegramError
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.jobs import season_posts
 from nani_pix_bot.jobs.avatars import fetch_avatar
+from nani_pix_bot.jobs.post import Post
 from nani_pix_bot.jobs.timers._shared import job_log_scope
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.announcement import AnnouncementOutbox
@@ -31,13 +33,16 @@ from nani_pix_bot.services import i18n, players, quiet_hours, settings
 from nani_pix_bot.services.achievements import catalogue, names, outbox, podium
 from nani_pix_bot.services.cards import (
     PodiumCard,
+    SeasonBanner,
     UnlockCard,
     load_background,
     podium_slot,
     render_podium_card,
+    render_season_banner,
     render_unlock_card,
     unlock_slot,
 )
+from nani_pix_bot.services.cosmetics import flair
 
 OUTBOX_JOB_NAME = "announcement_outbox"
 OUTBOX_POLL_SECONDS = 20
@@ -46,19 +51,9 @@ ALBUM_MIN = 3
 ALBUM_MAX = 10  # Telegram's album size limit
 
 
-class _Where(TypedDict):
+class _Where(TypedDict, total=False):
     chat_id: int
     message_thread_id: int
-
-
-@dataclass(frozen=True)
-class Post:
-    row_ids: tuple[int, ...]
-    text: str
-    card: UnlockCard | PodiumCard | None = None
-    avatar_ids: tuple[int, ...] = ()
-    batch_id: int | None = None
-    background_slot: str | None = None
 
 
 def _card_text(text: str) -> str:
@@ -79,7 +74,7 @@ def _unlock_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post |
     text = i18n.t(
         "achievement.unlocked",
         lang,
-        player=who,
+        player=flair.named(session, granted.player_id, who),
         name=name,
         desc=desc,
         rarity=rarity,
@@ -128,6 +123,7 @@ def _period_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post |
 RENDERERS: dict[OutboxKind, Callable[[Session, AnnouncementOutbox, str], Post | None]] = {
     OutboxKind.UNLOCK: _unlock_post,
     OutboxKind.PERIOD_SUMMARY: _period_post,
+    **season_posts.RENDERERS,
 }
 
 
@@ -194,10 +190,14 @@ def _draw(post: Post, faces: list[bytes | None]) -> bytes:
     """Render the post's card on a worker thread: background lookup included."""
     slot = post.background_slot
     seed = post.avatar_ids[0] if post.avatar_ids else 0
-    background = load_background(slot, seed) if slot else None
+    background = post.background
+    if background is None and slot:
+        background = load_background(slot, seed)
     card = post.card
     if isinstance(card, UnlockCard):
         return render_unlock_card(card, faces[0] if faces else None, background)
+    if isinstance(card, SeasonBanner):
+        return render_season_banner(card, background)
     if isinstance(card, PodiumCard):
         entries = tuple(replace(e, avatar=a) for e, a in zip(card.entries, faces, strict=False))
         return render_podium_card(replace(card, entries=entries), background)
@@ -234,7 +234,9 @@ async def _image(
         return None
 
 
-def _where(context: ContextTypes.DEFAULT_TYPE) -> _Where:
+def _where(context: ContextTypes.DEFAULT_TYPE, post: Post) -> _Where:
+    if post.dm_to is not None:
+        return {"chat_id": post.dm_to}
     return {
         "chat_id": context.bot_data["group_chat_id"],
         "message_thread_id": context.bot_data["game_topic_id"],
@@ -246,9 +248,9 @@ async def _send_one(context: ContextTypes.DEFAULT_TYPE, post: Post, image: bytes
     if not post.text:
         return
     if image is None:
-        await context.bot.send_message(text=post.text, **_where(context))
+        await context.bot.send_message(text=post.text, **_where(context, post))
     else:
-        await context.bot.send_photo(photo=image, caption=post.text, **_where(context))
+        await context.bot.send_photo(photo=image, caption=post.text, **_where(context, post))
 
 
 def _row_ids(group: list[Post]) -> list[int]:
@@ -261,26 +263,43 @@ async def _send_album(
     media = [
         InputMediaPhoto(image, caption=post.text) for image, post in zip(images, group, strict=True)
     ]
-    await context.bot.send_media_group(media=media, **_where(context))
+    await context.bot.send_media_group(media=media, **_where(context, group[0]))
 
 
 async def _send_each(
     context: ContextTypes.DEFAULT_TYPE, group: list[Post], images: list[bytes | None]
-) -> tuple[list[int], list[int]]:
+) -> tuple[list[int], list[int], set[int]]:
     """One message per post, reusing the bytes already rendered (a card that
     failed to draw goes out as text). A failure stops here: the posts before
-    it stay posted, it and the rest are reported failed."""
+    it stay posted, it and the rest are reported failed. The third value is the
+    rows of DMs given up on: settled like posted, but not actually sent."""
+    given_up: set[int] = set()
     for done, (post, image) in enumerate(zip(group, images, strict=True)):
         try:
             await _send_one(context, post, image)
+        except Forbidden as exc:
+            if post.dm_to is None:
+                logger.error(
+                    "failed to post announcement {outbox_ids}: {error}",
+                    outbox_ids=post.row_ids,
+                    error=exc,
+                )
+                return _row_ids(group[:done]), _row_ids(group[done:]), given_up
+            logger.warning(
+                "couldn't DM {recipient} their season pass notice: {error} — given up",
+                recipient=post.dm_to,
+                recipient_id=post.dm_to,
+                error=exc,
+            )
+            given_up.update(post.row_ids)
         except TelegramError as exc:
             logger.error(
                 "failed to post announcement {outbox_ids}: {error}",
                 outbox_ids=post.row_ids,
                 error=exc,
             )
-            return _row_ids(group[:done]), _row_ids(group[done:])
-    return _row_ids(group), []
+            return _row_ids(group[:done]), _row_ids(group[done:]), given_up
+    return _row_ids(group), [], given_up
 
 
 async def _send(
@@ -303,11 +322,12 @@ async def _send(
                 "failed to post announcement {outbox_ids}: {error}", outbox_ids=ids, error=exc
             )
             return [], ids
-        posted, failed = ids, []
+        posted, failed, given_up = ids, [], set()
     else:
-        posted, failed = await _send_each(context, group, images)
-    if posted:
-        logger.info("posted announcement {outbox_ids}", outbox_ids=posted)
+        posted, failed, given_up = await _send_each(context, group, images)
+    sent = [row_id for row_id in posted if row_id not in given_up]
+    if sent:
+        logger.info("posted announcement {outbox_ids}", outbox_ids=sent)
     return posted, failed
 
 

@@ -14,15 +14,25 @@ from sqlalchemy.orm import Session, aliased
 
 from nani_pix_bot.models.clue_purchase import CluePurchase
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
-from nani_pix_bot.models.enums import ClueKind, CurrencyReason, EventType, GameStatus, Provider
+from nani_pix_bot.models.enums import (
+    ClueKind,
+    ConsumableKind,
+    CurrencyReason,
+    EventType,
+    GameStatus,
+    Provider,
+)
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.seasons.definition import Modifier
 from nani_pix_bot.services import events, players
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services.clues import text
+from nani_pix_bot.services.clues import discount, text, token_clues
+from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.economy import config, earning, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
 from nani_pix_bot.services.game import guesses
+from nani_pix_bot.services.seasons import modifiers
 
 MAX_EXTRA_SCREENSHOTS = 3
 TILE_GRID = 8
@@ -69,6 +79,7 @@ class Offer:
     price: int
     affordable: bool
     owned_screenshots: int = 0  # screenshots the buyer holds (SCREENSHOT offer only)
+    token: bool = False  # the buyer holds a clue token, so this clue is free
 
 
 @dataclass(frozen=True)
@@ -121,24 +132,54 @@ def _screenshot_count(session: Session, game: Game, buyer: Player) -> int:
     return len(owned_screenshot_urls(session, game.id, buyer.telegram_user_id))
 
 
-def price(session: Session, game: Game, buyer: Player, kind: ClueKind) -> int:
+@dataclass(frozen=True)
+class _Quote:
+    """A clue's price and how it was reached: the configured `base`, then
+    HARD MODE's and the season's discount percentages."""
+
+    base: int
+    hard_mode_pct: int
+    season_pct: int
+    cost: int
+
+    def log_fields(self) -> dict[str, object]:
+        """Purchase-line kwargs: the discount as structured fields plus its
+        text as `discount`, empty when neither discount applies."""
+        if not (self.hard_mode_pct or self.season_pct):
+            return {"discount": ""}
+        return {
+            "discount": (
+                f", discounted from {self.base} 💠 "
+                f"(HARD MODE {self.hard_mode_pct}%, season {self.season_pct}%)"
+            ),
+            "base_price": self.base,
+            "hard_mode_pct": self.hard_mode_pct,
+            "season_pct": self.season_pct,
+        }
+
+
+def _base_price(session: Session, game: Game, buyer: Player, kind: ClueKind) -> int:
     amounts = config.get_amounts(session)
     if kind is ClueKind.SCREENSHOT:
         already = _screenshot_count(session, game, buyer)
-        base = (
+        return (
             amounts[EconomyKey.CLUE_SCREENSHOT] + amounts[EconomyKey.CLUE_SCREENSHOT_STEP] * already
         )
-    else:
-        base = amounts[_PRICE_KEYS[kind]]
-    return _discounted(game, base)
+    return amounts[_PRICE_KEYS[kind]]
 
 
-def _discounted(game: Game, base: int) -> int:
-    """HARD MODE's clue sale (issue #254) — rounded down, never below 1 💠."""
-    percent = game.hard_mode_clue_discount if game.hard_mode else 0
-    if percent <= 0:
-        return base
-    return max(1, base * (100 - percent) // 100)
+def price(session: Session, game: Game, buyer: Player, kind: ClueKind) -> int:
+    return _quote(session, game, _base_price(session, game, buyer, kind)).cost
+
+
+def _quote(session: Session, game: Game, base: int) -> _Quote:
+    """HARD MODE's clue sale (issue #254) and the season's clue discount
+    (seasons spec §5), stacked by `discount.apply`."""
+    hard_mode = game.hard_mode_clue_discount if game.hard_mode else 0
+    season = modifiers.for_game(session, game).get(Modifier.CLUE_DISCOUNT_PCT, 0)
+    cost = discount.apply(base, hard_mode, season)
+    logger.debug("clue price {base} -> {cost}", base=base, cost=cost, game_id=game.id)
+    return _Quote(base=base, hard_mode_pct=hard_mode or 0, season_pct=season, cost=cost)
 
 
 def clue_screenshot_providers(game: Game) -> list[Provider]:
@@ -185,10 +226,8 @@ def _available(session: Session, game: Game, buyer: Player, kind: ClueKind, lang
 
 
 def _already_owned(session: Session, game: Game, buyer: Player, request: PurchaseRequest) -> bool:
-    player_id = buyer.telegram_user_id
-    if request.kind in TEXT_KINDS or request.kind is ClueKind.TILE:
-        return request.kind in owned_kinds(session, game.id, player_id)
-    return False
+    once_only = request.kind in TEXT_KINDS or request.kind is ClueKind.TILE
+    return once_only and request.kind in owned_kinds(session, game.id, buyer.telegram_user_id)
 
 
 def offers(session: Session, game: Game, buyer: Player, lang: str) -> list[Offer]:
@@ -198,6 +237,7 @@ def offers(session: Session, game: Game, buyer: Player, lang: str) -> list[Offer
     `lang` picks the title fallback chain, so availability matches the
     title the clue will actually use."""
     owned = owned_kinds(session, game.id, buyer.telegram_user_id)
+    tokens = consumables.count(session, buyer.telegram_user_id, ConsumableKind.CLUE_TICKET)
     result = []
     for kind in _MENU_ORDER:
         if kind in owned and kind in TEXT_KINDS:
@@ -206,7 +246,9 @@ def offers(session: Session, game: Game, buyer: Player, lang: str) -> list[Offer
             continue
         cost = price(session, game, buyer, kind)
         held = _screenshot_count(session, game, buyer) if kind is ClueKind.SCREENSHOT else 0
-        result.append(Offer(kind, cost, buyer.currency >= cost, held))
+        result.append(
+            Offer(kind, cost, tokens > 0 or buyer.currency >= cost, held, token=tokens > 0)
+        )
     return result
 
 
@@ -262,17 +304,11 @@ def _detail(request: PurchaseRequest) -> dict[str, object]:
     return fields
 
 
-def purchase(session: Session, game: Game, buyer: Player, request: PurchaseRequest) -> CluePurchase:
-    refusal = _refusal(session, game, buyer, request)
-    if refusal is not None:
-        logger.warning(
-            "refused the {kind} clue{detail}: {reason}",
-            reason=refusal.value,
-            game_id=game.id,
-            **_detail(request),
-        )
-        raise ShopRefusedError(refusal)
-    cost = price(session, game, buyer, request.kind)
+def _pay_with_currency(
+    session: Session, game: Game, buyer: Player, request: PurchaseRequest
+) -> CluePurchase:
+    quote = _quote(session, game, _base_price(session, game, buyer, request.kind))
+    cost = quote.cost
     try:
         charge = wallet.debit(
             session,
@@ -300,12 +336,29 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
     session.add(bought)
     session.flush()
     logger.info(
-        "bought the {kind} clue{detail} for {price} 💠 (purchase {purchase_id})",
+        "bought the {kind} clue{detail} for {price} 💠{discount} (purchase {purchase_id})",
         price=cost,
         purchase_id=bought.id,
         game_id=game.id,
         **_detail(request),
+        **quote.log_fields(),
     )
+    return bought
+
+
+def purchase(session: Session, game: Game, buyer: Player, request: PurchaseRequest) -> CluePurchase:
+    refusal = _refusal(session, game, buyer, request)
+    if refusal is not None:
+        logger.warning(
+            "refused the {kind} clue{detail}: {reason}",
+            reason=refusal.value,
+            game_id=game.id,
+            **_detail(request),
+        )
+        raise ShopRefusedError(refusal)
+    detail = _detail(request)
+    bought = token_clues.pay(session, game, buyer, request, detail)
+    bought = bought or _pay_with_currency(session, game, buyer, request)
     events.emit(
         session,
         EventType.CLUE_PURCHASED,
@@ -333,7 +386,7 @@ def refundable_purchases(session: Session, player_id: int) -> list[RefundableIte
     stmt = (
         select(CluePurchase, CurrencyTransfer.amount)
         .join(CurrencyTransfer, CurrencyTransfer.id == CluePurchase.transfer_id)
-        .where(CluePurchase.player_id == player_id)
+        .where(CluePurchase.player_id == player_id, CluePurchase.token_used.is_(False))
         .order_by(CluePurchase.created_at.desc(), CluePurchase.id.desc())
     )
     items = []
@@ -387,7 +440,13 @@ def refund(session: Session, purchase_row: CluePurchase) -> int:
     /refund: pay the charge back (house -> player, naming it via
     reverses_id) less any cashback already paid on it (cashback_share), and
     drop the row. Returns the refunded amount."""
-    charge = session.get(CurrencyTransfer, purchase_row.transfer_id)
+    if purchase_row.transfer_id is None:  # paid with a clue token (token_used)
+        return token_clues.refund(session, purchase_row)
+    return _refund_currency(session, purchase_row, purchase_row.transfer_id)
+
+
+def _refund_currency(session: Session, purchase_row: CluePurchase, transfer_id: int) -> int:
+    charge = session.get(CurrencyTransfer, transfer_id)
     buyer = session.get(Player, purchase_row.player_id)
     if charge is None or buyer is None:
         msg = f"refund of purchase {purchase_row.id}: missing charge or buyer"
@@ -415,12 +474,7 @@ def refund(session: Session, purchase_row: CluePurchase) -> int:
         recipient_id=buyer.telegram_user_id,
         game_id=purchase_row.game_id,
     )
-    events.emit(
-        session,
-        EventType.CLUE_REFUNDED,
-        events.Involved(actor_id=buyer.telegram_user_id, game_id=purchase_row.game_id),
-        kind=ClueKind(purchase_row.kind).value,
-    )
+    token_clues.emit_refunded(session, purchase_row)
     return amount
 
 

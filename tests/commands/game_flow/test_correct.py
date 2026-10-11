@@ -8,7 +8,8 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import correct as correct_command_module
 from nani_pix_bot.jobs import timers as timers_package
-from nani_pix_bot.jobs.timers.current_image import RevealTarget, RevealWinner
+from nani_pix_bot.jobs.reveal import RevealWinner
+from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models import CurrencyTransfer
 from nani_pix_bot.models.enums import CurrencyReason, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
@@ -538,6 +539,30 @@ async def test_correct_command_pays_the_pot_to_the_winner_and_names_it(session_f
         paid = session.query(CurrencyTransfer).filter_by(reason=CurrencyReason.BOUNTY_WIN).one()
         assert (paid.amount, paid.to_player_id) == (30, 2)
         assert winner.currency >= before + 30
+
+
+async def test_correct_passes_the_targets_equipped_win_effect_to_the_reveal(
+    session_factory, equip_win_effect, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory, total_guess_count=1)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="winner"))
+        session.flush()
+        equip_win_effect(session, 2)
+        session.commit()
+    post_reveal = AsyncMock(return_value=MagicMock(message_id=1))
+    monkeypatch.setattr(timers_package, "post_reveal", post_reveal)
+    update = _make_update(user_id=1, args=["@winner"])
+    context = _make_context(session_factory, args=["@winner"])
+
+    await correct_command_module.correct_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert post_reveal.await_args is not None
+    assert post_reveal.await_args.kwargs["target"] == RevealTarget(
+        game_id, RevealWinner(2, "@winner", overlay="confetti")
+    )
 
 
 async def test_correct_posts_the_reveal_with_the_targets_handle(

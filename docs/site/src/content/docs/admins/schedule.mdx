@@ -52,7 +52,7 @@ Asia/Yekaterinburg, Europe/Berlin, Europe/London and UTC. Tap yours (or send
   <TgMessage from="nani-pix-bot" buttons={[['Europe/Kaliningrad'], ['Europe/Moscow'], ['Asia/Yekaterinburg'], ['Europe/Berlin'], ['Europe/London'], ['UTC']]}>
     First tell me your timezone, so I know which 23:00 you mean — then send the command again:
   </TgMessage>
-  <TgMessage from="nani-pix-bot">Timezone set to Europe/Moscow (it's 22:41 there now). /quiethours times you enter will use it.</TgMessage>
+  <TgMessage from="nani-pix-bot">Timezone set to Europe/Moscow (it's 22:41 there now). Times you enter in /quiethours and /season will use it.</TgMessage>
   <TgMessage out>/quiethours 23:00 08:00</TgMessage>
   <TgMessage from="nani-pix-bot">🌙 Quiet hours set: 23:00–08:00 Europe/Moscow (20:00–05:00 UTC). During them the bot holds back its automatic posts and game clocks are paused.</TgMessage>
 </TelegramChat>
@@ -77,4 +77,5 @@ window ends. Every clock started after the change (the next guess, the next turn
 the next round) pauses properly.
 
 The quiet-hours time zone is also the group's time zone for champion weeks, months
-and years. Without one, the bot uses UTC.
+and years. Without one, the bot uses UTC. The dates you type in `/season` use your
+time zone too.

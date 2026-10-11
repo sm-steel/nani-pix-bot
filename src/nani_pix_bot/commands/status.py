@@ -22,7 +22,8 @@ from nani_pix_bot.models.enums import GameStatus, PixelAlgorithm
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
-from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.cosmetics import flair
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.settings import stage_config
@@ -48,6 +49,8 @@ class _Repost:
     images: tuple[bytes, ...]  # one, or the HARD MODE pair
     width: int
     algorithm: PixelAlgorithm
+    frame: str | None
+    style: str | None
 
 
 def caption(live: LiveStatus, lang: str) -> str:
@@ -101,25 +104,39 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
         pot=bounty.pot_balance(session, game.id),
         time_left=_time_left(game, now),
     )
-    return _Repost(live, tuple(images), width, game.pixel_algorithm)
+    return _Repost(
+        live,
+        tuple(images),
+        width,
+        game.pixel_algorithm,
+        stage_cosmetics.frame_for(session, game),
+        stage_cosmetics.season_style(session, game),
+    )
 
 
 def _idle_text(session: Session, game: Game | None, lang: str) -> str:
     if game is not None and game.status is GameStatus.SETUP:
-        starter = players.display_name(session, game.starter_id)
+        starter = flair.named(
+            session, game.starter_id, players.display_name(session, game.starter_id)
+        )
         return i18n.t("status.setup", lang, starter=starter)
     if game is not None and game.status is GameStatus.VOTING:
         return i18n.t("status.voting", lang, id=game.id)
     state = turns.get_turn_state(session)
     if state is not None and state.next_starter_id is not None:
-        player = players.display_name(session, state.next_starter_id)
+        player = flair.named(
+            session, state.next_starter_id, players.display_name(session, state.next_starter_id)
+        )
         return i18n.t("status.turn_player", lang, player=player)
     return i18n.t("status.turn_open", lang)
 
 
 def _render(repost: _Repost) -> list[bytes]:
     return [
-        pixelate_service.pixelate(image, repost.width, repost.algorithm) for image in repost.images
+        stage_cosmetics.stage_png_with(
+            image, repost.width, repost.algorithm, repost.frame, repost.style
+        )
+        for image in repost.images
     ]
 
 

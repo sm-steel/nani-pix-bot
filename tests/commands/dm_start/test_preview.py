@@ -38,6 +38,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.search import shikimori
@@ -127,7 +128,7 @@ def _staged_setup_game(session_factory, *, starter_id: int = 1, **overrides) -> 
 async def test_preview_confirm_activates_and_posts_to_the_group(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
     context = _make_callback_context(session_factory)
@@ -170,7 +171,7 @@ async def test_preview_confirm_activates_and_posts_to_the_group(
 async def test_preview_confirm_reserves_the_reveal_slot_and_starts_the_pre_render_before_the_post(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     game_id = _staged_setup_game(session_factory)
     order: list[str] = []
     start = MagicMock(side_effect=lambda *_: order.append("pregenerate"))
@@ -195,10 +196,34 @@ async def test_preview_confirm_reserves_the_reveal_slot_and_starts_the_pre_rende
         assert slot.image_choice is None
 
 
+async def test_preview_confirm_reserves_the_starters_equipped_transition(
+    session_factory, equip_transition, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(preview.reveal, "start_pregeneration", MagicMock())
+    monkeypatch.setattr(reveal_store, "pick_effect", lambda: RevealEffect.GLITCH)
+    _staged_setup_game(session_factory)
+    with session_factory() as session:
+        equip_transition(session, 1)
+        session.commit()
+    update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_callback_context(session_factory)
+    context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=999))
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        slot = reveal_store.load(session)
+        assert slot is not None
+        assert slot.effect == RevealEffect.IRIS
+
+
 async def test_preview_confirm_replaces_an_older_reveal_slot(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     monkeypatch.setattr(preview.reveal, "start_pregeneration", MagicMock())
     game_id = _staged_setup_game(session_factory)
     with session_factory() as session:
@@ -222,7 +247,7 @@ async def test_preview_confirm_replaces_an_older_reveal_slot(
 async def test_preview_confirm_shows_and_pays_the_prompt_start_bonus(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory, turn_received_at=datetime.now(UTC) - timedelta(minutes=5))
     update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
     context = _make_callback_context(session_factory)
@@ -243,7 +268,7 @@ async def test_preview_confirm_shows_and_pays_the_prompt_start_bonus(
 async def test_preview_confirm_activates_the_game_even_when_the_group_post_times_out(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
     context = _make_callback_context(session_factory)
@@ -500,7 +525,7 @@ async def test_preview_add_synonym_awaits_a_synonym_message(session_factory) -> 
 async def test_search_text_handler_appends_a_synonym_and_reshows_the_preview(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()
@@ -524,7 +549,7 @@ async def test_search_text_handler_appends_a_synonym_and_reshows_the_preview(
 async def test_search_text_handler_keeps_the_appended_synonym_when_the_album_times_out(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()
@@ -636,7 +661,7 @@ async def test_pixel_algorithm_button_opens_the_submenu(session_factory) -> None
 async def test_picking_an_algorithm_stores_it_and_reshows_the_preview(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
 
     update = await _run_preview_callback(
@@ -652,7 +677,7 @@ async def test_picking_an_algorithm_stores_it_and_reshows_the_preview(
 async def test_picking_an_algorithm_reflects_it_in_the_new_preview_keyboard(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     update = _make_preview_callback_update(data=f"{PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX}box")
     context = _make_callback_context(session_factory)
@@ -795,7 +820,7 @@ async def test_bounty_back_returns_to_the_preview_buttons(session_factory) -> No
 async def test_confirming_shows_the_bounty_in_the_game_start_caption(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_setup_game(session_factory)
     _fund_setter(session_factory, 100)
     await _run_preview_callback(session_factory, f"{PREVIEW_BOUNTY_PICK_PREFIX}60")

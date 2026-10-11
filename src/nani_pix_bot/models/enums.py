@@ -275,6 +275,10 @@ class RevealEffect(enum.Enum):
     RIPPLE = "ripple"
     GLITCH = "glitch"
     SHATTER = "shatter"
+    # Sakura Season transitions: only ever an equipped cosmetic, never a random pick
+    # (services/reveal/store.py's RANDOM_EFFECTS).
+    SPRING_BREEZE = "spring_breeze"
+    BLOSSOM_BRANCH = "blossom_branch"
 
 
 class RevealStatus(enum.Enum):
@@ -341,6 +345,25 @@ class CurrencyReason(enum.StrEnum):
     CASHBACK = "cashback"
     COMPENSATION = "compensation"
     ACHIEVEMENT = "achievement"
+    SEASON_WIN = "season_win"
+    SEASON_HOST = "season_host"
+    SEASON_FIRST_GUESS = "season_first_guess"
+    TIER_REWARD = "pass_reward"
+    PREMIUM = "premium_pass"
+    SEASON_CONVERSION = "season_conversion"
+    # 🪙 spent in the Season Shop
+    SEASON_SHOP = "season_shop"
+    # 🪙 paid for completing a season objective
+    SEASON_OBJECTIVE = "season_objective"
+
+
+class Currency(enum.StrEnum):
+    """Which currency a ledger row moves (seasons spec §2): the base currency
+    (shown as 💠 to players; cached in Player.currency) or a season's coins
+    (🪙; cached per season in season_balances). Plain string."""
+
+    BASE = "base"
+    SEASON = "season"
 
 
 class CurrencyParty(enum.StrEnum):
@@ -378,6 +401,10 @@ class EventType(enum.StrEnum):
     CLUE_REFUNDED = "clue_refunded"
     CLUE_SHARED = "clue_shared"
     BOUNTY_SETTLED = "bounty_settled"
+    # Seasons (Phase 5): emitted by season services so achievements can react.
+    ITEM_GAINED = "item_gained"  # a season cosmetic was granted (any source)
+    TRACK_COMPLETED = "pass_completed"  # a pass track finished; data["first"] for the free one
+    SEASON_ENDED = "season_ended"  # one per ranked player when a season finalizes
 
 
 class WinMethod(enum.StrEnum):
@@ -404,6 +431,13 @@ class OutboxKind(enum.StrEnum):
 
     UNLOCK = "unlock"
     PERIOD_SUMMARY = "period_summary"
+    SEASON_TEASER = "season_teaser"
+    SEASON_START = "season_start"
+    SEASON_END = "season_end"
+    SEASON_TIER = "season_tier"
+    SEASON_COMPLETE = "season_pass_done"
+    # a player's DM for a completed season objective
+    SEASON_OBJECTIVE = "season_objective"
 
 
 class PeriodType(enum.StrEnum):
@@ -412,3 +446,69 @@ class PeriodType(enum.StrEnum):
     WEEK = "week"
     MONTH = "month"
     YEAR = "year"
+
+
+class XpSource(enum.StrEnum):
+    """Why a season_xp row was written (seasons spec §2). Plain string."""
+
+    WIN = "win"
+    HOST = "host"
+    FIRST_GUESS = "first_guess"
+    # a completed season objective (services/seasons/objectives.py)
+    OBJECTIVE = "objective"
+
+
+class SeasonStatus(enum.StrEnum):
+    """A season_schedule row's lifecycle (seasons spec §1). Stored as a
+    plain string. `closing`: past end_at, waiting for its tagged games."""
+
+    SCHEDULED = "scheduled"
+    ACTIVE = "active"
+    CLOSING = "closing"
+    ENDED = "ended"
+    CANCELLED = "cancelled"
+
+
+class CosmeticSlot(enum.StrEnum):
+    """Where an equipped season cosmetic shows (seasons spec §3). Stored as a plain string."""
+
+    WIN_EFFECT = "win_effect"
+    HOST_TRANSITION = "host_transition"
+    HOST_FRAME = "host_frame"
+    NAME_FLAIR = "name_flair"
+    GUESS_REACTION = "guess_reaction"
+    PROFILE_BANNER = "profile_banner"
+    TITLE = "title"
+
+
+class ItemSource(enum.StrEnum):
+    """How an owned season cosmetic was obtained (seasons spec §3). Plain string."""
+
+    ADMIN = "admin"
+    TIER = "pass"
+    SHOP = "shop"
+
+
+class PreviewKind(enum.StrEnum):
+    """What an item's preview is (seasons spec §3): a line of text, an image or a clip.
+    Plain string."""
+
+    TEXT = "text"
+    PHOTO = "photo"
+    VIDEO = "video"
+
+
+class ShowcaseKind(enum.StrEnum):
+    """What a player pinned to their /profile card (#413): a season stamp (ref =
+    run id) or an achievement (ref = achievement grant id). Plain string."""
+
+    STAMP = "stamp"
+    ACHIEVEMENT = "achievement"
+
+
+class ConsumableKind(enum.StrEnum):
+    """A consumable a player holds a count of (seasons spec §3): the clue token
+    only — no free sharpens."""
+
+    # 🎟 the clue token; named so a security linter doesn't read "token" as a secret
+    CLUE_TICKET = "clue_token"

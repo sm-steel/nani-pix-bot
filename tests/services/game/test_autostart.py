@@ -60,7 +60,7 @@ def _patch_stub_get(monkeypatch: pytest.MonkeyPatch, *, content: bytes = b"bytes
 
 
 async def test_gather_pick_succeeds_on_shikimori_first_try(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_random_anime(client):
+    async def fake_random_anime(client, genre_id=None):
         return _SHIKI_RESULT
 
     async def fake_screenshots(client, shikimori_id):
@@ -87,7 +87,7 @@ async def test_gather_pick_falls_back_to_tenrai_when_shikimori_fails(
 ) -> None:
     tenrai_stub_client = _StubAsyncClient()
 
-    async def failing_random_anime(client):
+    async def failing_random_anime(client, genre_id=None):
         raise RuntimeError("Shikimori is down")
 
     async def fake_tenrai_random(client):
@@ -120,7 +120,7 @@ async def test_gather_pick_retries_a_different_anime_when_no_screenshots_exist(
     picks = [_SHIKI_RESULT, ShikimoriResult(9, "Second", None, None, [])]
     calls = {"n": 0}
 
-    async def fake_random_anime(client):
+    async def fake_random_anime(client, genre_id=None):
         result = picks[calls["n"]]
         calls["n"] += 1
         return result
@@ -155,7 +155,7 @@ async def test_gather_pick_gives_up_after_the_attempt_limit_with_no_db_touch(
 
     calls = {"n": 0}
 
-    async def counting_random_anime(client):
+    async def counting_random_anime(client, genre_id=None):
         calls["n"] += 1
         return
 
@@ -179,7 +179,7 @@ async def test_gather_pick_rejects_an_explicit_rated_tenrai_pick_and_retries(
     a failed attempt so gather_pick's loop retries with a different
     anime, never surfacing the explicit pick to a caller (issue #159)."""
 
-    async def failing_shikimori_random(client):
+    async def failing_shikimori_random(client, genre_id=None):
         raise RuntimeError("Shikimori is down")
 
     tenrai_picks = [
@@ -237,7 +237,7 @@ async def test_gather_pick_falls_through_provider_order_when_first_provider_lack
     different screenshot provider — distinct from the "retry a different
     anime" tests above."""
 
-    async def fake_random_anime(client):
+    async def fake_random_anime(client, genre_id=None):
         return _SHIKI_RESULT
 
     async def fake_shikimori_screenshots(client, shikimori_id):

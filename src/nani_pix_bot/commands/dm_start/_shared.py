@@ -28,6 +28,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.settings import stage_config
 
 # "The provider is unreachable" in all the shapes it actually arrives in.
@@ -137,6 +138,13 @@ def client_for_source(context: ContextTypes.DEFAULT_TYPE, source: Provider) -> h
     return cast(httpx.AsyncClient, context.bot_data[key])
 
 
+# The wording production greps for: one string, so the two helpers below can't drift.
+_STALE_TAP_LOG = (
+    "tapped {data!r} with no SETUP game left — already resolved, or the "
+    "setup-abandon timer deleted the row"
+)
+
+
 async def _reject_stale_tap(query: CallbackQuery, lang: str) -> None:
     """The one thing every screen of the screenshot sub-flow says when a
     button is tapped and there is no SETUP game left to act on: the row
@@ -172,12 +180,18 @@ async def _reject_stale_tap(query: CallbackQuery, lang: str) -> None:
     mid-round-trip. No literal line number is cited here on purpose —
     the last one went stale, and it was a line-number comment that
     caused this exact bug."""
-    logger.opt(depth=1).warning(
-        "tapped {data!r} with no SETUP game left — already resolved, or the "
-        "setup-abandon timer deleted the row",
-        data=query.data,
-    )
+    logger.opt(depth=1).warning(_STALE_TAP_LOG, data=query.data)
     await query.answer(i18n.t("dm_start.setup_gone", lang), show_alert=True)
+
+
+async def _reject_stale_tap_answered(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int, data: str | None, lang: str
+) -> None:
+    """`_reject_stale_tap` for a handler that already spent its one
+    callback-query answer up front (to beat Telegram's window): same
+    WARNING, with the explanation sent as a plain message instead."""
+    logger.opt(depth=1).warning(_STALE_TAP_LOG, data=data)
+    await context.bot.send_message(chat_id=chat_id, text=i18n.t("dm_start.setup_gone", lang))
 
 
 def _prefer_shikimori(lang: str) -> bool:
@@ -441,6 +455,7 @@ async def _start_new_game(
             width=stage_config.get_stage_config(session, game_service.STAGE_ORDER[0]).target_width,
             algorithm=new_game.pixel_algorithm,
         )
+        starter_name = flair.named(session, user.id, user.full_name)
 
     timeout_module.cancel_turn_timers(context.job_queue)
     timeout_module.cancel_idle_autostart(context.job_queue)
@@ -448,7 +463,7 @@ async def _start_new_game(
     await context.bot.send_message(
         chat_id=group_chat_id,
         message_thread_id=context.bot_data["game_topic_id"],
-        text=i18n.t("dm_start.setup_started_group_notice", lang, starter=user.full_name)
+        text=i18n.t("dm_start.setup_started_group_notice", lang, starter=starter_name)
         + game_service.game_id_line(new_game.id, lang),
     )
     logger.info("announced the setup in the group topic", game_id=new_game.id)

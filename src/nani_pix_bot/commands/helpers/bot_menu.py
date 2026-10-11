@@ -17,12 +17,16 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("help", i18n.t("commands.help", lang)),
         BotCommand("newgame", i18n.t("commands.newgame", lang)),
         BotCommand("balance", i18n.t("commands.balance", lang)),
+        BotCommand("profile", i18n.t("commands.profile", lang)),
         BotCommand("shop", i18n.t("commands.shop", lang)),
+        BotCommand("seasonpass", i18n.t("commands.seasonpass", lang)),
+        BotCommand("seasonshop", i18n.t("commands.seasonshop", lang)),
         BotCommand("achievements", i18n.t("commands.achievements", lang)),
         BotCommand("standings", i18n.t("commands.standings", lang)),
         BotCommand("leaderboard", i18n.t("commands.leaderboard", lang)),
         BotCommand("history", i18n.t("commands.history", lang)),
         BotCommand("title", i18n.t("commands.title", lang)),
+        BotCommand("cosmetics", i18n.t("commands.cosmetics", lang)),
         BotCommand("tip", i18n.t("commands.tip", lang)),
         BotCommand("language", i18n.t("commands.language", lang)),
         # Listed unconditionally, like every other command here: this menu
@@ -45,6 +49,8 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("setwinner", i18n.t("commands.setwinner", lang)),
         BotCommand("timezone", i18n.t("commands.timezone", lang)),
         BotCommand("quiethours", i18n.t("commands.quiethours", lang)),
+        BotCommand("season", i18n.t("commands.season", lang)),
+        BotCommand("grantitem", i18n.t("commands.grantitem", lang)),
         BotCommand("version", i18n.t("commands.version", lang)),
     ]
     group_commands = [
@@ -58,6 +64,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("achievements", i18n.t("commands.achievements", lang)),
         BotCommand("standings", i18n.t("commands.standings", lang)),
         BotCommand("balance", i18n.t("commands.balance", lang)),
+        BotCommand("profile", i18n.t("commands.profile", lang)),
         BotCommand("tip", i18n.t("commands.tip", lang)),
         BotCommand("help", i18n.t("commands.help", lang)),
         BotCommand("version", i18n.t("commands.version", lang)),

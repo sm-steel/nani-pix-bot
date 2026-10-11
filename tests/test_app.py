@@ -96,11 +96,16 @@ def test_build_application_registers_every_command() -> None:
         "setautostart",
         "timezone",
         "quiethours",
+        "season",
+        "grantitem",
         "version",
         "linkmal",
         "unlinkmal",
         "balance",
+        "profile",
         "shop",
+        "seasonpass",
+        "seasonshop",
         "tip",
         "pixelconfig",
         "partialmatch",
@@ -111,6 +116,7 @@ def test_build_application_registers_every_command() -> None:
         "history",
         "status",
         "title",
+        "cosmetics",
     }
 
 

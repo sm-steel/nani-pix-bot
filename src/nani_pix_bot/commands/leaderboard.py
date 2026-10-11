@@ -17,6 +17,7 @@ from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.achievements import titles
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.players import LeaderRow
 
 LEADERBOARD_SIZE = 10
@@ -34,7 +35,7 @@ def parse_page(data: str) -> int | None:
 
 
 def _name(session: Session, row: LeaderRow, lang: str) -> str:
-    name = players.display_name(session, row.player_id)
+    name = flair.named(session, row.player_id, players.display_name(session, row.player_id))
     title = titles.text(row.title_key, lang)
     return f"{name} «{title}»" if title else name
 
