@@ -289,3 +289,19 @@ async def test_malformed_callback_data_is_ignored(
     query = await _tap(session_factory, _context(session_factory), "sshop:b:x:y")
     query.edit_message_text.assert_not_awaited()
     assert any(r.level == "WARNING" for r in log_records)
+
+
+async def test_a_missing_offer_is_refused_with_a_warning(
+    session_factory, season, coins, log_records: list[LogLine]
+) -> None:
+    await _tap(session_factory, _context(session_factory), "sshop:i:1:9")
+    assert any(r.level == "WARNING" and r.extra.get("index") == 9 for r in log_records)
+
+
+async def test_the_icon_has_no_caption_of_its_own(
+    session_factory, season, coins, monkeypatch
+) -> None:
+    sent = AsyncMock()
+    monkeypatch.setattr(season_shop_module.item_preview, "send_image", sent)
+    await _tap(session_factory, _context(session_factory), "sshop:i:1:2")
+    assert sent.await_args_list[0].args[2].caption is None

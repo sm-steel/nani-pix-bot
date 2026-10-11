@@ -11,4 +11,5 @@ def test_the_icon_is_a_square_png() -> None:
 
 
 def test_the_icon_is_the_same_bytes_every_time() -> None:
-    assert clue_token_icon.icon() is clue_token_icon.icon()
+    draw = clue_token_icon.icon.__wrapped__
+    assert draw() == draw()

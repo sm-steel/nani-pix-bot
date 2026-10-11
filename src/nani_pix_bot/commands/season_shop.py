@@ -122,15 +122,15 @@ class _Offer:
 
 def _offer(
     session: Session, season_id: int, player_id: int, index: int, lang: str
-) -> _Offer | None:
-    """The offer's page, or None when the tapped season isn't the running one."""
+) -> _Offer | ShopRefusal | None:
+    """The offer's page; UNKNOWN for a missing offer; None when the season isn't the open one."""
     open_run = _open(session, season_id)
     if open_run is None:
         return None
     season, run = open_run
     rows = season_shop.stock(session, season, run, player_id)
     if not 0 <= index < len(rows):
-        raise ShopRefusedError(ShopRefusal.UNKNOWN)
+        return ShopRefusal.UNKNOWN
     row = rows[index]
     balance = wallet.balance(session, player_id, season_id=season.id)
     text = i18n.t(
@@ -179,8 +179,7 @@ async def _send_preview(
     if offer.resolved is not None:
         await item_preview.send(context, chat_id, offer.resolved, lang)
         return
-    caption = i18n.t("season_shop.offer_token_note", lang)
-    picture = item_preview.Picture(CLUE_ICON_KEY, clue_token_icon.icon, caption)
+    picture = item_preview.Picture(CLUE_ICON_KEY, clue_token_icon.icon)
     await item_preview.send_image(context, chat_id, picture, lang)
 
 
@@ -188,11 +187,16 @@ async def _on_offer(
     query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, season_id: int, index: int
 ) -> None:
     lang = _language(context)
-    try:
-        with session_scope(context.bot_data["session_factory"]) as session:
-            offer = _offer(session, season_id, query.from_user.id, index, lang)
-    except ShopRefusedError as error:
-        await _refuse(query, context, error.refusal)
+    with session_scope(context.bot_data["session_factory"]) as session:
+        offer = _offer(session, season_id, query.from_user.id, index, lang)
+    if isinstance(offer, ShopRefusal):
+        logger.warning(
+            "refused a /seasonshop tap: {refusal}",
+            refusal=offer.value,
+            index=index,
+            season_id=season_id,
+        )
+        await _refuse(query, context, offer)
         return
     if offer is None:
         await _stale(query, context, season_id)
@@ -237,15 +241,19 @@ def _purchase(
     return text, InlineKeyboardMarkup([[back]])
 
 
-def _refusal_numbers(context: ContextTypes.DEFAULT_TYPE, user_id: int, season_id: int, index: int):
-    """The price and the 🪙 balance an INSUFFICIENT alert quotes."""
+def _refusal_numbers(
+    context: ContextTypes.DEFAULT_TYPE, user_id: int, season_id: int, index: int
+) -> dict[str, int]:
+    """The price and the 🪙 balance an INSUFFICIENT alert quotes; 0 for what can't be read."""
+    price = balance = 0
     with session_scope(context.bot_data["session_factory"]) as session:
         open_run = _open(session, season_id)
-        if open_run is None or not 0 <= index < len(open_run[1].shop):
-            return {}
-        season, run = open_run
-        balance = wallet.balance(session, user_id, season_id=season.id)
-        return {"price": run.shop[index].price, "balance": balance}
+        if open_run is not None:
+            season, run = open_run
+            balance = wallet.balance(session, user_id, season_id=season.id)
+            if 0 <= index < len(run.shop):
+                price = run.shop[index].price
+    return {"price": price, "balance": balance}
 
 
 async def _on_buy(
