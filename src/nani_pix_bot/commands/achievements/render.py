@@ -32,11 +32,20 @@ def heading(state: State, lang: str) -> str:
     return "## " + _t(f"achievements.section.{state.value}", lang)
 
 
+def _latest(item: Status, lang: str) -> str:
+    """The latest period won: a champion's titled period, a season's name
+    (its title only when the achievement confers one)."""
+    defn = item.defn
+    if defn.kind is Kind.SEASON and not defn.titled:
+        return names.season_label(item.period_key, lang)
+    return names.title(defn, 1, item.period_key, lang)
+
+
 def _earned_row(item: Status, lang: str, _holder: str | None) -> str:
     defn = item.defn
     medal = MEDALS[rarity_of(defn, max(item.tier, 1))]
-    if defn.kind is Kind.PERIOD:
-        latest = md_escape(names.title(defn, 1, item.period_key, lang))
+    if defn.kind in (Kind.PERIOD, Kind.SEASON):
+        latest = md_escape(_latest(item, lang))
         times = _t("achievements.times", lang, count=item.tier)
         if item.rank is not None:
             times += " · " + _t("achievements.race_now", lang, rank=item.rank)

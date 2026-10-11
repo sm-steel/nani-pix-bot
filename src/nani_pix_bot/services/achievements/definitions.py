@@ -6,11 +6,14 @@ import enum
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from zoneinfo import ZoneInfo
 
 from nani_pix_bot.models.enums import EventType, Rarity
 from nani_pix_bot.services.events import LoggedEvent
+
+if TYPE_CHECKING:
+    from nani_pix_bot.seasons.definition import SeasonRun
 
 
 class Kind(enum.Enum):
@@ -18,6 +21,7 @@ class Kind(enum.Enum):
     LADDER = "ladder"
     GROUP_UNIQUE = "group_unique"  # one holder per tier, ever
     PERIOD = "period"  # granted by the period job, keyed by period
+    SEASON = "season"  # once per season, period_key = the season's run_id
 
 
 class History(Protocol):
@@ -45,6 +49,16 @@ class History(Protocol):
     ) -> bool: ...
 
 
+class SeasonHistory(History, Protocol):
+    """A History scoped to one season (services/seasons/season_history.py), plus
+    what season progress needs to know about it."""
+
+    season_id: int
+    run: "SeasonRun"
+    first_day: date
+    last_day: date
+
+
 ProgressFn = Callable[[History], int]
 
 
@@ -58,8 +72,13 @@ class Definition:
     progress: ProgressFn
     endless_step: int | None = None
     hidden: bool = False
+    titled: bool = False  # SEASON only: whether earning it confers a title
+    run_id: str | None = None  # counts only in this run's season
 
     def __post_init__(self) -> None:
+        if self.titled and self.kind is not Kind.SEASON:
+            msg = "only season achievements grant a title by flag"
+            raise ValueError(msg)
         if not self.tiers or len(self.tiers) != len(self.rarities):
             msg = f"{self.key}: needs one of rarities per tier"
             raise ValueError(msg)
@@ -123,7 +142,9 @@ def rarity_of(defn: Definition, tier: int) -> Rarity:
 
 def grants_title(defn: Definition, tier: int) -> bool:
     """The prestige set (spec §4): group-unique, champions, and the top
-    *defined* tier of every ladder."""
+    *defined* tier of every ladder; a season achievement when it says so."""
+    if defn.kind is Kind.SEASON:
+        return defn.titled
     if defn.kind in (Kind.GROUP_UNIQUE, Kind.PERIOD):
         return True
     return defn.kind is Kind.LADDER and tier == len(defn.tiers)

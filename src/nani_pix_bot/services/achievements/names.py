@@ -1,6 +1,7 @@
 """How an achievement reads to people: localized name (with its tier),
 description (with its threshold), and the title it confers."""
 
+from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.achievements.definitions import Definition, Kind, threshold
 
@@ -50,8 +51,17 @@ def period_label(period_key: str, lang: str) -> str:
     return period_key
 
 
+def season_label(period_key: str, lang: str) -> str:
+    """A season achievement's period key is its run id: the run's name, else the id."""
+    run = registry.get(period_key)
+    return run.name(lang) if run is not None else period_key
+
+
 def title(defn: Definition, tier: int, period_key: str, lang: str) -> str:
     if defn.kind is Kind.PERIOD and period_key:
         label = period_label(period_key, lang)
         return i18n.t(f"achievement.{defn.key}.title", lang, period=label)
+    if defn.kind is Kind.SEASON and period_key:
+        label = season_label(period_key, lang)
+        return i18n.t(f"achievement.{defn.key}.title", lang, season=label)
     return name(defn, tier, lang)

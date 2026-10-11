@@ -48,7 +48,7 @@ def test_a_run_that_was_held_cannot_be_scheduled_again(session) -> None:
     row.status, row.started_at, row.ended_at = SeasonStatus.ENDED, NOW, NOW
     session.flush()
     assert schedule.held_run_ids(session) == {"demo_1"}
-    assert schedule.available_runs(session) == []
+    assert [r.run_id for r in schedule.available_runs(session)] == ["demo_2"]
     with _refused(Refusal.ALREADY_HELD):
         _schedule(session)
 

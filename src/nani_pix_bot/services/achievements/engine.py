@@ -10,7 +10,7 @@ from nani_pix_bot.models.achievement import AchievementClaim, AchievementGrant
 from nani_pix_bot.models.enums import CurrencyReason, EventType
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import players, settings
-from nani_pix_bot.services.achievements import catalogue, outbox, rewards
+from nani_pix_bot.services.achievements import catalogue, outbox, rewards, season_eval
 from nani_pix_bot.services.achievements.definitions import (
     Definition,
     Kind,
@@ -125,6 +125,8 @@ def _evaluate(
 ) -> list[AchievementGrant]:
     if defn.kind is Kind.GROUP_UNIQUE:
         return _evaluate_group_unique(session, defn, history, event)
+    if defn.kind is Kind.SEASON:
+        return season_eval.evaluate(session, defn, event, history.player_id)
     top = reached(defn, defn.progress(history))
     granted: list[AchievementGrant] = []
     for tier in range(1, top + 1):

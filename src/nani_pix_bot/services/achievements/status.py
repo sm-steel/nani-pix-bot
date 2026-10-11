@@ -11,10 +11,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.achievement import AchievementClaim, AchievementGrant
+from nani_pix_bot.models.enums import SeasonStatus
+from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import settings
-from nani_pix_bot.services.achievements import catalogue, periods
+from nani_pix_bot.services.achievements import catalogue, periods, season_eval
 from nani_pix_bot.services.achievements.definitions import Definition, Kind, next_threshold, reached
 from nani_pix_bot.services.achievements.history import DbHistory
+from nani_pix_bot.services.seasons import schedule
 
 
 class State(enum.Enum):
@@ -36,7 +39,7 @@ class View(enum.StrEnum):
 class Status:
     defn: Definition
     state: State
-    tier: int = 0  # highest tier held; times won for a champion
+    tier: int = 0  # highest tier held; times won for a champion, seasons for a season one
     value: int = 0
     target: int | None = None
     granted_at: datetime | None = None
@@ -67,6 +70,14 @@ def _earned(defn: Definition, ctx: _Context) -> Status:
             granted_at=latest.granted_at,
             period_key=latest.period_key,
             rank=_current_rank(defn, ctx),  # a past champion still races this period
+        )
+    if defn.kind is Kind.SEASON:
+        return Status(
+            defn,
+            State.EARNED,
+            tier=len({g.period_key for g in ctx.grants}),
+            granted_at=latest.granted_at,
+            period_key=latest.period_key,
         )
     tier = max(g.tier for g in ctx.grants)
     return Status(
@@ -108,8 +119,23 @@ def _plain(defn: Definition, ctx: _Context) -> Status:
     return Status(defn, state, value=value, target=defn.tiers[0])
 
 
+def _season_progress(defn: Definition, ctx: _Context) -> Status:
+    """Progress in the open season, if it is one this definition counts in."""
+    if defn.hidden:
+        return Status(defn, State.HIDDEN)
+    season = schedule.current(ctx.session)
+    granting = season is not None and season.status in (SeasonStatus.ACTIVE, SeasonStatus.CLOSING)
+    run = registry.get(season.run_id) if season is not None and granting else None
+    if season is None or run is None or not season_eval.counts_in(defn, run):
+        return Status(defn, State.UNTOUCHED, target=defn.tiers[0])
+    scoped = season_eval.scoped_history(ctx.session, season, run, ctx.history.player_id)
+    value = defn.progress(scoped)
+    state = State.PARTIAL if value > 0 else State.UNTOUCHED
+    return Status(defn, state, value=value, target=defn.tiers[0])
+
+
 _UNEARNED: Mapping[Kind, Callable[[Definition, _Context], Status]] = MappingProxyType(
-    {Kind.PERIOD: _race, Kind.GROUP_UNIQUE: _unclaimed}
+    {Kind.PERIOD: _race, Kind.GROUP_UNIQUE: _unclaimed, Kind.SEASON: _season_progress}
 )
 
 
@@ -133,7 +159,7 @@ def build(session: Session, player_id: int, now: datetime) -> list[Status]:
     held = _grants(session, player_id)
     return [
         _status(defn, _Context(session, history, tuple(held.get(defn.key, ())), now))
-        for defn in catalogue.CATALOGUE
+        for defn in catalogue.definitions()
     ]
 
 

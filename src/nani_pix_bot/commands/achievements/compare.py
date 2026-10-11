@@ -28,7 +28,7 @@ def compare_data(other_id: int, filt: CompareFilter, page: int) -> str:
 def _cell(item: Status) -> str:
     if item.state is not State.EARNED:
         return "⬜"
-    if item.defn.kind is Kind.PERIOD:
+    if item.defn.kind in (Kind.PERIOD, Kind.SEASON):
         return f"✅ \N{MULTIPLICATION SIGN}{item.tier}"
     laddered = len(item.defn.tiers) > 1 or item.defn.endless_step
     return f"✅ {names.roman(item.tier)}" if laddered else "✅"
