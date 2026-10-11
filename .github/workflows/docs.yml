@@ -15,6 +15,10 @@ on:
       - "src/nani_pix_bot/services/cards/**"
       - "src/nani_pix_bot/services/achievements/**"
       - "src/nani_pix_bot/services/economy/config.py"
+      - "src/nani_pix_bot/services/cosmetics/**"
+      - "src/nani_pix_bot/services/reveal/**"
+      - "src/nani_pix_bot/services/seasons/**"
+      - "src/nani_pix_bot/seasons/**"
       - "src/nani_pix_bot/assets/**"
       - "src/nani_pix_bot/locales/**"
       - "src/nani_pix_bot/release_notes/**"
@@ -46,12 +50,12 @@ jobs:
       - name: Install project dependencies
         run: uv sync
 
-      # Node is pinned in mise.toml/mise.lock (locked mode).
-      - name: Install pinned Node
+      # Node and ffmpeg are pinned in mise.toml/mise.lock (locked mode). ffmpeg renders
+      # the Sakura page's cosmetic clips (gen_docs_cards.py) and their test.
+      - name: Install pinned tools (Node, ffmpeg)
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: 2026.10.4
-          install_args: node
 
       - name: Guide tests (page parity, command table, stage generator)
         run: uv run pytest -q tests/docs tests/scripts/test_gen_docs_stages.py tests/scripts/test_gen_docs_cards.py
@@ -60,7 +64,8 @@ jobs:
         working-directory: docs/site
         run: npm ci
 
-      # prebuild regenerates the pixelation-stage images first.
+      # prebuild regenerates the pixelation-stage images, the cards and the cosmetic
+      # clips first (the clips need the ffmpeg installed above).
       - name: Build site
         working-directory: docs/site
         run: npm run build
