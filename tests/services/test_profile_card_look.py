@@ -61,3 +61,25 @@ def test_the_name_is_outlined_in_black() -> None:
 def test_a_broken_banner_falls_back_to_the_gradient() -> None:
     plain = cards.render_profile_card(CARD, None, None)
     assert cards.render_profile_card(CARD, None, b"not an image") == plain
+
+
+def _has_black_outline(out: Image.Image, box: tuple[int, int, int, int]) -> bool:
+    dark = out.crop(box).convert("L").point(lambda v: 255 if v < 30 else 0)
+    return dark.getbbox() is not None
+
+
+def test_the_title_is_outlined_in_black() -> None:
+    out = _render(Image.new("RGB", cards.CARD_SIZE, (255, 255, 255)))
+    x = profile_card._PROFILE_TEXT_X
+    assert _has_black_outline(out, (x - 4, 196, x + 300, 246))
+
+
+def test_the_stamp_label_is_outlined_in_black() -> None:
+    card = cards.ProfileCard(
+        name="@a", title=None, stamps=(cards.StampEntry("Sakura"),), stats=(), seed=1
+    )
+    png = cards.render_profile_card(card, None, _png(Image.new("RGB", cards.CARD_SIZE, "white")))
+    out = Image.open(BytesIO(png)).convert("RGB")
+    x = profile_card._PROFILE_TEXT_X
+    label_y = profile_card._STAMP_Y + profile_card._STAMP_SIZE + 22
+    assert _has_black_outline(out, (x - 4, label_y - 14, x + 120, label_y + 14))

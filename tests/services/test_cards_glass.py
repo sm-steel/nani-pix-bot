@@ -112,3 +112,20 @@ def test_with_grid_leaves_a_gap_between_blocks() -> None:
     out = glass.with_grid(flat)
     gap_x = glass.GRID_CELL - 1  # the last column of the first cell is the gap
     assert _rgb(out, (gap_x, 10)) == (30, 30, 30)
+
+
+def test_each_block_reads_the_picture_under_it() -> None:
+    """Light on the left, dark on the right: the left blocks get the light look's
+    bluish dark tint, the right ones neutral white glass. A mixed-up cell index
+    would read the wrong side."""
+    split = 400
+    picture = Image.new("RGB", CARD_SIZE, (0, 0, 0))
+    picture.paste((255, 255, 255), (0, 0, split, H))
+    out = glass.with_grid(picture)
+    middle = (glass.GRID_CELL - glass.GRID_GAP) // 2
+    for cell in range(2, split // glass.GRID_CELL):  # left of the split, light
+        r, g, b = _rgb(out, (cell * glass.GRID_CELL + middle, middle))
+        assert r == g < b < 255
+    for cell in range(split // glass.GRID_CELL, 18):  # right of it, dark
+        r, g, b = _rgb(out, (cell * glass.GRID_CELL + middle, middle))
+        assert 0 < r == g == b
