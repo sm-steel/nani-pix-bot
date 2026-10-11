@@ -38,6 +38,8 @@ def test_a_tip_logs_payer_as_actor_and_recipient_as_subject(session: Session) ->
     assert row.data == {
         "amount": 5,
         "reason": "tip",
+        "currency": "base",
+        "season_id": None,
         "from_type": "player",
         "to_type": "player",
         "reversal": False,

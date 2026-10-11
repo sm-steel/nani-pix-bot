@@ -347,6 +347,15 @@ class CurrencyReason(enum.StrEnum):
     ACHIEVEMENT = "achievement"
 
 
+class Currency(enum.StrEnum):
+    """Which currency a ledger row moves (seasons spec §2): the base currency
+    (shown as 💠 to players; cached in Player.currency) or a season's coins
+    (🪙; cached per season in season_balances). Plain string."""
+
+    BASE = "base"
+    SEASON = "season"
+
+
 class CurrencyParty(enum.StrEnum):
     """One side of a currency transfer (services/economy/wallet.py). Stored as a
     plain string, like CurrencyReason."""

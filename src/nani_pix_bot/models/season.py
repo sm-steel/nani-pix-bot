@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import BigInteger, ForeignKey, String, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nani_pix_bot.models.base import Base
@@ -58,3 +58,17 @@ class SeasonResult(Base):
     player_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("players.telegram_user_id"))
     rank: Mapped[int]
     xp: Mapped[int]
+
+
+class SeasonBalance(Base):
+    """A player's 🪙 in one season — the cached balance, always moved together
+    with a currency_transfers row (like Player.currency for 💠)."""
+
+    __tablename__ = "season_balances"
+    __table_args__ = (CheckConstraint("coins >= 0", name="ck_season_balances_coins_non_negative"),)
+
+    season_id: Mapped[int] = mapped_column(ForeignKey("season_schedule.id"), primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("players.telegram_user_id"), primary_key=True
+    )
+    coins: Mapped[int] = mapped_column(default=0)
