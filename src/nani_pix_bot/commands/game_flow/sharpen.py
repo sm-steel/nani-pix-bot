@@ -23,6 +23,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.clues import shop
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.economy import sharpen
 
 _PREFIX = "sharpen:"
@@ -158,7 +159,9 @@ def _apply(context: ContextTypes.DEFAULT_TYPE, user: User, tap: _Tap) -> _Sharpe
             raise sharpen.SharpenRefusedError(sharpen.SharpenRefusal.NO_GAME)
         paid = sharpen.sharpen(session, game, player, sharpen.SharpenOffer(tap.stage, tap.price))
         announcement = prepare_stage_advanced_announcement(session, context, game, lang)
-        prefix = i18n.t("sharpen.done", lang, name=user.full_name, amount=paid)
+        prefix = i18n.t(
+            "sharpen.done", lang, name=flair.named(session, user.id, user.full_name), amount=paid
+        )
         return _Sharpened(lang, replace(announcement, caption=f"{prefix}\n{announcement.caption}"))
 
 

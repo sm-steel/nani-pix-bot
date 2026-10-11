@@ -27,8 +27,9 @@ from nani_pix_bot.models.enums import GameStatus, RevealStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services.cosmetics import reveal_choice
 from nani_pix_bot.services.players import describe_person
-from nani_pix_bot.services.reveal import pipeline, store
+from nani_pix_bot.services.reveal import overlays, pipeline, store
 
 WAIT_SECONDS = 5.0
 AVATAR_TIMEOUT = 3.0
@@ -103,8 +104,31 @@ async def _avatar(
         return None
 
 
+@dataclass(frozen=True)
+class RevealWinner:
+    """Who the reveal video's badge shows; `handle` is the badge text
+    verbatim ("@username", or the full name when there is no username) and
+    `overlay` the winner's equipped win effect (None: the default confetti)."""
+
+    user_id: int
+    handle: str
+    overlay: str | None = None
+
+
+def _overlay_key(overlay: str | None, game_id: int) -> str:
+    """The overlay to ask the worker for: the default unless `overlay` is a registered one."""
+    if overlay is None:
+        return overlays.DEFAULT_OVERLAY
+    if overlay not in overlays.WIN_OVERLAYS:
+        logger.warning(
+            "unknown win overlay {overlay!r} — using confetti", overlay=overlay, game_id=game_id
+        )
+        return overlays.DEFAULT_OVERLAY
+    return overlay
+
+
 async def render_reveal(
-    application: Application, game_id: int, clear: bytes, winner_id: int | None, handle: str | None
+    application: Application, game_id: int, clear: bytes, winner: RevealWinner | None
 ) -> bytes | None:
     """The final reveal MP4, or None when the caller should post the photo.
 
@@ -120,8 +144,8 @@ async def render_reveal(
         _fallback(game_id, "no reveal worker")
         return None
     avatar_task = (
-        asyncio.ensure_future(_avatar(application, game_id, winner_id, handle))
-        if winner_id
+        asyncio.ensure_future(_avatar(application, game_id, winner.user_id, winner.handle))
+        if winner is not None and winner.user_id
         else None
     )
     try:
@@ -129,7 +153,13 @@ async def render_reveal(
         if isinstance(pregen, str):
             _fallback(game_id, pregen)
             return None
-        badge = None if avatar_task is None else pipeline.Badge(await avatar_task, handle or "")
+        badge = (
+            None
+            if avatar_task is None or winner is None
+            else pipeline.Badge(
+                await avatar_task, winner.handle, _overlay_key(winner.overlay, game_id)
+            )
+        )
     finally:
         if avatar_task is not None:
             avatar_task.cancel()  # a no-op once finished; stops it on every other way out
@@ -210,7 +240,9 @@ def _restore_plan(session: Session) -> _Restore | None:
     if live is None or live.status != GameStatus.ACTIVE:
         return None
     image_choice = store.pick_image() if live.hard_mode else None
-    store.reserve(session, live.id, store.pick_effect(), image_choice)
+    store.reserve(
+        session, live.id, reveal_choice.effect_for(session, live.starter_id), image_choice
+    )
     logger.info("backfilled the reveal of the running game", game_id=live.id)
     return _Restore(live.id)
 

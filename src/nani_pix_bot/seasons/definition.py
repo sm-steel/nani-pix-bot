@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from nani_pix_bot.models.enums import CosmeticSlot
+
 TagKind = Literal["genre", "theme"]
 
 
@@ -39,11 +41,28 @@ class XpTable:
 
 
 @dataclass(frozen=True)
+class Item:
+    """One cosmetic a run offers (seasons spec §3). `key` is `<slot>.<name>`;
+    its full id is `<run_id>/<key>`. `look` means something per slot (an
+    emoji, a frame/overlay key, a RevealEffect name, a banner file) —
+    services/cosmetics/looks.py validates it."""
+
+    key: str
+    slot: CosmeticSlot
+    look: str
+    names: Mapping[str, str]
+
+    def name(self, lang: str) -> str:
+        return self.names.get(lang) or self.names["EN"]
+
+
+@dataclass(frozen=True)
 class SeasonRun:
     run_id: str
     names: Mapping[str, str]
     xp: XpTable
     gate: Gate | None = None
+    items: tuple[Item, ...] = ()
 
     def name(self, lang: str) -> str:
         return self.names.get(lang) or self.names["EN"]

@@ -6,7 +6,7 @@ import pytest
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import aliases, preview
+from nani_pix_bot.commands.dm_start import aliases
 from nani_pix_bot.commands.dm_start.keyboards import (
     ALIASES_DONE_CALLBACK_DATA,
     ALIASES_SKIP_CALLBACK_DATA,
@@ -14,6 +14,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 )
 from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from tests.commands.dm_start.test_preview import (
     _make_callback_context as _base_context,
 )
@@ -25,7 +26,7 @@ from tests.commands.dm_start.test_preview import (
 
 @pytest.fixture(autouse=True)
 def _no_pixelation(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
 
 
 def _make_callback_context(session_factory) -> MagicMock:

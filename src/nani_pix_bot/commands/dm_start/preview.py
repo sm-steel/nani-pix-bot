@@ -64,7 +64,8 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.cosmetics import flair, reveal_choice
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty, earning, wallet
 from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.seasons import gate as gate_service
@@ -105,10 +106,8 @@ def _activate_and_stage_first_post(
     original_bytes = game.original_image
     first_stage = game_service.STAGE_ORDER[0]
     first_stage_settings = stage_config.get_stage_config(session, first_stage)
-    pixelated = pixelate_service.pixelate(
-        original_bytes,
-        first_stage_settings.target_width,
-        game.pixel_algorithm,
+    pixelated = stage_cosmetics.stage_png(
+        session, game, original_bytes, first_stage_settings.target_width
     )
     caption = i18n.t(
         "dm_start.game_started_caption",
@@ -121,7 +120,7 @@ def _activate_and_stage_first_post(
     )
     caption += game_service.game_id_line(game.id, lang)
     game_service.activate_game(session, game)
-    reveal_store.reserve(session, game.id, reveal_store.pick_effect(), None)
+    reveal_store.reserve(session, game.id, reveal_choice.effect_for(session, game.starter_id), None)
     prompt_bonus = earning.award_prompt_start(session, game)
     if prompt_bonus:
         caption += "\n" + i18n.t(
@@ -274,7 +273,7 @@ async def _handle_confirm_tap(
         # starter and the answer, and this tap is that same action.
         logger.debug("confirmed from preview", game_id=setup_game.id)
         first_stage_post = _activate_and_stage_first_post(
-            session, context, setup_game, lang, user.full_name
+            session, context, setup_game, lang, flair.named(session, user.id, user.full_name)
         )
         game_id = setup_game.id
     # Block closed and committed above — activation is durable now

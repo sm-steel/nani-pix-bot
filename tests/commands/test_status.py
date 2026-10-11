@@ -13,6 +13,7 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.game import turns
 
 HOST, ALICE = 1, 2
@@ -101,7 +102,9 @@ async def _run(update: MagicMock, context: MagicMock) -> None:
 async def test_an_active_game_is_reposted_with_a_live_caption(
     session_factory, monkeypatch: pytest.MonkeyPatch, log_records
 ) -> None:
-    monkeypatch.setattr(status.pixelate_service, "pixelate", lambda image, width, _a: image + b"@")
+    monkeypatch.setattr(
+        stage_cosmetics.pixelate_service, "pixelate", lambda image, width, _a: image + b"@"
+    )
     with session_scope(session_factory) as session:
         _players(session)
         session.add(
@@ -129,7 +132,9 @@ async def test_an_active_game_is_reposted_with_a_live_caption(
 async def test_a_hard_mode_game_is_reposted_as_its_pair(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(status.pixelate_service, "pixelate", lambda image, width, _a: image)
+    monkeypatch.setattr(
+        stage_cosmetics.pixelate_service, "pixelate", lambda image, width, _a: image
+    )
     with session_scope(session_factory) as session:
         _players(session)
         session.add(

@@ -28,16 +28,19 @@ from nani_pix_bot import db, heartbeat
 from nani_pix_bot.commands import (
     achievements,
     balance,
+    cosmetics,
     currency_config,
     dm_start,
     game_flow,
     gamesenabled,
+    grant_item,
     history,
     language,
     leaderboard,
     mal_link,
     onboarding,
     partialmatch,
+    profile,
     quiet_hours,
     refund,
     season,
@@ -332,6 +335,9 @@ def build_application(config: Config) -> Application:
     application.add_handler(CallbackQueryHandler(shop.shop_callback_handler, pattern=r"^shop:"))
     application.add_handler(CallbackQueryHandler(title.title_callback, pattern=r"^title:"))
     application.add_handler(
+        CallbackQueryHandler(cosmetics.cosmetics_callback, pattern=rf"^{cosmetics.PREFIX}")
+    )
+    application.add_handler(
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
     )
     application.add_handler(CallbackQueryHandler(standings_dm.standings_callback, pattern=r"^std:"))
@@ -353,12 +359,14 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
     application.add_handler(CommandHandler("status", status.status_command))
     application.add_handler(CommandHandler("balance", balance.balance_command))
+    application.add_handler(CommandHandler("profile", profile.profile_command))
     application.add_handler(CommandHandler("shop", shop.shop_command))
     application.add_handler(CommandHandler("tip", tip.tip_command))
     application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))
     application.add_handler(CommandHandler("partialmatch", partialmatch.partialmatch_command))
     application.add_handler(CommandHandler("refund", refund.refund_command))
     application.add_handler(CommandHandler("title", title.title_command))
+    application.add_handler(CommandHandler("cosmetics", cosmetics.cosmetics_command))
     application.add_handler(CommandHandler("setwinner", setwinner.setwinner_command))
     application.add_handler(CommandHandler("language", language.language_command))
     application.add_handler(CommandHandler("linkmal", mal_link.linkmal_command))
@@ -373,6 +381,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("timezone", quiet_hours.timezone_command))
     application.add_handler(CommandHandler("quiethours", quiet_hours.quiethours_command))
     application.add_handler(CommandHandler("season", season.season_command))
+    application.add_handler(CommandHandler("grantitem", grant_item.grant_item_command))
     application.add_handler(CommandHandler("version", version.version_command))
     application.add_handler(CommandHandler("achievements", achievements.achievements_command))
     application.add_handler(CommandHandler("standings", standings.standings_command))

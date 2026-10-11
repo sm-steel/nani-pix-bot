@@ -6,7 +6,7 @@ import pytest
 from PIL import Image
 
 from nani_pix_bot.models.enums import PixelAlgorithm, RevealEffect
-from nani_pix_bot.services.reveal import celebration, pipeline
+from nani_pix_bot.services.reveal import celebration, overlays, pipeline
 from tests.services.reveal.ffprobe_helpers import decode_clean, probe_frames
 
 WIDTHS = (64, 80, 128, 192, 512)
@@ -74,13 +74,29 @@ def test_pregenerate_builds_the_confetti_so_finish_does_not(monkeypatch) -> None
     pregen = pipeline.pregenerate(png, PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS)
     assert pipeline._static is not None
     static = pipeline._static[1]
-    assert celebration.badge_height(static.size) in static.confetti
+    assert ("confetti", celebration.badge_height(static.size)) in static.confetti
 
     def boom(_height):
         raise AssertionError("confetti rebuilt at win time")
 
-    monkeypatch.setattr(celebration, "confetti_clip", boom)
+    monkeypatch.setattr(overlays, "WIN_OVERLAYS", {"confetti": boom})
     assert decode_clean(pipeline.finish(pregen, png, pipeline.Badge(None, "@w")))
+
+
+@pytest.mark.ffmpeg
+def test_preview_clip_renders_a_whole_reveal_and_leaves_the_game_cache_alone() -> None:
+    png = _png()
+    pipeline.pregenerate(png, PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS)
+    cached = pipeline._static
+    clip = pipeline.preview_clip(
+        _png((160, 90)),
+        PixelAlgorithm.MEDIAN,
+        WIDTHS,
+        RevealEffect.IRIS,
+        pipeline.Badge(None, "@you"),
+    )
+    assert decode_clean(clip)
+    assert pipeline._static is cached
 
 
 def test_nothing_run_by_the_worker_imports_loguru() -> None:

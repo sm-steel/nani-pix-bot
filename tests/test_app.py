@@ -97,10 +97,12 @@ def test_build_application_registers_every_command() -> None:
         "timezone",
         "quiethours",
         "season",
+        "grantitem",
         "version",
         "linkmal",
         "unlinkmal",
         "balance",
+        "profile",
         "shop",
         "tip",
         "pixelconfig",
@@ -112,6 +114,7 @@ def test_build_application_registers_every_command() -> None:
         "history",
         "status",
         "title",
+        "cosmetics",
     }
 
 

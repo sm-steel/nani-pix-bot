@@ -20,6 +20,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import reveal
+from nani_pix_bot.jobs.reveal import RevealWinner
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
@@ -270,15 +271,6 @@ async def post_stage_images(
 
 
 @dataclass(frozen=True)
-class RevealWinner:
-    """Who the reveal video's badge shows; `handle` is the badge text
-    verbatim ("@username", or the full name when there is no username)."""
-
-    user_id: int
-    handle: str
-
-
-@dataclass(frozen=True)
 class RevealTarget:
     """Which game's pre-rendered reveal to post, and who (if anyone) won it."""
 
@@ -289,14 +281,7 @@ class RevealTarget:
 async def _render(
     context: ContextTypes.DEFAULT_TYPE, target: RevealTarget, clear: bytes
 ) -> bytes | None:
-    winner = target.winner
-    return await reveal.render_reveal(
-        context.application,
-        target.game_id,
-        clear,
-        winner.user_id if winner else None,
-        winner.handle if winner else None,
-    )
+    return await reveal.render_reveal(context.application, target.game_id, clear, target.winner)
 
 
 async def _send_video(

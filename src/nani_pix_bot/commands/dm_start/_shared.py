@@ -28,6 +28,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.settings import stage_config
 
 # "The provider is unreachable" in all the shapes it actually arrives in.
@@ -441,6 +442,7 @@ async def _start_new_game(
             width=stage_config.get_stage_config(session, game_service.STAGE_ORDER[0]).target_width,
             algorithm=new_game.pixel_algorithm,
         )
+        starter_name = flair.named(session, user.id, user.full_name)
 
     timeout_module.cancel_turn_timers(context.job_queue)
     timeout_module.cancel_idle_autostart(context.job_queue)
@@ -448,7 +450,7 @@ async def _start_new_game(
     await context.bot.send_message(
         chat_id=group_chat_id,
         message_thread_id=context.bot_data["game_topic_id"],
-        text=i18n.t("dm_start.setup_started_group_notice", lang, starter=user.full_name)
+        text=i18n.t("dm_start.setup_started_group_notice", lang, starter=starter_name)
         + game_service.game_id_line(new_game.id, lang),
     )
     logger.info("announced the setup in the group topic", game_id=new_game.id)

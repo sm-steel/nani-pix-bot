@@ -19,6 +19,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.economy import messages, settlement
 
 # /setwinner <game id> @username
@@ -138,6 +139,7 @@ def _resolve_and_apply(
 def _refinish(session: Session, game: Game, target: Player, winner: str, lang: str) -> str:
     """Re-finish an UNSOLVED game and return the group announcement."""
     game_service.refinish(session, game, winner_id=target.telegram_user_id)
+    winner = flair.named(session, target.telegram_user_id, winner)
     earnings = settlement.settle_disputed_win(session, game, target.telegram_user_id)
     text = i18n.t(
         "setwinner.announcement",

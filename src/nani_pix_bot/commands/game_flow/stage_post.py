@@ -13,7 +13,7 @@ from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
-from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -82,7 +82,7 @@ def prepare_stage_advanced_announcement(
         raise RuntimeError("game.current_stage is None on a STAGE_ADVANCED outcome")
     original_bytes = require_original_image(game, "a STAGE_ADVANCED outcome")
     target_width = stage_config.get_stage_config(session, game.current_stage).target_width
-    pixelated = pixelate_service.pixelate(original_bytes, target_width, game.pixel_algorithm)
+    pixelated = stage_cosmetics.stage_png(session, game, original_bytes, target_width)
     progress = game_service.stage_progress(session, game)
     game_service.reset_inactivity_clock(session, game)
     timeout_module.schedule_inactivity_timers(context.job_queue, game)

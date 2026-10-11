@@ -6,9 +6,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.achievement import AchievementGrant
+from nani_pix_bot.models.enums import CosmeticSlot
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services.achievements import catalogue, names
 from nani_pix_bot.services.achievements.definitions import grants_title
+from nani_pix_bot.services.cosmetics import inventory, looks
+
+ITEM_PREFIX = "item:"
+# A season title item is stored as `item:<item id>` in Player.title_key (String(96))
+# and offered as `title:i:<item id>` callback data (Telegram: 64 bytes). The tighter
+# bound is the callback: 64 - len("title:i:") = 56 bytes. looks.problems fails CI for a
+# shipped id over it; the runtime checks below are a backstop.
+MAX_ITEM_ID_LENGTH = looks.MAX_TITLE_ID_BYTES
 
 
 def _confers(grant: AchievementGrant) -> bool:
@@ -55,10 +66,49 @@ def choose(session: Session, player_id: int, grant_id: int | None) -> bool:
     return True
 
 
+def item_titles(session: Session, player_id: int) -> list[ResolvedItem]:
+    """Season title items the player owns and can pick."""
+    found = inventory.owned(session, player_id, CosmeticSlot.TITLE)
+    usable = [r for r in found if len(r.item_id.encode()) <= MAX_ITEM_ID_LENGTH]
+    for r in found:
+        if r not in usable:
+            logger.warning("title item {item_id} id is too long to offer", item_id=r.item_id)
+    return usable
+
+
+def _takeable_item(session: Session, player_id: int, item_id: str) -> bool:
+    resolved = registry.item(item_id)
+    if resolved is None or resolved.item.slot is not CosmeticSlot.TITLE:
+        return False
+    if len(item_id.encode()) > MAX_ITEM_ID_LENGTH:
+        return False
+    return inventory.owns(session, player_id, item_id)
+
+
+def choose_item(session: Session, player_id: int, item_id: str) -> bool:
+    """Show an owned season title item. False when it isn't theirs to take."""
+    player = session.get(Player, player_id)
+    if player is None or not _takeable_item(session, player_id, item_id):
+        logger.warning(
+            "tried to take the title item {item_id}, which isn't theirs to take",
+            item_id=item_id,
+        )
+        return False
+    player.title_key = f"{ITEM_PREFIX}{item_id}"
+    logger.info("chose the title {title_key}", title_key=player.title_key)
+    return True
+
+
 def text(title_key: str | None, lang: str) -> str | None:
     """A stored choice as display text; None for no title or a retired key."""
     if not title_key:
         return None
+    if title_key.startswith(ITEM_PREFIX):
+        resolved = registry.item(title_key.removeprefix(ITEM_PREFIX))
+        if resolved is None or resolved.item.slot is not CosmeticSlot.TITLE:
+            logger.warning("stored title {title_key!r} names no title item", title_key=title_key)
+            return None
+        return resolved.item.name(lang)
     key, tier, period_key = [*title_key.split(":"), "", "", ""][:3]
     try:
         defn = catalogue.get(key)

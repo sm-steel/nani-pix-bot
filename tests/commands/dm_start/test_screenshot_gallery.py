@@ -10,7 +10,7 @@ from telegram import Update
 from telegram.error import BadRequest, TimedOut
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import preview, screenshot_gallery, search
+from nani_pix_bot.commands.dm_start import screenshot_gallery, search
 from nani_pix_bot.commands.dm_start.keyboards import SCREENSHOT_UPLOAD_CALLBACK_DATA
 from nani_pix_bot.commands.dm_start.screenshots import SourceMenu
 from nani_pix_bot.commands.helpers.log_scope import bind_update
@@ -19,6 +19,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.search import shikimori, tenrai, tmdb
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
@@ -144,7 +145,7 @@ async def test_screenshot_gallery_callback_handler_pick_downloads_and_shows_prev
 ) -> None:
     urls = ["https://shikimori.io/x/0.jpg", "https://shikimori.io/x/1.jpg"]
     monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=urls))
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     game_id = _staged_game(session_factory, shikimori_id=52991)
 
     update = _make_callback_update(data="screenshot_pick:shikimori:1")
@@ -178,7 +179,7 @@ async def test_screenshot_gallery_callback_handler_pick_keeps_the_image_when_the
 ) -> None:
     urls = ["https://shikimori.io/x/0.jpg", "https://shikimori.io/x/1.jpg"]
     monkeypatch.setattr(shikimori, "screenshots", AsyncMock(return_value=urls))
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     game_id = _staged_game(session_factory, shikimori_id=52991)
 
     update = _make_callback_update(data="screenshot_pick:shikimori:1")
@@ -1468,7 +1469,7 @@ async def test_a_gallery_pick_is_answered_before_the_download_starts(
     monkeypatch.setattr(
         shikimori, "screenshots", AsyncMock(return_value=["https://shikimori.io/x/0.jpg"])
     )
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _staged_game(session_factory, shikimori_id=52991)
 
     update = _make_callback_update(data="screenshot_pick:shikimori:0")

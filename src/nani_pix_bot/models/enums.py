@@ -434,3 +434,30 @@ class SeasonStatus(enum.StrEnum):
     CLOSING = "closing"
     ENDED = "ended"
     CANCELLED = "cancelled"
+
+
+class CosmeticSlot(enum.StrEnum):
+    """Where an equipped season cosmetic shows (seasons spec §3). Stored as a plain string."""
+
+    WIN_EFFECT = "win_effect"
+    HOST_TRANSITION = "host_transition"
+    HOST_FRAME = "host_frame"
+    NAME_FLAIR = "name_flair"
+    GUESS_REACTION = "guess_reaction"
+    PROFILE_BANNER = "profile_banner"
+    TITLE = "title"
+
+
+class ItemSource(enum.StrEnum):
+    """How an owned season cosmetic was obtained (seasons spec §3). Plain string."""
+
+    ADMIN = "admin"
+
+
+class PreviewKind(enum.StrEnum):
+    """What an item's preview is (seasons spec §3): a line of text, an image or a clip.
+    Plain string."""
+
+    TEXT = "text"
+    PHOTO = "photo"
+    VIDEO = "video"

@@ -7,11 +7,12 @@ from telegram.constants import ChatMemberStatus
 from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import preview, search
+from nani_pix_bot.commands.dm_start import search
 from nani_pix_bot.models.enums import GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from tests.commands.dm_start.conftest import run_background
 from tests.conftest import LogLine
 
@@ -151,7 +152,7 @@ async def test_manual_entry_without_an_image_offers_every_screenshot_source(
 async def test_manual_entry_second_message_stages_and_shows_a_preview(
     session_factory, monkeypatch: pytest.MonkeyPatch, background_tasks
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _create_setup_game(session_factory, starter_id=1, source="manual")
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()
@@ -186,7 +187,7 @@ async def test_manual_entry_second_message_stages_and_shows_a_preview(
 async def test_manual_entry_second_message_keeps_the_staged_entry_when_the_album_times_out(
     session_factory, monkeypatch: pytest.MonkeyPatch, background_tasks
 ) -> None:
-    monkeypatch.setattr(preview.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
     _create_setup_game(session_factory, starter_id=1, source="manual")
     with session_factory() as session:
         game = session.query(Game).filter_by(starter_id=1).one()

@@ -8,6 +8,7 @@ arguments and results.
 
 import hashlib
 import io
+import logging
 import time
 from dataclasses import dataclass, field
 
@@ -15,7 +16,7 @@ from PIL import Image
 
 from nani_pix_bot.models.enums import PixelAlgorithm, RevealEffect
 from nani_pix_bot.services.pixelate import pixelate_image
-from nani_pix_bot.services.reveal import celebration, encode
+from nani_pix_bot.services.reveal import celebration, encode, overlays
 from nani_pix_bot.services.reveal.effects import EFFECTS
 from nani_pix_bot.services.reveal.effects._common import to_yuv420
 
@@ -33,19 +34,22 @@ class Pregen:
 
 @dataclass(frozen=True)
 class Badge:
-    """The winner's celebration badge: avatar (None -> initial) and the verbatim label."""
+    """The winner's celebration badge: avatar (None -> initial), the verbatim label and the key
+    of the win overlay (a plain str: this is pickled into the worker)."""
 
     avatar: bytes | None
     handle: str
+    overlay: str = overlays.DEFAULT_OVERLAY
 
 
 @dataclass
 class _Static:
-    """Winner-independent data of one image: its clear frame and the confetti per badge height."""
+    """Winner-independent data of one image: its clear frame and the win-overlay clips, keyed by
+    (overlay, badge height)."""
 
     size: tuple[int, int]
     clear_yuv: bytes
-    confetti: dict[int, tuple[bytes, tuple[int, int]]] = field(default_factory=dict)
+    confetti: dict[tuple[str, int], tuple[bytes, tuple[int, int]]] = field(default_factory=dict)
 
 
 # Per-worker-process speed cache, NOT feature state (the DB slot is the state): it only keeps
@@ -91,12 +95,29 @@ def _remember(clear: bytes, static: _Static) -> None:
     _static = (_key(clear), static)
 
 
-def _confetti(static: _Static) -> bytes:
-    """The confetti clip for this frame size's badge height, built once per entry."""
+def _confetti(static: _Static, overlay: str = overlays.DEFAULT_OVERLAY) -> bytes:
+    """The clip of `overlay` for this frame size's badge height, built once per entry."""
     height = celebration.badge_height(static.size)
-    if height not in static.confetti:
-        static.confetti[height] = celebration.confetti_clip(height)
-    return static.confetti[height][0]
+    if (overlay, height) not in static.confetti:
+        static.confetti[overlay, height] = overlays.WIN_OVERLAYS[overlay](height)
+    return static.confetti[overlay, height][0]
+
+
+def _overlay_clip(static: _Static, overlay: str) -> bytes:
+    """The clip of the winner's overlay; an unknown key or a renderer that raises falls back to
+    the default confetti. The worker has no bot-side log setup (and imports no logger package),
+    so the warning goes through stdlib logging to stderr."""
+    try:
+        return _confetti(static, overlay)
+    except Exception:
+        if overlay == overlays.DEFAULT_OVERLAY:
+            raise
+        logging.getLogger(__name__).warning(
+            "win overlay %r is unknown or failed to render; using the default",
+            overlay,
+            exc_info=True,
+        )
+        return _confetti(static)
 
 
 def _static_for(clear: bytes) -> _Static:
@@ -132,7 +153,7 @@ def _overlay(static: _Static, badge: Badge) -> encode.Overlay:
             celebration.badge_max_width(static.size[0], encode.Overlay.margin),
         )
     )
-    return encode.Overlay(_confetti(static), rgba, badge_size)
+    return encode.Overlay(_overlay_clip(static, badge.overlay), rgba, badge_size)
 
 
 def finish(pregen: Pregen, clear: bytes, badge: Badge | None) -> bytes:
@@ -142,6 +163,23 @@ def finish(pregen: Pregen, clear: bytes, badge: Badge | None) -> bytes:
     return encode.ending_and_join(
         pregen.part1_ts, pregen.join_offset, static.clear_yuv, static.size, overlay
     )
+
+
+def preview_clip(
+    image: bytes,
+    algorithm: PixelAlgorithm,
+    widths: tuple[int, ...],
+    effect: RevealEffect,
+    badge: Badge | None,
+) -> bytes:
+    """A whole reveal MP4 in one go, for a cosmetic's preview (seasons spec §3). Unlike
+    `pregenerate`, it leaves the static cache alone: that entry belongs to the game in
+    progress, whose win must not pay to rebuild it."""
+    original, stages = prep(image, algorithm, widths)
+    part1_ts, join_offset = encode.to_ts(EFFECTS[effect](original, stages))
+    static = _new_static(original)
+    overlay = None if badge is None else _overlay(static, badge)
+    return encode.ending_and_join(part1_ts, join_offset, static.clear_yuv, static.size, overlay)
 
 
 def warm_up() -> None:

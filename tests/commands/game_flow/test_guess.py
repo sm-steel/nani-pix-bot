@@ -8,12 +8,14 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import guess as guess_command_module
 from nani_pix_bot.jobs import timers as timers_package
-from nani_pix_bot.jobs.timers.current_image import RevealTarget, RevealWinner
+from nani_pix_bot.jobs.reveal import RevealWinner
+from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
 
 
@@ -214,7 +216,7 @@ async def test_guess_command_keeps_the_win_committed_when_the_announcement_times
 async def test_guess_command_keeps_the_stage_advance_committed_when_the_post_times_out(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     game_id = _active_game(
         session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2, total_guess_count=3
     )
@@ -259,7 +261,7 @@ async def test_guess_command_keeps_the_unsolved_ending_committed_when_the_post_t
 async def test_guess_command_wrong_guess_advances_stage_with_new_image(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     # STAGE_1/STAGE_2's limit is only 1, so a stage with headroom (STAGE_3,
     # given a limit of 3 here) is needed to exercise "some wrong guesses,
     # then advances".
@@ -502,7 +504,7 @@ async def test_guess_command_wrong_guess_resets_and_reschedules_the_inactivity_c
 async def test_guess_command_stage_advanced_resets_and_reschedules_the_inactivity_clock(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     game_id = _active_game(
         session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2, total_guess_count=3
     )
@@ -598,7 +600,7 @@ async def test_guess_command_stage_advance_caption_shows_the_new_stage_budget(
 ) -> None:
     """The advance caption names the stage's whole budget, not a bare
     cumulative guess counter with nothing to measure it against."""
-    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     _active_game(session_factory, current_stage=PixelStage.STAGE_2, wrong_guess_count=0)
     _seed_stage_limit(session_factory, PixelStage.STAGE_2, wrong_guess_limit=1)
     _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=2)
@@ -663,7 +665,7 @@ async def test_guess_command_hard_mode_turn_advanced_posts_album_at_turn_two_wid
         pixelate_calls.append((image_bytes, width, algorithm))
         return b"pixelated-" + image_bytes
 
-    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", fake_pixelate)
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", fake_pixelate)
     game_id = _active_hard_mode_game(session_factory)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
@@ -767,7 +769,7 @@ async def test_guess_command_hard_mode_wrong_guess_never_actually_fires(
     hard-mode game always immediately advances the turn (or ends the
     game unsolved on the last turn) — WRONG is never the outcome a real
     player sees, even though the branch exists (see the test above)."""
-    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     _active_hard_mode_game(session_factory)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
@@ -785,7 +787,7 @@ async def test_guess_command_hard_mode_wrong_guess_never_actually_fires(
 async def test_wrong_guess_that_advances_the_stage_shows_currency_earned(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     _active_game(session_factory)
     _seed_stage_limit(session_factory, PixelStage.STAGE_1, wrong_guess_limit=1)
     update = _make_update(user_id=2)
@@ -857,7 +859,7 @@ async def test_wrong_guess_stays_committed_when_the_reply_times_out(session_fact
 async def test_stage_advance_post_carries_the_shop_button_but_the_win_reveal_does_not(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(guess_command_module.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"x8-bytes")
     _active_game(
         session_factory, current_stage=PixelStage.STAGE_3, wrong_guess_count=2, total_guess_count=3
     )
@@ -1085,3 +1087,82 @@ async def test_guess_unsolved_posts_the_reveal_without_a_winner(
     kwargs = post_reveal.await_args.kwargs
     assert kwargs["target"] == RevealTarget(game_id, None)
     assert kwargs["photo"] == b"file123"
+
+
+async def test_guess_command_won_caption_shows_the_winners_flair(
+    session_factory, equip_flair
+) -> None:
+    _active_game(session_factory)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="guesser"))
+        session.flush()
+        equip_flair(session, 2)
+        session.commit()
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    _, kwargs = context.bot.send_photo.await_args
+    assert "Guesser Name 🌸" in kwargs["caption"]
+
+
+async def test_guess_win_passes_the_winners_equipped_win_effect_to_the_reveal(
+    session_factory, equip_win_effect, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = _active_game(session_factory)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2, username="guesser"))
+        session.flush()
+        equip_win_effect(session, 2)
+        session.commit()
+    post_reveal = _patch_reveal(monkeypatch, "post_reveal", MagicMock(message_id=1))
+    update = _make_update(user_id=2, args=["frieren"])
+    context = _make_context(session_factory, args=["frieren"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert post_reveal.await_args is not None
+    assert post_reveal.await_args.kwargs["target"] == RevealTarget(
+        game_id, RevealWinner(2, "@guesser", overlay="confetti")
+    )
+
+
+async def test_stage_advance_posts_the_starters_equipped_frame(
+    session_factory, equip_frame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (200, 120), (10, 200, 30)).save(buf, "PNG")
+    game_id = _active_game(
+        session_factory,
+        original_image=buf.getvalue(),
+        current_stage=PixelStage.STAGE_3,
+        wrong_guess_count=2,
+        total_guess_count=3,
+    )
+    _seed_stage_limit(session_factory, PixelStage.STAGE_3, wrong_guess_limit=3)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_4, wrong_guess_limit=5)
+    with session_factory() as session:
+        equip_frame(session, 1)
+        session.commit()
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    photo = context.bot.send_photo.await_args.kwargs["photo"]
+    posted = Image.open(io.BytesIO(photo)).convert("RGB")
+    # The stage-4 pixelation of a flat green image is flat green; the frame
+    # is the only thing that can change the corner.
+    assert posted.getpixel((0, 0)) != posted.getpixel((posted.width // 2, posted.height // 2))
+    assert game_id

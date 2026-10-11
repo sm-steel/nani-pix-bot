@@ -9,12 +9,14 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.jobs.timers.current_image import RevealTarget, RevealWinner
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.jobs.reveal import RevealWinner
+from nani_pix_bot.jobs.timers.current_image import RevealTarget
+from nani_pix_bot.models.enums import CosmeticSlot, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services.cosmetics import flair, inventory
 from nani_pix_bot.services.economy import earning
 from nani_pix_bot.services.economy.messages import earnings_suffix
 
@@ -55,9 +57,16 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
         game_id = game.id
         reveal_target = RevealTarget(
-            game_id, RevealWinner(target.telegram_user_id, f"@{target_username}")
+            game_id,
+            RevealWinner(
+                target.telegram_user_id,
+                f"@{target_username}",
+                inventory.look(session, target.telegram_user_id, CosmeticSlot.WIN_EFFECT),
+            ),
         )
-        original_bytes, photos, caption = _prepare_correct_reveal(game, target_username, lang)
+        original_bytes, photos, caption = _prepare_correct_reveal(
+            game, flair.named(session, target.telegram_user_id, target_username), lang
+        )
 
         logger.info(
             "starter used /correct to award the win to {target}",
@@ -67,7 +76,13 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         game_service.force_win(session, game, winner_id=target.telegram_user_id)
         earnings = earning.award_win(session, game, winner_id=target.telegram_user_id)
-        caption += earnings_suffix(session, game, earnings, lang, player_name=f"@{target_username}")
+        caption += earnings_suffix(
+            session,
+            game,
+            earnings,
+            lang,
+            player_name=flair.named(session, target.telegram_user_id, f"@{target_username}"),
+        )
         timeout_module.cancel_timeout(context.job_queue, game.id)
         timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
         turn_state = game_service.get_turn_state(session)

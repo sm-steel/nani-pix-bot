@@ -24,7 +24,7 @@ from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import settlement
 from nani_pix_bot.services.settings import stage_config
 
@@ -149,8 +149,8 @@ def _hard_mode_turn_advance(
     )
     image_a, image_b = game_service.hard_mode_reveal_images(game)
     width = game_service.hard_mode_turn_width(game)
-    pixelated_a = pixelate_service.pixelate(image_a, width, game.pixel_algorithm)
-    pixelated_b = pixelate_service.pixelate(image_b, width, game.pixel_algorithm)
+    pixelated_a = stage_cosmetics.stage_png(session, game, image_a, width)
+    pixelated_b = stage_cosmetics.stage_png(session, game, image_b, width)
     progress = game_service.hard_mode_turn_progress(game)
     caption = i18n.t(
         "guess.hard_mode_inactivity_advanced_caption",
@@ -315,8 +315,8 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
                 target_width = stage_config.get_stage_config(
                     session, game.current_stage
                 ).target_width
-                pixelated = pixelate_service.pixelate(
-                    game.original_image, target_width, game.pixel_algorithm
+                pixelated = stage_cosmetics.stage_png(
+                    session, game, game.original_image, target_width
                 )
                 progress = game_service.stage_progress(session, game)
                 advanced_caption = i18n.t(

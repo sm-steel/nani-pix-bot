@@ -13,6 +13,7 @@ from nani_pix_bot.services.achievements import catalogue, names, titles
 
 TITLE_PREFIX = "title:"
 _NONE = "none"
+_ITEM = "i:"
 
 
 async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -34,6 +35,14 @@ async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             ]
             for g in titles.eligible(session, user.id)
         ]
+        rows += [
+            [
+                InlineKeyboardButton(
+                    r.item.name(lang), callback_data=f"{TITLE_PREFIX}{_ITEM}{r.item_id}"
+                )
+            ]
+            for r in titles.item_titles(session, user.id)
+        ]
     logger.info("opened /title with {count} title(s)", count=len(rows))
     if not rows:
         await message.reply_text(i18n.t("title.none_earned", lang))
@@ -44,23 +53,32 @@ async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await message.reply_text(i18n.t("title.pick", lang), reply_markup=InlineKeyboardMarkup(rows))
 
 
-def _parse(data: str) -> tuple[bool, int | None]:
-    """(valid, grant id) from a tap; the id is None for "no title"."""
+def _parse(data: str) -> tuple[bool, int | str | None]:
+    """(valid, choice) from a tap: a grant id, a season item id (str), or None
+    for "no title"."""
     raw = data.removeprefix(TITLE_PREFIX)
     if raw == _NONE:
         return True, None
+    if raw.startswith(_ITEM) and len(raw) > len(_ITEM):
+        return True, raw.removeprefix(_ITEM)
     if raw.isdecimal() and int(raw) <= MAX_ID:
         return True, int(raw)
     logger.warning("ignored a malformed /title tap {data!r}", data=data)
     return False, None
 
 
+def _choose(session, user_id: int, choice: int | str | None) -> bool:
+    if isinstance(choice, str):
+        return titles.choose_item(session, user_id, choice)
+    return titles.choose(session, user_id, choice)
+
+
 def _apply(context: ContextTypes.DEFAULT_TYPE, user_id: int, data: str) -> tuple[str, str | None]:
     """Store the tap's choice; (language, the title now shown) or None for a refusal."""
-    valid, grant_id = _parse(data)
+    valid, choice = _parse(data)
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
-        if not valid or not titles.choose(session, user_id, grant_id):
+        if not valid or not _choose(session, user_id, choice):
             return lang, None
         player = session.get(Player, user_id)
         return lang, (titles.text(player.title_key, lang) if player else None) or ""

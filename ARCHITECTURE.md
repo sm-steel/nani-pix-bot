@@ -431,6 +431,13 @@ src/nani_pix_bot/
                    # runs not yet held, and schedule/start/end/cancel, with
                    # dates typed in the admin's /timezone — see
                    # MECHANICS.md's "Seasons"
+    cosmetics.py  # /cosmetics — DM-only: slots, owned items, preview +
+                   # Equip/Unequip (services/cosmetics); the title slot only
+                   # hints at /title — see MECHANICS.md's "Cosmetics"
+    profile.py    # /profile — the game topic and DM (members only): the
+                   # profile card (banner, title, stamps, counts)
+    grant_item.py # /grantitem — admin-gated: give a player an item
+                   # (ItemSource.ADMIN)
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
                    # `/start ach_<id>`, the achievements one, and
                    # `/start rules`/`/start recent` for standings_dm.py), /help
@@ -693,7 +700,13 @@ src/nani_pix_bot/
                    #                   confetti frames (reuses
                    #                   services/cards/render.py)
                    #   pipeline.py     the picklable worker entry points,
-                   #                   pregenerate and finish
+                   #                   pregenerate and finish, plus
+                   #                   preview_clip (a whole reveal in one
+                   #                   go for a cosmetic preview, leaving
+                   #                   the static cache alone)
+                   #   overlays.py     WIN_OVERLAYS: overlay key -> clip
+                   #                   renderer for the ending
+                   #                   (DEFAULT_OVERLAY = confetti)
                    #   store.py        the single reveal_video slot: reserve,
                    #                   mark_ready/mark_failed (guarded by
                    #                   game_id), load, clear
@@ -873,6 +886,21 @@ src/nani_pix_bot/
                    #   gate.py       the Verdict (PASSED / OFF_THEME /
                    #                 UNIDENTIFIABLE / UNAVAILABLE) and
                    #                 active_gate
+    cosmetics/    # season cosmetics without Telegram — see MECHANICS.md's
+                   # "Cosmetics":
+                   #   looks.py        per-slot look validation (problems),
+                   #                   allowed reactions, banner_path,
+                   #                   MAX_TITLE_ID_BYTES
+                   #   inventory.py    owns/grant/equip/unequip/equipped and
+                   #                   look(session, player, slot)
+                   #   flair.py        named(): a name plus its flair emoji
+                   #   frames.py       FRAMES and apply_frame
+                   #   stage.py        stage_png: a stage image with the
+                   #                   starter's frame
+                   #   reveal_choice.py  effect_for: the starter's
+                   #                   transition, else random
+                   #   profile.py      build(): banner, title, stamps, counts
+                   #   previews.py     render + the item_previews cache
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,
                    #                    games-enabled flag, autostart-
@@ -936,6 +964,7 @@ src/nani_pix_bot/
     announcement.py  # AnnouncementOutbox
     period.py     # PeriodResult, PeriodState
     season.py     # SeasonSchedule, SeasonXp, SeasonResult
+    cosmetics.py  # OwnedItem, EquippedItem, ItemPreview
     enums.py      # GameStatus, PixelStage, SetupStep, PixelReason, and Provider — the
                    # latter also exposes pick_prefix/id_attr_name/
                    # screenshot_module/search_module as properties, the
@@ -1228,6 +1257,10 @@ erDiagram
 | `season_xp` | v12 | Append-only Season XP: `season_id` (FK), `player_id` (FK), `amount`, `source` (an `XpSource` stored as a plain string: `win`, `host`, `first_guess`), `game_id` (a plain integer with **no** FK, like `currency_transfers.game_id`, so rows outlive a `/stop`ped game), `created_at`. Standings are `SUM(amount)` per player (`services/seasons/xp.py::standings`). Written only by `xp.on_event`, for games tagged to a season. |
 | `season_results` | v12 | A finished season's frozen podium: one row per player with XP (`season_id`, `player_id`, `rank` as a competition rank so ties share it, `xp`), unique on (`season_id`, `player_id`). Written once when the season finalizes (`lifecycle._finalize`), so the end post and any later view read the frozen result, not the live sum. |
 | `games` season columns | v12 | `season_id` (nullable FK to `season_schedule`): the season that was active when the game was activated (`services/game/state.py::activate_game`), `NULL` outside seasons. A game keeps it when it ends after the season's `end_at`, and its XP still counts. `anime_tags` (nullable JSON list of `{kind, name, mal_id}`): the identified anime's MAL genres/themes, fetched only while a gated season is active and kept for the confirm-time re-check. |
+| `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string, `admin` for now), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
+| `equipped_items` | v12 | The item equipped per slot: primary key (`player_id`, `slot`; `slot` a `CosmeticSlot` as a plain string), `item_id`. One item per slot, so equipping replaces. |
+| `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so each preview is rendered and uploaded once per language. |
+| `players.title_key` item encoding | v12 | Besides an achievement title key, `title_key` may be `item:<item id>`, a season title item (`services/achievements/titles.py`). Title item ids are at most 56 bytes (`looks.problems`) so they fit `/title`'s callback data. |
 
 ### Achievements
 

@@ -810,3 +810,38 @@ async def test_run_bot_autostart_gated_lines_carry_the_season(
     assert line.extra["gated"] is True
     assert line.extra["season_id"] == season_id
     assert line.extra["run_id"] == "demo_1"
+
+
+async def test_the_dethroned_winners_flair_shows_once_in_the_overthrow_caption(
+    session_factory, equip_flair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=1))
+        session.add(BotSettings(id=1, games_enabled=True, autostart_enabled=True))
+        session.flush()
+        equip_flair(session, 1)
+        session.commit()
+    context = _make_context(session_factory)
+    monkeypatch.setattr(autostart_service, "roll_overthrow", lambda: True)
+    monkeypatch.setattr(
+        "nani_pix_bot.services.pixelate.pixelate",
+        lambda image_bytes, target_width, algorithm: b"pixelated",
+    )
+
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
+        return _fake_pick()
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+
+    await autostart_timers.maybe_overthrow(
+        cast(ContextTypes.DEFAULT_TYPE, context),
+        session_factory,
+        winner_id=1,
+        winner_name="frieren",
+    )
+
+    caption = context.bot.send_media_group.call_args.kwargs["media"][0].caption
+    assert caption == _expected_first_turn_caption(
+        "dm_start.hard_mode_game_started_caption_overthrow_winner", winner="frieren 🌸"
+    )

@@ -1,0 +1,126 @@
+from datetime import UTC, datetime
+
+import pytest
+from sqlalchemy import func, select
+
+from nani_pix_bot.models.cosmetics import EquippedItem, OwnedItem
+from nani_pix_bot.models.enums import CosmeticSlot, ItemSource
+from nani_pix_bot.models.player import Player
+from nani_pix_bot.services.cosmetics import frames, inventory, looks
+from nani_pix_bot.services.cosmetics.inventory import ItemGrant
+
+ALICE = 2
+FLAIR = "demo_1/name_flair.blossom"
+
+
+@pytest.fixture
+def alice(session):
+    session.add(Player(telegram_user_id=ALICE, username="alice"))
+    session.flush()
+    return ALICE
+
+
+def test_grant_then_equip(session, alice) -> None:
+    assert inventory.grant(session, alice, ItemGrant(FLAIR, ItemSource.ADMIN))
+    assert inventory.owns(session, alice, FLAIR)
+    inventory.equip(session, alice, FLAIR)
+    assert inventory.look(session, alice, CosmeticSlot.NAME_FLAIR) == "🌸"
+
+
+def test_grant_twice_keeps_one_row(session, alice) -> None:
+    assert inventory.grant(session, alice, ItemGrant(FLAIR, ItemSource.ADMIN))
+    assert not inventory.grant(session, alice, ItemGrant(FLAIR, ItemSource.ADMIN))
+    assert session.scalar(select(func.count(OwnedItem.id))) == 1
+
+
+def test_grant_unknown_item_is_a_bug(session, alice) -> None:
+    with pytest.raises(ValueError, match="unknown item"):
+        inventory.grant(session, alice, ItemGrant("demo_1/nope", ItemSource.ADMIN))
+
+
+def test_cannot_equip_unowned(session, alice) -> None:
+    with pytest.raises(inventory.EquipRefusedError) as refused:
+        inventory.equip(session, alice, FLAIR)
+    assert refused.value.reason == "not_owned"
+    assert session.scalar(select(func.count()).select_from(EquippedItem)) == 0
+
+
+def test_one_item_per_slot_and_unequip(session, alice) -> None:
+    inventory.grant(session, alice, ItemGrant(FLAIR, ItemSource.ADMIN))
+    inventory.equip(session, alice, FLAIR)
+    inventory.equip(session, alice, FLAIR)  # idempotent
+    assert session.scalar(select(func.count()).select_from(EquippedItem)) == 1
+    inventory.unequip(session, alice, CosmeticSlot.NAME_FLAIR)
+    assert inventory.equipped(session, alice, CosmeticSlot.NAME_FLAIR) is None
+
+
+def test_owned_filters_by_slot(session, alice) -> None:
+    inventory.grant(session, alice, ItemGrant(FLAIR, ItemSource.ADMIN))
+    inventory.grant(session, alice, ItemGrant("demo_1/title.demo", ItemSource.ADMIN))
+    assert [r.item_id for r in inventory.owned(session, alice, CosmeticSlot.TITLE)] == [
+        "demo_1/title.demo"
+    ]
+    assert len(inventory.owned(session, alice)) == 2
+
+
+def test_equipped_with_unresolvable_item_is_none(session, alice, log_records) -> None:
+    session.add(
+        EquippedItem(player_id=alice, slot=CosmeticSlot.NAME_FLAIR, item_id="gone_1/name_flair.x")
+    )
+    session.flush()
+    assert inventory.look(session, alice, CosmeticSlot.NAME_FLAIR) is None
+    assert any(r.level == "WARNING" for r in log_records)
+
+
+def test_equipped_item_whose_look_no_longer_validates_is_none(
+    session, alice, log_records, monkeypatch
+) -> None:
+    frame = "demo_1/host_frame.border"
+    inventory.grant(session, alice, ItemGrant(frame, ItemSource.ADMIN))
+    inventory.equip(session, alice, frame)
+    assert inventory.equipped(session, alice, CosmeticSlot.HOST_FRAME) is not None
+
+    monkeypatch.setattr(
+        frames, "FRAMES", {k: v for k, v in frames.FRAMES.items() if k != "simple_border"}
+    )
+    monkeypatch.setattr(looks, "FRAMES", frames.FRAMES)
+    assert inventory.equipped(session, alice, CosmeticSlot.HOST_FRAME) is None
+    assert any(r.level == "WARNING" and r.extra["item_id"] == frame for r in log_records)
+
+
+def test_grant_is_logged(session, alice, log_records) -> None:
+    inventory.grant(session, alice, ItemGrant(FLAIR, ItemSource.ADMIN))
+    line = next(r for r in log_records if r.message.startswith("granted"))
+    assert line.extra["item_id"] == FLAIR
+
+
+def test_owned_comes_back_in_acquisition_order(session, alice) -> None:
+    inventory.grant(session, alice, ItemGrant("demo_1/title.demo", ItemSource.ADMIN))
+    inventory.grant(session, alice, ItemGrant(FLAIR, ItemSource.ADMIN))
+    owned_ids = [r.item_id for r in inventory.owned(session, alice)]
+    assert owned_ids == ["demo_1/title.demo", FLAIR]
+    older = session.scalars(select(OwnedItem).where(OwnedItem.item_id == FLAIR)).one()
+    older.acquired_at = datetime(2000, 1, 1, tzinfo=UTC)
+    session.flush()
+    assert [r.item_id for r in inventory.owned(session, alice)] == [FLAIR, "demo_1/title.demo"]
+
+
+def test_owned_rows_carry_the_row_id_and_filter_by_slot(session, alice) -> None:
+    inventory.grant(session, alice, ItemGrant(FLAIR, ItemSource.ADMIN))
+    inventory.grant(session, alice, ItemGrant("demo_1/title.demo", ItemSource.ADMIN))
+    row_id = session.scalar(select(OwnedItem.id).where(OwnedItem.item_id == FLAIR))
+    rows = inventory.owned_rows(session, alice, CosmeticSlot.NAME_FLAIR)
+    assert [(i, r.item_id) for i, r in rows] == [(row_id, FLAIR)]
+    assert len(inventory.owned_rows(session, alice)) == 2
+
+
+def test_owned_by_resolves_only_the_players_own_row(session, alice) -> None:
+    session.add(Player(telegram_user_id=7))
+    inventory.grant(session, alice, ItemGrant(FLAIR, ItemSource.ADMIN))
+    row_id = session.scalar(select(OwnedItem.id))
+    assert row_id is not None
+    resolved = inventory.owned_by(session, alice, row_id)
+    assert resolved is not None
+    assert resolved.item_id == FLAIR
+    assert inventory.owned_by(session, 7, row_id) is None
+    assert inventory.owned_by(session, alice, row_id + 100) is None
