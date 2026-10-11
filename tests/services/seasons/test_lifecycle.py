@@ -121,7 +121,7 @@ def test_finalize_logs_the_frozen_results_and_the_winner(session, log_records) -
     (line,) = _frozen(log_records)
     assert line.level == "INFO"
     assert line.extra["results"] == 2
-    assert line.extra["winner_id"] == 2
+    assert line.extra["winner_ids"] == [2]
     assert line.extra["season_id"] == row.id
     assert line.extra["run_id"] == "demo_1"
 
@@ -129,11 +129,12 @@ def test_finalize_logs_the_frozen_results_and_the_winner(session, log_records) -
 def test_finalize_logs_every_player_tied_for_first(session, log_records) -> None:
     _finalize_season(session, {1: 50, 2: 50, 3: 5})
     (line,) = _frozen(log_records)
-    assert line.extra["winner_id"] == [1, 2]
+    assert line.extra["winner_ids"] == [1, 2]
 
 
 def test_finalize_logs_when_nobody_scored(session, log_records) -> None:
     _finalize_season(session, {})
     (line,) = _frozen(log_records)
     assert line.extra["results"] == 0
+    assert line.extra["winner_ids"] == []
     assert "nobody scored" in line.message

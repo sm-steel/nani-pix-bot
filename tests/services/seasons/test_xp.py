@@ -3,16 +3,27 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import select
 
-from nani_pix_bot.models.enums import EventType, GameStatus, PixelStage, SeasonStatus, XpSource
+from nani_pix_bot.models.currency_transfer import CurrencyTransfer
+from nani_pix_bot.models.enums import (
+    CurrencyReason,
+    EventType,
+    GameStatus,
+    PixelStage,
+    SeasonStatus,
+    XpSource,
+)
 from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule, SeasonXp
+from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import XpTable
 from nani_pix_bot.services import events
+from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.events import LoggedEvent
 from nani_pix_bot.services.seasons import consumer, xp
+from tests import seasons_fixtures
 
 TABLE = XpTable(win_by_stage=(50, 40, 30, 20, 10), host_solved=15, host_unsolved=5, first_guess=5)
 NOW = datetime(2026, 11, 1, tzinfo=UTC)
@@ -202,3 +213,86 @@ def test_a_closing_seasons_late_game_still_pays(session) -> None:
         _event(EventType.GAME_WON, actor=ALICE, subject=STARTER, game_id=game.id, stage=1),
     )
     assert _xp_rows(session) == [(ALICE, 50, "win"), (STARTER, 15, "host")]
+
+
+def test_a_win_after_an_unsolved_end_pays_the_host_only_the_difference() -> None:
+    got = xp.awards(
+        xp.host_top_up(TABLE),
+        _event(EventType.GAME_WON, actor=ALICE, subject=STARTER, stage=2),
+        bot_game=False,
+        first_guess_of_player=False,
+    )
+    assert got == [xp.Award(ALICE, 40, XpSource.WIN), xp.Award(STARTER, 10, XpSource.HOST)]
+
+
+def test_the_host_top_up_is_never_negative() -> None:
+    table = XpTable(
+        win_by_stage=(50, 40, 30, 20, 10), host_solved=5, host_unsolved=8, first_guess=5
+    )
+    got = xp.awards(
+        xp.host_top_up(table),
+        _event(EventType.GAME_WON, actor=ALICE, subject=STARTER, stage=2),
+        bot_game=False,
+        first_guess_of_player=False,
+    )
+    assert got == [xp.Award(ALICE, 40, XpSource.WIN)]
+
+
+_COIN_REASONS = {XpSource.WIN: CurrencyReason.SEASON_WIN, XpSource.HOST: CurrencyReason.SEASON_HOST}
+
+
+def _game_award(session, game_id: int, player: int, source: XpSource) -> tuple[int, int]:
+    """The XP and 🪙 one game paid `player` as its winner or host."""
+    xp_total = sum(
+        session.scalars(
+            select(SeasonXp.amount).where(
+                SeasonXp.game_id == game_id,
+                SeasonXp.player_id == player,
+                SeasonXp.source == source,
+            )
+        )
+    )
+    coins_total = sum(
+        session.scalars(
+            select(CurrencyTransfer.amount).where(
+                CurrencyTransfer.game_id == game_id,
+                CurrencyTransfer.to_player_id == player,
+                CurrencyTransfer.reason == _COIN_REASONS[source],
+            )
+        )
+    )
+    return xp_total, coins_total
+
+
+def test_setwinner_tops_the_host_up_to_solved(session, tagged_game, log_records) -> None:
+    """An admin /setwinner on a tagged game that already ended UNSOLVED (and so
+    paid the host `host_unsolved`) leaves the host with exactly a solved game's
+    XP and 🪙, through the real game services and the real consumer."""
+    run = registry.all_runs()["demo_1"]
+    host, winner = tagged_game.starter_id, seasons_fixtures.WINNER
+
+    game_service.force_unsolved(tagged_game, cause="timeout")
+    assert _game_award(session, tagged_game.id, host, XpSource.HOST) == (
+        run.xp.host_unsolved,
+        run.coins.host_unsolved,
+    )
+
+    game_service.refinish(session, tagged_game, winner_id=winner)
+
+    assert _game_award(session, tagged_game.id, host, XpSource.HOST) == (
+        run.xp.host_solved,
+        run.coins.host_solved,
+    )
+    # The winner's own award is a solved game's, untouched by the top-up.
+    assert _game_award(session, tagged_game.id, winner, XpSource.WIN) == (
+        run.xp.win_by_stage[0],
+        run.coins.win,
+    )
+    line = next(r for r in log_records if "topped the host up to solved" in r.message)
+    assert line.level == "INFO"
+    assert line.extra["game_id"] == tagged_game.id
+    assert line.extra["recipient_id"] == host
+    assert (line.extra["xp"], line.extra["coins"]) == (
+        run.xp.host_solved - run.xp.host_unsolved,
+        run.coins.host_solved - run.coins.host_unsolved,
+    )

@@ -103,7 +103,15 @@ class GateTag:
 @dataclass(frozen=True)
 class Gate:
     """A game qualifies if its anime has ANY of these tags. `description`
-    is the player-facing rule per language, naming every tag."""
+    is the player-facing rule per language, naming every tag.
+
+    Its shape is fixed, because it is slotted into one sentence: a plural
+    noun phrase listing the tags, lowercase, joined with "or" and no
+    trailing period. The templates are "This season only {rule} can be
+    played." (EN) and «…можно играть только в {rule}.» (RU), so the RU
+    phrase follows «в» in the accusative. For example:
+    EN "slice-of-life, romance or school anime",
+    RU «повседневность, романтику или школу»."""
 
     any_of: tuple[GateTag, ...]
     description: Mapping[str, str]

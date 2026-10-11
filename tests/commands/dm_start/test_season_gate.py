@@ -224,15 +224,44 @@ async def test_no_season_means_no_gate(session_factory, monkeypatch) -> None:
 
 
 def test_refusal_text_names_the_rule() -> None:
-    text = season_gate.refusal_text(Verdict.OFF_THEME, "Romance", "EN")
-    assert "Romance" in text
-    assert text == i18n.t("season.gate.off_theme", "EN", rule="Romance")
+    text = season_gate.refusal_text(Verdict.OFF_THEME, "romance anime", "EN")
+    assert "romance anime" in text
+    assert text == i18n.t("season.gate.off_theme", "EN", rule="romance anime")
+
+
+def test_the_rule_reads_as_one_sentence_in_both_languages() -> None:
+    """Gate.description is a plural noun phrase listing the tags."""
+    rule_en = "slice-of-life, romance or school anime"
+    assert i18n.t("season.gate.off_theme", "EN", rule=rule_en) == (
+        "This season only slice-of-life, romance or school anime can be played — pick another one."
+    )
+    assert i18n.t("season.post.gate", "EN", rule=rule_en) == (
+        "This season only slice-of-life, romance or school anime can be played."
+    )
+    # RU checked by its parts: ruff's confusables check (RUF001) rejects the
+    # one-letter Cyrillic words a whole RU sentence literal would contain.
+    rule_ru = "повседневность, романтику или школу"
+    sentence_ru = "сезоне можно играть только в повседневность, романтику или школу"
+    refusal = i18n.t("season.gate.off_theme", "RU", rule=rule_ru)
+    assert sentence_ru in refusal
+    assert refusal.endswith("школу — выберите другое.")
+    assert i18n.t("season.post.gate", "RU", rule=rule_ru).endswith(sentence_ru + ".")
+
+
+def test_unidentifiable_advice_names_the_catalogues() -> None:
+    assert i18n.t("season.gate.unidentifiable", "EN") == (
+        "This season I need to know the anime's genre, and I couldn't find it for this one"
+        " — pick a different anime, or find this one by name in Shikimori or Tenrai search."
+    )
+    advice_ru = i18n.t("season.gate.unidentifiable", "RU")
+    assert "мне нужно знать жанр аниме" in advice_ru
+    assert advice_ru.endswith("найдите это по названию в поиске Shikimori или Tenrai.")
 
 
 @pytest.mark.usefixtures("active_season")
 def test_rule_text_is_the_gate_description_in_the_language(session_factory) -> None:
-    assert season_gate.rule_text(session_factory, "RU") == "Романтика"
-    assert season_gate.rule_text(session_factory, "EN") == "Romance"
+    assert season_gate.rule_text(session_factory, "RU") == "романтику"
+    assert season_gate.rule_text(session_factory, "EN") == "romance anime"
 
 
 @pytest.mark.usefixtures("active_season")
@@ -252,7 +281,7 @@ async def test_off_theme_catalogue_pick_is_refused_with_a_way_back(
     query = update.callback_query
     query.answer.assert_awaited_once_with()
     query.edit_message_text.assert_awaited_once_with(
-        season_gate.refusal_text(Verdict.OFF_THEME, "Romance", "EN"),
+        season_gate.refusal_text(Verdict.OFF_THEME, "romance anime", "EN"),
         reply_markup=back_to_methods_keyboard("EN"),
     )
     assert background_tasks == []  # no alias search, no preview
@@ -299,7 +328,7 @@ async def test_confirm_refusal_edits_the_preview_with_back_button(
     query = update.callback_query
     query.answer.assert_awaited_once_with()
     query.edit_message_text.assert_awaited_once_with(
-        season_gate.refusal_text(Verdict.OFF_THEME, "Romance", "EN"),
+        season_gate.refusal_text(Verdict.OFF_THEME, "romance anime", "EN"),
         reply_markup=back_to_methods_keyboard("EN"),
     )
     context.bot.send_photo.assert_not_awaited()
@@ -309,7 +338,7 @@ async def test_confirm_refusal_edits_the_preview_with_back_button(
 
 
 @pytest.mark.usefixtures("active_season")
-async def test_confirm_while_catalogues_are_down_alerts_and_keeps_the_preview(
+async def test_confirm_while_catalogues_are_down_says_so_and_keeps_the_preview(
     session_factory, monkeypatch
 ) -> None:
     _patch_tags(monkeypatch, error=TagsUnavailableError())
@@ -322,13 +351,40 @@ async def test_confirm_while_catalogues_are_down_alerts_and_keeps_the_preview(
     )
 
     query = update.callback_query
-    query.answer.assert_awaited_once_with(i18n.t("season.gate.unavailable", "EN"), show_alert=True)
+    query.answer.assert_awaited_once_with()
     query.edit_message_text.assert_not_awaited()
+    context.bot.send_message.assert_awaited_once_with(
+        chat_id=1, text=i18n.t("season.gate.unavailable", "EN")
+    )
     context.bot.send_photo.assert_not_awaited()
     game = _game(session_factory, game_id)
     assert game.status == GameStatus.SETUP
     assert game.setup_step == SetupStep.CONFIRMING
     assert game.title_english == "Toradora!"
+
+
+@pytest.mark.usefixtures("active_season")
+async def test_confirm_is_answered_before_the_catalogue_lookups(
+    session_factory, monkeypatch
+) -> None:
+    """Telegram's callback window is short: the tap is acknowledged before
+    the tag lookup's network round-trip, not after it."""
+    calls: list[str] = []
+    update = _callback_update(PREVIEW_CONFIRM_CALLBACK_DATA)
+    update.callback_query.answer = AsyncMock(side_effect=lambda *a, **k: calls.append("answer"))
+
+    async def fetch(*_a):
+        calls.append("fetch_tags")
+        return GURREN
+
+    monkeypatch.setattr(gate_service, "fetch_tags", fetch)
+    _tenrai_game(session_factory, 2001, "Gurren Lagann")
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _context(session_factory))
+    )
+
+    assert calls == ["answer", "fetch_tags"]
 
 
 @pytest.mark.usefixtures("active_season")

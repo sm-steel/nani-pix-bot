@@ -50,7 +50,7 @@ def test_teaser_names_the_season_and_its_dates(session) -> None:
 
 def test_start_post_states_the_gate_rule(session) -> None:
     post = _render(session, OutboxKind.SEASON_START)
-    assert "Romance" in post.text
+    assert "This season only romance anime can be played." in post.text
 
 
 def test_end_post_lists_the_podium(session) -> None:

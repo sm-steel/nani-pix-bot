@@ -89,7 +89,7 @@ RUN = SeasonRun(
     xp=XpTable(win_by_stage=(50, 40, 30, 20, 10), host_solved=15, host_unsolved=5, first_guess=5),
     gate=Gate(
         any_of=(GateTag("genre", "Romance", 22, shikimori_id=22),),
-        description=MappingProxyType({"EN": "Romance", "RU": "Романтика"}),
+        description=MappingProxyType({"EN": "romance anime", "RU": "романтику"}),
     ),
     items=ITEMS,
     coins=CoinTable(win=25, host_solved=15, host_unsolved=5, first_guess=5),

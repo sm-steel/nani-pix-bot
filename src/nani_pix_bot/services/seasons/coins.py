@@ -19,7 +19,7 @@ _REASONS = {
 
 
 def pay(session: Session, event: LoggedEvent, found: xp.Tagged) -> list[xp.Award]:
-    table = found.run.coins.as_xp_table()
+    table = xp.payable(found.run.coins.as_xp_table(), found)
     paid = xp.awards(
         table, event, bot_game=found.game.hard_mode, first_guess_of_player=found.first_guess
     )

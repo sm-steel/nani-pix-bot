@@ -1738,7 +1738,9 @@ until a run module is added.
   first if unset), stored in UTC. The start can move only before the
   season begins; the end can move until the season starts closing, and an
   end in the past on a running season ends it now (early stop). Date
-  changes before the start re-post the teaser.
+  changes before the start re-post the teaser — unless a teaser for that
+  season is still waiting in the outbox: it reads the dates when it posts,
+  so quick edits share one post.
 - The `season_boundary` job advances the season at each start/end and
   catches up after downtime. A closing season whose last tagged game was
   deleted by `/stop` is finalized by the job's hourly fallback run.
@@ -1774,6 +1776,12 @@ add their own rows (source `objective`, see "Objectives" below).
 "First guess" is answered from the player's `game_guesses` rows for that
 game (their first), not from a separate ledger. Standings are the sum of XP
 per player.
+
+**`/setwinner` on a game that ended unsolved** (it has an earlier
+`game_unsolved` event) already paid the host `host_unsolved`, so its win
+pays the host only `host_solved - host_unsolved` (never below 0), in XP and
+in 🪙 alike: the host ends with exactly a solved game's award. The winner's
+own award is the usual one.
 
 ### Season Coins, Pass and Premium
 
@@ -1887,7 +1895,10 @@ nothing: its queued posts are dropped unsent.
 A run may declare a gate: a list of accepted MAL genres/themes, where a
 game qualifies if its anime has **any** of them (a season about Slice of
 Life, Romance or the School theme accepts all three). The player-facing
-rule text names every tag.
+rule text names every tag, in one fixed shape (the `Gate` docstring): a
+plural noun phrase slotted into "This season only {rule} can be played."
+(EN, e.g. "slice-of-life, romance or school anime") and «В этом сезоне можно
+играть только в {rule}.» (RU, accusative after «в»).
 
 - **Tags** come from the MAL id: Tenrai first (matched by MAL tag id),
   Shikimori as the fallback (matched by kind + English name, since some of
@@ -1902,7 +1913,10 @@ rule text names every tag.
   refusal also clears a catalogue screenshot and resets setup to the method
   pick; a result for a pick that has since changed (a stale verdict) is
   dropped. **Unavailable**: no provider answered after retries — the player
-  is told to try again, and it is never reported as off-theme.
+  is told to try again, and it is never reported as off-theme. Confirm
+  answers the tap before the gate's catalogue lookups (Telegram's callback
+  window is short), so "unavailable" there arrives as a DM message of its
+  own, the preview left as it is for another tap.
 - **Bot-started games** are gated too: the autostart pick queries Shikimori
   on **one randomly chosen** gate tag's id (its filter ANDs several ids, so
   it can't take the whole list), and a Tenrai pick is kept only if its tags
