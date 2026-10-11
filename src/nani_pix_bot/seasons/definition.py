@@ -22,6 +22,8 @@ class RewardKind(enum.StrEnum):
     CURRENCY = "currency"  # 💠
     # 🎟 the clue token; named so a security linter doesn't read "token" as a secret
     CLUE_TICKET = "clue_token"
+    STAMP = "stamp"  # the season stamp's gold ring (free track); the claim is the reward
+    STAMP_PLUS = "stamp_plus"  # the gold season stamp art (premium track)
 
 
 @dataclass(frozen=True)
@@ -48,6 +50,14 @@ class Reward:
     @classmethod
     def clue_ticket(cls) -> "Reward":
         return cls(RewardKind.CLUE_TICKET)
+
+    @classmethod
+    def stamp(cls) -> "Reward":
+        return cls(RewardKind.STAMP)
+
+    @classmethod
+    def stamp_plus(cls) -> "Reward":
+        return cls(RewardKind.STAMP_PLUS)
 
 
 @dataclass(frozen=True)
@@ -263,6 +273,23 @@ def _reward_problems(run: SeasonRun, number: int, reward: Reward) -> list[str]:
     return []
 
 
+def _stamp_problems(run: SeasonRun) -> list[str]:
+    """The stamp rewards: one gold ring on the free track, one plus art on the
+    premium track, and no plus art without the ring."""
+    free = [t.free.kind for t in run.tiers if t.free is not None]
+    premium = [t.premium.kind for t in run.tiers if t.premium is not None]
+    rings = free.count(RewardKind.STAMP)
+    pluses = premium.count(RewardKind.STAMP_PLUS)
+    checks = (
+        (rings > 1, "at most one stamp reward per pass"),
+        (pluses > 1, "at most one stamp_plus reward per pass"),
+        (RewardKind.STAMP in premium, "stamp only on the free track"),
+        (RewardKind.STAMP_PLUS in free, "stamp_plus only on the premium track"),
+        (pluses > 0 and rings == 0, "stamp_plus needs a stamp somewhere on the free track"),
+    )
+    return [message for failed, message in checks if failed]
+
+
 def pass_problems(run: SeasonRun) -> list[str]:
     """Everything wrong with `run`'s pass; [] when it's valid."""
     problems: list[str] = []
@@ -286,7 +313,7 @@ def pass_problems(run: SeasonRun) -> list[str]:
         problems.append(f"{tokens} clue token rewards; at most {MAX_CLUE_TOKEN_TIERS} per pass")
     if any(tier.premium is not None for tier in run.tiers) and run.premium_price <= 0:
         problems.append("premium rewards need a premium_price")
-    return problems
+    return problems + _stamp_problems(run)
 
 
 def _pass_item_keys(run: SeasonRun) -> set[str]:

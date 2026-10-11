@@ -10,10 +10,12 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.cosmetics import OwnedItem
 from nani_pix_bot.models.enums import CosmeticSlot, Rarity
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.models.season import SeasonPass
 from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.definition import RewardKind, SeasonRun
 from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import catalogue, names, titles
-from nani_pix_bot.services.cards import StatEntry, season_background
+from nani_pix_bot.services.cards import StatEntry, season_background, season_stamp
 from nani_pix_bot.services.cosmetics import inventory, looks, showcase
 
 
@@ -21,7 +23,8 @@ from nani_pix_bot.services.cosmetics import inventory, looks, showcase
 class Stamp:
     run_id: str
     label: str
-    gold: bool  # pass completed (Phase 3); never set yet
+    gold: bool  # the free pass reached its STAMP tier: the ring is gold
+    art: bytes | None = None  # Sakura+ art if its premium tier was claimed, else the stamp art
 
 
 @dataclass(frozen=True)
@@ -69,9 +72,31 @@ def neighbour(order: list[int], current: int, step: int) -> int:
     return order[(order.index(current) + step) % len(order)]
 
 
-def _stamp(run_id: str, lang: str) -> Stamp:
+def _tier_number(run: SeasonRun, kind: RewardKind, *, premium: bool) -> int | None:
+    """The 1-based tier whose free (or premium) reward is `kind`, if any."""
+    for number, tier in enumerate(run.tiers, start=1):
+        reward = tier.premium if premium else tier.free
+        if reward is not None and reward.kind is kind:
+            return number
+    return None
+
+
+def _stamp(
+    session: Session, player_id: int, season_id: int | None, run_id: str, lang: str
+) -> Stamp:
+    """One season stamp: gold once the free STAMP tier is claimed; the Sakura+
+    art once the premium STAMP_PLUS tier is, else the stamp art, else none."""
     run = registry.get(run_id)
-    return Stamp(run_id, run.name(lang) if run else run_id, gold=False)
+    label = run.name(lang) if run else run_id
+    progress = session.get(SeasonPass, (season_id, player_id)) if season_id is not None else None
+    if run is None or progress is None:
+        return Stamp(run_id, label, gold=False, art=season_stamp(run_id, plus=False))
+    ring = _tier_number(run, RewardKind.STAMP, premium=False)
+    plus = _tier_number(run, RewardKind.STAMP_PLUS, premium=True)
+    gold = ring is not None and progress.free_claimed >= ring
+    has_plus = plus is not None and progress.premium_claimed >= plus
+    art = season_stamp(run_id, plus=True) if has_plus else None
+    return Stamp(run_id, label, gold=gold, art=art or season_stamp(run_id, plus=False))
 
 
 def _badges(session: Session, player_id: int, lang: str) -> tuple[Badge, ...]:
@@ -96,7 +121,12 @@ def _banner(session: Session, player_id: int, played: list[str]) -> bytes | None
 
 def build(session: Session, player_id: int, lang: str) -> ProfileView:
     played = showcase.stamp_choices(session, player_id)
-    stamps = tuple(_stamp(run_id, lang) for run_id in showcase.shown_stamps(session, player_id))
+    # the newest season of a run wins (later dict entries overwrite earlier ones)
+    seasons = {run_id: sid for sid, run_id in reversed(showcase.stamp_seasons(session, player_id))}
+    stamps = tuple(
+        _stamp(session, player_id, seasons.get(run_id), run_id, lang)
+        for run_id in showcase.shown_stamps(session, player_id)
+    )
     player = session.get(Player, player_id)
     owned = session.scalar(
         select(func.count()).select_from(OwnedItem).where(OwnedItem.player_id == player_id)

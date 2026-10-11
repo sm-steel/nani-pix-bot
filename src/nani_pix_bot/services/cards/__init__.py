@@ -4,6 +4,7 @@ from nani_pix_bot.services.cards.backgrounds import (
     load_background,
     podium_slot,
     season_background,
+    season_stamp,
     unlock_slot,
 )
 from nani_pix_bot.services.cards.profile_card import (
@@ -43,5 +44,6 @@ __all__ = [
     "render_season_banner",
     "render_unlock_card",
     "season_background",
+    "season_stamp",
     "unlock_slot",
 ]

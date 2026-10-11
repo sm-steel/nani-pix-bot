@@ -43,7 +43,7 @@ def _xp(session, season_id, player_id, amount) -> None:
 
 def test_reached_counts_tiers_by_threshold(demo) -> None:
     xps = (0, 19, 20, 59, 60, 500)
-    assert [season_pass.reached(demo, xp) for xp in xps] == [0, 0, 1, 1, 2, 3]
+    assert [season_pass.reached(demo, xp) for xp in xps] == [0, 0, 1, 1, 2, 4]
 
 
 def test_sync_grants_each_free_tier_once(session, season, demo) -> None:
@@ -57,7 +57,7 @@ def test_sync_grants_each_free_tier_once(session, season, demo) -> None:
 
 def test_crossing_several_tiers_at_once_grants_them_in_order(session, season, demo) -> None:
     _xp(session, season.id, 1, 200)
-    assert [g.tier for g in season_pass.sync(session, season, demo, 1)] == [1, 2, 3]
+    assert [g.tier for g in season_pass.sync(session, season, demo, 1)] == [1, 2, 3, 4]
     assert consumables.count(session, 1, ConsumableKind.CLUE_TICKET) == 1
 
 
@@ -105,7 +105,7 @@ def test_a_grant_queues_one_dm_listing_everything(session, season, demo) -> None
     season_pass.sync(session, season, demo, 1)
     (row,) = [r for r in outbox.pending(session, 10) if r.kind == OutboxKind.SEASON_TIER]
     assert row.payload["player_id"] == 1
-    assert [g["tier"] for g in row.payload["granted"]] == [1, 2, 3]
+    assert [g["tier"] for g in row.payload["granted"]] == [1, 2, 3, 4]
 
 
 def test_completing_the_free_track_queues_a_topic_line(session, season, demo) -> None:
@@ -146,7 +146,7 @@ def test_view_lines_show_progress_and_every_tier(session, season, demo) -> None:
     season_pass.sync(session, season, demo, 1)
     text = "\n".join(pass_view.view_lines(session, season, demo, 1, "EN"))
     assert "60 XP" in text
-    assert "Tier 2/3" in text
+    assert "Tier 2/4" in text
     assert "next tier at 120 XP" in text
     assert "✅ 1." in text
     assert "▫️ 3." in text
@@ -164,7 +164,7 @@ def test_view_lines_after_the_last_tier_have_no_next_line(session, season, demo)
 def test_view_lines_for_a_player_without_xp_show_an_empty_pass(session, season, demo) -> None:
     text = "\n".join(pass_view.view_lines(session, season, demo, 2, "EN"))
     assert "0 XP" in text
-    assert "Tier 0/3" in text
+    assert "Tier 0/4" in text
     assert "✅" not in text
 
 

@@ -5,9 +5,10 @@ glass grid on top. Pure Pillow, no Telegram; the caller localizes every string."
 import hashlib
 from dataclasses import dataclass
 from functools import lru_cache
+from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 from nani_pix_bot.models.enums import Rarity
 from nani_pix_bot.services.cards.glass import gradient, with_grid
@@ -67,6 +68,7 @@ _STAT_GAP = 44
 class StampEntry:
     label: str
     gold: bool = False
+    art: bytes | None = None  # the run's stamp art (PNG); None draws the initials disc
 
 
 @dataclass(frozen=True)
@@ -93,15 +95,31 @@ class ProfileCard:
     badges: tuple[BadgeEntry, ...] = ()
 
 
+def _stamp_face(entry: StampEntry, size: int) -> Image.Image:
+    """The disc inside the ring: the run's art cropped to a circle, else the initials."""
+    if entry.art is None:
+        seed = int.from_bytes(hashlib.sha256(entry.label.encode()).digest()[:4], "big")
+        return avatar_disc(None, entry.label, seed, size)
+    art = (
+        Image.open(BytesIO(entry.art))
+        .convert("RGBA")
+        .resize((size, size), Image.Resampling.LANCZOS)
+    )
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size - 1, size - 1), fill=255)
+    face = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    face.paste(art, (0, 0), ImageChops.multiply(art.getchannel("A"), mask))
+    return face
+
+
 def _stamp_disc(entry: StampEntry) -> Image.Image:
-    """The initials disc and its ring, drawn at SUPERSAMPLE and shrunk so both edges
+    """The art (or initials) disc and its ring, drawn at SUPERSAMPLE and shrunk so both edges
     are smooth; the ring is gold when the pass was completed."""
     ring_width = _STAMP_RING * SUPERSAMPLE
     disc_size = _STAMP_SIZE * SUPERSAMPLE
     side = disc_size + 2 * ring_width
     big = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    seed = int.from_bytes(hashlib.sha256(entry.label.encode()).digest()[:4], "big")
-    disc = avatar_disc(None, entry.label, seed, disc_size)
+    disc = _stamp_face(entry, disc_size)
     big.paste(disc, (ring_width, ring_width), disc)
     ring = RARITY_COLORS[Rarity.GOLD] if entry.gold else _MUTED
     ImageDraw.Draw(big).ellipse((0, 0, side - 1, side - 1), outline=ring, width=ring_width)

@@ -758,6 +758,8 @@
   "season_pass.done": "🎫 {player} completed the {season} pass!",
   "season_pass.reward.item": "{slot} «{name}»",
   "season_pass.reward.clue_token": "🎟 Clue token",
+  "season_pass.reward.stamp": "the season stamp's gold ring",
+  "season_pass.reward.stamp_plus": "the gold season stamp",
   "commands.seasonpass": "Your season pass",
   "commands.seasonshop": "Season Shop — spend your 🪙",
   "season_shop.dm_only": "The Season Shop opens in a private chat with me — send /seasonshop there.",
