@@ -13,6 +13,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.seasons import schedule
 
 NOW = datetime(2026, 11, 1, tzinfo=UTC)
 
@@ -107,3 +108,170 @@ async def test_a_scheduled_season_shows_an_empty_pass(session_factory) -> None:
 async def test_showing_the_pass_is_logged(session_factory, season, log_records) -> None:
     await _run(session_factory, _update())
     assert any(r.level == "INFO" and "/seasonpass" in r.message for r in log_records)
+
+
+# --- Premium buttons ---
+
+
+def _buttons(markup) -> list[str]:
+    return [b.callback_data for row in markup.inline_keyboard for b in row]
+
+
+def _query(data: str, *, user_id: int = 1) -> MagicMock:
+    update = MagicMock()
+    update.callback_query.data = data
+    update.callback_query.from_user.id = user_id
+    update.callback_query.from_user.username = "me"
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+    return update
+
+
+async def _tap(session_factory, data: str, *, member: bool = True, user_id: int = 1) -> MagicMock:
+    update = _query(data, user_id=user_id)
+    await season_pass_module.season_pass_callback(
+        cast(Update, update),
+        cast(ContextTypes.DEFAULT_TYPE, _context(session_factory, member=member)),
+    )
+    return update.callback_query
+
+
+def _set_currency(session_factory, amount: int) -> None:
+    with session_factory() as session:
+        session.get(Player, 1).currency = amount
+        session.commit()
+
+
+def _season_id(session_factory) -> int:
+    with session_factory() as session:
+        current = schedule.current(session)
+        assert current is not None
+        return current.id
+
+
+def _alert(query: MagicMock) -> str:
+    assert query.answer.await_args.kwargs.get("show_alert") is True
+    return query.answer.await_args.args[0]
+
+
+async def test_the_view_offers_premium_while_it_is_unbought(session_factory, season) -> None:
+    update = _update()
+    await _run(session_factory, update)
+    markup = update.message.reply_text.await_args.kwargs["reply_markup"]
+    sid = _season_id(session_factory)
+    assert _buttons(markup) == [f"spass:buy:{sid}"]
+    assert markup.inline_keyboard[0][0].text == i18n.t("season_pass.buy", "EN", price=150)
+
+
+async def test_no_buy_button_once_premium_is_bought(session_factory, season) -> None:
+    _set_currency(session_factory, 1000)
+    sid = _season_id(session_factory)
+    await _tap(session_factory, f"spass:yes:{sid}")
+    update = _update()
+    await _run(session_factory, update)
+    assert update.message.reply_text.await_args.kwargs["reply_markup"] is None
+
+
+async def test_no_buy_button_while_the_season_is_closing(session_factory) -> None:
+    _add_season(session_factory, SeasonStatus.CLOSING)
+    update = _update()
+    await _run(session_factory, update)
+    assert update.message.reply_text.await_args.kwargs["reply_markup"] is None
+
+
+async def test_buy_asks_to_confirm(session_factory, season) -> None:
+    sid = _season_id(session_factory)
+    query = await _tap(session_factory, f"spass:buy:{sid}")
+    text = query.edit_message_text.await_args.args[0]
+    assert text == i18n.t("season_pass.confirm", "EN", price=150)
+    markup = query.edit_message_text.await_args.kwargs["reply_markup"]
+    assert _buttons(markup) == [f"spass:yes:{sid}", f"spass:no:{sid}"]
+    query.answer.assert_awaited_once_with()
+
+
+async def test_yes_buys_and_shows_the_view(session_factory, season) -> None:
+    _set_currency(session_factory, 1000)
+    sid = _season_id(session_factory)
+    query = await _tap(session_factory, f"spass:yes:{sid}")
+    query.answer.assert_awaited_once_with()
+    assert query.edit_message_text.await_args.kwargs.get("reply_markup") is None
+    assert "⭐ Premium" in query.edit_message_text.await_args.args[0]
+    with session_factory() as session:
+        assert session.get(Player, 1).currency == 850
+
+
+async def test_no_goes_back_to_the_view(session_factory, season) -> None:
+    sid = _season_id(session_factory)
+    query = await _tap(session_factory, f"spass:no:{sid}")
+    assert "Demo Season" in query.edit_message_text.await_args.args[0]
+    assert _buttons(query.edit_message_text.await_args.kwargs["reply_markup"]) == [
+        f"spass:buy:{sid}"
+    ]
+
+
+async def test_too_poor_gets_an_alert_with_the_balance(session_factory, season) -> None:
+    _set_currency(session_factory, 10)
+    sid = _season_id(session_factory)
+    query = await _tap(session_factory, f"spass:yes:{sid}")
+    assert _alert(query) == i18n.t("season_pass.refused.insufficient", "EN", price=150, balance=10)
+    query.edit_message_text.assert_not_awaited()
+
+
+async def test_buying_twice_is_refused(session_factory, season) -> None:
+    _set_currency(session_factory, 1000)
+    sid = _season_id(session_factory)
+    await _tap(session_factory, f"spass:yes:{sid}")
+    query = await _tap(session_factory, f"spass:yes:{sid}")
+    assert _alert(query) == i18n.t("season_pass.refused.already", "EN")
+    with session_factory() as session:
+        assert session.get(Player, 1).currency == 850
+
+
+async def test_an_old_messages_season_is_not_open(session_factory, season) -> None:
+    _set_currency(session_factory, 1000)
+    sid = _season_id(session_factory)
+    query = await _tap(session_factory, f"spass:yes:{sid + 5}")
+    assert _alert(query) == i18n.t("season_pass.refused.not_open", "EN")
+    with session_factory() as session:
+        assert session.get(Player, 1).currency == 1000
+
+
+async def test_a_confirm_for_an_old_season_is_not_open(session_factory, season) -> None:
+    sid = _season_id(session_factory)
+    query = await _tap(session_factory, f"spass:buy:{sid + 5}")
+    assert _alert(query) == i18n.t("season_pass.refused.not_open", "EN")
+
+
+async def test_no_season_at_all_is_not_open(session_factory) -> None:
+    query = await _tap(session_factory, "spass:buy:1")
+    assert _alert(query) == i18n.t("season_pass.refused.not_open", "EN")
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        "spass:",
+        "spass:buy",
+        "spass:buy:",
+        "spass:buy:x",
+        "spass:zap:1",
+        "spass:buy:-1",
+        f"spass:buy:{2**63}",
+    ],
+)
+async def test_a_malformed_tap_is_answered_and_ignored(
+    session_factory, season, log_records, data
+) -> None:
+    query = await _tap(session_factory, data)
+    query.answer.assert_awaited_once_with()
+    query.edit_message_text.assert_not_awaited()
+    assert any(r.level == "WARNING" and "malformed" in r.message for r in log_records)
+
+
+async def test_a_non_member_cannot_buy(session_factory, season) -> None:
+    _set_currency(session_factory, 1000)
+    sid = _season_id(session_factory)
+    query = await _tap(session_factory, f"spass:yes:{sid}", member=False)
+    assert _alert(query) == i18n.t("dm_start.not_a_member", "EN")
+    with session_factory() as session:
+        assert session.get(Player, 1).currency == 1000

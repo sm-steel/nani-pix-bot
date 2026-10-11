@@ -2,6 +2,7 @@
 everyone, premium ones with Premium, each granted once and in order as XP
 reaches it."""
 
+import enum
 from dataclasses import dataclass
 
 from loguru import logger
@@ -165,3 +166,65 @@ def describe(run: SeasonRun, reward: Reward, lang: str) -> str:
     if reward.kind is RewardKind.CURRENCY:
         return f"{reward.amount} 💠"
     return i18n.t("season_pass.reward.clue_token", lang)
+
+
+class PremiumRefusal(enum.StrEnum):
+    NOT_OPEN = "not_open"
+    ALREADY = "already"
+    NO_PREMIUM = "no_premium"
+    INSUFFICIENT = "insufficient"
+
+
+class PremiumRefusedError(Exception):
+    def __init__(self, refusal: PremiumRefusal) -> None:
+        super().__init__(refusal.value)
+        self.refusal = refusal
+
+
+def _premium_refusal(
+    season: SeasonSchedule, run: SeasonRun, progress: SeasonPass
+) -> PremiumRefusal | None:
+    if season.status != SeasonStatus.ACTIVE:
+        return PremiumRefusal.NOT_OPEN
+    if not any(tier.premium for tier in run.tiers):
+        return PremiumRefusal.NO_PREMIUM
+    if progress.premium_transfer_id is not None:
+        return PremiumRefusal.ALREADY
+    return None
+
+
+def buy_premium(
+    session: Session, season: SeasonSchedule, run: SeasonRun, player: Player
+) -> list[Granted]:
+    """Charge `run.premium_price` 💠 for Premium (only while the season is ACTIVE) and
+    grant every premium tier the player's XP already reached."""
+    progress = row(session, season.id, player.telegram_user_id)
+    refusal = _premium_refusal(season, run, progress)
+    if refusal is not None:
+        logger.warning(
+            "refused Premium for {run_id}: {reason}",
+            run_id=run.run_id,
+            reason=refusal.value,
+            season_id=season.id,
+        )
+        raise PremiumRefusedError(refusal)
+    entry = wallet.LedgerEntry(CurrencyReason.PREMIUM, season_id=season.id)
+    try:
+        charge = wallet.debit(session, player, run.premium_price, entry)
+    except wallet.InsufficientCurrencyError as error:
+        logger.warning(
+            "refused Premium for {run_id}: {reason}",
+            run_id=run.run_id,
+            reason=PremiumRefusal.INSUFFICIENT.value,
+            season_id=season.id,
+        )
+        raise PremiumRefusedError(PremiumRefusal.INSUFFICIENT) from error
+    session.flush()
+    progress.premium_transfer_id = charge.id
+    logger.info(
+        "bought Premium for {run_id} ({price} 💠)",
+        run_id=run.run_id,
+        price=run.premium_price,
+        season_id=season.id,
+    )
+    return sync(session, season, run, player.telegram_user_id)

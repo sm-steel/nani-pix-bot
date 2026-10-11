@@ -1,3 +1,5 @@
+import dataclasses
+
 import pytest
 from sqlalchemy import select
 
@@ -163,3 +165,72 @@ def test_view_lines_for_a_player_without_xp_show_an_empty_pass(session, season, 
     assert "0 XP" in text
     assert "Tier 0/3" in text
     assert "✅" not in text
+
+
+@pytest.fixture
+def rich(session, season) -> Player:
+    player = session.get(Player, 1)
+    player.currency = 1000
+    session.flush()
+    return player
+
+
+@pytest.fixture
+def poor(session, season) -> Player:
+    player = session.get(Player, 1)
+    player.currency = 10
+    session.flush()
+    return player
+
+
+def test_buying_premium_charges_and_grants_reached_tiers(session, season, demo, rich) -> None:
+    _xp(session, season.id, 1, 60)
+    season_pass.sync(session, season, demo, 1)
+    granted = season_pass.buy_premium(session, season, demo, rich)
+    assert [(g.tier, g.premium) for g in granted] == [(1, True), (2, True)]
+    assert rich.currency == 1000 - 150
+    assert season_pass.row(session, season.id, 1).premium_transfer_id is not None
+
+
+def test_premium_later_tiers_come_as_xp_grows(session, season, demo, rich) -> None:
+    season_pass.buy_premium(session, season, demo, rich)
+    _xp(session, season.id, 1, 200)
+    granted = season_pass.sync(session, season, demo, 1)
+    assert (3, True) in [(g.tier, g.premium) for g in granted]
+
+
+def test_buying_premium_twice_charges_once(session, season, demo, rich) -> None:
+    season_pass.buy_premium(session, season, demo, rich)
+    with pytest.raises(season_pass.PremiumRefusedError) as refused:
+        season_pass.buy_premium(session, season, demo, rich)
+    assert refused.value.refusal is season_pass.PremiumRefusal.ALREADY
+    assert rich.currency == 1000 - 150
+
+
+def test_premium_needs_enough_currency(session, season, demo, poor) -> None:
+    with pytest.raises(season_pass.PremiumRefusedError) as refused:
+        season_pass.buy_premium(session, season, demo, poor)
+    assert refused.value.refusal is season_pass.PremiumRefusal.INSUFFICIENT
+    assert poor.currency == 10
+    assert season_pass.row(session, season.id, 1).premium_transfer_id is None
+
+
+def test_premium_is_only_sold_while_the_season_is_active(session, season, demo, rich) -> None:
+    season.status = SeasonStatus.CLOSING
+    with pytest.raises(season_pass.PremiumRefusedError) as refused:
+        season_pass.buy_premium(session, season, demo, rich)
+    assert refused.value.refusal is season_pass.PremiumRefusal.NOT_OPEN
+
+
+def test_a_run_without_a_premium_track_sells_none(session, season, demo, rich) -> None:
+    free_only = dataclasses.replace(
+        demo, tiers=tuple(dataclasses.replace(t, premium=None) for t in demo.tiers)
+    )
+    with pytest.raises(season_pass.PremiumRefusedError) as refused:
+        season_pass.buy_premium(session, season, free_only, rich)
+    assert refused.value.refusal is season_pass.PremiumRefusal.NO_PREMIUM
+
+
+def test_the_purchase_is_logged(session, season, demo, rich, log_records) -> None:
+    season_pass.buy_premium(session, season, demo, rich)
+    assert any(r.level == "INFO" and "bought Premium" in r.message for r in log_records)

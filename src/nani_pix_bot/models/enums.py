@@ -349,6 +349,7 @@ class CurrencyReason(enum.StrEnum):
     SEASON_HOST = "season_host"
     SEASON_FIRST_GUESS = "season_first_guess"
     TIER_REWARD = "pass_reward"
+    PREMIUM = "premium_pass"
 
 
 class Currency(enum.StrEnum):

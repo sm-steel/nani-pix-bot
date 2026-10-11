@@ -340,6 +340,9 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(cosmetics.cosmetics_callback, pattern=rf"^{cosmetics.PREFIX}")
     )
     application.add_handler(
+        CallbackQueryHandler(season_pass.season_pass_callback, pattern=rf"^{season_pass.PREFIX}")
+    )
+    application.add_handler(
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
     )
     application.add_handler(
