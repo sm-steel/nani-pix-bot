@@ -424,6 +424,8 @@ class OutboxKind(enum.StrEnum):
     SEASON_TEASER = "season_teaser"
     SEASON_START = "season_start"
     SEASON_END = "season_end"
+    SEASON_TIER = "season_tier"
+    SEASON_COMPLETE = "season_pass_done"
 
 
 class PeriodType(enum.StrEnum):
