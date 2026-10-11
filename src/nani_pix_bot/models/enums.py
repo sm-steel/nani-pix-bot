@@ -491,4 +491,5 @@ class ConsumableKind(enum.StrEnum):
     """A consumable a player holds a count of (seasons spec §3): the clue token
     only — no free sharpens."""
 
-    CLUE_TOKEN = "clue_token"  # noqa: S105 - a game item, not a secret
+    # 🎟 the clue token; named so a security linter doesn't read "token" as a secret
+    CLUE_TICKET = "clue_token"

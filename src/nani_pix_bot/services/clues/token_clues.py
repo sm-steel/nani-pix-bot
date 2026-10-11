@@ -27,7 +27,7 @@ def pay(
 ) -> CluePurchase | None:
     """Spend one of the buyer's clue tokens on the clue; None if they hold none.
     `detail` is shop._detail(request), the purchase line's log kwargs."""
-    if not consumables.take(session, buyer.telegram_user_id, ConsumableKind.CLUE_TOKEN):
+    if not consumables.take(session, buyer.telegram_user_id, ConsumableKind.CLUE_TICKET):
         return None
     bought = CluePurchase(
         game_id=game.id,
@@ -53,7 +53,7 @@ def refund(session: Session, purchase_row: CluePurchase) -> int:
     consumables.add(
         session,
         purchase_row.player_id,
-        ConsumableKind.CLUE_TOKEN,
+        ConsumableKind.CLUE_TICKET,
         why=f"refund of clue purchase {purchase_row.id}",
     )
     session.delete(purchase_row)

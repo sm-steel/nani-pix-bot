@@ -4,7 +4,7 @@ from nani_pix_bot.models.enums import ConsumableKind
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services.cosmetics import consumables
 
-TOKEN = ConsumableKind.CLUE_TOKEN
+TOKEN = ConsumableKind.CLUE_TICKET
 
 
 @pytest.fixture(autouse=True)
@@ -18,7 +18,7 @@ def test_nobody_starts_with_tokens(session) -> None:
 
 
 def test_add_and_take(session) -> None:
-    assert consumables.add(session, 1, TOKEN, 2, why="test") == 2
+    assert consumables.add(session, 1, TOKEN, "test", 2) == 2
     assert consumables.take(session, 1, TOKEN) is True
     assert consumables.count(session, 1, TOKEN) == 1
 

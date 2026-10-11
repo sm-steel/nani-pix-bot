@@ -9,7 +9,7 @@ from nani_pix_bot.services.clues.shop import PurchaseRequest
 from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.economy import earning
 
-TOKEN = ConsumableKind.CLUE_TOKEN
+TOKEN = ConsumableKind.CLUE_TICKET
 
 
 @pytest.fixture

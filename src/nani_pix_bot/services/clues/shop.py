@@ -205,7 +205,7 @@ def offers(session: Session, game: Game, buyer: Player, lang: str) -> list[Offer
     `lang` picks the title fallback chain, so availability matches the
     title the clue will actually use."""
     owned = owned_kinds(session, game.id, buyer.telegram_user_id)
-    tokens = consumables.count(session, buyer.telegram_user_id, ConsumableKind.CLUE_TOKEN)
+    tokens = consumables.count(session, buyer.telegram_user_id, ConsumableKind.CLUE_TICKET)
     result = []
     for kind in _MENU_ORDER:
         if kind in owned and kind in TEXT_KINDS:

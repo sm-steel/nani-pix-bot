@@ -20,7 +20,7 @@ def count(session: Session, player_id: int, kind: ConsumableKind) -> int:
     return 0 if row is None else row.count
 
 
-def add(session: Session, player_id: int, kind: ConsumableKind, n: int = 1, why: str = "") -> int:
+def add(session: Session, player_id: int, kind: ConsumableKind, why: str, n: int = 1) -> int:
     row = _row(session, player_id, kind)
     row.count += n
     session.flush()
