@@ -353,6 +353,8 @@ class CurrencyReason(enum.StrEnum):
     SEASON_CONVERSION = "season_conversion"
     # 🪙 spent in the Season Shop
     SEASON_SHOP = "season_shop"
+    # 🪙 paid for completing a season objective
+    SEASON_OBJECTIVE = "season_objective"
 
 
 class Currency(enum.StrEnum):
@@ -430,6 +432,8 @@ class OutboxKind(enum.StrEnum):
     SEASON_END = "season_end"
     SEASON_TIER = "season_tier"
     SEASON_COMPLETE = "season_pass_done"
+    # a player's DM for a completed season objective
+    SEASON_OBJECTIVE = "season_objective"
 
 
 class PeriodType(enum.StrEnum):
@@ -446,6 +450,8 @@ class XpSource(enum.StrEnum):
     WIN = "win"
     HOST = "host"
     FIRST_GUESS = "first_guess"
+    # a completed season objective (services/seasons/objectives.py)
+    OBJECTIVE = "objective"
 
 
 class SeasonStatus(enum.StrEnum):

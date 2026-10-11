@@ -812,5 +812,16 @@
   "cosmetics.preview.title": "«{title}»",
   "cosmetics.preview.reaction": "{reaction} на вашей победной догадке",
   "cosmetics.menu_line_title": "{slot}: {count} шт. · выбирается в /title",
-  "cosmetics.title_hint": "Титул показывается через /title — выберите его там."
+  "cosmetics.title_hint": "Титул показывается через /title — выберите его там.",
+  "season_objective.goal.hosted": "Загадайте {n} игр",
+  "season_objective.goal.wins": "Победите в {n} играх",
+  "season_objective.goal.wins_by_stage": "Победите в {n} играх не позже {stage}-го этапа",
+  "season_objective.goal.guessed_in": "Угадывайте в {n} играх",
+  "season_objective.goal.shared_clues": "Поделитесь подсказкой {n} раз",
+  "season_objective.goal.tips": "Дайте чаевые игроку {n} раз",
+  "season_objective.goal.days_played": "Играйте в {n} разных дней",
+  "season_objective.notice": "🎯 Задание сезона «{season}» выполнено: {name} — +{xp} XP, +{coins} 🪙.",
+  "season_pass.view.objectives": "🎯 Задания",
+  "season_pass.view.objective": "{mark} {name} — {goal} ({progress}/{target}) — +{xp} XP, +{coins} 🪙",
+  "season_pass.view.objective_done": "✅ {name} — +{xp} XP, +{coins} 🪙 · {date}"
 }

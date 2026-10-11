@@ -3,7 +3,7 @@
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.services.events import LoggedEvent
-from nani_pix_bot.services.seasons import coins, lifecycle, season_pass, xp
+from nani_pix_bot.services.seasons import coins, lifecycle, objectives, season_pass, xp
 
 
 def on_event(session: Session, event: LoggedEvent) -> None:
@@ -14,4 +14,6 @@ def on_event(session: Session, event: LoggedEvent) -> None:
         coins.pay(session, event, found)
         for player_id in sorted({award.player_id for award in awarded}):
             season_pass.sync(session, found.season, found.run, player_id)
+    # Objectives before the season can finalize on its last game's end.
+    objectives.check(session, event)
     lifecycle.on_game_ended(session, event)

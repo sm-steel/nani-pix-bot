@@ -96,6 +96,7 @@ def emit_win(session, request):
             EventType.GAME_WON,
             events.Involved(actor_id=winner, subject_id=STARTER, game_id=game.id),
             stage=stage,
+            hard_mode=False,
         )
 
     return _emit

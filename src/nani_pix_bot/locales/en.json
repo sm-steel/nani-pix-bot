@@ -812,5 +812,16 @@
   "cosmetics.preview.title": "«{title}»",
   "cosmetics.preview.reaction": "{reaction} on your winning guess",
   "cosmetics.menu_line_title": "{slot}: {count} owned · pick one with /title",
-  "cosmetics.title_hint": "Titles are shown through /title — pick this one there."
+  "cosmetics.title_hint": "Titles are shown through /title — pick this one there.",
+  "season_objective.goal.hosted": "Host {n} games",
+  "season_objective.goal.wins": "Win {n} games",
+  "season_objective.goal.wins_by_stage": "Win {n} games by stage {stage}",
+  "season_objective.goal.guessed_in": "Guess in {n} games",
+  "season_objective.goal.shared_clues": "Share {n} clues",
+  "season_objective.goal.tips": "Tip a player {n} times",
+  "season_objective.goal.days_played": "Play on {n} different days",
+  "season_objective.notice": "🎯 {season} objective done: {name} — +{xp} XP, +{coins} 🪙.",
+  "season_pass.view.objectives": "🎯 Objectives",
+  "season_pass.view.objective": "{mark} {name} — {goal} ({progress}/{target}) — +{xp} XP, +{coins} 🪙",
+  "season_pass.view.objective_done": "✅ {name} — +{xp} XP, +{coins} 🪙 · {date}"
 }

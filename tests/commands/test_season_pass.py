@@ -83,7 +83,9 @@ async def _run(session_factory, update: MagicMock, *, member: bool = True) -> st
 
 
 async def test_the_command_replies_in_dm(session_factory, season) -> None:
-    assert "Demo Season" in await _run(session_factory, _update())
+    text = await _run(session_factory, _update())
+    assert "Demo Season" in text
+    assert i18n.t("season_pass.view.objectives", "EN") in text
 
 
 async def test_outside_a_dm_it_says_to_use_the_dm(session_factory, season) -> None:

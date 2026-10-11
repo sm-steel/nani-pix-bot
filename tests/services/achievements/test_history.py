@@ -73,3 +73,10 @@ def test_a_repeated_read_is_served_without_another_query(session: Session) -> No
 
     assert first == again
     assert len(statements) == 2
+
+
+def test_without_a_scope_every_event_is_read(session: Session) -> None:
+    events.emit(session, EventType.GUESS, events.Involved(actor_id=1, game_id=1))
+    events.emit(session, EventType.GUESS, events.Involved(actor_id=1, game_id=2))
+
+    assert len(DbHistory(session, 1, ZoneInfo("UTC")).mine(EventType.GUESS)) == 2

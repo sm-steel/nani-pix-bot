@@ -89,7 +89,8 @@ def test_items_from_the_pass_remember_their_source_and_season(session, season, d
 
 
 def test_a_season_win_grants_tiers_through_the_consumer(session, tagged_game, emit_win) -> None:
-    emit_win(winner=1, stage=1)  # 50 XP in demo_1
+    # 20 XP in demo_1, exactly tier 1; too late for the first_bloom objective's XP
+    emit_win(winner=1, stage=4)
     assert season_pass.row(session, tagged_game.season_id, 1).free_claimed == 1
 
 

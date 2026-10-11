@@ -10,6 +10,8 @@ from nani_pix_bot.models.enums import SeasonStatus, XpSource
 RUN_ID_LENGTH = 48
 SEASON_STATUS_LENGTH = 16
 XP_SOURCE_LENGTH = 16
+# An objective's key in its run module (seasons/definition.py validates it).
+OBJECTIVE_KEY_LENGTH = 32
 
 
 class SeasonSchedule(Base):
@@ -108,3 +110,17 @@ class SeasonShopPurchase(Base):
     offer_key: Mapped[str] = mapped_column(String(ITEM_ID_LENGTH))
     transfer_id: Mapped[int] = mapped_column(ForeignKey("currency_transfers.id"), unique=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+
+class SeasonObjective(Base):
+    """A season objective a player has completed (seasons spec §5) — one row
+    each, so it pays once."""
+
+    __tablename__ = "season_objectives"
+
+    season_id: Mapped[int] = mapped_column(ForeignKey("season_schedule.id"), primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("players.telegram_user_id"), primary_key=True
+    )
+    objective_key: Mapped[str] = mapped_column(String(OBJECTIVE_KEY_LENGTH), primary_key=True)
+    completed_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
