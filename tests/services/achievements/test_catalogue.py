@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from nani_pix_bot.models.enums import EventType
+from nani_pix_bot.models.enums import EventType, Rarity
 from nani_pix_bot.services.achievements import catalogue
 from nani_pix_bot.services.achievements.definitions import Kind
 
@@ -58,3 +58,22 @@ def test_a_clue_share_triggers_no_achievement() -> None:
 def test_get_raises_for_an_unknown_key() -> None:
     with pytest.raises(KeyError):
         catalogue.get("no_such_achievement")
+
+
+def test_season_achievement_rarities_are_the_approved_ones() -> None:
+    r = Rarity
+    expected = {
+        "season_debut": r.BRONZE,
+        "season_opening_act": r.SILVER,
+        "season_curtain_call": r.SILVER,
+        "season_pass_complete": r.GOLD,
+        "season_pass_premium": r.PLATINUM,
+        "season_window_shopper": r.BRONZE,
+        "season_collector": r.GOLD,
+        "season_podium_3": r.SILVER,
+        "season_podium_2": r.GOLD,
+        "season_podium_1": r.PLATINUM,
+        "season_on_theme": r.SILVER,
+    }
+    got = {d.key: d.rarities[0] for d in catalogue.CATALOGUE if d.kind is Kind.SEASON}
+    assert got == expected
