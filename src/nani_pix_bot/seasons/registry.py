@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from functools import cache
 from types import MappingProxyType
 
-from nani_pix_bot.seasons.definition import Item, SeasonRun
+from nani_pix_bot.seasons.definition import Item, SeasonRun, pass_problems
 
 RUNS_PACKAGE = "nani_pix_bot.seasons.runs"
 
@@ -27,6 +27,10 @@ def discover(package: str) -> dict[str, SeasonRun]:
             raise RunModuleError(msg)
         if run.run_id != info.name:
             msg = f"{module.__name__}: run_id {run.run_id!r} must equal the module name"
+            raise RunModuleError(msg)
+        problems = pass_problems(run)
+        if problems:
+            msg = f"{module.__name__}: invalid season pass: " + "; ".join(problems)
             raise RunModuleError(msg)
         runs[run.run_id] = run
     return runs

@@ -5,7 +5,7 @@ Pure: no DB, no clock."""
 from collections.abc import Iterable
 from datetime import date, timedelta
 
-from nani_pix_bot.models.enums import CurrencyReason, EventType
+from nani_pix_bot.models.enums import Currency, CurrencyReason, EventType
 from nani_pix_bot.services.achievements.definitions import History
 from nani_pix_bot.services.events import LoggedEvent
 
@@ -24,8 +24,14 @@ def _games(events: Iterable[LoggedEvent]) -> int:
 
 
 def _money(history: History, *, incoming: bool) -> list[LoggedEvent]:
+    """💠 movements, refunds and cashback left out. A season's 🪙 never counts
+    (events logged before currencies existed carry no `currency`: 💠)."""
     moved = history.about_me(E.CURRENCY_MOVED) if incoming else history.mine(E.CURRENCY_MOVED)
-    return [e for e in moved if not e.data["reversal"]]
+    return [
+        e
+        for e in moved
+        if not e.data["reversal"] and e.data.get("currency", Currency.BASE) == Currency.BASE
+    ]
 
 
 def _amounts(events: Iterable[LoggedEvent], reasons: frozenset[str]) -> list[int]:

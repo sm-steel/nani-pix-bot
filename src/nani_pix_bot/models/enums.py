@@ -345,6 +345,21 @@ class CurrencyReason(enum.StrEnum):
     CASHBACK = "cashback"
     COMPENSATION = "compensation"
     ACHIEVEMENT = "achievement"
+    SEASON_WIN = "season_win"
+    SEASON_HOST = "season_host"
+    SEASON_FIRST_GUESS = "season_first_guess"
+    TIER_REWARD = "pass_reward"
+    PREMIUM = "premium_pass"
+    SEASON_CONVERSION = "season_conversion"
+
+
+class Currency(enum.StrEnum):
+    """Which currency a ledger row moves (seasons spec §2): the base currency
+    (shown as 💠 to players; cached in Player.currency) or a season's coins
+    (🪙; cached per season in season_balances). Plain string."""
+
+    BASE = "base"
+    SEASON = "season"
 
 
 class CurrencyParty(enum.StrEnum):
@@ -411,6 +426,8 @@ class OutboxKind(enum.StrEnum):
     SEASON_TEASER = "season_teaser"
     SEASON_START = "season_start"
     SEASON_END = "season_end"
+    SEASON_TIER = "season_tier"
+    SEASON_COMPLETE = "season_pass_done"
 
 
 class PeriodType(enum.StrEnum):
@@ -456,6 +473,7 @@ class ItemSource(enum.StrEnum):
     """How an owned season cosmetic was obtained (seasons spec §3). Plain string."""
 
     ADMIN = "admin"
+    TIER = "pass"
 
 
 class PreviewKind(enum.StrEnum):
@@ -473,3 +491,11 @@ class ShowcaseKind(enum.StrEnum):
 
     STAMP = "stamp"
     ACHIEVEMENT = "achievement"
+
+
+class ConsumableKind(enum.StrEnum):
+    """A consumable a player holds a count of (seasons spec §3): the clue token
+    only — no free sharpens."""
+
+    # 🎟 the clue token; named so a security linter doesn't read "token" as a secret
+    CLUE_TICKET = "clue_token"

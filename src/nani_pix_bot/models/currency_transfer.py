@@ -4,12 +4,13 @@ from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nani_pix_bot.models.base import Base
-from nani_pix_bot.models.enums import CurrencyParty, CurrencyReason
+from nani_pix_bot.models.enums import Currency, CurrencyParty, CurrencyReason
 
 # Longest CurrencyReason value plus headroom for later phases' reasons.
 REASON_LENGTH = 32
 # Longest CurrencyParty value plus headroom.
 PARTY_LENGTH = 16
+CURRENCY_LENGTH = 8
 
 
 class CurrencyTransfer(Base):
@@ -57,6 +58,13 @@ class CurrencyTransfer(Base):
             "from_type <> to_type OR (from_type = 'player' AND from_player_id <> to_player_id)",
             name="ck_currency_transfers_distinct_sides",
         ),
+        CheckConstraint(
+            "currency IN ('base', 'season')", name="ck_currency_transfers_currency_valid"
+        ),
+        CheckConstraint(
+            "currency <> 'season' OR season_id IS NOT NULL",
+            name="ck_currency_transfers_season_coins_have_season",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -73,5 +81,13 @@ class CurrencyTransfer(Base):
     game_id: Mapped[int | None] = mapped_column(default=None, index=True)
     reverses_id: Mapped[int | None] = mapped_column(
         ForeignKey("currency_transfers.id"), default=None, unique=True
+    )
+    currency: Mapped[Currency] = mapped_column(
+        String(CURRENCY_LENGTH), default=Currency.BASE, server_default=Currency.BASE.value
+    )
+    # Which season the row belongs to: required for 🪙, optional for 💠 (a
+    # Premium purchase, a converted leftover, a pass reward paid in 💠).
+    season_id: Mapped[int | None] = mapped_column(
+        ForeignKey("season_schedule.id"), index=True, default=None
     )
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))

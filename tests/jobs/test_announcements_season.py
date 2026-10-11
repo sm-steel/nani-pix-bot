@@ -4,13 +4,14 @@ import pytest
 
 from nani_pix_bot.jobs import announcements
 from nani_pix_bot.models.announcement import AnnouncementOutbox
-from nani_pix_bot.models.enums import OutboxKind, SeasonStatus
+from nani_pix_bot.models.enums import CurrencyReason, OutboxKind, SeasonStatus
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.cards import SeasonBanner
-from nani_pix_bot.services.seasons import schedule
+from nani_pix_bot.services.economy import wallet
+from nani_pix_bot.services.seasons import conversion, schedule
 
 
 @pytest.fixture(autouse=True)
@@ -106,3 +107,19 @@ def test_end_post_says_when_nobody_scored(session, lang, line) -> None:
     post = announcements.RENDERERS[OutboxKind.SEASON_END](session, row, lang)
     assert post is not None
     assert line in post.text
+
+
+def test_end_post_reports_the_coin_conversion(session) -> None:
+    row = _row(session, OutboxKind.SEASON_END)
+    season_id = row.payload["season_id"]
+    player = Player(telegram_user_id=2, username="alice")
+    session.add(player)
+    session.flush()
+    entry = wallet.LedgerEntry(CurrencyReason.GRANT, season_id=season_id, coins=True)
+    wallet.credit(session, player, 9, entry)
+    season = session.get(SeasonSchedule, season_id)
+    conversion.convert(session, season, registry.all_runs()["demo_1"])
+    post = announcements.RENDERERS[OutboxKind.SEASON_END](session, row, "EN")
+    assert post is not None
+    assert "4 💠" in post.text
+    assert "2 🪙 = 1 💠" in post.text

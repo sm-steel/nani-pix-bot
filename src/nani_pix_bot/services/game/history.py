@@ -139,6 +139,7 @@ class ClueRow:
     kind: ClueKind
     price: int
     shared_at: datetime | None
+    token: bool = False  # paid with a clue token: no price
 
 
 @dataclass(frozen=True)
@@ -184,13 +185,14 @@ def _clue_row(purchase: CluePurchase, price: int) -> ClueRow:
         kind=ClueKind(purchase.kind),
         price=price,
         shared_at=as_utc(shared) if shared is not None else None,
+        token=purchase.token_used,
     )
 
 
 def _clues(session: Session, game_id: int) -> list[ClueRow]:
     stmt = (
-        select(CluePurchase, CurrencyTransfer.amount)
-        .join(CurrencyTransfer, CurrencyTransfer.id == CluePurchase.transfer_id)
+        select(CluePurchase, func.coalesce(CurrencyTransfer.amount, 0))
+        .outerjoin(CurrencyTransfer, CurrencyTransfer.id == CluePurchase.transfer_id)
         .where(CluePurchase.game_id == game_id)
         .order_by(CluePurchase.created_at, CluePurchase.id)
     )

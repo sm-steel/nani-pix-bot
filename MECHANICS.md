@@ -1713,11 +1713,12 @@ round's bounty, tip a player, or pay to sharpen the image.
 ## Seasons
 
 **Status: Implemented (phase 1: the framework, Season XP and the anime
-gate; phase 2: inventory and cosmetics).** Seasons are occasional,
+gate; phase 2: inventory and cosmetics; phase 3: Season Coins, the
+Season Pass, Premium and clue tokens).** Seasons are occasional,
 time-boxed events that run alongside the normal game. No playable season
 ships yet: `seasons/runs/` is empty, so `/season` has nothing to schedule
-until a run module is added. Coins, the pass, the shop and consumables
-(clue tokens) are later phases.
+until a run module is added. The season shop and objectives are later
+phases.
 
 ### Runs and the schedule
 
@@ -1771,6 +1772,50 @@ game's events. Amounts come from the run's XP table.
 "First guess" is answered from the player's `game_guesses` rows for that
 game (their first), not from a separate ledger. Standings are the sum of XP
 per player.
+
+### Season Coins, Pass and Premium
+
+**Season Coins (🪙)** are a per-season balance (`season_balances`), separate
+from the 💠 balance. Every credit and debit still writes a `currency_transfers`
+row, tagged `currency = season` and the `season_id`. They are paid for the
+same events and by the same rules as Season XP (tagged games only; no hosting
+on HARD MODE games; the first guess is the player's first `game_guesses` row in that game),
+priced by the run's `CoinTable`: a win pays the same at every stage,
+`host_solved`, `host_unsolved`, `first_guess`. Pass rewards can pay 🪙 too.
+
+**The pass.** A run lists `tiers`; each has a free reward and an optional
+premium reward, reached by the player's Season XP total. A reward is an
+item, 🪙, 💠 or a clue token. `season_pass.sync` runs after XP changes and
+grants, in tier order and once each, every reward the XP has reached
+(`free_claimed` / `premium_claimed` are counts, since tiers go in order). It
+runs while the season is `active` or `closing`, never once it has `ended`.
+An item the player already owns is "already yours" (no second copy). A
+grant queues a DM (`OutboxKind.SEASON_TIER`) listing the rewards; finishing
+the free track queues one topic line (`OutboxKind.SEASON_COMPLETE`). A
+consumable reward is capped at two tiers per run (checked by
+`pass_problems`).
+
+**Premium** costs `run.premium_price` 💠 and is bought from `/seasonpass`
+(⭐ button, then a confirm) only while the season is `active`. It is
+refused when already bought, unaffordable, or when the run has no premium
+rewards. It grants every premium reward already reached at once; later ones
+as they are reached.
+
+**`/seasonpass`** (DM, group members only) shows XP, tier n/N, XP to the next
+tier, the 🪙 balance, the Premium state and every tier (free ✅/▫️,
+premium ✅/🔒 ⭐).
+
+**Clue tokens** are a consumable (`consumables`, a count per player and
+kind). While a player holds one, their next clue purchase in the shop uses
+it instead of 💠 (any clue kind): the purchase row has `token_used` and no
+`transfer_id`, and the shop shows 🎟 in place of the price. A clue that
+cannot be delivered returns the token. The game history marks a token clue
+with 🎟.
+
+**Conversion.** When a season finalizes, every positive 🪙 balance is
+emptied and paid out as `coins // run.coins_per_currency` 💠 (default 2 🪙 =
+1 💠; the remainder is dropped). The end post states how many players'
+coins became how much 💠, and the rate.
 
 ### Announcements
 
