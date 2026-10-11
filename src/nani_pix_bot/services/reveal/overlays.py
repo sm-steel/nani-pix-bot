@@ -10,5 +10,9 @@ from nani_pix_bot.services.reveal import celebration, petals
 
 DEFAULT_OVERLAY = "confetti"
 WIN_OVERLAYS: Mapping[str, Callable[[int], tuple[bytes, tuple[int, int]]]] = MappingProxyType(
-    {DEFAULT_OVERLAY: celebration.confetti_clip, "petal_drift": petals.petal_drift_clip}
+    {
+        DEFAULT_OVERLAY: celebration.confetti_clip,
+        "petal_drift": petals.petal_drift_clip,
+        "sakura_storm": petals.sakura_storm_clip,
+    }
 )

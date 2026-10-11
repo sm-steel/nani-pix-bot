@@ -714,7 +714,9 @@ src/nani_pix_bot/
                    #                   renderer for the ending
                    #                   (DEFAULT_OVERLAY = confetti)
                    #   petals.py       the Sakura win overlays: sakura
-                   #                   petals over the badge (petal_drift)
+                   #                   petals over the badge (petal_drift,
+                   #                   sakura_storm), fading out at the
+                   #                   edges of their area (edge_fade)
                    #   store.py        the single reveal_video slot: reserve,
                    #                   mark_ready/mark_failed (guarded by
                    #                   game_id), load, clear
