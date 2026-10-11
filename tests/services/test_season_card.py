@@ -49,6 +49,18 @@ def test_the_key_visual_shows_unshaded(corner) -> None:
     assert out.getpixel(corner) == picture.getpixel(corner)
 
 
+def test_an_empty_headline_and_dates_leave_out_the_ribbon_and_pill() -> None:
+    picture = _key_visual()
+    plain = cards.SeasonBanner("", CARD.title, "")
+    out = Image.open(BytesIO(cards.render_season_banner(plain, _png(picture)))).convert("RGB")
+    ribbon_spot, pill_spot = (W // 2, 60), (W // 2, H - 68)
+    assert out.getpixel(ribbon_spot) == picture.getpixel(ribbon_spot)
+    assert out.getpixel(pill_spot) == picture.getpixel(pill_spot)
+    full = _draw(None, _png(picture))
+    assert full.getpixel(ribbon_spot) != picture.getpixel(ribbon_spot)
+    assert full.getpixel(pill_spot) != picture.getpixel(pill_spot)
+
+
 def test_without_a_key_visual_the_card_is_flat() -> None:
     out = _draw(None, None)
     assert out.getpixel((4, 4)) == render._BACKGROUND

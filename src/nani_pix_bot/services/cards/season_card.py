@@ -224,16 +224,18 @@ def _date_pill(image: Image.Image, text: str) -> None:
 def render_season_banner(card: SeasonBanner, background: bytes | None = None) -> bytes:
     """A season's teaser/start/end card over the run's key visual (unshaded), else
     the flat card: stamp seal, season name and ribbon tag, each with a soft
-    shadow, then the dates."""
+    shadow, then the dates. An empty headline leaves out the ribbon and empty
+    dates the pill (the guide's plain picture of a season)."""
     picture = _cover(background, CARD_SIZE) if background is not None else None
     if picture is None:
         picture = Image.new("RGB", CARD_SIZE, _BACKGROUND)
     image = picture.convert("RGBA")
     seal = _stamp_layer(card.stamp) if card.stamp is not None else None
-    layers = (seal, title_layer(card.title, stamped=seal is not None), _ribbon_layer(card.headline))
-    for layer in layers:
+    ribbon = _ribbon_layer(card.headline) if card.headline else None
+    for layer in (seal, title_layer(card.title, stamped=seal is not None), ribbon):
         if layer is not None:
             image.alpha_composite(_shadow(layer))
             image.alpha_composite(layer)
-    _date_pill(image, card.subtitle)
+    if card.subtitle:
+        _date_pill(image, card.subtitle)
     return _png(image.convert("RGB"))

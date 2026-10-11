@@ -63,6 +63,7 @@ def test_writes_the_bots_own_renders_per_language(tmp_path: Path) -> None:
 
 SAKURA_FILES = (
     "season-sakura-{lang}.webp",
+    "season-sakura-plain-{lang}.webp",
     "profile-stamps-{lang}.webp",
     "profile-night-hanami-{lang}.webp",
     "profile-blossom-avenue-{lang}.webp",
@@ -105,6 +106,11 @@ def test_sakura_images_are_the_production_renders(lang: str) -> None:
     key_visual = season_background("sakura_1")
     assert images[f"season-sakura-{lang}.webp"] == gen_docs_cards.webp(
         render_season_banner(gen_docs_cards.season_banner(lang), key_visual)
+    )
+    plain = gen_docs_cards.plain_season_banner(lang)
+    assert (plain.headline, plain.subtitle) == ("", "")
+    assert images[f"season-sakura-plain-{lang}.webp"] == gen_docs_cards.webp(
+        render_season_banner(plain, key_visual)
     )
     stamps = render_profile_card(gen_docs_cards.stamps_card(lang), None, key_visual)
     assert images[f"profile-stamps-{lang}.webp"] == gen_docs_cards.webp(stamps)

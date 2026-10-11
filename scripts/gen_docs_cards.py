@@ -16,6 +16,7 @@ WebP: the renders are photographs and would weigh about a megabyte each as PNG.
 Usage: uv run python scripts/gen_docs_cards.py
 """
 
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 
@@ -128,6 +129,11 @@ def season_banner(lang: str) -> SeasonBanner:
     )
 
 
+def plain_season_banner(lang: str) -> SeasonBanner:
+    """The season's card with no ribbon and no dates: the Sakura page's own picture."""
+    return replace(season_banner(lang), headline="", subtitle="")
+
+
 def banner_files() -> tuple[str, ...]:
     """The run's profile-banner file names, in the order the run lists them."""
     return tuple(i.look for i in run().items if i.slot is CosmeticSlot.PROFILE_BANNER)
@@ -184,6 +190,9 @@ def sakura_images(lang: str) -> dict[str, bytes]:
     key_visual = season_background(RUN_ID)
     files = {
         f"season-sakura-{lang}.webp": webp(render_season_banner(season_banner(lang), key_visual)),
+        f"season-sakura-plain-{lang}.webp": webp(
+            render_season_banner(plain_season_banner(lang), key_visual)
+        ),
         f"profile-stamps-{lang}.webp": webp(
             render_profile_card(stamps_card(lang), None, key_visual)
         ),
