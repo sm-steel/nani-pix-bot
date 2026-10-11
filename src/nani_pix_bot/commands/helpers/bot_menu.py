@@ -20,6 +20,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("profile", i18n.t("commands.profile", lang)),
         BotCommand("shop", i18n.t("commands.shop", lang)),
         BotCommand("seasonpass", i18n.t("commands.seasonpass", lang)),
+        BotCommand("seasonshop", i18n.t("commands.seasonshop", lang)),
         BotCommand("achievements", i18n.t("commands.achievements", lang)),
         BotCommand("standings", i18n.t("commands.standings", lang)),
         BotCommand("leaderboard", i18n.t("commands.leaderboard", lang)),

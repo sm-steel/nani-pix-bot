@@ -8,7 +8,7 @@ from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, 
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import MAX_ID, outsider_refusal
-from nani_pix_bot.commands.helpers.scoping import is_private_chat
+from nani_pix_bot.commands.helpers.dm_view import reply_with_view
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SeasonStatus
 from nani_pix_bot.models.season import SeasonPass, SeasonSchedule
@@ -47,24 +47,7 @@ def view(session: Session, player_id: int, lang: str) -> tuple[str, InlineKeyboa
 
 
 async def season_pass_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message, user = update.message, update.effective_user
-    if message is None or user is None:
-        return
-    with session_scope(context.bot_data["session_factory"]) as session:
-        lang = settings.get_language(session)
-    if not is_private_chat(update):
-        logger.warning("/seasonpass outside a DM")
-        await message.reply_text(i18n.t("season_pass.dm_only", lang))
-        return
-    refusal = await outsider_refusal(context, user.id, "/seasonpass")
-    if refusal is not None:
-        await message.reply_text(refusal)
-        return
-    with session_scope(context.bot_data["session_factory"]) as session:
-        players.get_or_create_player(session, user.id, username=user.username)
-        text, keyboard = view(session, user.id, lang)
-    await message.reply_text(text, reply_markup=keyboard)
-    logger.info("showed /seasonpass")
+    await reply_with_view(update, context, "/seasonpass", "season_pass.dm_only", view)
 
 
 # --- Premium taps ---

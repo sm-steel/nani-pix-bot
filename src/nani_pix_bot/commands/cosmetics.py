@@ -3,26 +3,23 @@
 Buttons carry `OwnedItem.id`, not the item id: the latter may not fit Telegram's 64-byte
 callback data. A row id that isn't the tapper's is refused (`cosmetics.not_yours`)."""
 
-import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
 from loguru import logger
 from sqlalchemy.orm import Session
-from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
-from telegram.error import BadRequest, TelegramError
+from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import MAX_ID, outsider_refusal
+from nani_pix_bot.commands.helpers import item_preview
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs import reveal_worker
-from nani_pix_bot.models.enums import CosmeticSlot, PreviewKind
+from nani_pix_bot.models.enums import CosmeticSlot
 from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.cosmetics import inventory, previews
-from nani_pix_bot.services.reveal import pipeline
+from nani_pix_bot.services.cosmetics import inventory
 
 PREFIX = "cos:"
 _MENU = f"{PREFIX}m"
@@ -220,122 +217,22 @@ async def _on_unequip(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, 
     await _edit(query, view)
 
 
-# --- previews ---
-
-
-async def _render(
-    context: ContextTypes.DEFAULT_TYPE, resolved: ResolvedItem, lang: str
-) -> previews.Preview:
-    """The preview, rendered off the event loop: a clip in the reveal worker, the rest in a
-    thread. No worker, or a render that fails, gives a short "can't show it now" text."""
-    try:
-        job = previews.clip_job(resolved, lang)
-        if job is None:
-            return await asyncio.to_thread(previews.render, resolved, lang)
-        if reveal_worker.runtime(context.application) is not None:
-            video = await reveal_worker.submit(context.bot_data, pipeline.preview_clip, *job.args())
-            return previews.Preview(PreviewKind.VIDEO, video=video)
-        logger.warning(
-            "no reveal worker — can't render the preview of {item_id}", item_id=resolved.item_id
-        )
-    except Exception:
-        logger.opt(exception=True).error(
-            "rendering the preview of {item_id} failed", item_id=resolved.item_id
-        )
-    return previews.Preview(PreviewKind.TEXT, text=i18n.t("cosmetics.preview_unavailable", lang))
-
-
-async def _send_media(
-    context: ContextTypes.DEFAULT_TYPE, chat_id: int, kind: PreviewKind, media: bytes | str
-) -> Message:
-    if kind is PreviewKind.VIDEO:
-        return await context.bot.send_video(chat_id=chat_id, video=media, supports_streaming=True)
-    return await context.bot.send_photo(chat_id=chat_id, photo=media)
-
-
-def _file_id(sent: Message, kind: PreviewKind) -> str | None:
-    if kind is PreviewKind.VIDEO:
-        return sent.video.file_id if sent.video else None
-    return sent.photo[-1].file_id if sent.photo else None
-
-
-async def _send_fresh(
-    context: ContextTypes.DEFAULT_TYPE, chat_id: int, resolved: ResolvedItem, lang: str
-) -> None:
-    """Renders, sends, then remembers the file_id in a new short session."""
-    preview = await _render(context, resolved, lang)
-    media = preview.video if preview.kind is PreviewKind.VIDEO else preview.image
-    if media is None:
-        await context.bot.send_message(chat_id=chat_id, text=preview.text or "")
-        return
-    sent = await _send_media(context, chat_id, preview.kind, media)
-    file_id = _file_id(sent, preview.kind)
-    if file_id is None:
-        logger.warning(
-            "Telegram returned no file_id for the preview of {item_id}", item_id=resolved.item_id
-        )
-        return
-    with session_scope(context.bot_data["session_factory"]) as session:
-        previews.remember(session, resolved.item_id, lang, preview.kind, file_id)
-
-
-async def _send_cached(
-    context: ContextTypes.DEFAULT_TYPE,
-    chat_id: int,
-    resolved: ResolvedItem,
-    lang: str,
-    cached: tuple[PreviewKind, str],
-) -> None:
-    """Sends the remembered file_id; one Telegram refuses is forgotten and re-rendered."""
-    try:
-        await _send_media(context, chat_id, *cached)
-    except BadRequest:
-        logger.warning(
-            "Telegram rejected the cached preview of {item_id} — re-rendering",
-            item_id=resolved.item_id,
-        )
-        with session_scope(context.bot_data["session_factory"]) as session:
-            previews.forget(session, resolved.item_id, lang)
-        await _send_fresh(context, chat_id, resolved, lang)
-
-
-async def _send_preview(
-    context: ContextTypes.DEFAULT_TYPE,
-    chat_id: int,
-    resolved: ResolvedItem,
-    lang: str,
-    cached: tuple[PreviewKind, str] | None,
-) -> None:
-    try:
-        if cached is None:
-            await _send_fresh(context, chat_id, resolved, lang)
-        else:
-            await _send_cached(context, chat_id, resolved, lang, cached)
-    except TelegramError:
-        logger.opt(exception=True).error(
-            "failed to send the preview of {item_id}", item_id=resolved.item_id
-        )
-
-
 @dataclass(frozen=True)
 class _ItemTap:
     owned_id: int
     resolved: ResolvedItem
     equipped: bool
-    cached: tuple[PreviewKind, str] | None
 
 
-def _load_item(session: Session, user_id: int, owned_id: int | None, lang: str) -> _ItemTap | None:
+def _load_item(session: Session, user_id: int, owned_id: int | None) -> _ItemTap | None:
     """The tapped row's item with its state; None when that row isn't the tapper's."""
     resolved = None if owned_id is None else inventory.owned_by(session, user_id, owned_id)
     if owned_id is None or resolved is None:
         return None
-    row = previews.cached(session, resolved.item_id, lang)
     return _ItemTap(
         owned_id,
         resolved,
         equipped=_equipped_id(session, user_id, resolved.item.slot) == resolved.item_id,
-        cached=None if row is None else (PreviewKind(row.kind), row.file_id),
     )
 
 
@@ -343,17 +240,12 @@ async def _on_item(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, arg
     user_id = query.from_user.id
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
-        tap = _load_item(session, user_id, _owned_id(arg), lang)
+        tap = _load_item(session, user_id, _owned_id(arg))
     if tap is None:
         await _refuse(query, context, str(query.data))
         return
     await query.answer()
-    logger.info(
-        "previewed {item_id} ({source})",
-        item_id=tap.resolved.item_id,
-        source="cached" if tap.cached else "rendered",
-    )
-    await _send_preview(context, user_id, tap.resolved, lang, tap.cached)
+    await item_preview.send(context, user_id, tap.resolved, lang)
     text, markup = _item_view(tap.owned_id, tap.resolved, tap.equipped, lang)
     await context.bot.send_message(chat_id=user_id, text=text, reply_markup=markup)
 

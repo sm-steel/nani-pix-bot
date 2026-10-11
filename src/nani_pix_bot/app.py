@@ -45,6 +45,7 @@ from nani_pix_bot.commands import (
     refund,
     season,
     season_pass,
+    season_shop,
     setautostart,
     setwinner,
     shop,
@@ -343,6 +344,9 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(season_pass.season_pass_callback, pattern=rf"^{season_pass.PREFIX}")
     )
     application.add_handler(
+        CallbackQueryHandler(season_shop.season_shop_callback, pattern=rf"^{season_shop.PREFIX}")
+    )
+    application.add_handler(
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
     )
     application.add_handler(
@@ -370,6 +374,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("profile", profile.profile_command))
     application.add_handler(CommandHandler("shop", shop.shop_command))
     application.add_handler(CommandHandler("seasonpass", season_pass.season_pass_command))
+    application.add_handler(CommandHandler("seasonshop", season_shop.season_shop_command))
     application.add_handler(CommandHandler("tip", tip.tip_command))
     application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))
     application.add_handler(CommandHandler("partialmatch", partialmatch.partialmatch_command))
