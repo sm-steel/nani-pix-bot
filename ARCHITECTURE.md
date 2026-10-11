@@ -903,6 +903,8 @@ src/nani_pix_bot/
                    #                   look(session, player, slot)
                    #   flair.py        named(): a name plus its flair emoji
                    #   frames.py       FRAMES and apply_frame
+                   #   paper_frames.py the Sakura paper frames (deckled
+                   #                   edge, soft shadow; seeded)
                    #   stage.py        stage_png: a stage image with the
                    #                   starter's frame
                    #   reveal_choice.py  effect_for: the starter's

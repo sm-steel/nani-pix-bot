@@ -1,6 +1,7 @@
 """Stage-image frames (seasons spec §3 `host_frame`): a key → a Pillow
 function drawing a border onto the stage image, size unchanged. Season
-frames are added here; "simple_border" is the neutral built-in."""
+frames are registered here; "simple_border" is the neutral built-in, the Sakura
+paper frames live in paper_frames.py."""
 
 from collections.abc import Callable, Mapping
 from io import BytesIO
@@ -8,6 +9,8 @@ from types import MappingProxyType
 
 from loguru import logger
 from PIL import Image, ImageDraw
+
+from nani_pix_bot.services.cosmetics import paper_frames
 
 _SIMPLE_WIDTH_RATIO = 0.03
 _SIMPLE_COLOR = (245, 245, 245)
@@ -23,7 +26,7 @@ def _simple_border(image: Image.Image) -> Image.Image:
 
 
 FRAMES: Mapping[str, Callable[[Image.Image], Image.Image]] = MappingProxyType(
-    {"simple_border": _simple_border}
+    {"simple_border": _simple_border, "paper": paper_frames.paper}
 )
 
 
