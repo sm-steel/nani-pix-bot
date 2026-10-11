@@ -28,7 +28,7 @@ def compare_data(other_id: int, filt: CompareFilter, page: int) -> str:
 def _cell(item: Status) -> str:
     if item.state is not State.EARNED:
         return "⬜"
-    if item.defn.kind is Kind.PERIOD:
+    if item.defn.kind in (Kind.PERIOD, Kind.SEASON):
         return f"✅ \N{MULTIPLICATION SIGN}{item.tier}"
     laddered = len(item.defn.tiers) > 1 or item.defn.endless_step
     return f"✅ {names.roman(item.tier)}" if laddered else "✅"
@@ -77,8 +77,9 @@ def _table(
 
 def compare_view(session: Session, request: CompareRequest, lang: str) -> browser.Rendered:
     now = datetime.now(UTC)
-    mine = status.build(session, request.viewer_id, now)
-    pairs = status.compare(mine, status.build(session, request.other_id, now), request.filt)
+    mine = status.build(session, request.viewer_id, now, alongside=request.other_id)
+    theirs = status.build(session, request.other_id, now, alongside=request.viewer_id)
+    pairs = status.compare(mine, theirs, request.filt)
     page = paging.clamp_page(request.page, total=len(pairs), size=COMPARE_PAGE_SIZE)
     pages = paging.page_count(len(pairs), COMPARE_PAGE_SIZE)
     shown = pairs[page * COMPARE_PAGE_SIZE : (page + 1) * COMPARE_PAGE_SIZE]

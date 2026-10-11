@@ -1715,7 +1715,7 @@ round's bounty, tip a player, or pay to sharpen the image.
 **Status: Implemented (phase 1: the framework, Season XP and the anime
 gate; phase 2: inventory and cosmetics; phase 3: Season Coins, the
 Season Pass, Premium and clue tokens; phase 4: the Season Shop, rule
-modifiers, the visual style and objectives).** Seasons are occasional,
+modifiers, the visual style and objectives; phase 5: season achievements).** Seasons are occasional,
 time-boxed events that run alongside the normal game. No playable season
 ships yet: `seasons/runs/` is empty, so `/season` has nothing to schedule
 until a run module is added.
@@ -1954,3 +1954,70 @@ Accepted limits:
   effects draw text); text previews are never stored. A file_id Telegram
   rejects is dropped and the preview re-rendered. A failed render is
   reported to the player, not cached.
+
+### Season achievements
+
+Phase 5. The 11 per-season achievements and the 6 lifetime ladders live in
+`services/achievements/` (`catalogue.py`, `season_progress.py`, `ladders.py`)
+and are evaluated by `season_eval.py`. A run may add its own.
+
+**`Kind.SEASON`.** A definition of this kind is earned **once per season**.
+Its grant's `period_key` is the season's `run_id` (so the unique key
+(`player_id`, `key`, `tier`, `period_key`) holds one grant per season), which
+is why a run id is at most 16 characters. A season is evaluated against **its
+own** scope only: the event's season, with the first and last local day taken
+in the group's time zone. `/achievements` shows the grant count as ×N.
+
+| Key | Earned when | Rarity |
+|---|---|---|
+| `season_debut` | a guess in a season game, or hosting a non-HARD MODE one | B |
+| `season_opening_act` | played on the season's first local day | S |
+| `season_curtain_call` | played on its last local day | S |
+| `season_pass_complete` | finished the free track (`pass_completed`, not premium) | G |
+| `season_pass_premium` | finished the premium track | P |
+| `season_window_shopper` | bought anything in the Season Shop | B |
+| `season_collector` | owns every cosmetic the shop sells | G |
+| `season_podium_3` / `_2` | finished 3rd / 2nd | S / G |
+| `season_podium_1` | won the season; also grants the title "Champion of {season}" | P |
+| `season_on_theme` | won 5 season games, only in a gated season | S |
+
+**Lifetime ladders** (plain `Kind.LADDER`, read over all of a player's
+history):
+
+| Key | Counts | Tiers |
+|---|---|---|
+| `season_veteran` | distinct seasons with a `season_ended` event | 1·3·5·10 |
+| `season_completionist` | free passes completed | 1·3·5 |
+| `season_front_runner` | `pass_completed` events with `first` | 1·3·5 |
+| `season_hoarder` | distinct `item_gained` items | 5·15·30 |
+| `season_patron` | Premium passes bought | 1·3·5 |
+| `season_genre_explorer` | distinct `gate_tags` across the player's `game_won` events | 2·4·6 |
+
+**New events.**
+- `item_gained`: `cosmetics/inventory.py::grant` emits it for every new
+  cosmetic, whatever the source (admin, pass, shop).
+- `pass_completed` (`premium`, `first`): emitted by `seasons/pass_completion.py`
+  when a track is fully granted. `first` is true when no one else has stamped
+  `season_pass.free_completed_at` in that season yet, so Front-runner reads
+  `first` instead of comparing timestamps. The free track also stamps
+  `free_completed_at` and queues the topic line.
+- `season_ended`: one per ranked player when the season finalizes.
+
+**Scope.** The season history (`season_history.py`) admits the season-owned
+events (`item_gained`, `pass_completed`, `season_ended`) **by type**, because
+they have no game of the season. A reader therefore filters by `data.season_id`
+(`season_progress._own`). Lifetime ladders read the unscoped history.
+
+**`gate_tags`.** `game_won` facts carry `gate_tags`: the won game's anime tags
+that match the season's gate (empty outside a gated season). Genre Explorer
+counts the distinct ones. A HARD MODE pick made under a gate keeps the tags it
+matched in `games.anime_tags`, so its wins count too.
+
+**Run-specific achievements.** A run module may list `RunAchievement`s (key,
+names and descriptions in EN and RU, rarity, trigger events, a `progress`
+function over the season's history). They are merged into the catalogue as
+`<run_id>.<key>` and earned once in that season. `/achievements` lists one
+only while its season is the open one (`active`/`closing`), or for a player
+who holds it; it is left out of everyone else's list and summary total
+(`status.build`). A comparison lists it when either player would see it.
+No run ships one yet.

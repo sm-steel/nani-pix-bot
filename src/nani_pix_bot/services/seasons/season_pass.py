@@ -9,7 +9,12 @@ from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import ConsumableKind, CurrencyReason, ItemSource, SeasonStatus
+from nani_pix_bot.models.enums import (
+    ConsumableKind,
+    CurrencyReason,
+    ItemSource,
+    SeasonStatus,
+)
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonPass, SeasonSchedule, SeasonXp
 from nani_pix_bot.seasons import registry
@@ -19,6 +24,7 @@ from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.cosmetics import consumables, inventory
 from nani_pix_bot.services.cosmetics.inventory import ItemGrant
 from nani_pix_bot.services.economy import wallet
+from nani_pix_bot.services.seasons import pass_completion
 
 GRANTING = (SeasonStatus.ACTIVE, SeasonStatus.CLOSING)
 
@@ -123,7 +129,7 @@ def sync(session: Session, season: SeasonSchedule, run: SeasonRun, player_id: in
         return []
     progress = row(session, season.id, player_id)
     level = reached(run, xp_total(session, season.id, player_id))
-    was_complete = progress.free_claimed >= len(run.tiers)
+    before = pass_completion.done(progress, run)
     granted = _grant_track(session, _Track(season, run, player, progress, False), level)
     if progress.premium_transfer_id is not None:
         granted += _grant_track(session, _Track(season, run, player, progress, True), level)
@@ -131,8 +137,7 @@ def sync(session: Session, season: SeasonSchedule, run: SeasonRun, player_id: in
     if granted:
         entries = [{"tier": g.tier, "premium": g.premium, "new": g.new} for g in granted]
         outbox.enqueue_tier(session, season.id, player_id, entries)
-    if not was_complete and progress.free_claimed >= len(run.tiers):
-        outbox.enqueue_pass_done(session, season.id, player_id)
+    pass_completion.announce(session, season, run, progress, before)
     return granted
 
 

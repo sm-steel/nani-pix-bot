@@ -828,7 +828,7 @@ src/nani_pix_bot/
                    # achievements.on_event
     achievements/ # the achievement engine, no Telegram — see
                    # "Achievements" below. definitions.py (what a
-                   # Definition is + tier math), catalogue.py (all 33,
+                   # Definition is + tier math), catalogue.py (all 33 plus the 17 season ones,
                    # in display order), ladders.py / conditions.py (pure
                    # progress functions over a History), history.py (the
                    # event_log-backed History), engine.py (on_event:
@@ -837,6 +837,11 @@ src/nani_pix_bot/
                    # name/description), status.py (the view model behind
                    # /achievements, plus the top), periods.py (period
                    # math, scoring, freezing a closed period),
+                   # season_eval.py (per-season achievements, Kind.SEASON:
+                   # a SeasonHistory scoped to one season, period_key =
+                   # run_id), season_progress.py (their progress
+                   # functions), RunAchievement hooks for a run's own
+                   # (seasons/definition.py, merged by catalogue.py),
                    # podium.py (a finished period as lines/a card),
                    # outbox.py (queue/list/settle)
     cards/        # Pillow image cards, no Telegram: render.py (unlock and
@@ -924,7 +929,14 @@ src/nani_pix_bot/
                    #                 (style_for, apply_style); watercolor.py
                    #                 is the watercolor drawing
                    #   season_history.py  the History one season's objectives
-                   #                 read (its games + tips in its dates)
+                   #                 and season achievements read (its games
+                   #                 + tips in its dates); season-owned events
+                   #                 (item_gained/pass_completed/season_ended)
+                   #                 are admitted by type, so readers filter
+                   #                 them by data.season_id
+                   #   pass_completion.py  a pass track finishing: stamps
+                   #                 season_pass.free_completed_at, queues the
+                   #                 topic line, emits pass_completed (first)
                    #   goals.py      progress toward and wording of a Goal
                    #   objectives.py check (complete + pay + DM), status
                    #   pass_view.py  the /seasonpass text and its tier lines
@@ -1325,7 +1337,7 @@ erDiagram
 | `clue_purchases` | v8 | One clue a player bought in one game (`kind` is a `ClueKind` stored as a plain string: first/last letter, title shape, screenshot, tile). `game_id` is a real FK with `ON DELETE CASCADE`, so a game deletion drops its purchases (the ledger rows stay); `/stop` refunds them first via `shop.refund_game`, and setup-abandon only deletes `SETUP` games, which cannot have any; `player_id` FKs `players`. `tile_index` (0-63, row-major on the 8x8 grid) is set for a tile (one per game: the first tile purchase's index, via `shop.round_tile`, is the round's tile and every later buyer's row repeats it; one tile per player) and `screenshot_url` for an extra screenshot, so *what* was bought lives here and never in the ledger. `telegram_file_id` is the delivered image's file_id, kept so sharing re-posts it without re-rendering; `shared_at` is set once when the player shares it with the group (free, once per clue). `transfer_id` (FK, unique) is the `currency_transfers` charge that paid for it; a failed delivery is refunded through a `reverses_id` ledger row and the purchase row is deleted. Written only via `services/clues/shop.py`. |
 | `game_votes` | v9 | One current vote in a hard-mode vote (#252): `game_id` (real FK, `ON DELETE CASCADE`), `voter_id`, `candidate_id` (both FK `players`). Unique on (`game_id`, `voter_id`): changing a vote updates the row in place. Candidates are every player with a `game_guesses` row for the game, and nobody can vote for themselves (`services/game/vote.py`). |
 | `game_guesses` | v9 | Every /guess: game, player, text, stage/turn, correct, partial reveal. `game_id` is a real FK with `ON DELETE CASCADE`, so it cascades with its game; `player_id` FKs `players`. `stage` is the PixelStage number (1-5) or the hard-mode turn (1-2); `text` is truncated to 255 characters. Written only via `services/game/guesses.py::log_guess`, from `state.record_guess` and `hard_mode.record_hard_mode_guess`. |
-| `event_log` | v10 | Append-only domain events, the data source for achievements and deliberately not achievement-specific. `event_type` is an `EventType` stored as a plain string (a new type needs no migration), `actor_id`/`subject_id` are plain bigints (no FK) and `game_id` a plain int with **no** FK like `currency_transfers.game_id`, so rows outlive a `/stop`ped game. `data` is type-specific JSON. Indexed on `(event_type, actor_id)`, `(event_type, subject_id)`, `game_id` and `occurred_at`. It starts empty on deploy, which is the no-backfill rule. Written only through `services/events.py::emit`. |
+| `event_log` | v10 | Append-only domain events, the data source for achievements and deliberately not achievement-specific. `event_type` is an `EventType` stored as a plain string (a new type needs no migration), `actor_id`/`subject_id` are plain bigints (no FK) and `game_id` a plain int with **no** FK like `currency_transfers.game_id`, so rows outlive a `/stop`ped game. `data` is type-specific JSON. Indexed on `(event_type, actor_id)`, `(event_type, subject_id)`, `game_id` and `occurred_at`. It starts empty on deploy, which is the no-backfill rule. Written only through `services/events.py::emit`. Season Phase 5 adds three types: `item_gained` (a cosmetic granted, any source), `pass_completed` (a pass track finished; `premium`, and `first` for the first free completion in a season) and `season_ended` (one per ranked player when a season finalizes). `game_won` facts also carry `gate_tags`. The three season-owned types have no season game, so the season history scope admits them by type and readers filter on `data.season_id`. |
 | `achievement_grants` | v10 | One achievement tier a player unlocked: `key`, `tier`, `rarity`, `reward`, `points`, the ledger `transfer_id` and `granted_at`. Unique on (`player_id`, `key`, `tier`, `period_key`). `period_key` is `NOT NULL DEFAULT ''` (`''` = not a period grant) because MariaDB treats NULLs as distinct in a unique index, which would let a champion tier be granted twice. |
 | `achievement_claims` | v10 | The single holder of a group-unique tier (Pioneer, Milestone Keeper N). The primary key (`key`, `tier`) is what makes a second holder impossible. There is no timestamp: the grant row has it. |
 | `announcement_outbox` | v10 | A group post owed but not yet sent (`kind` `unlock`/`period_summary`, JSON `payload`), written in the same transaction as what it announces. `batch_id` (the causing event) groups unlocks into one album, `attempts` counts failed sends (given up at 3), `posted_at` is NULL until delivered. Posted in id order by `jobs/announcements.py`. |
@@ -1340,7 +1352,7 @@ erDiagram
 | `games` season columns | v12 | `season_id` (nullable FK to `season_schedule`): the season that was active when the game was activated (`services/game/state.py::activate_game`), `NULL` outside seasons. A game keeps it when it ends after the season's `end_at`, and its XP still counts. `anime_tags` (nullable JSON list of `{kind, name, mal_id}`): the identified anime's MAL genres/themes, fetched only while a gated season is active and kept for the confirm-time re-check. |
 | `currency_transfers` season columns | v12 | `currency` (`base` = the 💠 balance, `season` = 🪙, a `Currency` stored as a plain string, default `base`) and a nullable `season_id`: a 🪙 movement is tagged with its season. New `CurrencyReason`s: `season_win`, `season_host`, `season_first_guess`, `pass_reward`, `premium_pass`, `season_conversion`, and from Phase 4 `season_shop` (🪙 spent in the Season Shop) and `season_objective` (🪙 paid for a completed objective). |
 | `season_balances` | v12 | A player's 🪙 balance in one season (`season_id`, `player_id`, `balance`): a cache of the `currency = season` ledger rows, written only via `wallet`. Emptied by the season-end conversion. |
-| `season_pass` | v12 | A player's pass progress in one season: `free_claimed` / `premium_claimed` (counts, since tiers are granted in order) and `premium_transfer_id` (the 💠 charge that bought Premium, `NULL` = no Premium). Written only by `services/seasons/season_pass.py`. |
+| `season_pass` | v12 | A player's pass progress in one season: `free_claimed` / `premium_claimed` (counts, since tiers are granted in order) and `premium_transfer_id` (the 💠 charge that bought Premium, `NULL` = no Premium), plus `free_completed_at` (Phase 5: when the free track was fully granted, `NULL` until then; it is how the first player to finish is known, see `pass_completed`'s `first`). Written by `services/seasons/season_pass.py` and `services/seasons/pass_completion.py`. |
 | `season_shop_purchases` | Phase 4 | One Season Shop purchase: `season_id`, `player_id`, `offer_key`, `transfer_id` (unique, the 🪙 charge) and `created_at`. A player's per-season count per offer enforces its limit. Written only by `services/seasons/season_shop.py`. |
 | `season_objectives` | Phase 4 | A completed objective: primary key (`season_id`, `player_id`, `objective_key`) and `completed_at`, so it pays once. Written only by `services/seasons/objectives.py`. |
 | `consumables` | v12 | `player_id`, `kind` (a `ConsumableKind`, stored `clue_token`) and `count`: the clue tokens a player holds. Written only by `services/cosmetics/consumables.py`. |

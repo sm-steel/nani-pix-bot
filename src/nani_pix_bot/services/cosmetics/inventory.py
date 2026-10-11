@@ -7,10 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.cosmetics import EquippedItem, OwnedItem
-from nani_pix_bot.models.enums import CosmeticSlot, ItemSource
+from nani_pix_bot.models.enums import CosmeticSlot, EventType, ItemSource
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.registry import ResolvedItem
-from nani_pix_bot.services import players
+from nani_pix_bot.services import events, players
 from nani_pix_bot.services.cosmetics import looks
 
 
@@ -62,6 +62,14 @@ def grant(session: Session, player_id: int, request: ItemGrant) -> bool:
         item_id=item_id,
         recipient=recipient,
         recipient_id=player_id,
+        source=request.source.value,
+        season_id=request.season_id,
+    )
+    events.emit(
+        session,
+        EventType.ITEM_GAINED,
+        events.Involved(actor_id=player_id),
+        item_id=item_id,
         source=request.source.value,
         season_id=request.season_id,
     )

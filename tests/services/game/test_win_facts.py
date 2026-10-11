@@ -1,0 +1,28 @@
+"""The facts a win records for its game_won event."""
+
+import pytest
+
+from nani_pix_bot.models.enums import WinMethod
+from nani_pix_bot.services.game import win_facts
+from nani_pix_bot.services.seasons import gate
+from tests.seasons_fixtures import WINNER
+
+
+@pytest.fixture(autouse=True)
+def _season_runs(fake_runs):
+    """The shared fake runs, applied to every test in this file."""
+
+
+def test_a_tagged_wins_facts_list_its_gate_tags(session, tagged_game) -> None:
+    tagged_game.anime_tags = [{"kind": "genre", "name": "Romance", "mal_id": 22}]
+
+    facts = win_facts.win_facts(session, tagged_game, WINNER, WinMethod.GUESS)
+
+    assert facts["gate_tags"] == ["genre:22"]
+    assert facts["gate_tags"] == gate.won_tags(session, tagged_game)
+
+
+def test_an_untagged_wins_facts_have_no_gate_tags(session, untagged_game) -> None:
+    facts = win_facts.win_facts(session, untagged_game, WINNER, WinMethod.GUESS)
+
+    assert facts["gate_tags"] == []

@@ -9,7 +9,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.achievements import browser, compare
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
-from nani_pix_bot.services.achievements import engine
+from nani_pix_bot.services.achievements import catalogue, engine
 from nani_pix_bot.services.achievements.status import CompareFilter
 
 pytestmark = pytest.mark.achievements
@@ -106,5 +106,6 @@ async def test_an_unknown_filter_and_huge_page_fall_back_to_all_on_the_last_page
     assert "Sharpshooter" not in args[2]  # first page is not shown
     assert "| Achievement | You | @bob |" in args[2]
     buttons = [b.callback_data for row in args[3].inline_keyboard for b in row]
-    assert compare.compare_data(2, CompareFilter.ALL, 2) in buttons  # prev of the last page (3)
-    assert "ach:c:2:a:3" not in buttons
+    last = -(-len(catalogue.definitions()) // compare.COMPARE_PAGE_SIZE) - 1
+    assert compare.compare_data(2, CompareFilter.ALL, last - 1) in buttons  # prev of the last page
+    assert compare.compare_data(2, CompareFilter.ALL, last) not in buttons

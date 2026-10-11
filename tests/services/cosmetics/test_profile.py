@@ -152,6 +152,12 @@ def test_badges_default_to_the_rarest_named_with_their_tier(session, alice, art)
     )
 
 
+def test_a_run_achievement_badge_is_named_from_its_run_module(session, alice, art) -> None:
+    _grant(session, "demo_1.double_date", 1, Rarity.SILVER)
+    badges = profile.build(session, alice, "RU").badges
+    assert badges == (profile.Badge("Двойное свидание", Rarity.SILVER),)
+
+
 def test_stamps_follow_the_picks_but_the_count_is_every_season(session, alice, art) -> None:
     _ended_season(session, "demo_1", 0)
     showcase.toggle(session, alice, ShowcaseKind.STAMP, "demo_1")

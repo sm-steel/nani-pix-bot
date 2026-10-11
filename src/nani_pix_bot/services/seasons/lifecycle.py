@@ -14,7 +14,7 @@ from nani_pix_bot.models.enums import EventType, GameStatus, OutboxKind, SeasonS
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.services import players
+from nani_pix_bot.services import events, players
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.events import LoggedEvent, as_utc
 from nani_pix_bot.services.seasons import conversion, schedule, xp
@@ -70,6 +70,26 @@ def _log_frozen(session: Session, row: SeasonSchedule, standings: list[xp.Placed
     )
 
 
+def _announce_end(session: Session, row: SeasonSchedule, standings: list[xp.Placed]) -> None:
+    """One SEASON_ENDED event per ranked player, for the achievements."""
+    for placed in standings:
+        events.emit(
+            session,
+            EventType.SEASON_ENDED,
+            events.Involved(actor_id=placed.player_id),
+            season_id=row.id,
+            run_id=row.run_id,
+            rank=placed.rank,
+            xp=placed.xp,
+        )
+    logger.info(
+        "announced the season's end to {players} ranked players",
+        players=len(standings),
+        season_id=row.id,
+        run_id=row.run_id,
+    )
+
+
 def _convert_coins(session: Session, row: SeasonSchedule) -> None:
     run = registry.get(row.run_id)
     if run is None:
@@ -101,8 +121,11 @@ def _finalize(session: Session, row: SeasonSchedule, now: datetime) -> Transitio
     row.ended_at = now
     session.flush()
     _log_frozen(session, row, standings)
-    _convert_coins(session, row)
+    # Queued before SEASON_ENDED so the end post leads its podium/Veteran
+    # unlocks; it reads the conversion back from the ledger when it's posted.
     outbox.enqueue_season(session, OutboxKind.SEASON_END, row.id)
+    _announce_end(session, row, standings)
+    _convert_coins(session, row)
     return _move(row, SeasonStatus.ENDED)
 
 

@@ -9,7 +9,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import CurrencyReason, XpSource
-from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonObjective, SeasonSchedule, SeasonXp
 from nani_pix_bot.seasons import registry
@@ -19,21 +18,7 @@ from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.economy.wallet import LedgerEntry
 from nani_pix_bot.services.events import LoggedEvent, as_utc
-from nani_pix_bot.services.seasons import goals, schedule, season_history, season_pass
-
-
-def _season_of(session: Session, event: LoggedEvent) -> SeasonSchedule | None:
-    """Rule D1: a game's events belong to its season while that season still
-    grants; a game-less event (a tip) to the season running now."""
-    if event.game_id is None:
-        return schedule.active(session)
-    game = session.get(Game, event.game_id)
-    if game is None or game.season_id is None:
-        return None
-    season = session.get(SeasonSchedule, game.season_id)
-    if season is None or season.status not in season_pass.GRANTING:
-        return None
-    return season
+from nani_pix_bot.services.seasons import goals, season_history, season_pass
 
 
 def reward_text(objective: Objective, lang: str) -> str:
@@ -101,7 +86,7 @@ def _complete(session: Session, found: _Open, objective: Objective) -> None:
 
 
 def _open_for(session: Session, event: LoggedEvent, player: Player) -> _Open | None:
-    season = _season_of(session, event)
+    season = season_history.season_of_event(session, event)
     run = registry.get(season.run_id) if season is not None else None
     if season is None or run is None or not run.objectives:
         return None

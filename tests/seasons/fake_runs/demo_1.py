@@ -1,6 +1,6 @@
 from types import MappingProxyType
 
-from nani_pix_bot.models.enums import CosmeticSlot
+from nani_pix_bot.models.enums import CosmeticSlot, EventType, Rarity
 from nani_pix_bot.seasons.definition import (
     CoinTable,
     Gate,
@@ -11,6 +11,7 @@ from nani_pix_bot.seasons.definition import (
     Modifier,
     Objective,
     Reward,
+    RunAchievement,
     SeasonRun,
     ShopOffer,
     Tier,
@@ -65,6 +66,23 @@ OBJECTIVES = (
     ),
 )
 
+
+def _two_wins_one_day(history) -> int:
+    days = [e.occurred_at.astimezone(history.tz).date() for e in history.mine(EventType.GAME_WON)]
+    return 1 if any(days.count(day) >= 2 for day in set(days)) else 0
+
+
+ACHIEVEMENTS = (
+    RunAchievement(
+        "double_date",
+        _names("Double Date", "Двойное свидание"),
+        _names("Win two season games in one day", "Выиграйте две игры сезона за один день"),
+        Rarity.SILVER,
+        frozenset({EventType.GAME_WON}),
+        _two_wins_one_day,
+    ),
+)
+
 RUN = SeasonRun(
     run_id="demo_1",
     names=MappingProxyType({"EN": "Demo Season", "RU": "Демо-сезон"}),
@@ -89,4 +107,5 @@ RUN = SeasonRun(
     modifiers=MappingProxyType({Modifier.CLUE_DISCOUNT_PCT: 25}),
     style="plain",
     objectives=OBJECTIVES,
+    achievements=ACHIEVEMENTS,
 )

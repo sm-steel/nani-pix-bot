@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from functools import cache
 from types import MappingProxyType
 
-from nani_pix_bot.seasons.definition import Item, SeasonRun, run_problems
+from nani_pix_bot.seasons.definition import MAX_RUN_ID_LENGTH, Item, SeasonRun, run_problems
 
 RUNS_PACKAGE = "nani_pix_bot.seasons.runs"
 
@@ -27,6 +27,9 @@ def discover(package: str) -> dict[str, SeasonRun]:
             raise RunModuleError(msg)
         if run.run_id != info.name:
             msg = f"{module.__name__}: run_id {run.run_id!r} must equal the module name"
+            raise RunModuleError(msg)
+        if len(run.run_id) > MAX_RUN_ID_LENGTH:
+            msg = f"{module.__name__}: run_id must be at most {MAX_RUN_ID_LENGTH} characters"
             raise RunModuleError(msg)
         problems = run_problems(run)
         if problems:

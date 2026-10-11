@@ -93,3 +93,36 @@ def test_active_gate_is_the_running_seasons_gate(session) -> None:
 def test_active_gate_of_an_active_season(session, fake_runs) -> None:
     _season(session, SeasonStatus.ACTIVE)
     assert gate_service.active_gate(session) == fake_runs["demo_1"].gate
+
+
+def test_won_tags_are_the_gate_tags_the_game_matches(session, tagged_game) -> None:
+    tagged_game.anime_tags = [
+        {"kind": "genre", "name": "Romance", "mal_id": 22},
+        {"kind": "genre", "name": "Drama", "mal_id": 8},
+    ]
+    assert gate_service.won_tags(session, tagged_game) == ["genre:22"]
+
+
+def test_an_untagged_game_won_nothing(session, untagged_game) -> None:
+    untagged_game.anime_tags = [{"kind": "genre", "name": "Romance", "mal_id": 22}]
+    assert gate_service.won_tags(session, untagged_game) == []
+
+
+def test_a_season_game_without_stored_tags_won_nothing(session, tagged_game) -> None:
+    tagged_game.anime_tags = None
+    assert gate_service.won_tags(session, tagged_game) == []
+
+
+def test_a_season_game_off_the_gate_won_nothing(session, tagged_game) -> None:
+    tagged_game.anime_tags = [{"kind": "genre", "name": "Drama", "mal_id": 8}]
+    assert gate_service.won_tags(session, tagged_game) == []
+
+
+def test_a_game_of_an_unknown_run_won_nothing(session, tagged_game, active_season) -> None:
+    active_season.run_id = "no_such_run"
+    tagged_game.anime_tags = [{"kind": "genre", "name": "Romance", "mal_id": 22}]
+    assert gate_service.won_tags(session, tagged_game) == []
+
+
+def test_tag_key_is_kind_and_mal_id() -> None:
+    assert gate_service.tag_key(GateTag("theme", "School", 23, 99)) == "theme:23"
