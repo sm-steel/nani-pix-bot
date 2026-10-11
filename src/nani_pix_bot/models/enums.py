@@ -351,6 +351,8 @@ class CurrencyReason(enum.StrEnum):
     TIER_REWARD = "pass_reward"
     PREMIUM = "premium_pass"
     SEASON_CONVERSION = "season_conversion"
+    # 🪙 spent in the Season Shop
+    SEASON_SHOP = "season_shop"
 
 
 class Currency(enum.StrEnum):
@@ -474,6 +476,7 @@ class ItemSource(enum.StrEnum):
 
     ADMIN = "admin"
     TIER = "pass"
+    SHOP = "shop"
 
 
 class PreviewKind(enum.StrEnum):
