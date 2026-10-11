@@ -84,6 +84,9 @@ async def test_a_dm_the_bot_cannot_send_is_given_up_without_blocking(
         assert outbox.pending(session, 10) == []  # both settled
     assert context.bot.send_message.await_count == 2
     assert any(r.level == "WARNING" and "DM" in r.message for r in log_records)
+    posted = [r for r in log_records if r.level == "INFO" and "posted announcement" in r.message]
+    assert len(posted) == 1  # only the pass-done line that really went out
+    assert len(posted[0].extra["outbox_ids"]) == 1
 
 
 async def test_pass_done_is_a_topic_line(session_factory, context) -> None:

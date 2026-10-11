@@ -58,6 +58,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Not data-safe for season coins: without the currency column their rows
+    # would read as 💠, so they are deleted first.
+    op.execute("DELETE FROM currency_transfers WHERE currency = 'season'")
     op.drop_table("season_balances")
     with op.batch_alter_table("currency_transfers") as batch:
         batch.drop_constraint(op.f("ck_currency_transfers_season_coins_have_season"), type_="check")

@@ -268,10 +268,12 @@ async def _send_album(
 
 async def _send_each(
     context: ContextTypes.DEFAULT_TYPE, group: list[Post], images: list[bytes | None]
-) -> tuple[list[int], list[int]]:
+) -> tuple[list[int], list[int], set[int]]:
     """One message per post, reusing the bytes already rendered (a card that
     failed to draw goes out as text). A failure stops here: the posts before
-    it stay posted, it and the rest are reported failed."""
+    it stay posted, it and the rest are reported failed. The third value is the
+    rows of DMs given up on: settled like posted, but not actually sent."""
+    given_up: set[int] = set()
     for done, (post, image) in enumerate(zip(group, images, strict=True)):
         try:
             await _send_one(context, post, image)
@@ -282,21 +284,22 @@ async def _send_each(
                     outbox_ids=post.row_ids,
                     error=exc,
                 )
-                return _row_ids(group[:done]), _row_ids(group[done:])
+                return _row_ids(group[:done]), _row_ids(group[done:]), given_up
             logger.warning(
                 "couldn't DM {recipient} their season pass notice: {error} — given up",
                 recipient=post.dm_to,
                 recipient_id=post.dm_to,
                 error=exc,
             )
+            given_up.update(post.row_ids)
         except TelegramError as exc:
             logger.error(
                 "failed to post announcement {outbox_ids}: {error}",
                 outbox_ids=post.row_ids,
                 error=exc,
             )
-            return _row_ids(group[:done]), _row_ids(group[done:])
-    return _row_ids(group), []
+            return _row_ids(group[:done]), _row_ids(group[done:]), given_up
+    return _row_ids(group), [], given_up
 
 
 async def _send(
@@ -319,11 +322,12 @@ async def _send(
                 "failed to post announcement {outbox_ids}: {error}", outbox_ids=ids, error=exc
             )
             return [], ids
-        posted, failed = ids, []
+        posted, failed, given_up = ids, [], set()
     else:
-        posted, failed = await _send_each(context, group, images)
-    if posted:
-        logger.info("posted announcement {outbox_ids}", outbox_ids=posted)
+        posted, failed, given_up = await _send_each(context, group, images)
+    sent = [row_id for row_id in posted if row_id not in given_up]
+    if sent:
+        logger.info("posted announcement {outbox_ids}", outbox_ids=sent)
     return posted, failed
 
 

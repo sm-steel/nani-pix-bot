@@ -275,3 +275,29 @@ async def test_a_non_member_cannot_buy(session_factory, season) -> None:
     assert _alert(query) == i18n.t("dm_start.not_a_member", "EN")
     with session_factory() as session:
         assert session.get(Player, 1).currency == 1000
+
+
+async def test_a_failing_purchase_answers_the_tap_and_charges_nothing(
+    session_factory, season, monkeypatch, log_records
+) -> None:
+    _set_currency(session_factory, 1000)
+    sid = _season_id(session_factory)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("db went away")
+
+    monkeypatch.setattr(season_pass_module.season_pass, "buy_premium", boom)
+    query = await _tap(session_factory, f"spass:yes:{sid}")
+    assert _alert(query) == i18n.t("season_pass.failed", "EN")
+    assert any(record.level == "ERROR" for record in log_records)
+    with session_factory() as session:
+        assert session.get(Player, 1).currency == 1000
+
+
+async def test_an_unopen_season_buy_is_logged(session_factory, season, log_records) -> None:
+    sid = _season_id(session_factory)
+    await _tap(session_factory, f"spass:yes:{sid + 5}")
+    assert any(
+        record.level == "WARNING" and record.extra.get("tapped_season_id") == sid + 5
+        for record in log_records
+    )

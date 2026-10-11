@@ -735,6 +735,7 @@
   "season_pass.confirm": "Buy Premium for {price} 💠? You get every premium reward you've already reached, and the rest as you reach them.",
   "season_pass.confirm_yes": "Buy",
   "season_pass.confirm_no": "Back",
+  "season_pass.failed": "Something went wrong — nothing was charged. Try again later.",
   "season_pass.refused.not_open": "Premium can't be bought now: this season isn't running.",
   "season_pass.refused.already": "You already have Premium.",
   "season_pass.refused.no_premium": "This season has no Premium track.",

@@ -1779,7 +1779,7 @@ per player.
 from the 💠 balance. Every credit and debit still writes a `currency_transfers`
 row, tagged `currency = season` and the `season_id`. They are paid for the
 same events and by the same rules as Season XP (tagged games only; no hosting
-on HARD MODE games; the first guess answered from `total_guess_count`),
+on HARD MODE games; the first guess is the player's first `game_guesses` row in that game),
 priced by the run's `CoinTable`: a win pays the same at every stage,
 `host_solved`, `host_unsolved`, `first_guess`. Pass rewards can pay 🪙 too.
 

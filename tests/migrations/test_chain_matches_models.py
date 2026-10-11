@@ -338,17 +338,21 @@ def test_chain_matches_the_models_foreign_keys(
     assert migrated_foreign_keys == model_foreign_keys
 
 
-def test_currency_transfers_checks_match_the_model(migrated_connection: Connection) -> None:
-    """The ledger's integrity lives in its named CHECKs; the generic
-    comparisons above never look at them, so drift would pass silently."""
+@pytest.mark.parametrize(
+    "table_name",
+    ["currency_transfers", "clue_purchases", "consumables", "season_balances"],
+)
+def test_checks_match_the_model(migrated_connection: Connection, table_name: str) -> None:
+    """Integrity lives in named CHECKs (the ledger's, one clue payment, non-negative
+    counts and coins); the generic comparisons above never look at them, so drift
+    would pass silently."""
     model_checks = {
         constraint.name
-        for constraint in Base.metadata.tables["currency_transfers"].constraints
+        for constraint in Base.metadata.tables[table_name].constraints
         if isinstance(constraint, sa.CheckConstraint)
     }
     migrated_checks = {
-        check["name"]
-        for check in sa.inspect(migrated_connection).get_check_constraints("currency_transfers")
+        check["name"] for check in sa.inspect(migrated_connection).get_check_constraints(table_name)
     }
     assert model_checks
     assert migrated_checks == model_checks

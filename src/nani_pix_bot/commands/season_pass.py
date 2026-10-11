@@ -131,6 +131,10 @@ def _try_buy(
         with session_scope(context.bot_data["session_factory"]) as session:
             open_run = _open_run(session, season_id)
             if open_run is None:
+                logger.warning(
+                    "refused Premium: season {tapped_season_id} isn't the open one",
+                    tapped_season_id=season_id,
+                )
                 raise season_pass.PremiumRefusedError(season_pass.PremiumRefusal.NOT_OPEN)
             season, run = open_run
             player = players.get_or_create_player(session, user.id, username=user.username)
@@ -142,7 +146,14 @@ def _try_buy(
 
 
 async def _buy(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, season_id: int) -> None:
-    refusal, price, balance = _try_buy(context, query.from_user, season_id)
+    try:
+        refusal, price, balance = _try_buy(context, query.from_user, season_id)
+    except Exception:
+        logger.opt(exception=True).error("buying Premium failed", season_id=season_id)
+        with session_scope(context.bot_data["session_factory"]) as session:
+            lang = settings.get_language(session)
+        await query.answer(i18n.t("season_pass.failed", lang), show_alert=True)
+        return
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
         text, keyboard = view(session, query.from_user.id, lang)
