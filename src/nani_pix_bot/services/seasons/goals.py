@@ -76,5 +76,6 @@ def describe(goal: Goal, lang: str) -> str:
     key = f"season_objective.goal.{goal.kind.value}"
     if goal.kind is GoalKind.WINS and goal.max_stage is not None:
         key += "_by_stage"
+    key += f".{i18n.plural(goal.target, lang)}"
     # Every template gets the same kwargs; str.format ignores the unused `stage`.
     return i18n.t(key, lang, n=goal.target, stage=goal.max_stage)

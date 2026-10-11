@@ -34,3 +34,11 @@ def test_a_run_without_objectives_shows_no_section(session, active_season, tagge
     run = replace(_demo(), objectives=())
     lines = pass_view.view_lines(session, active_season, run, WINNER, "EN")
     assert i18n.t("season_pass.view.objectives", "EN") not in lines
+
+
+def test_an_objective_without_coins_shows_no_coins(session, active_season, tagged_game) -> None:
+    run = _demo()
+    run = replace(run, objectives=tuple(replace(o, coins=0) for o in run.objectives))
+    section = pass_view.view_lines(session, active_season, run, WINNER, "EN")[-5:]
+    assert section[0] == i18n.t("season_pass.view.objectives", "EN")
+    assert all("🪙" not in line for line in section)

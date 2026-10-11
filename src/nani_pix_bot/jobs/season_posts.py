@@ -19,7 +19,7 @@ from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.cards import SeasonBanner, season_background
 from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.events import as_utc
-from nani_pix_bot.services.seasons import conversion, podium_text, season_pass
+from nani_pix_bot.services.seasons import conversion, objectives, podium_text, season_pass
 
 
 def _local(at: datetime, tz: ZoneInfo) -> str:
@@ -115,8 +115,7 @@ def _objective_post(session: Session, row: AnnouncementOutbox, lang: str) -> Pos
         "season_objective.notice",
         lang,
         name=objective.name(lang),
-        xp=objective.xp,
-        coins=objective.coins,
+        reward=objectives.reward_text(objective, lang),
         season=run.name(lang),
     )
     return Post((row.id,), text, dm_to=row.payload["player_id"])

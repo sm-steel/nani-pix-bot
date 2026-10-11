@@ -14,7 +14,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonObjective, SeasonSchedule, SeasonXp
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import Objective, SeasonRun
-from nani_pix_bot.services import players
+from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.economy.wallet import LedgerEntry
@@ -34,6 +34,13 @@ def _season_of(session: Session, event: LoggedEvent) -> SeasonSchedule | None:
     if season is None or season.status not in season_pass.GRANTING:
         return None
     return season
+
+
+def reward_text(objective: Objective, lang: str) -> str:
+    """What an objective pays, in player words; no "+0 🪙" for an XP-only one."""
+    if objective.coins:
+        return i18n.t("season_objective.reward", lang, xp=objective.xp, coins=objective.coins)
+    return i18n.t("season_objective.reward_xp_only", lang, xp=objective.xp)
 
 
 def done_keys(session: Session, season_id: int, player_id: int) -> set[str]:

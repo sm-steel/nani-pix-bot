@@ -68,3 +68,13 @@ def test_group_probes_are_scoped_too(session, active_season, tagged_game) -> Non
     assert history.group_active_between((EventType.GUESS,), day, day) is False
     _log(session, EventType.GUESS, actor=2, game_id=tagged_game.id)
     assert history.group_active_between((EventType.GUESS,), day, day) is True
+
+
+def test_a_late_start_moves_the_window_to_started_at(session, active_season) -> None:
+    active_season.started_at = (NOW + timedelta(hours=2)).replace(tzinfo=None)
+    session.flush()
+    _log(session, EventType.CURRENCY_MOVED, actor=1, reason="tip", at=NOW + timedelta(hours=1))
+    _log(session, EventType.CURRENCY_MOVED, actor=1, reason="tip", at=NOW + timedelta(hours=3))
+    history = season_history.for_player(session, active_season, 1)
+    (inside,) = history.mine(EventType.CURRENCY_MOVED)
+    assert inside.occurred_at == NOW + timedelta(hours=3)

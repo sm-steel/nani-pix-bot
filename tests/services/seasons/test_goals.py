@@ -65,3 +65,24 @@ def test_every_kind_has_triggers_and_a_description() -> None:
 
 def test_a_stage_limit_is_described() -> None:
     assert "2" in goals.describe(Goal(GoalKind.WINS, 3, max_stage=2), "EN")
+
+
+def test_descriptions_agree_with_the_count() -> None:
+    hosted = [goals.describe(Goal(GoalKind.HOSTED, n), "RU") for n in (1, 2, 5)]
+    assert hosted == ["Загадайте 1 игру", "Загадайте 2 игры", "Загадайте 5 игр"]
+    by_stage = [goals.describe(Goal(GoalKind.WINS, n, max_stage=2), "EN") for n in (1, 2, 5)]
+    assert by_stage == [
+        "Win 1 game by stage 2",
+        "Win 2 games by stage 2",
+        "Win 5 games by stage 2",
+    ]
+    ru_by_stage = [goals.describe(Goal(GoalKind.WINS, n, max_stage=2), "RU") for n in (1, 2, 5)]
+    wins = ["Победите в 1 игре", "Победите в 2 играх", "Победите в 5 играх"]
+    assert [text.split(" не позже ")[0] for text in ru_by_stage] == wins
+    assert all(
+        text.endswith("этапа") and "2" in text.split(" не позже ")[1] for text in ru_by_stage
+    )
+    tips = [goals.describe(Goal(GoalKind.TIPS, n), "EN") for n in (1, 2, 5)]
+    assert tips == ["Send 1 tip", "Send 2 tips", "Send 5 tips"]
+    days = [goals.describe(Goal(GoalKind.DAYS_PLAYED, n), "RU") for n in (1, 2, 5)]
+    assert days == ["Играйте 1 день", "Играйте 2 разных дня", "Играйте 5 разных дней"]

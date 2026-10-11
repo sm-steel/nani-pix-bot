@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
@@ -89,10 +90,21 @@ def test_a_tip_before_the_season_does_not(session, active_season, tagged_game) -
     assert _done(session) == []
 
 
-def test_the_house_completes_nothing(session, active_season, tagged_game) -> None:
+def test_the_house_completes_nothing(session, active_season, tagged_game, monkeypatch) -> None:
+    """The guard returns before any lookup: the coins an objective pays come
+    from the house, so a house event must never re-enter check()."""
     _running_now(session, active_season)
-    _tip(session, actor=None)
-    assert _done(session) == []
+    house_tip = events.LoggedEvent(
+        0, EventType.CURRENCY_MOVED, None, WINNER, None, {"reason": "tip"}, datetime.now(UTC)
+    )
+    looked_up: list[object] = []
+    real_get = session.get
+    monkeypatch.setattr(
+        session, "get", lambda kind, *a, **k: looked_up.append(kind) or real_get(kind, *a, **k)
+    )
+    monkeypatch.setattr(objectives, "done_keys", lambda *a: looked_up.append("done_keys") or set())
+    assert objectives.check(session, house_tip) == []
+    assert looked_up == []
 
 
 def test_no_objectives_once_the_season_ended(session, tagged_game, end_season, emit_win) -> None:
@@ -150,3 +162,11 @@ def test_status_reads_when_an_objective_was_completed(
     }
     assert rows["first_bloom"].completed_at == datetime(2026, 11, 2, 21, 30, tzinfo=UTC)
     assert rows["hanami_host"].completed_at is None
+
+
+def test_the_reward_leaves_out_zero_coins() -> None:
+    run = registry.get("demo_1")
+    assert run is not None
+    objective = run.objectives[0]
+    assert objectives.reward_text(objective, "EN") == "+40 XP, +30 🪙"
+    assert objectives.reward_text(replace(objective, coins=0), "RU") == "+40 XP"

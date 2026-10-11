@@ -25,7 +25,7 @@ def _tier_line(run: SeasonRun, number: int, progress: SeasonPass, lang: str) -> 
 
 def _objective_line(row: ObjectiveStatus, tz: ZoneInfo, lang: str) -> str:
     o = row.objective
-    paid = {"name": o.name(lang), "xp": o.xp, "coins": o.coins}
+    paid = {"name": o.name(lang), "reward": objectives.reward_text(o, lang)}
     if row.completed_at is not None:
         day = row.completed_at.astimezone(tz).strftime("%d.%m")
         return i18n.t("season_pass.view.objective_done", lang, date=day, **paid)
