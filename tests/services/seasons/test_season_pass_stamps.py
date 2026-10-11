@@ -23,7 +23,9 @@ def test_reaching_the_stamp_tier_claims_it_without_a_delivery(
     assert granted[-1].reward == Reward.stamp()
     assert granted[-1].new is True
     assert season_pass.row(session, active_season.id, 1).free_claimed == len(demo.tiers)
-    assert any("earned the season stamp ring" in r.message for r in log_records)
+    stamp_lines = [r for r in log_records if r.level == "INFO" and "stamp" in r.message]
+    assert len(stamp_lines) == 1  # the tier grant line only, naming the recipient
+    assert stamp_lines[0].extra["recipient_id"] == 1
 
 
 def test_the_stamp_texts(demo) -> None:
