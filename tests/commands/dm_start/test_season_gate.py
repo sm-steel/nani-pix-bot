@@ -314,6 +314,51 @@ async def test_unavailable_catalogue_pick_carries_on(
 
 
 @pytest.mark.usefixtures("active_season")
+@pytest.mark.parametrize(
+    ("tags", "error", "expected_text"),
+    [
+        (ROMANCE, None, i18n.t("dm_start.preview_sent", "EN")),
+        (
+            GURREN,
+            None,
+            season_gate.refusal_text(Verdict.OFF_THEME, "romance anime", "EN"),
+        ),
+        (None, TagsUnavailableError(), i18n.t("dm_start.preview_sent", "EN")),
+    ],
+    ids=["passed", "refused", "unavailable"],
+)
+async def test_catalogue_pick_is_answered_before_its_lookups(
+    session_factory, monkeypatch, background_tasks, tags, error, expected_text
+) -> None:
+    """Telegram's callback window is short: the tap is acknowledged once,
+    before get_by_id and the gate's tag lookup, on every path."""
+    calls: list[str] = []
+    update = _callback_update("tenrai_pick:2001")
+    update.callback_query.answer = AsyncMock(side_effect=lambda *a, **k: calls.append("answer"))
+
+    async def get_by_id(*_a):
+        calls.append("get_by_id")
+        return _GURREN_TENRAI
+
+    async def fetch(*_a):
+        calls.append("fetch_tags")
+        if error is not None:
+            raise error
+        return tags
+
+    monkeypatch.setattr(search.tenrai, "get_by_id", get_by_id)
+    monkeypatch.setattr(gate_service, "fetch_tags", fetch)
+    _setup_game(session_factory, step=SetupStep.PICKING_METHOD, source=Provider.TENRAI)
+
+    await search.pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _context(session_factory))
+    )
+
+    assert calls == ["answer", "get_by_id", "fetch_tags"]
+    assert update.callback_query.edit_message_text.await_args.args[0] == expected_text
+
+
+@pytest.mark.usefixtures("active_season")
 async def test_confirm_refusal_edits_the_preview_with_back_button(
     session_factory, monkeypatch
 ) -> None:

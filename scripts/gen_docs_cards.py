@@ -13,6 +13,11 @@ renderers and its committed art: the season-start post, a profile card over
 each of its three banners, and a profile card showing the stamps. Those are
 WebP: the renders are photographs and would weigh about a megabyte each as PNG.
 
+For the Sakura page's cosmetics section it draws each stage frame on the key visual
+(a stage-3 Sakura image), and renders each win effect and reveal transition as the
+same MP4 clip `/cosmetics` previews it with, on the key visual. The clips need ffmpeg
+(pinned in mise.toml) and go to the site's public/ folder, also gitignored.
+
 Usage: uv run python scripts/gen_docs_cards.py
 """
 
@@ -20,9 +25,15 @@ from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 
-from nani_pix_bot.models.enums import CosmeticSlot, OutboxKind, Rarity
+from nani_pix_bot.models.enums import (
+    DEFAULT_ALGORITHM,
+    CosmeticSlot,
+    OutboxKind,
+    PixelStage,
+    Rarity,
+)
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.services import i18n
@@ -47,11 +58,14 @@ from nani_pix_bot.services.cards import (
     season_stamp,
     unlock_slot,
 )
-from nani_pix_bot.services.cosmetics import looks, profile
+from nani_pix_bot.services.cosmetics import looks, previews, profile, stage
 from nani_pix_bot.services.economy.config import DEFAULT_AMOUNTS, EconomyKey
+from nani_pix_bot.services.reveal import pipeline
+from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "docs" / "site" / "src" / "assets" / "generated"
+CLIPS_DIR = ROOT / "docs" / "site" / "public" / "generated"
 LANGS = ("en", "ru")
 
 ACHIEVEMENT = "sharpshooter"
@@ -103,6 +117,8 @@ SEASON_DATES = "12.10 18:00 \u2013 22.10 18:00 (Europe/Moscow)"
 TITLE_KEY = "title.hanami_host"
 RUN_BADGE = ("hanami_party", Rarity.BRONZE)
 PROFILE_SEASONS, PROFILE_COSMETICS = 2, 12
+# The frame stills show the key visual at stage 3, at the default width.
+FRAME_STAGE_WIDTH = DEFAULT_STAGE_CONFIG[PixelStage.STAGE_3].target_width
 
 
 def webp(png: bytes) -> bytes:
@@ -205,8 +221,79 @@ def sakura_images(lang: str) -> dict[str, bytes]:
     return files
 
 
+def _key_visual() -> bytes:
+    found = season_background(RUN_ID)
+    if found is None:
+        raise LookupError(f"{RUN_ID} has no key visual")
+    return found
+
+
+def _resolved(slot: CosmeticSlot) -> tuple[registry.ResolvedItem, ...]:
+    """The run's items of `slot`, in the order the run lists them, as the bot resolves them."""
+    items = registry.all_items()
+    return tuple(items[f"{RUN_ID}/{i.key}"] for i in run().items if i.slot is slot)
+
+
+def cosmetic_stem(resolved: registry.ResolvedItem) -> str:
+    """`host_frame.gold_washi` -> `gold-washi`."""
+    return resolved.item.key.split(".", 1)[1].replace("_", "-")
+
+
+def frame_stills() -> dict[str, bytes]:
+    """Each Sakura frame on the key visual as a real Sakura game posts stage 3: pixelated,
+    painted in the season's style, then framed (`stage_png_with`). No text: one set."""
+    key_visual = _key_visual()
+    return {
+        f"frame-{cosmetic_stem(resolved)}.webp": webp(
+            stage.stage_png_with(
+                key_visual, FRAME_STAGE_WIDTH, DEFAULT_ALGORITHM, resolved.item.look, run().style
+            )
+        )
+        for resolved in _resolved(CosmeticSlot.HOST_FRAME)
+    }
+
+
+def clip_jobs() -> dict[str, previews.ClipJob]:
+    """The /cosmetics preview clip of each Sakura win effect (per language: its badge reads
+    the localized "you") and reveal transition (one, no text), by file name."""
+    jobs: dict[str, previews.ClipJob] = {}
+    for resolved in _resolved(CosmeticSlot.WIN_EFFECT):
+        for lang in LANGS:
+            job = previews.clip_job(resolved, lang)
+            if job is not None:
+                jobs[f"win-{cosmetic_stem(resolved)}-{lang}.mp4"] = job
+    for resolved in _resolved(CosmeticSlot.HOST_TRANSITION):
+        job = previews.clip_job(resolved, LANGS[0])
+        if job is not None:
+            jobs[f"transition-{cosmetic_stem(resolved)}.mp4"] = job
+    return jobs
+
+
+def clip_image() -> bytes:
+    """The key visual cropped to the previews' size, so the clips look like a Sakura game
+    and stay as small as the bot's own previews."""
+    out = BytesIO()
+    with Image.open(BytesIO(_key_visual())) as image:
+        ImageOps.fit(image.convert("RGB"), previews.SAMPLE_SIZE).save(out, format="PNG")
+    return out.getvalue()
+
+
+def generate_clips(out_dir: Path) -> None:
+    """The win-effect and transition clips, rendered by the preview pipeline on the key
+    visual. MP4s are served as-is, so they go to the site's public/ folder."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    image = clip_image()
+    for file_name, job in clip_jobs().items():
+        clip = pipeline.preview_clip(
+            image, DEFAULT_ALGORITHM, previews.STAGE_WIDTHS, job.effect, job.badge
+        )
+        (out_dir / file_name).write_bytes(clip)
+
+
 def generate(out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
+    for file_name, data in frame_stills().items():
+        (out_dir / file_name).write_bytes(data)
     for lang in LANGS:
         background = load_background(unlock_slot(Rarity.GOLD), UNLOCK_SEED)
         unlock = render_unlock_card(unlock_card(lang), None, background)
@@ -220,3 +307,4 @@ def generate(out_dir: Path) -> None:
 
 if __name__ == "__main__":
     generate(OUT_DIR)
+    generate_clips(CLIPS_DIR)
