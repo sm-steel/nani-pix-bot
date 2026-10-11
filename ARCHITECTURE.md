@@ -699,7 +699,9 @@ src/nani_pix_bot/
                    #                   parts share (part 1, TS remux, the
                    #                   ending, the stream-copy join)
                    #   effects/        one module per effect (iris,
-                   #                   tile_flip, ripple, glitch, shatter)
+                   #                   tile_flip, ripple, glitch, shatter;
+                   #                   the Sakura spring_breeze, never
+                   #                   random: store.RANDOM_EFFECTS)
                    #                   with shared helpers in _common.py;
                    #                   EFFECTS maps RevealEffect to them
                    #   celebration.py  the winner's badge, shine and

@@ -275,6 +275,9 @@ class RevealEffect(enum.Enum):
     RIPPLE = "ripple"
     GLITCH = "glitch"
     SHATTER = "shatter"
+    # Sakura Season transitions: only ever an equipped cosmetic, never a random pick
+    # (services/reveal/store.py's RANDOM_EFFECTS).
+    SPRING_BREEZE = "spring_breeze"
 
 
 class RevealStatus(enum.Enum):
