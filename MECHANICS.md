@@ -716,7 +716,7 @@ way to play it once.
 The effect is picked **at game start**: the starter's equipped reveal
 transition (see "Cosmetics"), else uniformly at random from `iris`,
 `tile_flip`, `ripple`, `glitch` and `shatter`. The season transitions
-(`spring_breeze`) are cosmetics and never come up at random. For HARD MODE the animated
+(`spring_breeze`, `blossom_branch`) are cosmetics and never come up at random. For HARD MODE the animated
 screenshot (`a` or `b`) is picked then too. The effect part is rendered in
 the background right after the game goes live, so the reveal itself only
 renders the ending and never delays a game's start.

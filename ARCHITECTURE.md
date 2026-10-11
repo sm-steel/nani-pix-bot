@@ -700,8 +700,11 @@ src/nani_pix_bot/
                    #                   ending, the stream-copy join)
                    #   effects/        one module per effect (iris,
                    #                   tile_flip, ripple, glitch, shatter;
-                   #                   the Sakura spring_breeze, never
-                   #                   random: store.RANDOM_EFFECTS)
+                   #                   the Sakura spring_breeze and
+                   #                   blossom_branch, never
+                   #                   random: store.RANDOM_EFFECTS;
+                   #                   sakura_sprites.py draws the
+                   #                   branch, blossom and leaf once)
                    #                   with shared helpers in _common.py;
                    #                   EFFECTS maps RevealEffect to them
                    #   celebration.py  the winner's badge, shine and
