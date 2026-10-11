@@ -11,6 +11,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.achievements.common import MAX_ID
 from nani_pix_bot.commands.profile import browse
 from nani_pix_bot.commands.profile import card as card_module
+from nani_pix_bot.commands.profile import data as cb
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons import registry
@@ -73,8 +74,8 @@ def _data(markup) -> list[list[str]]:
 
 
 def test_callback_data_round_trips() -> None:
-    assert browse.parse(browse.card_data(1, 2, "n")) == ("o", [1, 2, "n"])
-    assert browse.parse(browse.list_data(1, 3)) == ("l", [1, 3])
+    assert cb.parse(cb.card_data(1, 2, "n")) == ("o", [1, 2, "n"])
+    assert cb.parse(cb.list_data(1, 3)) == ("l", [1, 3])
 
 
 @pytest.mark.parametrize(
@@ -90,11 +91,11 @@ def test_callback_data_round_trips() -> None:
     ],
 )
 def test_malformed_callback_data_is_rejected(data: str) -> None:
-    assert browse.parse(data) is None
+    assert cb.parse(data) is None
 
 
 def test_the_longest_callback_data_fits_telegrams_64_bytes() -> None:
-    assert len(browse.card_data(MAX_ID, MAX_ID, "m").encode()) <= 64
+    assert len(cb.card_data(MAX_ID, MAX_ID, "m").encode()) <= 64
 
 
 # --- keyboards ---------------------------------------------------------------
@@ -102,18 +103,22 @@ def test_the_longest_callback_data_fits_telegrams_64_bytes() -> None:
 
 def test_card_keyboard_wraps_around_at_both_ends() -> None:
     first, last = ROSTER[0], ROSTER[-1]
-    rows = _data(browse.card_keyboard(ROSTER, ME, first, "EN"))
-    assert rows[0] == [browse.card_data(ME, last, "p"), browse.card_data(ME, ROSTER[1], "n")]
+    rows = _data(browse.card_keyboard(ROSTER, browse.Viewing(ME, first, private=False), "EN"))
+    assert rows[0] == [cb.card_data(ME, last, "p"), cb.card_data(ME, ROSTER[1], "n")]
 
 
 def test_card_keyboard_players_button_opens_the_page_the_player_is_on() -> None:
     on_second_page = ROSTER[8]
-    rows = _data(browse.card_keyboard(ROSTER, ME, on_second_page, "EN"))
-    assert rows[-1] == [browse.list_data(ME, 1)]
+    rows = _data(
+        browse.card_keyboard(ROSTER, browse.Viewing(ME, on_second_page, private=False), "EN")
+    )
+    assert rows[-1] == [cb.list_data(ME, 1)]
 
 
 def test_a_lone_player_gets_no_prev_next() -> None:
-    assert _data(browse.card_keyboard([ME], ME, ME, "EN")) == [[browse.list_data(ME, 0)]]
+    assert _data(browse.card_keyboard([ME], browse.Viewing(ME, ME, private=False), "EN")) == [
+        [cb.list_data(ME, 0)]
+    ]
 
 
 def test_list_view_pages_names_and_ends_with_my_card(session) -> None:
@@ -124,9 +129,9 @@ def test_list_view_pages_names_and_ends_with_my_card(session) -> None:
     assert caption == i18n.t("profile.list", "EN")
     assert page == 0
     assert [row[0].text for row in rows[:8]] == [f"@{NAMES[i]}" for i in ROSTER[:8]]
-    assert rows[0][0].callback_data == browse.card_data(ME, ROSTER[0], "l")
+    assert rows[0][0].callback_data == cb.card_data(ME, ROSTER[0], "l")
     assert [b.text for b in rows[8]] == ["1/2", i18n.t("achievements.next_page", "EN")]
-    assert rows[-1][0].callback_data == browse.card_data(ME, ME, "m")
+    assert rows[-1][0].callback_data == cb.card_data(ME, ME, "m")
 
 
 def test_a_stale_page_is_clamped_to_the_last_one(session) -> None:
@@ -141,14 +146,14 @@ def test_a_stale_page_is_clamped_to_the_last_one(session) -> None:
 
 
 async def test_next_swaps_the_photo_for_the_next_players_card(session_factory, log_records) -> None:
-    query = _query(browse.card_data(ME, 3, "n"))
+    query = _query(cb.card_data(ME, 3, "n"))
     await _tap(session_factory, query)
 
     (media,) = query.edit_message_media.await_args.args
     assert isinstance(media, InputMediaPhoto)
     assert "@bob" in media.caption
     keyboard = query.edit_message_media.await_args.kwargs["reply_markup"]
-    assert _data(keyboard)[0] == [browse.card_data(ME, 2, "p"), browse.card_data(ME, 4, "n")]
+    assert _data(keyboard)[0] == [cb.card_data(ME, 2, "p"), cb.card_data(ME, 4, "n")]
     query.answer.assert_awaited_once_with()
     info = [r for r in log_records if r.level == "INFO"]
     assert info[-1].extra["target_id"] == 3
@@ -156,7 +161,7 @@ async def test_next_swaps_the_photo_for_the_next_players_card(session_factory, l
 
 
 async def test_the_card_photo_is_a_full_profile_card(session_factory) -> None:
-    query = _query(browse.card_data(ME, 3, "l"))
+    query = _query(cb.card_data(ME, 3, "l"))
     await _tap(session_factory, query)
 
     (media,) = query.edit_message_media.await_args.args
@@ -164,18 +169,18 @@ async def test_the_card_photo_is_a_full_profile_card(session_factory) -> None:
 
 
 async def test_players_turns_the_caption_into_the_list(session_factory, log_records) -> None:
-    query = _query(browse.list_data(ME, 1))
+    query = _query(cb.list_data(ME, 1))
     await _tap(session_factory, query)
 
     kwargs = query.edit_message_caption.await_args.kwargs
     assert kwargs["caption"] == i18n.t("profile.list", "EN")
-    assert _data(kwargs["reply_markup"])[0] == [browse.card_data(ME, ROSTER[8], "l")]
+    assert _data(kwargs["reply_markup"])[0] == [cb.card_data(ME, ROSTER[8], "l")]
     query.edit_message_media.assert_not_awaited()
     assert any(r.level == "INFO" and "player list" in r.message for r in log_records)
 
 
 async def test_someone_elses_tap_is_refused_with_an_alert(session_factory, log_records) -> None:
-    query = _query(browse.card_data(ME, 3, "n"), tapper=5)
+    query = _query(cb.card_data(ME, 3, "n"), tapper=5)
     await _tap(session_factory, query)
 
     query.answer.assert_awaited_once_with(i18n.t("profile.not_yours", "EN"), show_alert=True)
@@ -187,7 +192,7 @@ async def test_someone_elses_tap_is_refused_with_an_alert(session_factory, log_r
 async def test_a_player_who_is_gone_gets_an_alert(session_factory, log_records) -> None:
     with session_scope(session_factory) as session:
         session.delete(session.get(Player, 3))
-    query = _query(browse.card_data(ME, 3, "n"))
+    query = _query(cb.card_data(ME, 3, "n"))
     await _tap(session_factory, query)
 
     query.answer.assert_awaited_once_with(i18n.t("profile.gone", "EN"), show_alert=True)
@@ -206,7 +211,7 @@ async def test_malformed_data_is_answered_and_ignored(session_factory, log_recor
 
 
 async def test_a_failed_edit_still_answers_the_tap(session_factory, log_records) -> None:
-    query = _query(browse.card_data(ME, 3, "n"))
+    query = _query(cb.card_data(ME, 3, "n"))
     query.edit_message_media.side_effect = BadRequest("Message is not modified")
     await _tap(session_factory, query)
 

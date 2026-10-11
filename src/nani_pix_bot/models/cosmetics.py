@@ -4,9 +4,11 @@ from sqlalchemy import BigInteger, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nani_pix_bot.models.base import Base
-from nani_pix_bot.models.enums import CosmeticSlot, ItemSource, PreviewKind
+from nani_pix_bot.models.enums import CosmeticSlot, ItemSource, PreviewKind, ShowcaseKind
 
 ITEM_ID_LENGTH = 96
+SHOWCASE_KIND_LENGTH = 16
+SHOWCASE_REF_LENGTH = 64
 SLOT_LENGTH = 24
 SOURCE_LENGTH = 16
 PREVIEW_KIND_LENGTH = 8
@@ -55,3 +57,17 @@ class ItemPreview(Base):
     kind: Mapped[PreviewKind] = mapped_column(String(PREVIEW_KIND_LENGTH))
     file_id: Mapped[str] = mapped_column(String(FILE_ID_LENGTH))
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+
+class ShowcasePick(Base):
+    """One thing a player chose to show on their /profile card (#413), in the
+    order they picked it. A pick that no longer resolves is skipped on render."""
+
+    __tablename__ = "profile_showcase"
+
+    player_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("players.telegram_user_id"), primary_key=True
+    )
+    kind: Mapped[ShowcaseKind] = mapped_column(String(SHOWCASE_KIND_LENGTH), primary_key=True)
+    ref: Mapped[str] = mapped_column(String(SHOWCASE_REF_LENGTH), primary_key=True)
+    position: Mapped[int]

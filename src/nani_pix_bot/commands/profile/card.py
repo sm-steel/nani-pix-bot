@@ -8,7 +8,12 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.jobs.avatars import fetch_avatar
 from nani_pix_bot.services import i18n
-from nani_pix_bot.services.cards import ProfileCard, StampEntry, render_profile_card
+from nani_pix_bot.services.cards import (
+    BadgeEntry,
+    ProfileCard,
+    StampEntry,
+    render_profile_card,
+)
 from nani_pix_bot.services.cosmetics import flair, profile
 
 
@@ -19,6 +24,7 @@ def _card(view: profile.ProfileView, lang: str) -> ProfileCard:
         stamps=tuple(StampEntry(s.label, s.gold) for s in view.stamps),
         stats=profile.stats(view.seasons_played, view.cosmetics_owned, lang),
         seed=view.player_id,
+        badges=tuple(BadgeEntry(b.label, b.rarity) for b in view.badges),
     )
 
 

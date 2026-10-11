@@ -439,7 +439,9 @@ src/nani_pix_bot/
                    # __init__.py the command; card.py the photo +
                    # caption; browse.py the card's ◀ ▶ (roster order,
                    # wrapping) and 👥 Players list, edited in place,
-                   # tappable only by whoever sent /profile (prof:…)
+                   # tappable only by whoever sent /profile; edit.py the
+                   # ✏️ editor (own card, DM only) for what the card
+                   # shows; data.py the prof:… callback data
     grant_item.py # /grantitem — admin-gated: give a player an item
                    # (ItemSource.ADMIN)
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
@@ -907,6 +909,9 @@ src/nani_pix_bot/
                    #                   transition, else random
                    #   profile.py      build(): banner, title, stamps, counts;
                    #                   roster()/neighbour() for ◀ ▶
+                   #   showcase.py     what the card shows: picks (≤6 stamps,
+                   #                   ≤4 achievements, tick order), else the
+                   #                   newest seasons / rarest achievements
                    #   previews.py     render + the item_previews cache
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,
@@ -1268,6 +1273,7 @@ erDiagram
 | `equipped_items` | v12 | The item equipped per slot: primary key (`player_id`, `slot`; `slot` a `CosmeticSlot` as a plain string), `item_id`. One item per slot, so equipping replaces. |
 | `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so each preview is rendered and uploaded once per language. |
 | `players.title_key` item encoding | v12 | Besides an achievement title key, `title_key` may be `item:<item id>`, a season title item (`services/achievements/titles.py`). Title item ids are at most 56 bytes (`looks.problems`) so they fit `/title`'s callback data. |
+| `profile_showcase` | v12 | What a player picked to show on their `/profile` card (#413): `player_id` + `kind` (`ShowcaseKind`: `stamp` or `achievement`) + `ref` PK (a season run id, or an `achievement_grants.id` as text) and `position` (tick order). At most 6 stamps and 4 achievements (`services/cosmetics/showcase.py`). A pick that no longer resolves is skipped. With no pick resolving, the card shows the newest seasons and rarest achievements. |
 
 ### Achievements
 

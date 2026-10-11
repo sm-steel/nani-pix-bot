@@ -59,7 +59,8 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             unknown = i18n.t("profile.unknown", lang, username=args[0].lstrip("@"))
         else:
             view, headline = card.load(session, target_id, lang)
-            keyboard = browse.card_keyboard(profile.roster(session), user.id, target_id, lang)
+            viewing = browse.Viewing(user.id, target_id, private=not in_topic)
+            keyboard = browse.card_keyboard(profile.roster(session), viewing, lang)
     if target_id is None:
         await message.reply_text(unknown)
         return

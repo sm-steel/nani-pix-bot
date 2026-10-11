@@ -64,6 +64,7 @@ from nani_pix_bot.commands.helpers import log_scope, paging, player_tracking
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
+from nani_pix_bot.commands.profile.data import PREFIX as PROFILE_PREFIX
 from nani_pix_bot.commands.quiet_hours import SET_TIMEZONE_PREFIX
 from nani_pix_bot.config import Config, load_config
 from nani_pix_bot.jobs import reveal, reveal_pregen
@@ -341,7 +342,7 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
     )
     application.add_handler(
-        CallbackQueryHandler(profile.browse.profile_callback, pattern=rf"^{profile.browse.PREFIX}")
+        CallbackQueryHandler(profile.browse.profile_callback, pattern=rf"^{PROFILE_PREFIX}")
     )
     application.add_handler(CallbackQueryHandler(standings_dm.standings_callback, pattern=r"^std:"))
     application.add_handler(CallbackQueryHandler(leaderboard.leaderboard_callback, pattern=r"^lb:"))

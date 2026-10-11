@@ -461,3 +461,11 @@ class PreviewKind(enum.StrEnum):
     TEXT = "text"
     PHOTO = "photo"
     VIDEO = "video"
+
+
+class ShowcaseKind(enum.StrEnum):
+    """What a player pinned to their /profile card (#413): a season stamp (ref =
+    run id) or an achievement (ref = achievement grant id). Plain string."""
+
+    STAMP = "stamp"
+    ACHIEVEMENT = "achievement"

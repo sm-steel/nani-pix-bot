@@ -9,9 +9,10 @@ from telegram.constants import ChatMemberStatus, ChatType
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import profile as profile_module
-from nani_pix_bot.commands.profile import browse
 from nani_pix_bot.commands.profile import card as card_module
+from nani_pix_bot.commands.profile import data as cb
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.models.enums import ShowcaseKind
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import i18n
@@ -95,9 +96,25 @@ async def test_the_card_has_prev_next_and_players_buttons(session_factory) -> No
     data = [[button.callback_data for button in row] for row in rows]
     # Roster by name: Bob (7), me (1). Both neighbours of "me" are Bob.
     assert data == [
-        [browse.card_data(1, 7, "p"), browse.card_data(1, 7, "n")],
-        [browse.list_data(1, 0)],
+        [cb.card_data(1, 7, "p"), cb.card_data(1, 7, "n")],
+        [cb.list_data(1, 0)],
     ]
+
+
+async def test_your_own_card_in_dm_also_has_the_edit_button(session_factory) -> None:
+    update = _update(chat_type=ChatType.PRIVATE, thread_id=None)
+    await _run(session_factory, update)
+
+    rows = update.message.reply_photo.await_args.kwargs["reply_markup"].inline_keyboard
+    assert rows[-1][0].callback_data == cb.edit_data(1, ShowcaseKind.STAMP, 0)
+
+
+async def test_someone_elses_card_in_dm_has_no_edit_button(session_factory) -> None:
+    update = _update(chat_type=ChatType.PRIVATE, thread_id=None)
+    await _run(session_factory, update, ["@bob"])
+
+    rows = update.message.reply_photo.await_args.kwargs["reply_markup"].inline_keyboard
+    assert all(not b.callback_data.startswith("prof:e:") for row in rows for b in row)
 
 
 async def test_looking_at_someone_else_adds_the_caller_to_the_roster(session_factory) -> None:

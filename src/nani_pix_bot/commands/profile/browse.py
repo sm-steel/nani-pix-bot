@@ -1,13 +1,10 @@
 """The /profile card's buttons (#412), all in the card's own message: ◀ ▶ swap
 the photo for the neighbouring player's card (services/cosmetics/profile.py's
 roster order, wrapping around), 👥 Players turns the caption and buttons into
-a page of names, and a name swaps in that player's card.
+a page of names, and a name swaps in that player's card. On your own card in
+DM, ✏️ opens edit.py's editor. Callback data: data.py."""
 
-Callback data: prof:o:<owner>:<target>:<via> (show a card) and
-prof:l:<owner>:<page> (the player list). <owner> is whoever sent /profile; in
-the topic only they may tap. Everything after the prefix is client-controlled,
-so it is parsed defensively."""
-
+from dataclasses import dataclass
 from typing import cast
 
 from loguru import logger
@@ -18,50 +15,42 @@ from telegram import (
     InputMediaPhoto,
     Update,
 )
+from telegram.constants import ChatType
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.achievements.common import MAX_ID
 from nani_pix_bot.commands.helpers import paging
-from nani_pix_bot.commands.profile import card
+from nani_pix_bot.commands.profile import card, edit
+from nani_pix_bot.commands.profile.data import VIAS, card_data, edit_data, list_data, parse
 from nani_pix_bot.db import session_scope
+from nani_pix_bot.models.enums import ShowcaseKind
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.cosmetics import profile
 
-PREFIX = "prof:"
 PAGE_SIZE = 8
-# How a card was reached, as it reads in the log.
-VIAS = {"p": "◀", "n": "▶", "l": "the player list", "m": "my card"}
-# action -> its fields, and which of them are ints
-_SHAPES: dict[str, tuple[bool, ...]] = {"o": (True, True, False), "l": (True, True)}
-
-
-def card_data(owner: int, target: int, via: str) -> str:
-    return f"{PREFIX}o:{owner}:{target}:{via}"
-
-
-def list_data(owner: int, page: int) -> str:
-    return f"{PREFIX}l:{owner}:{page}"
-
-
-def parse(data: str) -> tuple[str, list[int | str]] | None:
-    action, *fields = data.removeprefix(PREFIX).split(":")
-    shape = _SHAPES.get(action)
-    if shape is None or len(fields) != len(shape):
-        return None
-    pairs = list(zip(fields, shape, strict=True))
-    if any(is_int and not (raw.isdecimal() and int(raw) <= MAX_ID) for raw, is_int in pairs):
-        return None
-    if action == "o" and fields[2] not in VIAS:
-        return None
-    return action, [int(raw) if is_int else raw for raw, is_int in pairs]
 
 
 def _page_of(order: list[int], player_id: int) -> int:
     return order.index(player_id) // PAGE_SIZE if player_id in order else 0
 
 
-def card_keyboard(order: list[int], owner: int, target: int, lang: str) -> InlineKeyboardMarkup:
+@dataclass(frozen=True)
+class Viewing:
+    """Whose card is on screen: `owner` sent /profile and is the one who may tap."""
+
+    owner: int
+    target: int
+    private: bool  # in a DM with the bot
+
+    @property
+    def editable(self) -> bool:
+        """Only your own card, and only in DM, offers the editor."""
+        return self.private and self.owner == self.target
+
+
+def card_keyboard(order: list[int], viewing: Viewing, lang: str) -> InlineKeyboardMarkup:
+    """◀ ▶, 👥 Players and, on an editable card, ✏️."""
+    owner, target = viewing.owner, viewing.target
     rows = []
     if len(order) > 1:
         prev_id = profile.neighbour(order, target, -1)
@@ -80,6 +69,11 @@ def card_keyboard(order: list[int], owner: int, target: int, lang: str) -> Inlin
         i18n.t("profile.players", lang), callback_data=list_data(owner, _page_of(order, target))
     )
     rows.append([players_button])
+    if viewing.editable:
+        edit_button = InlineKeyboardButton(
+            i18n.t("profile.edit", lang), callback_data=edit_data(owner, ShowcaseKind.STAMP, 0)
+        )
+        rows.append([edit_button])
     return InlineKeyboardMarkup(rows)
 
 
@@ -125,7 +119,8 @@ async def _show_card(
             await query.answer(i18n.t("profile.gone", lang), show_alert=True)
             return
         view, headline = card.load(session, target, lang)
-        keyboard = card_keyboard(order, owner, target, lang)
+        private = query.message is not None and query.message.chat.type == ChatType.PRIVATE
+        keyboard = card_keyboard(order, Viewing(owner, target, private), lang)
     png, caption = await card.photo(context, view, headline, lang)
     try:
         await query.edit_message_media(
@@ -183,5 +178,5 @@ async def profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         logger.warning("refused a tap on {owner}'s /profile card", owner=owner_name, owner_id=owner)
         await query.answer(i18n.t("profile.not_yours", lang), show_alert=True)
         return
-    show = _show_list if action == "l" else _show_card
-    await show(query, context, fields, lang)
+    handlers = {"o": _show_card, "l": _show_list, "e": edit.editor_tap, "t": edit.toggle_tap}
+    await handlers[action](query, context, fields, lang)
