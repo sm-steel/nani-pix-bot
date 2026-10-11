@@ -1,4 +1,4 @@
-"""Achievement and podium image cards (spec §7)."""
+"""Achievement, podium, profile and season image cards (spec §7)."""
 
 from nani_pix_bot.services.cards.backgrounds import (
     load_background,
@@ -18,13 +18,12 @@ from nani_pix_bot.services.cards.render import (
     CARD_SIZE,
     PodiumCard,
     PodiumEntry,
-    SeasonBanner,
     UnlockCard,
     avatar_disc,
     render_podium_card,
-    render_season_banner,
     render_unlock_card,
 )
+from nani_pix_bot.services.cards.season_card import SeasonBanner, render_season_banner
 
 __all__ = [
     "CARD_SIZE",

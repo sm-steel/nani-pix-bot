@@ -4,9 +4,11 @@ score, the rarity medal and the currency diamond. Each is painted at 4x and
 shrunk with LANCZOS, so edges are smooth."""
 
 import math
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
+ICON_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "icons"  # Noto emoji PNGs
 _SS = 4
 _GOLD = (240, 190, 40)
 _GOLD_LIGHT = (255, 226, 120)

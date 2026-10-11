@@ -15,6 +15,13 @@ GRID_GAP = 2  # clear space between two blocks
 GRID_BODY_ALPHA = 24  # block fill, in the top-left corner
 GRID_EDGE_ALPHA = 56  # top and left highlight, in the top-left corner
 _GRID_EDGE = 2
+# The light look, for blocks over a bright backdrop (a pale sky, blossoms): white glass
+# would vanish there, so the block gets a faint dark tint and a two-tone bevel.
+LIGHT_LOOK_BODY = (20, 20, 40)
+LIGHT_LOOK_BODY_ALPHA = 26
+LIGHT_LOOK_EDGE_ALPHA = 150  # top and left highlight, white
+LIGHT_LOOK_SHADE_ALPHA = 44  # bottom and right edge, black
+LIGHT_FROM, LIGHT_TO = 110, 190  # mean luminance where the switch starts and ends
 
 
 @lru_cache(maxsize=2)
@@ -41,26 +48,57 @@ def grid_strength(x: float, y: float, size: tuple[int, int]) -> float:
     return max(0.0, 1 - math.sqrt((u * u + v * v) / 0.5))
 
 
-@lru_cache(maxsize=2)
-def _grid(size: tuple[int, int]) -> Image.Image:
-    overlay = Image.new("RGBA", size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
+def lightness(luminance: float) -> float:
+    """How far a block's backdrop is into the light look: 0 at LIGHT_FROM or darker,
+    1 at LIGHT_TO or lighter, linear in between."""
+    return min(1.0, max(0.0, (luminance - LIGHT_FROM) / (LIGHT_TO - LIGHT_FROM)))
+
+
+def _mix(dark: float, light: float, t: float) -> float:
+    return dark + (light - dark) * t
+
+
+def _cell_luminance(image: Image.Image) -> Image.Image:
+    """The mean luminance under every grid cell, one pixel per cell (padded with black
+    past the image's edge)."""
+    columns = -(-image.width // GRID_CELL)
+    rows = -(-image.height // GRID_CELL)
+    gray = image.convert("L").crop((0, 0, columns * GRID_CELL, rows * GRID_CELL))
+    return gray.reduce(GRID_CELL)
+
+
+def _block(draw: ImageDraw.ImageDraw, x: int, y: int, k: float, t: float) -> None:
+    """One glass block at strength `k`, its look blended by the backdrop's lightness `t`."""
     block = GRID_CELL - GRID_GAP
-    for x in range(0, size[0], GRID_CELL):
-        for y in range(0, size[1], GRID_CELL):
-            k = grid_strength(x + block / 2, y + block / 2, size)
-            if k <= 0:
-                continue
-            body = (255, 255, 255, round(GRID_BODY_ALPHA * k))
-            edge = (255, 255, 255, round(GRID_EDGE_ALPHA * k))
-            draw.rectangle((x, y, x + block - 1, y + block - 1), fill=body)
-            draw.rectangle((x, y, x + block - 1, y + _GRID_EDGE - 1), fill=edge)
-            draw.rectangle((x, y, x + _GRID_EDGE - 1, y + block - 1), fill=edge)
-    return overlay
+    body = tuple(round(_mix(255, dark, t)) for dark in LIGHT_LOOK_BODY)
+    body_alpha = round(_mix(GRID_BODY_ALPHA, LIGHT_LOOK_BODY_ALPHA, t) * k)
+    highlight = (255, 255, 255, round(_mix(GRID_EDGE_ALPHA, LIGHT_LOOK_EDGE_ALPHA, t) * k))
+    shade_alpha = round(LIGHT_LOOK_SHADE_ALPHA * t * k)
+    right, bottom = x + block - 1, y + block - 1
+    draw.rectangle((x, y, right, bottom), fill=(*body, body_alpha))
+    if shade_alpha:
+        shade = (0, 0, 0, shade_alpha)
+        draw.rectangle((x, bottom - _GRID_EDGE + 1, right, bottom), fill=shade)
+        draw.rectangle((right - _GRID_EDGE + 1, y, right, bottom), fill=shade)
+    draw.rectangle((x, y, right, y + _GRID_EDGE - 1), fill=highlight)
+    draw.rectangle((x, y, x + _GRID_EDGE - 1, bottom), fill=highlight)
 
 
 def with_grid(image: Image.Image) -> Image.Image:
-    """`image` with the glass grid laid over it."""
+    """`image` with the glass grid laid over it. Each block reads the brightness
+    under it: white glass over a dark backdrop, a faint dark tint with a white
+    top-left and a dark bottom-right bevel over a light one, blended in between."""
     out = image.convert("RGBA")
-    out.alpha_composite(_grid(out.size))
+    luminance = _cell_luminance(out)
+    means, columns = luminance.tobytes(), luminance.width
+    overlay = Image.new("RGBA", out.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    block = GRID_CELL - GRID_GAP
+    for x in range(0, out.width, GRID_CELL):
+        for y in range(0, out.height, GRID_CELL):
+            k = grid_strength(x + block / 2, y + block / 2, out.size)
+            if k > 0:
+                mean = means[(y // GRID_CELL) * columns + x // GRID_CELL]
+                _block(draw, x, y, k, lightness(mean))
+    out.alpha_composite(overlay)
     return out.convert("RGB")

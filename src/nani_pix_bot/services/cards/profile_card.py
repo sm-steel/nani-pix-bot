@@ -6,13 +6,12 @@ import hashlib
 from dataclasses import dataclass
 from functools import lru_cache
 from io import BytesIO
-from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps
 
 from nani_pix_bot.models.enums import Rarity
 from nani_pix_bot.services.cards.glass import gradient, with_grid
-from nani_pix_bot.services.cards.icons import medal
+from nani_pix_bot.services.cards.icons import ICON_DIR, medal
 from nani_pix_bot.services.cards.render import (
     _AVATAR,
     _BACKGROUND,
@@ -25,18 +24,16 @@ from nani_pix_bot.services.cards.render import (
     CARD_SIZE,
     RARITY_COLORS,
     SUPERSAMPLE,
-    _canvas,
+    _cover,
     _fit,
     _name_font,
     _paste_badge,
     _png,
-    _unlock_shade,
     avatar_disc,
     badge_ring,
     font,
 )
 
-ICON_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "icons"
 PROFILE_STAMPS_MAX = 6
 _STAMP_SIZE = 84
 _STAMP_GAP = 24
@@ -59,9 +56,14 @@ _PROFILE_TEXT_X = 2 * _MARGIN + 2 * (_AVATAR // 2 + _RING_TOTAL)
 _PROFILE_TEXT_WIDTH = _WIDTH - _PROFILE_TEXT_X - _MARGIN
 _CHIP_MAX_WIDTH = (_PROFILE_TEXT_WIDTH - _CHIP_GAP) // 2
 _STATS_Y = _HEIGHT - 70  # vertical centre of the stats line
-_STAT_ICON = 40
-_STAT_ICON_GAP = 10
-_STAT_GAP = 44
+# The stats are chips like the achievement ones, a little taller, outlined in silver.
+_STAT_CHIP_HEIGHT = 52
+_STAT_ICON = 32
+_STAT_OUTLINE = (190, 190, 205)
+_STAT_SIZE = 30
+# Every text over the picture gets a thin black outline, readable on any banner.
+_OUTLINE_WIDTH = 3
+_OUTLINE_FILL = (0, 0, 0)
 
 
 @dataclass(frozen=True)
@@ -96,19 +98,17 @@ class ProfileCard:
 
 
 def _stamp_face(entry: StampEntry, size: int) -> Image.Image:
-    """The disc inside the ring: the run's art cropped to a circle, else the initials."""
+    """The disc inside the ring: the run's art, centre-cropped to a square and cut to a
+    circle, else the initials."""
     if entry.art is None:
         seed = int.from_bytes(hashlib.sha256(entry.label.encode()).digest()[:4], "big")
         return avatar_disc(None, entry.label, seed, size)
-    art = (
-        Image.open(BytesIO(entry.art))
-        .convert("RGBA")
-        .resize((size, size), Image.Resampling.LANCZOS)
-    )
+    art = Image.open(BytesIO(entry.art)).convert("RGBA")
+    face = ImageOps.fit(art, (size, size), Image.Resampling.LANCZOS)
     mask = Image.new("L", (size, size), 0)
     ImageDraw.Draw(mask).ellipse((0, 0, size - 1, size - 1), fill=255)
-    face = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    face.paste(art, (0, 0), ImageChops.multiply(art.getchannel("A"), mask))
+    # only the alpha is masked, so the edge keeps the art's colour (no dark fringe)
+    face.putalpha(ImageChops.multiply(face.getchannel("A"), mask))
     return face
 
 
@@ -119,8 +119,7 @@ def _stamp_disc(entry: StampEntry) -> Image.Image:
     disc_size = _STAMP_SIZE * SUPERSAMPLE
     side = disc_size + 2 * ring_width
     big = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    disc = _stamp_face(entry, disc_size)
-    big.paste(disc, (ring_width, ring_width), disc)
+    big.alpha_composite(_stamp_face(entry, disc_size), (ring_width, ring_width))
     ring = RARITY_COLORS[Rarity.GOLD] if entry.gold else _MUTED
     ImageDraw.Draw(big).ellipse((0, 0, side - 1, side - 1), outline=ring, width=ring_width)
     small = side // SUPERSAMPLE
@@ -161,6 +160,8 @@ def _stamp(image: Image.Image, entry: StampEntry, left: int) -> None:
             font=label_font,
             fill=_MUTED,
             anchor="mm",
+            stroke_width=_OUTLINE_WIDTH,
+            stroke_fill=_OUTLINE_FILL,
         )
 
 
@@ -170,8 +171,8 @@ def render_profile_card(
     """A player's profile: avatar, name, title, up to PROFILE_BADGES_MAX achievement
     chips, a row of season stamps (at most PROFILE_STAMPS_MAX) and a stats line,
     over the banner (or the default gradient) with the glass grid on top."""
-    base = gradient(CARD_SIZE) if background is None else _canvas(background, _unlock_shade())
-    image = with_grid(base)
+    picture = _cover(background, CARD_SIZE) if background is not None else None
+    image = with_grid(gradient(CARD_SIZE) if picture is None else picture)
     draw = ImageDraw.Draw(image)
     color = RARITY_COLORS[Rarity.GOLD]
     draw.rectangle((0, 0, _WIDTH - 1, _HEIGHT - 1), outline=color, width=10)
@@ -182,10 +183,26 @@ def render_profile_card(
     _paste_badge(image, badge, (_MARGIN + radius, _HEIGHT // 2))
     x, width = _PROFILE_TEXT_X, _PROFILE_TEXT_WIDTH
     name_font = _name_font(draw, card.name, width)
-    draw.text((x, 100), _fit(draw, card.name, name_font, width), font=name_font, fill=_TEXT)
+    name = _fit(draw, card.name, name_font, width)
+    draw.text(
+        (x, 100),
+        name,
+        font=name_font,
+        fill=_TEXT,
+        stroke_width=_OUTLINE_WIDTH,
+        stroke_fill=_OUTLINE_FILL,
+    )
     if card.title:
         title_font = font(36)
-        draw.text((x, 200), _fit(draw, card.title, title_font, width), font=title_font, fill=color)
+        title = _fit(draw, card.title, title_font, width)
+        draw.text(
+            (x, 200),
+            title,
+            font=title_font,
+            fill=color,
+            stroke_width=_OUTLINE_WIDTH,
+            stroke_fill=_OUTLINE_FILL,
+        )
     _badges(image, card.badges[:PROFILE_BADGES_MAX], x, width)
     for i, entry in enumerate(card.stamps[:PROFILE_STAMPS_MAX]):
         _stamp(image, entry, x + 4 + i * (_STAMP_SIZE + _STAMP_GAP))
@@ -229,6 +246,8 @@ def _badge_chip(entry: BadgeEntry) -> Image.Image:
         font=label_font,
         fill=_TEXT,
         anchor="lm",
+        stroke_width=_OUTLINE_WIDTH,
+        stroke_fill=_OUTLINE_FILL,
     )
     return chip
 
@@ -253,13 +272,37 @@ def _icon(key: str) -> Image.Image:
         return icon.convert("RGBA").resize((_STAT_ICON, _STAT_ICON), Image.Resampling.LANCZOS)
 
 
+def _stat_chip(entry: StatEntry) -> Image.Image:
+    """One counter as a chip: its icon and number on the achievement chips' dark pill,
+    outlined in silver, drawn at SUPERSAMPLE for smooth corners."""
+    stat_font = font(_STAT_SIZE, bold=True)
+    measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    text_width = round(measure.textlength(entry.text, font=stat_font))
+    width = _CHIP_PAD * 3 + _STAT_ICON + text_width + 4
+    s = SUPERSAMPLE
+    big = Image.new("RGBA", (width * s, _STAT_CHIP_HEIGHT * s), (0, 0, 0, 0))
+    ImageDraw.Draw(big).rounded_rectangle(
+        (0, 0, width * s - 1, _STAT_CHIP_HEIGHT * s - 1),
+        radius=_STAT_CHIP_HEIGHT * s // 2,
+        fill=_CHIP_FILL,
+        outline=_STAT_OUTLINE,
+        width=2 * s,
+    )
+    chip = big.resize((width, _STAT_CHIP_HEIGHT), Image.Resampling.LANCZOS)
+    chip.alpha_composite(_icon(entry.icon), (_CHIP_PAD + 2, (_STAT_CHIP_HEIGHT - _STAT_ICON) // 2))
+    ImageDraw.Draw(chip).text(
+        (_CHIP_PAD * 2 + _STAT_ICON + 2, _STAT_CHIP_HEIGHT // 2),
+        entry.text,
+        font=stat_font,
+        fill=_TEXT,
+        anchor="lm",
+    )
+    return chip
+
+
 def _stats(image: Image.Image, stats: tuple[StatEntry, ...], left: int) -> None:
-    """The stats line: an icon before each entry, the entries spaced apart."""
-    draw = ImageDraw.Draw(image)
-    stats_font = font(32, bold=True)
+    """The stats line: one chip per counter, left to right, centred on _STATS_Y."""
     for entry in stats:
-        icon = _icon(entry.icon)
-        image.paste(icon, (left, _STATS_Y - _STAT_ICON // 2), icon)
-        left += _STAT_ICON + _STAT_ICON_GAP
-        draw.text((left, _STATS_Y), entry.text, font=stats_font, fill=_TEXT, anchor="lm")
-        left += round(draw.textlength(entry.text, font=stats_font)) + _STAT_GAP
+        chip = _stat_chip(entry)
+        image.paste(chip, (left, _STATS_Y - _STAT_CHIP_HEIGHT // 2), chip)
+        left += chip.width + _CHIP_GAP
