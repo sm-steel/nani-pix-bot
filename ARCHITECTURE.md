@@ -427,6 +427,9 @@ src/nani_pix_bot/
                    # the admin's own IANA timezone (Player.timezone) and
                    # the bot-wide quiet-hours window entered in it — see
                    # MECHANICS.md's "Quiet hours"
+    season_pass.py  # /seasonpass — DM-only, group members: the pass view,
+                   # the ⭐ Buy Premium button and its confirm (see
+                   # MECHANICS.md's "Season Coins, Pass and Premium")
     season.py     # /season — DM-only, admin-gated: status, history, the
                    # runs not yet held, and schedule/start/end/cancel, with
                    # dates typed in the admin's /timezone — see
@@ -551,6 +554,10 @@ src/nani_pix_bot/
                    #                      read (and deletes what it finds
                    #                      expired). This job is cleanup,
                    #                      not the guarantee
+    post.py       # Post: one announcement as it will be sent (text, card,
+                   # and dm_to for a player's DM instead of the topic)
+    season_posts.py  # turns the season pass rows (SEASON_TIER DMs,
+                   # SEASON_COMPLETE topic line) into Posts
     announcements.py  # the announcement outbox drain: a repeating 20s
                    # job, id order, nothing during quiet hours (rows wait),
                    # cards with the text as caption, albums for 3-10 rows
@@ -558,7 +565,11 @@ src/nani_pix_bot/
                    # avatars cached per drain, a drain stops at the first
                    # failed send, a row is given up after 3 attempts
                    # (season_teaser/start/end render a banner card; a
-                   # cancelled season's rows are dropped unsent)
+                   # cancelled season's rows are dropped unsent). A Post
+                   # may be a DM (`dm_to`, the season pass notices): a DM
+                   # the bot can't send (the player never started it, or
+                   # blocked it) is given up with a WARNING, so it never
+                   # blocks the topic posts behind it
     periods.py    # the period boundary job: a one-shot run_once at the
                    # next boundary that closes what ended (catching up
                    # after downtime) and re-arms itself; the first start
@@ -894,6 +905,13 @@ src/nani_pix_bot/
                    #                 end post
                    #   xp.py         Season XP awards for tagged games
                    #                 (on_event) and standings
+                   #   coins.py      Season Coins 🪙 for the same events,
+                   #                 priced by the run's CoinTable
+                   #   season_pass.py  the pass: reached/sync (auto-grant in
+                   #                 tier order), describe, buy_premium
+                   #   pass_view.py  the /seasonpass text and its tier lines
+                   #   conversion.py leftover 🪙 -> 💠 at the season's end
+                   #                 (called from lifecycle._finalize)
                    #   consumer.py   hooks the above into services/
                    #                 events.py::emit
                    #   when.py       date + time parsing in the admin's
@@ -926,6 +944,8 @@ src/nani_pix_bot/
                    #                   transition, else random
                    #   profile.py      build(): banner, title, stamps, counts;
                    #                   roster()/neighbour() for ◀ ▶
+                   #   consumables.py  counts of consumables a player holds
+                   #                   (clue tokens): count/add/take
                    #   showcase.py     what the card shows: picks (≤6 stamps,
                    #                   ≤4 achievements, tick order), else the
                    #                   newest seasons / rarest achievements
@@ -992,13 +1012,21 @@ src/nani_pix_bot/
     achievement.py  # AchievementGrant, AchievementClaim
     announcement.py  # AnnouncementOutbox
     period.py     # PeriodResult, PeriodState
-    season.py     # SeasonSchedule, SeasonXp, SeasonResult
-    cosmetics.py  # OwnedItem, EquippedItem, ItemPreview
+    season.py     # SeasonSchedule, SeasonXp, SeasonResult, SeasonBalance, SeasonPass
+    cosmetics.py  # OwnedItem, EquippedItem, ItemPreview, Consumable
     enums.py      # GameStatus, PixelStage, SetupStep, PixelReason, and Provider — the
                    # latter also exposes pick_prefix/id_attr_name/
                    # screenshot_module/search_module as properties, the
                    # single source of truth for what used to be four
                    # hand-maintained Provider-keyed dicts (issue #114)
+                   # Naming rule for the season pass enums: a security linter
+                   # reads "pass"/"token" in names as secrets, so the code
+                   # names differ from the stored values on purpose:
+                   # ConsumableKind.CLUE_TICKET and RewardKind.CLUE_TICKET
+                   # (value "clue_token"), ItemSource.TIER ("pass"),
+                   # CurrencyReason.TIER_REWARD ("pass_reward") and
+                   # .PREMIUM ("premium_pass"), OutboxKind.SEASON_TIER and
+                   # .SEASON_COMPLETE ("season_pass_done")
 assets/          # fonts/ (bundled Noto Sans, OFL) and backgrounds/
                    # <unlock/rarity | podium/period>/n.png, optional card
                    # backgrounds (prompts: docs/card-backgrounds.md)
@@ -1291,7 +1319,12 @@ erDiagram
 | `season_xp` | v12 | Append-only Season XP: `season_id` (FK), `player_id` (FK), `amount`, `source` (an `XpSource` stored as a plain string: `win`, `host`, `first_guess`), `game_id` (a plain integer with **no** FK, like `currency_transfers.game_id`, so rows outlive a `/stop`ped game), `created_at`. Standings are `SUM(amount)` per player (`services/seasons/xp.py::standings`). Written only by `xp.on_event`, for games tagged to a season. |
 | `season_results` | v12 | A finished season's frozen podium: one row per player with XP (`season_id`, `player_id`, `rank` as a competition rank so ties share it, `xp`), unique on (`season_id`, `player_id`). Written once when the season finalizes (`lifecycle._finalize`), so the end post and any later view read the frozen result, not the live sum. |
 | `games` season columns | v12 | `season_id` (nullable FK to `season_schedule`): the season that was active when the game was activated (`services/game/state.py::activate_game`), `NULL` outside seasons. A game keeps it when it ends after the season's `end_at`, and its XP still counts. `anime_tags` (nullable JSON list of `{kind, name, mal_id}`): the identified anime's MAL genres/themes, fetched only while a gated season is active and kept for the confirm-time re-check. |
-| `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string, `admin` for now), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
+| `currency_transfers` season columns | v12 | `currency` (`base` = the 💠 balance, `season` = 🪙, a `Currency` stored as a plain string, default `base`) and a nullable `season_id`: a 🪙 movement is tagged with its season. New `CurrencyReason`s: `season_win`, `season_host`, `season_first_guess`, `pass_reward`, `premium_pass`, `season_conversion`. |
+| `season_balances` | v12 | A player's 🪙 balance in one season (`season_id`, `player_id`, `balance`): a cache of the `currency = season` ledger rows, written only via `wallet`. Emptied by the season-end conversion. |
+| `season_pass` | v12 | A player's pass progress in one season: `free_claimed` / `premium_claimed` (counts, since tiers are granted in order) and `premium_transfer_id` (the 💠 charge that bought Premium, `NULL` = no Premium). Written only by `services/seasons/season_pass.py`. |
+| `consumables` | v12 | `player_id`, `kind` (a `ConsumableKind`, stored `clue_token`) and `count`: the clue tokens a player holds. Written only by `services/cosmetics/consumables.py`. |
+| `clue_purchases` token columns | v12 | `token_used` (the clue was paid with a clue token) and `transfer_id` now nullable: a token purchase has no ledger charge. A failed token delivery gives the token back. |
+| `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string: `admin`, or `pass` for a pass reward), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
 | `equipped_items` | v12 | The item equipped per slot: primary key (`player_id`, `slot`; `slot` a `CosmeticSlot` as a plain string), `item_id`. One item per slot, so equipping replaces. |
 | `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so each preview is rendered and uploaded once per language. |
 | `players.title_key` item encoding | v12 | Besides an achievement title key, `title_key` may be `item:<item id>`, a season title item (`services/achievements/titles.py`). Title item ids are at most 56 bytes (`looks.problems`) so they fit `/title`'s callback data. |
