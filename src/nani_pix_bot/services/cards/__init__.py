@@ -6,28 +6,34 @@ from nani_pix_bot.services.cards.backgrounds import (
     season_background,
     unlock_slot,
 )
+from nani_pix_bot.services.cards.profile_card import (
+    BadgeEntry,
+    ProfileCard,
+    StampEntry,
+    StatEntry,
+    render_profile_card,
+)
 from nani_pix_bot.services.cards.render import (
     CARD_SIZE,
     PodiumCard,
     PodiumEntry,
-    ProfileCard,
     SeasonBanner,
-    StampEntry,
     UnlockCard,
     avatar_disc,
     render_podium_card,
-    render_profile_card,
     render_season_banner,
     render_unlock_card,
 )
 
 __all__ = [
     "CARD_SIZE",
+    "BadgeEntry",
     "PodiumCard",
     "PodiumEntry",
     "ProfileCard",
     "SeasonBanner",
     "StampEntry",
+    "StatEntry",
     "UnlockCard",
     "avatar_disc",
     "load_background",

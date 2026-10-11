@@ -713,8 +713,10 @@ way to play it once.
 | Unsolved: stage 5 exhausted, 2-day timeout, inactivity on stage 5, `/stop` with reveal | the same effect, then the clear image held, no badge |
 | HARD MODE (any of the above) and the vote opening | the album as before, but the screenshot picked at game start is the reveal video (a badge on a win, none on the vote opening or an unsolved ending) and the other one stays a photo |
 
-The effect is picked uniformly at random **at game start** from `iris`,
-`tile_flip`, `ripple`, `glitch` and `shatter`. For HARD MODE the animated
+The effect is picked **at game start**: the starter's equipped reveal
+transition (see "Cosmetics"), else uniformly at random from `iris`,
+`tile_flip`, `ripple`, `glitch` and `shatter`. The season transitions
+(`spring_breeze`, `blossom_branch`) are cosmetics and never come up at random. For HARD MODE the animated
 screenshot (`a` or `b`) is picked then too. The effect part is rendered in
 the background right after the game goes live, so the reveal itself only
 renders the ending and never delays a game's start.

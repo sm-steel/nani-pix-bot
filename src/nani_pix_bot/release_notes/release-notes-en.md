@@ -6,5 +6,5 @@
 - 📖 There's now an illustrated guide, in English and Russian, covering how to play, every command and how to run your own bot: https://sm-steel.github.io/nani-pix-bot/
 - 👮 Admins can schedule and manage seasons with `/season` (seasons themselves arrive in a later update).
 - 🎁 Admins can hand out season cosmetics with `/grantitem`.
-- 🪪 `/profile [@username]` shows a player's profile card: avatar, title, a stamp for every season played and how many cosmetics they own.
+- 🪪 `/profile [@username]` shows a player's profile card: avatar, title, a stamp for every season played and how many cosmetics they own. ◀ ▶ on the card flip through everyone's cards, and 👥 Players lists them all. Up to four of your rarest achievements show too, and ✏️ on your own card (in a private chat) lets you pick which achievements and season stamps appear.
 - 🎨 `/cosmetics` (in a private chat) lists the season cosmetics you own by slot, previews each one — as an image, a short clip or a line of text — and lets you equip it: a win effect, a reveal transition and a stage frame for your rounds, a name flair emoji after your name in the group, a reaction on your winning guess, a profile banner and season titles.

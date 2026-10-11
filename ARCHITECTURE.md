@@ -434,8 +434,14 @@ src/nani_pix_bot/
     cosmetics.py  # /cosmetics — DM-only: slots, owned items, preview +
                    # Equip/Unequip (services/cosmetics); the title slot only
                    # hints at /title — see MECHANICS.md's "Cosmetics"
-    profile.py    # /profile — the game topic and DM (members only): the
-                   # profile card (banner, title, stamps, counts)
+    profile/      # /profile — the game topic and DM (members only): the
+                   # profile card (banner, title, stamps, counts).
+                   # __init__.py the command; card.py the photo +
+                   # caption; browse.py the card's ◀ ▶ (roster order,
+                   # wrapping) and 👥 Players list, edited in place,
+                   # tappable only by whoever sent /profile; edit.py the
+                   # ✏️ editor (own card, DM only) for what the card
+                   # shows; data.py the prof:… callback data
     grant_item.py # /grantitem — admin-gated: give a player an item
                    # (ItemSource.ADMIN)
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
@@ -693,7 +699,12 @@ src/nani_pix_bot/
                    #                   parts share (part 1, TS remux, the
                    #                   ending, the stream-copy join)
                    #   effects/        one module per effect (iris,
-                   #                   tile_flip, ripple, glitch, shatter)
+                   #                   tile_flip, ripple, glitch, shatter;
+                   #                   the Sakura spring_breeze and
+                   #                   blossom_branch, never
+                   #                   random: store.RANDOM_EFFECTS;
+                   #                   sakura_sprites.py draws the
+                   #                   branch, blossom and leaf once)
                    #                   with shared helpers in _common.py;
                    #                   EFFECTS maps RevealEffect to them
                    #   celebration.py  the winner's badge, shine and
@@ -707,6 +718,10 @@ src/nani_pix_bot/
                    #   overlays.py     WIN_OVERLAYS: overlay key -> clip
                    #                   renderer for the ending
                    #                   (DEFAULT_OVERLAY = confetti)
+                   #   petals.py       the Sakura win overlays: sakura
+                   #                   petals over the badge (petal_drift,
+                   #                   sakura_storm), fading out at the
+                   #                   edges of their area (edge_fade)
                    #   store.py        the single reveal_video slot: reserve,
                    #                   mark_ready/mark_failed (guarded by
                    #                   game_id), load, clear
@@ -776,6 +791,8 @@ src/nani_pix_bot/
                    # DB/Telegram; DST-correct via zoneinfo
     text.py       # cut_at_line: cut text to a length at a line break,
                    # with a marker (release notes, rich.py's fit)
+    shapes.py     # pure vector shapes shared by the stage frames and the
+                   # reveal overlays (the sakura petal outline)
     players.py    # Player lookup/creation, win-count bookkeeping,
                    # leaderboard query — everything that touches only
                    # the Player table (win increments themselves happen
@@ -809,7 +826,9 @@ src/nani_pix_bot/
     cards/        # Pillow image cards, no Telegram: render.py (unlock and
                    # podium cards), icons.py (the drawn diamond, trophy and
                    # star), backgrounds.py (optional per-slot anime
-                   # backgrounds)
+                   # backgrounds), profile_card.py (the /profile card:
+                   # stamps, achievement chips, stats line), glass.py (its
+                   # default gradient and glass-pixel grid)
     economy/      # the currency economy (shown as 💠 pixels) — see MECHANICS.md's "Pixels".
                    # __init__.py deliberately re-exports nothing (import
                    # submodules directly): players.py imports
@@ -895,11 +914,21 @@ src/nani_pix_bot/
                    #                   look(session, player, slot)
                    #   flair.py        named(): a name plus its flair emoji
                    #   frames.py       FRAMES and apply_frame
+                   #   paper_frames.py the Sakura paper frames, "paper" and
+                   #                   "washi" (pink, unryū fibres, pressed
+                   #                   petals): deckled edge, soft shadow;
+                   #                   seeded
+                   #   gold_frame.py   "gold_washi": metallic gold leaf,
+                   #                   seigaiha emboss, sakura corners
                    #   stage.py        stage_png: a stage image with the
                    #                   starter's frame
                    #   reveal_choice.py  effect_for: the starter's
                    #                   transition, else random
-                   #   profile.py      build(): banner, title, stamps, counts
+                   #   profile.py      build(): banner, title, stamps, counts;
+                   #                   roster()/neighbour() for ◀ ▶
+                   #   showcase.py     what the card shows: picks (≤6 stamps,
+                   #                   ≤4 achievements, tick order), else the
+                   #                   newest seasons / rarest achievements
                    #   previews.py     render + the item_previews cache
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,
@@ -1031,7 +1060,12 @@ flowchart LR
 ```
 
 - **Two parts.** `pipeline.pregenerate` renders part 1 (the pixelated
-  stages and the effect) as MPEG-TS right after activation.
+  stages and the effect) as MPEG-TS right after activation. It also draws
+  the win overlay clips ahead: the default confetti, plus every overlay a
+  player has equipped (`reveal_choice.overlays_in_use`, read by
+  `jobs/reveal_pregen.py`). A Sakura overlay costs ~0.5 s to draw, and
+  drawing it then keeps that off the win. One equipped later is drawn at
+  the win instead.
   `pipeline.finish` renders the ending (the clear image, with the
   celebration badge on a win) and joins it to part 1 by stream copy,
   which only works because `services/reveal/encode.py` is the one place
@@ -1261,6 +1295,7 @@ erDiagram
 | `equipped_items` | v12 | The item equipped per slot: primary key (`player_id`, `slot`; `slot` a `CosmeticSlot` as a plain string), `item_id`. One item per slot, so equipping replaces. |
 | `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so each preview is rendered and uploaded once per language. |
 | `players.title_key` item encoding | v12 | Besides an achievement title key, `title_key` may be `item:<item id>`, a season title item (`services/achievements/titles.py`). Title item ids are at most 56 bytes (`looks.problems`) so they fit `/title`'s callback data. |
+| `profile_showcase` | v12 | What a player picked to show on their `/profile` card (#413): `player_id` + `kind` (`ShowcaseKind`: `stamp` or `achievement`) + `ref` PK (a season run id, or an `achievement_grants.id` as text) and `position` (tick order). At most 6 stamps and 4 achievements (`services/cosmetics/showcase.py`). A pick that no longer resolves is skipped. With no pick resolving, the card shows the newest seasons and rarest achievements. |
 
 ### Achievements
 
@@ -1337,7 +1372,14 @@ for 💠, trophy for achievement points and star for the champion score, an
 anti-aliased avatar badge (solid inner ring, a conic sweep-gradient outer
 ring in a per-rarity palette, a glow), initials (letters only) when there is
 no avatar, and an optional anime background per slot that is picked
-deterministically by player and placed under a dark overlay.
+deterministically by player and placed under a dark overlay. The profile card
+adds two committed colour PNGs from Noto Emoji (`assets/icons/`, 🏅 and 🎁 on
+its stats line), since the font has no emoji. It also adds achievement chips
+(a rarity medal and the name on a translucent pill, at most four in two rows,
+with smaller text for a long name so all four fit) and season stamps, drawn
+supersampled with the full name wrapped onto two lines. Behind it all is the
+banner, or a diagonal gradient, with `glass.py`'s grid of faint glass pixels
+fading from the top-left corner to the middle.
 
 **Testing.** Evaluating achievements on every emitted event would change
 balances in the ~500 existing economy tests, so an autouse fixture in

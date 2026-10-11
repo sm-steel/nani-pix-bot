@@ -275,6 +275,10 @@ class RevealEffect(enum.Enum):
     RIPPLE = "ripple"
     GLITCH = "glitch"
     SHATTER = "shatter"
+    # Sakura Season transitions: only ever an equipped cosmetic, never a random pick
+    # (services/reveal/store.py's RANDOM_EFFECTS).
+    SPRING_BREEZE = "spring_breeze"
+    BLOSSOM_BRANCH = "blossom_branch"
 
 
 class RevealStatus(enum.Enum):
@@ -461,3 +465,11 @@ class PreviewKind(enum.StrEnum):
     TEXT = "text"
     PHOTO = "photo"
     VIDEO = "video"
+
+
+class ShowcaseKind(enum.StrEnum):
+    """What a player pinned to their /profile card (#413): a season stamp (ref =
+    run id) or an achievement (ref = achievement grant id). Plain string."""
+
+    STAMP = "stamp"
+    ACHIEVEMENT = "achievement"

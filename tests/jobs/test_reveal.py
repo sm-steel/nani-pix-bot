@@ -13,6 +13,7 @@ from nani_pix_bot.jobs.reveal import RevealWinner
 from nani_pix_bot.models.enums import GameStatus, PixelStage, RevealEffect, RevealStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.services.cosmetics import reveal_choice
 from nani_pix_bot.services.reveal import overlays, pipeline, store
 
 PREGEN = pipeline.Pregen(part1_ts=b"\x47ts", join_offset=1.0, render_ms=12)
@@ -82,6 +83,29 @@ async def test_pregeneration_fills_cache_and_db(session_factory, monkeypatch) ->
     await _settle(application)
     assert (cache.game_id, cache.pregen) == (game_id, PREGEN)
     assert _slot(session_factory) == (game_id, RevealStatus.READY)
+
+
+async def test_pregeneration_draws_the_equipped_win_overlays_ahead(
+    session_factory, monkeypatch, log_records
+) -> None:
+    seen: list[tuple] = []
+
+    def _pregenerate(*args):
+        seen.append(args)
+        return PREGEN
+
+    monkeypatch.setattr(pipeline, "pregenerate", _pregenerate)
+    monkeypatch.setattr(
+        reveal_choice, "overlays_in_use", lambda _session: ("petal_drift", "sakura_storm")
+    )
+    game_id = _game(session_factory)
+    _reserve(session_factory, game_id)
+    application = _application(session_factory)
+    reveal.start_pregeneration(application, game_id)
+    await _settle(application)
+    assert seen[0][-1] == ("petal_drift", "sakura_storm")
+    started = next(line for line in log_records if "pre-render started" in line.message)
+    assert "petal_drift, sakura_storm" in started.message
 
 
 async def test_failed_pregeneration_marks_the_slot_failed(

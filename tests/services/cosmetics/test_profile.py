@@ -6,14 +6,15 @@ from types import MappingProxyType
 import pytest
 from PIL import Image
 
+from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.cosmetics import EquippedItem, OwnedItem
-from nani_pix_bot.models.enums import CosmeticSlot, ItemSource, SeasonStatus
+from nani_pix_bot.models.enums import CosmeticSlot, ItemSource, Rarity, SeasonStatus, ShowcaseKind
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import Item
 from nani_pix_bot.services.cards import backgrounds
-from nani_pix_bot.services.cosmetics import looks, profile
+from nani_pix_bot.services.cosmetics import looks, profile, showcase
 
 ALICE = 2
 BANNER_ID = "demo_1/profile_banner.sky"
@@ -121,3 +122,80 @@ def test_title_text_is_resolved(session, alice, art) -> None:
     session.flush()
     assert profile.build(session, alice, "EN").title == "Demo Star"
     assert profile.build(session, alice, "RU").title == "Демо-звезда"
+
+
+def test_stats_are_seasons_with_a_medal_and_cosmetics_with_a_gift() -> None:
+    assert [(e.icon, e.text) for e in profile.stats(2, 9, "EN")] == [
+        ("medal", "Seasons: 2"),
+        ("gift", "Cosmetics: 9"),
+    ]
+    assert [e.text for e in profile.stats(2, 9, "RU")] == ["Сезонов: 2", "Предметов: 9"]
+
+
+def _grant(session, key: str, tier: int, rarity: Rarity) -> None:
+    session.add(
+        AchievementGrant(
+            player_id=ALICE, key=key, tier=tier, period_key="", rarity=rarity, reward=0, points=0
+        )
+    )
+    session.flush()
+
+
+def test_badges_default_to_the_rarest_named_with_their_tier(session, alice, art) -> None:
+    _grant(session, "sharpshooter", 3, Rarity.GOLD)
+    _grant(session, "patron", 1, Rarity.SILVER)
+    _grant(session, "no_longer_in_the_catalogue", 1, Rarity.PLATINUM)
+    badges = profile.build(session, alice, "EN").badges
+    assert badges == (
+        profile.Badge("Sharpshooter III", Rarity.GOLD),
+        profile.Badge("Patron I", Rarity.SILVER),
+    )
+
+
+def test_stamps_follow_the_picks_but_the_count_is_every_season(session, alice, art) -> None:
+    _ended_season(session, "demo_1", 0)
+    showcase.toggle(session, alice, ShowcaseKind.STAMP, "demo_1")
+    view = profile.build(session, alice, "EN")
+    assert [s.run_id for s in view.stamps] == ["demo_1"]
+    assert view.seasons_played == 1
+
+
+def test_roster_is_every_player_by_name_ignoring_case_and_the_at(session) -> None:
+    session.add_all(
+        [
+            Player(telegram_user_id=30, username="zed"),
+            Player(telegram_user_id=10, username="Bob"),
+            Player(telegram_user_id=20, first_name="amy"),
+            Player(telegram_user_id=40),  # no name at all: shown and sorted by id
+        ]
+    )
+    session.flush()
+    assert profile.roster(session) == [40, 20, 10, 30]
+
+
+def test_roster_breaks_name_ties_by_id(session) -> None:
+    session.add_all(
+        [Player(telegram_user_id=9, first_name="Kim"), Player(telegram_user_id=3, first_name="kim")]
+    )
+    session.flush()
+    assert profile.roster(session) == [3, 9]
+
+
+def test_roster_of_nobody_is_empty(session) -> None:
+    assert profile.roster(session) == []
+
+
+@pytest.mark.parametrize(
+    ("current", "step", "expected"),
+    [(2, 1, 3), (2, -1, 1), (3, 1, 1), (1, -1, 3)],
+)
+def test_neighbour_wraps_around(current: int, step: int, expected: int) -> None:
+    assert profile.neighbour([1, 2, 3], current, step) == expected
+
+
+def test_neighbour_of_someone_no_longer_listed_is_the_first() -> None:
+    assert profile.neighbour([1, 2, 3], 99, 1) == 1
+
+
+def test_neighbour_of_the_only_player_is_themselves() -> None:
+    assert profile.neighbour([5], 5, 1) == 5

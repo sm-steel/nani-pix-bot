@@ -84,6 +84,24 @@ def test_pregenerate_builds_the_confetti_so_finish_does_not(monkeypatch) -> None
 
 
 @pytest.mark.ffmpeg
+def test_pregenerate_draws_the_equipped_overlays_so_the_win_does_not(monkeypatch) -> None:
+    png = _png()
+    pregen = pipeline.pregenerate(
+        png, PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS, ("petal_drift",)
+    )
+    static = pipeline._static[1] if pipeline._static else None
+    assert static is not None
+    assert ("petal_drift", celebration.badge_height(static.size)) in static.confetti
+
+    def boom(_height):
+        raise AssertionError("overlay drawn at win time")
+
+    monkeypatch.setattr(overlays, "WIN_OVERLAYS", {"confetti": boom, "petal_drift": boom})
+    badge = pipeline.Badge(None, "@w", overlay="petal_drift")
+    assert decode_clean(pipeline.finish(pregen, png, badge))
+
+
+@pytest.mark.ffmpeg
 def test_preview_clip_renders_a_whole_reveal_and_leaves_the_game_cache_alone() -> None:
     png = _png()
     pipeline.pregenerate(png, PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS)

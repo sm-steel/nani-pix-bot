@@ -24,7 +24,7 @@ from nani_pix_bot.models.enums import (
 from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.cards import ProfileCard, render_profile_card
-from nani_pix_bot.services.cosmetics import frames, looks
+from nani_pix_bot.services.cosmetics import frames, looks, profile
 from nani_pix_bot.services.reveal import pipeline
 from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
 
@@ -95,7 +95,7 @@ def _banner(resolved: ResolvedItem, lang: str) -> bytes:
         name=_you(lang),
         title=None,
         stamps=(),
-        stats_line=i18n.t("profile.stats", lang, seasons=1, owned=1),
+        stats=profile.stats(1, 1, lang),
         seed=0,
     )
     background = looks.banner_path(resolved.run.run_id, resolved.item.look).read_bytes()
