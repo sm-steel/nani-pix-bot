@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from io import BytesIO
 
+from loguru import logger
 from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps
 
 from nani_pix_bot.models.enums import Rarity
@@ -97,13 +98,23 @@ class ProfileCard:
     badges: tuple[BadgeEntry, ...] = ()
 
 
+def _initials_face(entry: StampEntry, size: int) -> Image.Image:
+    seed = int.from_bytes(hashlib.sha256(entry.label.encode()).digest()[:4], "big")
+    return avatar_disc(None, entry.label, seed, size)
+
+
 def _stamp_face(entry: StampEntry, size: int) -> Image.Image:
     """The disc inside the ring: the run's art, centre-cropped to a square and cut to a
-    circle, else the initials."""
+    circle, else (no art, or bytes that aren't an image) the initials."""
     if entry.art is None:
-        seed = int.from_bytes(hashlib.sha256(entry.label.encode()).digest()[:4], "big")
-        return avatar_disc(None, entry.label, seed, size)
-    art = Image.open(BytesIO(entry.art)).convert("RGBA")
+        return _initials_face(entry, size)
+    try:
+        art = Image.open(BytesIO(entry.art)).convert("RGBA")
+    except OSError:
+        logger.warning(
+            "stamp art for {stamp} isn't an image — drawing its initials", stamp=entry.label
+        )
+        return _initials_face(entry, size)
     face = ImageOps.fit(art, (size, size), Image.Resampling.LANCZOS)
     mask = Image.new("L", (size, size), 0)
     ImageDraw.Draw(mask).ellipse((0, 0, size - 1, size - 1), fill=255)

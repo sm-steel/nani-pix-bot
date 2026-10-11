@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from io import BytesIO
 
+from loguru import logger
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from nani_pix_bot.services.cards.icons import ICON_DIR
@@ -126,14 +127,19 @@ def _title_font(
 
 
 @lru_cache(maxsize=8)
-def _gradient(left: int, right: int) -> Image.Image:
-    """_TITLE_FROM at x=left to _TITLE_TO at x=right, flat beyond, over the whole card."""
+def _gradient_row(left: int, right: int) -> Image.Image:
+    """One pixel row of _gradient: cached, as it is tiny (a whole card is not)."""
     row = Image.new("RGBA", (_WIDTH, 1))
     for x in range(_WIDTH):
         t = min(1.0, max(0.0, (x - left) / max(1, right - left)))
         color = tuple(round(a + (b - a) * t) for a, b in zip(_TITLE_FROM, _TITLE_TO, strict=True))
         row.putpixel((x, 0), (*color, 255))
-    return row.resize(CARD_SIZE, Image.Resampling.NEAREST)
+    return row
+
+
+def _gradient(left: int, right: int) -> Image.Image:
+    """_TITLE_FROM at x=left to _TITLE_TO at x=right, flat beyond, over the whole card."""
+    return _gradient_row(left, right).resize(CARD_SIZE, Image.Resampling.NEAREST)
 
 
 def title_layer(text: str, *, stamped: bool) -> Image.Image:
@@ -164,6 +170,7 @@ def _stamp_layer(stamp: bytes) -> Image.Image | None:
     try:
         art = Image.open(BytesIO(stamp)).convert("RGBA")
     except OSError:
+        logger.warning("the season's stamp art isn't an image — no seal on the card")
         return None
     seal = art.resize((_STAMP_SIZE, _STAMP_SIZE), Image.Resampling.LANCZOS).rotate(
         _STAMP_TILT, resample=Image.Resampling.BICUBIC, expand=True
@@ -188,16 +195,22 @@ def _date_pill(image: Image.Image, text: str) -> None:
     text = _fit(draw, text, pill_font, room)
     width = int(draw.textlength(text, font=pill_font) + _PILL_PAD + _ICON + _ICON_GAP)
     left, top = (_WIDTH - width) // 2, _HEIGHT - _PILL_BOTTOM_GAP
-    box = (left, top, left + width, top + _PILL_HEIGHT)
+    right, bottom = left + width, top + _PILL_HEIGHT  # exclusive, as crop takes them
     radius = _PILL_HEIGHT // 2
     mask = Image.new("L", (width, _PILL_HEIGHT), 0)
     ImageDraw.Draw(mask).rounded_rectangle(
         (0, 0, width - 1, _PILL_HEIGHT - 1), radius=radius, fill=255
     )
-    image.paste(image.crop(box).filter(ImageFilter.GaussianBlur(_PILL_BLUR)), box[:2], mask)
+    behind = image.crop((left, top, right, bottom)).filter(ImageFilter.GaussianBlur(_PILL_BLUR))
+    image.paste(behind, (left, top), mask)
     frost = _layer()
+    # The drawn shape takes inclusive corners: the same pixels as the mask.
     ImageDraw.Draw(frost).rounded_rectangle(
-        box, radius=radius, fill=_PILL_FILL, outline=_PILL_OUTLINE, width=2
+        (left, top, right - 1, bottom - 1),
+        radius=radius,
+        fill=_PILL_FILL,
+        outline=_PILL_OUTLINE,
+        width=2,
     )
     image.alpha_composite(frost)
     x = left + _PILL_PAD // 2

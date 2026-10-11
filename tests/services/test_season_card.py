@@ -1,7 +1,7 @@
 from io import BytesIO
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageChops
 
 from nani_pix_bot.services import cards
 from nani_pix_bot.services.cards import render, season_card
@@ -105,3 +105,44 @@ def test_the_calendar_icon_exists_and_is_listed() -> None:
     readme = (path.parent / "README.md").read_text(encoding="utf-8")
     assert "`calendar.png`" in readme
     assert "U+1F5D3" in readme
+
+
+def test_a_broken_key_visual_falls_back_to_the_flat_card() -> None:
+    assert _draw(None, b"not an image").tobytes() == _draw(None, None).tobytes()
+
+
+def test_stamp_bytes_that_are_no_image_draw_no_seal(log_records) -> None:
+    key_visual = _png(_key_visual())
+    assert _draw(b"not an image", key_visual).tobytes() == _draw(None, key_visual).tobytes()
+    assert [r.level for r in log_records if "stamp art" in r.message] == ["WARNING"]
+
+
+def test_the_title_gradient_is_built_per_call_not_shared() -> None:
+    first = season_card._gradient(400, 800)
+    assert first.size == cards.CARD_SIZE
+    assert season_card._gradient(400, 800) is not first
+    first.paste((0, 0, 0, 0), (0, 0, W, H))  # a caller scribbling on its copy...
+    assert season_card._gradient(400, 800).getpixel((0, 0)) != (0, 0, 0, 0)  # ...leaves no trace
+
+
+def _changed_box(before: Image.Image, after: Image.Image) -> tuple[int, int, int, int] | None:
+    return ImageChops.difference(before.convert("RGB"), after.convert("RGB")).getbbox()
+
+
+def test_the_pill_blur_covers_exactly_the_drawn_pill(monkeypatch) -> None:
+    """The frosted pill and the blurred patch behind it are the same box."""
+    flat = Image.new("RGBA", cards.CARD_SIZE, (40, 40, 40, 255))
+    frosted = flat.copy()
+    season_card._date_pill(frosted, CARD.subtitle)
+    pill = _changed_box(flat, frosted)
+
+    # Over a checkerboard with an invisible veil and outline, only the blur shows.
+    monkeypatch.setattr(season_card, "_PILL_FILL", (255, 255, 255, 0))
+    monkeypatch.setattr(season_card, "_PILL_OUTLINE", (255, 255, 255, 0))
+    cells = bytes(255 * ((x + y) % 2) for y in range(H) for x in range(W))
+    board = Image.frombytes("L", cards.CARD_SIZE, cells).convert("RGBA")
+    blurred = board.copy()
+    season_card._date_pill(blurred, CARD.subtitle)
+
+    assert pill is not None
+    assert _changed_box(board, blurred) == pill

@@ -86,3 +86,11 @@ def test_a_card_with_art_stamps_renders() -> None:
     )
     png = cards.render_profile_card(card, None, None)
     assert Image.open(BytesIO(png)).size == cards.CARD_SIZE
+
+
+def test_art_that_is_no_image_draws_the_initials_disc(log_records) -> None:
+    broken = profile_card._stamp_face(cards.StampEntry("Sakura", art=b"not an image"), 64)
+    initials = profile_card._stamp_face(cards.StampEntry("Sakura"), 64)
+    assert broken.tobytes() == initials.tobytes()
+    warned = [r for r in log_records if r.level == "WARNING"]
+    assert [r.extra["stamp"] for r in warned] == ["Sakura"]
