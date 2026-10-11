@@ -1760,8 +1760,9 @@ until a run module is added.
 
 ### Season XP
 
-Written as append-only `season_xp` rows, for tagged games only, from the
-game's events. Amounts come from the run's XP table.
+Written as append-only `season_xp` rows. Game XP comes from the events of
+tagged games only, with amounts from the run's XP table. Completed objectives
+add their own rows (source `objective`, see "Objectives" below).
 
 | Event | Who gets it |
 |---|---|
