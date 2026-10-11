@@ -180,7 +180,8 @@ def _charge(
         )
         raise ShopRefusedError(Refusal.NO_GAME)
     amount = shop.price(session, game, buyer, request.kind)
-    return game, shop.purchase(session, game, buyer, request), amount
+    bought = shop.purchase(session, game, buyer, request)
+    return game, bought, 0 if bought.token_used else amount
 
 
 def _purchase(session_factory, tap: _BuyTap) -> _Bought:
@@ -226,9 +227,8 @@ async def _fail_delivery(
 ) -> None:
     """Refund a purchase whose clue Telegram would not take, and say so."""
     _refund(context.bot_data["session_factory"], bought.purchase_id)
-    await tap.query.answer(
-        i18n.t("shop.delivery_failed", bought.lang, amount=bought.amount), show_alert=True
-    )
+    key = "shop.delivery_failed" if bought.amount else "shop.delivery_failed_token"
+    await tap.query.answer(i18n.t(key, bought.lang, amount=bought.amount), show_alert=True)
 
 
 async def _announce(

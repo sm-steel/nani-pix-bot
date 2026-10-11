@@ -13,6 +13,9 @@ SHOP_SHARE_PREFIX = f"{SHOP_PREFIX}share:"
 
 
 def _offer_label(offer: Offer, lang: str) -> str:
+    if offer.token:
+        name = i18n.t(f"shop.item_name.{offer.kind.value}", lang)
+        return i18n.t("shop.offer_token", lang, name=name)
     label = i18n.t(f"shop.item.{offer.kind.value}", lang, price=offer.price)
     return label if offer.affordable else i18n.t("shop.locked", lang, label=label)
 

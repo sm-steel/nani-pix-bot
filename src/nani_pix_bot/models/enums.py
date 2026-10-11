@@ -485,3 +485,10 @@ class ShowcaseKind(enum.StrEnum):
 
     STAMP = "stamp"
     ACHIEVEMENT = "achievement"
+
+
+class ConsumableKind(enum.StrEnum):
+    """A consumable a player holds a count of (seasons spec §3): the clue token
+    only — no free sharpens."""
+
+    CLUE_TOKEN = "clue_token"  # noqa: S105 - a game item, not a secret

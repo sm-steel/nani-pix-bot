@@ -20,7 +20,7 @@ def _clue_cells(session: Session, clue: ClueRow, tz: ZoneInfo, lang: str) -> lis
         local(clue.at, tz, SHORT_TIME),
         name(session, clue.player_id),
         i18n.t(f"shop.item_name.{clue.kind.value}", lang),
-        str(clue.price),
+        t("history.clue_token", lang) if clue.token else str(clue.price),
         shared,
     ]
 

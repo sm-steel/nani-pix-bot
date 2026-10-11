@@ -14,12 +14,20 @@ from sqlalchemy.orm import Session, aliased
 
 from nani_pix_bot.models.clue_purchase import CluePurchase
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
-from nani_pix_bot.models.enums import ClueKind, CurrencyReason, EventType, GameStatus, Provider
+from nani_pix_bot.models.enums import (
+    ClueKind,
+    ConsumableKind,
+    CurrencyReason,
+    EventType,
+    GameStatus,
+    Provider,
+)
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import events, players
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services.clues import text
+from nani_pix_bot.services.clues import text, token_clues
+from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.economy import config, earning, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
 from nani_pix_bot.services.game import guesses
@@ -69,6 +77,7 @@ class Offer:
     price: int
     affordable: bool
     owned_screenshots: int = 0  # screenshots the buyer holds (SCREENSHOT offer only)
+    token: bool = False  # the buyer holds a clue token, so this clue is free
 
 
 @dataclass(frozen=True)
@@ -185,10 +194,8 @@ def _available(session: Session, game: Game, buyer: Player, kind: ClueKind, lang
 
 
 def _already_owned(session: Session, game: Game, buyer: Player, request: PurchaseRequest) -> bool:
-    player_id = buyer.telegram_user_id
-    if request.kind in TEXT_KINDS or request.kind is ClueKind.TILE:
-        return request.kind in owned_kinds(session, game.id, player_id)
-    return False
+    once_only = request.kind in TEXT_KINDS or request.kind is ClueKind.TILE
+    return once_only and request.kind in owned_kinds(session, game.id, buyer.telegram_user_id)
 
 
 def offers(session: Session, game: Game, buyer: Player, lang: str) -> list[Offer]:
@@ -198,6 +205,7 @@ def offers(session: Session, game: Game, buyer: Player, lang: str) -> list[Offer
     `lang` picks the title fallback chain, so availability matches the
     title the clue will actually use."""
     owned = owned_kinds(session, game.id, buyer.telegram_user_id)
+    tokens = consumables.count(session, buyer.telegram_user_id, ConsumableKind.CLUE_TOKEN)
     result = []
     for kind in _MENU_ORDER:
         if kind in owned and kind in TEXT_KINDS:
@@ -206,7 +214,9 @@ def offers(session: Session, game: Game, buyer: Player, lang: str) -> list[Offer
             continue
         cost = price(session, game, buyer, kind)
         held = _screenshot_count(session, game, buyer) if kind is ClueKind.SCREENSHOT else 0
-        result.append(Offer(kind, cost, buyer.currency >= cost, held))
+        result.append(
+            Offer(kind, cost, tokens > 0 or buyer.currency >= cost, held, token=tokens > 0)
+        )
     return result
 
 
@@ -262,16 +272,9 @@ def _detail(request: PurchaseRequest) -> dict[str, object]:
     return fields
 
 
-def purchase(session: Session, game: Game, buyer: Player, request: PurchaseRequest) -> CluePurchase:
-    refusal = _refusal(session, game, buyer, request)
-    if refusal is not None:
-        logger.warning(
-            "refused the {kind} clue{detail}: {reason}",
-            reason=refusal.value,
-            game_id=game.id,
-            **_detail(request),
-        )
-        raise ShopRefusedError(refusal)
+def _pay_with_currency(
+    session: Session, game: Game, buyer: Player, request: PurchaseRequest
+) -> CluePurchase:
     cost = price(session, game, buyer, request.kind)
     try:
         charge = wallet.debit(
@@ -306,6 +309,22 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
         game_id=game.id,
         **_detail(request),
     )
+    return bought
+
+
+def purchase(session: Session, game: Game, buyer: Player, request: PurchaseRequest) -> CluePurchase:
+    refusal = _refusal(session, game, buyer, request)
+    if refusal is not None:
+        logger.warning(
+            "refused the {kind} clue{detail}: {reason}",
+            reason=refusal.value,
+            game_id=game.id,
+            **_detail(request),
+        )
+        raise ShopRefusedError(refusal)
+    detail = _detail(request)
+    bought = token_clues.pay(session, game, buyer, request, detail)
+    bought = bought or _pay_with_currency(session, game, buyer, request)
     events.emit(
         session,
         EventType.CLUE_PURCHASED,
@@ -333,7 +352,7 @@ def refundable_purchases(session: Session, player_id: int) -> list[RefundableIte
     stmt = (
         select(CluePurchase, CurrencyTransfer.amount)
         .join(CurrencyTransfer, CurrencyTransfer.id == CluePurchase.transfer_id)
-        .where(CluePurchase.player_id == player_id)
+        .where(CluePurchase.player_id == player_id, CluePurchase.token_used.is_(False))
         .order_by(CluePurchase.created_at.desc(), CluePurchase.id.desc())
     )
     items = []
@@ -387,7 +406,13 @@ def refund(session: Session, purchase_row: CluePurchase) -> int:
     /refund: pay the charge back (house -> player, naming it via
     reverses_id) less any cashback already paid on it (cashback_share), and
     drop the row. Returns the refunded amount."""
-    charge = session.get(CurrencyTransfer, purchase_row.transfer_id)
+    if purchase_row.transfer_id is None:  # paid with a clue token (token_used)
+        return token_clues.refund(session, purchase_row)
+    return _refund_currency(session, purchase_row, purchase_row.transfer_id)
+
+
+def _refund_currency(session: Session, purchase_row: CluePurchase, transfer_id: int) -> int:
+    charge = session.get(CurrencyTransfer, transfer_id)
     buyer = session.get(Player, purchase_row.player_id)
     if charge is None or buyer is None:
         msg = f"refund of purchase {purchase_row.id}: missing charge or buyer"
@@ -415,12 +440,7 @@ def refund(session: Session, purchase_row: CluePurchase) -> int:
         recipient_id=buyer.telegram_user_id,
         game_id=purchase_row.game_id,
     )
-    events.emit(
-        session,
-        EventType.CLUE_REFUNDED,
-        events.Involved(actor_id=buyer.telegram_user_id, game_id=purchase_row.game_id),
-        kind=ClueKind(purchase_row.kind).value,
-    )
+    token_clues.emit_refunded(session, purchase_row)
     return amount
 
 

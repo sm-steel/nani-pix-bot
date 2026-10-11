@@ -1,10 +1,16 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import BigInteger, ForeignKey, String, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nani_pix_bot.models.base import Base
-from nani_pix_bot.models.enums import CosmeticSlot, ItemSource, PreviewKind, ShowcaseKind
+from nani_pix_bot.models.enums import (
+    ConsumableKind,
+    CosmeticSlot,
+    ItemSource,
+    PreviewKind,
+    ShowcaseKind,
+)
 
 ITEM_ID_LENGTH = 96
 SHOWCASE_KIND_LENGTH = 16
@@ -14,6 +20,7 @@ SOURCE_LENGTH = 16
 PREVIEW_KIND_LENGTH = 8
 FILE_ID_LENGTH = 256
 PREVIEW_LANG_LENGTH = 8
+CONSUMABLE_KIND_LENGTH = 16
 
 
 class OwnedItem(Base):
@@ -71,3 +78,16 @@ class ShowcasePick(Base):
     kind: Mapped[ShowcaseKind] = mapped_column(String(SHOWCASE_KIND_LENGTH), primary_key=True)
     ref: Mapped[str] = mapped_column(String(SHOWCASE_REF_LENGTH), primary_key=True)
     position: Mapped[int]
+
+
+class Consumable(Base):
+    """How many of a consumable a player holds (seasons spec §3)."""
+
+    __tablename__ = "consumables"
+    __table_args__ = (CheckConstraint("count >= 0", name="ck_consumables_count_non_negative"),)
+
+    player_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("players.telegram_user_id"), primary_key=True
+    )
+    kind: Mapped[ConsumableKind] = mapped_column(String(CONSUMABLE_KIND_LENGTH), primary_key=True)
+    count: Mapped[int] = mapped_column(default=0)

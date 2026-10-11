@@ -7,6 +7,7 @@ from nani_pix_bot.models.announcement import AnnouncementOutbox as AnnouncementO
 from nani_pix_bot.models.base import Base as Base
 from nani_pix_bot.models.bot_settings import BotSettings as BotSettings
 from nani_pix_bot.models.clue_purchase import CluePurchase as CluePurchase
+from nani_pix_bot.models.cosmetics import Consumable as Consumable
 from nani_pix_bot.models.cosmetics import EquippedItem as EquippedItem
 from nani_pix_bot.models.cosmetics import ItemPreview as ItemPreview
 from nani_pix_bot.models.cosmetics import OwnedItem as OwnedItem
