@@ -534,13 +534,12 @@ async def test_pick_callback_handler_says_so_when_the_setup_row_is_gone(
     session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
 ) -> None:
     """The one remaining silent-drop site from issue #79's sweep (#95):
-    unlike the other five call sites of _reject_stale_tap, this
-    handler's own stale-row lookup — after _resolve_picked_result's
+    this handler's own stale-row lookup — after _resolve_picked_result's
     provider round-trip — used to `return` with no log and no reply.
-    Must answer exactly once, with the alert, so the bare acknowledgement
-    a successful pick gets has to move below this branch instead of
-    sitting above it as a second (rejected) answer on the same query
-    id."""
+    Since #418 the tap is answered up front (before the lookups, to beat
+    Telegram's window), so this branch logs the WARNING and explains in a
+    plain message via _reject_stale_tap_answered — still exactly one
+    answer on the query id."""
     monkeypatch.setattr(search.anilist, "get_by_id", AsyncMock(return_value=_FRIEREN))
     update = _make_callback_update(data="anilist_pick:99", user_id=7)
     update.effective_user = update.callback_query.from_user

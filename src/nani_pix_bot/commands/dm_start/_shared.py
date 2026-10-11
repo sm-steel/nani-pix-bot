@@ -138,6 +138,13 @@ def client_for_source(context: ContextTypes.DEFAULT_TYPE, source: Provider) -> h
     return cast(httpx.AsyncClient, context.bot_data[key])
 
 
+# The wording production greps for: one string, so the two helpers below can't drift.
+_STALE_TAP_LOG = (
+    "tapped {data!r} with no SETUP game left — already resolved, or the "
+    "setup-abandon timer deleted the row"
+)
+
+
 async def _reject_stale_tap(query: CallbackQuery, lang: str) -> None:
     """The one thing every screen of the screenshot sub-flow says when a
     button is tapped and there is no SETUP game left to act on: the row
@@ -173,11 +180,7 @@ async def _reject_stale_tap(query: CallbackQuery, lang: str) -> None:
     mid-round-trip. No literal line number is cited here on purpose —
     the last one went stale, and it was a line-number comment that
     caused this exact bug."""
-    logger.opt(depth=1).warning(
-        "tapped {data!r} with no SETUP game left — already resolved, or the "
-        "setup-abandon timer deleted the row",
-        data=query.data,
-    )
+    logger.opt(depth=1).warning(_STALE_TAP_LOG, data=query.data)
     await query.answer(i18n.t("dm_start.setup_gone", lang), show_alert=True)
 
 
@@ -187,11 +190,7 @@ async def _reject_stale_tap_answered(
     """`_reject_stale_tap` for a handler that already spent its one
     callback-query answer up front (to beat Telegram's window): same
     WARNING, with the explanation sent as a plain message instead."""
-    logger.opt(depth=1).warning(
-        "tapped {data!r} with no SETUP game left — already resolved, or the "
-        "setup-abandon timer deleted the row",
-        data=data,
-    )
+    logger.opt(depth=1).warning(_STALE_TAP_LOG, data=data)
     await context.bot.send_message(chat_id=chat_id, text=i18n.t("dm_start.setup_gone", lang))
 
 
