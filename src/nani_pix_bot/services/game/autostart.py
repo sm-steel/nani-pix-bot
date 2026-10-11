@@ -5,13 +5,13 @@ See jobs/timers/autostart.py for the Telegram/DB-aware orchestration
 layer built on top of this (the actual "claim the game" side effects)."""
 
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import httpx
 from loguru import logger
 
 from nani_pix_bot.models.enums import Provider
-from nani_pix_bot.seasons.definition import Gate
+from nani_pix_bot.seasons.definition import Gate, GateTag
 from nani_pix_bot.services.game.state import (
     SCREENSHOT_CAPABLE_PROVIDERS,
     TitleVariants,
@@ -19,6 +19,7 @@ from nani_pix_bot.services.game.state import (
 )
 from nani_pix_bot.services.search import shikimori, tenrai
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tags import AnimeTag
 from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.seasons.gate import matches
 from nani_pix_bot.services.seasons.tags import TagClients, TagsUnavailableError, fetch_tags
@@ -51,6 +52,8 @@ def roll_overthrow() -> bool:
 class AnimePick:
     result: ShikimoriResult | TenraiResult
     source: Provider
+    # The tags the season gate check matched on; empty when there is no gate.
+    tags: tuple[AnimeTag, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -198,7 +201,33 @@ async def _gated_tenrai_pick(
     if not tags or not matches(gate, tags):
         logger.info("bot pick {pick!r} is off this season's theme — rejecting", pick=pick.result)
         return None
-    return pick
+    return replace(pick, tags=tuple(tags))
+
+
+async def _tag_shikimori_pick(
+    search_client: httpx.AsyncClient,
+    tenrai_client: httpx.AsyncClient,
+    pick: AnimePick,
+    want: GateTag,
+) -> AnimePick:
+    """Attach tags to a Shikimori pick the provider already filtered on
+    `want`. Shikimori ids are MAL ids, so the tags are fetched by
+    `shikimori_id`. If none can be fetched the single filter tag stands in:
+    the pick is still on-theme, so it is kept."""
+    clients = TagClients(shikimori=search_client, tenrai=tenrai_client)
+    tags: list[AnimeTag] | None
+    try:
+        tags = await fetch_tags(clients, getattr(pick.result, Provider.SHIKIMORI.id_attr_name))
+    except TagsUnavailableError:
+        logger.warning(
+            "bot pick {pick!r}: couldn't fetch its tags — keeping the gate tag {tag}",
+            pick=pick.result,
+            tag=want.name,
+        )
+        tags = None
+    if not tags:
+        tags = [AnimeTag(kind=want.kind, name=want.name, mal_id=want.mal_id)]
+    return replace(pick, tags=tuple(tags))
 
 
 async def _pick_random_anime(
@@ -209,12 +238,16 @@ async def _pick_random_anime(
     and a Tenrai pick must pass the gate; a tag Shikimori has no id for
     skips straight to Tenrai."""
     genre_id = None
+    want = None
     if gate is not None:
-        genre_id = secrets.choice(gate.any_of).shikimori_id
+        want = secrets.choice(gate.any_of)
+        genre_id = want.shikimori_id
         if genre_id is None:
             return await _gated_tenrai_pick(tenrai_client, search_client, gate)
     pick = await _shikimori_pick(search_client, genre_id)
     if pick is not None:
+        if want is not None:
+            return await _tag_shikimori_pick(search_client, tenrai_client, pick, want)
         return pick
     if gate is not None:
         return await _gated_tenrai_pick(tenrai_client, search_client, gate)

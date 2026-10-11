@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import MappingProxyType
 from typing import cast
@@ -23,7 +24,9 @@ from nani_pix_bot.services.game import autostart as autostart_service
 from nani_pix_bot.services.game.autostart import AnimePick, GatheredPick, ScreenshotPick
 from nani_pix_bot.services.quiet_hours import QuietHours
 from nani_pix_bot.services.reveal import store as reveal_store
+from nani_pix_bot.services.search import tags as anime_tags
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
+from nani_pix_bot.services.search.tags import AnimeTag
 from tests.conftest import LogLine
 
 
@@ -845,3 +848,49 @@ async def test_the_dethroned_winners_flair_shows_once_in_the_overthrow_caption(
     assert caption == _expected_first_turn_caption(
         "dm_start.hard_mode_game_started_caption_overthrow_winner", winner="frieren 🌸"
     )
+
+
+async def _run_autostart_with(session_factory, monkeypatch: pytest.MonkeyPatch, pick) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=None))
+        session.commit()
+    context = _make_context(session_factory)
+    monkeypatch.setattr("nani_pix_bot.services.pixelate.pixelate", lambda b, w, a: b)
+
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
+        return pick
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+    claim = autostart_timers._AutostartClaim(
+        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    )
+    assert await autostart_timers.run_bot_autostart(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
+    )
+
+
+async def test_run_bot_autostart_stores_a_gated_picks_tags(
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records: list[LogLine]
+) -> None:
+    pick = _fake_pick()
+    tags = (AnimeTag("genre", "Romance", 22), AnimeTag("theme", "School", 23))
+    gated = GatheredPick(anime=replace(pick.anime, tags=tags), screenshot=pick.screenshot)
+
+    await _run_autostart_with(session_factory, monkeypatch, gated)
+
+    with session_factory() as session:
+        game = session.query(Game).one()
+        assert game.anime_tags == anime_tags.to_json(tags)
+    assert any(
+        "stored tags" in r.message and r.extra["tags"] == ["Romance", "School"] for r in log_records
+    )
+
+
+async def test_run_bot_autostart_leaves_an_ungated_picks_tags_unset(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _run_autostart_with(session_factory, monkeypatch, _fake_pick())
+
+    with session_factory() as session:
+        assert session.query(Game).one().anime_tags is None

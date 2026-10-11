@@ -86,7 +86,7 @@ async def test_gated_pick_filters_shikimori_on_the_chosen_tags_id(
     assert pick is not None
     assert pick.anime.source == Provider.SHIKIMORI
     assert calls["shiki"] == [{"genre_id": 22}]
-    assert calls["tags"] == []  # a filtered Shikimori pick is not re-checked
+    assert calls["tags"] == [1]  # fetched to keep, never to re-check against the gate
 
 
 async def test_tag_without_a_shikimori_id_goes_straight_to_tenrai(
@@ -187,3 +187,67 @@ async def test_gated_pick_lines_carry_the_season(
         assert line.extra["season_id"] == row.id
         assert line.extra["run_id"] == "demo_1"
     assert any("off this season's theme" in r.message for r in log_records)
+
+
+async def test_a_gated_tenrai_pick_keeps_its_tags(
+    monkeypatch: pytest.MonkeyPatch, calls: dict
+) -> None:
+    monkeypatch.setattr(autostart.secrets, "choice", lambda _seq: NO_SHIKI_ID)
+    romance = AnimeTag("genre", "Romance", 22)
+    school = AnimeTag("theme", "School", 23)
+    calls["tags_result"] = [romance, school]
+    gate = Gate(any_of=(ROMANCE, NO_SHIKI_ID), description=MappingProxyType({"EN": "x"}))
+
+    pick = await _gather(gate)
+
+    assert pick is not None
+    assert pick.anime.source == Provider.TENRAI
+    assert pick.anime.tags == (romance, school)
+
+
+async def test_a_shikimori_gated_pick_fetches_its_tags(
+    monkeypatch: pytest.MonkeyPatch, calls: dict
+) -> None:
+    monkeypatch.setattr(autostart.secrets, "choice", lambda _seq: ROMANCE)
+    romance = AnimeTag("genre", "Romance", 22)
+    calls["tags_result"] = [romance]
+
+    pick = await _gather(SAKURA_LIKE)
+
+    assert pick is not None
+    assert pick.anime.source == Provider.SHIKIMORI
+    assert calls["tags"] == [1]
+    assert pick.anime.tags == (romance,)
+
+
+async def test_a_shikimori_gated_pick_without_fetched_tags_keeps_the_filter_tag(
+    monkeypatch: pytest.MonkeyPatch, calls: dict, log_records: list[LogLine]
+) -> None:
+    monkeypatch.setattr(autostart.secrets, "choice", lambda _seq: ROMANCE)
+    calls["tags_result"] = TagsUnavailableError()
+
+    pick = await _gather(SAKURA_LIKE)
+
+    assert pick is not None
+    assert pick.anime.source == Provider.SHIKIMORI
+    assert pick.anime.tags == (AnimeTag("genre", "Romance", 22),)
+    assert any("couldn't fetch its tags" in r.message for r in log_records)
+
+
+async def test_a_shikimori_gated_pick_with_empty_tags_keeps_the_filter_tag(
+    monkeypatch: pytest.MonkeyPatch, calls: dict
+) -> None:
+    monkeypatch.setattr(autostart.secrets, "choice", lambda _seq: SCHOOL)
+    calls["tags_result"] = None
+
+    pick = await _gather(SAKURA_LIKE)
+
+    assert pick is not None
+    assert pick.anime.tags == (AnimeTag("theme", "School", 23),)
+
+
+async def test_an_ungated_pick_has_no_tags(calls: dict) -> None:
+    pick = await _gather(None)
+
+    assert pick is not None
+    assert pick.anime.tags == ()

@@ -31,6 +31,7 @@ from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.game import autostart as autostart_service
 from nani_pix_bot.services.reveal import store as reveal_store
+from nani_pix_bot.services.search import tags as anime_tags
 from nani_pix_bot.services.seasons import gate as gate_service
 
 IDLE_AUTOSTART_JOB_NAME = "idle-autostart"
@@ -345,6 +346,14 @@ async def run_bot_autostart(
             session, starter_id=bot_id, entry=f"bot autostart ({claim.trigger.value})"
         )
         game_service.stage_result(game, pick.anime.result, source=pick.anime.source)
+        if pick.anime.tags:
+            game.anime_tags = anime_tags.to_json(list(pick.anime.tags))
+            logger.info(
+                "season gate: stored tags for {pick!r}",
+                pick=pick.anime.result,
+                tags=[t.name for t in pick.anime.tags],
+                game_id=game.id,
+            )
         # Every autostart pick is hard mode now — no `if` needed.
         # original_image stays None; the screenshot pair lives in
         # hard_mode_image_a/_b instead.
