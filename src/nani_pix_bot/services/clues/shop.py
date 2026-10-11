@@ -24,13 +24,15 @@ from nani_pix_bot.models.enums import (
 )
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.seasons.definition import Modifier
 from nani_pix_bot.services import events, players
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services.clues import text, token_clues
+from nani_pix_bot.services.clues import discount, text, token_clues
 from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.economy import config, earning, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
 from nani_pix_bot.services.game import guesses
+from nani_pix_bot.services.seasons import modifiers
 
 MAX_EXTRA_SCREENSHOTS = 3
 TILE_GRID = 8
@@ -139,15 +141,17 @@ def price(session: Session, game: Game, buyer: Player, kind: ClueKind) -> int:
         )
     else:
         base = amounts[_PRICE_KEYS[kind]]
-    return _discounted(game, base)
+    return _discounted(session, game, base)
 
 
-def _discounted(game: Game, base: int) -> int:
-    """HARD MODE's clue sale (issue #254) — rounded down, never below 1 💠."""
-    percent = game.hard_mode_clue_discount if game.hard_mode else 0
-    if percent <= 0:
-        return base
-    return max(1, base * (100 - percent) // 100)
+def _discounted(session: Session, game: Game, base: int) -> int:
+    """HARD MODE's clue sale (issue #254) and the season's clue discount
+    (seasons spec §5), stacked by `discount.apply`."""
+    hard_mode = game.hard_mode_clue_discount if game.hard_mode else 0
+    season = modifiers.for_game(session, game).get(Modifier.CLUE_DISCOUNT_PCT, 0)
+    cost = discount.apply(base, hard_mode, season)
+    logger.debug("clue price {base} -> {cost}", base=base, cost=cost, game_id=game.id)
+    return cost
 
 
 def clue_screenshot_providers(game: Game) -> list[Provider]:

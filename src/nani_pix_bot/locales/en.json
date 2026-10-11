@@ -320,6 +320,7 @@
   "shop.button": "🛒 Clues",
   "shop.menu": "🛒 Clue shop — balance: {balance} 💠\nClues come to you privately here; you can share any of them with the group for free.",
   "shop.hard_mode_discount": "🏷 HARD MODE sale: −{percent}% on every clue.",
+  "shop.season_discount": "🌸 {season}: clues are {percent}% off.",
   "shop.no_game": "No game is running right now — the shop opens while a round is on.",
   "shop.setter": "You set this round, so the shop is closed for you until the next one.",
   "shop.nothing_left": "Nothing left to buy in this round.",

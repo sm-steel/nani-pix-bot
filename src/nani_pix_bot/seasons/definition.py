@@ -3,7 +3,8 @@ services read it, nothing here does anything."""
 
 import enum
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Literal
 
 from nani_pix_bot.models.enums import CosmeticSlot
@@ -147,6 +148,15 @@ class Item:
         return self.names.get(lang) or self.names["EN"]
 
 
+class Modifier(enum.StrEnum):
+    """Rule modifiers a run may set (spec §5). Only what a run uses is built."""
+
+    CLUE_DISCOUNT_PCT = "clue_discount_pct"
+
+
+MAX_CLUE_DISCOUNT_PCT = 90
+
+
 @dataclass(frozen=True)
 class SeasonRun:
     run_id: str
@@ -159,6 +169,7 @@ class SeasonRun:
     premium_price: int = 0  # 💠
     coins_per_currency: int = 2  # 🪙 per 1 💠 at conversion
     shop: tuple[ShopOffer, ...] = ()
+    modifiers: Mapping[Modifier, int] = field(default_factory=lambda: MappingProxyType({}))
 
     def name(self, lang: str) -> str:
         return self.names.get(lang) or self.names["EN"]
@@ -224,6 +235,13 @@ def shop_problems(run: SeasonRun) -> list[str]:
     return problems
 
 
+def modifier_problems(run: SeasonRun) -> list[str]:
+    discount = run.modifiers.get(Modifier.CLUE_DISCOUNT_PCT)
+    if discount is not None and not 1 <= discount <= MAX_CLUE_DISCOUNT_PCT:
+        return [f"modifier clue_discount_pct must be 1..{MAX_CLUE_DISCOUNT_PCT}"]
+    return []
+
+
 def run_problems(run: SeasonRun) -> list[str]:
     """Everything wrong with a run module's data — checked when the registry loads it."""
-    return pass_problems(run) + shop_problems(run)
+    return pass_problems(run) + shop_problems(run) + modifier_problems(run)

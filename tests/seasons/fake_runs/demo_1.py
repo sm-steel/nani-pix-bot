@@ -6,6 +6,7 @@ from nani_pix_bot.seasons.definition import (
     Gate,
     GateTag,
     Item,
+    Modifier,
     Reward,
     SeasonRun,
     ShopOffer,
@@ -51,4 +52,5 @@ RUN = SeasonRun(
         ShopOffer.item("host_frame.border", 80),
         ShopOffer.clue_ticket(30, 2),
     ),
+    modifiers=MappingProxyType({Modifier.CLUE_DISCOUNT_PCT: 25}),
 )
