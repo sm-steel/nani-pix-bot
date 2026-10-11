@@ -158,11 +158,6 @@ def pay(session: Session, event: LoggedEvent, found: Tagged) -> list[Award]:
     return paid
 
 
-def on_event(session: Session, event: LoggedEvent) -> list[Award]:
-    found = tagged(session, event)
-    return [] if found is None else pay(session, event, found)
-
-
 def standings(session: Session, season_id: int) -> list[Placed]:
     """Competition ranks by total XP (1, 1, 3); ties keep player-id order."""
     total = func.sum(SeasonXp.amount)

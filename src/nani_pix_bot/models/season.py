@@ -72,3 +72,22 @@ class SeasonBalance(Base):
         BigInteger, ForeignKey("players.telegram_user_id"), primary_key=True
     )
     coins: Mapped[int] = mapped_column(default=0)
+
+
+class SeasonPass(Base):
+    """A player's progress through one season's pass (seasons spec §2): how
+    many free and premium tiers have been granted (tiers are granted in order,
+    so a count is enough), and the 💠 charge that bought Premium, if any."""
+
+    __tablename__ = "season_pass"
+
+    season_id: Mapped[int] = mapped_column(ForeignKey("season_schedule.id"), primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("players.telegram_user_id"), primary_key=True
+    )
+    free_claimed: Mapped[int] = mapped_column(default=0)
+    premium_claimed: Mapped[int] = mapped_column(default=0)
+    premium_transfer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("currency_transfers.id"), unique=True, default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))

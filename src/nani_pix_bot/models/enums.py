@@ -348,6 +348,7 @@ class CurrencyReason(enum.StrEnum):
     SEASON_WIN = "season_win"
     SEASON_HOST = "season_host"
     SEASON_FIRST_GUESS = "season_first_guess"
+    TIER_REWARD = "pass_reward"
 
 
 class Currency(enum.StrEnum):
@@ -468,6 +469,7 @@ class ItemSource(enum.StrEnum):
     """How an owned season cosmetic was obtained (seasons spec §3). Plain string."""
 
     ADMIN = "admin"
+    TIER = "pass"
 
 
 class PreviewKind(enum.StrEnum):

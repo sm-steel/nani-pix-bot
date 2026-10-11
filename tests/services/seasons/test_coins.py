@@ -31,9 +31,9 @@ def test_no_coins_once_the_season_is_over(session, tagged_game, emit_win, end_se
     assert wallet.balance(session, 1, season_id=tagged_game.season_id) == 0
 
 
-def test_an_untagged_game_pays_no_coins(session, untagged_game, emit_win) -> None:
+def test_an_untagged_game_pays_no_coins(session, active_season, untagged_game, emit_win) -> None:
     emit_win(winner=1, stage=1)
-    assert wallet.balance(session, 1, season_id=1) == 0
+    assert wallet.balance(session, 1, season_id=active_season.id) == 0
 
 
 def test_coins_are_logged_with_the_season(session, tagged_game, emit_win, log_records) -> None:
