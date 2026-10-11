@@ -93,7 +93,9 @@ def test_converted_currency_is_logged_as_base_currency(session, season, demo, al
     wallet.credit(session, alice, 10, _coins(season.id))
     conversion.convert(session, season, demo)
     moved = session.scalars(
-        select(EventLog).where(EventLog.event_type == EventType.CURRENCY_MOVED)
+        select(EventLog)
+        .where(EventLog.event_type == EventType.CURRENCY_MOVED)
+        .order_by(EventLog.id)
     ).all()
     credit = moved[-1].data
     assert (credit["reason"], credit["currency"], credit["amount"]) == (
