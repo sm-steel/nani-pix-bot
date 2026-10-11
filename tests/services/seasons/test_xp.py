@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -296,3 +297,43 @@ def test_setwinner_tops_the_host_up_to_solved(session, tagged_game, log_records)
         run.xp.host_solved - run.xp.host_unsolved,
         run.coins.host_solved - run.coins.host_unsolved,
     )
+
+
+def _top_up_lines(log_records) -> list:
+    return [r for r in log_records if "topped the host up to solved" in r.message]
+
+
+def test_a_zero_top_up_is_not_logged(
+    session, tagged_game, fake_runs, monkeypatch, log_records
+) -> None:
+    """A run whose solved host award is no more than the unsolved one tops up
+    nothing, so there is nothing to log."""
+    run = fake_runs["demo_1"]
+    flat = replace(
+        run,
+        xp=replace(run.xp, host_solved=run.xp.host_unsolved),
+        coins=replace(run.coins, host_solved=run.coins.host_unsolved),
+    )
+    monkeypatch.setitem(fake_runs, "demo_1", flat)
+    game_service.force_unsolved(tagged_game, cause="timeout")
+
+    game_service.refinish(session, tagged_game, winner_id=seasons_fixtures.WINNER)
+
+    host = tagged_game.starter_id
+    assert _game_award(session, tagged_game.id, host, XpSource.HOST) == (
+        run.xp.host_unsolved,
+        run.coins.host_unsolved,
+    )
+    assert _top_up_lines(log_records) == []
+
+
+def test_a_hard_mode_setwinner_pays_no_host_and_logs_no_top_up(
+    session, bot_tagged_game, log_records
+) -> None:
+    game_service.force_unsolved(bot_tagged_game, cause="timeout")
+
+    game_service.refinish(session, bot_tagged_game, winner_id=seasons_fixtures.WINNER)
+
+    host = bot_tagged_game.starter_id
+    assert _game_award(session, bot_tagged_game.id, host, XpSource.HOST) == (0, 0)
+    assert _top_up_lines(log_records) == []

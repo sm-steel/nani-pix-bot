@@ -35,14 +35,17 @@ def _log_host_top_up(
     xp_and_coins: tuple[list[xp.Award], list[xp.Award]],
 ) -> None:
     """A /setwinner on a game that already paid the host the unsolved award:
-    the win added only the difference, so the host ends with the solved one."""
-    if found.game.hard_mode:
-        return
+    the win added only the difference, so the host ends with the solved one.
+    Nothing added (a HARD MODE game pays no host; a run whose solved award is
+    no more than the unsolved one) is nothing to log."""
     xp_awards, coin_awards = xp_and_coins
+    added_xp, added_coins = _host_award(xp_awards, host_id), _host_award(coin_awards, host_id)
+    if not added_xp and not added_coins:
+        return
     logger.info(
         "topped the host up to solved: +{xp} XP, +{coins} 🪙 to {recipient}",
-        xp=_host_award(xp_awards, host_id),
-        coins=_host_award(coin_awards, host_id),
+        xp=added_xp,
+        coins=added_coins,
         recipient=players.describe_player_id(session, host_id),
         recipient_id=host_id,
         season_id=found.season.id,
