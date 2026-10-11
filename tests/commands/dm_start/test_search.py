@@ -554,8 +554,10 @@ async def test_pick_callback_handler_says_so_when_the_setup_row_is_gone(
     [warning] = [line for line in log_records if line.level == "WARNING"]
     assert warning.extra["user_id"] == 7
     assert "anilist_pick:99" in warning.message
-    update.callback_query.answer.assert_awaited_once_with(
-        i18n.t("dm_start.setup_gone", "EN"), show_alert=True
+    # The tap was answered up front, so the explanation is a message.
+    update.callback_query.answer.assert_awaited_once_with()
+    context.bot.send_message.assert_awaited_once_with(
+        chat_id=7, text=i18n.t("dm_start.setup_gone", "EN")
     )
     context.bot.send_media_group.assert_not_awaited()
 

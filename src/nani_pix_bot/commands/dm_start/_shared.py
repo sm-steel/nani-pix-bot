@@ -181,6 +181,20 @@ async def _reject_stale_tap(query: CallbackQuery, lang: str) -> None:
     await query.answer(i18n.t("dm_start.setup_gone", lang), show_alert=True)
 
 
+async def _reject_stale_tap_answered(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int, data: str | None, lang: str
+) -> None:
+    """`_reject_stale_tap` for a handler that already spent its one
+    callback-query answer up front (to beat Telegram's window): same
+    WARNING, with the explanation sent as a plain message instead."""
+    logger.opt(depth=1).warning(
+        "tapped {data!r} with no SETUP game left — already resolved, or the "
+        "setup-abandon timer deleted the row",
+        data=data,
+    )
+    await context.bot.send_message(chat_id=chat_id, text=i18n.t("dm_start.setup_gone", lang))
+
+
 def _prefer_shikimori(lang: str) -> bool:
     return lang.upper() == "RU"
 
