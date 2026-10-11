@@ -13,10 +13,11 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.enums import EventType, GameStatus, OutboxKind, SeasonStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
+from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import players
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.events import LoggedEvent, as_utc
-from nani_pix_bot.services.seasons import schedule, xp
+from nani_pix_bot.services.seasons import conversion, schedule, xp
 
 _RUNNING = (GameStatus.ACTIVE, GameStatus.VOTING)
 
@@ -69,6 +70,26 @@ def _log_frozen(session: Session, row: SeasonSchedule, standings: list[xp.Placed
     )
 
 
+def _convert_coins(session: Session, row: SeasonSchedule) -> None:
+    run = registry.get(row.run_id)
+    if run is None:
+        logger.error(
+            "season {run_id} ended with an unloadable run — leftover coins not converted",
+            run_id=row.run_id,
+            season_id=row.id,
+        )
+        return
+    done = conversion.convert(session, row, run)
+    logger.info(
+        "season {run_id} converted {coins} 🪙 into {currency} 💠 for {players} player(s)",
+        run_id=row.run_id,
+        coins=done.coins,
+        currency=done.currency,
+        players=done.players,
+        season_id=row.id,
+    )
+
+
 def _finalize(session: Session, row: SeasonSchedule, now: datetime) -> Transition:
     standings = xp.standings(session, row.id)
     for placed in standings:
@@ -80,6 +101,7 @@ def _finalize(session: Session, row: SeasonSchedule, now: datetime) -> Transitio
     row.ended_at = now
     session.flush()
     _log_frozen(session, row, standings)
+    _convert_coins(session, row)
     outbox.enqueue_season(session, OutboxKind.SEASON_END, row.id)
     return _move(row, SeasonStatus.ENDED)
 

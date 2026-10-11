@@ -18,7 +18,7 @@ from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.cards import SeasonBanner, season_background
 from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.events import as_utc
-from nani_pix_bot.services.seasons import podium_text, season_pass
+from nani_pix_bot.services.seasons import conversion, podium_text, season_pass
 
 
 def _local(at: datetime, tz: ZoneInfo) -> str:
@@ -36,6 +36,17 @@ def _season_lines(
         lines.append(i18n.t("season.post.gate", lang, rule=rule))
     if kind is OutboxKind.SEASON_END:
         lines.extend(podium_text.lines(session, season.id, lang))
+        done = conversion.summary(session, season.id)
+        if done.players:
+            lines.append(
+                i18n.t(
+                    "season.post.conversion",
+                    lang,
+                    players=done.players,
+                    currency=done.currency,
+                    rate=run.coins_per_currency,
+                )
+            )
     return lines
 
 

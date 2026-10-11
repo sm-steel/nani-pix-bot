@@ -150,6 +150,8 @@ def _reward_problems(run: SeasonRun, number: int, reward: Reward) -> list[str]:
 def pass_problems(run: SeasonRun) -> list[str]:
     """Everything wrong with `run`'s pass; [] when it's valid."""
     problems: list[str] = []
+    if run.coins_per_currency < 1:
+        problems.append("coins_per_currency must be at least 1")
     for number, tier in enumerate(run.tiers, start=1):
         if tier.xp <= 0:
             problems.append(f"tier {number} needs a positive XP threshold")

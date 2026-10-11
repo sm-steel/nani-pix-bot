@@ -713,6 +713,7 @@
   "season.post.gate": "This season only anime that are {rule} can be played.",
   "season.post.podium_line": "{rank}. {player} — {xp} XP",
   "season.post.no_scores": "Nobody earned Season XP this time.",
+  "season.post.conversion": "🪙 → 💠: leftover Season Coins of {players} player(s) became {currency} 💠 ({rate} 🪙 = 1 💠).",
   "season_pass.notice.header": "🎫 {season} — Season Pass",
   "season_pass.notice.line": "Tier {tier}: {reward}",
   "season_pass.notice.line_premium": "Tier {tier} ⭐: {reward}",

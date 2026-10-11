@@ -46,3 +46,9 @@ def test_premium_rewards_need_a_price(demo) -> None:
 def test_amounts_must_be_positive(demo) -> None:
     tiers = (Tier(10, Reward.coins(0)),)
     assert any("amount" in p for p in pass_problems(replace(demo, tiers=tiers)))
+
+
+def test_coins_per_currency_must_be_at_least_one(demo) -> None:
+    assert any(
+        "coins_per_currency" in p for p in pass_problems(replace(demo, coins_per_currency=0))
+    )
