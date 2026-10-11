@@ -345,6 +345,9 @@ class CurrencyReason(enum.StrEnum):
     CASHBACK = "cashback"
     COMPENSATION = "compensation"
     ACHIEVEMENT = "achievement"
+    SEASON_WIN = "season_win"
+    SEASON_HOST = "season_host"
+    SEASON_FIRST_GUESS = "season_first_guess"
 
 
 class Currency(enum.StrEnum):

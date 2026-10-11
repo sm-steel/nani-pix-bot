@@ -22,7 +22,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.season import SeasonSchedule, SeasonXp
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.seasons.definition import XpTable
+from nani_pix_bot.seasons.definition import SeasonRun, XpTable
 from nani_pix_bot.services import players
 from nani_pix_bot.services.events import LoggedEvent
 
@@ -81,12 +81,25 @@ def _is_first_guess(session: Session, game_id: int, player_id: int | None) -> bo
     return session.scalar(stmt) == 1
 
 
-def on_event(session: Session, event: LoggedEvent) -> None:
+@dataclass(frozen=True)
+class Tagged:
+    """A game event that counts for a season: the game, its open season and run,
+    and whether a GUESS was the player's first in the game."""
+
+    game: Game
+    season: SeasonSchedule
+    run: SeasonRun
+    first_guess: bool
+
+
+def tagged(session: Session, event: LoggedEvent) -> Tagged | None:
+    """The season `event` pays into, or None (not a paying event, untagged game,
+    unloadable run, or the season already over — each logged as today)."""
     if event.event_type not in _HANDLED or event.game_id is None:
-        return
+        return None
     game = session.get(Game, event.game_id)
     if game is None or game.season_id is None:
-        return
+        return None
     season = session.get(SeasonSchedule, game.season_id)
     run = registry.get(season.run_id) if season is not None else None
     if season is None or run is None:
@@ -95,7 +108,7 @@ def on_event(session: Session, event: LoggedEvent) -> None:
             season_id=game.season_id,
             game_id=game.id,
         )
-        return
+        return None
     if season.status in (SeasonStatus.ENDED, SeasonStatus.CANCELLED):
         # e.g. /setwinner re-finishing a tagged game after the podium froze:
         # paying now would make the ledger disagree with season_results.
@@ -106,18 +119,29 @@ def on_event(session: Session, event: LoggedEvent) -> None:
             season_id=season.id,
             game_id=game.id,
         )
-        return
+        return None
     first = event.event_type == EventType.GUESS and _is_first_guess(
         session, game.id, event.actor_id
     )
-    for award in awards(run.xp, event, bot_game=game.hard_mode, first_guess_of_player=first):
+    return Tagged(game, season, run, first)
+
+
+def pay(session: Session, event: LoggedEvent, found: Tagged) -> list[Award]:
+    """Season XP for `event`: season_xp rows, returned."""
+    paid = awards(
+        found.run.xp,
+        event,
+        bot_game=found.game.hard_mode,
+        first_guess_of_player=found.first_guess,
+    )
+    for award in paid:
         session.add(
             SeasonXp(
-                season_id=season.id,
+                season_id=found.season.id,
                 player_id=award.player_id,
                 amount=award.amount,
                 source=award.source,
-                game_id=game.id,
+                game_id=found.game.id,
             )
         )
         logger.info(
@@ -126,11 +150,17 @@ def on_event(session: Session, event: LoggedEvent) -> None:
             source=award.source.value,
             recipient=players.describe_player_id(session, award.player_id),
             recipient_id=award.player_id,
-            season_id=season.id,
-            run_id=season.run_id,
-            game_id=game.id,
+            season_id=found.season.id,
+            run_id=found.season.run_id,
+            game_id=found.game.id,
         )
     session.flush()
+    return paid
+
+
+def on_event(session: Session, event: LoggedEvent) -> list[Award]:
+    found = tagged(session, event)
+    return [] if found is None else pay(session, event, found)
 
 
 def standings(session: Session, season_id: int) -> list[Placed]:

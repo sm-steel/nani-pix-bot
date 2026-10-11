@@ -41,6 +41,25 @@ class XpTable:
 
 
 @dataclass(frozen=True)
+class CoinTable:
+    """🪙 per season-game action (seasons spec §7): a win pays the same at any stage."""
+
+    win: int = 0
+    host_solved: int = 0
+    host_unsolved: int = 0
+    first_guess: int = 0
+
+    def as_xp_table(self) -> XpTable:
+        """The same shape as the XP table, so xp.awards can price coins too."""
+        return XpTable(
+            win_by_stage=(self.win, self.win, self.win, self.win, self.win),
+            host_solved=self.host_solved,
+            host_unsolved=self.host_unsolved,
+            first_guess=self.first_guess,
+        )
+
+
+@dataclass(frozen=True)
 class Item:
     """One cosmetic a run offers (seasons spec §3). `key` is `<slot>.<name>`;
     its full id is `<run_id>/<key>`. `look` means something per slot (an
@@ -63,6 +82,7 @@ class SeasonRun:
     xp: XpTable
     gate: Gate | None = None
     items: tuple[Item, ...] = ()
+    coins: CoinTable = CoinTable()
 
     def name(self, lang: str) -> str:
         return self.names.get(lang) or self.names["EN"]

@@ -1,7 +1,7 @@
 from types import MappingProxyType
 
 from nani_pix_bot.models.enums import CosmeticSlot
-from nani_pix_bot.seasons.definition import Gate, GateTag, Item, SeasonRun, XpTable
+from nani_pix_bot.seasons.definition import CoinTable, Gate, GateTag, Item, SeasonRun, XpTable
 
 
 def _names(en: str, ru: str):
@@ -28,4 +28,5 @@ RUN = SeasonRun(
         description=MappingProxyType({"EN": "Romance", "RU": "Романтика"}),
     ),
     items=ITEMS,
+    coins=CoinTable(win=25, host_solved=15, host_unsolved=5, first_guess=5),
 )
