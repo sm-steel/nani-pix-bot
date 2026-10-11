@@ -120,6 +120,12 @@ CATALOGUE: tuple[Definition, ...] = (
     _season("season_podium_2", G, frozenset({E.SEASON_ENDED}), sp.podium(2)),
     replace(_season("season_podium_1", P, frozenset({E.SEASON_ENDED}), sp.podium(1)), titled=True),
     replace(_season("season_on_theme", S, _WON, sp.on_theme), tiers=(5,)),
+    _ladder("season_veteran", (1, 3, 5, 10), frozenset({E.SEASON_ENDED}), ld.seasons_scored),
+    _ladder("season_completionist", (1, 3, 5), frozenset({E.TRACK_COMPLETED}), ld.passes_completed),
+    _ladder("season_front_runner", (1, 3, 5), frozenset({E.TRACK_COMPLETED}), ld.front_runs),
+    _ladder("season_hoarder", (5, 15, 30), frozenset({E.ITEM_GAINED}), ld.season_cosmetics),
+    _ladder("season_patron", (1, 3, 5), _MONEY, ld.premiums_bought),
+    _ladder("season_genre_explorer", (2, 4, 6), _WON, ld.gated_genres_won),
 )
 
 

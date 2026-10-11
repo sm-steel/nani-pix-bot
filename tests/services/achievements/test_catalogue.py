@@ -12,7 +12,7 @@ LOCALES = Path(__file__).resolve().parents[3] / "src" / "nani_pix_bot" / "locale
 
 def test_catalogue_keys_are_unique_and_complete() -> None:
     keys = [d.key for d in catalogue.CATALOGUE]
-    assert len(keys) == len(set(keys)) == 46
+    assert len(keys) == len(set(keys)) == 52
 
 
 def test_definitions_contain_every_catalogue_entry() -> None:

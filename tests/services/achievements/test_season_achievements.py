@@ -152,7 +152,7 @@ def test_five_season_wins_earn_on_theme(session, tagged_game, emit_win) -> None:
 
 
 def test_the_eleven_season_definitions_close_the_static_catalogue() -> None:
-    keys = [d.key for d in STATIC][-11:]
+    keys = [d.key for d in STATIC if d.key.startswith("season_")][:11]
     assert keys[0] == "season_debut"
     assert keys[-1] == "season_on_theme"
     assert EventType.SEASON_ENDED in catalogue.get("season_podium_1").triggers
