@@ -44,6 +44,7 @@ from nani_pix_bot.commands import (
     quiet_hours,
     refund,
     season,
+    season_pass,
     setautostart,
     setwinner,
     shop,
@@ -365,6 +366,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("balance", balance.balance_command))
     application.add_handler(CommandHandler("profile", profile.profile_command))
     application.add_handler(CommandHandler("shop", shop.shop_command))
+    application.add_handler(CommandHandler("seasonpass", season_pass.season_pass_command))
     application.add_handler(CommandHandler("tip", tip.tip_command))
     application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))
     application.add_handler(CommandHandler("partialmatch", partialmatch.partialmatch_command))
