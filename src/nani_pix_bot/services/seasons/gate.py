@@ -45,11 +45,12 @@ def _same_tag(want: GateTag, tag: AnimeTag) -> bool:
 
 
 def matches_one(want: GateTag, tags: Sequence[AnimeTag]) -> bool:
+    """Whether any of `tags` is the gate tag `want`."""
     return any(_same_tag(want, tag) for tag in tags)
 
 
 def matches(gate: Gate, tags: Sequence[AnimeTag]) -> bool:
-    return any(_same_tag(want, tag) for want in gate.any_of for tag in tags)
+    return any(matches_one(want, tags) for want in gate.any_of)
 
 
 async def check(

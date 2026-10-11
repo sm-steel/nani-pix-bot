@@ -251,3 +251,16 @@ async def test_an_ungated_pick_has_no_tags(calls: dict) -> None:
 
     assert pick is not None
     assert pick.anime.tags == ()
+
+
+async def test_a_shikimori_gated_pick_whose_fetched_tags_disagree_also_keeps_the_filter_tag(
+    monkeypatch: pytest.MonkeyPatch, calls: dict
+) -> None:
+    monkeypatch.setattr(autostart.secrets, "choice", lambda _seq: ROMANCE)
+    drama = AnimeTag("genre", "Drama", 8)
+    calls["tags_result"] = [drama]
+
+    pick = await _gather(SAKURA_LIKE)
+
+    assert pick is not None
+    assert pick.anime.tags == (drama, AnimeTag("genre", "Romance", 22))

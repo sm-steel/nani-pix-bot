@@ -21,7 +21,7 @@ from nani_pix_bot.services.search import shikimori, tenrai
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tags import AnimeTag
 from nani_pix_bot.services.search.tenrai import TenraiResult
-from nani_pix_bot.services.seasons.gate import matches
+from nani_pix_bot.services.seasons.gate import matches, matches_one
 from nani_pix_bot.services.seasons.tags import TagClients, TagsUnavailableError, fetch_tags
 
 # ~12%, within the 10-15% range this feature was designed to — see the
@@ -212,8 +212,9 @@ async def _tag_shikimori_pick(
 ) -> AnimePick:
     """Attach tags to a Shikimori pick the provider already filtered on
     `want`. Shikimori ids are MAL ids, so the tags are fetched by
-    `shikimori_id`. If none can be fetched the single filter tag stands in:
-    the pick is still on-theme, so it is kept."""
+    `shikimori_id`. The filter tag is always among the stored tags (added
+    when the fetch failed, came back empty, or disagrees with the provider's
+    filter): the pick is on-theme, and Genre Explorer must count it."""
     clients = TagClients(shikimori=search_client, tenrai=tenrai_client)
     tags: list[AnimeTag] | None
     try:
@@ -223,10 +224,17 @@ async def _tag_shikimori_pick(
             "bot pick {pick!r}: couldn't fetch its tags — keeping the gate tag {tag}",
             pick=pick.result,
             tag=want.name,
+            fallback=True,
         )
         tags = None
-    if not tags:
-        tags = [AnimeTag(kind=want.kind, name=want.name, mal_id=want.mal_id)]
+    if not tags or not matches_one(want, tags):
+        tags = [*(tags or []), AnimeTag(kind=want.kind, name=want.name, mal_id=want.mal_id)]
+        logger.info(
+            "bot pick {pick!r}: stored the gate tag {tag} alongside its fetched tags",
+            pick=pick.result,
+            tag=want.name,
+            fallback=True,
+        )
     return replace(pick, tags=tuple(tags))
 
 
