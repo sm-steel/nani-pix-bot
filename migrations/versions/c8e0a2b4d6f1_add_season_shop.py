@@ -53,6 +53,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_season_shop_purchases_player_id"), table_name="season_shop_purchases")
-    op.drop_index(op.f("ix_season_shop_purchases_season_id"), table_name="season_shop_purchases")
+    # Dropping the table drops its indexes; dropping them first fails on MariaDB,
+    # which won't drop an index a foreign key still needs (error 1553).
     op.drop_table("season_shop_purchases")

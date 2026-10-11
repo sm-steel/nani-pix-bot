@@ -9,7 +9,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.services.achievements import engine, outbox
-from nani_pix_bot.services.cards import SeasonBanner, UnlockCard
+from nani_pix_bot.services.cards import SeasonBanner, UnlockCard, backgrounds
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.seasons import conversion, schedule
 
@@ -50,7 +50,7 @@ def test_teaser_names_the_season_and_its_dates(session) -> None:
 
 def test_start_post_states_the_gate_rule(session) -> None:
     post = _render(session, OutboxKind.SEASON_START)
-    assert "Romance" in post.text
+    assert "This season only romance anime can be played." in post.text
 
 
 def test_end_post_lists_the_podium(session) -> None:
@@ -62,6 +62,23 @@ def test_end_post_lists_the_podium(session) -> None:
     assert post is not None
     assert "@alice" in post.text
     assert "120" in post.text
+
+
+def test_the_banner_carries_the_runs_stamp_art(session, monkeypatch, tmp_path) -> None:
+    folder = tmp_path / "demo_1"
+    folder.mkdir()
+    (folder / "stamp.png").write_bytes(b"plain stamp")
+    (folder / "stamp_plus.png").write_bytes(b"plus stamp")
+    monkeypatch.setattr(backgrounds, "SEASON_ART_DIR", tmp_path)
+    post = _render(session, OutboxKind.SEASON_START)
+    assert isinstance(post.card, SeasonBanner)
+    assert post.card.stamp == b"plain stamp"
+
+
+def test_a_run_without_stamp_art_gets_a_banner_without_a_stamp(session) -> None:
+    post = _render(session, OutboxKind.SEASON_TEASER)
+    assert isinstance(post.card, SeasonBanner)
+    assert post.card.stamp is None
 
 
 def test_banner_draws_without_a_background_file(session) -> None:

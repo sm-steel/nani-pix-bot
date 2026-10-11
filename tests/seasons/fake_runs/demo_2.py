@@ -17,7 +17,7 @@ RUN = SeasonRun(
     xp=XpTable(win_by_stage=(50, 40, 30, 20, 10), host_solved=15, host_unsolved=5, first_guess=5),
     gate=Gate(
         any_of=(GateTag("genre", "Action", 1, shikimori_id=1),),
-        description=_names("Action", "Экшен"),
+        description=_names("action anime", "экшен"),
     ),
     items=(
         Item("name_flair.bolt", CosmeticSlot.NAME_FLAIR, "⚡", _names("Bolt", "Молния")),

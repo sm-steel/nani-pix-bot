@@ -848,8 +848,9 @@ src/nani_pix_bot/
                    # podium cards), icons.py (the drawn diamond, trophy and
                    # star), backgrounds.py (optional per-slot anime
                    # backgrounds), profile_card.py (the /profile card:
-                   # stamps, achievement chips, stats line), glass.py (its
-                   # default gradient and glass-pixel grid)
+                   # stamps, achievement chips, stats chips), glass.py (its
+                   # default gradient and adaptive glass-pixel grid),
+                   # season_card.py (the season teaser/start/end card)
     economy/      # the currency economy (shown as 💠 pixels) — see MECHANICS.md's "Pixels".
                    # __init__.py deliberately re-exports nothing (import
                    # submodules directly): players.py imports
@@ -1011,8 +1012,12 @@ src/nani_pix_bot/
                    # definition.py (SeasonRun, XpTable, Gate), registry.py
                    # (finds runs/<run_id>.py), lock.py + runs.lock (a
                    # sha256 per shipped run module; a test fails if one is
-                   # edited — a repeat is a new module). runs/ is empty
-                   # until a real run ships
+                   # edited — a repeat is a new module). runs/sakura_1.py
+                   # is the first real run (Sakura Season): its items,
+                   # 12-tier pass, shop, objectives, run achievements,
+                   # gate and watercolor style. Its art (key visual,
+                   # stamp.png, stamp_plus.png, banners/) is in
+                   # assets/seasons/sakura_1/
   release_notes/  # player-facing release notes per language, shown by
                    # /version: release-notes-<lang>.md (the release being
                    # built) and previous-releases-<lang>.md (up to four
@@ -1058,7 +1063,13 @@ src/nani_pix_bot/
                    # CurrencyReason.TIER_REWARD ("pass_reward") and
                    # .PREMIUM ("premium_pass"), OutboxKind.SEASON_TIER and
                    # .SEASON_COMPLETE ("season_pass_done")
-assets/          # fonts/ (bundled Noto Sans, OFL) and backgrounds/
+                   # RewardKind.STAMP / STAMP_PLUS are the free track's gold
+                   # ring and the premium track's Sakura+ art on the season
+                   # stamp (services/cosmetics/profile.py reads the claimed
+                   # tiers; services/cards/backgrounds.py::season_stamp
+                   # loads the run's art)
+assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's key
+                   # visual, stamps and banners) and backgrounds/
                    # <unlock/rarity | podium/period>/n.png, optional card
                    # backgrounds (prompts: docs/card-backgrounds.md)
 migrations/       # Alembic migrations
@@ -1439,13 +1450,19 @@ anti-aliased avatar badge (solid inner ring, a conic sweep-gradient outer
 ring in a per-rarity palette, a glow), initials (letters only) when there is
 no avatar, and an optional anime background per slot that is picked
 deterministically by player and placed under a dark overlay. The profile card
-adds two committed colour PNGs from Noto Emoji (`assets/icons/`, 🏅 and 🎁 on
-its stats line), since the font has no emoji. It also adds achievement chips
+adds committed colour PNGs from Noto Emoji (`assets/icons/`, 🏅 and 🎁 on
+its stats chips), since the font has no emoji. It also adds achievement chips
 (a rarity medal and the name on a translucent pill, at most four in two rows,
-with smaller text for a long name so all four fit) and season stamps, drawn
-supersampled with the full name wrapped onto two lines. Behind it all is the
-banner, or a diagonal gradient, with `glass.py`'s grid of faint glass pixels
-fading from the top-left corner to the middle.
+with smaller text for a long name so all four fit) and season stamps (the
+run's stamp art in a ring, drawn supersampled, with the full name wrapped onto
+two lines). Behind it all is the banner, unshaded, or a diagonal gradient,
+with `glass.py`'s grid of faint glass pixels fading from the top-left corner
+to the middle; each block reads the brightness under it and turns from white
+glass over a dark picture to a faint dark tint with a two-tone bevel over a
+light one. Every text on the card has a thin black outline instead. The
+season card (`season_card.py`) shows the run's key visual unshaded under a
+pink ribbon tag, the season name in a pink-to-gold gradient beside the run's
+stamp tilted like a seal, and the dates with the 🗓 icon in a frosted pill.
 
 **Testing.** Evaluating achievements on every emitted event would change
 balances in the ~500 existing economy tests, so an autouse fixture in

@@ -27,6 +27,9 @@ from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.seasons import pass_completion
 
 GRANTING = (SeasonStatus.ACTIVE, SeasonStatus.CLOSING)
+# Nothing to deliver: the profile reads the claimed tier count. _grant_track's
+# "granted to {recipient}" line is the one log of these.
+_CLAIM_ONLY = frozenset({RewardKind.STAMP, RewardKind.STAMP_PLUS})
 
 
 @dataclass(frozen=True)
@@ -85,7 +88,7 @@ def _give(
         consumables.add(
             session, player.telegram_user_id, ConsumableKind.CLUE_TICKET, why=f"{run.run_id} pass"
         )
-    else:
+    elif reward.kind not in _CLAIM_ONLY:
         raise ValueError(f"unknown pass reward {reward!r}")
     return True
 
@@ -170,7 +173,8 @@ def describe(run: SeasonRun, reward: Reward, lang: str) -> str:
         return f"{reward.amount} 🪙"
     if reward.kind is RewardKind.CURRENCY:
         return f"{reward.amount} 💠"
-    return i18n.t("season_pass.reward.clue_token", lang)
+    # clue_token, stamp and stamp_plus: the text key is the kind's value
+    return i18n.t(f"season_pass.reward.{reward.kind.value}", lang)
 
 
 class PremiumRefusal(enum.StrEnum):

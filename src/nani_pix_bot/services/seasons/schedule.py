@@ -10,6 +10,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from nani_pix_bot.models.announcement import AnnouncementOutbox
 from nani_pix_bot.models.enums import OutboxKind, SeasonStatus
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
@@ -71,6 +72,25 @@ def history(session: Session, limit: int = 10) -> list[SeasonSchedule]:
     return list(session.scalars(stmt))
 
 
+def _queue_teaser(session: Session, row: SeasonSchedule) -> None:
+    """Queue the season's teaser, unless one is still waiting to be posted
+    (unposted, attempts left): it reads the dates when it posts, so quick
+    edits share a single post."""
+    stmt = select(AnnouncementOutbox).where(
+        AnnouncementOutbox.kind == OutboxKind.SEASON_TEASER,
+        AnnouncementOutbox.posted_at.is_(None),
+        AnnouncementOutbox.attempts < outbox.MAX_ATTEMPTS,
+    )
+    if any(queued.payload.get("season_id") == row.id for queued in session.scalars(stmt)):
+        logger.info(
+            "teaser already queued for season {run_id} — not queueing another",
+            run_id=row.run_id,
+            season_id=row.id,
+        )
+        return
+    outbox.enqueue_season(session, OutboxKind.SEASON_TEASER, row.id)
+
+
 def _check_window(start_at: datetime, end_at: datetime, now: datetime) -> None:
     if end_at <= start_at or end_at <= now:
         raise ScheduleRefusedError(Refusal.BAD_WINDOW)
@@ -109,7 +129,7 @@ def schedule(session: Session, request: ScheduleRequest, now: datetime) -> Seaso
     )
     session.add(row)
     session.flush()
-    outbox.enqueue_season(session, OutboxKind.SEASON_TEASER, row.id)
+    _queue_teaser(session, row)
     logger.info(
         "scheduled season {run_id} for {start} to {end}",
         run_id=run_id,
@@ -126,7 +146,7 @@ def set_start(session: Session, start_at: datetime, now: datetime) -> SeasonSche
         raise ScheduleRefusedError(Refusal.NOT_SCHEDULED)
     _check_window(start_at, as_utc(row.end_at), now)
     row.start_at = start_at
-    outbox.enqueue_season(session, OutboxKind.SEASON_TEASER, row.id)
+    _queue_teaser(session, row)
     logger.info(
         "moved season start to {start}",
         start=start_at.isoformat(),
@@ -142,7 +162,7 @@ def set_end(session: Session, end_at: datetime, now: datetime) -> SeasonSchedule
         raise ScheduleRefusedError(Refusal.ALREADY_ENDING)
     if row.status == SeasonStatus.SCHEDULED:
         _check_window(as_utc(row.start_at), end_at, now)
-        outbox.enqueue_season(session, OutboxKind.SEASON_TEASER, row.id)
+        _queue_teaser(session, row)
     else:
         end_at = max(end_at, now)  # running: an end in the past means "now"
     row.end_at = end_at

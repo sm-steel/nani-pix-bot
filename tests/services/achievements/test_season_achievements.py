@@ -73,7 +73,7 @@ def test_playing_a_season_game_earns_the_debut(session, tagged_game, emit_guess)
 def test_a_pass_completed_while_closing_earns_pass_complete(
     session, active_season, tagged_game
 ) -> None:
-    session.add(SeasonXp(season_id=active_season.id, player_id=WINNER, amount=120, source="win"))
+    session.add(SeasonXp(season_id=active_season.id, player_id=WINNER, amount=160, source="win"))
     active_season.status = SeasonStatus.CLOSING
     active_season.end_at = NOW - timedelta(hours=1)
     session.flush()

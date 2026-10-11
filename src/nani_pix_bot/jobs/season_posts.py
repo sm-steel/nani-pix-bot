@@ -16,7 +16,7 @@ from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.services import i18n, players, settings
-from nani_pix_bot.services.cards import SeasonBanner, season_background
+from nani_pix_bot.services.cards import SeasonBanner, season_background, season_stamp
 from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.events import as_utc
 from nani_pix_bot.services.seasons import conversion, objectives, podium_text, season_pass
@@ -72,6 +72,7 @@ def _season_post(
             headline=i18n.t(f"card.season.{kind.value}", lang),
             title=run.name(lang),
             subtitle=f"{_local(season.start_at, tz)} \u2013 {_local(season.end_at, tz)} ({tz.key})",
+            stamp=season_stamp(season.run_id, plus=False),
         )
         return Post(
             (row.id,),

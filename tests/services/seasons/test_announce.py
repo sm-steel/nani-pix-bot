@@ -17,10 +17,19 @@ def _request(start_at, end_at) -> schedule.ScheduleRequest:
     return schedule.ScheduleRequest(run_id="demo_1", start_at=start_at, end_at=end_at, admin_id=7)
 
 
+def _post_queued(session) -> None:
+    """The announcements job posted what was queued (a waiting teaser absorbs
+    later date edits — test_schedule.py)."""
+    for row in session.scalars(select(AnnouncementOutbox)):
+        row.posted_at = NOW
+    session.flush()
+
+
 def test_schedule_and_date_changes_queue_teasers_and_cancel_does_not(session) -> None:
     row = schedule.schedule(
         session, _request(NOW + timedelta(days=1), NOW + timedelta(days=5)), NOW
     )
+    _post_queued(session)
     schedule.set_end(session, NOW + timedelta(days=6), NOW)
     schedule.cancel(session, NOW)
     assert _kinds(session) == ["season_teaser", "season_teaser"]
@@ -30,6 +39,7 @@ def test_schedule_and_date_changes_queue_teasers_and_cancel_does_not(session) ->
 
 def test_start_change_queues_a_teaser(session) -> None:
     schedule.schedule(session, _request(NOW + timedelta(days=1), NOW + timedelta(days=5)), NOW)
+    _post_queued(session)
     schedule.set_start(session, NOW + timedelta(days=2), NOW)
     assert _kinds(session) == ["season_teaser", "season_teaser"]
 

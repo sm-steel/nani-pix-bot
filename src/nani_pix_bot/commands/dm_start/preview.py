@@ -174,8 +174,8 @@ async def preview_callback_handler(update: Update, context: ContextTypes.DEFAULT
         await _handle_bounty_pick_tap(session_factory, query, user)
         return
     if user is not None and query.data == PREVIEW_CONFIRM_CALLBACK_DATA:
-        # Answers the query itself too: the season gate's "try again" is
-        # an alert (see _handle_gated_confirm).
+        # Answers the query itself too, before the season gate's catalogue
+        # lookups (see _handle_gated_confirm).
         await _handle_gated_confirm(context, session_factory, query, user)
         return
     await query.answer()
@@ -236,17 +236,21 @@ async def _handle_gated_confirm(
     context: ContextTypes.DEFAULT_TYPE, session_factory, query, user
 ) -> None:
     """Confirm, behind the running season's gate (seasons spec §5) —
-    authoritative, since every way of identifying a game ends here. A
+    authoritative, since every way of identifying a game ends here. The
+    tap is answered first: the gate may look the anime's tags up in the
+    catalogues, and Telegram's callback window can run out meanwhile. A
     refusal replaces the preview's buttons with why and a way back to the
-    methods; "unavailable" is an alert that leaves the preview as it is,
-    so Confirm can simply be tapped again. Answers the query exactly once."""
+    methods; "unavailable" says so in a message of its own and leaves the
+    preview as it is, so Confirm can simply be tapped again."""
+    await query.answer()
     verdict = await season_gate.run_gate(context, session_factory, user.id)
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
     if verdict is Verdict.UNAVAILABLE:
-        await query.answer(i18n.t("season.gate.unavailable", lang), show_alert=True)
+        await context.bot.send_message(
+            chat_id=user.id, text=i18n.t("season.gate.unavailable", lang)
+        )
         return
-    await query.answer()
     if verdict in gate_service.REFUSED:
         await query.edit_message_text(
             season_gate.refusal_text(verdict, season_gate.rule_text(session_factory, lang), lang),

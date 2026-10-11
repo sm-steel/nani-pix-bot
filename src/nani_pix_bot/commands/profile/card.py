@@ -21,7 +21,7 @@ def _card(view: profile.ProfileView, lang: str) -> ProfileCard:
     return ProfileCard(
         name=view.name,
         title=view.title,
-        stamps=tuple(StampEntry(s.label, s.gold) for s in view.stamps),
+        stamps=tuple(StampEntry(s.label, s.gold, s.art) for s in view.stamps),
         stats=profile.stats(view.seasons_played, view.cosmetics_owned, lang),
         seed=view.player_id,
         badges=tuple(BadgeEntry(b.label, b.rarity) for b in view.badges),

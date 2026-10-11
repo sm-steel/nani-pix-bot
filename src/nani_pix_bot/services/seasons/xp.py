@@ -9,15 +9,20 @@ Design notes:
   `hard_mode = True`).
 - "First guess" = the player's first `game_guesses` row in that game (existing
   domain state; `log_guess` adds the row before it emits `GUESS`).
+- A `/setwinner` on a game that already ended unsolved (an earlier
+  `game_unsolved` event for it) already paid the host `host_unsolved`: its
+  `game_won` tops the host up to `host_solved` (never below 0), so the host
+  ends with exactly a solved game's award. The winner's award is unchanged.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import EventType, SeasonStatus, XpSource
+from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.season import SeasonSchedule, SeasonXp
@@ -47,6 +52,16 @@ def _win_xp(table: XpTable, stage: int) -> int:
     if stage < 1:
         return 0
     return table.win_by_stage[min(stage, len(table.win_by_stage)) - 1]
+
+
+def host_top_up(table: XpTable) -> XpTable:
+    """`table` for a win after an unsolved end that already paid the host
+    `host_unsolved`: the host's solved award is only the rest (never below 0)."""
+    return replace(table, host_solved=max(table.host_solved - table.host_unsolved, 0))
+
+
+def payable(table: XpTable, found: "Tagged") -> XpTable:
+    return host_top_up(table) if found.host_paid_unsolved else table
 
 
 def awards(
@@ -81,15 +96,29 @@ def _is_first_guess(session: Session, game_id: int, player_id: int | None) -> bo
     return session.scalar(stmt) == 1
 
 
+def _ended_unsolved_before(session: Session, event: LoggedEvent, game_id: int) -> bool:
+    """A GAME_WON for a game that already ended unsolved: a /setwinner."""
+    if event.event_type != EventType.GAME_WON:
+        return False
+    stmt = select(func.count(EventLog.id)).where(
+        EventLog.game_id == game_id,
+        EventLog.event_type == EventType.GAME_UNSOLVED,
+        EventLog.id < event.id,
+    )
+    return bool(session.scalar(stmt))
+
+
 @dataclass(frozen=True)
 class Tagged:
     """A game event that counts for a season: the game, its open season and run,
-    and whether a GUESS was the player's first in the game."""
+    whether a GUESS was the player's first in the game, and whether a GAME_WON
+    follows an unsolved end that already paid the host (a /setwinner)."""
 
     game: Game
     season: SeasonSchedule
     run: SeasonRun
     first_guess: bool
+    host_paid_unsolved: bool = False
 
 
 def tagged(session: Session, event: LoggedEvent) -> Tagged | None:
@@ -123,13 +152,13 @@ def tagged(session: Session, event: LoggedEvent) -> Tagged | None:
     first = event.event_type == EventType.GUESS and _is_first_guess(
         session, game.id, event.actor_id
     )
-    return Tagged(game, season, run, first)
+    return Tagged(game, season, run, first, _ended_unsolved_before(session, event, game.id))
 
 
 def pay(session: Session, event: LoggedEvent, found: Tagged) -> list[Award]:
     """Season XP for `event`: season_xp rows, returned."""
     paid = awards(
-        found.run.xp,
+        payable(found.run.xp, found),
         event,
         bot_game=found.game.hard_mode,
         first_guess_of_player=found.first_guess,

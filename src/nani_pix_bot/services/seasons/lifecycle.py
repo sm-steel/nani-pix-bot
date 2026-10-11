@@ -47,24 +47,25 @@ def _move(row: SeasonSchedule, status: SeasonStatus) -> Transition:
 
 def _log_frozen(session: Session, row: SeasonSchedule, standings: list[xp.Placed]) -> None:
     """One line on what the podium froze: how many results, and who is #1
-    (everyone tied for it; `winner_id` is a single id, or a list on a tie)."""
+    (`winner_ids`: always a list, everyone tied for first; empty when
+    nobody scored)."""
     top = [p for p in standings if p.rank == 1]
     if not top:
         logger.info(
             "season {run_id} froze 0 results — nobody scored",
             run_id=row.run_id,
             results=0,
+            winner_ids=[],
             season_id=row.id,
         )
         return
     winner = ", ".join(players.describe_player_id(session, p.player_id) for p in top)
-    winner_id = top[0].player_id if len(top) == 1 else [p.player_id for p in top]
     logger.info(
         "season {run_id} froze {results} result(s) — #1: {winner} with {xp} XP",
         run_id=row.run_id,
         results=len(standings),
         winner=winner,
-        winner_id=winner_id,
+        winner_ids=[p.player_id for p in top],
         xp=top[0].xp,
         season_id=row.id,
     )

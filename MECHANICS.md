@@ -1362,6 +1362,10 @@ game once. A reward that unlocks another achievement (Pixel Magnate) is
 granted in order, and the engine re-reads what a player already holds
 before each grant, so a cascade never grants a tier twice.
 
+When a game ends (won or unsolved), **every player who guessed in it** is
+evaluated, not only the winner and the host, so an achievement that depends
+on a game they only guessed in (Sakura Season's Hanami Party) reaches them.
+
 ### Money rules
 
 - **Reversals never count and never take anything away.** Refunds
@@ -1738,7 +1742,9 @@ until a run module is added.
   first if unset), stored in UTC. The start can move only before the
   season begins; the end can move until the season starts closing, and an
   end in the past on a running season ends it now (early stop). Date
-  changes before the start re-post the teaser.
+  changes before the start re-post the teaser — unless a teaser for that
+  season is still waiting in the outbox: it reads the dates when it posts,
+  so quick edits share one post.
 - The `season_boundary` job advances the season at each start/end and
   catches up after downtime. A closing season whose last tagged game was
   deleted by `/stop` is finalized by the job's hourly fallback run.
@@ -1774,6 +1780,12 @@ add their own rows (source `objective`, see "Objectives" below).
 "First guess" is answered from the player's `game_guesses` rows for that
 game (their first), not from a separate ledger. Standings are the sum of XP
 per player.
+
+**`/setwinner` on a game that ended unsolved** (it has an earlier
+`game_unsolved` event) already paid the host `host_unsolved`, so its win
+pays the host only `host_solved - host_unsolved` (never below 0), in XP and
+in 🪙 alike: the host ends with exactly a solved game's award. The winner's
+own award is the usual one.
 
 ### Season Coins, Pass and Premium
 
@@ -1887,7 +1899,10 @@ nothing: its queued posts are dropped unsent.
 A run may declare a gate: a list of accepted MAL genres/themes, where a
 game qualifies if its anime has **any** of them (a season about Slice of
 Life, Romance or the School theme accepts all three). The player-facing
-rule text names every tag.
+rule text names every tag, in one fixed shape (the `Gate` docstring): a
+plural noun phrase slotted into "This season only {rule} can be played."
+(EN, e.g. "slice-of-life, romance or school anime") and «В этом сезоне можно
+играть только в {rule}.» (RU, accusative after «в»).
 
 - **Tags** come from the MAL id: Tenrai first (matched by MAL tag id),
   Shikimori as the fallback (matched by kind + English name, since some of
@@ -1902,7 +1917,10 @@ rule text names every tag.
   refusal also clears a catalogue screenshot and resets setup to the method
   pick; a result for a pick that has since changed (a stale verdict) is
   dropped. **Unavailable**: no provider answered after retries — the player
-  is told to try again, and it is never reported as off-theme.
+  is told to try again, and it is never reported as off-theme. Confirm
+  answers the tap before the gate's catalogue lookups (Telegram's callback
+  window is short), so "unavailable" there arrives as a DM message of its
+  own, the preview left as it is for another tap.
 - **Bot-started games** are gated too: the autostart pick queries Shikimori
   on **one randomly chosen** gate tag's id (its filter ANDs several ids, so
   it can't take the whole list), and a Tenrai pick is kept only if its tags
@@ -1948,7 +1966,17 @@ Accepted limits:
 - A title item's id must fit `/title`'s callback data: at most 56 bytes,
   checked by `looks.problems` (and so by CI for every shipped run).
 - **Stamps** on `/profile` are the ended seasons the player has a
-  `season_results` row in; no stamp is stored per player.
+  `season_results` row in; no stamp is stored per player. A run's art lives
+  in `assets/seasons/<run_id>/` (`stamp.png`, `stamp_plus.png`); every
+  stamp draws `stamp.png` inside its ring. The ring is **gold** once the
+  free track's `RewardKind.STAMP` tier is claimed (`free_claimed` reaches
+  that tier), and the art becomes `stamp_plus.png` once the premium track's
+  `RewardKind.STAMP_PLUS` tier is claimed (`premium_claimed`). Both are read
+  from the player's `season_pass` row when the card is built, so nothing
+  extra is stored. A run may use each kind at most once, `STAMP` only on the
+  free track and `STAMP_PLUS` only on the premium one. A missing or broken
+  art file falls back to the initials disc (`season_stamp` returns None;
+  the card logs a warning). The season's post draws `stamp.png` as a seal.
 - Previews are rendered on demand, then cached by Telegram `file_id`
   (`item_previews`, one row per item and language, since banners and win
   effects draw text); text previews are never stored. A file_id Telegram

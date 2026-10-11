@@ -65,7 +65,7 @@ def test_completing_the_free_track_sets_the_time_and_emits(
     session, active_season, tagged_game
 ) -> None:
     run = _run()
-    _give_xp(session, active_season, WINNER, 120)
+    _give_xp(session, active_season, WINNER, 160)
     season_pass.sync(session, active_season, run, WINNER)
     progress = session.get(SeasonPass, (active_season.id, WINNER))
     assert progress.free_completed_at is not None
@@ -76,7 +76,7 @@ def test_completing_the_free_track_sets_the_time_and_emits(
 def test_only_the_first_free_completion_is_first(session, active_season, tagged_game) -> None:
     run = _run()
     for player in (WINNER, STARTER):
-        _give_xp(session, active_season, player, 120)
+        _give_xp(session, active_season, player, 160)
         season_pass.sync(session, active_season, run, player)
     firsts = [row.data["first"] for row in _events(session, EventType.TRACK_COMPLETED)]
     assert firsts == [True, False]
@@ -84,7 +84,7 @@ def test_only_the_first_free_completion_is_first(session, active_season, tagged_
 
 def test_a_second_sync_emits_no_second_completion(session, active_season, tagged_game) -> None:
     run = _run()
-    _give_xp(session, active_season, WINNER, 120)
+    _give_xp(session, active_season, WINNER, 160)
     season_pass.sync(session, active_season, run, WINNER)
     season_pass.sync(session, active_season, run, WINNER)
     assert len(_events(session, EventType.TRACK_COMPLETED)) == 1
@@ -94,7 +94,7 @@ def test_completing_the_premium_track_emits_premium(session, active_season, tagg
     run = _run()
     player = session.get(Player, WINNER)
     wallet.credit(session, player, 500, LedgerEntry(CurrencyReason.GRANT))
-    _give_xp(session, active_season, WINNER, 120)
+    _give_xp(session, active_season, WINNER, 160)
     season_pass.buy_premium(session, active_season, run, player)
     premium = [r.data for r in _events(session, EventType.TRACK_COMPLETED) if r.data["premium"]]
     assert premium == [{"season_id": active_season.id, "premium": True, "first": False}]

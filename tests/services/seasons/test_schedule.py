@@ -1,8 +1,11 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
 
-from nani_pix_bot.models.enums import SeasonStatus
+from nani_pix_bot.models.announcement import AnnouncementOutbox
+from nani_pix_bot.models.enums import OutboxKind, SeasonStatus
+from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.seasons import schedule
 from nani_pix_bot.services.seasons.schedule import Refusal, ScheduleRefusedError, ScheduleRequest
 
@@ -111,3 +114,45 @@ def test_scheduling_is_logged_with_structured_fields(session, log_records) -> No
     assert line.level == "INFO"
     assert line.extra["season_id"] == row.id
     assert line.extra["run_id"] == "demo_1"
+
+
+def _teasers(session, season_id: int) -> list[AnnouncementOutbox]:
+    rows = session.scalars(
+        select(AnnouncementOutbox).where(AnnouncementOutbox.kind == OutboxKind.SEASON_TEASER)
+    )
+    return [r for r in rows if r.payload["season_id"] == season_id]
+
+
+def test_quick_date_edits_queue_one_teaser(session, log_records) -> None:
+    row = _schedule(session)
+    schedule.set_start(session, NOW + timedelta(days=2), NOW)
+    schedule.set_end(session, NOW + timedelta(days=12), NOW)
+    assert len(_teasers(session, row.id)) == 1
+    skipped = [r for r in log_records if "teaser already queued" in r.message]
+    assert len(skipped) == 2
+    assert skipped[0].level == "INFO"
+    assert skipped[0].extra["season_id"] == row.id
+
+
+def test_a_date_edit_after_the_teaser_posted_queues_a_new_one(session) -> None:
+    row = _schedule(session)
+    _teasers(session, row.id)[0].posted_at = NOW
+    session.flush()
+    schedule.set_start(session, NOW + timedelta(days=2), NOW)
+    assert len(_teasers(session, row.id)) == 2
+
+
+def test_a_teaser_that_gave_up_does_not_block_a_new_one(session) -> None:
+    row = _schedule(session)
+    _teasers(session, row.id)[0].attempts = outbox.MAX_ATTEMPTS
+    session.flush()
+    schedule.set_start(session, NOW + timedelta(days=2), NOW)
+    assert len(_teasers(session, row.id)) == 2
+
+
+def test_another_seasons_unposted_teaser_does_not_count(session) -> None:
+    first = _schedule(session)
+    schedule.cancel(session, NOW)
+    second = _schedule(session)
+    assert len(_teasers(session, first.id)) == 1
+    assert len(_teasers(session, second.id)) == 1

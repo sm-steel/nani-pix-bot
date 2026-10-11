@@ -62,7 +62,7 @@ def _grants(session, key: str) -> list[tuple[int, int]]:
 
 
 def _complete_free_pass(session, season, player: int) -> None:
-    session.add(SeasonXp(season_id=season.id, player_id=player, amount=120, source="win"))
+    session.add(SeasonXp(season_id=season.id, player_id=player, amount=160, source="win"))
     session.flush()
     run = registry.get("demo_1")
     assert run is not None
