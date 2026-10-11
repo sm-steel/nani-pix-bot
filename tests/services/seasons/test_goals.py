@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from nani_pix_bot.models.enums import EventType
 from nani_pix_bot.seasons.definition import Goal, GoalKind
 from nani_pix_bot.services.seasons import goals
@@ -86,3 +88,37 @@ def test_descriptions_agree_with_the_count() -> None:
     assert tips == ["Send 1 tip", "Send 2 tips", "Send 5 tips"]
     days = [goals.describe(Goal(GoalKind.DAYS_PLAYED, n), "RU") for n in (1, 2, 5)]
     assert days == ["Играйте 1 день", "Играйте 2 разных дня", "Играйте 5 разных дней"]
+
+
+# WINS with a stage limit is covered by test_descriptions_agree_with_the_count
+# (its ordinal ending can't be spelled out here without tripping ruff's RUF001).
+_RU_PLURALS: dict[tuple[GoalKind, int | None], tuple[str, ...]] = {
+    (GoalKind.HOSTED, None): ("Загадайте 1 игру", "Загадайте 2 игры", "Загадайте 5 игр"),
+    (GoalKind.WINS, None): ("Победите в 1 игре", "Победите в 2 играх", "Победите в 5 играх"),
+    (GoalKind.GUESSED_IN, None): (
+        "Угадывайте в 1 игре",
+        "Угадывайте в 2 играх",
+        "Угадывайте в 5 играх",
+    ),
+    (GoalKind.SHARED_CLUES, None): (
+        "Поделитесь подсказкой 1 раз",
+        "Поделитесь подсказкой 2 раза",
+        "Поделитесь подсказкой 5 раз",
+    ),
+    (GoalKind.TIPS, None): ("Дайте чаевые 1 раз", "Дайте чаевые 2 раза", "Дайте чаевые 5 раз"),
+    (GoalKind.DAYS_PLAYED, None): (
+        "Играйте 1 день",
+        "Играйте 2 разных дня",
+        "Играйте 5 разных дней",
+    ),
+}
+
+
+def test_the_ru_plural_table_covers_every_kind() -> None:
+    assert {kind for kind, _stage in _RU_PLURALS} == set(GoalKind)
+
+
+@pytest.mark.parametrize(("kind", "stage"), list(_RU_PLURALS))
+def test_every_kind_takes_the_ru_plural_for_1_2_and_5(kind: GoalKind, stage: int | None) -> None:
+    got = tuple(goals.describe(Goal(kind, n, max_stage=stage), "RU") for n in (1, 2, 5))
+    assert got == _RU_PLURALS[kind, stage]

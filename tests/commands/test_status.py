@@ -9,9 +9,10 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import status
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import GameStatus, PixelStage
+from nani_pix_bot.models.enums import GameStatus, PixelStage, SeasonStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.game import turns
@@ -199,3 +200,42 @@ async def test_silent_outside_the_game_topic(session_factory) -> None:
 
     update.message.reply_text.assert_not_awaited()
     context.bot.send_photo.assert_not_awaited()
+
+
+async def test_a_season_game_is_reposted_in_its_style(
+    session_factory, monkeypatch: pytest.MonkeyPatch, fake_runs, log_records
+) -> None:
+    rendered: list[str | None] = []
+
+    def fake_stage_png_with(image, _width, _algorithm, _frame, style=None) -> bytes:
+        rendered.append(style)
+        return image
+
+    monkeypatch.setattr(stage_cosmetics, "stage_png_with", fake_stage_png_with)
+    with session_scope(session_factory) as session:
+        _players(session)
+        season = SeasonSchedule(
+            run_id="demo_1",
+            start_at=datetime.now(UTC),
+            end_at=datetime.now(UTC) + timedelta(days=9),
+            status=SeasonStatus.ACTIVE,
+            created_by=HOST,
+        )
+        session.add(season)
+        session.flush()
+        session.add(
+            Game(
+                starter_id=HOST,
+                status=GameStatus.ACTIVE,
+                current_stage=PixelStage.STAGE_1,
+                original_image=b"img",
+                season_id=season.id,
+            )
+        )
+    context = _context(session_factory)
+
+    await _run(_update(), context)
+
+    assert rendered == [fake_runs["demo_1"].style]
+    styled = [r for r in log_records if r.message.startswith("stage image in the season style")]
+    assert [(r.level, r.extra["style"]) for r in styled] == [("INFO", "plain")]

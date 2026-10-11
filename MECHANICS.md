@@ -33,7 +33,7 @@ just what's currently built.
 | Public spends — bounty (`/bounty`), `/tip`, `/sharpen` | Implemented |
 | HARD MODE vote when nobody guessed right (15 min, unique plurality of 3+ votes) | Implemented |
 | Quiet hours (`/quiethours`, `/timezone`) — automatic posts held, clocks frozen | Implemented |
-| Seasons, phase 1 (`/season`, schedule, Season XP, anime gate) | Implemented |
+| Seasons (`/season`, schedule, Season XP, anime gate, cosmetics, pass, `/seasonshop`, objectives) | Implemented |
 
 ## Game lifecycle
 
@@ -1768,6 +1768,7 @@ game's events. Amounts come from the run's XP table.
 | Win | the winner, by the stage (or HARD MODE turn, clamped to 1-5) they won at |
 | Host | the starter, when the game is won or ends unsolved — **not on HARD MODE games**, which only the bot starts |
 | First guess | each player's first guess in a game, once per player per game |
+| Objective | the player who completes a season objective, once (see "Objectives") |
 
 "First guess" is answered from the player's `game_guesses` rows for that
 game (their first), not from a separate ledger. Standings are the sum of XP
@@ -1827,7 +1828,9 @@ per-season `limit`; an item is also refused when the player already owns it
 (no refunds). The purchase is one `season_shop_purchases` row tied to its 🪙
 `currency_transfers` row, and the limit is the count of a player's rows for
 that offer in that season. Refusals: closed, unknown offer, owned, sold out,
-insufficient 🪙. Items are put on in `/cosmetics`.
+insufficient 🪙. Items are put on in `/cosmetics`. An item sold in the shop
+is never also a pass reward (free or premium); the run loader rejects a run
+that does both.
 
 ### Rule modifiers
 
@@ -1912,9 +1915,11 @@ A run module may offer **items** (`Item`: a `<slot>.<name>` key, its slot, a
 per-slot `look` and a name per language). The full id is `<run_id>/<key>`
 and, because run modules are frozen, it always resolves. A player **owns**
 an item forever (`owned_items`, unique per player and item) and has at most
-**one equipped item per slot** (`equipped_items`). Phase 2 has a single way
-to get one: an admin's `/grantitem` (`ItemSource.ADMIN`). Earning items
-through play, the shop and the pass come later.
+**one equipped item per slot** (`equipped_items`). There are three ways to
+get one: an admin's `/grantitem` (`ItemSource.ADMIN`), a Season Pass reward
+(`ItemSource.TIER`, see "Season Coins, Pass and Premium") and a Season Shop
+purchase (`ItemSource.SHOP`, see "Season Shop"). A run's item is either
+shop-only or pass-only, never both.
 
 `/cosmetics` (DM) lists the slots, then a slot's owned items; tapping an
 item sends its preview with **Equip** / **Unequip**. `/profile` (the game topic, or DM for members) shows

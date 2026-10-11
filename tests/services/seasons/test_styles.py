@@ -20,6 +20,14 @@ def test_an_untagged_game_gets_none(session, untagged_game) -> None:
     assert styles.style_for(session, untagged_game) is None
 
 
+def test_a_tagged_game_whose_run_is_unregistered_gets_none(
+    session, tagged_game, active_season
+) -> None:
+    active_season.run_id = "gone_1"
+    session.flush()
+    assert styles.style_for(session, tagged_game) is None
+
+
 def test_every_style_keeps_the_size() -> None:
     for key in styles.STYLES:
         out = Image.open(BytesIO(styles.apply_style(_png(), key)))

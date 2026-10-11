@@ -146,7 +146,18 @@ class Picture:
 async def _send_picture_fresh(
     context: ContextTypes.DEFAULT_TYPE, chat_id: int, picture: Picture, lang: str
 ) -> None:
-    image = await asyncio.to_thread(picture.render)
+    try:
+        image = await asyncio.to_thread(picture.render)
+    except Exception:
+        # Like _render for cosmetics: a broken drawing must not stop the
+        # caller's next message (the offer page with its Buy button).
+        logger.opt(exception=True).error(
+            "drawing the image {cache_key} failed — sending a text note",
+            cache_key=picture.cache_key,
+        )
+        text = i18n.t("cosmetics.preview_unavailable", lang)
+        await context.bot.send_message(chat_id=chat_id, text=text)
+        return
     sent = await _send_media(context, chat_id, PreviewKind.PHOTO, image, picture.caption)
     file_id = _file_id(sent, PreviewKind.PHOTO)
     if file_id is None:

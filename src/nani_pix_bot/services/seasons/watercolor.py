@@ -4,15 +4,17 @@ paper grain, uneven drying and a thinned painted border. Deterministic (fixed
 seeds), same size, RGB."""
 
 import random
-from functools import cache
+from functools import lru_cache
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
 
 PAPER = (247, 240, 226)
 SEED = 1597
+# Per-size layers kept: stage images come in a handful of widths at most.
+LAYER_CACHE_SIZE = 4
 
 
-@cache
+@lru_cache(maxsize=LAYER_CACHE_SIZE)
 def _grain(size: tuple[int, int]) -> Image.Image:
     """Paper grain: low-res seeded noise, blurred up — fibres and blotches."""
     rng = random.Random(SEED)  # noqa: S311 - seeded decoration, not security
@@ -26,7 +28,7 @@ def _grain(size: tuple[int, int]) -> Image.Image:
     return Image.blend(fine, blot, 0.5)
 
 
-@cache
+@lru_cache(maxsize=LAYER_CACHE_SIZE)
 def _blots(size: tuple[int, int]) -> Image.Image:
     rng = random.Random(SEED + 1)  # noqa: S311 - seeded decoration, not security
     w, _ = size
@@ -36,7 +38,7 @@ def _blots(size: tuple[int, int]) -> Image.Image:
     return big.point(lambda v: max(0, v - 150) * 2)
 
 
-@cache
+@lru_cache(maxsize=LAYER_CACHE_SIZE)
 def _edge_mask(size: tuple[int, int]) -> Image.Image:
     """White inside, ragged soft falloff at the border."""
     rng = random.Random(SEED + 2)  # noqa: S311 - seeded decoration, not security

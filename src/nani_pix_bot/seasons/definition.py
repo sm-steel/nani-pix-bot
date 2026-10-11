@@ -252,6 +252,16 @@ def pass_problems(run: SeasonRun) -> list[str]:
     return problems
 
 
+def _pass_item_keys(run: SeasonRun) -> set[str]:
+    """The items the pass gives on either track."""
+    return {
+        reward.item_key
+        for tier in run.tiers
+        for reward in (tier.free, tier.premium)
+        if reward is not None and reward.kind is RewardKind.ITEM
+    }
+
+
 def _offer_problems(run: SeasonRun, offer: ShopOffer) -> list[str]:
     where = f"shop offer {offer.key!r}"
     problems = []
@@ -262,6 +272,8 @@ def _offer_problems(run: SeasonRun, offer: ShopOffer) -> list[str]:
     if offer.kind is RewardKind.ITEM:
         if offer.item_key not in {item.key for item in run.items}:
             problems.append(f"{where}: no such item")
+        if offer.item_key in _pass_item_keys(run):
+            problems.append(f"{where}: already a pass reward; an item is shop- or pass-only")
         if offer.limit != 1:
             problems.append(f"{where}: an item sells once")
     if offer.kind is RewardKind.CLUE_TICKET and not 1 <= offer.limit <= MAX_SHOP_CLUE_TOKENS:

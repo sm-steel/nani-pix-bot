@@ -262,3 +262,21 @@ async def test_an_image_that_fails_to_send_is_logged_not_raised(
     await _send_image(context, lambda: b"png")
 
     assert any(r.level == "ERROR" for r in log_records)
+
+
+async def test_an_image_that_fails_to_draw_falls_back_to_text(
+    session_factory, log_records: list[LogLine]
+) -> None:
+    def broken() -> bytes:
+        raise ValueError("bad icon")
+
+    context = _context(session_factory)
+    await _send_image(context, broken, "a note")
+
+    context.bot.send_photo.assert_not_awaited()
+    context.bot.send_message.assert_awaited_once_with(
+        chat_id=1, text=i18n.t("cosmetics.preview_unavailable", "EN")
+    )
+    assert any(r.level == "ERROR" and "consumable/clue_token" in r.message for r in log_records)
+    with session_factory() as session:
+        assert previews.cached(session, "consumable/clue_token", "EN") is None

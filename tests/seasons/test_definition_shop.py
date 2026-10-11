@@ -54,3 +54,9 @@ def test_an_offer_appears_once() -> None:
 def test_coins_and_currency_are_not_for_sale() -> None:
     offer = ShopOffer(RewardKind.COINS, price=10)
     assert shop_problems(replace(_demo(), shop=(offer,)))
+
+
+def test_a_pass_reward_is_not_also_sold() -> None:
+    for key in ("name_flair.blossom", "guess_reaction.love"):  # a free and a premium reward
+        run = replace(_demo(), shop=(ShopOffer.item(key, 40),))
+        assert any(key in p and "pass reward" in p for p in shop_problems(run)), key

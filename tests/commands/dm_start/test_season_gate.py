@@ -334,6 +334,8 @@ async def test_confirm_while_catalogues_are_down_alerts_and_keeps_the_preview(
 @pytest.mark.usefixtures("active_season")
 async def test_confirm_of_an_on_theme_game_starts_it(session_factory, monkeypatch) -> None:
     monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    # The season's style is applied to the first post (it isn't a real PNG here).
+    monkeypatch.setattr(stage_cosmetics.styles, "apply_style", lambda png, _key: png)
     _patch_tags(monkeypatch, ROMANCE)
     game_id = _tenrai_game(session_factory, 4224, "Toradora!")
     update = _callback_update(PREVIEW_CONFIRM_CALLBACK_DATA)
@@ -349,6 +351,29 @@ async def test_confirm_of_an_on_theme_game_starts_it(session_factory, monkeypatc
     )
     context.bot.send_photo.assert_awaited_once()
     assert _game(session_factory, game_id).status == GameStatus.ACTIVE
+
+
+@pytest.mark.usefixtures("active_season")
+async def test_first_stage_post_of_a_season_game_is_styled(session_factory, monkeypatch) -> None:
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    styled: list[tuple[bytes, str]] = []
+
+    def fake_apply_style(png: bytes, key: str) -> bytes:
+        styled.append((png, key))
+        return b"styled"
+
+    monkeypatch.setattr(stage_cosmetics.styles, "apply_style", fake_apply_style)
+    _patch_tags(monkeypatch, ROMANCE)
+    _tenrai_game(session_factory, 4224, "Toradora!")
+    update = _callback_update(PREVIEW_CONFIRM_CALLBACK_DATA)
+    context = _context(session_factory)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert styled == [(b"pixelated", registry.all_runs()["demo_1"].style)]
+    assert context.bot.send_photo.await_args.kwargs["photo"] == b"styled"
 
 
 @pytest.mark.usefixtures("active_season")

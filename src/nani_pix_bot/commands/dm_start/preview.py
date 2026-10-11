@@ -99,16 +99,15 @@ def _activate_and_stage_first_post(
     come from the stage config this function is already loading for the
     pixelation width. Read straight off STAGE_ORDER[0] rather than through
     game_service.stage_progress(), which needs an already-ACTIVE game;
-    activate_game() only runs a couple of lines below."""
+    activate_game() only runs a couple of lines below. The image itself is
+    rendered after activate_game(), which sets the season tag its style
+    depends on."""
     timeout_module.cancel_setup_abandon(context.job_queue, game.id)
     if game.original_image is None:
         raise RuntimeError("game.original_image is None in _activate_and_stage_first_post")
     original_bytes = game.original_image
     first_stage = game_service.STAGE_ORDER[0]
     first_stage_settings = stage_config.get_stage_config(session, first_stage)
-    pixelated = stage_cosmetics.stage_png(
-        session, game, original_bytes, first_stage_settings.target_width
-    )
     caption = i18n.t(
         "dm_start.game_started_caption",
         lang,
@@ -120,6 +119,11 @@ def _activate_and_stage_first_post(
     )
     caption += game_service.game_id_line(game.id, lang)
     game_service.activate_game(session, game)
+    # Rendered only after activation: activate_game() tags the game with the
+    # running season, which picks the stage style (styles.style_for).
+    pixelated = stage_cosmetics.stage_png(
+        session, game, original_bytes, first_stage_settings.target_width
+    )
     reveal_store.reserve(session, game.id, reveal_choice.effect_for(session, game.starter_id), None)
     prompt_bonus = earning.award_prompt_start(session, game)
     if prompt_bonus:

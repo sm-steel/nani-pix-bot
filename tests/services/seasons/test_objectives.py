@@ -10,7 +10,7 @@ from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import events
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.events import Involved
-from nani_pix_bot.services.seasons import objectives
+from nani_pix_bot.services.seasons import consumer, lifecycle, objectives
 from tests.seasons_fixtures import STARTER, WINNER
 
 
@@ -170,3 +170,39 @@ def test_the_reward_leaves_out_zero_coins() -> None:
     objective = run.objectives[0]
     assert objectives.reward_text(objective, "EN") == "+40 XP, +30 🪙"
     assert objectives.reward_text(replace(objective, coins=0), "RU") == "+40 XP"
+
+
+def test_a_broken_objective_keeps_the_games_xp_and_coins(
+    session, tagged_game, emit_win, monkeypatch, log_records
+) -> None:
+    ended: list[int] = []
+
+    def boom(session, _event):
+        session.add(
+            SeasonObjective(
+                season_id=tagged_game.season_id, player_id=WINNER, objective_key="first_bloom"
+            )
+        )
+        session.flush()
+        raise RuntimeError("broken objective")
+
+    real_on_game_ended = lifecycle.on_game_ended
+
+    def spy_on_game_ended(session, event):
+        ended.append(event.id)
+        real_on_game_ended(session, event)
+
+    monkeypatch.setattr(consumer.objectives, "check", boom)
+    monkeypatch.setattr(consumer.lifecycle, "on_game_ended", spy_on_game_ended)
+
+    emit_win(winner=WINNER, stage=1)
+
+    season_id = tagged_game.season_id
+    assert wallet.balance(session, WINNER, season_id=season_id) == 25  # demo_1 coins.win
+    xp_rows = session.scalars(select(SeasonXp).where(SeasonXp.player_id == WINNER)).all()
+    assert [(r.amount, r.source) for r in xp_rows] == [(50, XpSource.WIN)]
+    assert _done(session) == []  # the objective's own work is rolled back
+    assert ended
+    assert any(
+        r.level == "ERROR" and r.message.startswith("season objectives failed") for r in log_records
+    )

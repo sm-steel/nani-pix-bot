@@ -26,7 +26,6 @@ from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.game import turns
-from nani_pix_bot.services.seasons import styles
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -111,7 +110,7 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
         width,
         game.pixel_algorithm,
         stage_cosmetics.frame_for(session, game),
-        styles.style_for(session, game),
+        stage_cosmetics.season_style(session, game),
     )
 
 

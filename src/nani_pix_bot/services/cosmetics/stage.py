@@ -39,8 +39,16 @@ def stage_png_with(
     return frames.apply_frame(png, frame)
 
 
-def stage_png(session: Session, game: Game, image_bytes: bytes, width: int) -> bytes:
+def season_style(session: Session, game: Game) -> str | None:
+    """The game's season style key, logged at INFO when there is one. Every
+    stage render reads it through here (stage_png, /status) so the decision
+    is in the log exactly once per render."""
     style = styles.style_for(session, game)
     if style is not None:
         logger.info("stage image in the season style {style!r}", style=style, game_id=game.id)
+    return style
+
+
+def stage_png(session: Session, game: Game, image_bytes: bytes, width: int) -> bytes:
+    style = season_style(session, game)
     return stage_png_with(image_bytes, width, game.pixel_algorithm, frame_for(session, game), style)
