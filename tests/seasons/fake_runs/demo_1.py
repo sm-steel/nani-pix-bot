@@ -8,6 +8,7 @@ from nani_pix_bot.seasons.definition import (
     Item,
     Reward,
     SeasonRun,
+    ShopOffer,
     Tier,
     XpTable,
 )
@@ -25,6 +26,7 @@ ITEMS = (
     Item(
         "win_effect.confetti", CosmeticSlot.WIN_EFFECT, "confetti", _names("Confetti", "Конфетти")
     ),
+    Item("name_flair.dango", CosmeticSlot.NAME_FLAIR, "🍡", _names("Dango", "Данго")),
     Item("title.demo", CosmeticSlot.TITLE, "", _names("Demo Star", "Демо-звезда")),
 )
 
@@ -44,4 +46,9 @@ RUN = SeasonRun(
         Tier(120, Reward.clue_ticket(), Reward.currency(50)),
     ),
     premium_price=150,
+    shop=(
+        ShopOffer.item("name_flair.dango", 40),
+        ShopOffer.item("host_frame.border", 80),
+        ShopOffer.clue_ticket(30, 2),
+    ),
 )

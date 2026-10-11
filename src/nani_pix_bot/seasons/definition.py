@@ -55,6 +55,31 @@ class Tier:
 
 
 MAX_CLUE_TOKEN_TIERS = 2
+MAX_SHOP_CLUE_TOKENS = 2
+_SHOP_KINDS = (RewardKind.ITEM, RewardKind.CLUE_TICKET)
+
+
+@dataclass(frozen=True)
+class ShopOffer:
+    """One Season Shop line (spec §4): a cosmetic sold once, or the clue
+    token sold up to `limit` times per season, priced in 🪙."""
+
+    kind: RewardKind
+    item_key: str = ""
+    price: int = 0
+    limit: int = 1
+
+    @classmethod
+    def item(cls, key: str, price: int) -> "ShopOffer":
+        return cls(RewardKind.ITEM, item_key=key, price=price)
+
+    @classmethod
+    def clue_ticket(cls, price: int, limit: int) -> "ShopOffer":
+        return cls(RewardKind.CLUE_TICKET, price=price, limit=limit)
+
+    @property
+    def key(self) -> str:
+        return self.item_key if self.kind is RewardKind.ITEM else self.kind.value
 
 
 @dataclass(frozen=True)
@@ -133,6 +158,7 @@ class SeasonRun:
     tiers: tuple[Tier, ...] = ()
     premium_price: int = 0  # 💠
     coins_per_currency: int = 2  # 🪙 per 1 💠 at conversion
+    shop: tuple[ShopOffer, ...] = ()
 
     def name(self, lang: str) -> str:
         return self.names.get(lang) or self.names["EN"]
@@ -171,3 +197,33 @@ def pass_problems(run: SeasonRun) -> list[str]:
     if any(tier.premium is not None for tier in run.tiers) and run.premium_price <= 0:
         problems.append("premium rewards need a premium_price")
     return problems
+
+
+def _offer_problems(run: SeasonRun, offer: ShopOffer) -> list[str]:
+    where = f"shop offer {offer.key!r}"
+    problems = []
+    if offer.kind not in _SHOP_KINDS:
+        problems.append(f"{where}: only items and the clue token are sold")
+    if offer.price <= 0:
+        problems.append(f"{where}: price must be positive")
+    if offer.kind is RewardKind.ITEM:
+        if offer.item_key not in {item.key for item in run.items}:
+            problems.append(f"{where}: no such item")
+        if offer.limit != 1:
+            problems.append(f"{where}: an item sells once")
+    if offer.kind is RewardKind.CLUE_TICKET and not 1 <= offer.limit <= MAX_SHOP_CLUE_TOKENS:
+        problems.append(f"{where}: limit must be 1..{MAX_SHOP_CLUE_TOKENS}")
+    return problems
+
+
+def shop_problems(run: SeasonRun) -> list[str]:
+    problems = [p for offer in run.shop for p in _offer_problems(run, offer)]
+    keys = [offer.key for offer in run.shop]
+    if len(keys) != len(set(keys)):
+        problems.append("shop: an offer appears twice")
+    return problems
+
+
+def run_problems(run: SeasonRun) -> list[str]:
+    """Everything wrong with a run module's data — checked when the registry loads it."""
+    return pass_problems(run) + shop_problems(run)
