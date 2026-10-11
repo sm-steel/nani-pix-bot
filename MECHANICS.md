@@ -1362,6 +1362,10 @@ game once. A reward that unlocks another achievement (Pixel Magnate) is
 granted in order, and the engine re-reads what a player already holds
 before each grant, so a cascade never grants a tier twice.
 
+When a game ends (won or unsolved), **every player who guessed in it** is
+evaluated, not only the winner and the host, so an achievement that depends
+on a game they only guessed in (Sakura Season's Hanami Party) reaches them.
+
 ### Money rules
 
 - **Reversals never count and never take anything away.** Refunds
@@ -1962,7 +1966,17 @@ Accepted limits:
 - A title item's id must fit `/title`'s callback data: at most 56 bytes,
   checked by `looks.problems` (and so by CI for every shipped run).
 - **Stamps** on `/profile` are the ended seasons the player has a
-  `season_results` row in; no stamp is stored per player.
+  `season_results` row in; no stamp is stored per player. A run's art lives
+  in `assets/seasons/<run_id>/` (`stamp.png`, `stamp_plus.png`); every
+  stamp draws `stamp.png` inside its ring. The ring is **gold** once the
+  free track's `RewardKind.STAMP` tier is claimed (`free_claimed` reaches
+  that tier), and the art becomes `stamp_plus.png` once the premium track's
+  `RewardKind.STAMP_PLUS` tier is claimed (`premium_claimed`). Both are read
+  from the player's `season_pass` row when the card is built, so nothing
+  extra is stored. A run may use each kind at most once, `STAMP` only on the
+  free track and `STAMP_PLUS` only on the premium one. A missing or broken
+  art file falls back to the initials disc (`season_stamp` returns None;
+  the card logs a warning). The season's post draws `stamp.png` as a seal.
 - Previews are rendered on demand, then cached by Telegram `file_id`
   (`item_previews`, one row per item and language, since banners and win
   effects draw text); text previews are never stored. A file_id Telegram

@@ -1012,8 +1012,12 @@ src/nani_pix_bot/
                    # definition.py (SeasonRun, XpTable, Gate), registry.py
                    # (finds runs/<run_id>.py), lock.py + runs.lock (a
                    # sha256 per shipped run module; a test fails if one is
-                   # edited — a repeat is a new module). runs/ is empty
-                   # until a real run ships
+                   # edited — a repeat is a new module). runs/sakura_1.py
+                   # is the first real run (Sakura Season): its items,
+                   # 12-tier pass, shop, objectives, run achievements,
+                   # gate and watercolor style. Its art (key visual,
+                   # stamp.png, stamp_plus.png, banners/) is in
+                   # assets/seasons/sakura_1/
   release_notes/  # player-facing release notes per language, shown by
                    # /version: release-notes-<lang>.md (the release being
                    # built) and previous-releases-<lang>.md (up to four
@@ -1059,7 +1063,13 @@ src/nani_pix_bot/
                    # CurrencyReason.TIER_REWARD ("pass_reward") and
                    # .PREMIUM ("premium_pass"), OutboxKind.SEASON_TIER and
                    # .SEASON_COMPLETE ("season_pass_done")
-assets/          # fonts/ (bundled Noto Sans, OFL) and backgrounds/
+                   # RewardKind.STAMP / STAMP_PLUS are the free track's gold
+                   # ring and the premium track's Sakura+ art on the season
+                   # stamp (services/cosmetics/profile.py reads the claimed
+                   # tiers; services/cards/backgrounds.py::season_stamp
+                   # loads the run's art)
+assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's key
+                   # visual, stamps and banners) and backgrounds/
                    # <unlock/rarity | podium/period>/n.png, optional card
                    # backgrounds (prompts: docs/card-backgrounds.md)
 migrations/       # Alembic migrations
