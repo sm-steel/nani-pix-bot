@@ -26,15 +26,17 @@ def test_every_definition_key_is_unique() -> None:
 
 
 def test_every_entry_has_a_name_and_description_in_both_languages() -> None:
+    """A run module's own achievements carry their text in the module
+    (tests/seasons/test_run_texts.py checks those)."""
     for lang in ("en", "ru"):
         strings = json.loads((LOCALES / f"{lang}.json").read_text(encoding="utf-8"))
-        for defn in catalogue.definitions():
+        for defn in (d for d in catalogue.definitions() if d.run_id is None):
             assert f"achievement.{defn.key}.name" in strings, (lang, defn.key)
             assert f"achievement.{defn.key}.desc" in strings, (lang, defn.key)
 
 
-def test_exactly_three_hidden_entries() -> None:
-    hidden = {d.key for d in catalogue.definitions() if d.hidden}
+def test_exactly_three_hidden_static_entries() -> None:
+    hidden = {d.key for d in catalogue.definitions() if d.hidden and d.run_id is None}
     assert hidden == {"dethroned", "so_close", "penny_pincher"}
 
 
