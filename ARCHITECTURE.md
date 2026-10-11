@@ -1055,7 +1055,12 @@ flowchart LR
 ```
 
 - **Two parts.** `pipeline.pregenerate` renders part 1 (the pixelated
-  stages and the effect) as MPEG-TS right after activation.
+  stages and the effect) as MPEG-TS right after activation. It also draws
+  the win overlay clips ahead: the default confetti, plus every overlay a
+  player has equipped (`reveal_choice.overlays_in_use`, read by
+  `jobs/reveal_pregen.py`). A Sakura overlay costs ~0.5 s to draw, and
+  drawing it then keeps that off the win. One equipped later is drawn at
+  the win instead.
   `pipeline.finish` renders the ending (the clear image, with the
   celebration badge on a win) and joins it to part 1 by stream copy,
   which only works because `services/reveal/encode.py` is the one place

@@ -120,6 +120,19 @@ def _overlay_clip(static: _Static, overlay: str) -> bytes:
         return _confetti(static)
 
 
+def _draw_ahead(static: _Static, keys: tuple[str, ...]) -> None:
+    """Build the clips of `keys` (the overlays players have equipped) into the entry now,
+    so whoever wins doesn't wait for theirs. One that fails is skipped with a warning: the
+    win then draws it, or falls back to the default, as it would have anyway."""
+    for key in keys:
+        try:
+            _confetti(static, key)
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "couldn't draw win overlay %r ahead; it'll be drawn at the win", key, exc_info=True
+            )
+
+
 def _static_for(clear: bytes) -> _Static:
     cached = _static
     if cached is not None and cached[0] == _key(clear):
@@ -130,14 +143,20 @@ def _static_for(clear: bytes) -> _Static:
 
 
 def pregenerate(
-    image: bytes, algorithm: PixelAlgorithm, widths: tuple[int, ...], effect: RevealEffect
+    image: bytes,
+    algorithm: PixelAlgorithm,
+    widths: tuple[int, ...],
+    effect: RevealEffect,
+    win_overlays: tuple[str, ...] = (),
 ) -> Pregen:
-    """Render the effect part for `image` as MPEG-TS and warm the static cache for it."""
+    """Render the effect part for `image` as MPEG-TS and warm the static cache for it,
+    with the default overlay and `win_overlays` (those equipped) already drawn."""
     started = time.perf_counter()
     original, stages = prep(image, algorithm, widths)
     part1_ts, join_offset = encode.to_ts(EFFECTS[effect](original, stages))
     static = _new_static(original)
     _confetti(static)  # winner-independent: built now, so a win doesn't pay for it
+    _draw_ahead(static, win_overlays)
     _remember(image, static)
     render_ms = round((time.perf_counter() - started) * 1000)
     return Pregen(part1_ts, join_offset, render_ms)

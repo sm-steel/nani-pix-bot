@@ -77,6 +77,42 @@ def test_the_fallback_warns_via_stdlib_logging(monkeypatch, caplog) -> None:
     assert "broken" in messages[1]
 
 
+def test_drawn_ahead_overlays_are_not_drawn_again_at_the_win(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def renderer(name: str):
+        def render(height: int) -> tuple[bytes, tuple[int, int]]:
+            calls.append(name)
+            return f"{name}-clip".encode(), (height, height)
+
+        return render
+
+    _renderers(monkeypatch, stars=renderer("stars"), moons=renderer("moons"))
+    static = _static()
+    pipeline._draw_ahead(static, ("stars", "moons"))
+    assert calls == ["stars", "moons"]
+    for key in ("stars", "moons"):
+        badge = pipeline.Badge(None, "@w", overlay=key)
+        assert pipeline._overlay(static, badge).confetti_mov == f"{key}-clip".encode()
+    assert calls == ["stars", "moons"]  # nothing drawn at the win
+
+
+def test_a_failing_overlay_drawn_ahead_is_skipped_with_a_warning(monkeypatch, caplog) -> None:
+    def broken(_height: int) -> tuple[bytes, tuple[int, int]]:
+        raise RuntimeError("renderer broke")
+
+    _renderers(monkeypatch, broken=broken)
+    static = _static()
+    with caplog.at_level("WARNING"):
+        pipeline._draw_ahead(static, ("broken", "nope"))
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 2
+    assert "broken" in warnings[0]
+    # the win still gets the default, as it would have without drawing ahead
+    badge = pipeline.Badge(None, "@w", overlay="broken")
+    assert pipeline._overlay(static, badge).confetti_mov == b"default-clip"
+
+
 @pytest.mark.ffmpeg
 def test_the_confetti_overlay_is_unchanged() -> None:
     from nani_pix_bot.services.reveal import celebration
