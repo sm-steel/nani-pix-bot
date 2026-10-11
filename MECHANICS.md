@@ -1860,7 +1860,9 @@ played (days with a guess or a hosted game).
   (`services/seasons/season_history.py`): the events of the games tagged to the
   season, plus game-less events (tips) during its dates. A game outside the
   season never counts. A tagged game's events count while the season still
-  grants (`active`/`closing`); a tip counts only while it is running.
+  grants (`active`/`closing`). A tip counts only inside the tip window,
+  which starts at the season's actual start (`started_at`, falling back to the
+  scheduled `start_at`) and runs until its `end_at`.
 - **Completion** is checked after each event of the actor. A completed
   objective writes a `season_objectives` row (so it pays once), an
   `XpSource.OBJECTIVE` Season XP row and, with coins, a 🪙 credit

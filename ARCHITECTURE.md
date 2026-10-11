@@ -453,8 +453,7 @@ src/nani_pix_bot/
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
                    # `/start ach_<id>`, the achievements one, and
                    # `/start rules`/`/start recent` for standings_dm.py), /help
-    helpers/      # shared Telegram-aware plumbing (item_preview.py: an item's
-                   # preview send, shared by /cosmetics and /seasonshop) — topic/DM scoping
+    helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
                    # (membership.py), Telegram rich messages (headings,
                    # checklists, tables) sent or edited from markdown,
@@ -473,7 +472,9 @@ src/nani_pix_bot/
                    # DM-only/admin-gated on/off
                    # toggle-command factory (admin_toggle.py — built to
                    # de-duplicate /setgamesenabled and /setautostart, see
-                   # its own docstring), and the one update callback here
+                   # its own docstring), the shared DM reply for /seasonpass and
+                   # /seasonshop (dm_view.py), an item's preview send shared by
+                   # /cosmetics and /seasonshop (item_preview.py), and the one update callback here
                    # that app.py does register — player_tracking.py's
                    # remember_user (see "Handler groups" below). (Rendering an
                    # Earnings value into reply text lives in
@@ -884,6 +885,8 @@ src/nani_pix_bot/
                    #             the charge (through economy/wallet.py) plus
                    #             CluePurchase bookkeeping; Refusal and
                    #             ShopRefusedError for the rejected cases
+                   #   discount.py  stacking of percentage clue discounts (HARD
+                   #             MODE sale + the season's): apply
                    #   (economy/) bounty.py   the pot: contribute, pay_out,
                    #               refund_pot, refund_note; BOUNTY_MIN. The
                    #               pot is derived from currency_transfers
@@ -965,6 +968,7 @@ src/nani_pix_bot/
                    #                   ≤4 achievements, tick order), else the
                    #                   newest seasons / rarest achievements
                    #   previews.py     render + the item_previews cache
+                   #   clue_token_icon.py  the clue token's golden-ticket picture
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,
                    #                    games-enabled flag, autostart-
