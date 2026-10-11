@@ -1,5 +1,6 @@
 from io import BytesIO
 
+import pytest
 from PIL import Image
 
 from nani_pix_bot.models.cosmetics import EquippedItem
@@ -59,3 +60,20 @@ def test_stage_png_with_applies_the_given_frame() -> None:
         BytesIO(stage.stage_png_with(_image(), WIDTH, PixelAlgorithm.BOX, "simple_border"))
     )
     assert out.getpixel((0, 0)) != (10, 200, 30)
+
+
+def test_the_style_goes_under_the_frame(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        stage.styles, "apply_style", lambda png, key: calls.append(("style", key)) or png
+    )
+    monkeypatch.setattr(
+        stage.frames, "apply_frame", lambda png, key: calls.append(("frame", key)) or png
+    )
+    stage.stage_png_with(_image(), WIDTH, PixelAlgorithm.BOX, "simple_border", style="plain")
+    assert calls == [("style", "plain"), ("frame", "simple_border")]
+
+
+def test_no_style_no_call(monkeypatch) -> None:
+    monkeypatch.setattr(stage.styles, "apply_style", lambda *_: pytest.fail("styled"))
+    stage.stage_png_with(_image(), WIDTH, PixelAlgorithm.BOX, None)

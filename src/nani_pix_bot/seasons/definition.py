@@ -170,6 +170,7 @@ class SeasonRun:
     coins_per_currency: int = 2  # 🪙 per 1 💠 at conversion
     shop: tuple[ShopOffer, ...] = ()
     modifiers: Mapping[Modifier, int] = field(default_factory=lambda: MappingProxyType({}))
+    style: str | None = None  # a key into services.seasons.styles.STYLES
 
     def name(self, lang: str) -> str:
         return self.names.get(lang) or self.names["EN"]

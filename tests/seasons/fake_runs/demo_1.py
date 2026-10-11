@@ -53,4 +53,5 @@ RUN = SeasonRun(
         ShopOffer.clue_ticket(30, 2),
     ),
     modifiers=MappingProxyType({Modifier.CLUE_DISCOUNT_PCT: 25}),
+    style="plain",
 )
