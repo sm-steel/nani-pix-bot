@@ -103,6 +103,44 @@ def test_gold_washi_is_deterministic() -> None:
     assert frames.apply_frame(png, "gold_washi") == frames.apply_frame(png, "gold_washi")
 
 
+def _band(out: Image.Image, depth: int) -> list[tuple[int, int, int]]:
+    """Every pixel within `depth` of the top and bottom edges."""
+    w, h = out.size
+    rows = [*range(depth), *range(h - depth, h)]
+    return [_rgb(out, (x, y)) for y in rows for x in range(w)]
+
+
+def _washi(size=(1000, 600), color=(10, 200, 30)) -> Image.Image:
+    return Image.open(BytesIO(frames.apply_frame(_png(size, color), "washi")))
+
+
+def test_washi_keeps_size_and_leaves_the_middle() -> None:
+    out = _washi()
+    assert out.size == (1000, 600)
+    assert _rgb(out, (500, 300)) == (10, 200, 30)
+
+
+def test_washi_is_pink_paper_with_white_fibres_and_deep_pink_petals() -> None:
+    out = _washi()
+    band = _band(out, depth=6)  # inside the paper everywhere, past the ragged edge
+    pinkish = [p for p in band if p[0] > p[1] + 15 and p[0] > 200]
+    white = [p for p in band if min(p) > 238]
+    petals = [p for p in band if p[0] > 190 and p[1] < 150]
+    assert len(pinkish) > len(band) * 0.6  # the paper itself is pink
+    assert white  # unryū fibres
+    assert petals  # pressed sakura petals
+
+
+def test_washi_is_not_plain_paper() -> None:
+    png = _png((600, 400))
+    assert frames.apply_frame(png, "washi") != frames.apply_frame(png, "paper")
+
+
+def test_washi_is_deterministic() -> None:
+    png = _png((300, 200))
+    assert frames.apply_frame(png, "washi") == frames.apply_frame(png, "washi")
+
+
 def test_unknown_frame_returns_the_image_unchanged() -> None:
     png = _png()
     assert frames.apply_frame(png, "nope") == png

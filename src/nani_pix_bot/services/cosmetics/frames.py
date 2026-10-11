@@ -30,6 +30,7 @@ FRAMES: Mapping[str, Callable[[Image.Image], Image.Image]] = MappingProxyType(
         "simple_border": _simple_border,
         "paper": paper_frames.paper,
         "gold_washi": gold_frame.gold_washi,
+        "washi": paper_frames.washi,
     }
 )
 

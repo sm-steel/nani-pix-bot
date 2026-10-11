@@ -4,6 +4,7 @@ shadow onto it. Each frame is a PaperStyle (the paper's colour and fibres);
 the edge, shadow and rim are shared with gold_frame.py. Deterministic: the
 same image always gets the same edge and texture."""
 
+import math
 import random
 from dataclasses import dataclass
 
@@ -26,9 +27,43 @@ class PaperStyle:
     fibre: Color
     fibre_length: int = 6  # px either way
     fibres_per: int = 1500  # one fibre per this many px²
+    petals_per: int = 0  # one pressed petal per this many px² of border band; 0 = none
+    unryu_per: int = 0  # one long curly white fibre per this many px² of band; 0 = none
 
 
 PAPER = PaperStyle(paper=(243, 235, 218), fibre=(214, 202, 178))
+WASHI = PaperStyle(
+    paper=(244, 206, 216),
+    fibre=(232, 186, 198),
+    fibre_length=10,
+    fibres_per=900,
+    petals_per=800,
+    unryu_per=260,
+)
+_PRESSED_PETAL = (226, 104, 140, 200)  # sakura pink, slightly see-through
+_PRESSED_VEIN = (190, 70, 110, 170)
+_UNRYU = (255, 250, 252, 170)  # the white "cloud dragon" fibres
+_UNRYU_STEPS = 14
+_PETAL_SS = 3
+
+
+def petal_outline(
+    base: tuple[float, float], length: float, width: float, angle: float
+) -> list[tuple[float, float]]:
+    """One sakura petal from `base` along `angle`: widening, rounded, with the
+    notch at its tip."""
+    half_lobe, notch_depth = 0.38, 0.84
+    side = [
+        (length * t, width * math.sin(math.pi * t) ** 0.6)
+        for t in (0.04 + 0.88 * i / 14 for i in range(15))
+    ]
+    local = [(u, -v) for u, v in side]
+    local += [(length, -width * half_lobe), (length * notch_depth, 0.0)]
+    local += [(length, width * half_lobe)]
+    local += [(u, v) for u, v in reversed(side)]
+    cos, sin = math.cos(angle), math.sin(angle)
+    x, y = base
+    return [(x + u * cos - v * sin, y + u * sin + v * cos) for u, v in local]
 
 
 def border_for(size: tuple[int, int]) -> int:
@@ -90,15 +125,77 @@ def _sheet(size: tuple[int, int], style: PaperStyle, rng: random.Random) -> Imag
     return sheet
 
 
+def _band_point(size: tuple[int, int], border: int, rng: random.Random) -> tuple[float, float]:
+    """A random point in the border band, any of the four sides."""
+    w, h = size
+    side = rng.randrange(4)
+    along = rng.uniform(0, w if side < 2 else h)
+    depth = rng.uniform(0, border)
+    return {
+        0: (along, depth),
+        1: (along, h - depth),
+        2: (depth, along),
+        3: (w - depth, along),
+    }[side]
+
+
+def _unryu(
+    draw: ImageDraw.ImageDraw, size: tuple[int, int], count: int, border: int, rng: random.Random
+) -> None:
+    """Long white fibres that curl as they go: a slowly turning random walk."""
+    for _ in range(count):
+        x, y = _band_point(size, border, rng)
+        heading = rng.uniform(0, math.tau)
+        step = border * rng.uniform(0.25, 0.45) * _PETAL_SS
+        points = [(x * _PETAL_SS, y * _PETAL_SS)]
+        for _ in range(_UNRYU_STEPS):
+            heading += rng.uniform(-0.6, 0.6)
+            px, py = points[-1]
+            points.append((px + math.cos(heading) * step, py + math.sin(heading) * step))
+        draw.line(points, fill=_UNRYU, width=_PETAL_SS, joint="curve")
+
+
+def _pressed_petals(
+    sheet: Image.Image, style: PaperStyle, border: int, rng: random.Random
+) -> Image.Image:
+    """White unryū fibres and sakura petals pressed into the paper's border band."""
+    w, h = sheet.size
+    layer = Image.new("RGBA", (w * _PETAL_SS, h * _PETAL_SS), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    band = w * h - (w - 2 * border) * (h - 2 * border)
+    if style.unryu_per:
+        _unryu(draw, sheet.size, band // style.unryu_per, border, rng)
+    for _ in range(band // style.petals_per):
+        x, y = _band_point(sheet.size, border, rng)
+        length = border * rng.uniform(1.0, 1.6) * _PETAL_SS
+        angle = rng.uniform(0, math.tau)
+        base = (x * _PETAL_SS, y * _PETAL_SS)
+        draw.polygon(petal_outline(base, length, length * 0.3, angle), fill=_PRESSED_PETAL)
+        tip = (base[0] + math.cos(angle) * length * 0.7, base[1] + math.sin(angle) * length * 0.7)
+        draw.line((base, tip), fill=_PRESSED_VEIN, width=_PETAL_SS)
+    petals = layer.resize(sheet.size, Image.Resampling.LANCZOS)
+    out = sheet.convert("RGBA")
+    out.alpha_composite(petals)
+    return out.convert("RGB")
+
+
 def framed(image: Image.Image, style: PaperStyle) -> Image.Image:
     """`image` inside a paper frame of `style`, the same size."""
     base = image.convert("RGB")
     rng = random.Random(SEED)  # noqa: S311 - paper texture, seeded for a reproducible look
     border = border_for(base.size)
     mask = deckle_mask(base.size, border, rng)
-    return Image.composite(_sheet(base.size, style, rng), shadowed(base, mask, border), mask)
+    sheet = _sheet(base.size, style, rng)
+    if style.petals_per:
+        sheet = _pressed_petals(sheet, style, border, rng)
+    return Image.composite(sheet, shadowed(base, mask, border), mask)
 
 
 def paper(image: Image.Image) -> Image.Image:
     """The "paper" frame: a cream deckled border with a soft shadow inside it."""
     return framed(image, PAPER)
+
+
+def washi(image: Image.Image) -> Image.Image:
+    """The "washi" frame: pink-white washi with long fibres and pressed sakura petals."""
+    return framed(image, WASHI)
