@@ -1815,9 +1815,12 @@ refused when already bought, unaffordable, or when the run has no premium
 rewards. It grants every premium reward already reached at once; later ones
 as they are reached.
 
-**`/seasonpass`** (DM, group members only) shows XP, tier n/N, XP to the next
-tier, the 🪙 balance, the Premium state and every tier (free ✅/▫️,
-premium ✅/🔒 ⭐).
+**`/seasonpass`** (DM, group members only) is a rich message: a heading,
+XP, tier n/N, XP to the next tier, the 🪙 balance and the Premium price
+while it isn't owned, then every tier as a table `| | XP | Free | ⭐ Premium |`.
+Only the first cell carries a mark (✅ reached, ⬜ not yet); premium cells
+are just the reward, and the Premium column header gets a 🔒 until Premium
+is bought. The objectives follow under their own heading.
 
 **Clue tokens** are a consumable (`consumables`, a count per player and
 kind). While a player holds one, their next clue purchase in the shop uses

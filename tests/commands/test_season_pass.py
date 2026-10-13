@@ -14,6 +14,7 @@ from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.seasons import schedule
+from nani_pix_bot.services.text import md_escape
 
 NOW = datetime(2026, 11, 1, tzinfo=UTC)
 
@@ -66,6 +67,7 @@ def _context(session_factory, *, member: bool = True) -> MagicMock:
     context = MagicMock()
     joined = ChatMemberStatus.MEMBER if member else ChatMemberStatus.LEFT
     context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=joined))
+    context.bot.do_api_request = AsyncMock()
     context.bot_data = {
         "session_factory": session_factory,
         "group_chat_id": 555,
@@ -74,18 +76,39 @@ def _context(session_factory, *, member: bool = True) -> MagicMock:
     return context
 
 
-async def _run(session_factory, update: MagicMock, *, member: bool = True) -> str:
+def _rich(context: MagicMock, method: str) -> dict | None:
+    """The api_kwargs of the last rich `method` call, if there was one."""
+    call = context.bot.do_api_request.await_args
+    if call is None or call.args[0] != method:
+        return None
+    return call.kwargs["api_kwargs"]
+
+
+async def _show(session_factory, update: MagicMock, *, member: bool = True):
+    """Runs /seasonpass; returns (text, markup) of the reply, rich or plain."""
+    context = _context(session_factory, member=member)
     await season_pass_module.season_pass_command(
-        cast(Update, update),
-        cast(ContextTypes.DEFAULT_TYPE, _context(session_factory, member=member)),
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
-    return update.message.reply_text.await_args.args[0]
+    sent = _rich(context, "sendRichMessage")
+    if sent is not None:
+        return sent["rich_message"]["markdown"], sent.get("reply_markup")
+    reply = update.message.reply_text.await_args
+    return reply.args[0], reply.kwargs.get("reply_markup")
 
 
-async def test_the_command_replies_in_dm(session_factory, season) -> None:
-    text = await _run(session_factory, _update())
+async def _run(session_factory, update: MagicMock, *, member: bool = True) -> str:
+    text, _ = await _show(session_factory, update, member=member)
+    return text
+
+
+async def test_the_command_replies_in_dm_as_a_rich_message(session_factory, season) -> None:
+    update = _update()
+    text = await _run(session_factory, update)
+    assert text.startswith("## ")
     assert "Demo Season" in text
-    assert i18n.t("season_pass.view.objectives", "EN") in text
+    assert "## " + i18n.t("season_pass.view.objectives", "EN") in text
+    update.message.reply_text.assert_not_awaited()
 
 
 async def test_outside_a_dm_it_says_to_use_the_dm(session_factory, season) -> None:
@@ -99,7 +122,7 @@ async def test_a_non_member_is_refused(session_factory, season) -> None:
 
 
 async def test_with_no_season_it_says_so(session_factory) -> None:
-    assert await _run(session_factory, _update()) == i18n.t("season_pass.none", "EN")
+    assert await _run(session_factory, _update()) == md_escape(i18n.t("season_pass.none", "EN"))
 
 
 async def test_a_scheduled_season_shows_an_empty_pass(session_factory) -> None:
@@ -126,15 +149,18 @@ def _query(data: str, *, user_id: int = 1) -> MagicMock:
     update.callback_query.from_user.username = "me"
     update.callback_query.answer = AsyncMock()
     update.callback_query.edit_message_text = AsyncMock()
+    update.callback_query.message.chat.id = 1
+    update.callback_query.message.message_id = 42
     return update
 
 
 async def _tap(session_factory, data: str, *, member: bool = True, user_id: int = 1) -> MagicMock:
     update = _query(data, user_id=user_id)
+    context = _context(session_factory, member=member)
     await season_pass_module.season_pass_callback(
-        cast(Update, update),
-        cast(ContextTypes.DEFAULT_TYPE, _context(session_factory, member=member)),
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
+    update.callback_query.rich_edit = _rich(context, "editMessageText")
     return update.callback_query
 
 
@@ -157,9 +183,7 @@ def _alert(query: MagicMock) -> str:
 
 
 async def test_the_view_offers_premium_while_it_is_unbought(session_factory, season) -> None:
-    update = _update()
-    await _run(session_factory, update)
-    markup = update.message.reply_text.await_args.kwargs["reply_markup"]
+    _, markup = await _show(session_factory, _update())
     sid = _season_id(session_factory)
     assert _buttons(markup) == [f"spass:buy:{sid}"]
     assert markup.inline_keyboard[0][0].text == i18n.t("season_pass.buy", "EN", price=150)
@@ -169,16 +193,14 @@ async def test_no_buy_button_once_premium_is_bought(session_factory, season) -> 
     _set_currency(session_factory, 1000)
     sid = _season_id(session_factory)
     await _tap(session_factory, f"spass:yes:{sid}")
-    update = _update()
-    await _run(session_factory, update)
-    assert update.message.reply_text.await_args.kwargs["reply_markup"] is None
+    _, markup = await _show(session_factory, _update())
+    assert markup is None
 
 
 async def test_no_buy_button_while_the_season_is_closing(session_factory) -> None:
     _add_season(session_factory, SeasonStatus.CLOSING)
-    update = _update()
-    await _run(session_factory, update)
-    assert update.message.reply_text.await_args.kwargs["reply_markup"] is None
+    _, markup = await _show(session_factory, _update())
+    assert markup is None
 
 
 async def test_buy_asks_to_confirm(session_factory, season) -> None:
@@ -196,8 +218,10 @@ async def test_yes_buys_and_shows_the_view(session_factory, season) -> None:
     sid = _season_id(session_factory)
     query = await _tap(session_factory, f"spass:yes:{sid}")
     query.answer.assert_awaited_once_with()
-    assert query.edit_message_text.await_args.kwargs.get("reply_markup") is None
-    assert "⭐ Premium" in query.edit_message_text.await_args.args[0]
+    edit = query.rich_edit
+    assert edit["message_id"] == 42
+    assert edit.get("reply_markup") is None
+    assert "| ⭐ Premium |" in edit["rich_message"]["markdown"]  # no 🔒 any more
     with session_factory() as session:
         assert session.get(Player, 1).currency == 850
 
@@ -205,10 +229,8 @@ async def test_yes_buys_and_shows_the_view(session_factory, season) -> None:
 async def test_no_goes_back_to_the_view(session_factory, season) -> None:
     sid = _season_id(session_factory)
     query = await _tap(session_factory, f"spass:no:{sid}")
-    assert "Demo Season" in query.edit_message_text.await_args.args[0]
-    assert _buttons(query.edit_message_text.await_args.kwargs["reply_markup"]) == [
-        f"spass:buy:{sid}"
-    ]
+    assert "Demo Season" in query.rich_edit["rich_message"]["markdown"]
+    assert _buttons(query.rich_edit["reply_markup"]) == [f"spass:buy:{sid}"]
 
 
 async def test_too_poor_gets_an_alert_with_the_balance(session_factory, season) -> None:

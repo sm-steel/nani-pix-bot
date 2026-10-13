@@ -8,7 +8,8 @@ from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, 
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import MAX_ID, outsider_refusal
-from nani_pix_bot.commands.helpers.dm_view import reply_with_view
+from nani_pix_bot.commands.helpers.dm_view import DmCommand, reply_with_view
+from nani_pix_bot.commands.helpers.rich import RichTarget, edit_rich, md_escape
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SeasonStatus
 from nani_pix_bot.models.season import SeasonPass, SeasonSchedule
@@ -37,17 +38,20 @@ def _keyboard(
 
 
 def view(session: Session, player_id: int, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
-    """The pass text for the open season, with its Buy Premium button when on sale."""
+    """The pass markdown for the open season, with its Buy Premium button when on sale."""
     season = schedule.current(session)
     run = registry.get(season.run_id) if season is not None else None
     if season is None or run is None:
-        return i18n.t("season_pass.none", lang), None
-    text = "\n".join(pass_view.view_lines(session, season, run, player_id, lang))
+        return md_escape(i18n.t("season_pass.none", lang)), None
+    text = pass_view.view_markdown(session, season, run, player_id, lang)
     return text, _keyboard(session, season, run, player_id, lang)
 
 
+COMMAND = DmCommand("/seasonpass", "season_pass.dm_only", view, rich=True)
+
+
 async def season_pass_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await reply_with_view(update, context, "/seasonpass", "season_pass.dm_only", view)
+    await reply_with_view(update, context, COMMAND)
 
 
 # --- Premium taps ---
@@ -102,7 +106,7 @@ async def _back(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, season
         text, keyboard = view(session, query.from_user.id, settings.get_language(session))
     logger.info("backed out of buying Premium", season_id=season_id)
     await query.answer()
-    await query.edit_message_text(text, reply_markup=keyboard)
+    await _show(query, context, text, keyboard)
 
 
 def _try_buy(
@@ -144,7 +148,23 @@ async def _buy(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, season_
         await _refuse(query, lang, refusal, price=price, balance=balance)
         return
     await query.answer()
-    await query.edit_message_text(text, reply_markup=keyboard)
+    await _show(query, context, text, keyboard)
+
+
+async def _show(
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
+    markdown: str,
+    keyboard: InlineKeyboardMarkup | None,
+) -> None:
+    """Puts the pass view back into the tapped message, as a rich message."""
+    message = query.message
+    if message is None:
+        logger.warning("a /seasonpass tap came without its message — nothing to edit")
+        return
+    await edit_rich(
+        context.bot, RichTarget(message.chat.id, message_id=message.message_id), markdown, keyboard
+    )
 
 
 _TAPS = MappingProxyType({"buy": _confirm, "yes": _buy, "no": _back})
