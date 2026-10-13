@@ -12,7 +12,8 @@ from nani_pix_bot.commands.achievements.common import MAX_ID
 from nani_pix_bot.commands.profile import browse
 from nani_pix_bot.commands.profile import card as card_module
 from nani_pix_bot.commands.profile import data as cb
-from nani_pix_bot.db import session_scope
+from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import i18n
@@ -45,6 +46,11 @@ def avatar(monkeypatch) -> AsyncMock:
 def players(session_factory) -> None:
     with session_factory() as session:
         session.add_all(Player(telegram_user_id=i, username=n) for i, n in NAMES.items())
+        session.flush()
+        # One game each: everyone is in the roster, tied on games, so by name.
+        session.add_all(
+            Game(starter_id=i, status=GameStatus.UNSOLVED, title_english="X") for i in NAMES
+        )
         session.commit()
 
 
@@ -62,6 +68,7 @@ async def _tap(session_factory, query: MagicMock) -> None:
     update = MagicMock()
     update.callback_query = query
     context = MagicMock()
+    context.bot.id = 999
     context.bot_data = {"session_factory": session_factory}
     await browse.profile_callback(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
@@ -190,14 +197,12 @@ async def test_someone_elses_tap_is_refused_with_an_alert(session_factory, log_r
 
 
 async def test_a_player_who_is_gone_gets_an_alert(session_factory, log_records) -> None:
-    with session_scope(session_factory) as session:
-        session.delete(session.get(Player, 3))
-    query = _query(cb.card_data(ME, 3, "n"))
+    query = _query(cb.card_data(ME, 42, "n"))  # not (or no longer) in the roster
     await _tap(session_factory, query)
 
     query.answer.assert_awaited_once_with(i18n.t("profile.gone", "EN"), show_alert=True)
     query.edit_message_media.assert_not_awaited()
-    assert any(r.level == "WARNING" and r.extra.get("target_id") == 3 for r in log_records)
+    assert any(r.level == "WARNING" and r.extra.get("target_id") == 42 for r in log_records)
 
 
 async def test_malformed_data_is_answered_and_ignored(session_factory, log_records) -> None:

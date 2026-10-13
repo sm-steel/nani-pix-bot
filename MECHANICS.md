@@ -1945,7 +1945,11 @@ shop-only or pass-only, never both.
 
 `/cosmetics` (DM) lists the slots, then a slot's owned items; tapping an
 item sends its preview with **Equip** / **Unequip**. `/profile` (the game topic, or DM for members) shows
-the profile card. A season title is picked with `/title`, not in
+the profile card. Its ◀ ▶ and 👥 Players list walk only players who
+played a finished game (hosted, won or guessed in it, as in `/history`'s
+"I played"), most games first, then by name; the bot never appears, and
+the viewer is always included (last, before their first game).
+`/profile @someone` still opens anyone's card. A season title is picked with `/title`, not in
 `/cosmetics`, which only shows a hint for that slot.
 
 | Slot | `look` | Where it shows |
