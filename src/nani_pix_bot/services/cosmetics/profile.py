@@ -15,7 +15,14 @@ from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import RewardKind, SeasonRun
 from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import catalogue, names, titles
-from nani_pix_bot.services.cards import StatEntry, season_background, season_stamp
+from nani_pix_bot.services.cards import (
+    BadgeEntry,
+    ProfileCard,
+    StampEntry,
+    StatEntry,
+    season_background,
+    season_stamp,
+)
 from nani_pix_bot.services.cosmetics import inventory, looks, showcase
 from nani_pix_bot.services.game import history
 
@@ -44,6 +51,18 @@ class ProfileView:
     badges: tuple[Badge, ...]  # picked order, else rarest first
     seasons_played: int
     cosmetics_owned: int
+
+
+def card(view: ProfileView, lang: str) -> ProfileCard:
+    """The card /profile draws for `view` (and a banner preview puts a new banner behind)."""
+    return ProfileCard(
+        name=view.name,
+        title=view.title,
+        stamps=tuple(StampEntry(s.label, s.gold, s.art) for s in view.stamps),
+        stats=stats(view.seasons_played, view.cosmetics_owned, lang),
+        seed=view.player_id,
+        badges=tuple(BadgeEntry(b.label, b.rarity) for b in view.badges),
+    )
 
 
 def stats(seasons: int, owned: int, lang: str) -> tuple[StatEntry, ...]:

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -6,7 +7,8 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers import item_preview
-from nani_pix_bot.models.enums import PreviewKind
+from nani_pix_bot.models.enums import CosmeticSlot, PreviewKind
+from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services import i18n
@@ -15,6 +17,7 @@ from nani_pix_bot.services.reveal import pipeline
 from tests.conftest import LogLine
 
 FRAME = "demo_1/host_frame.border"
+WIN = "demo_1/win_effect.confetti"
 FLAIR = "demo_1/name_flair.blossom"
 IRIS = "demo_1/host_transition.iris"
 
@@ -40,14 +43,22 @@ def _context(session_factory) -> MagicMock:
     return context
 
 
+def _player(session_factory, player_id: int, username: str) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=player_id, username=username))
+        session.commit()
+
+
 def _resolved(item_id: str) -> ResolvedItem:
     resolved = registry.item(item_id)
     assert resolved is not None
     return resolved
 
 
-async def _send(context: MagicMock, item_id: str, lang: str = "EN") -> None:
-    await item_preview.send(cast(ContextTypes.DEFAULT_TYPE, context), 1, _resolved(item_id), lang)
+async def _send(context: MagicMock, item_id: str, lang: str = "EN", viewer: int = 1) -> None:
+    await item_preview.send(
+        cast(ContextTypes.DEFAULT_TYPE, context), 1, _resolved(item_id), lang, viewer
+    )
 
 
 def _remember(session_factory, item_id: str, kind: PreviewKind, file_id: str) -> None:
@@ -81,10 +92,11 @@ async def test_a_cached_file_id_is_reused_without_rendering(session_factory, mon
 
 
 async def test_a_text_preview_is_sent_as_text_and_not_cached(session_factory) -> None:
+    _player(session_factory, 1, "amy")
     context = _context(session_factory)
     await _send(context, FLAIR)
 
-    assert context.bot.send_message.await_args.kwargs["text"] == "@you 🌸"
+    assert context.bot.send_message.await_args.kwargs["text"] == "@amy 🌸"  # not "@you"
     with session_factory() as session:
         assert previews.cached(session, FLAIR, "EN") is None
 
@@ -280,3 +292,78 @@ async def test_an_image_that_fails_to_draw_falls_back_to_text(
     assert any(r.level == "ERROR" and "consumable/clue_token" in r.message for r in log_records)
     with session_factory() as session:
         assert previews.cached(session, "consumable/clue_token", "EN") is None
+
+
+# --- drawn on the viewer (#427) ---
+
+
+@pytest.fixture
+def worker(monkeypatch) -> AsyncMock:
+    submit = AsyncMock(return_value=b"mp4")
+    monkeypatch.setattr(item_preview.reveal_worker, "runtime", lambda _app: object())
+    monkeypatch.setattr(item_preview.reveal_worker, "submit", submit)
+    return submit
+
+
+@pytest.fixture
+def avatar(monkeypatch) -> AsyncMock:
+    fetch = AsyncMock(return_value=b"amy-avatar")
+    monkeypatch.setattr(item_preview, "fetch_avatar", fetch)
+    return fetch
+
+
+async def test_a_win_effect_shows_the_viewers_avatar_and_name(
+    session_factory, worker, avatar
+) -> None:
+    _player(session_factory, 7, "amy")
+    await _send(_context(session_factory), WIN, viewer=7)
+
+    badge = worker.await_args.args[-1]
+    assert badge == pipeline.Badge(b"amy-avatar", "@amy", overlay="confetti")
+    avatar.assert_awaited_once()
+
+
+async def test_a_win_effect_is_kept_per_viewer(session_factory, worker, avatar) -> None:
+    _player(session_factory, 7, "amy")
+    _player(session_factory, 8, "bob")
+    await _send(_context(session_factory), WIN, viewer=7)
+    await _send(_context(session_factory), WIN, viewer=8)
+    await _send(_context(session_factory), WIN, viewer=7)  # Amy's again: from the cache
+
+    assert worker.await_count == 2
+    with session_factory() as session:
+        assert previews.cached(session, f"{WIN}@7", "EN") is not None
+        assert previews.cached(session, f"{WIN}@8", "EN") is not None
+        assert previews.cached(session, WIN, "EN") is None
+
+
+async def test_a_frame_needs_no_avatar_and_is_shared(session_factory, avatar) -> None:
+    await _send(_context(session_factory), FRAME, viewer=7)
+    avatar.assert_not_awaited()
+    with session_factory() as session:
+        assert previews.cached(session, FRAME, "EN") is not None
+
+
+async def test_a_banner_is_drawn_on_the_viewers_card_every_time(
+    session_factory, monkeypatch, avatar
+) -> None:
+    _player(session_factory, 7, "amy")
+    seen: list[previews.Viewer] = []
+
+    def render(_resolved, _lang, viewer):
+        seen.append(viewer)
+        return previews.Preview(PreviewKind.PHOTO, image=b"png")
+
+    monkeypatch.setattr(item_preview.previews, "render", render)
+    frame = _resolved(FRAME)
+    banner = replace(frame, item=replace(frame.item, slot=CosmeticSlot.PROFILE_BANNER))
+    context = _context(session_factory)
+    for _ in range(2):
+        await item_preview.send(cast(ContextTypes.DEFAULT_TYPE, context), 7, banner, "EN", 7)
+
+    assert len(seen) == 2  # never cached: their stats move on
+    assert seen[0].card is not None
+    assert seen[0].card.name == "@amy"
+    assert seen[0].avatar == b"amy-avatar"
+    with session_factory() as session:
+        assert previews.cached(session, banner.item_id, "EN") is None

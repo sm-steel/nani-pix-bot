@@ -10,12 +10,13 @@ from nani_pix_bot.models.cosmetics import ItemPreview
 from nani_pix_bot.models.enums import CosmeticSlot, PixelAlgorithm, PreviewKind, RevealEffect
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import Item
-from nani_pix_bot.services.cards import CARD_SIZE
+from nani_pix_bot.services.cards import CARD_SIZE, ProfileCard
 from nani_pix_bot.services.cosmetics import looks, previews
 from nani_pix_bot.services.reveal import pipeline
 from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+AMY = previews.Viewer(player_id=7, name="@amy", avatar=b"avatar-bytes")
 
 
 def _resolved(key: str) -> registry.ResolvedItem:
@@ -72,24 +73,24 @@ def test_sample_stage_is_not_a_flat_colour() -> None:
 
 
 def test_flair_previews_as_text_with_the_emoji() -> None:
-    preview = previews.render(_resolved("name_flair.blossom"), "EN")
+    preview = previews.render(_resolved("name_flair.blossom"), "EN", AMY)
     assert preview.kind is PreviewKind.TEXT
-    assert preview.text == "@you 🌸"
+    assert preview.text == "@amy 🌸"  # the viewer's own name, as flair.named shows it
 
 
 def test_title_previews_as_text_in_quotes() -> None:
-    assert previews.render(_resolved("title.demo"), "EN").text == "«Demo Star»"
-    assert previews.render(_resolved("title.demo"), "RU").text == "«Демо-звезда»"
+    assert previews.render(_resolved("title.demo"), "EN", AMY).text == "«Demo Star»"
+    assert previews.render(_resolved("title.demo"), "RU", AMY).text == "«Демо-звезда»"
 
 
 def test_reaction_previews_as_text() -> None:
-    preview = previews.render(_resolved("guess_reaction.love"), "EN")
+    preview = previews.render(_resolved("guess_reaction.love"), "EN", AMY)
     assert preview.kind is PreviewKind.TEXT
     assert preview.text == "🥰 on your winning guess"
 
 
 def test_frame_previews_as_a_framed_sample_png() -> None:
-    preview = previews.render(_resolved("host_frame.border"), "EN")
+    preview = previews.render(_resolved("host_frame.border"), "EN", AMY)
     assert preview.kind is PreviewKind.PHOTO
     assert preview.image is not None
     assert preview.image.startswith(PNG_MAGIC)
@@ -100,14 +101,27 @@ def test_frame_previews_as_a_framed_sample_png() -> None:
 
 
 def test_banner_previews_as_a_profile_card(banner) -> None:
-    preview = previews.render(banner, "EN")
+    preview = previews.render(banner, "EN", AMY)
     assert preview.kind is PreviewKind.PHOTO
     assert preview.image is not None
     assert Image.open(BytesIO(preview.image)).size == CARD_SIZE
 
 
+def test_banner_previews_on_the_viewers_own_card(banner, monkeypatch) -> None:
+    """Their real card (name, title, stamps, stats) and avatar, with the new
+    banner behind it: exactly what equipping it changes."""
+    drawn = []
+    monkeypatch.setattr(previews, "render_profile_card", lambda *args: drawn.append(args) or b"png")
+    own = ProfileCard(name="@amy", title="Senpai", stamps=(), stats=(), seed=7)
+    previews.render(banner, "EN", replace(AMY, card=own))
+    [(card, avatar, background)] = drawn
+    assert card is own
+    assert avatar == b"avatar-bytes"
+    assert background == looks.banner_path("demo_1", "sky.png").read_bytes()
+
+
 def test_transition_previews_as_a_clip_with_that_effect_and_no_badge(clip_calls) -> None:
-    preview = previews.render(_resolved("host_transition.iris"), "EN")
+    preview = previews.render(_resolved("host_transition.iris"), "EN", AMY)
     assert preview.kind is PreviewKind.VIDEO
     assert preview.video == b"mp4"
     [(image, algorithm, widths, effect, badge)] = clip_calls
@@ -119,20 +133,37 @@ def test_transition_previews_as_a_clip_with_that_effect_and_no_badge(clip_calls)
 
 
 def test_win_effect_previews_as_an_iris_clip_with_the_overlay_badge(clip_calls) -> None:
-    preview = previews.render(_resolved("win_effect.confetti"), "EN")
+    preview = previews.render(_resolved("win_effect.confetti"), "EN", AMY)
     assert preview.kind is PreviewKind.VIDEO
     [(_image, _algorithm, _widths, effect, badge)] = clip_calls
     assert effect is RevealEffect.IRIS
-    assert badge == pipeline.Badge(None, "@you", overlay="confetti")
+    assert badge == pipeline.Badge(b"avatar-bytes", "@amy", overlay="confetti")
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        ("host_frame.border", "demo_1/host_frame.border"),  # the same for everyone
+        ("host_transition.iris", "demo_1/host_transition.iris"),
+        ("win_effect.confetti", "demo_1/win_effect.confetti@7"),  # their avatar and name
+        ("name_flair.blossom", "demo_1/name_flair.blossom"),  # text: never stored anyway
+    ],
+)
+def test_cache_key_is_per_viewer_only_where_the_viewer_shows(key, expected) -> None:
+    assert previews.cache_key(_resolved(key), 7) == expected
+
+
+def test_a_banner_preview_is_never_cached(banner) -> None:
+    assert previews.cache_key(banner, 7) is None  # their stats move on
 
 
 def test_clip_job_is_none_for_a_still_preview() -> None:
-    assert previews.clip_job(_resolved("host_frame.border"), "EN") is None
-    assert previews.clip_job(_resolved("title.demo"), "EN") is None
+    assert previews.clip_job(_resolved("host_frame.border"), AMY) is None
+    assert previews.clip_job(_resolved("title.demo"), AMY) is None
 
 
 def test_clip_job_args_are_picklable() -> None:
-    job = previews.clip_job(_resolved("win_effect.confetti"), "RU")
+    job = previews.clip_job(_resolved("win_effect.confetti"), AMY)
     assert job is not None
     assert pickle.dumps(job.args())  # they cross into the reveal worker process
 
@@ -177,6 +208,6 @@ def test_forget_drops_only_that_language(session) -> None:
 
 @pytest.mark.ffmpeg
 def test_real_pipeline_renders_a_transition_clip() -> None:
-    preview = previews.render(_resolved("host_transition.iris"), "EN")
+    preview = previews.render(_resolved("host_transition.iris"), "EN", AMY)
     assert preview.video is not None
     assert preview.video[4:8] == b"ftyp"  # an MP4

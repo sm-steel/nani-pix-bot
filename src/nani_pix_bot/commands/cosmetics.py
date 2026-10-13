@@ -245,7 +245,7 @@ async def _on_item(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, arg
         await _refuse(query, context, str(query.data))
         return
     await query.answer()
-    await item_preview.send(context, user_id, tap.resolved, lang)
+    await item_preview.send(context, user_id, tap.resolved, lang, user_id)
     text, markup = _item_view(tap.owned_id, tap.resolved, tap.equipped, lang)
     await context.bot.send_message(chat_id=user_id, text=text, reply_markup=markup)
 

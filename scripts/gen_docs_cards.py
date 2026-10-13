@@ -253,17 +253,22 @@ def frame_stills() -> dict[str, bytes]:
     }
 
 
+def _sample_viewer(lang: str) -> previews.Viewer:
+    """The guide has no viewer: its badges read the localized "@you"."""
+    return previews.Viewer(player_id=0, name=i18n.t("cosmetics.preview.you", lang))
+
+
 def clip_jobs() -> dict[str, previews.ClipJob]:
     """The /cosmetics preview clip of each Sakura win effect (per language: its badge reads
     the localized "you") and reveal transition (one, no text), by file name."""
     jobs: dict[str, previews.ClipJob] = {}
     for resolved in _resolved(CosmeticSlot.WIN_EFFECT):
         for lang in LANGS:
-            job = previews.clip_job(resolved, lang)
+            job = previews.clip_job(resolved, _sample_viewer(lang))
             if job is not None:
                 jobs[f"win-{cosmetic_stem(resolved)}-{lang}.mp4"] = job
     for resolved in _resolved(CosmeticSlot.HOST_TRANSITION):
-        job = previews.clip_job(resolved, LANGS[0])
+        job = previews.clip_job(resolved, _sample_viewer(LANGS[0]))
         if job is not None:
             jobs[f"transition-{cosmetic_stem(resolved)}.mp4"] = job
     return jobs
