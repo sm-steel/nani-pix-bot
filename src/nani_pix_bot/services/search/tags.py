@@ -18,6 +18,11 @@ def to_json(tags: Iterable[AnimeTag]) -> list[dict[str, Any]]:
     return [{"kind": t.kind, "name": t.name, "mal_id": t.mal_id} for t in tags]
 
 
+def to_json_or_unknown(tags: Iterable[AnimeTag] | None) -> list[dict[str, Any]] | None:
+    """`to_json`, keeping None (tags unknown) apart from an empty list."""
+    return None if tags is None else to_json(tags)
+
+
 def from_json(raw: Sequence[Any] | None) -> list[AnimeTag]:
     found = []
     for item in raw or []:

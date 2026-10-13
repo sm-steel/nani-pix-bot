@@ -5,6 +5,7 @@ synonym."""
 from loguru import logger
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.dm_start import season_gate
 from nani_pix_bot.commands.dm_start._shared import (
     _SYNONYM_SPLIT_RE,
 )
@@ -83,6 +84,8 @@ async def _manual_synonyms_step(
     # Block closed and committed above — see _post_preview_album's/
     # send_screenshot_picker_prompt's docstrings for why the send has to
     # happen after.
+    if await season_gate.refused(context, user.id, lang, message.reply_text):
+        return
     start_alias_search(context, game_id, then_preview_in=lang if has_image else None)
     if not has_image:
         await send_screenshot_picker_prompt(context, picker_prompt, lang)

@@ -1907,11 +1907,15 @@ plural noun phrase slotted into "This season only {rule} can be played."
 - **Tags** come from the MAL id: Tenrai first (matched by MAL tag id),
   Shikimori as the fallback (matched by kind + English name, since some of
   its ids differ from MAL's). Fetched when a result is staged during DM
-  setup and stored in `games.anime_tags`.
-- **Checked twice**: when a catalogue result is picked, and again,
-  authoritatively, at Confirm, which every identification method passes
-  through. Manual and TMDB entries resolve a MAL id by an exact
-  (normalized) Tenrai title match; if none is found the game is refused.
+  setup and stored in `games.anime_tags`. A Tenrai result (search, by-id,
+  and so every My MAL List pick) already carries its genres and themes:
+  `stage_result` stores them, so its check makes no extra request.
+- **Checked twice**: as soon as the anime is known (a catalogue result
+  pick, a My MAL List pick, or the end of a manual entry, before the
+  screenshot step), and again, authoritatively, at Confirm, which every
+  identification method passes through. Manual and TMDB entries resolve a
+  MAL id by an exact (normalized) Tenrai title match; if none is found the
+  game is refused.
 - **Three outcomes.** Passed. **Refused**: off-theme, or unidentifiable (no
   MAL id could be found) — the player is told the rule and picks again. A
   refusal also clears a catalogue screenshot and resets setup to the method

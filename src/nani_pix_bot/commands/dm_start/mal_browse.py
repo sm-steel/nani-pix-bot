@@ -34,6 +34,7 @@ from loguru import logger
 from telegram import InlineKeyboardMarkup, Update, User
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.dm_start import season_gate
 from nani_pix_bot.commands.dm_start._shared import (
     SEARCH_SERVICE_ERRORS,
     _method_keyboard,
@@ -461,6 +462,8 @@ async def mal_list_pick_callback_handler(
         await _reject_stale_tap(query, lang)
         return
     await query.answer()
+    if await season_gate.refused(context, user.id, lang, query.edit_message_text):
+        return
     start_alias_search(context, game_id, then_preview_in=lang if has_image else None)
     if picker_prompt is not None:
         await send_screenshot_picker_prompt(context, picker_prompt, lang)
