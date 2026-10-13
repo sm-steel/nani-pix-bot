@@ -6,10 +6,6 @@
 - 🖼 Season posts and profile cards have a new look: the season's key visual with no darkening, a ribbon, a gradient title beside the stamp seal and a 🗓 date pill, and a profile card with outlined text, counter chips and a glass grid that adapts to light and dark pictures.
 - 🎉 When a game ends, every player who guessed in it is checked for achievements, not only the winner and the host.
 - 👮 `/setwinner` on a season game that ended unsolved now tops the host up to the solved reward instead of paying both, quick date edits of a scheduled season share one teaser post, and the season's "only this kind of anime" message and the advice for an anime whose genre can't be found are clearer.
-- Numbers no longer trip up a `/guess`: `GITS` wins "GITS 2026" (and the other way round), and season numbers, "2nd", roman numerals, the word "season" and fancy symbols like × or « » are all ignored.
-- The letter clues now only ever hand out real letters, and the title shape shows digits as `X` and the word "season" in plain sight — unless the whole title is a number, like "22/7".
-- 🔢 A game's creator can now make the numbers in a title count: the preview has a "Numbers count" switch, and the bot asks outright when a title is mostly numbers, like "91 Days".
-- 🔎 When you set up a game, the bot looks the anime up on the other sites too and offers any names it's missing as checkboxes — tick the ones that should also count as a correct guess.
 - 📖 There's now an illustrated guide, in English and Russian, covering how to play, every command and how to run your own bot: https://sm-steel.github.io/nani-pix-bot/
 - 👮 Admins can schedule and manage seasons with `/season`.
 - 🎁 Admins can hand out season cosmetics with `/grantitem`.
@@ -22,6 +18,14 @@
 - 🌸 A season may make clues cheaper in its games, stacking with the HARD MODE sale, and may paint its games' stage pictures in its own style.
 - 🏆 Seasons have achievements: eleven you can earn once in every season (Season Debut, Opening Act, finishing the pass, the Season Shop, a place on the podium and the "Champion of" title, and more) shown as ×N in `/achievements`, six lifetime ladders across seasons (Veteran, Completionist, Front-runner, Hoarder, Season Patron and Genre Explorer, which counts the themes you won in, the bot's own HARD MODE picks included), and a season may bring achievements of its own.
 
+## v1.15.0 · 2026-10-10
+
+### ✨ New
+- Numbers no longer trip up a `/guess`: `GITS` wins "GITS 2026" (and the other way round), and season numbers, "2nd", roman numerals, the word "season" and fancy symbols like × or « » are all ignored.
+- The letter clues now only ever hand out real letters, and the title shape shows digits as `X` and the word "season" in plain sight — unless the whole title is a number, like "22/7".
+- 🔢 A game's creator can now make the numbers in a title count: the preview has a "Numbers count" switch, and the bot asks outright when a title is mostly numbers, like "91 Days".
+- 🔎 When you set up a game, the bot looks the anime up on the other sites too and offers any names it's missing as checkboxes — tick the ones that should also count as a correct guess.
+
 ## v1.14.2 · 2026-10-09
 
 ### 🛠 Fixed
@@ -31,18 +35,3 @@
 
 ### 🛠 Fixed
 - `/version` shows the release notes again — it came up empty when the bot's language was set to Russian.
-
-## v1.14.0 · 2026-10-09
-
-### ✨ New
-- Champion races now reward a clean solve: win without a single wrong guess of your own and you get +1 🌟 on top (not in HARD MODE).
-- Ties in the weekly, monthly and yearly races are settled in the open — more 👑 wins, then fewer ❌ wrong guesses in the games you won, then faster ⏱ solves — and anyone still tied shares the place, with both new columns right there in `/standings`.
-- Everyone tied for first when a race closes becomes Champion, up to three of you.
-- Your own `/achievements` browser has a ⚖️ Compare button that lists players by 🏆 points, so you can pick anyone to measure yourself against.
-- `/history` has filter tabs: 📜 All · 👤 I played · 🎲 I hosted · 👑 I won.
-- A game's record in `/history` is split into 📋 Record and 💬 Guesses tabs and now shows the clues bought (with price and who shared them), who chipped 💠 into the bounty, when and why each stage cleared up, and how many players guessed.
-- `/version` shows these notes, with ◀ ▶ to look back at earlier releases.
-
-### 🛠 Fixed
-- The 📏 Title shape that comes again after you buy a letter has its own Share button, and you can share it again once it shows a new letter.
-- Oversized messages, like a long `/history` page, are trimmed instead of silently never arriving.

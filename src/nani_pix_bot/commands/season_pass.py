@@ -95,9 +95,12 @@ async def _confirm(
     ]
     logger.info("asked to confirm buying Premium", season_id=season_id, price=price)
     await query.answer()
-    await query.edit_message_text(
-        i18n.t("season_pass.confirm", lang, price=price),
-        reply_markup=InlineKeyboardMarkup([buttons]),
+    # Rich like the view it replaces: the message was sent rich.
+    await _show(
+        query,
+        context,
+        md_escape(i18n.t("season_pass.confirm", lang, price=price)),
+        InlineKeyboardMarkup([buttons]),
     )
 
 

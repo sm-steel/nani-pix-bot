@@ -206,9 +206,9 @@ async def test_no_buy_button_while_the_season_is_closing(session_factory) -> Non
 async def test_buy_asks_to_confirm(session_factory, season) -> None:
     sid = _season_id(session_factory)
     query = await _tap(session_factory, f"spass:buy:{sid}")
-    text = query.edit_message_text.await_args.args[0]
-    assert text == i18n.t("season_pass.confirm", "EN", price=150)
-    markup = query.edit_message_text.await_args.kwargs["reply_markup"]
+    text = query.rich_edit["rich_message"]["markdown"]
+    assert text == md_escape(i18n.t("season_pass.confirm", "EN", price=150))
+    markup = query.rich_edit["reply_markup"]
     assert _buttons(markup) == [f"spass:yes:{sid}", f"spass:no:{sid}"]
     query.answer.assert_awaited_once_with()
 
