@@ -456,6 +456,7 @@ async def test_preview_change_image_pick_screenshot_reoffers_the_source_menu_whe
         "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
+        "repick:anime",
     ]
     # Nothing failed, so no provider wears the ⚠️ mark.
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]

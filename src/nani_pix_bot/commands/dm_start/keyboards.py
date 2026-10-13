@@ -61,6 +61,9 @@ MAL_METHOD_CALLBACK_DATA = "method:mal_list"
 # handler of its own, but not a method pick: parse_method_callback_data
 # doesn't know it, and the handler checks for it before parsing.
 METHOD_BACK_CALLBACK_DATA = "method:back"
+# "Pick a different anime" (#429): on every screen after the anime is
+# identified, forget it and go back to the methods.
+REPICK_ANIME_CALLBACK_DATA = "repick:anime"
 
 PREVIEW_CONFIRM_CALLBACK_DATA = "preview:confirm"
 PREVIEW_CHANGE_IMAGE_CALLBACK_DATA = "preview:change_image"
@@ -154,6 +157,14 @@ def _back_to_methods_button(lang: str) -> InlineKeyboardButton:
     return InlineKeyboardButton(
         i18n.t("keyboards.back_to_methods", lang), callback_data=METHOD_BACK_CALLBACK_DATA
     )
+
+
+def _repick_row(lang: str) -> list[InlineKeyboardButton]:
+    return [
+        InlineKeyboardButton(
+            i18n.t("keyboards.repick_anime", lang), callback_data=REPICK_ANIME_CALLBACK_DATA
+        )
+    ]
 
 
 def back_to_methods_keyboard(lang: str) -> InlineKeyboardMarkup:
@@ -477,6 +488,7 @@ def aliases_keyboard(lang: str, suggestions: list[dict]) -> InlineKeyboardMarkup
             ),
         ]
     )
+    rows.append(_repick_row(lang))
     return InlineKeyboardMarkup(rows)
 
 
@@ -491,7 +503,8 @@ def numbers_question_keyboard(lang: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     i18n.t("keyboards.numbers_yes", lang), callback_data=NUMBERS_YES_CALLBACK_DATA
                 ),
-            ]
+            ],
+            _repick_row(lang),
         ]
     )
 
@@ -640,6 +653,7 @@ def screenshot_source_keyboard(
             )
         ]
     )
+    buttons.append(_repick_row(lang))
     return InlineKeyboardMarkup(buttons)
 
 
@@ -784,6 +798,7 @@ def screenshot_gallery_keyboard(page: GalleryPage, lang: str) -> InlineKeyboardM
             )
         ]
     )
+    rows.append(_repick_row(lang))
     return InlineKeyboardMarkup(rows)
 
 

@@ -255,6 +255,7 @@ async def test_screenshot_gallery_callback_handler_pick_falls_back_when_the_fetc
         "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
+        "repick:anime",
     ]
 
 
@@ -400,6 +401,7 @@ async def test_screenshot_gallery_paging_falls_back_when_telegram_rejects_the_al
         "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
+        "repick:anime",
     ]
     with session_factory() as session:
         fetched = session.get(Game, game_id)
@@ -952,6 +954,7 @@ async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_i
         "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
+        "repick:anime",
     ]
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
     assert any(label.startswith("⚠️") and "TMDB" in label for label in labels)
@@ -978,6 +981,7 @@ async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_i
         "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
+        "repick:anime",
     ]
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
     assert any(label.startswith("⚠️") and "Shikimori" in label for label in labels)
@@ -1004,6 +1008,7 @@ async def test_screenshot_search_step_offers_the_source_menu_when_the_provider_i
         "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
+        "repick:anime",
     ]
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
     assert any(label.startswith("⚠️") and "Tenrai" in label for label in labels)
@@ -1258,6 +1263,7 @@ async def test_screenshot_gallery_paging_past_the_end_still_offers_the_source_me
         "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
+        "repick:anime",
     ]
     with session_factory() as session:
         fetched = session.get(Game, game_id)

@@ -152,7 +152,7 @@ import stage1 from '../../../../assets/generated/stage-1.webp';
 превью.
 
 <TelegramChat label="Пример: отмечаем дополнительные названия">
-  <TgMessage from="nani-pix-bot" buttons={[['☑ 耳をすませば'], ['☑ If You Listen Closely'], ['☐ Mimi o Sumaseba'], ['⏭ Пропустить', '➕ Добавить отмеченные (2)']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['☑ 耳をすませば'], ['☑ If You Listen Closely'], ['☐ Mimi o Sumaseba'], ['⏭ Пропустить', '➕ Добавить отмеченные (2)'], ['↩ Выбрать другое аниме']]}>
     🔎 Нашёл ещё названия этого аниме на других сайтах. Отметь те, что тоже должны засчитываться как правильный ответ:
   </TgMessage>
   <TgMessage from="nani-pix-bot">➕ Добавлено принимаемых названий: 2.</TgMessage>
@@ -166,7 +166,7 @@ import stage1 from '../../../../assets/generated/stage-1.webp';
 например *22/7*, бот не спрашивает: в нём цифры учитываются всегда.
 
 <TelegramChat label="Пример: бот спрашивает, учитывать ли цифры">
-  <TgMessage from="nani-pix-bot" buttons={[['❌ Нет, не учитывать', '✅ Да, учитывать']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['❌ Нет, не учитывать', '✅ Да, учитывать'], ['↩ Выбрать другое аниме']]}>
     🔢 В названии «91 Days» почти одни цифры. Нужно ли угадывать и их?
 
     &nbsp;
@@ -197,13 +197,18 @@ import stage1 from '../../../../assets/generated/stage-1.webp';
    этой кнопки нет: там аниме заведомо то.
 5. Нажмите номер, чтобы выбрать скриншот.
 
+Выбрали совсем не то аниме? Кнопка **↩ Выбрать другое аниме** есть под выбором
+источника, под галереей, под вопросом о других названиях и под вопросом о цифрах.
+Она забывает аниме (и скриншот, выбранный для него; загруженное вами фото остаётся) и
+возвращает к выбору способа поиска, так что `/stop` и новая игра не нужны.
+
 <TelegramChat label="Пример: выбор скриншота с Shikimori, когда аниме определено на Tenrai">
-  <TgMessage from="nani-pix-bot" buttons={[['Tenrai'], ['Shikimori'], ['TMDB'], ['📤 Загрузить свой скриншот']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['Tenrai'], ['Shikimori'], ['TMDB'], ['📤 Загрузить свой скриншот'], ['↩ Выбрать другое аниме']]}>
     Откуда взять скриншот?
   </TgMessage>
   <TgMessage from="nani-pix-bot">Вот несколько скриншотов — выберите один ниже.</TgMessage>
   <TgMessage from="nani-pix-bot" image={original}>1</TgMessage>
-  <TgMessage from="nani-pix-bot" buttons={[['1', '2', '3', '4', '5'], ['Ещё ▶️'], ['❌ Не то аниме? Искать заново'], ['📤 Загрузить свой скриншот']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['1', '2', '3', '4', '5'], ['Ещё ▶️'], ['❌ Не то аниме? Искать заново'], ['📤 Загрузить свой скриншот'], ['↩ Выбрать другое аниме']]}>
     Какой из них использовать?
   </TgMessage>
 </TelegramChat>
@@ -214,7 +219,7 @@ import stage1 from '../../../../assets/generated/stage-1.webp';
 <TelegramChat label="Пример: после нажатия «Ещё ▶️» (картинка изображает альбом из пяти)">
   <TgMessage from="nani-pix-bot">Скриншоты 6–10 из 23 — выберите один ниже.</TgMessage>
   <TgMessage from="nani-pix-bot" image={original}>6</TgMessage>
-  <TgMessage from="nani-pix-bot" buttons={[['6', '7', '8', '9', '10'], ['◀️ Назад', 'Ещё ▶️'], ['❌ Не то аниме? Искать заново'], ['📤 Загрузить свой скриншот']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['6', '7', '8', '9', '10'], ['◀️ Назад', 'Ещё ▶️'], ['❌ Не то аниме? Искать заново'], ['📤 Загрузить свой скриншот'], ['↩ Выбрать другое аниме']]}>
     Какой из них использовать?
   </TgMessage>
 </TelegramChat>
@@ -225,7 +230,7 @@ import stage1 from '../../../../assets/generated/stage-1.webp';
 свой скриншот.
 
 <TelegramChat label="Пример: сайт со скриншотами не отвечает">
-  <TgMessage from="nani-pix-bot" buttons={[['⚠️ Tenrai'], ['Shikimori'], ['TMDB'], ['📤 Загрузить свой скриншот']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['⚠️ Tenrai'], ['Shikimori'], ['TMDB'], ['📤 Загрузить свой скриншот'], ['↩ Выбрать другое аниме']]}>
     ⚠️ Tenrai сейчас не отвечает. Выберите другой источник ниже или пришлите свой скриншот.
   </TgMessage>
 </TelegramChat>

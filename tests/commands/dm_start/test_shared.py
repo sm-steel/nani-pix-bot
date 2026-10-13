@@ -144,7 +144,7 @@ async def test_the_numbers_question_is_sent_instead_of_the_album() -> None:
     sent = context.bot.send_message.await_args_list[0].kwargs
     assert sent["text"] == "question?"
     data = [b.callback_data for row in sent["reply_markup"].inline_keyboard for b in row]
-    assert data == ["numbers:no", "numbers:yes"]
+    assert data == ["numbers:no", "numbers:yes", "repick:anime"]
 
 
 def test_resuming_on_the_numbers_question_reshows_it(session) -> None:

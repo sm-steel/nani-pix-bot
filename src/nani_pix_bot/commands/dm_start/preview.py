@@ -48,8 +48,8 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 from nani_pix_bot.commands.dm_start.screenshots import (
     NO_SOURCE_PROMPT_KEY,
     ScreenshotFailure,
-    clear_screenshot_selection,
     reply_with_source_menu,
+    restart_identification,
     send_fallback_notice,
     send_gallery_resume,
     source_menu_for,
@@ -391,12 +391,9 @@ async def _handle_change_image_pick_screenshot_tap(
 def _preview_research(tap: _Tap) -> _Edit:
     game, lang = tap.game, tap.lang
     logger.info("tapped Re-search title on the preview", game_id=game.id)
-    # An API-sourced screenshot is cleared here (see
-    # clear_screenshot_selection's docstring) since re-searching might
-    # pick a different anime entirely — a genuine upload is left alone,
-    # unchanged from before ticket 9.
-    clear_screenshot_selection(game)
-    game.setup_step = SetupStep.PICKING_METHOD
+    # Re-searching might pick a different anime entirely: its API
+    # screenshot goes, a genuine upload stays (restart_identification).
+    restart_identification(game)
     return _Edit(
         i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
         _method_keyboard(tap.context, lang),

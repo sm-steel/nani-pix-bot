@@ -369,6 +369,17 @@ def clear_screenshot_selection(game: Game) -> None:
     game.screenshot_source = None
 
 
+def restart_identification(game: Game) -> None:
+    """Back to picking a method, the anime forgotten: an API-picked
+    screenshot of it goes too (an upload stays), and so does everything
+    identified about it, so a background lookup still in flight for it is
+    discarded as stale. The preview's "Re-search title" and the "Pick a
+    different anime" button (#429) on every later setup screen."""
+    clear_screenshot_selection(game)
+    game_service.clear_identification(game)
+    game.setup_step = SetupStep.PICKING_METHOD
+
+
 @dataclass(frozen=True)
 class GalleryResume:
     """What send_gallery_resume needs, captured while the game's session was

@@ -13,6 +13,7 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_PIXEL_ALGORITHM_CALLBACK_DATA,
     PREVIEW_PIXEL_ALGORITHM_PICK_PREFIX,
     PREVIEW_RESEARCH_CALLBACK_DATA,
+    REPICK_ANIME_CALLBACK_DATA,
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
     SEARCH_RETRY_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
@@ -20,10 +21,12 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     TMDB_METHOD_CALLBACK_DATA,
     GalleryPage,
     MalListPage,
+    aliases_keyboard,
     anilist_results_keyboard,
     back_to_methods_keyboard,
     mal_list_keyboard,
     method_selection_keyboard,
+    numbers_question_keyboard,
     parse_mal_list_page_callback_data,
     parse_mal_list_pick_callback_data,
     parse_method_callback_data,
@@ -948,3 +951,37 @@ def test_mal_status_label_falls_back_to_raw_status_when_unrecognized() -> None:
 
     label = _gallery_rows(mal_list_keyboard(page, "en"))[0][0][0]
     assert label == "[unknown] X"
+
+
+# --- "Pick a different anime" on every post-identification screen (#429) ---
+
+
+def _all_callbacks(markup) -> list[str]:
+    return [b.callback_data for row in markup.inline_keyboard for b in row]
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        screenshot_source_keyboard([Provider.SHIKIMORI], "en"),
+        screenshot_gallery_keyboard(
+            GalleryPage(
+                provider=Provider.SHIKIMORI,
+                offset=0,
+                count=5,
+                has_more=True,
+                cross_provider=True,
+                previous_offset=None,
+            ),
+            "en",
+        ),
+        aliases_keyboard("en", [{"text": "Angel Beats", "selected": False}]),
+        numbers_question_keyboard("en"),
+    ],
+    ids=["source menu", "gallery", "aliases", "numbers"],
+)
+def test_post_identification_keyboards_offer_a_different_anime(markup) -> None:
+    rows = markup.inline_keyboard
+    assert rows[-1][0].callback_data == REPICK_ANIME_CALLBACK_DATA
+    assert rows[-1][0].text == i18n.t("keyboards.repick_anime", "en")
+    assert _all_callbacks(markup).count(REPICK_ANIME_CALLBACK_DATA) == 1

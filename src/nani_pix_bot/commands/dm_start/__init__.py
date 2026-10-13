@@ -34,6 +34,8 @@ Split across submodules by flow stage:
                        search/fetch with no session open, commit what it
                        resolved, then send (issue #292) — also split out
                        of screenshots.py for its complexity
+  repick.py           "Pick a different anime" — back to the methods
+                       from any screen after identification (#429)
   preview.py          the confirmation preview (show/confirm/change-
                        image/research/add-synonym) and the final post
                        to the group
@@ -62,6 +64,7 @@ from nani_pix_bot.commands.dm_start.mal_browse import (
 from nani_pix_bot.commands.dm_start.newgame import newgame_command
 from nani_pix_bot.commands.dm_start.numbers import numbers_callback_handler
 from nani_pix_bot.commands.dm_start.preview import preview_callback_handler
+from nani_pix_bot.commands.dm_start.repick import repick_callback_handler
 from nani_pix_bot.commands.dm_start.screenshot_gallery import (
     screenshot_gallery_callback_handler,
     screenshot_search_again_callback_handler,
@@ -87,6 +90,7 @@ __all__ = [
     "photo_handler",
     "pick_callback_handler",
     "preview_callback_handler",
+    "repick_callback_handler",
     "screenshot_gallery_callback_handler",
     "screenshot_search_again_callback_handler",
     "screenshot_search_pick_callback_handler",
