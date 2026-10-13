@@ -243,6 +243,19 @@ async def _handle_gated_confirm(
     methods; "unavailable" says so in a message of its own and leaves the
     preview as it is, so Confirm can simply be tapped again."""
     await query.answer()
+    with session_scope(session_factory) as session:
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        step = setup_game.setup_step if setup_game is not None else None
+    if setup_game is not None and step != SetupStep.CONFIRMING:
+        # The setup moved on without this message (e.g. an older "Pick a
+        # different anime" was tapped, #429): its Confirm would post a
+        # game with no answer, or none at all.
+        logger.warning(
+            "tapped Confirm on an old preview (setup step {step}) — dropping its buttons",
+            step=step,
+        )
+        await query.edit_message_reply_markup(reply_markup=None)
+        return
     verdict = await season_gate.run_gate(context, session_factory, user.id)
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)

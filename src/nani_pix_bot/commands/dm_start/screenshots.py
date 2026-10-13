@@ -345,10 +345,10 @@ async def send_screenshot_picker_prompt(
 def clear_screenshot_selection(game: Game) -> None:
     """Leaves the screenshot sub-flow behind: the picker stops resolving
     anything, and an API-picked screenshot plus the provider id that
-    resolved it are dropped. Used by preview.py's "Re-search title"
-    (a re-search that picks a different anime shouldn't leave the old
-    anime's screenshot attached) and by intake.py, where a genuine
-    upload supersedes whatever was staged before.
+    resolved it are dropped. Used by restart_identification below (a
+    re-pick of the anime shouldn't leave the old anime's screenshot
+    attached) and by intake.py, where a genuine upload supersedes
+    whatever was staged before.
 
     Only an *image* clears the id: `screenshot_source` is None whenever
     nothing API-sourced backs `original_image`, which covers both a

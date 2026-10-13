@@ -410,8 +410,9 @@ def clear_identification(game: Game) -> None:
 
     The screenshot columns (`screenshot_source`, `original_image`) are
     not touched — that's `commands/dm_start/screenshots.py`'s
-    `clear_screenshot_selection`, which the preview's "Re-search" runs
-    before any of this can happen."""
+    `clear_screenshot_selection`, which `restart_identification` (the
+    preview's "Re-search", "Pick a different anime", a season-gate
+    refusal) runs just before this."""
     logger.debug("clearing previous identification (source={source})", source=game.source)
     game.title_romaji = None
     game.title_english = None
