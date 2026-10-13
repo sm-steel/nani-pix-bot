@@ -13,9 +13,9 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start._shared import client_for_source
 from nani_pix_bot.commands.dm_start.aliases import identity_of, lookup_for
 from nani_pix_bot.commands.dm_start.keyboards import back_to_methods_keyboard
-from nani_pix_bot.commands.dm_start.screenshots import clear_screenshot_selection
+from nani_pix_bot.commands.dm_start.screenshots import restart_identification
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import Provider, SetupStep
+from nani_pix_bot.models.enums import Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.seasons.definition import Gate
 from nani_pix_bot.services import game as game_service
@@ -88,9 +88,7 @@ def _apply(session: Session, pending: _Pending, result: gate_service.GateResult)
     if result.tags:
         game.anime_tags = anime_tags.to_json(result.tags)
     if result.verdict in gate_service.REFUSED:
-        game_service.clear_identification(game)
-        clear_screenshot_selection(game)
-        game.setup_step = SetupStep.PICKING_METHOD
+        restart_identification(game)
     return True
 
 

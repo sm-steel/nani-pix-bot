@@ -54,6 +54,9 @@ stateDiagram-v2
         PickingScreenshot --> PickingScreenshot: provider down / nothing found\n— back to the source menu\n(see "When a provider fails")
         PickingScreenshot --> AwaitingPhotoChange: tap "Upload my own instead"
         Confirming --> PickingMethod: tap "Re-search title"\n(API-sourced screenshot cleared;\na genuine upload is kept)
+        PickingScreenshot --> PickingMethod: tap "Pick a different anime"\n(same clearing as "Re-search title")
+        PickingAliases --> PickingMethod: same
+        AskingNumbers --> PickingMethod: same
         Confirming --> AwaitingPhotoChange: tap "Change image"\n(genuine upload,\nor "Upload a new photo" chosen)
         Confirming --> PickingScreenshot: tap "Change image" ->\n"Pick a different screenshot"\n(API-sourced screenshot only)
         AwaitingPhotoChange --> Confirming: new photo sent
@@ -372,6 +375,16 @@ before it goes live:
   gallery from its already-resolved id — "Wrong anime? Search again" is
   always offered from there too, as an escape hatch to a different
   provider entirely).
+- **Pick a different anime** (`repick:anime`) sits on every screen
+  between identification and the preview: the screenshot source menu,
+  the gallery, the extra-names (aliases) question and the numbers
+  question. From wherever the starter is, it does what **Re-search
+  title** below does, so a wrong pick no longer needs `/stop` and a new
+  `/newgame` (issue #429; game #148 prompted it). Both forget the
+  identification on the spot (`restart_identification`), so a background
+  alias search still running for the old anime is discarded as stale.
+  Tapped from an old message once setup is already back at the methods,
+  it only drops that message's buttons.
 - **Re-search title** — back to the method-selection keyboard. A
   genuine upload keeps its screenshot regardless. An API-picked
   screenshot is cleared instead, along with the provider id that

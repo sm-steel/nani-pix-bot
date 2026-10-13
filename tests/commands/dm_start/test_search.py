@@ -8,12 +8,13 @@ from telegram.constants import ChatMemberStatus
 from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import search
+from nani_pix_bot.commands.dm_start import repick, search
 from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
     MANUAL_METHOD_CALLBACK_DATA,
     METHOD_BACK_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
+    REPICK_ANIME_CALLBACK_DATA,
     SEARCH_RETRY_CALLBACK_DATA,
     SHIKIMORI_METHOD_CALLBACK_DATA,
 )
@@ -1003,3 +1004,100 @@ async def test_text_typed_on_the_preview_is_logged_as_ignored_at_info(
     )
     assert line.extra["game_id"] == game_id
     update.message.reply_text.assert_not_awaited()
+
+
+# --- "Pick a different anime" from any later setup step (#429) ---
+
+
+def _stage_identified(session_factory, step: SetupStep, *, image: bytes | None = None) -> int:
+    """A setup that identified Frieren on Shikimori and moved on to `step`;
+    with `image`, an API-picked Shikimori screenshot backs it."""
+    game_id = _create_setup_game(session_factory, image=None, source=Provider.SHIKIMORI)
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        game_service.stage_result(game, _FRIEREN_SHIKIMORI, source=Provider.SHIKIMORI)
+        game.setup_step = step
+        if image is not None:
+            game.original_image = image
+            game.screenshot_source = Provider.SHIKIMORI
+        session.commit()
+    return game_id
+
+
+@pytest.mark.parametrize(
+    "step",
+    [
+        SetupStep.PICKING_SCREENSHOT,
+        SetupStep.PICKING_ALIASES,
+        SetupStep.ASKING_NUMBERS,
+        SetupStep.CONFIRMING,
+    ],
+)
+async def test_repick_goes_back_to_the_methods_and_forgets_the_anime(
+    session_factory, log_records: list[LogLine], step: SetupStep
+) -> None:
+    game_id = _stage_identified(session_factory, step, image=b"api-shot")
+    update = _make_method_callback_update(data=REPICK_ANIME_CALLBACK_DATA, user_id=1)
+
+    await repick.repick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory))
+    )
+
+    call = update.callback_query.edit_message_text.await_args
+    assert call.args[0] == i18n.t("dm_start.pick_method_prompt", "en")
+    assert ANILIST_METHOD_CALLBACK_DATA in _only_button_data(call.kwargs["reply_markup"])
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game.setup_step == SetupStep.PICKING_METHOD
+        assert game.shikimori_id is None
+        assert game.title_english is None
+        assert game.original_image is None  # the old anime's API screenshot
+    assert any(r.level == "INFO" and "different anime" in r.message for r in log_records)
+
+
+async def test_repick_keeps_an_uploaded_photo(session_factory) -> None:
+    game_id = _stage_identified(session_factory, SetupStep.PICKING_ALIASES)
+    with session_factory() as session:
+        session.get(Game, game_id).original_image = b"my upload"
+        session.commit()
+    update = _make_method_callback_update(data=REPICK_ANIME_CALLBACK_DATA, user_id=1)
+
+    await repick.repick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory))
+    )
+
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game.original_image == b"my upload"
+        assert game.setup_step == SetupStep.PICKING_METHOD
+
+
+async def test_repick_from_an_old_message_only_drops_its_buttons(
+    session_factory, log_records: list[LogLine]
+) -> None:
+    """Already back at the methods (or still searching): nothing to forget."""
+    _create_setup_game(session_factory, starter_id=1)
+    update = _make_method_callback_update(data=REPICK_ANIME_CALLBACK_DATA, user_id=1)
+    update.callback_query.edit_message_reply_markup = AsyncMock()
+
+    await repick.repick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory))
+    )
+
+    update.callback_query.edit_message_text.assert_not_awaited()
+    update.callback_query.edit_message_reply_markup.assert_awaited_once_with(reply_markup=None)
+    assert any(r.level == "WARNING" for r in log_records)
+
+
+async def test_repick_with_no_setup_left_says_so(session_factory) -> None:
+    update = _make_method_callback_update(data=REPICK_ANIME_CALLBACK_DATA, user_id=7)
+    context = _make_context(session_factory)
+
+    await repick.repick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    update.callback_query.edit_message_text.assert_not_awaited()
+    context.bot.send_message.assert_awaited_once_with(
+        chat_id=7, text=i18n.t("dm_start.setup_gone", "EN")
+    )

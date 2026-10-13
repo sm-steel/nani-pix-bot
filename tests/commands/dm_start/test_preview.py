@@ -456,6 +456,7 @@ async def test_preview_change_image_pick_screenshot_reoffers_the_source_menu_whe
         "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
+        "repick:anime",
     ]
     # Nothing failed, so no provider wears the ⚠️ mark.
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
@@ -907,3 +908,26 @@ async def test_a_preview_button_commits_its_step_before_editing_the_message(
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()
         assert fetched.setup_step == step
+
+
+@pytest.mark.parametrize("step", [SetupStep.PICKING_METHOD, SetupStep.PICKING_SCREENSHOT])
+async def test_a_confirm_left_on_an_old_preview_starts_nothing(
+    session_factory, log_records, step: SetupStep
+) -> None:
+    """The setup moved off the preview (an old "↩ Pick a different anime"
+    tapped elsewhere, #429): its Confirm must not post a game with no
+    answer, it only drops the old preview's buttons."""
+    game_id = _staged_setup_game(session_factory, setup_step=step)
+    update = _make_preview_callback_update(data=PREVIEW_CONFIRM_CALLBACK_DATA, user_id=1)
+    update.callback_query.edit_message_reply_markup = AsyncMock()
+    context = _make_callback_context(session_factory)
+
+    await preview.preview_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_photo.assert_not_awaited()
+    update.callback_query.edit_message_reply_markup.assert_awaited_once_with(reply_markup=None)
+    with session_factory() as session:
+        assert session.get(Game, game_id).status == GameStatus.SETUP
+    assert any(r.level == "WARNING" and "Confirm" in r.message for r in log_records)
