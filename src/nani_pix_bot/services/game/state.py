@@ -19,6 +19,7 @@ from nani_pix_bot.services.clues import text as clue_text
 from nani_pix_bot.services.game import guesses, turns
 from nani_pix_bot.services.game.clock import deadline_after
 from nani_pix_bot.services.game.win_facts import win_facts
+from nani_pix_bot.services.search import tags as anime_tags
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
@@ -370,6 +371,8 @@ def stage_result(
     elif isinstance(result, TenraiResult):
         game.tenrai_id = result.tenrai_id
         game.title_native = result.title_native
+        # Tags in hand: the season gate needn't fetch them (#426).
+        game.anime_tags = anime_tags.to_json_or_unknown(result.tags)
     elif isinstance(result, TMDBResult):
         game.tmdb_id = result.tmdb_id
         game.title_native = result.title_native

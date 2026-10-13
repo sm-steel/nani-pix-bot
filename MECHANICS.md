@@ -1828,9 +1828,12 @@ refused when already bought, unaffordable, or when the run has no premium
 rewards. It grants every premium reward already reached at once; later ones
 as they are reached.
 
-**`/seasonpass`** (DM, group members only) shows XP, tier n/N, XP to the next
-tier, the 🪙 balance, the Premium state and every tier (free ✅/▫️,
-premium ✅/🔒 ⭐).
+**`/seasonpass`** (DM, group members only) is a rich message: a heading,
+XP, tier n/N, XP to the next tier, the 🪙 balance and the Premium price
+while it isn't owned, then every tier as a table `| | XP | Free | ⭐ Premium |`.
+Only the first cell carries a mark (✅ reached, ⬜ not yet); premium cells
+are just the reward, and the Premium column header gets a 🔒 until Premium
+is bought. The objectives follow under their own heading.
 
 **Clue tokens** are a consumable (`consumables`, a count per player and
 kind). While a player holds one, their next clue purchase in the shop uses
@@ -1920,11 +1923,15 @@ plural noun phrase slotted into "This season only {rule} can be played."
 - **Tags** come from the MAL id: Tenrai first (matched by MAL tag id),
   Shikimori as the fallback (matched by kind + English name, since some of
   its ids differ from MAL's). Fetched when a result is staged during DM
-  setup and stored in `games.anime_tags`.
-- **Checked twice**: when a catalogue result is picked, and again,
-  authoritatively, at Confirm, which every identification method passes
-  through. Manual and TMDB entries resolve a MAL id by an exact
-  (normalized) Tenrai title match; if none is found the game is refused.
+  setup and stored in `games.anime_tags`. A Tenrai result (search, by-id,
+  and so every My MAL List pick) already carries its genres and themes:
+  `stage_result` stores them, so its check makes no extra request.
+- **Checked twice**: as soon as the anime is known (a catalogue result
+  pick, a My MAL List pick, or the end of a manual entry, before the
+  screenshot step), and again, authoritatively, at Confirm, which every
+  identification method passes through. Manual and TMDB entries resolve a
+  MAL id by an exact (normalized) Tenrai title match; if none is found the
+  game is refused.
 - **Three outcomes.** Passed. **Refused**: off-theme, or unidentifiable (no
   MAL id could be found) — the player is told the rule and picks again. A
   refusal also clears a catalogue screenshot and resets setup to the method
@@ -1955,7 +1962,11 @@ shop-only or pass-only, never both.
 
 `/cosmetics` (DM) lists the slots, then a slot's owned items; tapping an
 item sends its preview with **Equip** / **Unequip**. `/profile` (the game topic, or DM for members) shows
-the profile card. A season title is picked with `/title`, not in
+the profile card. Its ◀ ▶ and 👥 Players list walk only players who
+played a finished game (hosted, won or guessed in it, as in `/history`'s
+"I played"), most games first, then by name; the bot never appears, and
+the viewer is always included (last, before their first game).
+`/profile @someone` still opens anyone's card. A season title is picked with `/title`, not in
 `/cosmetics`, which only shows a hint for that slot.
 
 | Slot | `look` | Where it shows |

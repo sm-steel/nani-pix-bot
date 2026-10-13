@@ -17,7 +17,7 @@ from loguru import logger
 from telegram import Bot, InlineKeyboardMarkup, Message
 from telegram.error import BadRequest, InvalidToken
 
-from nani_pix_bot.services.text import cut_at_line
+from nani_pix_bot.services.text import MD_SPECIAL, cut_at_line, md_escape
 
 # Bot API "Rich Message Limits": up to 32768 UTF-8 characters of rich message
 # text (custom emoji alternative text and formula source included), up to 500
@@ -31,16 +31,9 @@ RICH_LIMIT = 32768
 TEXT_LIMIT = 4096
 CUT_MARKER = "\n\n…"
 
-# ASCII punctuation markdown can give meaning to; a backslash makes each literal.
-_SPECIAL = re.compile(r"([\\`*_~|=\[\](){}#>!+\-.])")
+__all__ = ["md_escape"]  # lives in services.text; commands import it from here
 
-
-def md_escape(text: str) -> str:
-    """For anything that isn't ours to format: player names, titles, input."""
-    return _SPECIAL.sub(r"\\\1", text)
-
-
-_ESCAPED = re.compile(r"\\" + _SPECIAL.pattern)
+_ESCAPED = re.compile(r"\\" + MD_SPECIAL.pattern)
 
 
 def _unescape(markdown: str) -> str:

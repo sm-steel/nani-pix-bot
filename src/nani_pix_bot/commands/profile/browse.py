@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from loguru import logger
+from sqlalchemy.orm import Session
 from telegram import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -103,6 +104,11 @@ def list_view(
     return i18n.t("profile.list", lang), InlineKeyboardMarkup(rows), page
 
 
+def roster(session: Session, context: ContextTypes.DEFAULT_TYPE, viewer_id: int) -> list[int]:
+    """Who the list and ◀ ▶ walk for `viewer_id`: players who play, never the bot."""
+    return profile.roster(session, viewer_id=viewer_id, bot_id=context.bot.id)
+
+
 async def _show_card(
     query: CallbackQuery,
     context: ContextTypes.DEFAULT_TYPE,
@@ -111,7 +117,7 @@ async def _show_card(
 ) -> None:
     owner, target, via = cast(tuple[int, int, str], tuple(fields))
     with session_scope(context.bot_data["session_factory"]) as session:
-        order = profile.roster(session)
+        order = roster(session, context, owner)
         if target not in order:
             logger.warning(
                 "a /profile button pointed at unknown player {target_id}", target_id=target
@@ -149,7 +155,9 @@ async def _show_list(
 ) -> None:
     owner, page = cast(tuple[int, int], tuple(fields))
     with session_scope(context.bot_data["session_factory"]) as session:
-        caption, keyboard, page = list_view(session, profile.roster(session), owner, page, lang)
+        caption, keyboard, page = list_view(
+            session, roster(session, context, owner), owner, page, lang
+        )
     try:
         await query.edit_message_caption(caption=caption, reply_markup=keyboard)
     except TelegramError:
