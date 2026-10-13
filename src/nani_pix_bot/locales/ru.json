@@ -789,6 +789,7 @@
   "season_pass.view.coins": "🪙 Сезонные монеты: {coins}",
   "season_pass.view.premium_on": "⭐ Премиум",
   "season_pass.view.premium_off": "Премиум: {price} 💠",
+  "season_pass.view.col_free": "Бесплатно",
   "season_pass.buy": "⭐ Купить Премиум — {price} 💠",
   "season_pass.confirm": "Купить Премиум за {price} 💠? Вы сразу получите все премиум-награды уже пройденных уровней, а остальные — по мере прохождения.",
   "season_pass.confirm_yes": "Купить",

@@ -141,28 +141,47 @@ def test_describe_names_each_kind_of_reward(demo) -> None:
     assert "Blossom" in season_pass.describe(demo, Reward.item("name_flair.blossom"), "EN")
 
 
-def test_view_lines_show_progress_and_every_tier(session, season, demo) -> None:
+def _table(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line.startswith("|")]
+
+
+def test_view_shows_progress_and_every_tier_as_a_table(session, season, demo) -> None:
     _xp(session, season.id, 1, 60)
     season_pass.sync(session, season, demo, 1)
-    text = "\n".join(pass_view.view_lines(session, season, demo, 1, "EN"))
+    text = pass_view.view_markdown(session, season, demo, 1, "EN")
+    assert text.startswith("## ")
     assert "60 XP" in text
     assert "Tier 2/4" in text
     assert "next tier at 120 XP" in text
-    assert "✅ 1." in text
-    assert "▫️ 3." in text
-    assert "🔒" in text  # premium not bought
+    header, divider, *rows = _table(text)
+    assert header == "| | XP | Free | ⭐ Premium 🔒 |"  # premium not bought
+    assert divider == "|---|---|---|---|"
+    assert len(rows) == len(demo.tiers)
+    assert rows[0].startswith("| ✅ 1 | ")
+    assert rows[2].startswith("| ⬜ 3 | ")
+    assert "▫️" not in text
     assert "Premium: 150 💠" in text
 
 
-def test_view_lines_after_the_last_tier_have_no_next_line(session, season, demo) -> None:
+def test_premium_cells_carry_no_status_icons(session, season, demo, rich) -> None:
+    _xp(session, season.id, 1, 60)
+    season_pass.sync(session, season, demo, 1)
+    season_pass.buy_premium(session, season, demo, rich)
+    header, _, *rows = _table(pass_view.view_markdown(session, season, demo, 1, "EN"))
+    assert header == "| | XP | Free | ⭐ Premium |"
+    premium_cells = [row.rstrip(" |").rsplit(" | ", 1)[1] for row in rows]
+    assert not any(icon in cell for cell in premium_cells for icon in ("✅", "⬜", "🔒"))
+
+
+def test_view_after_the_last_tier_has_no_next_line(session, season, demo) -> None:
     _xp(session, season.id, 1, 200)
     season_pass.sync(session, season, demo, 1)
-    text = "\n".join(pass_view.view_lines(session, season, demo, 1, "EN"))
+    text = pass_view.view_markdown(session, season, demo, 1, "EN")
     assert "next tier" not in text
 
 
-def test_view_lines_for_a_player_without_xp_show_an_empty_pass(session, season, demo) -> None:
-    text = "\n".join(pass_view.view_lines(session, season, demo, 2, "EN"))
+def test_view_for_a_player_without_xp_shows_an_empty_pass(session, season, demo) -> None:
+    text = pass_view.view_markdown(session, season, demo, 2, "EN")
     assert "0 XP" in text
     assert "Tier 0/4" in text
     assert "✅" not in text
