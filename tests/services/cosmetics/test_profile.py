@@ -8,7 +8,15 @@ from PIL import Image
 
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.cosmetics import EquippedItem, OwnedItem
-from nani_pix_bot.models.enums import CosmeticSlot, ItemSource, Rarity, SeasonStatus, ShowcaseKind
+from nani_pix_bot.models.enums import (
+    CosmeticSlot,
+    GameStatus,
+    ItemSource,
+    Rarity,
+    SeasonStatus,
+    ShowcaseKind,
+)
+from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
 from nani_pix_bot.seasons import registry
@@ -166,17 +174,46 @@ def test_stamps_follow_the_picks_but_the_count_is_every_season(session, alice, a
     assert view.seasons_played == 1
 
 
-def test_roster_is_every_player_by_name_ignoring_case_and_the_at(session) -> None:
+BOT = 999
+
+
+def _played(session, player_id: int, games: int) -> None:
+    """`games` finished games hosted by `player_id`."""
+    for _ in range(games):
+        session.add(Game(starter_id=player_id, status=GameStatus.UNSOLVED, title_english="X"))
+    session.flush()
+
+
+def test_roster_lists_only_players_who_played_most_games_first(session) -> None:
     session.add_all(
         [
             Player(telegram_user_id=30, username="zed"),
             Player(telegram_user_id=10, username="Bob"),
             Player(telegram_user_id=20, first_name="amy"),
-            Player(telegram_user_id=40),  # no name at all: shown and sorted by id
+            Player(telegram_user_id=40, username="lurker"),  # never played
         ]
     )
     session.flush()
-    assert profile.roster(session) == [40, 20, 10, 30]
+    _played(session, 30, 3)
+    _played(session, 10, 1)
+    _played(session, 20, 1)
+    # Ties by name, ignoring case and the "@": amy before Bob.
+    assert profile.roster(session, viewer_id=30, bot_id=BOT) == [30, 20, 10]
+
+
+def test_roster_leaves_out_the_bot_even_when_it_hosted(session) -> None:
+    session.add_all([Player(telegram_user_id=BOT, username="nanibot"), Player(telegram_user_id=1)])
+    session.flush()
+    _played(session, BOT, 5)
+    _played(session, 1, 1)
+    assert profile.roster(session, viewer_id=1, bot_id=BOT) == [1]
+
+
+def test_roster_always_has_the_viewer_last_when_they_never_played(session) -> None:
+    session.add_all([Player(telegram_user_id=1), Player(telegram_user_id=2)])
+    session.flush()
+    _played(session, 1, 1)
+    assert profile.roster(session, viewer_id=2, bot_id=BOT) == [1, 2]
 
 
 def test_roster_breaks_name_ties_by_id(session) -> None:
@@ -184,11 +221,15 @@ def test_roster_breaks_name_ties_by_id(session) -> None:
         [Player(telegram_user_id=9, first_name="Kim"), Player(telegram_user_id=3, first_name="kim")]
     )
     session.flush()
-    assert profile.roster(session) == [3, 9]
+    _played(session, 9, 1)
+    _played(session, 3, 1)
+    assert profile.roster(session, viewer_id=3, bot_id=BOT) == [3, 9]
 
 
-def test_roster_of_nobody_is_empty(session) -> None:
-    assert profile.roster(session) == []
+def test_roster_of_a_newcomer_alone_is_just_them(session) -> None:
+    session.add(Player(telegram_user_id=1))
+    session.flush()
+    assert profile.roster(session, viewer_id=1, bot_id=BOT) == [1]
 
 
 @pytest.mark.parametrize(

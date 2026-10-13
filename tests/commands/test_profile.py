@@ -12,7 +12,8 @@ from nani_pix_bot.commands import profile as profile_module
 from nani_pix_bot.commands.profile import card as card_module
 from nani_pix_bot.commands.profile import data as cb
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import ShowcaseKind
+from nani_pix_bot.models.enums import GameStatus, ShowcaseKind
+from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import i18n
@@ -40,6 +41,9 @@ def players(session_factory) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=1, username="me"))
         session.add(Player(telegram_user_id=7, username="Bob"))
+        session.flush()
+        # Bob has played a game, so he's in the roster; "me" is the viewer.
+        session.add(Game(starter_id=7, status=GameStatus.UNSOLVED, title_english="X"))
         session.commit()
 
 
@@ -60,6 +64,7 @@ def _context(session_factory, args: list[str], *, member: bool = True) -> MagicM
     context = MagicMock()
     joined = ChatMemberStatus.MEMBER if member else ChatMemberStatus.LEFT
     context.bot.get_chat_member = AsyncMock(return_value=MagicMock(status=joined))
+    context.bot.id = 999
     context.bot_data = {
         "session_factory": session_factory,
         "group_chat_id": 555,
@@ -94,7 +99,7 @@ async def test_the_card_has_prev_next_and_players_buttons(session_factory) -> No
 
     rows = update.message.reply_photo.await_args.kwargs["reply_markup"].inline_keyboard
     data = [[button.callback_data for button in row] for row in rows]
-    # Roster by name: Bob (7), me (1). Both neighbours of "me" are Bob.
+    # Roster: Bob (7, one game), then me (1, the viewer). Both neighbours are Bob.
     assert data == [
         [cb.card_data(1, 7, "p"), cb.card_data(1, 7, "n")],
         [cb.list_data(1, 0)],

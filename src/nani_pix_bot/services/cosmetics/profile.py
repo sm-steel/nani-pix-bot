@@ -17,6 +17,7 @@ from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import catalogue, names, titles
 from nani_pix_bot.services.cards import StatEntry, season_background, season_stamp
 from nani_pix_bot.services.cosmetics import inventory, looks, showcase
+from nani_pix_bot.services.game import history
 
 
 @dataclass(frozen=True)
@@ -53,15 +54,23 @@ def stats(seasons: int, owned: int, lang: str) -> tuple[StatEntry, ...]:
     )
 
 
-def roster(session: Session) -> list[int]:
-    """Every known player, in the order the /profile list and ◀ ▶ walk them:
-    by display name (no "@", case ignored), then by id."""
-    ids = session.scalars(select(Player.telegram_user_id))
+def roster(session: Session, *, viewer_id: int, bot_id: int) -> list[int]:
+    """The players the /profile list and ◀ ▶ walk: everyone who played a
+    finished game (hosted, won or guessed in it), most games first, then by
+    display name (no "@", case ignored), then by id. The bot never shows,
+    lurkers don't either, and the viewer is always in it (last, if they
+    haven't played yet) so their own card is reachable."""
+    played = history.games_played_counts(session)
+    played.pop(bot_id, None)
 
-    def key(player_id: int) -> tuple[str, int]:
-        return players.display_name(session, player_id).lstrip("@").casefold(), player_id
+    def key(player_id: int) -> tuple[int, str, int]:
+        name = players.display_name(session, player_id).lstrip("@").casefold()
+        return -played[player_id], name, player_id
 
-    return sorted(ids, key=key)
+    order = sorted(played, key=key)
+    if viewer_id not in played and viewer_id != bot_id:
+        order.append(viewer_id)
+    return order
 
 
 def neighbour(order: list[int], current: int, step: int) -> int:

@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import exists, func, or_, select, union
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.clue_purchase import CluePurchase
@@ -130,6 +130,19 @@ def finished_games(
 def count_finished(session: Session, scope: Scope = EVERY_GAME) -> int:
     stmt = select(func.count()).select_from(_finished(scope).subquery())
     return int(session.scalar(stmt) or 0)
+
+
+def games_played_counts(session: Session) -> dict[int, int]:
+    """How many finished games each player played, in the PLAYED filter's
+    sense (hosted, won or guessed in it), each game counted once per player."""
+    finished = Game.status.in_(FINISHED)
+    involved = union(
+        select(Game.starter_id.label("player_id"), Game.id.label("game_id")).where(finished),
+        select(Game.winner_id, Game.id).where(finished, Game.winner_id.is_not(None)),
+        select(GameGuess.player_id, GameGuess.game_id).join(Game).where(finished),
+    ).subquery()
+    stmt = select(involved.c.player_id, func.count()).group_by(involved.c.player_id)
+    return dict(session.execute(stmt).tuples().all())
 
 
 @dataclass(frozen=True)
