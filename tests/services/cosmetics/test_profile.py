@@ -240,8 +240,11 @@ def test_neighbour_wraps_around(current: int, step: int, expected: int) -> None:
     assert profile.neighbour([1, 2, 3], current, step) == expected
 
 
-def test_neighbour_of_someone_no_longer_listed_is_the_first() -> None:
+def test_from_someone_not_listed_next_is_the_first_and_prev_the_last() -> None:
+    """A card opened with /profile @lurker: ◀ and ▶ shouldn't both lead to
+    the same player."""
     assert profile.neighbour([1, 2, 3], 99, 1) == 1
+    assert profile.neighbour([1, 2, 3], 99, -1) == 3
 
 
 def test_neighbour_of_the_only_player_is_themselves() -> None:

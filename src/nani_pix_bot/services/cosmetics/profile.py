@@ -74,10 +74,11 @@ def roster(session: Session, *, viewer_id: int, bot_id: int) -> list[int]:
 
 
 def neighbour(order: list[int], current: int, step: int) -> int:
-    """The player `step` places from `current` in `order`, wrapping at both ends;
-    the first one when `current` is no longer listed."""
+    """The player `step` places from `current` in `order`, wrapping at both ends.
+    From someone not listed (a non-player's card), ▶ leads to the first
+    player and ◀ to the last."""
     if current not in order:
-        return order[0]
+        return order[0] if step > 0 else order[-1]
     return order[(order.index(current) + step) % len(order)]
 
 
