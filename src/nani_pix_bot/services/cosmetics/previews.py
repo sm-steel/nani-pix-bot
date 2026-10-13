@@ -64,12 +64,14 @@ def sample_stage() -> bytes:
 
 @dataclass(frozen=True)
 class Viewer:
-    """Who the preview is for. `name` is how the group names them ("@username", else their
-    first name), as on a win badge; `avatar` (None: initials) and `card` (their profile
-    card as /profile draws it) are only filled in for the slots that show them."""
+    """Who the preview is for, named as a game names them: `handle` on a win badge
+    (players.badge_handle), `full_name` before a flair (flair.named). `avatar` (None:
+    initials) and `card` (their profile card as /profile draws it) are only filled in for
+    the slots that show them."""
 
     player_id: int
-    name: str
+    handle: str
+    full_name: str
     avatar: bytes | None = None
     card: ProfileCard | None = None
 
@@ -108,7 +110,7 @@ def clip_job(resolved: ResolvedItem, viewer: Viewer) -> ClipJob | None:
     if item.slot is CosmeticSlot.HOST_TRANSITION:
         return ClipJob(RevealEffect[item.look], None)
     if item.slot is CosmeticSlot.WIN_EFFECT:
-        badge = pipeline.Badge(viewer.avatar, viewer.name, overlay=item.look)
+        badge = pipeline.Badge(viewer.avatar, viewer.handle, overlay=item.look)
         return ClipJob(RevealEffect.IRIS, badge)
     return None
 
@@ -119,7 +121,7 @@ def _frame(resolved: ResolvedItem, _lang: str, _viewer: Viewer) -> bytes:
 
 def _banner(resolved: ResolvedItem, lang: str, viewer: Viewer) -> bytes:
     card = viewer.card or ProfileCard(
-        name=viewer.name, title=None, stamps=(), stats=profile.stats(0, 0, lang), seed=0
+        name=viewer.handle, title=None, stamps=(), stats=profile.stats(0, 0, lang), seed=0
     )
     background = looks.banner_path(resolved.run.run_id, resolved.item.look).read_bytes()
     return render_profile_card(card, viewer.avatar, background)
@@ -136,7 +138,7 @@ def _text(resolved: ResolvedItem, lang: str, viewer: Viewer) -> str:
         return i18n.t("cosmetics.preview.title", lang, title=item.name(lang))
     if item.slot is CosmeticSlot.GUESS_REACTION:
         return i18n.t("cosmetics.preview.reaction", lang, reaction=item.look)
-    return f"{viewer.name} {item.look}"  # name flair, as flair.named shows it
+    return f"{viewer.full_name} {item.look}"  # name flair, as flair.named shows it
 
 
 def render(resolved: ResolvedItem, lang: str, viewer: Viewer) -> Preview:
@@ -155,9 +157,9 @@ def cached(session: Session, key: str, lang: str) -> ItemPreview | None:
     return session.get(ItemPreview, (key, lang))
 
 
-def forget(session: Session, item_id: str, lang: str) -> None:
+def forget(session: Session, key: str, lang: str) -> None:
     """Drops a cached preview Telegram no longer accepts."""
-    row = session.get(ItemPreview, (item_id, lang))
+    row = session.get(ItemPreview, (key, lang))
     if row is not None:
         session.delete(row)
         session.flush()

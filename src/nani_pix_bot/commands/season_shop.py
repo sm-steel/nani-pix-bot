@@ -177,14 +177,14 @@ async def _refuse(
 
 
 async def _send_preview(
-    context: ContextTypes.DEFAULT_TYPE, user_id: int, offer: _Offer, lang: str
+    context: ContextTypes.DEFAULT_TYPE, user: User, offer: _Offer, lang: str
 ) -> None:
     """Into the shopper's DM (its chat id is their user id), drawn on them."""
     if offer.resolved is not None:
-        await item_preview.send(context, user_id, offer.resolved, lang, user_id)
+        await item_preview.send(context, user.id, offer.resolved, lang, user)
         return
     picture = item_preview.Picture(CLUE_ICON_KEY, clue_token_icon.icon)
-    await item_preview.send_image(context, user_id, picture, lang)
+    await item_preview.send_image(context, user.id, picture, lang)
 
 
 async def _on_offer(
@@ -207,7 +207,7 @@ async def _on_offer(
         return
     logger.info("opened offer {index} of the season shop", index=index, season_id=season_id)
     await query.answer()
-    await _send_preview(context, query.from_user.id, offer, lang)
+    await _send_preview(context, query.from_user, offer, lang)
     await context.bot.send_message(
         chat_id=query.from_user.id, text=offer.text, reply_markup=offer.keyboard
     )

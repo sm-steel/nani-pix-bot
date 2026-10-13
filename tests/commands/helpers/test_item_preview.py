@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import replace
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
@@ -55,9 +56,17 @@ def _resolved(item_id: str) -> ResolvedItem:
     return resolved
 
 
+def _user(user_id: int = 1, username: str | None = "amy", full_name: str = "Amy Lee"):
+    user = MagicMock()
+    user.id, user.username, user.full_name = user_id, username, full_name
+    return user
+
+
 async def _send(context: MagicMock, item_id: str, lang: str = "EN", viewer: int = 1) -> None:
+    usernames = {7: "amy", 8: "bob"}
+    user = _user(viewer, usernames.get(viewer, "amy"))
     await item_preview.send(
-        cast(ContextTypes.DEFAULT_TYPE, context), 1, _resolved(item_id), lang, viewer
+        cast(ContextTypes.DEFAULT_TYPE, context), 1, _resolved(item_id), lang, user
     )
 
 
@@ -92,11 +101,11 @@ async def test_a_cached_file_id_is_reused_without_rendering(session_factory, mon
 
 
 async def test_a_text_preview_is_sent_as_text_and_not_cached(session_factory) -> None:
-    _player(session_factory, 1, "amy")
     context = _context(session_factory)
     await _send(context, FLAIR)
 
-    assert context.bot.send_message.await_args.kwargs["text"] == "@amy 🌸"  # not "@you"
+    # The group's own flair format: the full name, not "@you"
+    assert context.bot.send_message.await_args.kwargs["text"] == "Amy Lee 🌸"
     with session_factory() as session:
         assert previews.cached(session, FLAIR, "EN") is None
 
@@ -359,7 +368,7 @@ async def test_a_banner_is_drawn_on_the_viewers_card_every_time(
     banner = replace(frame, item=replace(frame.item, slot=CosmeticSlot.PROFILE_BANNER))
     context = _context(session_factory)
     for _ in range(2):
-        await item_preview.send(cast(ContextTypes.DEFAULT_TYPE, context), 7, banner, "EN", 7)
+        await item_preview.send(cast(ContextTypes.DEFAULT_TYPE, context), 7, banner, "EN", _user(7))
 
     assert len(seen) == 2  # never cached: their stats move on
     assert seen[0].card is not None
@@ -367,3 +376,37 @@ async def test_a_banner_is_drawn_on_the_viewers_card_every_time(
     assert seen[0].avatar == b"amy-avatar"
     with session_factory() as session:
         assert previews.cached(session, banner.item_id, "EN") is None
+
+
+async def test_the_badge_names_a_player_without_username_by_full_name(
+    session_factory, worker, avatar
+) -> None:
+    """As the real reveal does (players.badge_handle), not by the stored first name."""
+    user = _user(9, username=None, full_name="Bob Smith")
+    await item_preview.send(
+        cast(ContextTypes.DEFAULT_TYPE, _context(session_factory)), 9, _resolved(WIN), "EN", user
+    )
+    assert worker.await_args.args[-1].handle == "Bob Smith"
+
+
+async def test_a_slow_avatar_previews_with_initials(session_factory, worker, monkeypatch) -> None:
+    async def slow(*_args):
+        await asyncio.sleep(1)
+        return b"late"
+
+    monkeypatch.setattr(item_preview, "fetch_avatar", slow)
+    monkeypatch.setattr(item_preview, "AVATAR_TIMEOUT", 0.01)
+    await _send(_context(session_factory), WIN, viewer=7)
+
+    assert worker.await_args.args[-1].avatar is None
+
+
+async def test_a_viewer_that_cannot_be_drawn_says_the_preview_is_unavailable(
+    session_factory, monkeypatch
+) -> None:
+    monkeypatch.setattr(item_preview, "fetch_avatar", AsyncMock(side_effect=RuntimeError))
+    context = _context(session_factory)
+    await _send(context, WIN, viewer=7)
+
+    text = context.bot.send_message.await_args.kwargs["text"]
+    assert text == i18n.t("cosmetics.preview_unavailable", "EN")

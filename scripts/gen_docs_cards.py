@@ -255,7 +255,8 @@ def frame_stills() -> dict[str, bytes]:
 
 def _sample_viewer(lang: str) -> previews.Viewer:
     """The guide has no viewer: its badges read the localized "@you"."""
-    return previews.Viewer(player_id=0, name=i18n.t("cosmetics.preview.you", lang))
+    you = i18n.t("cosmetics.preview.you", lang)
+    return previews.Viewer(player_id=0, handle=you, full_name=you)
 
 
 def clip_jobs() -> dict[str, previews.ClipJob]:

@@ -6,7 +6,7 @@ from types import MappingProxyType
 import pytest
 from PIL import Image
 
-from nani_pix_bot.models.cosmetics import ItemPreview
+from nani_pix_bot.models.cosmetics import ITEM_ID_LENGTH, ItemPreview
 from nani_pix_bot.models.enums import CosmeticSlot, PixelAlgorithm, PreviewKind, RevealEffect
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import Item
@@ -16,7 +16,7 @@ from nani_pix_bot.services.reveal import pipeline
 from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
-AMY = previews.Viewer(player_id=7, name="@amy", avatar=b"avatar-bytes")
+AMY = previews.Viewer(7, handle="@amy", full_name="Amy Lee", avatar=b"avatar-bytes")
 
 
 def _resolved(key: str) -> registry.ResolvedItem:
@@ -75,7 +75,7 @@ def test_sample_stage_is_not_a_flat_colour() -> None:
 def test_flair_previews_as_text_with_the_emoji() -> None:
     preview = previews.render(_resolved("name_flair.blossom"), "EN", AMY)
     assert preview.kind is PreviewKind.TEXT
-    assert preview.text == "@amy 🌸"  # the viewer's own name, as flair.named shows it
+    assert preview.text == "Amy Lee 🌸"  # the full name, as flair.named shows it in the group
 
 
 def test_title_previews_as_text_in_quotes() -> None:
@@ -211,3 +211,14 @@ def test_real_pipeline_renders_a_transition_clip() -> None:
     preview = previews.render(_resolved("host_transition.iris"), "EN", AMY)
     assert preview.video is not None
     assert preview.video[4:8] == b"ftyp"  # an MP4
+
+
+def test_every_per_viewer_cache_key_fits_the_column() -> None:
+    """`<item id>@<player id>` must fit item_previews.item_id; a Telegram id is at most 20
+    characters with its sign."""
+    longest = max(
+        len(item_id)
+        for item_id, resolved in registry.all_items().items()
+        if resolved.item.slot is CosmeticSlot.WIN_EFFECT
+    )
+    assert longest + len("@") + 20 <= ITEM_ID_LENGTH

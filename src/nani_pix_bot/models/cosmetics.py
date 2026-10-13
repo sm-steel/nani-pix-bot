@@ -53,9 +53,10 @@ class EquippedItem(Base):
 
 
 class ItemPreview(Base):
-    """The Telegram file_id of an item's rendered preview (seasons spec §3), so
-    each preview is rendered and uploaded once per language (banners and win effects draw
-    text). Text previews aren't stored."""
+    """The Telegram file_id of an item's rendered preview (seasons spec §3), so it is
+    uploaded once per language. `item_id` holds previews.cache_key: the item id, or
+    `<item id>@<player id>` for a preview drawn on its viewer (a win effect). Text previews
+    and banners (drawn on a live profile card) aren't stored."""
 
     __tablename__ = "item_previews"
 

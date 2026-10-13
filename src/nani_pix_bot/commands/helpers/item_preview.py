@@ -8,13 +8,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from loguru import logger
-from telegram import Message
+from telegram import Message, User
 from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import reveal_worker
 from nani_pix_bot.jobs.avatars import fetch_avatar
+from nani_pix_bot.jobs.reveal import AVATAR_TIMEOUT
 from nani_pix_bot.models.enums import CosmeticSlot, PreviewKind
 from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services import i18n, players
@@ -24,30 +25,36 @@ from nani_pix_bot.services.reveal import pipeline
 
 @dataclass(frozen=True)
 class _Request:
-    """One preview to send: of `resolved`, into `chat_id`, for `viewer_id`, kept under
+    """One preview to send: of `resolved`, into `chat_id`, drawn on `viewer`, kept under
     `key` (previews.cache_key; None: never kept)."""
 
     chat_id: int
-    viewer_id: int
+    viewer: User
     resolved: ResolvedItem
     lang: str
     key: str | None
 
 
 async def _viewer(context: ContextTypes.DEFAULT_TYPE, request: _Request) -> previews.Viewer:
-    """The viewer as the preview shows them: their name, plus their avatar and own profile
-    card only for the slots that draw them (an avatar is a Telegram round-trip)."""
-    slot = request.resolved.item.slot
-    with session_scope(context.bot_data["session_factory"]) as session:
-        name = players.display_name(session, request.viewer_id)
-        card = None
-        if slot is CosmeticSlot.PROFILE_BANNER:
-            view = profile.build(session, request.viewer_id, request.lang)
-            card = profile.card(view, request.lang)
+    """The viewer as a game shows them (the same name sources as a win badge and a flair),
+    plus their avatar and own profile card only for the slots that draw them. The avatar is
+    capped like the reveal's (AVATAR_TIMEOUT): updates are handled one at a time."""
+    user, slot = request.viewer, request.resolved.item.slot
+    card = None
+    if slot is CosmeticSlot.PROFILE_BANNER:
+        with session_scope(context.bot_data["session_factory"]) as session:
+            card = profile.card(profile.build(session, user.id, request.lang), request.lang)
     avatar = None
     if slot in previews.AVATAR_SLOTS:
-        avatar = await fetch_avatar(context.bot, request.viewer_id)
-    return previews.Viewer(request.viewer_id, name, avatar, card)
+        try:
+            avatar = await asyncio.wait_for(fetch_avatar(context.bot, user.id), AVATAR_TIMEOUT)
+        except TimeoutError:
+            logger.warning(
+                "the avatar took over {seconds:g} s; previewing with initials",
+                seconds=AVATAR_TIMEOUT,
+            )
+    handle = players.badge_handle(user.username, user.full_name)
+    return previews.Viewer(user.id, handle, user.full_name, avatar, card)
 
 
 async def _render(context: ContextTypes.DEFAULT_TYPE, request: _Request) -> previews.Preview:
@@ -142,11 +149,11 @@ async def send(
     chat_id: int,
     resolved: ResolvedItem,
     lang: str,
-    viewer_id: int,
+    viewer: User,
 ) -> None:
-    """`resolved`'s preview into `chat_id`, drawn on `viewer_id` (#427)."""
-    key = previews.cache_key(resolved, viewer_id)
-    request = _Request(chat_id, viewer_id, resolved, lang, key)
+    """`resolved`'s preview into `chat_id`, drawn on `viewer` (#427)."""
+    key = previews.cache_key(resolved, viewer.id)
+    request = _Request(chat_id, viewer, resolved, lang, key)
     cached = _cached(context, request)
     logger.info(
         "previewed {item_id} ({source})",
