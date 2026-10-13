@@ -2,6 +2,7 @@ import httpx
 import pytest
 
 from nani_pix_bot.services.search import cache, tenrai
+from nani_pix_bot.services.search.tags import AnimeTag
 
 
 @pytest.fixture(autouse=True)
@@ -894,3 +895,21 @@ async def test_random_anime_keeps_tv_and_movie(kind: str) -> None:
 async def test_random_anime_rejects_other_types(kind: str | None) -> None:
     async with _random_client(type=kind) as client:
         assert await tenrai.random_anime(client) is None
+
+
+def test_a_search_result_carries_its_genres_and_themes() -> None:
+    raw = {
+        "mal_id": 4224,
+        "title": "Toradora!",
+        "genres": [{"mal_id": 22, "name": "Romance"}, {"mal_id": "x", "name": "Bad"}],
+        "themes": [{"mal_id": 23, "name": "School"}],
+    }
+    result = tenrai._parse_result(raw)
+    assert result is not None
+    assert result.tags == (AnimeTag("genre", "Romance", 22), AnimeTag("theme", "School", 23))
+
+
+def test_a_result_without_genre_fields_carries_no_tags() -> None:
+    result = tenrai._parse_result({"mal_id": 4224, "title": "Toradora!"})
+    assert result is not None
+    assert result.tags is None

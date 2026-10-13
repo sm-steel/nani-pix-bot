@@ -88,6 +88,11 @@ class TenraiResult:
     # random_anime()'s RANDOM_PICK_TYPES gate; defaults to None so every
     # existing keyword construction stays valid (same reasoning as `rating`).
     kind: str | None = None
+    # The entry's MAL genres and themes when the response carried them
+    # (search and by-id both do): the season gate reads them instead of
+    # fetching tags again (#426). None when the fields were absent, which
+    # is "unknown", not "no tags".
+    tags: tuple[AnimeTag, ...] | None = None
 
 
 @cache.cached()
@@ -139,6 +144,11 @@ def _parse_tags(raw: dict) -> list[AnimeTag]:
     entry = raw.get("data")
     if not isinstance(entry, dict):
         raise RuntimeError(f"Tenrai tags response has no data object: {raw!r}")
+    return _tags_of(entry)
+
+
+def _tags_of(entry: dict) -> list[AnimeTag]:
+    """An anime entry's genres and themes; malformed items are skipped."""
     tags = []
     for kind, field in (("genre", "genres"), ("theme", "themes")):
         tags.extend(
@@ -315,4 +325,5 @@ def _parse_result(raw: dict) -> TenraiResult | None:
         rating=parsing.optional_str(raw, "rating"),
         members=members,
         kind=parsing.optional_str(raw, "type"),
+        tags=tuple(_tags_of(raw)) if "genres" in raw or "themes" in raw else None,
     )
