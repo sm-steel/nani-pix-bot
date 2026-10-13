@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import MAX_ID, outsider_refusal
 from nani_pix_bot.commands.helpers import item_preview
-from nani_pix_bot.commands.helpers.dm_view import reply_with_view
+from nani_pix_bot.commands.helpers.dm_view import DmCommand, reply_with_view
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SeasonStatus
 from nani_pix_bot.models.season import SeasonSchedule
@@ -106,8 +106,11 @@ def view(session: Session, player_id: int, lang: str) -> tuple[str, InlineKeyboa
     return _menu(session, *open_run, player_id, lang)
 
 
+COMMAND = DmCommand("/seasonshop", "season_shop.dm_only", view)
+
+
 async def season_shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await reply_with_view(update, context, "/seasonshop", "season_shop.dm_only", view)
+    await reply_with_view(update, context, COMMAND)
 
 
 # --- taps ---

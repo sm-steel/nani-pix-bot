@@ -789,6 +789,7 @@
   "season_pass.view.coins": "🪙 Season Coins: {coins}",
   "season_pass.view.premium_on": "⭐ Premium",
   "season_pass.view.premium_off": "Premium: {price} 💠",
+  "season_pass.view.col_free": "Free",
   "season_pass.buy": "⭐ Buy Premium — {price} 💠",
   "season_pass.confirm": "Buy Premium for {price} 💠? You get every premium reward you've already reached, and the rest as you reach them.",
   "season_pass.confirm_yes": "Buy",
