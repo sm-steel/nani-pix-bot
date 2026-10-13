@@ -54,7 +54,7 @@ def _reveal_winner(session, user: User) -> RevealWinner:
     player with no username, plus their equipped win overlay."""
     return RevealWinner(
         user.id,
-        f"@{user.username}" if user.username else user.full_name,
+        players.badge_handle(user.username, user.full_name),
         inventory.look(session, user.id, CosmeticSlot.WIN_EFFECT),
     )
 

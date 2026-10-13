@@ -1,6 +1,9 @@
 """What an item looks like before you equip it (seasons spec §3): a line of text, an image
-or a short reveal clip, drawn by the same code that shows the item in a game. Images and
-clips are uploaded once; `item_previews` keeps their Telegram file_id, per language."""
+or a short reveal clip, drawn by the same code that shows the item in a game, on the
+viewer themselves (#427): their name with a flair, their avatar and name on a win badge,
+their own profile card under a banner. Images and clips are uploaded once; `item_previews`
+keeps their Telegram file_id per language under `cache_key` — per viewer where the viewer
+shows, never for a banner (their card's stats move on)."""
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -59,8 +62,33 @@ def sample_stage() -> bytes:
     return out.getvalue()
 
 
-def _you(lang: str) -> str:
-    return i18n.t("cosmetics.preview.you", lang)
+@dataclass(frozen=True)
+class Viewer:
+    """Who the preview is for, named as a game names them: `handle` on a win badge
+    (players.badge_handle), `full_name` before a flair (flair.named). `avatar` (None:
+    initials) and `card` (their profile card as /profile draws it) are only filled in for
+    the slots that show them."""
+
+    player_id: int
+    handle: str
+    full_name: str
+    avatar: bytes | None = None
+    card: ProfileCard | None = None
+
+
+# The slots whose preview shows the viewer's avatar.
+AVATAR_SLOTS = frozenset({CosmeticSlot.PROFILE_BANNER, CosmeticSlot.WIN_EFFECT})
+
+
+def cache_key(resolved: ResolvedItem, viewer_id: int) -> str | None:
+    """Where the uploaded preview is kept: per viewer for a win effect (their badge), not at
+    all for a banner (their live card), else once for everyone."""
+    slot = resolved.item.slot
+    if slot is CosmeticSlot.PROFILE_BANNER:
+        return None
+    if slot is CosmeticSlot.WIN_EFFECT:
+        return f"{resolved.item_id}@{viewer_id}"
+    return resolved.item_id
 
 
 @dataclass(frozen=True)
@@ -76,65 +104,62 @@ class ClipJob:
         return sample_stage(), DEFAULT_ALGORITHM, STAGE_WIDTHS, self.effect, self.badge
 
 
-def clip_job(resolved: ResolvedItem, lang: str) -> ClipJob | None:
+def clip_job(resolved: ResolvedItem, viewer: Viewer) -> ClipJob | None:
     """The clip a transition or win effect previews as; None for every other slot."""
     item = resolved.item
     if item.slot is CosmeticSlot.HOST_TRANSITION:
         return ClipJob(RevealEffect[item.look], None)
     if item.slot is CosmeticSlot.WIN_EFFECT:
-        return ClipJob(RevealEffect.IRIS, pipeline.Badge(None, _you(lang), overlay=item.look))
+        badge = pipeline.Badge(viewer.avatar, viewer.handle, overlay=item.look)
+        return ClipJob(RevealEffect.IRIS, badge)
     return None
 
 
-def _frame(resolved: ResolvedItem, _lang: str) -> bytes:
+def _frame(resolved: ResolvedItem, _lang: str, _viewer: Viewer) -> bytes:
     return frames.apply_frame(sample_stage(), resolved.item.look)
 
 
-def _banner(resolved: ResolvedItem, lang: str) -> bytes:
-    card = ProfileCard(
-        name=_you(lang),
-        title=None,
-        stamps=(),
-        stats=profile.stats(1, 1, lang),
-        seed=0,
+def _banner(resolved: ResolvedItem, lang: str, viewer: Viewer) -> bytes:
+    card = viewer.card or ProfileCard(
+        name=viewer.handle, title=None, stamps=(), stats=profile.stats(0, 0, lang), seed=0
     )
     background = looks.banner_path(resolved.run.run_id, resolved.item.look).read_bytes()
-    return render_profile_card(card, None, background)
+    return render_profile_card(card, viewer.avatar, background)
 
 
-_STILLS: Mapping[CosmeticSlot, Callable[[ResolvedItem, str], bytes]] = MappingProxyType(
+_STILLS: Mapping[CosmeticSlot, Callable[[ResolvedItem, str, Viewer], bytes]] = MappingProxyType(
     {CosmeticSlot.HOST_FRAME: _frame, CosmeticSlot.PROFILE_BANNER: _banner}
 )
 
 
-def _text(resolved: ResolvedItem, lang: str) -> str:
+def _text(resolved: ResolvedItem, lang: str, viewer: Viewer) -> str:
     item = resolved.item
     if item.slot is CosmeticSlot.TITLE:
         return i18n.t("cosmetics.preview.title", lang, title=item.name(lang))
     if item.slot is CosmeticSlot.GUESS_REACTION:
         return i18n.t("cosmetics.preview.reaction", lang, reaction=item.look)
-    return f"{_you(lang)} {item.look}"  # name flair, as flair.named shows it
+    return f"{viewer.full_name} {item.look}"  # name flair, as flair.named shows it
 
 
-def render(resolved: ResolvedItem, lang: str) -> Preview:
-    """The item's preview. Slow for a clip (a whole reveal render): callers run it off the
-    event loop."""
-    job = clip_job(resolved, lang)
+def render(resolved: ResolvedItem, lang: str, viewer: Viewer) -> Preview:
+    """The item's preview for `viewer`. Slow for a clip (a whole reveal render): callers run
+    it off the event loop."""
+    job = clip_job(resolved, viewer)
     if job is not None:
         return Preview(PreviewKind.VIDEO, video=pipeline.preview_clip(*job.args()))
     still = _STILLS.get(resolved.item.slot)
     if still is not None:
-        return Preview(PreviewKind.PHOTO, image=still(resolved, lang))
-    return Preview(PreviewKind.TEXT, text=_text(resolved, lang))
+        return Preview(PreviewKind.PHOTO, image=still(resolved, lang, viewer))
+    return Preview(PreviewKind.TEXT, text=_text(resolved, lang, viewer))
 
 
-def cached(session: Session, item_id: str, lang: str) -> ItemPreview | None:
-    return session.get(ItemPreview, (item_id, lang))
+def cached(session: Session, key: str, lang: str) -> ItemPreview | None:
+    return session.get(ItemPreview, (key, lang))
 
 
-def forget(session: Session, item_id: str, lang: str) -> None:
+def forget(session: Session, key: str, lang: str) -> None:
     """Drops a cached preview Telegram no longer accepts."""
-    row = session.get(ItemPreview, (item_id, lang))
+    row = session.get(ItemPreview, (key, lang))
     if row is not None:
         session.delete(row)
         session.flush()

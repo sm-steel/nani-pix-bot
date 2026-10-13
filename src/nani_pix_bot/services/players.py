@@ -159,6 +159,11 @@ def remember_first_name(player: Player, first_name: str | None) -> None:
         player.first_name = first_name[:USERNAME_LENGTH]
 
 
+def badge_handle(username: str | None, full_name: str) -> str:
+    """The name on a win badge: "@username", else the full name."""
+    return f"@{username}" if username else full_name
+
+
 def display_name(session: Session, telegram_user_id: int) -> str:
     """How a person is named in group-facing text: @username, else their
     first name, else their id."""
