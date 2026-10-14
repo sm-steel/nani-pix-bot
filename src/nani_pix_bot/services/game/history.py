@@ -42,19 +42,26 @@ class UnsolvedReason(StrEnum):
     EXHAUSTED = "exhausted"
     NO_VOTE = "no_vote"
     VOTE_FAILED = "vote_failed"
+    PASSED = "passed"  # the group gave up with /pass (#428)
     OTHER = "other"
+
+
+# Each cause's opening words, as force_unsolved()'s callers write them.
+_CAUSE_PREFIXES = (
+    ("2-day timeout", UnsolvedReason.TIMEOUT),
+    ("final stage exhausted", UnsolvedReason.EXHAUSTED),
+    ("vote closed", UnsolvedReason.VOTE_FAILED),
+    ("pass vote", UnsolvedReason.PASSED),
+)
 
 
 def unsolved_reason(cause: str) -> UnsolvedReason:
     if "nobody guessed" in cause:  # HARD MODE: no vote held (checked first: its prefix varies)
         return UnsolvedReason.NO_VOTE
-    if cause.startswith("2-day timeout"):
-        return UnsolvedReason.TIMEOUT
-    if cause.startswith("final stage exhausted"):
-        return UnsolvedReason.EXHAUSTED
-    if cause.startswith("vote closed"):
-        return UnsolvedReason.VOTE_FAILED
-    return UnsolvedReason.OTHER
+    return next(
+        (reason for prefix, reason in _CAUSE_PREFIXES if cause.startswith(prefix)),
+        UnsolvedReason.OTHER,
+    )
 
 
 class Involvement(StrEnum):

@@ -395,3 +395,12 @@ def test_games_played_counts_hosting_winning_and_guessing_once_per_game(session:
     )
     session.flush()
     assert history.games_played_counts(session) == {HOST: 2, ALICE: 1, BOB: 1}
+
+
+def test_a_game_given_up_by_pass_vote_reads_as_passed() -> None:
+    assert history.unsolved_reason("pass vote (3/3)") is history.UnsolvedReason.PASSED
+    # Hard mode with no guessers keeps its own reason, as for the timeout:
+    assert (
+        history.unsolved_reason("pass vote (3/3); nobody guessed, so no vote")
+        is history.UnsolvedReason.NO_VOTE
+    )

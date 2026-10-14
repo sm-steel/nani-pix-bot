@@ -744,13 +744,14 @@ arrived, so nothing is posted twice.
 
 **Status: Implemented.**
 
-A game ends unsolved one of two ways, handled identically:
+A game ends unsolved one of three ways, handled identically:
 
 - **Stage exhaustion**: the final stage's (`STAGE_5`) configured
   wrong-guess limit is reached — via a `/guess`, or via the inactivity
   auto-advance timer firing while already on `STAGE_5` (see
   "Inactivity" below; both go through the same `advance_stage()`).
 - **Timeout**: see below.
+- **Giving up**: enough players vote `/pass`, see "Giving up together" below.
 
 Either way, the bot reveals the original screenshot with the anime's
 title, sets `status → UNSOLVED` (stamping `ended_at`), and performs the same `original_image`
@@ -775,6 +776,39 @@ a timeout job on startup for any `Game` still `ACTIVE`, using its stored
 `scheduled_end_at` — a redeploy never silently loses or resets the clock.
 
 During quiet hours this clock is frozen and its post is held back — see "Quiet hours" below.
+
+## Giving up together (`/pass`)
+
+**Status: Implemented** (issue #428).
+
+A screenshot nobody recognizes shouldn't have to sit for two days. In the
+game topic, during an `ACTIVE` game, any group member may send `/pass` to
+vote to give up; sending it again in the same round withdraws the vote.
+The game's own host can't vote (they know the answer), and the bot never
+counts. `SETUP`, `VOTING` or no game at all gets a short refusal; outside
+the game topic `/pass` does nothing.
+
+- **Per round.** A vote belongs to the round it was cast in — the
+  PixelStage (1–5) or the HARD MODE turn (1–2), `win_facts.stage_number` —
+  so a stage advance (a clearer image is new information) starts the count
+  again. Rows stay in `pass_votes` (unique per game, player and round); the
+  tally only counts the current round.
+- **Threshold**: `needed = max(3, ⌈active / 2⌉)` (`PASS_MIN_VOTES`,
+  `PASS_VOTE_SHARE`), where `active` is the distinct players who made a
+  `/guess` or hosted a game that went live in the last 24 hours
+  (`PASS_ACTIVE_WINDOW`), minus this game's host and the bot. Recomputed on
+  every vote: 4 active need 3 votes, 8 need 4, 12 need 6. Voters needn't be
+  among the active ones; the count only sizes the bar.
+- **The ending** is the timeout's own, through the shared
+  `game_timeout.end_unsolved` with cause `pass vote (V/N)` (/history: "the
+  group gave up by vote"): the reveal, the bounty refund, the turn opened
+  if unassigned, the overthrow roll. In HARD MODE it goes through
+  `end_hard_mode_without_winner`, so a game with guessers opens the winner
+  vote as usual. Only a cast vote can end the round, never a withdrawal
+  (the bar can drop as the 24h window moves). The game's 2-day timeout job
+  is cancelled once the ending has gone through, so a failed ending keeps
+  its backstop; a later ending of any kind is a no-op, since
+  `end_unsolved` only acts on an `ACTIVE` game.
 
 ## Inactivity
 

@@ -31,6 +31,7 @@ from nani_pix_bot.models.game_guess import GameGuess as GameGuess
 from nani_pix_bot.models.game_vote import GameVote as GameVote
 from nani_pix_bot.models.mal_link import MalCredentials as MalCredentials
 from nani_pix_bot.models.mal_link import PendingMalLink as PendingMalLink
+from nani_pix_bot.models.pass_vote import PassVote as PassVote
 from nani_pix_bot.models.period import PeriodResult as PeriodResult
 from nani_pix_bot.models.period import PeriodState as PeriodState
 from nani_pix_bot.models.player import Player as Player

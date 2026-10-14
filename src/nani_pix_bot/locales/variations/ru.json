@@ -100,5 +100,6 @@
   "bounty.added": [
     "💰 {name} подкидывает {amount} 💠 в награду — в котле уже {pot} 💠.",
     "💰 {name} вносит {amount} 💠 в котёл — на кону {pot} 💠."
-  ]
+  ],
+  "pass.voted": ["🏳 {name} больше не может — {votes}/{needed}", "🏳 {name} выбрасывает белый флаг — {votes}/{needed}"]
 }
