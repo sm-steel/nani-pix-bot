@@ -1966,7 +1966,10 @@ the Season Shop) are drawn on the viewer: a flair after their own name, a
 win effect's badge with their avatar and name, a banner behind their real
 profile card. Uploaded previews are kept by file_id per language: once for
 everyone (frames, transitions), per viewer for a win effect, never for a
-banner (the card's stats move on). `/profile` (the game topic, or DM for members) shows
+banner (the card's stats move on). Frames and transitions are shown on a
+season-neutral sample anime screenshot (`assets/sample_screenshot.jpg`,
+#424); a frame on its stage 3 picture, pixelated and in the item's season
+style, as a real stage post. `/profile` (the game topic, or DM for members) shows
 the profile card. Its ◀ ▶ and 👥 Players list walk only players who
 played a finished game (hosted, won or guessed in it, as in `/history`'s
 "I played"), most games first, then by name; the bot never appears, and
