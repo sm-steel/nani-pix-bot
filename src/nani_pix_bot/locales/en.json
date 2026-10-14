@@ -676,6 +676,7 @@
   "history.detail.unsolved.exhausted": "every stage was used up",
   "history.detail.unsolved.no_vote": "HARD MODE, and nobody guessed",
   "history.detail.unsolved.vote_failed": "the vote picked no winner",
+  "history.detail.unsolved.passed": "the group gave up by vote",
   "history.detail.unsolved.other": "ended without a winner",
   "history.detail.guesses": "Guesses: {count}",
   "history.detail.no_log": "No guess log for this game — guesses weren't recorded yet back then.",
