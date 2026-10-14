@@ -37,6 +37,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
-    op.drop_index(op.f("ix_pass_votes_game_id"), table_name="pass_votes")
+    """Downgrade schema. Just drop_table: dropping the game_id index first fails on MariaDB
+    (error 1553, the foreign key still needs it; see c8e0a2b4d6f1)."""
     op.drop_table("pass_votes")
