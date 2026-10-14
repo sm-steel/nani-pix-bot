@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import MAX_ID, outsider_refusal
 from nani_pix_bot.commands.helpers import item_preview
-from nani_pix_bot.commands.helpers.dm_view import reply_with_view
+from nani_pix_bot.commands.helpers.dm_view import DmCommand, reply_with_view
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SeasonStatus
 from nani_pix_bot.models.season import SeasonSchedule
@@ -106,8 +106,11 @@ def view(session: Session, player_id: int, lang: str) -> tuple[str, InlineKeyboa
     return _menu(session, *open_run, player_id, lang)
 
 
+COMMAND = DmCommand("/seasonshop", "season_shop.dm_only", view)
+
+
 async def season_shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await reply_with_view(update, context, "/seasonshop", "season_shop.dm_only", view)
+    await reply_with_view(update, context, COMMAND)
 
 
 # --- taps ---
@@ -174,13 +177,14 @@ async def _refuse(
 
 
 async def _send_preview(
-    context: ContextTypes.DEFAULT_TYPE, chat_id: int, offer: _Offer, lang: str
+    context: ContextTypes.DEFAULT_TYPE, user: User, offer: _Offer, lang: str
 ) -> None:
+    """Into the shopper's DM (its chat id is their user id), drawn on them."""
     if offer.resolved is not None:
-        await item_preview.send(context, chat_id, offer.resolved, lang)
+        await item_preview.send(context, user.id, offer.resolved, lang, user)
         return
     picture = item_preview.Picture(CLUE_ICON_KEY, clue_token_icon.icon)
-    await item_preview.send_image(context, chat_id, picture, lang)
+    await item_preview.send_image(context, user.id, picture, lang)
 
 
 async def _on_offer(
@@ -203,7 +207,7 @@ async def _on_offer(
         return
     logger.info("opened offer {index} of the season shop", index=index, season_id=season_id)
     await query.answer()
-    await _send_preview(context, query.from_user.id, offer, lang)
+    await _send_preview(context, query.from_user, offer, lang)
     await context.bot.send_message(
         chat_id=query.from_user.id, text=offer.text, reply_markup=offer.keyboard
     )

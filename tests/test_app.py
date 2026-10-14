@@ -83,6 +83,7 @@ def test_build_application_registers_every_command() -> None:
         "sharpen",
         "correct",
         "skip",
+        "pass",
         "stop",
         "leaderboard",
         "language",

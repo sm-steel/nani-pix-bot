@@ -12,7 +12,6 @@ from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.commands.profile import browse, card
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, players, settings
-from nani_pix_bot.services.cosmetics import profile
 
 
 def _target_id(session: Session, user: User, args: list[str]) -> int | None:
@@ -60,7 +59,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         else:
             view, headline = card.load(session, target_id, lang)
             viewing = browse.Viewing(user.id, target_id, private=not in_topic)
-            keyboard = browse.card_keyboard(profile.roster(session), viewing, lang)
+            keyboard = browse.card_keyboard(browse.roster(session, context, user.id), viewing, lang)
     if target_id is None:
         await message.reply_text(unknown)
         return

@@ -143,6 +143,7 @@ async def test_manual_entry_without_an_image_offers_every_screenshot_source(
         "screenshot_source:tenrai",
         "screenshot_source:tmdb",
         "screenshot:upload",
+        "repick:anime",
     ]
     with session_factory() as session:
         fetched = session.query(Game).filter_by(starter_id=1).one()

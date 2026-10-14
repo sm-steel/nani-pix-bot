@@ -152,7 +152,7 @@ If that lookup is slow or fails, the bot skips this step. You can still add name
 yourself from the preview.
 
 <TelegramChat label="Example: ticking extra accepted names">
-  <TgMessage from="nani-pix-bot" buttons={[['☑ If You Listen Closely'], ['☐ Шёпот сердца'], ['☑ Mimi o Sumaseba'], ['⏭ Skip', '➕ Add selected (2)']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['☑ If You Listen Closely'], ['☐ Шёпот сердца'], ['☑ Mimi o Sumaseba'], ['⏭ Skip', '➕ Add selected (2)'], ['↩ Pick a different anime']]}>
     🔎 I found more names for this anime on other sites. Tick the ones that should count as a correct guess too:
   </TgMessage>
   <TgMessage from="nani-pix-bot">➕ More accepted names added: 2.</TgMessage>
@@ -166,7 +166,7 @@ a number and fewer than 5 letters once the numbers are removed, like *91 Days* o
 of numbers, like *22/7*, is never asked about: its numbers always count.
 
 <TelegramChat label="Example: the bot asks whether the numbers count">
-  <TgMessage from="nani-pix-bot" buttons={[['❌ No, ignore them', '✅ Yes, they count']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['❌ No, ignore them', '✅ Yes, they count'], ['↩ Pick a different anime']]}>
     🔢 The title “91 Days” is mostly numbers. Do guessers have to get the numbers right too?
 
     &nbsp;
@@ -197,13 +197,19 @@ still change it.
    the site you identified the anime on, since that one can't be the wrong anime.
 5. Tap a number to pick that screenshot.
 
+Picked the wrong anime altogether? **↩ Pick a different anime** sits under the
+source menu, the gallery, the extra-names question and the numbers question. It
+forgets the anime (and a screenshot picked for it; a photo you uploaded stays) and
+takes you back to choosing how to find one, so there's no need to `/stop` and start
+over.
+
 <TelegramChat label="Example: picking a screenshot from Shikimori after identifying the anime on Tenrai">
-  <TgMessage from="nani-pix-bot" buttons={[['Tenrai'], ['Shikimori'], ['TMDB'], ['📤 Upload my own instead']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['Tenrai'], ['Shikimori'], ['TMDB'], ['📤 Upload my own instead'], ['↩ Pick a different anime']]}>
     Where should I get a screenshot from?
   </TgMessage>
   <TgMessage from="nani-pix-bot">Here are some screenshots — pick one below.</TgMessage>
   <TgMessage from="nani-pix-bot" image={original}>1</TgMessage>
-  <TgMessage from="nani-pix-bot" buttons={[['1', '2', '3', '4', '5'], ['More ▶️'], ['❌ Wrong anime? Search again'], ['📤 Upload my own instead']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['1', '2', '3', '4', '5'], ['More ▶️'], ['❌ Wrong anime? Search again'], ['📤 Upload my own instead'], ['↩ Pick a different anime']]}>
     Which one do you want to use?
   </TgMessage>
 </TelegramChat>
@@ -214,7 +220,7 @@ then a new album of five and new buttons arrive:
 <TelegramChat label="Example: after tapping More ▶️ (the picture stands for an album of five)">
   <TgMessage from="nani-pix-bot">Screenshots 6–10 of 23 — pick one below.</TgMessage>
   <TgMessage from="nani-pix-bot" image={original}>6</TgMessage>
-  <TgMessage from="nani-pix-bot" buttons={[['6', '7', '8', '9', '10'], ['◀️ Back', 'More ▶️'], ['❌ Wrong anime? Search again'], ['📤 Upload my own instead']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['6', '7', '8', '9', '10'], ['◀️ Back', 'More ▶️'], ['❌ Wrong anime? Search again'], ['📤 Upload my own instead'], ['↩ Pick a different anime']]}>
     Which one do you want to use?
   </TgMessage>
 </TelegramChat>
@@ -224,7 +230,7 @@ with that site marked ⚠️. It stays tappable, since outages are often brief. 
 can try another site, type a different search, or upload your own screenshot.
 
 <TelegramChat label="Example: a screenshot site that isn't responding">
-  <TgMessage from="nani-pix-bot" buttons={[['⚠️ Tenrai'], ['Shikimori'], ['TMDB'], ['📤 Upload my own instead']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['⚠️ Tenrai'], ['Shikimori'], ['TMDB'], ['📤 Upload my own instead'], ['↩ Pick a different anime']]}>
     ⚠️ Tenrai isn't responding right now. Pick another source below, or send me your own screenshot.
   </TgMessage>
 </TelegramChat>

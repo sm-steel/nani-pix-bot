@@ -1790,3 +1790,18 @@ async def test_hard_mode_inactivity_unsolved_posts_the_reveal_pair(
     kwargs = post_reveal_pair.await_args.kwargs
     assert kwargs["target"] == RevealTarget(game_id, None)
     assert kwargs["photos"] == (b"hm-image-a", b"hm-image-b")
+
+
+async def test_end_unsolved_twice_ends_the_game_only_once(session_factory) -> None:
+    game_id = _active_game(session_factory)
+    context = _make_job_context(session_factory, game_id=game_id)
+
+    first = await timeout_module.end_unsolved(
+        cast(ContextTypes.DEFAULT_TYPE, context), game_id, timeout_module.TIMEOUT_ENDING
+    )
+    second = await timeout_module.end_unsolved(
+        cast(ContextTypes.DEFAULT_TYPE, context), game_id, timeout_module.TIMEOUT_ENDING
+    )
+
+    assert (first, second) == (True, False)
+    context.bot.send_photo.assert_awaited_once()

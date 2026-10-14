@@ -54,6 +54,9 @@ stateDiagram-v2
         PickingScreenshot --> PickingScreenshot: provider down / nothing found\n— back to the source menu\n(see "When a provider fails")
         PickingScreenshot --> AwaitingPhotoChange: tap "Upload my own instead"
         Confirming --> PickingMethod: tap "Re-search title"\n(API-sourced screenshot cleared;\na genuine upload is kept)
+        PickingScreenshot --> PickingMethod: tap "Pick a different anime"\n(same clearing as "Re-search title")
+        PickingAliases --> PickingMethod: same
+        AskingNumbers --> PickingMethod: same
         Confirming --> AwaitingPhotoChange: tap "Change image"\n(genuine upload,\nor "Upload a new photo" chosen)
         Confirming --> PickingScreenshot: tap "Change image" ->\n"Pick a different screenshot"\n(API-sourced screenshot only)
         AwaitingPhotoChange --> Confirming: new photo sent
@@ -372,6 +375,16 @@ before it goes live:
   gallery from its already-resolved id — "Wrong anime? Search again" is
   always offered from there too, as an escape hatch to a different
   provider entirely).
+- **Pick a different anime** (`repick:anime`) sits on every screen
+  between identification and the preview: the screenshot source menu,
+  the gallery, the extra-names (aliases) question and the numbers
+  question. From wherever the starter is, it does what **Re-search
+  title** below does, so a wrong pick no longer needs `/stop` and a new
+  `/newgame` (issue #429; game #148 prompted it). Both forget the
+  identification on the spot (`restart_identification`), so a background
+  alias search still running for the old anime is discarded as stale.
+  Tapped from an old message once setup is already back at the methods,
+  it only drops that message's buttons.
 - **Re-search title** — back to the method-selection keyboard. A
   genuine upload keeps its screenshot regardless. An API-picked
   screenshot is cleared instead, along with the provider id that
@@ -731,13 +744,14 @@ arrived, so nothing is posted twice.
 
 **Status: Implemented.**
 
-A game ends unsolved one of two ways, handled identically:
+A game ends unsolved one of three ways, handled identically:
 
 - **Stage exhaustion**: the final stage's (`STAGE_5`) configured
   wrong-guess limit is reached — via a `/guess`, or via the inactivity
   auto-advance timer firing while already on `STAGE_5` (see
   "Inactivity" below; both go through the same `advance_stage()`).
 - **Timeout**: see below.
+- **Giving up**: enough players vote `/pass`, see "Giving up together" below.
 
 Either way, the bot reveals the original screenshot with the anime's
 title, sets `status → UNSOLVED` (stamping `ended_at`), and performs the same `original_image`
@@ -762,6 +776,39 @@ a timeout job on startup for any `Game` still `ACTIVE`, using its stored
 `scheduled_end_at` — a redeploy never silently loses or resets the clock.
 
 During quiet hours this clock is frozen and its post is held back — see "Quiet hours" below.
+
+## Giving up together (`/pass`)
+
+**Status: Implemented** (issue #428).
+
+A screenshot nobody recognizes shouldn't have to sit for two days. In the
+game topic, during an `ACTIVE` game, any group member may send `/pass` to
+vote to give up; sending it again in the same round withdraws the vote.
+The game's own host can't vote (they know the answer), and the bot never
+counts. `SETUP`, `VOTING` or no game at all gets a short refusal; outside
+the game topic `/pass` does nothing.
+
+- **Per round.** A vote belongs to the round it was cast in — the
+  PixelStage (1–5) or the HARD MODE turn (1–2), `win_facts.stage_number` —
+  so a stage advance (a clearer image is new information) starts the count
+  again. Rows stay in `pass_votes` (unique per game, player and round); the
+  tally only counts the current round.
+- **Threshold**: `needed = max(3, ⌈active / 2⌉)` (`PASS_MIN_VOTES`,
+  `PASS_VOTE_SHARE`), where `active` is the distinct players who made a
+  `/guess` or hosted a game that went live in the last 24 hours
+  (`PASS_ACTIVE_WINDOW`), minus this game's host and the bot. Recomputed on
+  every vote: 4 active need 3 votes, 8 need 4, 12 need 6. Voters needn't be
+  among the active ones; the count only sizes the bar.
+- **The ending** is the timeout's own, through the shared
+  `game_timeout.end_unsolved` with cause `pass vote (V/N)` (/history: "the
+  group gave up by vote"): the reveal, the bounty refund, the turn opened
+  if unassigned, the overthrow roll. In HARD MODE it goes through
+  `end_hard_mode_without_winner`, so a game with guessers opens the winner
+  vote as usual. Only a cast vote can end the round, never a withdrawal
+  (the bar can drop as the 24h window moves). The game's 2-day timeout job
+  is cancelled once the ending has gone through, so a failed ending keeps
+  its backstop; a later ending of any kind is a no-op, since
+  `end_unsolved` only acts on an `ACTIVE` game.
 
 ## Inactivity
 
@@ -1815,9 +1862,12 @@ refused when already bought, unaffordable, or when the run has no premium
 rewards. It grants every premium reward already reached at once; later ones
 as they are reached.
 
-**`/seasonpass`** (DM, group members only) shows XP, tier n/N, XP to the next
-tier, the 🪙 balance, the Premium state and every tier (free ✅/▫️,
-premium ✅/🔒 ⭐).
+**`/seasonpass`** (DM, group members only) is a rich message: a heading,
+XP, tier n/N, XP to the next tier, the 🪙 balance and the Premium price
+while it isn't owned, then every tier as a table `| | XP | Free | ⭐ Premium |`.
+Only the first cell carries a mark (✅ reached, ⬜ not yet); premium cells
+are just the reward, and the Premium column header gets a 🔒 until Premium
+is bought. The objectives follow under their own heading.
 
 **Clue tokens** are a consumable (`consumables`, a count per player and
 kind). While a player holds one, their next clue purchase in the shop uses
@@ -1907,11 +1957,15 @@ plural noun phrase slotted into "This season only {rule} can be played."
 - **Tags** come from the MAL id: Tenrai first (matched by MAL tag id),
   Shikimori as the fallback (matched by kind + English name, since some of
   its ids differ from MAL's). Fetched when a result is staged during DM
-  setup and stored in `games.anime_tags`.
-- **Checked twice**: when a catalogue result is picked, and again,
-  authoritatively, at Confirm, which every identification method passes
-  through. Manual and TMDB entries resolve a MAL id by an exact
-  (normalized) Tenrai title match; if none is found the game is refused.
+  setup and stored in `games.anime_tags`. A Tenrai result (search, by-id,
+  and so every My MAL List pick) already carries its genres and themes:
+  `stage_result` stores them, so its check makes no extra request.
+- **Checked twice**: as soon as the anime is known (a catalogue result
+  pick, a My MAL List pick, or the end of a manual entry, before the
+  screenshot step), and again, authoritatively, at Confirm, which every
+  identification method passes through. Manual and TMDB entries resolve a
+  MAL id by an exact (normalized) Tenrai title match; if none is found the
+  game is refused.
 - **Three outcomes.** Passed. **Refused**: off-theme, or unidentifiable (no
   MAL id could be found) — the player is told the rule and picks again. A
   refusal also clears a catalogue screenshot and resets setup to the method
@@ -1941,8 +1995,20 @@ purchase (`ItemSource.SHOP`, see "Season Shop"). A run's item is either
 shop-only or pass-only, never both.
 
 `/cosmetics` (DM) lists the slots, then a slot's owned items; tapping an
-item sends its preview with **Equip** / **Unequip**. `/profile` (the game topic, or DM for members) shows
-the profile card. A season title is picked with `/title`, not in
+item sends its preview with **Equip** / **Unequip**. Previews (here and in
+the Season Shop) are drawn on the viewer: a flair after their own name, a
+win effect's badge with their avatar and name, a banner behind their real
+profile card. Uploaded previews are kept by file_id per language: once for
+everyone (frames, transitions), per viewer for a win effect, never for a
+banner (the card's stats move on). Frames and transitions are shown on a
+season-neutral sample anime screenshot (`assets/sample_screenshot.jpg`,
+#424); a frame on its stage 3 picture, pixelated and in the item's season
+style, as a real stage post. `/profile` (the game topic, or DM for members) shows
+the profile card. Its ◀ ▶ and 👥 Players list walk only players who
+played a finished game (hosted, won or guessed in it, as in `/history`'s
+"I played"), most games first, then by name; the bot never appears, and
+the viewer is always included (last, before their first game).
+`/profile @someone` still opens anyone's card. A season title is picked with `/title`, not in
 `/cosmetics`, which only shows a hint for that slot.
 
 | Slot | `look` | Where it shows |

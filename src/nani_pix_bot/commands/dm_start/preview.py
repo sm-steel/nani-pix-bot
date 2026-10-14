@@ -48,8 +48,8 @@ from nani_pix_bot.commands.dm_start.keyboards import (
 from nani_pix_bot.commands.dm_start.screenshots import (
     NO_SOURCE_PROMPT_KEY,
     ScreenshotFailure,
-    clear_screenshot_selection,
     reply_with_source_menu,
+    restart_identification,
     send_fallback_notice,
     send_gallery_resume,
     source_menu_for,
@@ -243,6 +243,19 @@ async def _handle_gated_confirm(
     methods; "unavailable" says so in a message of its own and leaves the
     preview as it is, so Confirm can simply be tapped again."""
     await query.answer()
+    with session_scope(session_factory) as session:
+        setup_game = game_service.get_setup_game_for_starter(session, user.id)
+        step = setup_game.setup_step if setup_game is not None else None
+    if setup_game is not None and step != SetupStep.CONFIRMING:
+        # The setup moved on without this message (e.g. an older "Pick a
+        # different anime" was tapped, #429): its Confirm would post a
+        # game with no answer, or none at all.
+        logger.warning(
+            "tapped Confirm on an old preview (setup step {step}) — dropping its buttons",
+            step=step,
+        )
+        await query.edit_message_reply_markup(reply_markup=None)
+        return
     verdict = await season_gate.run_gate(context, session_factory, user.id)
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
@@ -391,12 +404,9 @@ async def _handle_change_image_pick_screenshot_tap(
 def _preview_research(tap: _Tap) -> _Edit:
     game, lang = tap.game, tap.lang
     logger.info("tapped Re-search title on the preview", game_id=game.id)
-    # An API-sourced screenshot is cleared here (see
-    # clear_screenshot_selection's docstring) since re-searching might
-    # pick a different anime entirely — a genuine upload is left alone,
-    # unchanged from before ticket 9.
-    clear_screenshot_selection(game)
-    game.setup_step = SetupStep.PICKING_METHOD
+    # Re-searching might pick a different anime entirely: its API
+    # screenshot goes, a genuine upload stays (restart_identification).
+    restart_identification(game)
     return _Edit(
         i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
         _method_keyboard(tap.context, lang),

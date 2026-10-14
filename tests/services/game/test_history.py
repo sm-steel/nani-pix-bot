@@ -376,3 +376,31 @@ def test_a_game_with_no_extras_has_empty_record_parts(session: Session) -> None:
     assert detail is not None
     assert (detail.clues, detail.bounty, detail.stages, detail.votes) == ([], [], [], [])
     assert detail.distinct_guessers is None
+
+
+def test_games_played_counts_hosting_winning_and_guessing_once_per_game(session: Session) -> None:
+    _players(session)
+    first = _game(session, GameStatus.WON, ended=T0, winner_id=ALICE)
+    second = _game(session, GameStatus.UNSOLVED, ended=T0)
+    running = _game(session, GameStatus.ACTIVE, ended=None)
+    session.add_all(
+        [
+            # Alice won `first` after guessing in it: still one game.
+            GameGuess(game_id=first.id, player_id=ALICE, text="frieren", stage=1),
+            GameGuess(game_id=second.id, player_id=BOB, text="naruto", stage=1),
+            GameGuess(game_id=second.id, player_id=BOB, text="bleach", stage=2),
+            # A running game doesn't count yet.
+            GameGuess(game_id=running.id, player_id=CAROL, text="x", stage=1),
+        ]
+    )
+    session.flush()
+    assert history.games_played_counts(session) == {HOST: 2, ALICE: 1, BOB: 1}
+
+
+def test_a_game_given_up_by_pass_vote_reads_as_passed() -> None:
+    assert history.unsolved_reason("pass vote (3/3)") is history.UnsolvedReason.PASSED
+    # Hard mode with no guessers keeps its own reason, as for the timeout:
+    assert (
+        history.unsolved_reason("pass vote (3/3); nobody guessed, so no vote")
+        is history.UnsolvedReason.NO_VOTE
+    )

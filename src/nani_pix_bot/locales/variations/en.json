@@ -100,5 +100,6 @@
   "bounty.added": [
     "💰 {name} tops up the bounty by {amount} 💠 — the pot sits at {pot} 💠.",
     "💰 {name} throws {amount} 💠 into the pot — {pot} 💠 up for grabs."
-  ]
+  ],
+  "pass.voted": ["🏳 {name} has had enough — {votes}/{needed} to give up", "🏳 {name} throws in the towel — {votes}/{needed}"]
 }

@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import exists, func, or_, select, union
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.clue_purchase import CluePurchase
@@ -42,19 +42,26 @@ class UnsolvedReason(StrEnum):
     EXHAUSTED = "exhausted"
     NO_VOTE = "no_vote"
     VOTE_FAILED = "vote_failed"
+    PASSED = "passed"  # the group gave up with /pass (#428)
     OTHER = "other"
+
+
+# Each cause's opening words, as force_unsolved()'s callers write them.
+_CAUSE_PREFIXES = (
+    ("2-day timeout", UnsolvedReason.TIMEOUT),
+    ("final stage exhausted", UnsolvedReason.EXHAUSTED),
+    ("vote closed", UnsolvedReason.VOTE_FAILED),
+    ("pass vote", UnsolvedReason.PASSED),
+)
 
 
 def unsolved_reason(cause: str) -> UnsolvedReason:
     if "nobody guessed" in cause:  # HARD MODE: no vote held (checked first: its prefix varies)
         return UnsolvedReason.NO_VOTE
-    if cause.startswith("2-day timeout"):
-        return UnsolvedReason.TIMEOUT
-    if cause.startswith("final stage exhausted"):
-        return UnsolvedReason.EXHAUSTED
-    if cause.startswith("vote closed"):
-        return UnsolvedReason.VOTE_FAILED
-    return UnsolvedReason.OTHER
+    return next(
+        (reason for prefix, reason in _CAUSE_PREFIXES if cause.startswith(prefix)),
+        UnsolvedReason.OTHER,
+    )
 
 
 class Involvement(StrEnum):
@@ -130,6 +137,19 @@ def finished_games(
 def count_finished(session: Session, scope: Scope = EVERY_GAME) -> int:
     stmt = select(func.count()).select_from(_finished(scope).subquery())
     return int(session.scalar(stmt) or 0)
+
+
+def games_played_counts(session: Session) -> dict[int, int]:
+    """How many finished games each player played, in the PLAYED filter's
+    sense (hosted, won or guessed in it), each game counted once per player."""
+    finished = Game.status.in_(FINISHED)
+    involved = union(
+        select(Game.starter_id.label("player_id"), Game.id.label("game_id")).where(finished),
+        select(Game.winner_id, Game.id).where(finished, Game.winner_id.is_not(None)),
+        select(GameGuess.player_id, GameGuess.game_id).join(Game).where(finished),
+    ).subquery()
+    stmt = select(involved.c.player_id, func.count()).group_by(involved.c.player_id)
+    return dict(session.execute(stmt).tuples().all())
 
 
 @dataclass(frozen=True)

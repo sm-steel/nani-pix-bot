@@ -15,8 +15,16 @@ from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import RewardKind, SeasonRun
 from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import catalogue, names, titles
-from nani_pix_bot.services.cards import StatEntry, season_background, season_stamp
+from nani_pix_bot.services.cards import (
+    BadgeEntry,
+    ProfileCard,
+    StampEntry,
+    StatEntry,
+    season_background,
+    season_stamp,
+)
 from nani_pix_bot.services.cosmetics import inventory, looks, showcase
+from nani_pix_bot.services.game import history
 
 
 @dataclass(frozen=True)
@@ -45,6 +53,18 @@ class ProfileView:
     cosmetics_owned: int
 
 
+def card(view: ProfileView, lang: str) -> ProfileCard:
+    """The card /profile draws for `view` (and a banner preview puts a new banner behind)."""
+    return ProfileCard(
+        name=view.name,
+        title=view.title,
+        stamps=tuple(StampEntry(s.label, s.gold, s.art) for s in view.stamps),
+        stats=stats(view.seasons_played, view.cosmetics_owned, lang),
+        seed=view.player_id,
+        badges=tuple(BadgeEntry(b.label, b.rarity) for b in view.badges),
+    )
+
+
 def stats(seasons: int, owned: int, lang: str) -> tuple[StatEntry, ...]:
     """The profile card's stats line: seasons played, cosmetics owned."""
     return (
@@ -53,22 +73,31 @@ def stats(seasons: int, owned: int, lang: str) -> tuple[StatEntry, ...]:
     )
 
 
-def roster(session: Session) -> list[int]:
-    """Every known player, in the order the /profile list and ◀ ▶ walk them:
-    by display name (no "@", case ignored), then by id."""
-    ids = session.scalars(select(Player.telegram_user_id))
+def roster(session: Session, *, viewer_id: int, bot_id: int) -> list[int]:
+    """The players the /profile list and ◀ ▶ walk: everyone who played a
+    finished game (hosted, won or guessed in it), most games first, then by
+    display name (no "@", case ignored), then by id. The bot never shows,
+    lurkers don't either, and the viewer is always in it (last, if they
+    haven't played yet) so their own card is reachable."""
+    played = history.games_played_counts(session)
+    played.pop(bot_id, None)
 
-    def key(player_id: int) -> tuple[str, int]:
-        return players.display_name(session, player_id).lstrip("@").casefold(), player_id
+    def key(player_id: int) -> tuple[int, str, int]:
+        name = players.display_name(session, player_id).lstrip("@").casefold()
+        return -played[player_id], name, player_id
 
-    return sorted(ids, key=key)
+    order = sorted(played, key=key)
+    if viewer_id not in played and viewer_id != bot_id:
+        order.append(viewer_id)
+    return order
 
 
 def neighbour(order: list[int], current: int, step: int) -> int:
-    """The player `step` places from `current` in `order`, wrapping at both ends;
-    the first one when `current` is no longer listed."""
+    """The player `step` places from `current` in `order`, wrapping at both ends.
+    From someone not listed (a non-player's card), ▶ leads to the first
+    player and ◀ to the last."""
     if current not in order:
-        return order[0]
+        return order[0] if step > 0 else order[-1]
     return order[(order.index(current) + step) % len(order)]
 
 

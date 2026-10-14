@@ -1071,7 +1071,10 @@ src/nani_pix_bot/
 assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's key
                    # visual, stamps and banners) and backgrounds/
                    # <unlock/rarity | podium/period>/n.png, optional card
-                   # backgrounds (prompts: docs/card-backgrounds.md)
+                   # backgrounds (prompts: docs/card-backgrounds.md),
+                   # sample_screenshot.jpg (the season-neutral still frame
+                   # and transition previews are drawn on; prompt in the
+                   # same doc) and example1/2 (/stageconfig's examples)
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
                    # (EN/RU page parity, every command in its command table)
@@ -1370,7 +1373,7 @@ erDiagram
 | `clue_purchases` token columns | v12 | `token_used` (the clue was paid with a clue token) and `transfer_id` now nullable: a token purchase has no ledger charge. A failed token delivery gives the token back. |
 | `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string: `admin`, `pass` for a pass reward, or `shop` for a Season Shop purchase), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
 | `equipped_items` | v12 | The item equipped per slot: primary key (`player_id`, `slot`; `slot` a `CosmeticSlot` as a plain string), `item_id`. One item per slot, so equipping replaces. |
-| `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so each preview is rendered and uploaded once per language. |
+| `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so a preview is uploaded once per language. `item_id` holds `previews.cache_key`: the item id, or `<item id>@<player id>` for a win effect (drawn on its viewer); a banner (drawn on the viewer's live card) is never stored. Emptied by `d7a3f1c9b5e2` when the sample picture changed. |
 | `players.title_key` item encoding | v12 | Besides an achievement title key, `title_key` may be `item:<item id>`, a season title item (`services/achievements/titles.py`). Title item ids are at most 56 bytes (`looks.problems`) so they fit `/title`'s callback data. |
 | `profile_showcase` | v12 | What a player picked to show on their `/profile` card (#413): `player_id` + `kind` (`ShowcaseKind`: `stamp` or `achievement`) + `ref` PK (a season run id, or an `achievement_grants.id` as text) and `position` (tick order). At most 6 stamps and 4 achievements (`services/cosmetics/showcase.py`). A pick that no longer resolves is skipped. With no pick resolving, the card shows the newest seasons and rarest achievements. |
 

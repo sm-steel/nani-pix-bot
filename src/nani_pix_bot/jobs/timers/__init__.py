@@ -49,7 +49,10 @@ from nani_pix_bot.jobs.timers.current_image import (
     shop_link_url,
 )
 from nani_pix_bot.jobs.timers.game_timeout import (
+    TIMEOUT_ENDING,
+    Ending,
     cancel_timeout,
+    end_unsolved,
     schedule_timeout,
     timeout_job_callback,
     timeout_job_name,
@@ -93,9 +96,11 @@ from nani_pix_bot.services import game as game_service
 
 __all__ = [
     "IDLE_AUTOSTART_JOB_NAME",
+    "TIMEOUT_ENDING",
     "TURN_EXPIRY_JOB_NAME",
     "TURN_REMINDER_JOB_NAME",
     "AutostartTrigger",
+    "Ending",
     "VoteFinal",
     "ballot_markup",
     "ballot_repost_job_callback",
@@ -107,6 +112,7 @@ __all__ = [
     "cancel_turn_timers",
     "cancel_vote_close",
     "clear_image_if_sent",
+    "end_unsolved",
     "finalize_vote",
     "idle_autostart_job_callback",
     "inactivity_advance_job_callback",

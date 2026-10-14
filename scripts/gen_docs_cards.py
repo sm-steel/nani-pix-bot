@@ -31,7 +31,6 @@ from nani_pix_bot.models.enums import (
     DEFAULT_ALGORITHM,
     CosmeticSlot,
     OutboxKind,
-    PixelStage,
     Rarity,
 )
 from nani_pix_bot.seasons import registry
@@ -61,7 +60,6 @@ from nani_pix_bot.services.cards import (
 from nani_pix_bot.services.cosmetics import looks, previews, profile, stage
 from nani_pix_bot.services.economy.config import DEFAULT_AMOUNTS, EconomyKey
 from nani_pix_bot.services.reveal import pipeline
-from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "docs" / "site" / "src" / "assets" / "generated"
@@ -118,7 +116,7 @@ TITLE_KEY = "title.hanami_host"
 RUN_BADGE = ("hanami_party", Rarity.BRONZE)
 PROFILE_SEASONS, PROFILE_COSMETICS = 2, 12
 # The frame stills show the key visual at stage 3, at the default width.
-FRAME_STAGE_WIDTH = DEFAULT_STAGE_CONFIG[PixelStage.STAGE_3].target_width
+FRAME_STAGE_WIDTH = previews.FRAME_STAGE_WIDTH
 
 
 def webp(png: bytes) -> bytes:
@@ -253,17 +251,23 @@ def frame_stills() -> dict[str, bytes]:
     }
 
 
+def _sample_viewer(lang: str) -> previews.Viewer:
+    """The guide has no viewer: its badges read the localized "@you"."""
+    you = i18n.t("cosmetics.preview.you", lang)
+    return previews.Viewer(player_id=0, handle=you, full_name=you)
+
+
 def clip_jobs() -> dict[str, previews.ClipJob]:
     """The /cosmetics preview clip of each Sakura win effect (per language: its badge reads
     the localized "you") and reveal transition (one, no text), by file name."""
     jobs: dict[str, previews.ClipJob] = {}
     for resolved in _resolved(CosmeticSlot.WIN_EFFECT):
         for lang in LANGS:
-            job = previews.clip_job(resolved, lang)
+            job = previews.clip_job(resolved, _sample_viewer(lang))
             if job is not None:
                 jobs[f"win-{cosmetic_stem(resolved)}-{lang}.mp4"] = job
     for resolved in _resolved(CosmeticSlot.HOST_TRANSITION):
-        job = previews.clip_job(resolved, LANGS[0])
+        job = previews.clip_job(resolved, _sample_viewer(LANGS[0]))
         if job is not None:
             jobs[f"transition-{cosmetic_stem(resolved)}.mp4"] = job
     return jobs

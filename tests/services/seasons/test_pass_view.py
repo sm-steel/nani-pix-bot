@@ -23,25 +23,31 @@ def test_objectives_show_progress(session, active_season, tagged_game, emit_win)
     row = session.get(SeasonObjective, (active_season.id, WINNER, "first_bloom"))
     row.completed_at = datetime(2026, 11, 2, 21, 30, tzinfo=UTC).replace(tzinfo=None)
     session.flush()
-    lines = pass_view.view_lines(session, active_season, _demo(), WINNER, "EN")
-    assert i18n.t("season_pass.view.objectives", "EN") in lines
+    lines = pass_view.view_markdown(session, active_season, _demo(), WINNER, "EN").splitlines()
+    assert "## " + i18n.t("season_pass.view.objectives", "EN") in lines
     done = next(line for line in lines if line.startswith("✅ First Bloom"))
-    assert "03.11" in done
-    assert any(line.startswith("🎯 Hanami Host") and "(0/2)" in line for line in lines)
+    assert r"03\.11" in done  # markdown-escaped
+    assert any(line.startswith("🎯 Hanami Host") and r"\(0/2\)" in line for line in lines)
 
 
 def test_a_run_without_objectives_shows_no_section(session, active_season, tagged_game) -> None:
     run = replace(_demo(), objectives=())
-    lines = pass_view.view_lines(session, active_season, run, WINNER, "EN")
-    assert i18n.t("season_pass.view.objectives", "EN") not in lines
+    text = pass_view.view_markdown(session, active_season, run, WINNER, "EN")
+    assert i18n.t("season_pass.view.objectives", "EN") not in text
 
 
 def test_an_objective_without_coins_shows_no_coins(session, active_season, tagged_game) -> None:
     run = _demo()
     run = replace(run, objectives=tuple(replace(o, coins=0) for o in run.objectives))
-    lines = pass_view.view_lines(session, active_season, run, WINNER, "EN")
-    assert i18n.t("season_pass.view.objectives", "EN") in lines
+    lines = pass_view.view_markdown(session, active_season, run, WINNER, "EN").splitlines()
+    assert "## " + i18n.t("season_pass.view.objectives", "EN") in lines
     names = [o.name("EN") for o in run.objectives]
     rows = [line for line in lines if any(name in line for name in names)]
     assert len(rows) == len(names)
     assert all("🪙" not in line for line in rows)
+
+
+def test_player_text_is_markdown_escaped(session, active_season, tagged_game) -> None:
+    run = replace(_demo(), names={"EN": "Spring (2026)", "RU": "Весна (2026)"})
+    text = pass_view.view_markdown(session, active_season, run, WINNER, "EN")
+    assert r"Spring \(2026\)" in text.splitlines()[0]

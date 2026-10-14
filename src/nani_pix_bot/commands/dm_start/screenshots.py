@@ -345,10 +345,10 @@ async def send_screenshot_picker_prompt(
 def clear_screenshot_selection(game: Game) -> None:
     """Leaves the screenshot sub-flow behind: the picker stops resolving
     anything, and an API-picked screenshot plus the provider id that
-    resolved it are dropped. Used by preview.py's "Re-search title"
-    (a re-search that picks a different anime shouldn't leave the old
-    anime's screenshot attached) and by intake.py, where a genuine
-    upload supersedes whatever was staged before.
+    resolved it are dropped. Used by restart_identification below (a
+    re-pick of the anime shouldn't leave the old anime's screenshot
+    attached) and by intake.py, where a genuine upload supersedes
+    whatever was staged before.
 
     Only an *image* clears the id: `screenshot_source` is None whenever
     nothing API-sourced backs `original_image`, which covers both a
@@ -367,6 +367,17 @@ def clear_screenshot_selection(game: Game) -> None:
     game.original_image = None
     game.shown_screenshot_urls = None
     game.screenshot_source = None
+
+
+def restart_identification(game: Game) -> None:
+    """Back to picking a method, the anime forgotten: an API-picked
+    screenshot of it goes too (an upload stays), and so does everything
+    identified about it, so a background lookup still in flight for it is
+    discarded as stale. The preview's "Re-search title" and the "Pick a
+    different anime" button (#429) on every later setup screen."""
+    clear_screenshot_selection(game)
+    game_service.clear_identification(game)
+    game.setup_step = SetupStep.PICKING_METHOD
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,7 @@
 """The season gate on DM setup (seasons spec §5): checked on a catalogue
 pick and again, authoritatively, at the preview's Confirm."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
 from unittest.mock import ANY, AsyncMock, MagicMock
@@ -10,7 +11,7 @@ from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import preview, search, season_gate
+from nani_pix_bot.commands.dm_start import mal_browse, manual, preview, search, season_gate
 from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_CONFIRM_CALLBACK_DATA,
     back_to_methods_keyboard,
@@ -567,3 +568,113 @@ async def test_stale_result_line_carries_the_season(
     line = next(r for r in log_records if "is stale" in r.message)
     assert line.extra["run_id"] == "demo_1"
     assert isinstance(line.extra["season_id"], int)
+
+
+# --- the gate runs as soon as the anime is known, on every path (#426) ---
+
+
+def _list_game(session_factory) -> int:
+    """A screenshot-less /newgame setup on the My MAL List method."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.commit()
+        game = game_service.create_setup_game(session, starter_id=1)
+        game.setup_step = SetupStep.PICKING_METHOD
+        game.source = Provider.TENRAI
+        session.commit()
+        return game.id
+
+
+@pytest.mark.usefixtures("active_season")
+async def test_off_theme_mal_list_pick_is_refused_at_the_pick(
+    session_factory, monkeypatch, background_tasks
+) -> None:
+    _patch_tags(monkeypatch, GURREN)
+    monkeypatch.setattr(mal_browse.tenrai, "get_by_id", AsyncMock(return_value=_GURREN_TENRAI))
+    game_id = _list_game(session_factory)
+    update = _callback_update("mal_list_pick:2001")
+    context = _context(session_factory)
+
+    await mal_browse.mal_list_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    query = update.callback_query
+    query.answer.assert_awaited_once_with()
+    query.edit_message_text.assert_awaited_once_with(
+        season_gate.refusal_text(Verdict.OFF_THEME, "romance anime", "EN"),
+        reply_markup=back_to_methods_keyboard("EN"),
+    )
+    assert background_tasks == []  # no alias search
+    context.bot.send_message.assert_not_awaited()  # no screenshot source menu
+    game = _game(session_factory, game_id)
+    assert game.tenrai_id is None
+    assert game.setup_step == SetupStep.PICKING_METHOD
+
+
+@pytest.mark.usefixtures("active_season")
+async def test_on_theme_mal_list_pick_goes_on_to_the_screenshots(
+    session_factory, monkeypatch, background_tasks
+) -> None:
+    _patch_tags(monkeypatch, ROMANCE)
+    monkeypatch.setattr(mal_browse.tenrai, "get_by_id", AsyncMock(return_value=_GURREN_TENRAI))
+    game_id = _list_game(session_factory)
+    update = _callback_update("mal_list_pick:2001")
+
+    await mal_browse.mal_list_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _context(session_factory))
+    )
+
+    update.callback_query.edit_message_text.assert_awaited_once_with(
+        i18n.t("dm_start.identification_staged", "EN")
+    )
+    assert len(background_tasks) == 1
+    assert _game(session_factory, game_id).setup_step == SetupStep.PICKING_SCREENSHOT
+
+
+@pytest.mark.usefixtures("active_season")
+async def test_off_theme_manual_entry_is_refused_after_the_synonyms(
+    session_factory, monkeypatch, background_tasks
+) -> None:
+    _patch_tags(monkeypatch, GURREN)
+    monkeypatch.setattr(aliases, "mal_id", AsyncMock(return_value=2001))
+    game_id = _setup_game(
+        session_factory, step=SetupStep.PICKING_METHOD, source="manual", title_english="Gurren"
+    )
+    message = MagicMock()
+    message.text = "TTGL"
+    message.reply_text = AsyncMock()
+    user = MagicMock(id=1)
+
+    await manual._manual_synonyms_step(
+        message, cast(ContextTypes.DEFAULT_TYPE, _context(session_factory)), "EN", user
+    )
+
+    message.reply_text.assert_awaited_once_with(
+        season_gate.refusal_text(Verdict.OFF_THEME, "romance anime", "EN"),
+        reply_markup=back_to_methods_keyboard("EN"),
+    )
+    assert background_tasks == []
+    game = _game(session_factory, game_id)
+    assert game.title_english is None
+    assert game.setup_step == SetupStep.PICKING_METHOD
+
+
+@pytest.mark.usefixtures("active_season")
+async def test_a_tenrai_pick_with_its_tags_in_hand_fetches_none(
+    session_factory, monkeypatch, background_tasks
+) -> None:
+    fetch = _patch_tags(monkeypatch, ROMANCE)
+    tagged = replace(_GURREN_TENRAI, tags=tuple(GURREN))
+    monkeypatch.setattr(search.tenrai, "get_by_id", AsyncMock(return_value=tagged))
+    _setup_game(session_factory, step=SetupStep.PICKING_METHOD, source=Provider.TENRAI)
+    update = _callback_update("tenrai_pick:2001")
+
+    await search.pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _context(session_factory))
+    )
+
+    fetch.assert_not_awaited()
+    assert update.callback_query.edit_message_text.await_args.args[0] == (
+        season_gate.refusal_text(Verdict.OFF_THEME, "romance anime", "EN")
+    )

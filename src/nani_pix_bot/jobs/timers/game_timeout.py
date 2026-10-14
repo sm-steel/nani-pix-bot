@@ -55,8 +55,21 @@ def cancel_timeout(job_queue: JobQueue | None, game_id: int) -> None:
 
 
 @dataclass(frozen=True)
+class Ending:
+    """How an unsolved ending reads: the `cause` force_unsolved() logs (and /history
+    parses back), and the reveal captions for a normal and a HARD MODE game."""
+
+    cause: str
+    caption_key: str
+    hard_mode_caption_key: str
+
+
+TIMEOUT_ENDING = Ending("2-day timeout", "timeout.caption", "timeout.hard_mode_caption")
+
+
+@dataclass(frozen=True)
 class _HardModeTimeoutReveal:
-    """What a hard-mode game's timeout ending needs to post via
+    """What a hard-mode game's unsolved ending needs to post via
     post_current_images once its session has committed — the hard-mode
     analogue of the normal path's single original_bytes/caption pair
     below, carrying a screenshot pair instead of one photo."""
@@ -65,14 +78,14 @@ class _HardModeTimeoutReveal:
     caption: str
 
 
-def _hard_mode_timeout_reveal(game: Game, lang: str, refund_note: str) -> _HardModeTimeoutReveal:
+def _hard_mode_timeout_reveal(
+    game: Game, lang: str, refund_note: str, caption_key: str
+) -> _HardModeTimeoutReveal:
     """Both stored hard-mode screenshots, unpixelated, with a
-    hard-mode-specific timeout caption — the hard-mode analogue of the
-    normal path's `game.original_image` + `timeout.caption` reveal."""
+    hard-mode-specific caption — the hard-mode analogue of the
+    normal path's `game.original_image` + caption reveal."""
     photos = game_service.hard_mode_reveal_images(game)
-    caption = i18n.t(
-        "timeout.hard_mode_caption", lang, title=game_service.display_title(game, lang)
-    )
+    caption = i18n.t(caption_key, lang, title=game_service.display_title(game, lang))
     caption += game_service.game_id_line(game.id, lang)
     caption += refund_note
     return _HardModeTimeoutReveal(photos=photos, caption=caption)
@@ -82,10 +95,20 @@ def _hard_mode_timeout_reveal(game: Game, lang: str, refund_note: str) -> _HardM
 @retry_on_failure
 @quiet_hours_deferred
 async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Fires 2 days after a game started with no ending yet. A
-    hard-mode game (always `original_image is None`) is still eligible
-    as long as it still has both its stored screenshots — see
-    has_hard_mode_reveal_images() and _hard_mode_timeout_reveal above.
+    """Fires 2 days after a game started with no ending yet; ends it
+    through end_unsolved, the one unsolved ending /pass shares (#428)."""
+    job = context.job
+    if job is None:
+        return
+    await end_unsolved(context, cast(int, job.data), TIMEOUT_ENDING)
+
+
+async def end_unsolved(context: ContextTypes.DEFAULT_TYPE, game_id: int, ending: Ending) -> bool:
+    """End an ACTIVE game nobody solved: settle, reveal, roll the overthrow — or, in HARD
+    MODE with guessers, open the winner vote. False (nothing done) when the game is no
+    longer ACTIVE, so a second ending (a timeout after a /pass) is a no-op. A hard-mode
+    game (always `original_image is None`) is still eligible as long as it still has both
+    its stored screenshots — see has_hard_mode_reveal_images().
 
     Imports maybe_overthrow lazily (function-local, not at module level):
     autostart.py already imports schedule_timeout from this module, so a
@@ -96,11 +119,6 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     turn_timers.py's turn_expiry_job_callback for the identical
     situation with schedule_idle_autostart."""
     from nani_pix_bot.jobs.timers.autostart import maybe_overthrow
-
-    job = context.job
-    if job is None:
-        return
-    game_id = cast(int, job.data)
 
     session_factory = context.bot_data["session_factory"]
     hard_mode_reveal: _HardModeTimeoutReveal | None = None
@@ -113,29 +131,29 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
             or game.status != GameStatus.ACTIVE
             or (game.original_image is None and not game_service.has_hard_mode_reveal_images(game))
         ):
-            logger.debug("timeout fired but it's already resolved — no-op", game_id=game_id)
-            return
+            logger.debug("unsolved ending for a game already resolved — no-op", game_id=game_id)
+            return False
 
         cancel_inactivity_timers(context.job_queue, game.id)
         if game.hard_mode:
-            outcome = game_service.end_hard_mode_without_winner(
-                session, game, cause="2-day timeout"
-            )
+            outcome = game_service.end_hard_mode_without_winner(session, game, cause=ending.cause)
             if outcome is game_service.GuessOutcome.VOTE_OPENED:
                 schedule_vote_close(context.job_queue, game)
                 vote_opened = True
             else:
                 refund_note = settlement.settle_unsolved(session, game, lang)
                 game_service.mark_turn_open_if_unassigned(session)
-                hard_mode_reveal = _hard_mode_timeout_reveal(game, lang, refund_note)
+                hard_mode_reveal = _hard_mode_timeout_reveal(
+                    game, lang, refund_note, ending.hard_mode_caption_key
+                )
         else:
-            game_service.force_unsolved(game, cause="2-day timeout")
+            game_service.force_unsolved(game, cause=ending.cause)
             refund_note = settlement.settle_unsolved(session, game, lang)
             game_service.mark_turn_open_if_unassigned(session)
             original_bytes = game.original_image
             if original_bytes is None:
-                raise RuntimeError("normal-mode timeout with no original_image")
-            caption = i18n.t("timeout.caption", lang, title=game_service.display_title(game, lang))
+                raise RuntimeError("normal-mode unsolved ending with no original_image")
+            caption = i18n.t(ending.caption_key, lang, title=game_service.display_title(game, lang))
             caption += game_service.game_id_line(game.id, lang)
             caption += refund_note
     # Block closed and committed above — the UNSOLVED ending is durable
@@ -143,7 +161,7 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     # the group (see post_current_image's docstring).
     if vote_opened:
         await post_vote_ballot(context, session_factory, game_id)
-        return
+        return True
     if hard_mode_reveal is not None:
         sent = await post_reveal_pair(
             context,
@@ -162,3 +180,4 @@ async def timeout_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         )
     clear_image_if_sent(session_factory, game_id, sent)
     await maybe_overthrow(context, session_factory)
+    return True

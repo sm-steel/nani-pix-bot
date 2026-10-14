@@ -273,6 +273,9 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(dm_start.method_pick_callback_handler, pattern=r"^method:")
     )
     application.add_handler(
+        CallbackQueryHandler(dm_start.repick_callback_handler, pattern=r"^repick:")
+    )
+    application.add_handler(
         CallbackQueryHandler(
             dm_start.screenshot_upload_instead_callback_handler,
             pattern=rf"^{re.escape(SCREENSHOT_UPLOAD_CALLBACK_DATA)}$",
@@ -367,6 +370,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("sharpen", game_flow.sharpen_command))
     application.add_handler(CommandHandler("correct", game_flow.correct_command))
     application.add_handler(CommandHandler("skip", game_flow.skip_command))
+    application.add_handler(CommandHandler("pass", game_flow.pass_command))
     application.add_handler(CommandHandler("stop", game_flow.stop_command))
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
     application.add_handler(CommandHandler("status", status.status_command))
