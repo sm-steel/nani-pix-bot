@@ -151,3 +151,45 @@ async def test_hard_mode_with_guessers_opens_the_winner_vote(session_factory) ->
     for player in (10, 11, 12):
         await _pass(session_factory, player, context)
     assert _status(session_factory, game_id) is GameStatus.VOTING
+
+
+# --- final-review fixes ---
+
+
+async def test_a_failed_ending_keeps_the_timeout_backstop(session_factory, monkeypatch) -> None:
+    game_id = _game(session_factory)
+    context = _context(session_factory)
+    monkeypatch.setattr(pass_module, "end_unsolved", AsyncMock(side_effect=RuntimeError("db")))
+    await _pass(session_factory, 10, context)
+    await _pass(session_factory, 11, context)
+    with pytest.raises(RuntimeError):
+        await _pass(session_factory, 12, context)
+    names = [c.args[0] for c in context.job_queue.get_jobs_by_name.call_args_list]
+    assert f"game-timeout-{game_id}" not in names
+
+
+async def test_a_reached_vote_that_ends_nothing_says_so_in_the_log(
+    session_factory, monkeypatch, log_records
+) -> None:
+    _game(session_factory)
+    context = _context(session_factory)
+    monkeypatch.setattr(pass_module, "end_unsolved", AsyncMock(return_value=False))
+    for player in (10, 11, 12):
+        await _pass(session_factory, player, context)
+    assert any(r.level == "WARNING" and "ended nothing" in r.message for r in log_records)
+
+
+async def test_a_withdrawal_never_ends_the_round(session_factory, monkeypatch) -> None:
+    """The bar can drop as the 24h window moves; taking a vote back still isn't giving up."""
+    game_id = _game(session_factory)
+    withdrawn = pass_module.pass_vote.PassTally(voted=False, votes=3, needed=3, active=6)
+    monkeypatch.setattr(pass_module.pass_vote, "toggle", lambda *_a, **_k: withdrawn)
+    await _pass(session_factory, 10)
+    assert _status(session_factory, game_id) is GameStatus.ACTIVE
+
+
+@pytest.mark.parametrize("lang", ["EN", "RU"])
+def test_help_lists_pass_in_the_group_topic(lang) -> None:
+    help_text = i18n.t("onboarding.help", lang)
+    topic_part = help_text.split("\n\n")[1]
+    assert "/pass" in topic_part

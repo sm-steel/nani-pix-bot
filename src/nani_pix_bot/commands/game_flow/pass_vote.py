@@ -82,6 +82,17 @@ async def pass_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await message.reply_text(outcome.reply)
     except TelegramError as exc:
         logger.warning("failed to send the /pass reply: {error}", error=exc)
-    if tally is not None and tally.reached:
+    # Only a cast vote gives up: the bar can drop as the 24h window moves,
+    # but taking a vote back never ends the round.
+    if tally is None or not (tally.voted and tally.reached):
+        return
+    if await end_unsolved(context, outcome.game_id, _ending(tally)):
+        # After the ending, not before: a failed one keeps its 2-day backstop.
         cancel_timeout(context.job_queue, outcome.game_id)
-        await end_unsolved(context, outcome.game_id, _ending(tally))
+        return
+    logger.warning(
+        "the give-up vote reached {votes}/{needed} but ended nothing — the round was already over",
+        votes=tally.votes,
+        needed=tally.needed,
+        game_id=outcome.game_id,
+    )

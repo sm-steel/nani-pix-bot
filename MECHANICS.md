@@ -804,9 +804,11 @@ the game topic `/pass` does nothing.
   group gave up by vote"): the reveal, the bounty refund, the turn opened
   if unassigned, the overthrow roll. In HARD MODE it goes through
   `end_hard_mode_without_winner`, so a game with guessers opens the winner
-  vote as usual. The game's 2-day timeout job is cancelled; a later ending
-  of any kind is a no-op, since `end_unsolved` only acts on an `ACTIVE`
-  game.
+  vote as usual. Only a cast vote can end the round, never a withdrawal
+  (the bar can drop as the 24h window moves). The game's 2-day timeout job
+  is cancelled once the ending has gone through, so a failed ending keeps
+  its backstop; a later ending of any kind is a no-op, since
+  `end_unsolved` only acts on an `ACTIVE` game.
 
 ## Inactivity
 
