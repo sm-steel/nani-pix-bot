@@ -4,14 +4,14 @@ from io import BytesIO
 from types import MappingProxyType
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageOps
 
 from nani_pix_bot.models.cosmetics import ITEM_ID_LENGTH, ItemPreview
 from nani_pix_bot.models.enums import CosmeticSlot, PixelAlgorithm, PreviewKind, RevealEffect
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import Item
 from nani_pix_bot.services.cards import CARD_SIZE, ProfileCard
-from nani_pix_bot.services.cosmetics import looks, previews
+from nani_pix_bot.services.cosmetics import looks, previews, stage
 from nani_pix_bot.services.reveal import pipeline
 from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
 
@@ -65,6 +65,15 @@ def test_sample_stage_is_a_640x360_png_drawn_once() -> None:
     assert previews.sample_stage() is first
 
 
+def test_sample_stage_is_the_committed_screenshot_fitted_to_size() -> None:
+    """The neutral sample anime screenshot (#424), not a drawn scene."""
+    assert previews.SAMPLE_SCREENSHOT.is_file()
+    with Image.open(previews.SAMPLE_SCREENSHOT) as source:
+        expected = ImageOps.fit(source.convert("RGB"), previews.SAMPLE_SIZE)
+    sample = Image.open(BytesIO(previews.sample_stage())).convert("RGB")
+    assert sample.tobytes() == expected.tobytes()
+
+
 def test_sample_stage_is_not_a_flat_colour() -> None:
     image = Image.open(BytesIO(previews.sample_stage())).convert("RGB")
     colours = image.getcolors(maxcolors=640 * 360)
@@ -98,6 +107,21 @@ def test_frame_previews_as_a_framed_sample_png() -> None:
     framed = Image.open(BytesIO(preview.image)).convert("RGB")
     assert framed.size == (640, 360)
     assert framed.getpixel((0, 0)) == (245, 245, 245)  # simple_border's colour
+
+
+def test_a_frame_previews_on_a_stage_like_a_real_game_posts() -> None:
+    """Pixelated to stage 3, in the item's season style, then framed: what the frame looks
+    like on a real stage post, not on a clear picture."""
+    resolved = _resolved("host_frame.border")
+    preview = previews.render(resolved, "EN", AMY)
+    expected = stage.stage_png_with(
+        previews.sample_stage(),
+        previews.FRAME_STAGE_WIDTH,
+        PixelAlgorithm.MEDIAN,
+        resolved.item.look,
+        resolved.run.style,
+    )
+    assert preview.image == expected
 
 
 def test_banner_previews_as_a_profile_card(banner) -> None:

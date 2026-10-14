@@ -203,3 +203,16 @@ custom crop so their subject stayed in frame:
 
 When adding a new image, check that heads and the main subject survive the crop.
 The renderer cover-crops anything that isn't already 1200:630.
+
+## The sample screenshot (`assets/sample_screenshot.jpg`)
+
+Not a card background, but generated the same way (#424): the
+season-neutral still frame that frame and transition previews are shown on
+(`services/cosmetics/previews.py::sample_stage`), and reusable for future
+previews. Original characters, no text. Prompt:
+
+> Still frame from a 2010s TV anime, 16:9, 1920×1080, clean cel shading, detailed painted background. Two original characters (not resembling any existing franchise): a girl with short teal hair in a navy school blazer and a boy with messy dark-brown hair and a loose red scarf, mid-shot, standing in the left third on a grassy riverside embankment at golden hour. Behind them: a river, a small two-car train crossing a steel bridge, green summer trees, tall cumulus clouds, warm rim light. Strong silhouettes and varied, saturated colour blocks so the scene stays readable when heavily pixelated. Season-neutral (no cherry blossoms, snow, or autumn leaves). No text, subtitles, logos, watermarks, or UI.
+
+The generator returned 1536x1024; the committed file is a 16:9 crop of it
+(1536x864, centred slightly high so both heads stay in), saved as JPG at
+quality 88. The bot fits it to 640x360.

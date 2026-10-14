@@ -9,10 +9,11 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cache
 from io import BytesIO
+from pathlib import Path
 from types import MappingProxyType
 
 from loguru import logger
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageOps
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.cosmetics import ItemPreview
@@ -27,11 +28,15 @@ from nani_pix_bot.models.enums import (
 from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.cards import ProfileCard, render_profile_card
-from nani_pix_bot.services.cosmetics import frames, looks, profile
+from nani_pix_bot.services.cosmetics import looks, profile, stage
 from nani_pix_bot.services.reveal import pipeline
 from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
 
 SAMPLE_SIZE = (640, 360)
+# A made-for-the-bot anime still, season-neutral, original characters (#424).
+SAMPLE_SCREENSHOT = Path(__file__).resolve().parents[2] / "assets" / "sample_screenshot.jpg"
+# A frame is shown on the stage 3 picture, as a real game posts it mid-round.
+FRAME_STAGE_WIDTH = DEFAULT_STAGE_CONFIG[PixelStage.STAGE_3].target_width
 # The defaults, not the admin's live stage config: a preview shows the look, not this group.
 STAGE_WIDTHS = tuple(DEFAULT_STAGE_CONFIG[stage].target_width for stage in PixelStage)
 
@@ -46,19 +51,11 @@ class Preview:
 
 @cache
 def sample_stage() -> bytes:
-    """A made-up scene to show frames and transitions on: a gradient sky, a sun, hills.
-    Drawn here (no third-party art), once per process."""
-    width, height = SAMPLE_SIZE
-    across = Image.linear_gradient("L").rotate(90).resize(SAMPLE_SIZE)
-    down = Image.linear_gradient("L").resize(SAMPLE_SIZE)
-    image = Image.merge("RGB", (ImageOps.invert(across), down, across))
-    draw = ImageDraw.Draw(image)
-    draw.ellipse((70, 50, 230, 210), fill=(250, 210, 90))
-    draw.polygon([(220, 300), (400, 110), (600, 300)], fill=(60, 110, 90))
-    draw.rectangle((0, 280, width, height), fill=(35, 70, 55))
-    draw.rectangle((470, 200, 530, 280), fill=(200, 80, 90))
+    """The neutral sample anime screenshot (#424) fitted to SAMPLE_SIZE, as a PNG: what
+    frames and transitions are shown on. Once per process."""
     out = BytesIO()
-    image.save(out, format="PNG")
+    with Image.open(SAMPLE_SCREENSHOT) as source:
+        ImageOps.fit(source.convert("RGB"), SAMPLE_SIZE).save(out, format="PNG")
     return out.getvalue()
 
 
@@ -116,7 +113,10 @@ def clip_job(resolved: ResolvedItem, viewer: Viewer) -> ClipJob | None:
 
 
 def _frame(resolved: ResolvedItem, _lang: str, _viewer: Viewer) -> bytes:
-    return frames.apply_frame(sample_stage(), resolved.item.look)
+    """Pixelated, in the item's season style, then framed: a real stage post."""
+    return stage.stage_png_with(
+        sample_stage(), FRAME_STAGE_WIDTH, DEFAULT_ALGORITHM, resolved.item.look, resolved.run.style
+    )
 
 
 def _banner(resolved: ResolvedItem, lang: str, viewer: Viewer) -> bytes:

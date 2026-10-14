@@ -31,7 +31,6 @@ from nani_pix_bot.models.enums import (
     DEFAULT_ALGORITHM,
     CosmeticSlot,
     OutboxKind,
-    PixelStage,
     Rarity,
 )
 from nani_pix_bot.seasons import registry
@@ -61,7 +60,6 @@ from nani_pix_bot.services.cards import (
 from nani_pix_bot.services.cosmetics import looks, previews, profile, stage
 from nani_pix_bot.services.economy.config import DEFAULT_AMOUNTS, EconomyKey
 from nani_pix_bot.services.reveal import pipeline
-from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "docs" / "site" / "src" / "assets" / "generated"
@@ -118,7 +116,7 @@ TITLE_KEY = "title.hanami_host"
 RUN_BADGE = ("hanami_party", Rarity.BRONZE)
 PROFILE_SEASONS, PROFILE_COSMETICS = 2, 12
 # The frame stills show the key visual at stage 3, at the default width.
-FRAME_STAGE_WIDTH = DEFAULT_STAGE_CONFIG[PixelStage.STAGE_3].target_width
+FRAME_STAGE_WIDTH = previews.FRAME_STAGE_WIDTH
 
 
 def webp(png: bytes) -> bytes:
