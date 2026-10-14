@@ -109,6 +109,12 @@
 
   "timeout.caption": "⏰ Nobody guessed it in time. It was {title}.",
   "timeout.hard_mode_caption": "⏰ HARD MODE beat everyone to the clock. It was {title}.",
+  "pass.voted": "🏳 {name} votes to give up — {votes}/{needed}",
+  "pass.withdrawn": "↩ {name} took their give-up vote back — {votes}/{needed}",
+  "pass.host": "You know the answer — you can't vote to give up.",
+  "pass.no_game": "There's no round to give up on right now.",
+  "pass.caption": "🏳 The group gave up — it was {title}.",
+  "pass.hard_mode_caption": "🏳 The group gave up on HARD MODE — it was {title}.",
 
   "turn.reminder_dm": "⏰ Reminder: it's your turn to start a new game! DM me a screenshot whenever you're ready, or send /newgame to pick one instead.",
   "turn.reminder_group_fallback": "⏰ @{username}, it's your turn to start a new game — DM me a screenshot, or send me /newgame to pick one instead! (I couldn't reach you privately — message me first so reminders can find you next time.)",
@@ -127,6 +133,7 @@
   "commands.guess": "Guess the anime",
   "commands.correct": "Force a correct guess (starter only)",
   "commands.skip": "Pass or hand off your turn",
+  "commands.pass": "Vote to give up on this screenshot",
   "commands.stop": "Stop the current game (starter/admins)",
   "commands.leaderboard": "Show top winners",
   "commands.stageconfig": "View pixelation stage config (admins)",

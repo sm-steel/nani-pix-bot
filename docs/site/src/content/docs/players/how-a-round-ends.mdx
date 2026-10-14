@@ -95,7 +95,8 @@ A round ends **unsolved** when:
 
 - the last try on stage 5 is a wrong guess,
 - nobody guesses on stage 5 for 6 hours, or
-- **two days** pass since the round went live, however many guesses were made.
+- **two days** pass since the round went live, however many guesses were made, or
+- the group **gives up** with `/pass` (see below).
 
 If nobody guesses for 3 hours, the bot first nudges the topic. After 6 hours without
 a guess it posts the next, clearer stage by itself, so a round nobody touches still
@@ -124,6 +125,20 @@ open.
     💰 Nobody solved it — the 40 💠 bounty went back to its contributors.
   </TgMessage>
 </TelegramChat>
+
+### Giving up with /pass
+
+Nobody has a clue? Send `/pass` in the game topic to vote to give up. Send it again to
+take your vote back. The round's host can't vote, since they know the answer.
+
+When enough players agree, the round ends unsolved right away, exactly like the
+two-day limit: the reveal, the bounty back to its contributors. "Enough" is half of
+the people who guessed or hosted a round in the last 24 hours, and never fewer than 3.
+Every reply shows the count, like `2/3`.
+
+Votes count for the current stage only: once a clearer picture comes up, the vote
+starts again. In HARD MODE, giving up still opens the usual vote for the closest
+guess when someone has guessed.
 
 ## Stopping a round
 
