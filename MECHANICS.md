@@ -1679,9 +1679,9 @@ player's balance.
   fingerprint (64-bit difference hash, `services/pixelate/fingerprint.py`)
   with the round's own image(s) and the clues already handed out. A frame
   that matches is skipped even behind a different URL or as a re-encoded
-  copy. Up to 5 candidates are tried per purchase. Available in HARD MODE too. It comes
-  only from sources with real in-episode frames — Shikimori and TMDB,
-  starting with whichever one the round's own screenshot came from —
+  copy. Up to 5 candidates are tried per purchase. Available in HARD MODE
+  too. It comes only from sources with real in-episode frames —
+  Shikimori and TMDB, starting with whichever one the round's own screenshot came from —
   never from Tenrai, whose pictures are promotional art (posters) that
   can show the title. A game with no Shikimori or TMDB id doesn't offer
   this clue.

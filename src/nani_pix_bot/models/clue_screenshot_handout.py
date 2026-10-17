@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import BigInteger, ForeignKey, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nani_pix_bot.models.base import Base
@@ -12,12 +12,13 @@ class ClueScreenshotHandout(Base):
     Written with the CluePurchase but never deleted by a refund — the buyer
     has already seen the image. `fingerprint` is its perceptual hash
     (services/pixelate/fingerprint.py), so a copy behind another URL is
-    caught too; NULL for rows backfilled from purchases made before it."""
+    caught too; NULL for rows backfilled from purchases made before it.
+    (game_id, screenshot_url) is unique by the shop's own check before a
+    charge, not by a DB constraint: a 1024-character utf8mb4 column is too
+    long for a plain InnoDB unique key, and updates are handled one at a
+    time, so two buys of one URL cannot overlap."""
 
     __tablename__ = "clue_screenshot_handouts"
-    __table_args__ = (
-        UniqueConstraint("game_id", "screenshot_url", name="uq_clue_screenshot_handouts_game_url"),
-    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"), index=True)

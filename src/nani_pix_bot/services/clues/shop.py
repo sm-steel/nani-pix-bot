@@ -257,7 +257,7 @@ def _malformed(session: Session, game: Game, request: PurchaseRequest) -> bool:
     """A request missing (or out of range on) the detail its kind needs; a
     tile must also be the round's tile once someone has chosen it, and a
     screenshot must not have been handed out in this game already (issue
-    #446 — two buyers racing for the same pick)."""
+    #446)."""
     if request.kind is ClueKind.TILE:
         index = request.tile_index
         if not isinstance(index, int) or not 0 <= index < TILE_GRID * TILE_GRID:

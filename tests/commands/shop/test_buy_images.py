@@ -9,6 +9,7 @@ from PIL import Image
 from sqlalchemy import select
 from telegram.error import BadRequest, TimedOut
 
+from nani_pix_bot.commands.shop import images
 from nani_pix_bot.models import CluePurchase
 from nani_pix_bot.models.enums import ClueKind
 from nani_pix_bot.models.game import Game
@@ -375,6 +376,30 @@ async def test_only_already_seen_frames_left_charges_nothing(session_factory, mo
     assert "No other screenshots" in query.answer.await_args.args[0]
     assert balance(session_factory) == RICH
     assert purchases(session_factory) == []
+
+
+async def test_gives_up_after_the_candidate_cap_without_charging(
+    session_factory, monkeypatch
+) -> None:
+    mirrors = [f"https://x/mirror{n}.jpg" for n in range(images.MAX_CANDIDATE_DOWNLOADS + 2)]
+
+    async def listing(_client, _provider_id):
+        return list(mirrors)
+
+    pixelated: list[bytes] = []
+    monkeypatch.setattr(shikimori, "screenshots", listing)
+    monkeypatch.setattr(pixelate_service, "pixelate", lambda data, *_: pixelated.append(data))
+    game_id = seed_game(session_factory, shikimori_id=1, original_image=frame_bytes(1))
+    set_currency(session_factory, 2, RICH)
+    context = _image_context(session_factory, dict.fromkeys(mirrors, frame_bytes(1)))
+    query = make_query(f"shop:buy:{game_id}:screenshot:0")
+
+    await tap(context, query)
+
+    assert context.bot_data["search_client"].get.await_count == images.MAX_CANDIDATE_DOWNLOADS
+    assert pixelated == []  # a skipped frame is never pixelated
+    assert "No other screenshots" in query.answer.await_args.args[0]
+    assert balance(session_factory) == RICH
 
 
 async def test_the_handout_keeps_the_frames_fingerprint(session_factory, stub_screenshots) -> None:

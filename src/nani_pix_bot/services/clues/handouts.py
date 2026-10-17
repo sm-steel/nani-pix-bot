@@ -29,8 +29,9 @@ def is_handed_out(session: Session, game_id: int, url: str) -> bool:
 
 
 def sellable(session: Session, game_id: int, url: str | None) -> bool:
-    """Whether a screenshot request names a URL nobody got in this game yet
-    (two buyers racing for the same pick lose here, uncharged)."""
+    """Whether a screenshot request names a URL nobody got in this game yet.
+    Checked before the charge, this is what keeps (game, URL) unique: a
+    later buyer of the same URL is refused, uncharged."""
     if not url:
         return False
     return not is_handed_out(session, game_id, url)

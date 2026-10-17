@@ -29,9 +29,6 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["game_id"], ["games.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "game_id", "screenshot_url", name="uq_clue_screenshot_handouts_game_url"
-        ),
     )
     op.create_index(
         op.f("ix_clue_screenshot_handouts_game_id"), "clue_screenshot_handouts", ["game_id"]

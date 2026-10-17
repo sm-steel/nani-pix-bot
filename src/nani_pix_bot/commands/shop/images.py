@@ -128,7 +128,9 @@ def _round_fingerprints(game: Game) -> list[int]:
         try:
             prints.append(fingerprint.fingerprint(image))
         except ValueError:
-            logger.warning("extra screenshot: could not fingerprint the round's image")
+            logger.opt(exception=True).warning(
+                "extra screenshot: could not fingerprint the round's image"
+            )
     return prints
 
 
@@ -179,9 +181,16 @@ def _already_seen(plan: ScreenshotPlan, url: str, print_: int) -> bool:
     return False
 
 
-def _render(plan: ScreenshotPlan, url: str, data: bytes) -> FetchedScreenshot:
+def _fingerprint(data: bytes) -> int:
     try:
-        print_ = fingerprint.fingerprint(data)
+        return fingerprint.fingerprint(data)
+    except ValueError:
+        logger.opt(exception=True).warning("extra screenshot: download is not a readable image")
+        raise ScreenshotFetchError("unreadable download") from None
+
+
+def _render(plan: ScreenshotPlan, url: str, data: bytes, print_: int) -> FetchedScreenshot:
+    try:
         pixelated = pixelate_service.pixelate(data, plan.width, plan.algorithm)
     except (OSError, ValueError):
         logger.opt(exception=True).warning("extra screenshot: could not pixelate the download")
@@ -203,14 +212,15 @@ async def fetch_extra_screenshot(
             if tried == MAX_CANDIDATE_DOWNLOADS:
                 break
             tried += 1
-            fetched = _render(plan, url, await _download(context, provider, url))
-            if not _already_seen(plan, url, fetched.fingerprint):
+            data = await _download(context, provider, url)
+            print_ = _fingerprint(data)
+            if not _already_seen(plan, url, print_):
                 logger.info(
                     "extra screenshot: picked {screenshot_url} ({tried} candidate(s) tried)",
                     screenshot_url=url,
                     tried=tried,
                 )
-                return fetched
+                return _render(plan, url, data, print_)
     if failed:
         raise ScreenshotFetchError("provider lookup failed")
     logger.info(
