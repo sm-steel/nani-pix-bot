@@ -89,6 +89,18 @@ in the topic is fine, otherwise they need to message the bot first.
   </TgMessage>
 </TelegramChat>
 
+### The clue album
+
+Every ending that shows the answer (a win, an unsolved round, `/pass`, and
+`/stop` with reveal) is followed by a second post, with no pin: an album
+captioned **🖼 Clues from this game**. It holds every extra screenshot that was
+bought during the round, in the order they were handed out, in full quality
+and unpixelated. Refunded ones are in it too. In
+[HARD MODE](/nani-pix-bot/players/hard-mode/), the album starts with the other
+screenshot of the pair, since the video shows only one of them. More than 10
+pictures go out as several albums, a single picture as a plain photo, and if
+there's nothing to show, nothing is posted.
+
 ## Nobody wins
 
 A round ends **unsolved** when:
@@ -104,7 +116,7 @@ ends within 30 hours.
 
 The bot reveals the screenshot and the title with the same kind of video as a win,
 just without the gold badge. If the video can't be made in time, you get the plain
-screenshot instead. Any [bounty](/nani-pix-bot/players/pixels-and-shop/#spending-in-public)
+screenshot instead. The [clue album](#the-clue-album) follows it. Any [bounty](/nani-pix-bot/players/pixels-and-shop/#spending-in-public)
 goes back to the players who put it up, and the reveal says so.
 
 An unsolved round doesn't hand the turn to anyone: if the turn was open, it stays

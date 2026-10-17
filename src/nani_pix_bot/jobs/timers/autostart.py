@@ -45,7 +45,7 @@ class AutostartTrigger(enum.Enum):
 @dataclass(frozen=True)
 class _FirstTurnPost:
     """What the group announcement needs, captured while the staging
-    game's session was still open — post_current_images runs after that
+    game's session was still open — post_stage_images runs after that
     session (and its commit) has already closed, same pattern as
     commands/dm_start/preview.py's _FirstStagePost. Every autostart game
     is hard mode now, so this carries the screenshot pair's two

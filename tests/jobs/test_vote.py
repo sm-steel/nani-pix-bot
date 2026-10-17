@@ -69,6 +69,7 @@ def _job_context(session_factory, game_id: int) -> MagicMock:
     context.bot.send_message = AsyncMock(return_value=MagicMock(message_id=77))
     context.bot.edit_message_reply_markup = AsyncMock()
     context.bot.send_media_group = AsyncMock(return_value=[MagicMock(message_id=1)])
+    context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=2))
     context.bot.pin_chat_message = AsyncMock()
     context.bot.unpin_chat_message = AsyncMock()
     context.job_queue.get_jobs_by_name.return_value = []
@@ -291,7 +292,7 @@ async def test_the_vote_opening_posts_the_reveal_pair_without_a_winner(
     post_reveal_pair.assert_awaited_once()
     assert post_reveal_pair.await_args is not None
     kwargs = post_reveal_pair.await_args.kwargs
-    assert kwargs["target"] == RevealTarget(game_id, None)
+    assert kwargs["target"] == RevealTarget(game_id, None, clear_clues=False)
     assert kwargs["photos"] == (b"a", b"b")
     assert "Frieren" in kwargs["caption"]
 

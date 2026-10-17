@@ -24,6 +24,7 @@ from nani_pix_bot.jobs.timers.current_image import RevealTarget, free_reveal_slo
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services.clues import handouts
 from nani_pix_bot.services.clues import shop as shop_service
 from nani_pix_bot.services.economy import bounty
 
@@ -36,7 +37,8 @@ class _StoppedGame:
     At most one of `original_bytes`/`hard_mode_photos` is populated for
     a reveal: a normal-mode game carries `original_bytes` (posted via
     post_current_image), a hard-mode game carries `hard_mode_photos`
-    (posted via post_current_images as a 2-photo album) — same
+    (posted via post_reveal_pair: the video of one, then the other
+    opening the clue album) — same
     exactly-one-of-two-fields dispatch shape as guess.py's
     _Announcement."""
 
@@ -44,6 +46,7 @@ class _StoppedGame:
     title: str
     original_bytes: bytes | None = None
     hard_mode_photos: tuple[bytes, bytes] | None = None
+    clues: tuple[bytes, ...] = ()  # read before the game (and its handouts) is deleted
 
 
 async def _may_stop(
@@ -178,6 +181,9 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
             timeout_module.cancel_inactivity_timers(context.job_queue, game_id)
         else:
             timeout_module.cancel_setup_abandon(context.job_queue, game_id)
+        # The CASCADE drops the handouts with the game: take the clue album's
+        # images first, for the reveal to post.
+        clues = tuple(handouts.revealed_images(session, game_id)) if can_reveal_now else ()
         # The CASCADE would drop the game's clue purchases unrefunded.
         shop_service.refund_game(session, game_id)
         bounty.refund_pot(session, game_id)
@@ -192,6 +198,7 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
         title=title,
         original_bytes=original_bytes,
         hard_mode_photos=hard_mode_photos,
+        clues=clues,
     )
     revealed = await _announce_stop(context, session_factory, stopped_game, lang, reveal)
     logger.info(
@@ -224,8 +231,8 @@ async def _announce_stop(
     topic's pinned image) when there is no video. That caption already says
     the turn is open, so the reveal path posts one message rather than a
     photo plus a duplicate notice. A hard-mode game instead posts its stored
-    screenshot pair via `post_reveal_pair` (the video plus the other
-    screenshot, or the plain 2-photo album as the fallback), same
+    screenshot pair via `post_reveal_pair` (the video, or the photo as the fallback,
+    then the other screenshot opening the clue album), same
     caption-already-says-the-turn-is-open reasoning. Falls back to the
     plain notice if the button was a stale tap on a game that no longer
     had its image(s) (see the caller's own warning log for that case)."""
@@ -233,7 +240,7 @@ async def _announce_stop(
         sent = await timeout_module.post_reveal_pair(
             context,
             session_factory,
-            target=RevealTarget(stopped_game.game_id, None),
+            target=RevealTarget(stopped_game.game_id, None, clues=stopped_game.clues),
             photos=stopped_game.hard_mode_photos,
             caption=i18n.t("stop.hard_mode_stopped_reveal_caption", lang, title=stopped_game.title)
             + game_service.game_id_line(stopped_game.game_id, lang),
@@ -244,7 +251,7 @@ async def _announce_stop(
         sent = await timeout_module.post_reveal(
             context,
             session_factory,
-            target=RevealTarget(stopped_game.game_id, None),
+            target=RevealTarget(stopped_game.game_id, None, clues=stopped_game.clues),
             photo=stopped_game.original_bytes,
             caption=i18n.t("stop.stopped_reveal_caption", lang, title=stopped_game.title)
             + game_service.game_id_line(stopped_game.game_id, lang),

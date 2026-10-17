@@ -36,10 +36,10 @@ class Announcement:
     closes.
 
     Exactly one of `photo`/`photos` is populated: a normal-mode outcome
-    sets `photo`, a hard-mode outcome sets `photos` (a 2-photo album) —
+    sets `photo`, a hard-mode outcome sets `photos` (posted as a 2-photo stage album) —
     see `send_announcement` in this module, which picks the sender based
     on which field is set. A stage post goes out as a still via
-    post_current_image/post_current_images; an ending that sets `reveal`
+    post_current_image/post_stage_images; an ending that sets `reveal`
     goes through post_reveal/post_reveal_pair instead (the animated reveal
     video, with these photos as the fallback)."""
 
@@ -109,7 +109,7 @@ def prepare_stage_advanced_announcement(
 async def send_announcement(
     context: ContextTypes.DEFAULT_TYPE, session_factory, announcement: Announcement
 ) -> Message | tuple[Message, ...] | None:
-    """Picks post_current_image vs. post_current_images based on which
+    """Picks post_current_image vs. post_stage_images based on which
     of Announcement's photo/photos fields is populated, and sends it.
     Hoisted out of guess_command purely to keep its own cyclomatic
     complexity down, same reasoning as require_original_image above."""
@@ -136,7 +136,7 @@ async def _send_reveal(
     session_factory,
     announcement: Announcement,
     reveal: RevealTarget,
-) -> Message | tuple[Message, ...] | None:
+) -> Message | None:
     if announcement.photos is not None:
         return await timeout_module.post_reveal_pair(
             context,
@@ -156,18 +156,23 @@ async def _send_reveal(
     raise RuntimeError("Announcement has neither photo nor photos set")
 
 
+async def send_reveal_announcement(
+    context: ContextTypes.DEFAULT_TYPE, session_factory, announcement: Announcement
+) -> Message | None:
+    """send_announcement for an ending: message 1 of the reveal, which the
+    caller feeds to clear_image_if_sent."""
+    if announcement.reveal is None:
+        raise RuntimeError("Announcement has no reveal target")
+    return await _send_reveal(context, session_factory, announcement, announcement.reveal)
+
+
 async def _send(
     context: ContextTypes.DEFAULT_TYPE, session_factory, announcement: Announcement
 ) -> Message | tuple[Message, ...] | None:
     if announcement.reveal is not None and not announcement.is_stage_post:
         return await _send_reveal(context, session_factory, announcement, announcement.reveal)
     if announcement.photos is not None:
-        post_album = (
-            timeout_module.post_stage_images
-            if announcement.is_stage_post
-            else timeout_module.post_current_images
-        )
-        return await post_album(
+        return await timeout_module.post_stage_images(
             context, session_factory, photos=announcement.photos, caption=announcement.caption
         )
     if announcement.photo is not None:

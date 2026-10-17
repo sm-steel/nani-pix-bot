@@ -70,7 +70,7 @@ TIMEOUT_ENDING = Ending("2-day timeout", "timeout.caption", "timeout.hard_mode_c
 @dataclass(frozen=True)
 class _HardModeTimeoutReveal:
     """What a hard-mode game's unsolved ending needs to post via
-    post_current_images once its session has committed — the hard-mode
+    post_reveal_pair once its session has committed — the hard-mode
     analogue of the normal path's single original_bytes/caption pair
     below, carrying a screenshot pair instead of one photo."""
 

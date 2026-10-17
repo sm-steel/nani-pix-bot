@@ -88,6 +88,7 @@ class PurchaseRequest:
     tile_index: int | None = None
     screenshot_url: str | None = None
     screenshot_fingerprint: int | None = None  # services/pixelate/fingerprint.py
+    screenshot_original: bytes | None = None  # full-quality bytes, kept for the album
 
 
 def _purchases(session: Session, game_id: int, player_id: int) -> list[CluePurchase]:
@@ -362,7 +363,7 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
     detail = _detail(request)
     bought = token_clues.pay(session, game, buyer, request, detail)
     bought = bought or _pay_with_currency(session, game, buyer, request)
-    handouts.record(session, bought, request.screenshot_fingerprint)
+    handouts.record(session, bought, request.screenshot_fingerprint, request.screenshot_original)
     events.emit(
         session,
         EventType.CLUE_PURCHASED,
