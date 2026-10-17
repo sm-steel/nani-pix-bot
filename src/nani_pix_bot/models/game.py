@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from nani_pix_bot.models.base import Base
 from nani_pix_bot.models.enums import (
     DEFAULT_ALGORITHM,
+    ClueScreenshotMode,
     GameStatus,
     PixelAlgorithm,
     PixelStage,
@@ -19,6 +20,8 @@ from nani_pix_bot.models.player import Player
 TITLE_LENGTH = 255
 # A Provider value plus headroom — same length as `source` below.
 SCREENSHOT_SOURCE_LENGTH = 16
+# The longest ClueScreenshotMode value plus headroom.
+CLUE_SCREENSHOT_MODE_LENGTH = 16
 # A length this large just tells MariaDB to pick LONGBLOB over
 # BLOB/MEDIUMBLOB (see services/pixelate/render.py's docstring on why no image
 # bytes are ever this large in practice, but LONGBLOB costs nothing
@@ -139,6 +142,15 @@ class Game(Base):
     # String(16) warning there is about columns whose existing rows hold
     # Provider *values*; nothing predates this one.
     pixel_algorithm: Mapped[PixelAlgorithm] = mapped_column(default=DEFAULT_ALGORITHM)
+    # Where the shop's "Extra screenshot" clues come from (issue #450), set
+    # on the preview's clue panel and frozen once the game goes live. The
+    # author's list itself is the clue_author_screenshots table. A plain
+    # String like `source` above, so it stores the value, not the name.
+    clue_screenshot_mode: Mapped[ClueScreenshotMode] = mapped_column(
+        String(CLUE_SCREENSHOT_MODE_LENGTH),
+        default=ClueScreenshotMode.RANDOM,
+        server_default=ClueScreenshotMode.RANDOM.value,
+    )
     status: Mapped[GameStatus] = mapped_column(default=GameStatus.SETUP)
     current_stage: Mapped[PixelStage | None] = mapped_column(default=None)
     wrong_guess_count: Mapped[int] = mapped_column(default=0)

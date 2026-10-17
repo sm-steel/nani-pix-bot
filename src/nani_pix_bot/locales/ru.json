@@ -382,6 +382,7 @@
   "dm_start.bounty_prompt": "💰 Назначьте награду тому, кто отгадает ваш раунд — она списывается с ваших пикселей и достаётся победителю (вернётся, если никто не отгадает).\nВ котле: {pot} 💠 · ваш баланс: {balance} 💠",
   "dm_start.bounty_option": "+{amount} 💠",
   "dm_start.bounty_none_affordable": "Сейчас не хватает пикселей на награду.",
+  "dm_start.clue_upload_prompt": "Пришлите скриншот, который добавить в скриншоты-подсказки.",
   "tip.usage": "Использование: /tip @username <сумма>",
   "tip.unknown_user": "Я пока не знаю никого с ником @{username}.",
   "tip.unknown_user_hint": "Я пока не знаю никого с ником @{username} — пусть сначала напишет мне в личку: @{bot_username}",

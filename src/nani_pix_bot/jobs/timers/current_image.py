@@ -25,7 +25,7 @@ from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.clues import handouts
+from nani_pix_bot.services.clues import author_list, handouts
 from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.game import reveal_extras
 from nani_pix_bot.services.reveal import store as reveal_store
@@ -379,6 +379,7 @@ async def _post_clue_album(
     if timed_out and extras_sent and target.clear_clues:
         with session_scope(session_factory) as session:
             cleared = handouts.clear_images(session, target.game_id)
+            author_list.clear_images(session, target.game_id)
         logger.info("cleared {count} clue image(s) after the reveal", count=cleared)
 
 
@@ -455,12 +456,14 @@ def clear_image_if_sent(
 
     `sent` is the reveal's message 1 (post_reveal / post_reveal_pair),
     only ever checked for `is None`. Confirmed sent, it also drops the
-    game's kept clue screenshots (the album went out with the reveal)."""
+    game's kept clue screenshots and the author's list's originals (the
+    album went out with the reveal)."""
     if sent is None:
         logger.info("reveal not confirmed sent — keeping the screenshot bytes", game_id=game_id)
         return
     with session_scope(session_factory) as session:
         handouts.clear_images(session, game_id)
+        author_list.clear_images(session, game_id)
         game = session.get(Game, game_id)
         if game is None:
             logger.debug("row already gone — no screenshot bytes to clear", game_id=game_id)

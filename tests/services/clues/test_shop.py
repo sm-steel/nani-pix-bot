@@ -4,12 +4,19 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models import CluePurchase, CurrencyTransfer, Player
-from nani_pix_bot.models.enums import ClueKind, EventType, GameStatus, PixelStage, Provider
+from nani_pix_bot.models import ClueAuthorScreenshot, CluePurchase, CurrencyTransfer, Player
+from nani_pix_bot.models.enums import (
+    ClueKind,
+    ClueScreenshotMode,
+    EventType,
+    GameStatus,
+    PixelStage,
+    Provider,
+)
 from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services.clues import shop
+from nani_pix_bot.services.clues import author_list, shop
 from nani_pix_bot.services.economy import config, earning
 from nani_pix_bot.services.economy.config import EconomyKey
 from nani_pix_bot.services.game import guesses
@@ -577,3 +584,115 @@ def test_refund_logs_a_clue_refunded_event(session: Session) -> None:
     (row,) = _logged(session, EventType.CLUE_REFUNDED)
     assert (row.actor_id, row.game_id) == (BUYER, game.id)
     assert row.data == {"kind": "title_shape"}
+
+
+# --- The author's clue screenshots (issue #450) ---
+
+
+@pytest.mark.parametrize(
+    ("mode", "unsold_author", "has_provider", "expected"),
+    [
+        (ClueScreenshotMode.RANDOM, 0, False, False),
+        (ClueScreenshotMode.RANDOM, 0, True, True),
+        (ClueScreenshotMode.RANDOM, 2, False, False),
+        (ClueScreenshotMode.RANDOM, 2, True, True),
+        (ClueScreenshotMode.AUTHOR, 0, False, False),
+        (ClueScreenshotMode.AUTHOR, 0, True, False),
+        (ClueScreenshotMode.AUTHOR, 1, False, True),
+        (ClueScreenshotMode.AUTHOR, 1, True, True),
+        (ClueScreenshotMode.BOTH, 0, False, False),
+        (ClueScreenshotMode.BOTH, 0, True, True),
+        (ClueScreenshotMode.BOTH, 1, False, True),
+        (ClueScreenshotMode.BOTH, 1, True, True),
+    ],
+)
+def test_screenshot_source_open_table(
+    mode: ClueScreenshotMode, unsold_author: int, has_provider: bool, expected: bool
+) -> None:
+    assert (
+        shop.screenshot_source_open(mode, unsold_author=unsold_author, has_provider=has_provider)
+        is expected
+    )
+
+
+def _author_entry(session: Session, game: Game, url: str | None = None) -> ClueAuthorScreenshot:
+    row = ClueAuthorScreenshot(game_id=game.id, url=url, image=b"png", fingerprint=1)
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _screenshot_offered(session: Session, game: Game, buyer: Player) -> bool:
+    return ClueKind.SCREENSHOT in {o.kind for o in shop.offers(session, game, buyer, "en")}
+
+
+def _buy_entry(session: Session, game: Game, buyer: Player, entry: ClueAuthorScreenshot) -> None:
+    request = shop.PurchaseRequest(
+        ClueKind.SCREENSHOT,
+        screenshot_url=author_list.handout_key(entry),
+        screenshot_from_author=True,
+    )
+    shop.purchase(session, game, buyer, request)
+
+
+def test_author_mode_offers_without_provider(session: Session) -> None:
+    game, buyer = _setup(session, shikimori_id=None, clue_screenshot_mode=ClueScreenshotMode.AUTHOR)
+    _author_entry(session, game)
+
+    assert _screenshot_offered(session, game, buyer)
+
+
+def test_author_mode_used_up_drops_offer(session: Session) -> None:
+    game, buyer = _setup(session, clue_screenshot_mode=ClueScreenshotMode.AUTHOR)
+    _buy_entry(session, game, buyer, _author_entry(session, game))
+
+    # A provider is on file, but Author's mode never falls back to it.
+    assert not _screenshot_offered(session, game, buyer)
+
+
+def test_both_mode_keeps_offer_from_provider_once_list_used_up(session: Session) -> None:
+    game, buyer = _setup(session, clue_screenshot_mode=ClueScreenshotMode.BOTH)
+    _buy_entry(session, game, buyer, _author_entry(session, game))
+
+    assert _screenshot_offered(session, game, buyer)
+
+
+def test_author_entry_shown_as_round_image_is_not_unsold(session: Session) -> None:
+    game, buyer = _setup(
+        session,
+        shikimori_id=None,
+        clue_screenshot_mode=ClueScreenshotMode.AUTHOR,
+        shown_screenshot_urls=["https://x/main.jpg"],
+    )
+    _author_entry(session, game, url="https://x/main.jpg")
+
+    assert not _screenshot_offered(session, game, buyer)
+
+
+def test_author_upload_handout_key_counts_toward_cap(session: Session) -> None:
+    game, buyer = _setup(session, clue_screenshot_mode=ClueScreenshotMode.BOTH)
+    entry = _author_entry(session, game)
+
+    _buy_entry(session, game, buyer, entry)
+
+    [bought] = session.scalars(select(CluePurchase)).all()
+    assert bought.screenshot_url == f"author:{entry.id}"
+    assert shop.owned_screenshot_urls(session, game.id, BUYER) == {f"author:{entry.id}"}
+    [offer] = [o for o in shop.offers(session, game, buyer, "en") if o.kind is ClueKind.SCREENSHOT]
+    assert offer.owned_screenshots == 1
+
+
+def test_purchase_line_says_where_the_screenshot_came_from(session: Session, log_records) -> None:
+    game, buyer = _setup(session, clue_screenshot_mode=ClueScreenshotMode.BOTH)
+    _buy_entry(session, game, buyer, _author_entry(session, game))
+    shop.purchase(
+        session,
+        game,
+        buyer,
+        shop.PurchaseRequest(ClueKind.SCREENSHOT, screenshot_url="https://x/r.jpg"),
+    )
+
+    bought = [line for line in log_records if line.message.startswith("bought the screenshot")]
+    assert [line.extra["from_author"] for line in bought] == [True, False]
+    assert "from the author's list" in bought[0].message
+    assert "random pick" in bought[1].message

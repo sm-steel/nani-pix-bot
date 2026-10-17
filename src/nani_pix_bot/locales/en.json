@@ -382,6 +382,7 @@
   "dm_start.bounty_prompt": "💰 Put up a bounty for whoever solves your round — it comes out of your pixels and goes to the winner (refunded if nobody solves it).\nPot: {pot} 💠 · your balance: {balance} 💠",
   "dm_start.bounty_option": "+{amount} 💠",
   "dm_start.bounty_none_affordable": "You don't have enough pixels for a bounty right now.",
+  "dm_start.clue_upload_prompt": "Send the screenshot to add to your clue screenshots.",
   "tip.usage": "Usage: /tip @username <amount>",
   "tip.unknown_user": "I don't know anyone called @{username} yet.",
   "tip.unknown_user_hint": "I don't know anyone called @{username} yet — they need to send me a direct message first: @{bot_username}",

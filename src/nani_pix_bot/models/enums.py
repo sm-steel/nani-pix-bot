@@ -321,6 +321,21 @@ class SetupStep(enum.Enum):
     # ticks which to accept too (issue #348). Exited by "Add" or "Skip".
     PICKING_ALIASES = "picking_aliases"
     CONFIRMING = "confirming"  # showing the preview, waiting for a button tap
+    # The clue panel's "Upload my own" was tapped (issue #452): the next DM
+    # photo joins the author's clue screenshot list, never the main image.
+    # Exited back to CONFIRMING by that photo.
+    AWAITING_CLUE_PHOTO = "awaiting_clue_photo"
+
+
+class ClueScreenshotMode(enum.StrEnum):
+    """Where a game's "Extra screenshot" clues come from, chosen by its
+    starter on the setup preview's clue panel (issue #450). Stored as a
+    plain string, like `Provider`. Games the bot starts itself (autostart,
+    HARD MODE) have no author and stay RANDOM."""
+
+    RANDOM = "random"  # a random Shikimori/TMDB frame, as before the panel existed
+    AUTHOR = "author"  # only the author's list; none left means none sold
+    BOTH = "both"  # the author's list first, then random frames
 
 
 class CurrencyReason(enum.StrEnum):

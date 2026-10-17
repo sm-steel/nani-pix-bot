@@ -301,6 +301,7 @@ _SETUP_SCREENS: dict[SetupStep, Callable[..., _SetupScreen]] = {
     SetupStep.PICKING_ALIASES: _picking_aliases_screen,
     SetupStep.AWAITING_PHOTO_CHANGE: _prompt_only("dm_start.ask_new_photo"),
     SetupStep.AWAITING_SYNONYM: _prompt_only("dm_start.ask_extra_synonym"),
+    SetupStep.AWAITING_CLUE_PHOTO: _prompt_only("dm_start.clue_upload_prompt"),
 }
 
 
@@ -353,12 +354,13 @@ async def _resume_setup(message, game: Game, lang: str, context: ContextTypes.DE
     nothing is rescheduled either.
 
     Genuinely starting over is still `/stop`, unchanged; this only stops
-    the bot from denying the setup exists — and says so, on the two steps
+    the bot from denying the setup exists — and says so, on the steps
     where the screen alone cannot (issue #79, routed from #73)."""
     text, keyboard = _current_setup_screen(game, lang, context)
     if keyboard is None:
-        # AWAITING_PHOTO_CHANGE and AWAITING_SYNONYM: the two steps whose
-        # route forward is the photo or text being asked for, so there is
+        # AWAITING_PHOTO_CHANGE, AWAITING_SYNONYM and AWAITING_CLUE_PHOTO:
+        # the steps whose route forward is the photo or text being asked
+        # for, so there is
         # no keyboard to make this recognisable *as* a re-show. On its
         # own the prompt reads as a fresh question and answers the
         # /newgame with nothing, which is the same "the bot is ignoring

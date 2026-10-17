@@ -317,6 +317,7 @@ async def _buy_screenshot(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> N
                 screenshot_url=fetched.url,
                 screenshot_fingerprint=fetched.fingerprint,
                 screenshot_original=fetched.original,
+                screenshot_from_author=fetched.from_author,
             )
             _, row, amount = _charge(session, tap, request)
             bought = _ImageBought(
