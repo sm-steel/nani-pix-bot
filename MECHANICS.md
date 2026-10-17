@@ -1751,12 +1751,13 @@ frozen at Confirm.
 
 | Mode | Where the next extra screenshot comes from |
 |---|---|
-| Random (default) | the random Shikimori/TMDB pick described above, unchanged |
+| Random (default) | the random Shikimori/TMDB pick described above, unchanged; the author's list is not used (it stays stored, so switching back before Confirm keeps it) |
 | Author's | a random entry of the author's list not handed out yet; once the list is used up there is none (the usual "no other screenshots", uncharged) |
 | Both | the author's list first, then the random pick once the list is used up |
 
 - **The list.** At most 10 screenshots (`MAX_AUTHOR_SCREENSHOTS`), each
-  added from a source gallery or uploaded as a photo, and removable. Sources
+  added from a source gallery or uploaded as a photo (one per "Upload my
+  own": with several photos at once only the first is added), and removable. Sources
   are Shikimori and TMDB only (the shop's `clue_screenshot_providers`; Tenrai's
   posters can show the title), and only when the game resolved an id for
   one of them. An upload needs no provider. The list is the
@@ -1765,9 +1766,13 @@ frozen at Confirm.
   in the shop) matches the round's main screenshot or an entry already on
   the list is refused, as is the same source URL twice; so is an 11th. An
   unreadable photo is refused too. Every refusal says why and changes nothing.
-- **Re-identifying clears it.** Re-searching the title, picking a different
-  anime, and picking a new search result all empty the list and put the
-  mode back to Random, since the screenshots belong to the old anime.
+- **Re-identifying clears it.** Every re-identification empties the list
+  and puts the mode back to Random, since the screenshots belong to the old
+  anime: re-searching the title, picking a different anime, picking a search
+  or MAL-list result, a manual entry, a new method. All of them go through
+  `clear_identification` (`services/game/state.py`), which does it.
+  Text typed while the panel waits for an upload identifies nothing; the
+  upload prompt is asked again.
   **Change image** keeps the list; at Confirm, entries that match the new
   main screenshot's frame are dropped.
 - **Empty list at Confirm.** In Author's or Both mode, Confirm with nothing
@@ -1779,14 +1784,16 @@ frozen at Confirm.
 - **Availability.** Author's mode offers the clue while the list has
   entries not handed out yet, even for a game with no Shikimori/TMDB id,
   and drops it from the shop once they are used up. Both offers it while the
-  list or a provider can still supply. Random is unchanged.
+  list or a provider can still supply. Random is unchanged and ignores the
+  list.
 - **Hand-out rules are unchanged.** The per-player cap stays 3, the price and
   its escalation too, and each screenshot still goes out at most once per
   game. An entry's handout key (`screenshot_url` on its `CluePurchase` and
   `ClueScreenshotHandout`) is its source URL, or `author:<entry id>` for an
   upload. An entry is pixelated to the current stage like a random pick,
-  from its stored original with no download. Its original goes into the
-  clue album at the end like any other (see "The clue album"). The purchase
+  from its stored original with no download. Once handed out, its original
+  goes into the clue album at the end like any other (see "The clue
+  album"); entries nobody bought are never shown. The purchase
   log line says whether the screenshot came from the author's list or was a
   random pick.
 - **Cleanup.** The list's stored originals are cleared with the reveal's
