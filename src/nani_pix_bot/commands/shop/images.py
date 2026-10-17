@@ -4,7 +4,7 @@ and rendered before anyone is charged) and the revealed-tiles picture."""
 import random
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -16,12 +16,12 @@ from nani_pix_bot.commands.dm_start._shared import (
     SEARCH_SERVICE_ERRORS,
     client_for_source,
 )
-from nani_pix_bot.models.enums import ClueKind, PixelAlgorithm, Provider
+from nani_pix_bot.models.enums import ClueKind, ClueScreenshotMode, PixelAlgorithm, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services import players, settings
-from nani_pix_bot.services.clues import handouts, shop
+from nani_pix_bot.services.clues import author_list, handouts, shop
 from nani_pix_bot.services.clues.shop import Offer, Refusal, ShopRefusedError
 from nani_pix_bot.services.pixelate import fingerprint, render
 from nani_pix_bot.services.settings import stage_config
@@ -34,12 +34,25 @@ _EARLIER_CLUE = "an earlier clue"
 
 
 @dataclass(frozen=True)
+class AuthorCandidate:
+    """An unsold entry of the author's list (issue #450), with the bytes it
+    is pixelated from: no download needed. `key` is its handout key
+    (author_list.handout_key)."""
+
+    key: str
+    image: bytes
+    fingerprint: int
+
+
+@dataclass(frozen=True)
 class ScreenshotPlan:
     """Everything the network step needs, read in one short session.
     `excluded` are URLs never to sell (the round's own, and every one
     handed out in the game — issue #446); `seen` are fingerprints of frames
     the round already showed, each with what it was, for the same check
-    on frames behind another URL or uploaded."""
+    on frames behind another URL or uploaded. `author` are the author's
+    list's unsold entries (none in Random mode), tried before any random pick; `mode` says
+    whether a random pick may follow (issue #450)."""
 
     lang: str
     excluded: frozenset[str]
@@ -47,6 +60,8 @@ class ScreenshotPlan:
     width: int
     algorithm: PixelAlgorithm
     seen: tuple[tuple[int, str], ...] = ()
+    mode: ClueScreenshotMode = ClueScreenshotMode.RANDOM
+    author: tuple[AuthorCandidate, ...] = ()
 
 
 class ScreenshotFetchError(Exception):
@@ -56,10 +71,11 @@ class ScreenshotFetchError(Exception):
 
 @dataclass(frozen=True)
 class FetchedScreenshot:
-    url: str
+    url: str  # the handout key: a provider URL, or an upload's author:<id>
     pixelated: bytes
     fingerprint: int
     original: bytes
+    from_author: bool = False
 
 
 def stage_width(session: Session, game: Game) -> int:
@@ -113,9 +129,30 @@ def screenshot_plan(session: Session, user: User, game_id: int) -> ScreenshotPla
         (provider, getattr(game, provider.id_attr_name))
         for provider in shop.clue_screenshot_providers(game)
     )
-    width = stage_width(session, game)
+    mode = ClueScreenshotMode(game.clue_screenshot_mode)
     return ScreenshotPlan(
-        lang, frozenset(excluded), sources, width, game.pixel_algorithm, tuple(seen)
+        lang,
+        frozenset(excluded),
+        sources,
+        stage_width(session, game),
+        game.pixel_algorithm,
+        tuple(seen),
+        mode=mode,
+        author=_author_candidates(session, game, mode),
+    )
+
+
+def _author_candidates(
+    session: Session, game: Game, mode: ClueScreenshotMode
+) -> tuple[AuthorCandidate, ...]:
+    """The author's unsold entries, or none in Random mode: Random is the
+    random pick alone, and the list stays stored but unused (issue #450)."""
+    if mode == ClueScreenshotMode.RANDOM:
+        return ()
+    return tuple(
+        AuthorCandidate(author_list.handout_key(entry), entry.image, entry.fingerprint)
+        for entry in author_list.unsold(session, game)
+        if entry.image is not None
     )
 
 
@@ -194,9 +231,28 @@ def _render(plan: ScreenshotPlan, url: str, data: bytes, print_: int) -> Fetched
     try:
         pixelated = pixelate_service.pixelate(data, plan.width, plan.algorithm)
     except (OSError, ValueError):
-        logger.opt(exception=True).warning("extra screenshot: could not pixelate the download")
+        logger.opt(exception=True).warning(
+            "extra screenshot: could not pixelate {screenshot_url}", screenshot_url=url
+        )
         raise ScreenshotFetchError("pixelation failed") from None
     return FetchedScreenshot(url, pixelated, print_, data)
+
+
+def _author_pick(plan: ScreenshotPlan) -> FetchedScreenshot | None:
+    """A random unsold entry of the author's list the round hasn't shown
+    yet, pixelated from its stored bytes; None when none is left."""
+    candidates = list(plan.author)
+    random.shuffle(candidates)
+    for candidate in candidates:
+        if not _already_seen(plan, candidate.key, candidate.fingerprint):
+            logger.info(
+                "extra screenshot: picked {screenshot_url} from the author's list ({left} unsold)",
+                screenshot_url=candidate.key,
+                left=len(candidates),
+            )
+            rendered = _render(plan, candidate.key, candidate.image, candidate.fingerprint)
+            return replace(rendered, from_author=True)
+    return None
 
 
 async def fetch_extra_screenshot(
@@ -205,7 +261,19 @@ async def fetch_extra_screenshot(
     """Find, download and pixelate a screenshot nobody in the round has seen
     yet, or None (logged) if every provider answered but none had one. A
     failed lookup, download or pixelation raises ScreenshotFetchError — the
-    caller hasn't charged anyone yet."""
+    caller hasn't charged anyone yet.
+
+    The author's list goes first (issue #450); a random pick follows only
+    in Random or Both mode."""
+    if (picked := _author_pick(plan)) is not None:
+        return picked
+    if plan.mode == ClueScreenshotMode.AUTHOR:
+        logger.info(
+            "extra screenshot: the author's list is used up ({count} entries tried)"
+            " — no random pick in Author's mode",
+            count=len(plan.author),
+        )
+        return None
     failed: list[Provider] = []
     tried = 0
     async with aclosing(_unused_urls(context, plan, failed)) as candidates:

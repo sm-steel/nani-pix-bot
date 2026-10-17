@@ -6,6 +6,9 @@ from nani_pix_bot.models.achievement import AchievementGrant as AchievementGrant
 from nani_pix_bot.models.announcement import AnnouncementOutbox as AnnouncementOutbox
 from nani_pix_bot.models.base import Base as Base
 from nani_pix_bot.models.bot_settings import BotSettings as BotSettings
+from nani_pix_bot.models.clue_author_screenshot import (
+    ClueAuthorScreenshot as ClueAuthorScreenshot,
+)
 from nani_pix_bot.models.clue_purchase import CluePurchase as CluePurchase
 from nani_pix_bot.models.clue_screenshot_handout import (
     ClueScreenshotHandout as ClueScreenshotHandout,

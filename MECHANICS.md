@@ -62,6 +62,8 @@ stateDiagram-v2
         AwaitingPhotoChange --> Confirming: new photo sent
         Confirming --> AwaitingSynonym: tap "Add a synonym"
         AwaitingSynonym --> Confirming: synonym typed
+        Confirming --> AwaitingCluePhoto: tap "Clue screenshots" ->\n"Upload my own"\n(player-started games only)
+        AwaitingCluePhoto --> Confirming: photo sent (added to the clue list,\nnot a change of the main image),\nor "Back"
         PickingMethod --> PickingAliases: photo-first pick, more names\nfound on other providers
         PickingScreenshot --> PickingAliases: same, found while\npicking the screenshot
         PickingAliases --> AskingNumbers: Add / Skip,\nnumber-heavy title
@@ -396,6 +398,15 @@ before it goes live:
   of the old anime survives into the new one's accepted answers.
 - **Add a synonym** — type one more (or several); appended to the
   list, repeatable.
+- **🖼 Clue screenshots: <mode>** — only on games a player started (a
+  bot-started autostart or HARD MODE game has no author and is always
+  Random). Opens the clue panel, an edit of the same message: the mode
+  (**Random** / **Author's** / **Both**, the current one ticked), the
+  author's list's count out of 10, **Add from a source**, **Upload my own**,
+  **Remove…** (only while the list has entries) and **Back**. See "The
+  author's clue screenshots" under "Clue shop". The panel and the list live
+  only in setup: the mode and the list are frozen at Confirm, and nothing
+  can change them in a live game.
 - **🔢 Numbers count** ✅/⬜ — only when one of the titles has a digit.
   Off by default: guessing ignores numbers (see "Guess matching"), so
   `GITS` wins *GITS 2026*. On, the numbers are part of the answer for
@@ -1727,8 +1738,67 @@ player's balance.
   too. It comes only from sources with real in-episode frames —
   Shikimori and TMDB, starting with whichever one the round's own screenshot came from —
   never from Tenrai, whose pictures are promotional art (posters) that
-  can show the title. A game with no Shikimori or TMDB id doesn't offer
-  this clue.
+  can show the title. In Random mode (the default), a game with no
+  Shikimori or TMDB id doesn't offer this clue. Where the screenshots come
+  from depends on the game's clue screenshot mode, below.
+
+#### The author's clue screenshots
+
+**Status: Implemented** (issue #450). The starter of a player-started game
+chooses, on the confirmation preview's **🖼 Clue screenshots** panel, where
+the *Extra screenshot* clue gets its pictures. The choice is per game and
+frozen at Confirm.
+
+| Mode | Where the next extra screenshot comes from |
+|---|---|
+| Random (default) | the random Shikimori/TMDB pick described above, unchanged; the author's list is not used (it stays stored, so switching back before Confirm keeps it) |
+| Author's | a random entry of the author's list not handed out yet; once the list is used up there is none (the usual "no other screenshots", uncharged) |
+| Both | the author's list first, then the random pick once the list is used up |
+
+- **The list.** At most 10 screenshots (`MAX_AUTHOR_SCREENSHOTS`), each
+  added from a source gallery or uploaded as a photo (one per "Upload my
+  own": with several photos at once only the first is added), and removable. Sources
+  are Shikimori and TMDB only (the shop's `clue_screenshot_providers`; Tenrai's
+  posters can show the title), and only when the game resolved an id for
+  one of them. An upload needs no provider. The list is the
+  `clue_author_screenshots` table (`services/clues/author_list.py`).
+- **Refused additions.** A screenshot whose frame (perceptual fingerprint, as
+  in the shop) matches the round's main screenshot or an entry already on
+  the list is refused, as is the same source URL twice; so is an 11th. An
+  unreadable photo is refused too. Every refusal says why and changes nothing.
+- **Re-identifying clears it.** Every re-identification empties the list
+  and puts the mode back to Random, since the screenshots belong to the old
+  anime: re-searching the title, picking a different anime, picking a search
+  or MAL-list result, a manual entry, a new method. All of them go through
+  `clear_identification` (`services/game/state.py`), which does it.
+  Text typed while the panel waits for an upload identifies nothing; the
+  upload prompt is asked again.
+  **Change image** keeps the list; at Confirm, entries that match the new
+  main screenshot's frame are dropped.
+- **Empty list at Confirm.** In Author's or Both mode, Confirm with nothing
+  on the list does not start the game. The preview shows "No clue
+  screenshots added — the game will start in Random mode." with **Start
+  anyway** (sets Random, then the normal Confirm, season gate included) and
+  **Add screenshots** (opens the panel). Random mode, or a non-empty list,
+  confirms as before.
+- **Availability.** Author's mode offers the clue while the list has
+  entries not handed out yet, even for a game with no Shikimori/TMDB id,
+  and drops it from the shop once they are used up. Both offers it while the
+  list or a provider can still supply. Random is unchanged and ignores the
+  list.
+- **Hand-out rules are unchanged.** The per-player cap stays 3, the price and
+  its escalation too, and each screenshot still goes out at most once per
+  game. An entry's handout key (`screenshot_url` on its `CluePurchase` and
+  `ClueScreenshotHandout`) is its source URL, or `author:<entry id>` for an
+  upload. An entry is pixelated to the current stage like a random pick,
+  from its stored original with no download. Once handed out, its original
+  goes into the clue album at the end like any other (see "The clue
+  album"); entries nobody bought are never shown. The purchase
+  log line says whether the screenshot came from the author's list or was a
+  random pick.
+- **Cleanup.** The list's stored originals are cleared with the reveal's
+  cleanup (and kept while a HARD MODE vote is open); `/stop` or an abandoned
+  setup deletes the rows with the game.
 - *Reveal a tile*: one tile per round, the same for every buyer. The
   first player to buy it picks one square of an 8x8 grid laid over the
   round's screenshot, and gets the image back with that square shown

@@ -23,6 +23,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _search_and_build_keyboard,
     _stored_provider,
     client_for_source,
+    reprompt_clue_upload,
 )
 from nani_pix_bot.commands.dm_start.aliases import start_alias_search
 from nani_pix_bot.commands.dm_start.keyboards import (
@@ -255,6 +256,8 @@ async def _route_typed_text(
             step=typed.setup_step.value,
             game_id=typed.game_id,
         )
+    elif typed.setup_step == SetupStep.AWAITING_CLUE_PHOTO:
+        await reprompt_clue_upload(message, lang, typed.game_id)
     elif typed.setup_step == SetupStep.PICKING_SCREENSHOT:
         if typed.screenshot_menu is not None:
             # A screenshot provider is being resolved — ticket 8's

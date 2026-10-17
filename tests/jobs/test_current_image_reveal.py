@@ -8,9 +8,9 @@ from nani_pix_bot.jobs import reveal
 from nani_pix_bot.jobs.reveal import RevealWinner
 from nani_pix_bot.jobs.timers import current_image
 from nani_pix_bot.jobs.timers.current_image import RevealTarget
-from nani_pix_bot.models import ClueScreenshotHandout
+from nani_pix_bot.models import ClueAuthorScreenshot, ClueScreenshotHandout
 from nani_pix_bot.models.enums import RevealEffect
-from nani_pix_bot.services.clues import handouts
+from nani_pix_bot.services.clues import author_list, handouts
 from nani_pix_bot.services.reveal import store
 
 
@@ -194,6 +194,16 @@ def _kept(session_factory, game_id: int) -> list[bytes]:
         return handouts.revealed_images(session, game_id)
 
 
+def _add_author_entry(session_factory, game_id: int) -> None:
+    with session_scope(session_factory) as session:
+        session.add(ClueAuthorScreenshot(game_id=game_id, image=b"entry", fingerprint=1))
+
+
+def _author_images(session_factory, game_id: int) -> list[bytes | None]:
+    with session_scope(session_factory) as session:
+        return [row.image for row in author_list.entries(session, game_id)]
+
+
 def _video_ok(monkeypatch) -> MagicMock:
     monkeypatch.setattr(reveal, "render_reveal", AsyncMock(return_value=b"mp4"))
     finished = MagicMock()
@@ -357,14 +367,28 @@ async def test_pair_vote_opening_keeps_clues(session_factory, monkeypatch) -> No
 
 def test_clear_image_if_sent_clears_clue_images(session_factory) -> None:
     _add_clues(session_factory, 3, [b"c1"])
+    _add_author_entry(session_factory, 3)
     current_image.clear_image_if_sent(session_factory, 3, MagicMock())
     assert _kept(session_factory, 3) == []
+    assert _author_images(session_factory, 3) == [None]
 
 
 def test_clear_image_if_sent_keeps_clue_images_when_not_sent(session_factory) -> None:
     _add_clues(session_factory, 3, [b"c1"])
+    _add_author_entry(session_factory, 3)
     current_image.clear_image_if_sent(session_factory, 3, None)
     assert _kept(session_factory, 3) == [b"c1"]
+    assert _author_images(session_factory, 3) == [b"entry"]
+
+
+async def test_timed_out_video_clears_the_author_list_images(session_factory, monkeypatch) -> None:
+    _video_ok(monkeypatch)
+    _add_clues(session_factory, 3, [b"c1", b"c2"])
+    _add_author_entry(session_factory, 3)
+    context = _context(session_factory)
+    context.bot.send_video = AsyncMock(side_effect=TimedOut())
+    await _reveal(context, session_factory)
+    assert _author_images(session_factory, 3) == [None]
 
 
 async def test_album_prep_failure_does_not_block_the_reveal(

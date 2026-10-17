@@ -27,7 +27,12 @@ from typing import Generic, Literal, TypeVar
 from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from nani_pix_bot.models.enums import DISCOURAGED_ALGORITHMS, PixelAlgorithm, Provider
+from nani_pix_bot.models.enums import (
+    DISCOURAGED_ALGORITHMS,
+    ClueScreenshotMode,
+    PixelAlgorithm,
+    Provider,
+)
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.search.anilist import AniListResult
@@ -100,6 +105,9 @@ PREVIEW_BOUNTY_PICK_PREFIX = "preview:bounty:pick:"
 # The only amounts a setter can put up from the preview; the pick handler
 # validates against this since callback data is client-supplied.
 BOUNTY_PRESETS = (30, 60, 100)
+# The preview's button opening the clue screenshot panel (issue #452);
+# the panel's own buttons are in clue_keyboards.py.
+CLUE_PANEL_OPEN_CALLBACK_DATA = "cluepanel:open"
 
 
 _ResultT = TypeVar("_ResultT")
@@ -416,14 +424,19 @@ def algorithm_name(algorithm: PixelAlgorithm, lang: str) -> str:
 
 
 def preview_keyboard(
-    lang: str, algorithm: PixelAlgorithm, numbers_matter: bool | None = None
+    lang: str,
+    algorithm: PixelAlgorithm,
+    numbers_matter: bool | None = None,
+    clue_mode: ClueScreenshotMode | None = None,
 ) -> InlineKeyboardMarkup:
     """Buttons on the private preview shown before a game is posted to
     the group — see MECHANICS.md's "Starting a game" section. The
     pixelation button shows the game's current algorithm rather than a
     static label, so the starter can see what they'd be changing without
     opening the submenu. `numbers_matter` is the "numbers count" switch's
-    state, or None to leave the switch out (no title has a number)."""
+    state, or None to leave the switch out (no title has a number).
+    `clue_mode` labels the clue screenshot panel's button (issue #452), or
+    None to leave it out (a game with no author)."""
     confirm = InlineKeyboardButton(
         i18n.t("keyboards.preview_confirm", lang), callback_data=PREVIEW_CONFIRM_CALLBACK_DATA
     )
@@ -456,7 +469,15 @@ def preview_keyboard(
                 )
             ]
         )
-    return InlineKeyboardMarkup([*rows, [pixel_algorithm], [bounty]])
+    rows += [[pixel_algorithm], [bounty]]
+    if clue_mode is not None:
+        label = i18n.t("keyboards.clue_panel_button", lang, mode=clue_mode_name(clue_mode, lang))
+        rows.append([InlineKeyboardButton(label, callback_data=CLUE_PANEL_OPEN_CALLBACK_DATA)])
+    return InlineKeyboardMarkup(rows)
+
+
+def clue_mode_name(mode: ClueScreenshotMode, lang: str) -> str:
+    return i18n.t(f"dm_start.clue_mode_{ClueScreenshotMode(mode).value}", lang)
 
 
 def _alias_label(suggestion: dict) -> str:

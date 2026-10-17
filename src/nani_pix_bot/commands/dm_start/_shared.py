@@ -12,6 +12,7 @@ from telegram import CallbackQuery, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.dm_start.clue_keyboards import clue_back_keyboard
 from nani_pix_bot.commands.dm_start.keyboards import (
     aliases_keyboard,
     method_selection_keyboard,
@@ -23,7 +24,7 @@ from nani_pix_bot.commands.helpers.mal_config import mal_configured
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.models.enums import PixelAlgorithm, Provider, SetupStep
+from nani_pix_bot.models.enums import ClueScreenshotMode, PixelAlgorithm, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
@@ -270,10 +271,18 @@ def _picking_screenshot_screen(game: Game, lang: str, _context) -> _SetupScreen:
 
 
 def _confirming_screen(game: Game, lang: str, _context) -> _SetupScreen:
-    return (
-        i18n.t("dm_start.preview_confirm_prompt", lang),
-        preview_keyboard(lang, game.pixel_algorithm, numbers_toggle(game)),
-    )
+    """The preview's buttons message, as it was first sent."""
+    return i18n.t("dm_start.preview_confirm_prompt", lang), preview_markup(game, lang)
+
+
+def preview_markup(game: Game, lang: str) -> InlineKeyboardMarkup:
+    return preview_keyboard(lang, game.pixel_algorithm, numbers_toggle(game), clue_panel_mode(game))
+
+
+def clue_panel_mode(game: Game) -> ClueScreenshotMode | None:
+    """The mode the preview's clue panel button shows, or None for a game
+    with no author to choose one (HARD MODE), which gets no button."""
+    return None if game.hard_mode else ClueScreenshotMode(game.clue_screenshot_mode)
 
 
 def _asking_numbers_screen(game: Game, lang: str, _context) -> _SetupScreen:
@@ -285,6 +294,24 @@ def _picking_aliases_screen(game: Game, lang: str, _context) -> _SetupScreen:
         i18n.t("dm_start.alias_prompt", lang),
         aliases_keyboard(lang, game.alias_suggestions or []),
     )
+
+
+def clue_upload_screen(lang: str) -> _SetupScreen:
+    """The clue panel's "Upload my own" prompt, with Back to the panel."""
+    return i18n.t("dm_start.clue_upload_prompt", lang), clue_back_keyboard(lang)
+
+
+async def reprompt_clue_upload(message, lang: str, game_id: int) -> None:
+    """Text typed while the clue panel waits for a photo: it identifies
+    nothing (the clue list belongs to the anime already picked), so the
+    prompt is asked again."""
+    logger.info(
+        "typed {text!r} while a clue screenshot upload was awaited — asking for the photo again",
+        text=message.text,
+        game_id=game_id,
+    )
+    text, keyboard = clue_upload_screen(lang)
+    await message.reply_text(text, reply_markup=keyboard)
 
 
 def _prompt_only(key: str) -> Callable[..., _SetupScreen]:
@@ -301,6 +328,7 @@ _SETUP_SCREENS: dict[SetupStep, Callable[..., _SetupScreen]] = {
     SetupStep.PICKING_ALIASES: _picking_aliases_screen,
     SetupStep.AWAITING_PHOTO_CHANGE: _prompt_only("dm_start.ask_new_photo"),
     SetupStep.AWAITING_SYNONYM: _prompt_only("dm_start.ask_extra_synonym"),
+    SetupStep.AWAITING_CLUE_PHOTO: lambda _game, lang, _context: clue_upload_screen(lang),
 }
 
 
@@ -543,6 +571,7 @@ class _PreviewAlbum:
     # the keyboard without reaching back into a closed session.
     algorithm: PixelAlgorithm
     numbers_matter: bool | None  # see numbers_toggle
+    clue_mode: ClueScreenshotMode | None = None  # see clue_panel_mode
 
 
 @dataclass(frozen=True)
@@ -664,6 +693,7 @@ def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum | _SetupQues
         caption=caption,
         algorithm=game.pixel_algorithm,
         numbers_matter=numbers_toggle(game),
+        clue_mode=clue_panel_mode(game),
     )
 
 
@@ -699,5 +729,5 @@ async def _post_preview_album(
     await context.bot.send_message(
         chat_id=album.starter_id,
         text=i18n.t("dm_start.preview_confirm_prompt", lang),
-        reply_markup=preview_keyboard(lang, album.algorithm, album.numbers_matter),
+        reply_markup=preview_keyboard(lang, album.algorithm, album.numbers_matter, album.clue_mode),
     )

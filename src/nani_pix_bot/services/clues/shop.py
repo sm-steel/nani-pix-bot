@@ -16,6 +16,7 @@ from nani_pix_bot.models.clue_purchase import CluePurchase
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
 from nani_pix_bot.models.enums import (
     ClueKind,
+    ClueScreenshotMode,
     ConsumableKind,
     CurrencyReason,
     EventType,
@@ -27,7 +28,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons.definition import Modifier
 from nani_pix_bot.services import events, players
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services.clues import discount, handouts, text, token_clues
+from nani_pix_bot.services.clues import author_list, discount, handouts, text, token_clues
 from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.economy import config, earning, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
@@ -39,6 +40,15 @@ TILE_GRID = 8
 # Providers whose screenshot lists are real in-episode frames. Tenrai is
 # deliberately absent: its /pictures endpoint returns promotional art.
 CLUE_SCREENSHOT_PROVIDERS: tuple[Provider, ...] = (Provider.SHIKIMORI, Provider.TMDB)
+# Which supplies each clue screenshot mode draws from: (the author's list,
+# a provider's random frames).
+_MODE_SUPPLIES = {
+    ClueScreenshotMode.RANDOM: (False, True),
+    ClueScreenshotMode.AUTHOR: (True, False),
+    ClueScreenshotMode.BOTH: (True, True),
+}
+# How a screenshot purchase's log line names where it came from.
+_SCREENSHOT_ORIGIN = {True: "from the author's list", False: "random pick"}
 TEXT_KINDS = frozenset({ClueKind.FIRST_LETTER, ClueKind.LAST_LETTER, ClueKind.TITLE_SHAPE})
 _LETTER_KINDS = frozenset({ClueKind.FIRST_LETTER, ClueKind.LAST_LETTER})
 
@@ -89,6 +99,7 @@ class PurchaseRequest:
     screenshot_url: str | None = None
     screenshot_fingerprint: int | None = None  # services/pixelate/fingerprint.py
     screenshot_original: bytes | None = None  # full-quality bytes, kept for the album
+    screenshot_from_author: bool = False  # from the author's list, not a random pick
 
 
 def _purchases(session: Session, game_id: int, player_id: int) -> list[CluePurchase]:
@@ -202,8 +213,23 @@ def clue_screenshot_providers(game: Game) -> list[Provider]:
     return providers
 
 
-def _has_screenshot_provider(game: Game) -> bool:
-    return bool(clue_screenshot_providers(game))
+def screenshot_source_open(
+    mode: ClueScreenshotMode, *, unsold_author: int, has_provider: bool
+) -> bool:
+    """Whether the game's clue screenshot mode still has somewhere to take
+    an extra screenshot from (issue #450): Random needs a provider with
+    frames (`has_provider`), Author's an unsold entry of the author's list
+    (`unsold_author` left), and Both either one."""
+    supplies = (unsold_author > 0, has_provider)
+    return any(used and left for used, left in zip(_MODE_SUPPLIES[mode], supplies, strict=True))
+
+
+def _screenshot_source_open(session: Session, game: Game) -> bool:
+    return screenshot_source_open(
+        ClueScreenshotMode(game.clue_screenshot_mode),
+        unsold_author=len(author_list.unsold(session, game)),
+        has_provider=bool(clue_screenshot_providers(game)),
+    )
 
 
 def _available(session: Session, game: Game, buyer: Player, kind: ClueKind, lang: str) -> bool:
@@ -217,10 +243,9 @@ def _available(session: Session, game: Game, buyer: Player, kind: ClueKind, lang
     if kind in TEXT_KINDS:
         return game_service.display_title_field(game, lang) is not None
     if kind is ClueKind.SCREENSHOT:
-        return (
-            _has_screenshot_provider(game)
-            and _screenshot_count(session, game, buyer) < MAX_EXTRA_SCREENSHOTS
-        )
+        return _screenshot_count(
+            session, game, buyer
+        ) < MAX_EXTRA_SCREENSHOTS and _screenshot_source_open(session, game)
     # TILE: only a single-original-image game, and once per player.
     return not game.hard_mode and ClueKind.TILE not in owned_kinds(
         session, game.id, buyer.telegram_user_id
@@ -304,7 +329,12 @@ def _detail(request: PurchaseRequest) -> dict[str, object]:
     if request.kind is ClueKind.TILE:
         fields.update(detail=f" (tile {request.tile_index})", tile=request.tile_index)
     elif request.kind is ClueKind.SCREENSHOT:
-        fields.update(detail=f" ({request.screenshot_url})", screenshot_url=request.screenshot_url)
+        origin = _SCREENSHOT_ORIGIN[request.screenshot_from_author]
+        fields.update(
+            detail=f" ({request.screenshot_url}, {origin})",
+            screenshot_url=request.screenshot_url,
+            from_author=request.screenshot_from_author,
+        )
     return fields
 
 
