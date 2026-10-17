@@ -6,6 +6,7 @@ and opens the turn. Either way the reveal cleanup follows. The rules live
 in services/game/vote.py."""
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import cast
 
 from loguru import logger
@@ -34,6 +35,8 @@ from nani_pix_bot.services.economy import messages, settlement
 from nani_pix_bot.services.game import guesses
 
 VOTE_PREFIX = "vote:"
+# The Nobody button's candidate part: `vote:<game id>:none`.
+NOBODY_CALLBACK = "none"
 # Telegram shows roughly this much of a button label on a phone.
 _LABEL_LIMIT = 48
 
@@ -89,8 +92,14 @@ def _handle(session: Session, player_id: int) -> str:
 def ballot_text(session: Session, game: Game, lang: str) -> str:
     total = sum(game_service.vote_counts(session, game.id).values())
     minutes = int(game_service.VOTE_DURATION.total_seconds() // 60)
+    needed = game_service.early_close_needed(session, game, datetime.now(UTC))
     text = i18n.t(
-        "vote.ballot", lang, minutes=minutes, min_votes=game_service.VOTE_MIN_VOTES, total=total
+        "vote.ballot",
+        lang,
+        minutes=minutes,
+        min_votes=game_service.VOTE_MIN_VOTES,
+        needed=needed,
+        total=total,
     )
     return text + game_service.game_id_line(game.id, lang)
 
@@ -102,7 +111,8 @@ def _label(session: Session, player_id: int, texts: list[str], votes: int) -> st
     return f"{label} — {votes}"
 
 
-def ballot_markup(session: Session, game: Game) -> InlineKeyboardMarkup:
+def ballot_markup(session: Session, game: Game, lang: str) -> InlineKeyboardMarkup:
+    """One button per guesser, then Nobody (no guess was right, #458)."""
     counts = game_service.vote_counts(session, game.id)
     rows = [
         [
@@ -113,6 +123,15 @@ def ballot_markup(session: Session, game: Game) -> InlineKeyboardMarkup:
         ]
         for player_id, texts in guesses.guess_texts(session, game.id).items()
     ]
+    nobody_votes = counts.get(game_service.NOBODY, 0)
+    rows.append(
+        [
+            InlineKeyboardButton(
+                f"{i18n.t('vote.nobody', lang)} — {nobody_votes}",
+                callback_data=f"{VOTE_PREFIX}{game.id}:{NOBODY_CALLBACK}",
+            )
+        ]
+    )
     return InlineKeyboardMarkup(rows)
 
 
@@ -132,7 +151,7 @@ async def post_vote_ballot(
         title = game_service.display_title(game, lang)
         caption = i18n.t("vote.reveal_caption", lang, title=title)
         caption += game_service.game_id_line(game_id, lang)
-        text, markup = ballot_text(session, game, lang), ballot_markup(session, game)
+        text, markup = ballot_text(session, game, lang), ballot_markup(session, game, lang)
     await post_reveal_pair(
         context,
         session_factory,
@@ -250,15 +269,23 @@ async def ballot_repost_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None
 @retry_on_failure
 @quiet_hours_deferred
 async def vote_close_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Fires VOTE_DURATION after a vote opened. Imports maybe_overthrow
-    lazily, for the same reason game_timeout.py's timeout_job_callback does."""
-    from nani_pix_bot.jobs.timers.autostart import maybe_overthrow
-
+    """Fires VOTE_DURATION after a vote opened."""
     job = context.job
     if job is None:
         return
-    session_factory = context.bot_data["session_factory"]
-    final = await finalize_vote(context, session_factory, cast(int, job.data))
+    await close_vote_now(context, context.bot_data["session_factory"], cast(int, job.data))
+
+
+async def close_vote_now(
+    context: ContextTypes.DEFAULT_TYPE, session_factory: sessionmaker[Session], game_id: int
+) -> None:
+    """Close a vote on its tally and roll for an overthrow: the deadline's
+    close, and the early one when a clear lead reaches the bar (#458).
+    Imports maybe_overthrow lazily, for the same reason game_timeout.py's
+    timeout_job_callback does."""
+    from nani_pix_bot.jobs.timers.autostart import maybe_overthrow
+
+    final = await finalize_vote(context, session_factory, game_id)
     if final is None:
         return
     await maybe_overthrow(

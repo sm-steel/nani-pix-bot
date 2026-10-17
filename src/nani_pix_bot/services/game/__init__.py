@@ -86,13 +86,16 @@ from nani_pix_bot.services.game.turns import (
     set_next_starter,
 )
 from nani_pix_bot.services.game.vote import (
+    NOBODY,
     VOTE_DURATION,
     VOTE_MIN_VOTES,
     VoteRefusal,
     cast_vote,
     close_vote,
     decide_winner,
+    early_close_needed,
     end_hard_mode_without_winner,
+    should_close_early,
     vote_counts,
 )
 
@@ -105,6 +108,7 @@ __all__ = [
     "IDLE_AUTOSTART_DELAY",
     "INACTIVITY_ADVANCE_DELAY",
     "INACTIVITY_NUDGE_DELAY",
+    "NOBODY",
     "SCREENSHOT_CAPABLE_PROVIDERS",
     "SETUP_ABANDON_DELAY",
     "STAGE_ORDER",
@@ -140,6 +144,7 @@ __all__ = [
     "decide_winner",
     "display_title",
     "display_title_field",
+    "early_close_needed",
     "end_hard_mode_without_winner",
     "force_unsolved",
     "force_win",
@@ -166,6 +171,7 @@ __all__ = [
     "set_screenshot_provider_id",
     "setup_games",
     "should_ask_if_numbers_matter",
+    "should_close_early",
     "stage_label",
     "stage_manual_entry",
     "stage_progress",

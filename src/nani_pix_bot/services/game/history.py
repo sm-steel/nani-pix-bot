@@ -183,7 +183,8 @@ class GameDetail:
     bounty: list[tuple[int, int]] = field(default_factory=list)  # (player_id, total)
     stages: list[StageStep] = field(default_factory=list)
     distinct_guessers: int | None = None
-    votes: list[tuple[int, int]] = field(default_factory=list)  # (voter_id, candidate_id)
+    # (voter_id, candidate_id); a None candidate is a vote for Nobody.
+    votes: list[tuple[int, int | None]] = field(default_factory=list)
 
 
 def _latest_event(session: Session, event_type: EventType, game_id: int) -> LoggedEvent | None:
@@ -248,7 +249,7 @@ def _stages(session: Session, game_id: int) -> list[StageStep]:
     return [_stage_step(to_event(row)) for row in session.scalars(stmt)]
 
 
-def _votes(session: Session, game_id: int) -> list[tuple[int, int]]:
+def _votes(session: Session, game_id: int) -> list[tuple[int, int | None]]:
     stmt = select(GameVote).where(GameVote.game_id == game_id).order_by(GameVote.id)
     return [(vote.voter_id, vote.candidate_id) for vote in session.scalars(stmt)]
 

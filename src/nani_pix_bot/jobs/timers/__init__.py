@@ -79,11 +79,13 @@ from nani_pix_bot.jobs.timers.turn_timers import (
     turn_reminder_job_callback,
 )
 from nani_pix_bot.jobs.timers.vote import (
+    NOBODY_CALLBACK,
     VoteFinal,
     ballot_markup,
     ballot_repost_job_callback,
     ballot_text,
     cancel_vote_close,
+    close_vote_now,
     finalize_vote,
     post_vote_ballot,
     rearm_vote,
@@ -95,6 +97,7 @@ from nani_pix_bot.services import game as game_service
 
 __all__ = [
     "IDLE_AUTOSTART_JOB_NAME",
+    "NOBODY_CALLBACK",
     "TIMEOUT_ENDING",
     "TURN_EXPIRY_JOB_NAME",
     "TURN_REMINDER_JOB_NAME",
@@ -111,6 +114,7 @@ __all__ = [
     "cancel_turn_timers",
     "cancel_vote_close",
     "clear_image_if_sent",
+    "close_vote_now",
     "end_unsolved",
     "finalize_vote",
     "idle_autostart_job_callback",

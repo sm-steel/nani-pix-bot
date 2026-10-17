@@ -31,7 +31,7 @@ just what's currently built.
 | Pixels 💠 — earning, `/balance`, `/pixelconfig` | Implemented |
 | Clue shop (`/shop`) — spend 💠 on private clues | Implemented |
 | Public spends — bounty (`/bounty`), `/tip`, `/sharpen` | Implemented |
-| HARD MODE vote when nobody guessed right (15 min, unique plurality of 3+ votes) | Implemented |
+| HARD MODE vote when nobody guessed right (15 min, unique plurality of 3+ votes, a Nobody option, early close on a clear lead) | Implemented |
 | Quiet hours (`/quiethours`, `/timezone`) — automatic posts held, clocks frozen | Implemented |
 | Seasons (`/season`, schedule, Season XP, anime gate, cosmetics, pass, `/seasonshop`, objectives) | Implemented |
 
@@ -92,8 +92,8 @@ stateDiagram-v2
     ACTIVE --> WON: /guess matches,\nor starter's /correct
     ACTIVE --> UNSOLVED: stage 5's configured limit reached\n(stage exhaustion),\nor 6h of inactivity on stage 5,\nor 2-day timeout fires
     ACTIVE --> VOTING: hard mode only: no correct guess\n(turns exhausted, inactivity or timeout)\nbut at least one guesser\n(15 min vote-close timer starts)
-    VOTING --> WON: unique plurality of 3+ votes,\nor admin /setwinner
-    VOTING --> UNSOLVED: no winner when the vote closes
+    VOTING --> WON: a guesser's clear lead (early close),\nunique plurality of 3+ votes at the close,\nor admin /setwinner
+    VOTING --> UNSOLVED: Nobody's clear lead (early close),\nor no winner when the vote closes
     UNSOLVED --> WON: admin /setwinner\n(turn left where it is)
     ACTIVE --> [*]: /stop confirmed\n(row deleted, turn opens)
     VOTING --> [*]: /stop confirmed\n(row deleted, refunds, turn opens)
@@ -1213,9 +1213,17 @@ name).
   start, then the clue album (the other screenshot first, then the clues
   handed out), then the ballot. The clue originals are kept while the vote is
   open and cleared when it closes.
-- **Ballot:** one button per guesser, listing each guesser's guesses.
-  Any group member votes once, can change their vote by tapping another
-  button, and cannot vote for themselves. Only guessers are candidates.
+- **Ballot:** one button per guesser, listing each guesser's guesses,
+  then **🙅 Nobody**: no guess was right (issue #458; stored as a NULL
+  `game_votes.candidate_id`). Any group member votes once, can change their
+  vote by tapping another button, and cannot vote for themselves (Nobody is
+  open to everyone, guessers included). Only guessers are candidates.
+- **Early close:** as soon as one option, a guesser or Nobody, has a
+  unique lead of at least `max(3, ⌈active / 2⌉)` votes, the vote closes on
+  that tap instead of waiting for the deadline. It is the `/pass` bar (see
+  "Giving up together"): `active` is the distinct players who guessed or
+  hosted a live game in the last 24 hours, minus this game's host. A
+  guesser in the lead wins; Nobody in the lead ends the round unsolved.
 - **Close:** 15 minutes after the vote opened (`VOTE_DURATION`),
   computed through `deadline_after`, so quiet hours push it back like
   every other automatic deadline. The deadline is stored
@@ -1223,9 +1231,10 @@ name).
   one closes right away. If the restart came after the vote opened but
   before its ballot was posted (no `games.vote_message_id`) and the vote
   is still open, the answer and ballot are posted again on startup.
-- **Rule:** a candidate wins with a **unique plurality of at least 3
-  votes** (`VOTE_MIN_VOTES`). A tie for the top spot, or fewer than 3
-  votes, is no winner.
+- **Rule at the close:** a candidate wins with a **unique plurality of at
+  least 3 votes** (`VOTE_MIN_VOTES`). Nobody competes like a candidate: if
+  it has the unique lead, there is no winner. A tie for the top spot, or
+  fewer than 3 votes, is no winner either.
 - **Outcomes:** a winner gets a normal hard-mode win — +2 wins, the
   regular 💠 payout including the bounty pot — and the next-game turn,
   after which the overthrow roll runs as after any win. With no winner
