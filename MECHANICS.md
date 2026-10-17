@@ -1223,7 +1223,11 @@ name).
   that tap instead of waiting for the deadline. It is the `/pass` bar (see
   "Giving up together"): `active` is the distinct players who guessed or
   hosted a live game in the last 24 hours, minus this game's host. A
-  guesser in the lead wins; Nobody in the lead ends the round unsolved.
+  guesser in the lead wins; Nobody in the lead ends the round unsolved
+  ("the group decided no guess was right"). The bar and the lead are
+  re-checked on each tap only, so a bar that drops as the 24h window moves
+  takes effect on the next tap. Being a player's action, the early close
+  is not held back by quiet hours, like a `/guess` win.
 - **Close:** 15 minutes after the vote opened (`VOTE_DURATION`),
   computed through `deadline_after`, so quiet hours push it back like
   every other automatic deadline. The deadline is stored

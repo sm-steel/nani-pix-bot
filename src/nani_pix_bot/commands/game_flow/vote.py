@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from loguru import logger
-from telegram import InlineKeyboardMarkup, Update
+from sqlalchemy.orm import Session
+from telegram import InlineKeyboardMarkup, Update, User
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
@@ -31,7 +32,7 @@ class _Tap:
     markup: InlineKeyboardMarkup | None = None
 
 
-def _cast(session, game_id: int, voter, candidate_id: int | None) -> _Tap:
+def _cast(session: Session, game_id: int, voter: User, candidate_id: int | None) -> _Tap:
     lang = settings.get_language(session)
     players.get_or_create_player(session, voter.id, username=voter.username)
     game = session.get(Game, game_id)
@@ -41,7 +42,6 @@ def _cast(session, game_id: int, voter, candidate_id: int | None) -> _Tap:
     if refusal is not None:
         return _Tap(lang, refusal)
     if game_service.should_close_early(session, game, datetime.now(UTC)):
-        logger.info("a clear lead reached the bar — closing the vote early", game_id=game_id)
         return _Tap(lang, None, close_now=True)
     text = timeout_module.ballot_text(session, game, lang)
     return _Tap(lang, None, text=text, markup=timeout_module.ballot_markup(session, game, lang))
@@ -59,7 +59,12 @@ async def vote_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if tap.refusal is not None:
         await query.answer(i18n.t(f"vote.refused.{tap.refusal.value}", tap.lang))
         return
-    await query.answer(i18n.t("vote.counted", tap.lang))
+    try:
+        await query.answer(i18n.t("vote.counted", tap.lang))
+    except TelegramError as exc:
+        # e.g. "query is too old" after a backlog; the vote is stored anyway,
+        # and a tap that reached the bar must still close it.
+        logger.warning("couldn't answer the vote tap: {error}", error=exc, game_id=game_id)
     if tap.close_now:
         # The close removes the ballot's buttons and posts the result.
         await timeout_module.close_vote_now(context, session_factory, game_id)

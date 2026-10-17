@@ -186,9 +186,12 @@ class VoteFinal:
 def _settle(session: Session, context, game: Game, lang: str, forced_winner_id: int | None):
     """The in-transaction half of finalize_vote: decide, pay, word the post."""
     title = game_service.display_title(game, lang)
+    nobody = forced_winner_id is None and game_service.nobody_decided(
+        game_service.vote_counts(session, game.id)
+    )
     winner_id = game_service.close_vote(session, game, forced_winner_id=forced_winner_id)
     if winner_id is None:
-        text = i18n.t("vote.no_winner", lang, title=title)
+        text = i18n.t("vote.nobody_won" if nobody else "vote.no_winner", lang, title=title)
         text += settlement.settle_unsolved(session, game, lang)
         game_service.mark_turn_open_if_unassigned(session)
         return VoteFinal(None, None), text

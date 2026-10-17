@@ -103,8 +103,26 @@ def early_close_needed(session: Session, game: Game, now: datetime) -> int:
 
 
 def should_close_early(session: Session, game: Game, now: datetime) -> bool:
+    counts = vote_counts(session, game.id)
     needed = early_close_needed(session, game, now)
-    return decided_early(vote_counts(session, game.id), needed=needed)
+    leader = _unique_leader(counts)
+    if leader is None or not decided_early(counts, needed=needed):
+        return False
+    logger.info(
+        "{leader} leads with {votes} vote(s), at the early-close bar of {needed} — closing",
+        leader=_describe(session, leader.candidate_id),
+        votes=leader.votes,
+        needed=needed,
+        game_id=game.id,
+    )
+    return True
+
+
+def nobody_decided(counts: Mapping[int | None, int]) -> bool:
+    """Whether the group actively picked Nobody: its unique lead with at
+    least VOTE_MIN_VOTES, not just a vote that found no winner."""
+    leader = _unique_leader(counts)
+    return leader is not None and leader.candidate_id is NOBODY and leader.votes >= VOTE_MIN_VOTES
 
 
 def vote_counts(session: Session, game_id: int) -> dict[int | None, int]:
@@ -131,6 +149,11 @@ def _describe(session: Session, candidate_id: int | None) -> str:
     if candidate_id is NOBODY:
         return "Nobody"
     return players.describe_player_id(session, candidate_id)
+
+
+def _tally(session: Session, counts: Mapping[int | None, int]) -> str:
+    """The counts for a log line, Nobody by name rather than as `None`."""
+    return ", ".join(f"{_describe(session, cid)}: {n}" for cid, n in counts.items()) or "none"
 
 
 def _refusal(
@@ -184,7 +207,9 @@ def close_vote(session: Session, game: Game, *, forced_winner_id: int | None = N
     winner_id = forced_winner_id if forced_winner_id is not None else decide_winner(counts)
     _log_votes(session, game, winner_id)
     if winner_id is None:
-        state.force_unsolved(game, cause=f"vote closed with no winner (votes {counts})")
+        state.force_unsolved(
+            game, cause=f"vote closed with no winner (votes {_tally(session, counts)})"
+        )
         return None
     how = (
         "named by an admin"

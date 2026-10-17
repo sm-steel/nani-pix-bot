@@ -95,6 +95,7 @@ from nani_pix_bot.services.game.vote import (
     decide_winner,
     early_close_needed,
     end_hard_mode_without_winner,
+    nobody_decided,
     should_close_early,
     vote_counts,
 )
@@ -159,6 +160,7 @@ __all__ = [
     "mark_turn_open_if_unassigned",
     "match_candidates",
     "next_clue_discount",
+    "nobody_decided",
     "prioritized_title",
     "prioritized_title_field",
     "record_guess",

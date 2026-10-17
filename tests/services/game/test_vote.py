@@ -212,3 +212,37 @@ def test_closing_a_vote_logs_one_event_per_ballot(session: Session) -> None:
         (C, A, True),
         (D, A, True),
     ]
+
+
+@pytest.mark.parametrize(
+    ("counts", "expected"),
+    [
+        ({vote.NOBODY: 3}, True),
+        ({vote.NOBODY: 2}, False),  # too few to call it the group's pick
+        ({vote.NOBODY: 3, A: 3}, False),
+        ({A: 3, vote.NOBODY: 1}, False),
+    ],
+)
+def test_nobody_decided(counts: dict[int | None, int], expected: bool) -> None:
+    assert vote.nobody_decided(counts) is expected
+
+
+def test_a_changed_vote_that_breaks_a_tie_closes_early(session: Session) -> None:
+    """3-3 between A and B; one of B's voters moves to Nobody, so A leads
+    alone at the bar — whoever taps, the tally decides."""
+    game = _hard_game(session, guessers=(A, B))
+    extra = [Player(telegram_user_id=n) for n in range(10, 15)]
+    session.add_all(extra)
+    session.flush()
+    vote.end_hard_mode_without_winner(session, game, cause="t")
+    now = datetime.now(UTC)
+    for voter in (B, 10, 11):
+        vote.cast_vote(session, game, voter_id=voter, candidate_id=A)
+    for voter in (A, 12, 13):
+        vote.cast_vote(session, game, voter_id=voter, candidate_id=B)
+    assert not vote.should_close_early(session, game, now)
+
+    vote.cast_vote(session, game, voter_id=13, candidate_id=vote.NOBODY)
+
+    assert vote.should_close_early(session, game, now)
+    assert vote.close_vote(session, game) == A
