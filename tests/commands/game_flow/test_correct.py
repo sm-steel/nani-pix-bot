@@ -446,8 +446,8 @@ async def test_correct_command_drops_the_mention_when_the_bot_has_no_handle_yet(
 
 
 async def test_correct_command_hard_mode_reveals_both_stored_screenshots(session_factory) -> None:
-    """A hard-mode /correct win reveals the stored screenshot pair as a
-    2-photo album (post_current_images), not the normal-mode single
+    """A hard-mode /correct win reveals the stored screenshot pair
+    (post_reveal_pair: the reveal, then the other screenshot), not the normal-mode single
     original_image reveal — the award amount itself (+2 for hard mode)
     is already covered by Task 3's force_win tests, so this only checks
     the announcement/reveal shape.

@@ -37,7 +37,8 @@ class _StoppedGame:
     At most one of `original_bytes`/`hard_mode_photos` is populated for
     a reveal: a normal-mode game carries `original_bytes` (posted via
     post_current_image), a hard-mode game carries `hard_mode_photos`
-    (posted via post_current_images as a 2-photo album) — same
+    (posted via post_reveal_pair: the video of one, then the other
+    opening the clue album) — same
     exactly-one-of-two-fields dispatch shape as guess.py's
     _Announcement."""
 
@@ -230,8 +231,8 @@ async def _announce_stop(
     topic's pinned image) when there is no video. That caption already says
     the turn is open, so the reveal path posts one message rather than a
     photo plus a duplicate notice. A hard-mode game instead posts its stored
-    screenshot pair via `post_reveal_pair` (the video plus the other
-    screenshot, or the plain 2-photo album as the fallback), same
+    screenshot pair via `post_reveal_pair` (the video, or the photo as the fallback,
+    then the other screenshot opening the clue album), same
     caption-already-says-the-turn-is-open reasoning. Falls back to the
     plain notice if the button was a stale tap on a game that no longer
     had its image(s) (see the caller's own warning log for that case)."""

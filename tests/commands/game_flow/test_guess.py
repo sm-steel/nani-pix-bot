@@ -779,7 +779,7 @@ async def test_guess_command_hard_mode_wrong_guess_never_actually_fires(
     )
 
     # A WRONG outcome would have replied with plain text and posted no
-    # image; TURN_ADVANCED posts the 2-photo album instead.
+    # image; TURN_ADVANCED posts the 2-photo stage album instead.
     context.bot.send_media_group.assert_awaited_once()
     update.message.reply_text.assert_not_awaited()
 

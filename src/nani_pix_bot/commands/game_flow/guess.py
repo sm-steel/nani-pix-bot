@@ -92,8 +92,9 @@ def _prepare_hard_mode_won_announcement(
     user: User,
 ) -> Announcement:
     """The hard-mode analogue of _prepare_won_announcement — reveals the
-    stored screenshot pair (posted via post_reveal_pair: the reveal video
-    plus the other screenshot, or a 2-photo album as the fallback) instead
+    stored screenshot pair (posted via post_reveal_pair: the reveal video,
+    or the photo as the fallback, then the other screenshot opening the
+    clue album) instead
     of a single post_reveal call. Timer/turn-state
     handling is identical to the normal-mode helper; only the reveal
     photos and caption key differ."""

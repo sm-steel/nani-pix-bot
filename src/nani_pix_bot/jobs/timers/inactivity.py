@@ -123,7 +123,7 @@ async def inactivity_nudge_job_callback(context: ContextTypes.DEFAULT_TYPE) -> N
 @dataclass(frozen=True)
 class _HardModeAnnouncement:
     """What a hard-mode turn-advance/UNSOLVED outcome needs to post via
-    post_current_images once its session has committed — the hard-mode
+    post_stage_images (or post_reveal_pair) once its session has committed — the hard-mode
     analogue of guess.py's _Announcement, carrying a screenshot pair
     instead of a single photo."""
 
@@ -166,7 +166,7 @@ def _hard_mode_turn_advance(
 def _hard_mode_unsolved_reveal(session: Session, game: Game, lang: str) -> _HardModeAnnouncement:
     """Turn-2-exhausted ending — the hard-mode analogue of the normal
     UNSOLVED-by-inactivity path below: reveals both stored screenshots
-    unpixelated via post_current_images, same as the normal path's
+    unpixelated via post_reveal_pair, same as the normal path's
     single unpixelated original_image reveal."""
     photos = game_service.hard_mode_reveal_images(game)
     caption = i18n.t(

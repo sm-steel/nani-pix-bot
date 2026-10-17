@@ -36,7 +36,7 @@ class Announcement:
     closes.
 
     Exactly one of `photo`/`photos` is populated: a normal-mode outcome
-    sets `photo`, a hard-mode outcome sets `photos` (a 2-photo album) —
+    sets `photo`, a hard-mode outcome sets `photos` (posted as a 2-photo stage album) —
     see `send_announcement` in this module, which picks the sender based
     on which field is set. A stage post goes out as a still via
     post_current_image/post_stage_images; an ending that sets `reveal`

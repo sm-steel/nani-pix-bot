@@ -1131,7 +1131,7 @@ HARD MODE replaces stages with **turns**:
 - **2 turns total** (`HARD_MODE_TURN_COUNT`), not 5 pixelation stages.
 - Each turn shows **2 different screenshots of the same anime, from the
   same provider**, posted together as a single Telegram photo album
-  (`post_current_images`) rather than one image at a time — see "Picking
+  (`post_stage_images`) rather than one image at a time — see "Picking
   a random anime + screenshot pair" above for how that pair is sourced.
   (That is the *stage* post only. The reveal at an ending is never a
   combined album: the video of one screenshot goes out alone and the other

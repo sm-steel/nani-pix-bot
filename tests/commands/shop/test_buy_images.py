@@ -413,6 +413,18 @@ async def test_the_handout_keeps_the_frames_fingerprint(session_factory, stub_sc
     assert row.fingerprint == fingerprint.fingerprint(_frame_of(row.screenshot_url))
 
 
+async def test_the_handout_keeps_the_downloaded_original(session_factory, stub_screenshots) -> None:
+    game_id = seed_game(session_factory, shikimori_id=1)
+    set_currency(session_factory, 2, RICH)
+
+    await _buy_screenshot_as(_image_context(session_factory), game_id, 2)
+
+    with session_factory() as session:
+        [row] = handouts.for_game(session, game_id)
+        assert row.image == _frame_of(row.screenshot_url)
+        assert handouts.revealed_images(session, game_id) == [_frame_of(row.screenshot_url)]
+
+
 async def test_tile_button_opens_grid_without_charge(session_factory) -> None:
     game_id = seed_game(session_factory)
     set_currency(session_factory, 2, RICH)

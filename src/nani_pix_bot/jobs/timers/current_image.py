@@ -348,7 +348,26 @@ async def post_reveal(
     if sent is not None:
         free_reveal_slot(context, target.game_id)
     elif not timed_out:
+        logger.info("reveal not sent — skipping the clue album", game_id=target.game_id)
         return None
+    try:
+        await _post_clue_album(context, session_factory, target, timed_out)
+    except Exception as exc:
+        # Message 1 may already be out: nothing here may block the caller's cleanup.
+        logger.opt(exception=exc).error(
+            "couldn't post the clue album after the reveal", game_id=target.game_id
+        )
+    return sent
+
+
+async def _post_clue_album(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory: sessionmaker[Session],
+    target: RevealTarget,
+    timed_out: bool,
+) -> None:
+    """Message 2 of post_reveal; after a timed-out video, also drops the
+    clue bytes once the album is confirmed sent."""
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
         clues = (
@@ -359,8 +378,8 @@ async def post_reveal(
     extras_sent = await _post_extras(context, [*target.leading_extras, *clues], lang)
     if timed_out and extras_sent and target.clear_clues:
         with session_scope(session_factory) as session:
-            handouts.clear_images(session, target.game_id)
-    return sent
+            cleared = handouts.clear_images(session, target.game_id)
+        logger.info("cleared {count} clue image(s) after the reveal", count=cleared)
 
 
 async def _post_extras(
@@ -382,8 +401,10 @@ async def _post_extras(
                     chat_id=chat_id, message_thread_id=thread_id, photo=batch[0], caption=caption
                 )
             else:
-                media = [InputMediaPhoto(media=image) for image in batch]
-                media[0] = InputMediaPhoto(media=batch[0], caption=caption)
+                media = [
+                    InputMediaPhoto(media=image, caption=caption if index == 0 else None)
+                    for index, image in enumerate(batch)
+                ]
                 await context.bot.send_media_group(
                     chat_id=chat_id, message_thread_id=thread_id, media=media
                 )

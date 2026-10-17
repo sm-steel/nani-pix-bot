@@ -435,8 +435,8 @@ async def test_stop_callback_handler_reveal_rejects_a_non_starter_non_admin_tap(
 async def test_stop_callback_handler_reveal_posts_hard_mode_two_photo_album(
     session_factory,
 ) -> None:
-    """A hard-mode /stop-and-reveal posts the stored screenshot pair as a
-    2-photo album (post_current_images), not the normal-mode single
+    """A hard-mode /stop-and-reveal posts the stored screenshot pair
+    (post_reveal_pair: the reveal, then the other screenshot), not the normal-mode single
     original_image reveal — can_reveal_now must be computed from
     has_hard_mode_reveal_images rather than the always-None
     game.original_image (a hard-mode game never sets it — see

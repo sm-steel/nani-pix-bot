@@ -365,3 +365,41 @@ def test_clear_image_if_sent_keeps_clue_images_when_not_sent(session_factory) ->
     _add_clues(session_factory, 3, [b"c1"])
     current_image.clear_image_if_sent(session_factory, 3, None)
     assert _kept(session_factory, 3) == [b"c1"]
+
+
+async def test_album_prep_failure_does_not_block_the_reveal(
+    session_factory, monkeypatch, log_records
+) -> None:
+    _video_ok(monkeypatch)
+    monkeypatch.setattr(handouts, "revealed_images", MagicMock(side_effect=RuntimeError("db")))
+    context = _context(session_factory)
+    sent = await _reveal(context, session_factory)
+    assert sent is not None
+    assert sent.message_id == 11
+    context.bot.send_media_group.assert_not_awaited()
+    assert any(line.level == "ERROR" for line in log_records)
+
+
+async def test_failed_reveal_logs_that_the_album_is_skipped(
+    session_factory, monkeypatch, log_records
+) -> None:
+    _video_ok(monkeypatch)
+    context = _context(session_factory)
+    context.bot.send_video = AsyncMock(side_effect=TelegramError("bad"))
+    context.bot.send_photo = AsyncMock(side_effect=TelegramError("down"))
+    assert await _reveal(context, session_factory) is None
+    assert any(
+        line.level == "INFO" and "skipping the clue album" in line.message for line in log_records
+    )
+
+
+async def test_timed_out_video_logs_the_cleared_clue_count(
+    session_factory, monkeypatch, log_records
+) -> None:
+    _video_ok(monkeypatch)
+    _add_clues(session_factory, 3, [b"c1", b"c2"])
+    context = _context(session_factory)
+    context.bot.send_video = AsyncMock(side_effect=TimedOut())
+    await _reveal(context, session_factory)
+    [line] = [line for line in log_records if "clue image(s) after the reveal" in line.message]
+    assert (line.level, line.extra["count"]) == ("INFO", 2)
