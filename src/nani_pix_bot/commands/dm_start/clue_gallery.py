@@ -219,8 +219,11 @@ def _add_pick(
     """The write half of a pick; None if the setup moved on meanwhile."""
     with session_scope(context.bot_data["session_factory"]) as session:
         game = game_service.get_setup_game_for_starter(session, source.chat_id)
-        if game is None or not clue_screens.accepts_panel_taps(game):
-            logger.warning("the setup moved on while a clue screenshot downloaded — dropping it")
+        if game is None or game.id != source.game_id or not clue_screens.accepts_panel_taps(game):
+            logger.warning(
+                "the setup moved on while a clue screenshot downloaded — dropping it",
+                game_id=source.game_id,
+            )
             return None
         try:
             result = author_list.add(

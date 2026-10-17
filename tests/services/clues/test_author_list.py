@@ -235,3 +235,14 @@ def test_needs_empty_warning(
         _entry(session, game, 1)
 
     assert author_list.needs_empty_warning(session, game) is expected
+
+
+def test_clear_images_logs_no_info(session: Session, log_records) -> None:
+    """The reveal's own line reports the cleanup; this one stays at DEBUG."""
+    game = _game(session)
+    _entry(session, game, 1)
+
+    author_list.clear_images(session, game.id)
+    author_list.clear_images(session, game.id)
+
+    assert [line.level for line in log_records if "image(s)" in line.message] == ["DEBUG"] * 2

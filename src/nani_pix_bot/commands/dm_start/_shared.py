@@ -12,6 +12,7 @@ from telegram import CallbackQuery, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.dm_start.clue_keyboards import clue_back_keyboard
 from nani_pix_bot.commands.dm_start.keyboards import (
     aliases_keyboard,
     method_selection_keyboard,
@@ -295,6 +296,24 @@ def _picking_aliases_screen(game: Game, lang: str, _context) -> _SetupScreen:
     )
 
 
+def clue_upload_screen(lang: str) -> _SetupScreen:
+    """The clue panel's "Upload my own" prompt, with Back to the panel."""
+    return i18n.t("dm_start.clue_upload_prompt", lang), clue_back_keyboard(lang)
+
+
+async def reprompt_clue_upload(message, lang: str, game_id: int) -> None:
+    """Text typed while the clue panel waits for a photo: it identifies
+    nothing (the clue list belongs to the anime already picked), so the
+    prompt is asked again."""
+    logger.info(
+        "typed {text!r} while a clue screenshot upload was awaited — asking for the photo again",
+        text=message.text,
+        game_id=game_id,
+    )
+    text, keyboard = clue_upload_screen(lang)
+    await message.reply_text(text, reply_markup=keyboard)
+
+
 def _prompt_only(key: str) -> Callable[..., _SetupScreen]:
     return lambda _game, lang, _context: (i18n.t(key, lang), None)
 
@@ -309,7 +328,7 @@ _SETUP_SCREENS: dict[SetupStep, Callable[..., _SetupScreen]] = {
     SetupStep.PICKING_ALIASES: _picking_aliases_screen,
     SetupStep.AWAITING_PHOTO_CHANGE: _prompt_only("dm_start.ask_new_photo"),
     SetupStep.AWAITING_SYNONYM: _prompt_only("dm_start.ask_extra_synonym"),
-    SetupStep.AWAITING_CLUE_PHOTO: _prompt_only("dm_start.clue_upload_prompt"),
+    SetupStep.AWAITING_CLUE_PHOTO: lambda _game, lang, _context: clue_upload_screen(lang),
 }
 
 
@@ -362,13 +381,12 @@ async def _resume_setup(message, game: Game, lang: str, context: ContextTypes.DE
     nothing is rescheduled either.
 
     Genuinely starting over is still `/stop`, unchanged; this only stops
-    the bot from denying the setup exists — and says so, on the steps
+    the bot from denying the setup exists — and says so, on the two steps
     where the screen alone cannot (issue #79, routed from #73)."""
     text, keyboard = _current_setup_screen(game, lang, context)
     if keyboard is None:
-        # AWAITING_PHOTO_CHANGE, AWAITING_SYNONYM and AWAITING_CLUE_PHOTO:
-        # the steps whose route forward is the photo or text being asked
-        # for, so there is
+        # AWAITING_PHOTO_CHANGE and AWAITING_SYNONYM: the two steps whose
+        # route forward is the photo or text being asked for, so there is
         # no keyboard to make this recognisable *as* a re-show. On its
         # own the prompt reads as a fresh question and answers the
         # /newgame with nothing, which is the same "the bot is ignoring

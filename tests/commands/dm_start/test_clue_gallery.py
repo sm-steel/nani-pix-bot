@@ -307,3 +307,37 @@ async def test_repick_anime_clears_clue_list(session_factory) -> None:
 
     assert _entries(session_factory, game_id) == []
     assert _game(session_factory, game_id).clue_screenshot_mode == ClueScreenshotMode.RANDOM
+
+
+async def test_pick_after_the_game_was_replaced_is_dropped(
+    session_factory, monkeypatch, log_records
+) -> None:
+    """/stop and a new setup while the pick downloaded: the new game's list
+    must not get the old game's pick."""
+    old_id = _staged(session_factory)
+    _stub_urls(monkeypatch, _URLS)
+    context = _context(session_factory)
+
+    async def replace_game(_url: str) -> MagicMock:
+        # The new game is created first so it gets a new id, as MariaDB's
+        # AUTO_INCREMENT would give it (SQLite reuses a deleted max id).
+        with session_factory() as session:
+            new = game_service.create_setup_game(session, starter_id=STARTER, original_image=_MAIN)
+            new.setup_step = SetupStep.CONFIRMING
+            session.commit()
+            session.delete(session.get(Game, old_id))
+            session.commit()
+        response = MagicMock(content=frame_bytes(3))
+        response.raise_for_status = MagicMock()
+        return response
+
+    context.bot_data["search_client"].get = AsyncMock(side_effect=replace_game)
+
+    query = await _tap(
+        clue_gallery.clue_gallery_callback_handler, context, "cluegal:pick:shikimori:3"
+    )
+
+    with session_factory() as session:
+        assert session.query(ClueAuthorScreenshot).count() == 0
+    query.edit_message_reply_markup.assert_awaited_once_with(reply_markup=None)
+    assert any(line.level == "WARNING" for line in log_records)

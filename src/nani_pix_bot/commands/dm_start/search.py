@@ -23,6 +23,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _search_and_build_keyboard,
     _stored_provider,
     client_for_source,
+    reprompt_clue_upload,
 )
 from nani_pix_bot.commands.dm_start.aliases import start_alias_search
 from nani_pix_bot.commands.dm_start.keyboards import (
@@ -54,6 +55,7 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, mal_link, settings
+from nani_pix_bot.services.clues import author_list
 from nani_pix_bot.services.search import anilist, shikimori, tenrai, tmdb
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
@@ -255,6 +257,8 @@ async def _route_typed_text(
             step=typed.setup_step.value,
             game_id=typed.game_id,
         )
+    elif typed.setup_step == SetupStep.AWAITING_CLUE_PHOTO:
+        await reprompt_clue_upload(message, lang, typed.game_id)
     elif typed.setup_step == SetupStep.PICKING_SCREENSHOT:
         if typed.screenshot_menu is not None:
             # A screenshot provider is being resolved — ticket 8's
@@ -393,6 +397,9 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if setup_game is None:
             await _reject_stale_tap_answered(context, user.id, query.data, lang)
             return
+        # A re-identification: the author's clue screenshots belong to
+        # whatever anime was there before.
+        author_list.reset(session, setup_game)
         game_service.stage_result(setup_game, result, source=source)
         logger.info(
             "picked {title!r} ({provider} {provider_id})",

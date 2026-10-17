@@ -4,17 +4,19 @@ and removals of the author's clue screenshot list."""
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from telegram import InlineKeyboardMarkup, Update
 from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import _shared, clue_panel, intake
+from nani_pix_bot.commands.dm_start import _shared, clue_panel, intake, search
 from nani_pix_bot.models import ClueAuthorScreenshot
 from nani_pix_bot.models.enums import ClueScreenshotMode, GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.clues import author_list
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.pixelate import fingerprint
 from nani_pix_bot.services.search.anilist import AniListResult
 from tests.frames import frame_bytes
@@ -361,3 +363,108 @@ async def test_each_tap_logs_info(session_factory, log_records) -> None:
         infos = [line for line in log_records[before:] if line.level == "INFO"]
         assert infos, data
         assert all(line.extra.get("game_id") == game_id for line in infos), data
+
+
+# --- Fix round 1 ---
+
+
+def _text_update(text: str) -> MagicMock:
+    update = MagicMock()
+    update.effective_user.id = STARTER
+    update.effective_user.username = "starter"
+    update.effective_user.full_name = "Starter Name"
+    update.effective_chat.type = "private"
+    update.message.text = text
+    update.message.reply_text = AsyncMock()
+    return update
+
+
+async def _type(context, text: str) -> MagicMock:
+    update = _text_update(text)
+    await search.search_text_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+    return update.message
+
+
+@pytest.mark.parametrize("source", [Provider.ANILIST, "manual"])
+async def test_typed_text_at_clue_upload_identifies_nothing(
+    session_factory, monkeypatch, source
+) -> None:
+    game_id = _staged(
+        session_factory,
+        source=source,
+        setup_step=SetupStep.AWAITING_CLUE_PHOTO,
+        clue_screenshot_mode=ClueScreenshotMode.BOTH,
+    )
+    [entry] = _seed_entries(session_factory, game_id, 1)
+    searched = AsyncMock(return_value=[])
+    monkeypatch.setattr(search.anilist, "search", searched)
+    before = _game(session_factory, game_id)
+
+    message = await _type(_context(session_factory), "Naruto, Boruto")
+
+    searched.assert_not_awaited()
+    game = _game(session_factory, game_id)
+    assert game.setup_step is SetupStep.AWAITING_CLUE_PHOTO
+    assert (game.title_english, game.synonyms) == (before.title_english, before.synonyms)
+    assert game.clue_screenshot_mode == ClueScreenshotMode.BOTH
+    assert [row.id for row in _entries(session_factory, game_id)] == [entry]
+    kwargs = message.reply_text.await_args.kwargs
+    assert "cluepanel:open" in _buttons(kwargs["reply_markup"])
+
+
+async def test_result_pick_resets_the_clue_list(session_factory, monkeypatch) -> None:
+    game_id = _staged(session_factory, clue_screenshot_mode=ClueScreenshotMode.AUTHOR)
+    _seed_entries(session_factory, game_id, 2)
+    picked = AniListResult(
+        anilist_id=20,
+        title_romaji="Naruto",
+        title_english="Naruto",
+        title_native=None,
+        synonyms=[],
+        year=2002,
+    )
+    monkeypatch.setattr(
+        search, "_resolve_picked_result", AsyncMock(return_value=(Provider.ANILIST, 20, picked))
+    )
+    monkeypatch.setattr(search.season_gate, "refused", AsyncMock(return_value=False))
+    monkeypatch.setattr(search, "start_alias_search", MagicMock())
+    update = _query_update("anilist_pick:20")
+    update.callback_query.from_user.full_name = "Starter Name"
+
+    await search.pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _context(session_factory))
+    )
+
+    game = _game(session_factory, game_id)
+    assert game.title_english == "Naruto"
+    assert game.clue_screenshot_mode == ClueScreenshotMode.RANDOM
+    assert _entries(session_factory, game_id) == []
+
+
+async def test_resume_at_clue_upload_offers_back(session_factory) -> None:
+    game_id = _staged(session_factory, setup_step=SetupStep.AWAITING_CLUE_PHOTO)
+
+    text, markup = _shared._current_setup_screen(_game(session_factory, game_id), "en", MagicMock())
+
+    assert "Send the screenshot" in text
+    assert list(_buttons(markup)) == ["cluepanel:open"]
+
+
+async def test_source_and_start_anyway_taps_log_info(
+    session_factory, monkeypatch, log_records
+) -> None:
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    game_id = _staged(session_factory, shikimori_id=52991)
+    context = _context(session_factory)
+    context.bot.send_photo = AsyncMock(return_value=MagicMock(message_id=9))
+    context.bot.pin_chat_message = AsyncMock()
+    context.bot.unpin_chat_message = AsyncMock()
+    context.bot_data["game_topic_id"] = 7
+
+    for data in ("cluepanel:source", "cluepanel:start_random"):
+        before = len(log_records)
+        await _tap(context, data)
+        infos = [line for line in log_records[before:] if line.level == "INFO"]
+        assert infos, data
+        assert any(line.extra.get("game_id") == game_id for line in infos), data
+    assert _game(session_factory, game_id).status == GameStatus.ACTIVE

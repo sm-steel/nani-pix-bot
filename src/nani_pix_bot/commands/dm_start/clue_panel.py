@@ -16,7 +16,11 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start import clue_screens, preview
-from nani_pix_bot.commands.dm_start._shared import _confirming_screen, _reject_stale_tap
+from nani_pix_bot.commands.dm_start._shared import (
+    _confirming_screen,
+    _reject_stale_tap,
+    clue_upload_screen,
+)
 from nani_pix_bot.commands.dm_start.clue_keyboards import (
     CLUE_PANEL_BACK_CALLBACK_DATA,
     CLUE_PANEL_MODE_PREFIX,
@@ -74,7 +78,7 @@ def _set_mode(tap: _Tap) -> Screen:
 def _upload(tap: _Tap) -> Screen:
     logger.info("chose to upload a clue screenshot")
     tap.game.setup_step = SetupStep.AWAITING_CLUE_PHOTO
-    return i18n.t("dm_start.clue_upload_prompt", tap.lang), clue_back_keyboard(tap.lang)
+    return clue_upload_screen(tap.lang)
 
 
 def _remove_menu(tap: _Tap) -> Screen:

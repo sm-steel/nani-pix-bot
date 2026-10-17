@@ -156,7 +156,7 @@ def clear_images(session: Session, game_id: int) -> int:
         .values(image=None)
     )
     cleared = cast(CursorResult, session.execute(stmt)).rowcount
-    logger.info("cleared {count} author's clue screenshot image(s)", count=cleared, game_id=game_id)
+    logger.debug("cleared {count} author's list image(s)", count=cleared, game_id=game_id)
     return cleared
 
 
@@ -167,6 +167,9 @@ def reset(session: Session, game: Game) -> None:
     removed = cast(CursorResult, session.execute(stmt)).rowcount
     previous = game.clue_screenshot_mode
     game.clue_screenshot_mode = ClueScreenshotMode.RANDOM
+    if not removed and previous == ClueScreenshotMode.RANDOM:
+        logger.debug("no author's list to reset", game_id=game.id)
+        return
     logger.info(
         "reset the author's list ({count} entries removed, mode {previous} -> random)",
         count=removed,
