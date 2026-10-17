@@ -90,9 +90,9 @@ characters).
 - **Every PR that touches these files MUST run the Rotation check below
   first**, and rotate in that same PR when the notes have shipped. Skipping
   it once is how v1.17.0's and v1.18.0's notes ended up in one file.
-- **Nothing is committed to these files during or after a release.** The
+- **Nothing is committed to these files during a release run.** The
   release workflow tags `master` as it stands; the notes ride along
-  unchanged.
+  unchanged. Afterwards the next qualifying PR rotates them (below).
 
 ## Rotation
 
