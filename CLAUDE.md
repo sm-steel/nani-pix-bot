@@ -188,7 +188,7 @@ To skip in a genuine emergency: `git commit --no-verify` — but fix what it
 would have caught before the next real commit, don't make a habit of it.
 
 **CI (`.github/workflows/`) runs the exact same checks as the local
-pre-commit hook — never a separate copy of them.** Five workflows,
+pre-commit hook — never a separate copy of them.** Four workflows,
 GitHub-hosted runners only (never self-hosted — GitHub explicitly warns
 against self-hosted runners on public repos, since any fork PR can run
 arbitrary code on one, including reading secrets):
@@ -201,12 +201,20 @@ arbitrary code on one, including reading secrets):
   dependency here.
 - **`tests.yml`** (badge in `README.md`) — `uv run pytest -q`. No service
   containers: every test fixture uses an in-memory SQLite engine.
-- **`release.yml`** — only on a push to `master`, this repo's default
-  and release branch (see "Branching & workflow" below; never
-  `pull_request`, so a fork PR can never reach its secrets). Runs
-  `python-semantic-release` against this repo's Conventional Commits
-  history and, when a release actually cuts, tags it and builds/pushes a
-  versioned image to `ghcr.io/sm-steel/nani-pix-bot`. This repo has no
+
+  Both run on every push and PR, with no paths filter: the `master`
+  ruleset requires their `checks` and `tests` jobs to pass before a PR
+  can merge, and a required check whose workflow is filtered out never
+  reports, leaving the PR stuck.
+- **`release.yml`** — run by hand only (`workflow_dispatch`: Actions →
+  Release → Run workflow, on `master`; never on a push or
+  `pull_request`, so merging never releases and a fork PR can never reach
+  its secrets). See "Branching & workflow" below for when. Runs
+  `python-semantic-release` against every Conventional Commit since the
+  last tag and, when that adds up to a release, tags it, builds/pushes a
+  versioned image to `ghcr.io/sm-steel/nani-pix-bot`, and then calls
+  `docs.yml` to publish the guide for it. A `concurrency` group keeps two
+  runs from racing for the same tag. This repo has no
   deploy step of its own — rolling a released image out to your own
   instance is up to you (see the user's guide's Self-hosting pages). `bot`'s
   own Dockerfile `CMD` runs `alembic upgrade head` before starting the
@@ -214,28 +222,17 @@ arbitrary code on one, including reading secrets):
   whoever deploys it needs to remember — its startup queries the `games`
   table (to re-arm pending timeouts) immediately, which is exactly why a
   pending migration has to land first.
-- **`sync-develop.yml`** — also on every push to `master` (i.e. every
-  merged release PR, see "Branching & workflow" below). GitHub's merge
-  button always creates a *new* commit on `master` for that PR, one
-  `develop` never gets back on its own — left alone, that accumulates
-  release after release and the two branches quietly diverge. This
-  workflow closes the loop by opening a `master` → `develop` PR with
-  that commit (skipped if one's already open). It only opens the PR,
-  never merges it: a PR raised by the default `GITHUB_TOKEN` can't
-  trigger `checks.yml`/`tests.yml` (GitHub blocks Actions-created events
-  from recursively triggering more Actions), so there's no auto-merge
-  path that would actually wait on CI without a separate PAT — and
-  merging stays a human's call regardless, same as any other PR into a
-  protected branch. Requires "Allow GitHub Actions to create pull
-  requests" enabled under repo Settings → Actions → General (off by
-  default) — without it `gh pr create` fails on a permissions error.
 - **`docs.yml`** — the user's guide (`docs/site/`, see "User's guide"
   below). On every push/PR touching the guide or what it's generated from,
   runs the guide's own pytest checks (`tests/docs/`, the image generators'
-  tests) and an `astro build` with link validation. Only on a push to
-  `master` (or a manual run) does it publish the site, together with
-  `mal-callback.html`, to GitHub Pages — which needs Settings → Pages →
-  Source set to **GitHub Actions**.
+  tests) and an `astro build` with link validation. It publishes the
+  site, together with `mal-callback.html`, to GitHub Pages only when
+  `release.yml` calls it after a release (or on a manual run on
+  `master`), so the guide always describes the released bot — which
+  needs Settings → Pages → Source set to **GitHub Actions**.
+
+Every action is pinned to a full commit SHA with its version in a
+comment; `.github/dependabot.yml` opens a monthly PR bumping them.
 
 If a local pre-commit pass ever disagrees with `checks.yml`'s result on the
 same commit, that's a bug in the CI setup worth fixing directly, not
@@ -361,37 +358,40 @@ after.
 
 ## Branching & workflow
 
-`develop` is the integration branch — every task branch gets PR'd there.
-`master` is the GitHub **default** branch (what visitors see, what gets
-cloned) and release-only: it only moves via a deliberate `develop` →
-`master` PR when you actually want to cut a release, and that push is
-what triggers `release.yml` (see the CI section above). Both branches
-require a PR — no direct pushes, no force pushes, no deletions.
+`master` is the only long-lived branch: the GitHub default, the base of
+every task branch and PR, and where releases are cut. Merging to `master`
+never releases by itself — merged PRs accumulate there until you run
+`release.yml` by hand (see the CI section above), and that one run turns
+everything since the last tag into a single version. So **`master` must
+always be releasable**: anything merged ships with the next release,
+whoever presses the button.
 
-Because `master`, not `develop`, is the GitHub default, **a new PR's
-base branch defaults to `master` and does not auto-select `develop`** —
-GitHub ties "default branch" and "default PR base branch" to the same
-setting, so this can't be fixed with a repo setting alone. Always target
-`develop` explicitly: `gh pr create --base develop …`, or pick `develop`
-from the base-branch dropdown in the GitHub UI.
+The `master` ruleset requires a PR whose `checks` and `tests` pass, allows
+only merge commits (the history of `feat:`/`fix:` commits is what
+semantic-release reads, and a squash would collapse it into one PR
+title), and blocks force pushes and deletion.
 
 The standard flow for any task:
 
 1. Make sure it has a GitHub issue (see "Task tracking" below).
 2. Create an isolated worktree for it at `.claude/worktrees/<branch>`.
-3. Branch from `develop` (not `master`) as `<type>/<issue#>-<slug>` —
-   `<type>` matches the Conventional Commits type (`feat/`, `fix/`,
-   `chore/`, `docs/`, …), e.g. `feat/126-version-command`.
-4. Work and commit there, then open a PR explicitly targeting `develop`
-   (see above — it won't be preselected).
+3. Branch from `master` as `<type>/<issue#>-<slug>` — `<type>` matches
+   the Conventional Commits type (`feat/`, `fix/`, `chore/`, `docs/`, …),
+   e.g. `feat/126-version-command`.
+4. Work and commit there, then open a PR into `master`.
 
-Releasing is its own separate step, not something that happens as a side
-effect of a task PR: open a `develop` → `master` PR and merge it when
-you're ready to cut a version. That merge leaves a commit on `master`
-that `develop` doesn't have — `sync-develop.yml` (see the CI section
-above) opens a follow-up `master` → `develop` PR automatically; merge
-that one too before starting new task branches, so they fork from a
-`develop` that's actually caught up.
+**A feature too big to finish in one PR** doesn't land half-done on
+`master`. Either keep it in one PR (a PR can close several issues), or
+merge it switched off — a command that isn't registered yet, a setting
+that defaults off — and switch it on in the last PR, or, when neither
+fits, give it a short-lived integration branch (`feat/<issue#>-<slug>`
+from `master`): its sub-PRs target that branch, and it merges into
+`master` once, finished, then gets deleted.
+
+**Releasing:** check that `release-notes-*.md` read well as a whole
+(prune, merge overlapping bullets, order by impact — a `docs:` PR if they
+need it), then run Release on `master`. A run with no `feat:`/`fix:`
+since the last tag releases nothing.
 
 ## Task tracking (GitHub Issues)
 
@@ -438,18 +438,18 @@ it just adds a prefix that says what kind of change it is.
 `/version` shows hand-written, player-facing notes kept in
 `src/nani_pix_bot/release_notes/` (the release being built, plus up to four
 shipped ones), not the commit list semantic-release puts on GitHub. **Every
-PR into `develop` that a player or admin could notice adds its bullets to
-`release-notes-en.md` and `release-notes-ru.md` in that same PR**; the
-release PR only reviews them, and nothing is committed to these files during
-or after a release. The rules (what qualifies, the voice, condensing, not
+PR that a player or admin could notice adds its bullets to
+`release-notes-en.md` and `release-notes-ru.md` in that same PR**; they're
+reviewed as a whole just before a release, and nothing is committed to these
+files during or after one. The rules (what qualifies, the voice, condensing, not
 capping) and the rotation into `previous-releases-*.md` are in
 [`docs/release-notes.md`](docs/release-notes.md).
 
 ## User's guide
 
 The player/admin/self-hoster guide lives in `docs/site/` (Astro Starlight,
-published to https://sm-steel.github.io/nani-pix-bot/ from `master` by
-`docs.yml`). **Every PR into `develop` that changes behavior a player, admin
+published to https://sm-steel.github.io/nani-pix-bot/ by `docs.yml` with
+each release). **Every PR that changes behavior a player, admin
 or self-hoster could notice updates the matching guide pages in
 `docs/site/src/content/docs/` (English) and `…/docs/ru/` (Russian) in that
 same PR**, the same rule as release notes. `MECHANICS.md` stays the

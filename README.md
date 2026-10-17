@@ -71,18 +71,20 @@ optional MyAnimeList linking) is covered in the
 
 ## Continuous Integration
 
-Two GitHub Actions workflows run on every push/PR — **Checks**
+Two GitHub Actions workflows run on every push/PR, and both must pass
+before a PR can merge into `master` — **Checks**
 (`.github/workflows/checks.yml`: `ruff`, `ty`, and `qlty smells`, via the
 same `.pre-commit-config.yaml` the local pre-commit hook uses) and **Tests**
 (`.github/workflows/tests.yml`: `pytest`). A third workflow, **Release**
-(`.github/workflows/release.yml`), runs only on a push to `master` — this
-repo's default and release branch (see `CLAUDE.md`'s "Branching &
-workflow" section): it cuts a semantic-release
-version and, when a release actually happens, builds and pushes a
-versioned image to `ghcr.io/sm-steel/nani-pix-bot`. **Docs**
-(`.github/workflows/docs.yml`) builds the user's guide (`docs/site/`) on every
-PR that touches it, and on a push to `master` publishes it to GitHub Pages
-together with the MyAnimeList callback page. There is no workflow that deploys
+(`.github/workflows/release.yml`), only runs when started by hand on
+`master` — this repo's only long-lived branch (see `CLAUDE.md`'s
+"Branching & workflow" section), so merged PRs accumulate until then: it
+cuts a semantic-release version from everything since the last tag and,
+when a release actually happens, builds and pushes a versioned image to
+`ghcr.io/sm-steel/nani-pix-bot`. **Docs** (`.github/workflows/docs.yml`)
+builds the user's guide (`docs/site/`) on every PR that touches it, and is
+published to GitHub Pages, together with the MyAnimeList callback page, by
+each release. There is no workflow that deploys
 the bot itself —
 see the guide's [Updating](https://sm-steel.github.io/nani-pix-bot/self-hosting/updating/)
 page for how to roll a release out to your own instance. See `CLAUDE.md` for details.
