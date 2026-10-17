@@ -1,6 +1,9 @@
 """The image clues of the DM shop: the extra pixelated screenshot (fetched
 and rendered before anyone is charged) and the revealed-tiles picture."""
 
+import random
+from collections.abc import AsyncGenerator
+from contextlib import aclosing
 from dataclasses import dataclass
 
 from loguru import logger
@@ -18,21 +21,32 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services import players, settings
-from nani_pix_bot.services.clues import shop
+from nani_pix_bot.services.clues import handouts, shop
 from nani_pix_bot.services.clues.shop import Offer, Refusal, ShopRefusedError
-from nani_pix_bot.services.pixelate import render
+from nani_pix_bot.services.pixelate import fingerprint, render
 from nani_pix_bot.services.settings import stage_config
+
+# How many candidate screenshots one purchase may download before giving
+# up, when each turns out to be a frame already seen in the round.
+MAX_CANDIDATE_DOWNLOADS = 5
+_ROUND_IMAGE = "the round's own image"
+_EARLIER_CLUE = "an earlier clue"
 
 
 @dataclass(frozen=True)
 class ScreenshotPlan:
-    """Everything the network step needs, read in one short session."""
+    """Everything the network step needs, read in one short session.
+    `excluded` are URLs never to sell (the round's own, and every one
+    handed out in the game — issue #446); `seen` are fingerprints of frames
+    the round already showed, each with what it was, for the same check
+    on frames behind another URL or uploaded."""
 
     lang: str
     excluded: frozenset[str]
     sources: tuple[tuple[Provider, int], ...]
     width: int
     algorithm: PixelAlgorithm
+    seen: tuple[tuple[int, str], ...] = ()
 
 
 class ScreenshotFetchError(Exception):
@@ -44,6 +58,7 @@ class ScreenshotFetchError(Exception):
 class FetchedScreenshot:
     url: str
     pixelated: bytes
+    fingerprint: int
 
 
 def stage_width(session: Session, game: Game) -> int:
@@ -89,21 +104,40 @@ def screenshot_plan(session: Session, user: User, game_id: int) -> ScreenshotPla
     game, lang, offer = offered_game(session, user, game_id, ClueKind.SCREENSHOT)
     if not offer.affordable:
         raise _refused(game_id, ClueKind.SCREENSHOT, Refusal.INSUFFICIENT)
-    excluded = set(game.shown_screenshot_urls or []) | shop.owned_screenshot_urls(
-        session, game.id, user.id
-    )
+    given = handouts.for_game(session, game.id)
+    excluded = set(game.shown_screenshot_urls or []) | {row.screenshot_url for row in given}
+    seen = [(print_, _ROUND_IMAGE) for print_ in _round_fingerprints(game)]
+    seen += [(row.fingerprint, _EARLIER_CLUE) for row in given if row.fingerprint is not None]
     sources = tuple(
         (provider, getattr(game, provider.id_attr_name))
         for provider in shop.clue_screenshot_providers(game)
     )
     width = stage_width(session, game)
-    return ScreenshotPlan(lang, frozenset(excluded), sources, width, game.pixel_algorithm)
+    return ScreenshotPlan(
+        lang, frozenset(excluded), sources, width, game.pixel_algorithm, tuple(seen)
+    )
 
 
-async def _first_unused_url(
-    context: ContextTypes.DEFAULT_TYPE, plan: ScreenshotPlan
-) -> tuple[Provider, str] | None:
-    failed = False
+def _round_fingerprints(game: Game) -> list[int]:
+    """Fingerprints of the image(s) the round is played on: the original,
+    or HARD MODE's pair. One that can't be read is logged and left out."""
+    prints = []
+    for image in (game.original_image, game.hard_mode_image_a, game.hard_mode_image_b):
+        if image is None:
+            continue
+        try:
+            prints.append(fingerprint.fingerprint(image))
+        except ValueError:
+            logger.warning("extra screenshot: could not fingerprint the round's image")
+    return prints
+
+
+async def _unused_urls(
+    context: ContextTypes.DEFAULT_TYPE, plan: ScreenshotPlan, failed: list[Provider]
+) -> AsyncGenerator[tuple[Provider, str]]:
+    """Every not-excluded screenshot URL, provider by provider (best first),
+    in random order within each — so buyers don't all get the same one. A
+    provider whose lookup fails is logged and added to `failed`."""
     for provider, provider_id in plan.sources:
         client = client_for_source(context, provider)
         try:
@@ -112,42 +146,79 @@ async def _first_unused_url(
             logger.opt(exception=True).warning(
                 "extra screenshot: {provider} lookup failed", provider=provider.value
             )
-            failed = True
+            failed.append(provider)
             continue
-        unused = next((url for url in urls if url not in plan.excluded), None)
-        if unused is not None:
-            return provider, unused
-    if failed:
-        raise ScreenshotFetchError("provider lookup failed")
-    logger.info(
-        "extra screenshot: no unused screenshot among {count} providers", count=len(plan.sources)
-    )
-    return None
+        unused = [url for url in urls if url not in plan.excluded]
+        random.shuffle(unused)
+        for url in unused:
+            yield provider, url
 
 
-async def fetch_extra_screenshot(
-    context: ContextTypes.DEFAULT_TYPE, plan: ScreenshotPlan
-) -> FetchedScreenshot | None:
-    """Find, download and pixelate an unused screenshot, or None (logged)
-    if every provider answered but none had an unused one. A failed
-    lookup, download or pixelation raises ScreenshotFetchError — the
-    caller hasn't charged anyone yet."""
-    found = await _first_unused_url(context, plan)
-    if found is None:
-        return None
-    provider, url = found
+async def _download(context: ContextTypes.DEFAULT_TYPE, provider: Provider, url: str) -> bytes:
     try:
         response = await client_for_source(context, provider).get(url)
         response.raise_for_status()
     except IMAGE_DOWNLOAD_ERRORS:
         logger.opt(exception=True).warning("extra screenshot: download failed")
         raise ScreenshotFetchError("download failed") from None
+    return response.content
+
+
+def _already_seen(plan: ScreenshotPlan, url: str, print_: int) -> bool:
+    """Whether the frame is one the round already showed (logged if so)."""
+    for seen_print, seen_as in plan.seen:
+        if fingerprint.same_frame(print_, seen_print):
+            logger.info(
+                "extra screenshot: skipped {screenshot_url} — same frame as {seen_as}"
+                " (distance {distance})",
+                screenshot_url=url,
+                seen_as=seen_as,
+                distance=fingerprint.distance(print_, seen_print),
+            )
+            return True
+    return False
+
+
+def _render(plan: ScreenshotPlan, url: str, data: bytes) -> FetchedScreenshot:
     try:
-        pixelated = pixelate_service.pixelate(response.content, plan.width, plan.algorithm)
+        print_ = fingerprint.fingerprint(data)
+        pixelated = pixelate_service.pixelate(data, plan.width, plan.algorithm)
     except (OSError, ValueError):
         logger.opt(exception=True).warning("extra screenshot: could not pixelate the download")
         raise ScreenshotFetchError("pixelation failed") from None
-    return FetchedScreenshot(url, pixelated)
+    return FetchedScreenshot(url, pixelated, print_)
+
+
+async def fetch_extra_screenshot(
+    context: ContextTypes.DEFAULT_TYPE, plan: ScreenshotPlan
+) -> FetchedScreenshot | None:
+    """Find, download and pixelate a screenshot nobody in the round has seen
+    yet, or None (logged) if every provider answered but none had one. A
+    failed lookup, download or pixelation raises ScreenshotFetchError — the
+    caller hasn't charged anyone yet."""
+    failed: list[Provider] = []
+    tried = 0
+    async with aclosing(_unused_urls(context, plan, failed)) as candidates:
+        async for provider, url in candidates:
+            if tried == MAX_CANDIDATE_DOWNLOADS:
+                break
+            tried += 1
+            fetched = _render(plan, url, await _download(context, provider, url))
+            if not _already_seen(plan, url, fetched.fingerprint):
+                logger.info(
+                    "extra screenshot: picked {screenshot_url} ({tried} candidate(s) tried)",
+                    screenshot_url=url,
+                    tried=tried,
+                )
+                return fetched
+    if failed:
+        raise ScreenshotFetchError("provider lookup failed")
+    logger.info(
+        "extra screenshot: no unseen screenshot among {count} providers ({tried} tried)",
+        count=len(plan.sources),
+        tried=tried,
+    )
+    return None
 
 
 def render_tile_clue(session: Session, game: Game, tile: int) -> bytes:

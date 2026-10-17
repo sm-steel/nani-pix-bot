@@ -1668,9 +1668,18 @@ player's balance.
 - *Extra screenshot*: another pixelated screenshot of the same anime, at
   the stage the round is on now (in HARD MODE, at the current turn's
   stage). At most 3 per player per game, with the escalating price above.
-  It is never a screenshot that is already in play in this round (the
-  one used by the round, or either one of a HARD MODE pair) and never
-  one the player already bought. Available in HARD MODE too. It comes
+  Each screenshot goes out **at most once per game** (issue #446). A clue is
+  never a screenshot already in play in this round (the one used by the
+  round, or either one of a HARD MODE pair, uploaded or not), and never one
+  anyone has already got from the shop in this game: the buyer, another
+  player, or a purchase that was later refunded. Which screenshots were handed
+  out is kept per game in `clue_screenshot_handouts`, a record a refund
+  doesn't remove. The pick is random among the remaining screenshots, own
+  source first. Each candidate is downloaded and compared by a perceptual
+  fingerprint (64-bit difference hash, `services/pixelate/fingerprint.py`)
+  with the round's own image(s) and the clues already handed out. A frame
+  that matches is skipped even behind a different URL or as a re-encoded
+  copy. Up to 5 candidates are tried per purchase. Available in HARD MODE too. It comes
   only from sources with real in-episode frames — Shikimori and TMDB,
   starting with whichever one the round's own screenshot came from —
   never from Tenrai, whose pictures are promotional art (posters) that

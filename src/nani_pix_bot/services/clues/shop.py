@@ -27,7 +27,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons.definition import Modifier
 from nani_pix_bot.services import events, players
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services.clues import discount, text, token_clues
+from nani_pix_bot.services.clues import discount, handouts, text, token_clues
 from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.economy import config, earning, wallet
 from nani_pix_bot.services.economy.config import EconomyKey
@@ -87,6 +87,7 @@ class PurchaseRequest:
     kind: ClueKind
     tile_index: int | None = None
     screenshot_url: str | None = None
+    screenshot_fingerprint: int | None = None  # services/pixelate/fingerprint.py
 
 
 def _purchases(session: Session, game_id: int, player_id: int) -> list[CluePurchase]:
@@ -254,7 +255,9 @@ def offers(session: Session, game: Game, buyer: Player, lang: str) -> list[Offer
 
 def _malformed(session: Session, game: Game, request: PurchaseRequest) -> bool:
     """A request missing (or out of range on) the detail its kind needs; a
-    tile must also be the round's tile once someone has chosen it."""
+    tile must also be the round's tile once someone has chosen it, and a
+    screenshot must not have been handed out in this game already (issue
+    #446 — two buyers racing for the same pick)."""
     if request.kind is ClueKind.TILE:
         index = request.tile_index
         if not isinstance(index, int) or not 0 <= index < TILE_GRID * TILE_GRID:
@@ -262,7 +265,7 @@ def _malformed(session: Session, game: Game, request: PurchaseRequest) -> bool:
         chosen = round_tile(session, game.id)
         return chosen is not None and index != chosen
     if request.kind is ClueKind.SCREENSHOT:
-        return not request.screenshot_url
+        return not handouts.sellable(session, game.id, request.screenshot_url)
     return False
 
 
@@ -359,6 +362,7 @@ def purchase(session: Session, game: Game, buyer: Player, request: PurchaseReque
     detail = _detail(request)
     bought = token_clues.pay(session, game, buyer, request, detail)
     bought = bought or _pay_with_currency(session, game, buyer, request)
+    handouts.record(session, bought, request.screenshot_fingerprint)
     events.emit(
         session,
         EventType.CLUE_PURCHASED,
@@ -473,6 +477,7 @@ def _refund_currency(session: Session, purchase_row: CluePurchase, transfer_id: 
         recipient=players.describe_player_id(session, buyer.telegram_user_id),
         recipient_id=buyer.telegram_user_id,
         game_id=purchase_row.game_id,
+        screenshot_url=purchase_row.screenshot_url,
     )
     token_clues.emit_refunded(session, purchase_row)
     return amount

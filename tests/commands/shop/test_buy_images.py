@@ -1,17 +1,22 @@
 import io
+import random
+import zlib
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 from PIL import Image
+from sqlalchemy import select
 from telegram.error import BadRequest, TimedOut
 
+from nani_pix_bot.models import CluePurchase
 from nani_pix_bot.models.enums import ClueKind
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import pixelate as pixelate_service
-from nani_pix_bot.services.clues import shop
+from nani_pix_bot.services.clues import handouts, shop
 from nani_pix_bot.services.economy.config import EconomyKey
+from nani_pix_bot.services.pixelate import fingerprint
 from nani_pix_bot.services.search import shikimori
 from tests.commands.shop.helpers import (
     PRICES,
@@ -24,6 +29,7 @@ from tests.commands.shop.helpers import (
     set_currency,
     tap,
 )
+from tests.frames import encode, frame, frame_bytes
 
 _URLS = ["https://x/u1.jpg", "https://x/u2.jpg", "https://x/u3.jpg"]
 
@@ -34,12 +40,23 @@ def _png() -> bytes:
     return buffer.getvalue()
 
 
-def _image_context(session_factory):
+def _frame_of(url: str) -> bytes:
+    """The picture behind a fake screenshot URL: a distinct frame per URL."""
+    return frame_bytes(zlib.crc32(url.encode()))
+
+
+def _image_context(session_factory, frames: dict[str, bytes] | None = None):
+    """A context whose search client 'downloads' `frames[url]`, or a frame
+    of its own for any other URL."""
     context = make_context(session_factory)
-    response = MagicMock(content=b"raw")
-    response.raise_for_status = MagicMock()
+
+    async def download(url: str) -> MagicMock:
+        response = MagicMock(content=(frames or {}).get(url) or _frame_of(url))
+        response.raise_for_status = MagicMock()
+        return response
+
     client = MagicMock()
-    client.get = AsyncMock(return_value=response)
+    client.get = AsyncMock(side_effect=download)
     context.bot_data["search_client"] = client
     photo = MagicMock()
     photo.file_id = "FILE-1"
@@ -56,8 +73,8 @@ def stub_screenshots(monkeypatch):
     monkeypatch.setattr(pixelate_service, "pixelate", lambda *_: b"px")
 
 
-def _owned_urls(session_factory) -> list[str | None]:
-    return [p.screenshot_url for p in purchases(session_factory)]
+def _owned_urls(session_factory) -> list[str]:
+    return [p.screenshot_url or "" for p in purchases(session_factory)]
 
 
 async def test_screenshot_clue_skips_shown_and_owned_urls_and_charges_the_escalating_price(
@@ -71,7 +88,7 @@ async def test_screenshot_clue_skips_shown_and_owned_urls_and_charges_the_escala
     assert balance(session_factory) == RICH - PRICES[EconomyKey.CLUE_SCREENSHOT]
     await tap(context, make_query(f"shop:buy:{game_id}:screenshot:1"))
 
-    assert _owned_urls(session_factory) == [_URLS[1], _URLS[2]]
+    assert sorted(_owned_urls(session_factory)) == [_URLS[1], _URLS[2]]
     first = PRICES[EconomyKey.CLUE_SCREENSHOT]  # then the first price plus one step
     second = first + PRICES[EconomyKey.CLUE_SCREENSHOT_STEP]
     assert balance(session_factory) == RICH - first - second
@@ -228,6 +245,147 @@ async def test_screenshot_without_provider_id_is_unavailable(
 
     assert "isn't available" in query.answer.await_args.args[0]
     assert balance(session_factory) == RICH
+
+
+@pytest.fixture
+def in_list_order(monkeypatch) -> None:
+    """Candidates tried in the provider's order instead of shuffled."""
+    monkeypatch.setattr(random, "shuffle", lambda _seq: None)
+
+
+def _buy_screenshot_as(context, game_id: int, user_id: int, owned: int = 0):
+    return tap(context, make_query(f"shop:buy:{game_id}:screenshot:{owned}", user_id=user_id))
+
+
+async def test_another_buyer_never_gets_a_screenshot_someone_already_got(
+    session_factory, stub_screenshots
+) -> None:
+    game_id = seed_game(session_factory, shikimori_id=1, shown_screenshot_urls=[_URLS[0]])
+    set_currency(session_factory, 2, RICH)
+    set_currency(session_factory, 3, RICH)
+    context = _image_context(session_factory)
+
+    await _buy_screenshot_as(context, game_id, 2)
+    await _buy_screenshot_as(context, game_id, 3)
+
+    assert sorted(_owned_urls(session_factory)) == [_URLS[1], _URLS[2]]
+
+
+async def test_rebuying_after_a_refund_gives_a_new_screenshot(
+    session_factory, stub_screenshots
+) -> None:
+    game_id = seed_game(session_factory, shikimori_id=1)
+    set_currency(session_factory, 2, RICH)
+    context = _image_context(session_factory)
+    await _buy_screenshot_as(context, game_id, 2)
+    [first] = _owned_urls(session_factory)
+    with session_factory() as session:
+        shop.refund(session, session.scalars(select(CluePurchase)).one())
+        session.commit()
+
+    await _buy_screenshot_as(context, game_id, 2)
+
+    [second] = _owned_urls(session_factory)
+    assert second != first
+
+
+async def test_the_pick_is_random_among_unused_screenshots(
+    session_factory, stub_screenshots, monkeypatch
+) -> None:
+    monkeypatch.setattr(random, "shuffle", lambda seq: seq.reverse())
+    game_id = seed_game(session_factory, shikimori_id=1)
+    set_currency(session_factory, 2, RICH)
+
+    await _buy_screenshot_as(_image_context(session_factory), game_id, 2)
+
+    assert _owned_urls(session_factory) == [_URLS[2]]
+
+
+async def test_an_uploaded_rounds_own_frame_is_never_sold(
+    session_factory, stub_screenshots, in_list_order, log_records
+) -> None:
+    # The starter uploaded a re-encoded copy of what Shikimori serves as u1.
+    upload = encode(frame(1).resize((320, 180)), "JPEG", quality=70)
+    game_id = seed_game(session_factory, shikimori_id=1, original_image=upload)
+    set_currency(session_factory, 2, RICH)
+    context = _image_context(session_factory, {_URLS[0]: frame_bytes(1)})
+
+    await _buy_screenshot_as(context, game_id, 2)
+
+    assert _owned_urls(session_factory) == [_URLS[1]]
+    [skip] = [r for r in log_records if "skipped" in r.message]
+    assert skip.extra["screenshot_url"] == _URLS[0]
+    assert skip.extra["seen_as"] == "the round's own image"
+
+
+async def test_hard_mode_pair_frames_are_never_sold(
+    session_factory, stub_screenshots, in_list_order
+) -> None:
+    game_id = seed_game(
+        session_factory,
+        shikimori_id=1,
+        hard_mode=True,
+        hard_mode_turn=1,
+        current_stage=None,
+        original_image=None,
+        hard_mode_image_a=frame_bytes(1),
+        hard_mode_image_b=frame_bytes(2),
+    )
+    set_currency(session_factory, 2, RICH)
+    frames = {_URLS[0]: frame_bytes(1), _URLS[1]: frame_bytes(2)}
+
+    await _buy_screenshot_as(_image_context(session_factory, frames), game_id, 2)
+
+    assert _owned_urls(session_factory) == [_URLS[2]]
+
+
+async def test_a_handed_out_frame_behind_another_url_is_skipped(
+    session_factory, monkeypatch, in_list_order
+) -> None:
+    mirror = "https://x/u1-mirror.jpg"
+
+    async def listing(_client, _provider_id):
+        return [_URLS[0], mirror, _URLS[1]]
+
+    monkeypatch.setattr(shikimori, "screenshots", listing)
+    monkeypatch.setattr(pixelate_service, "pixelate", lambda *_: b"px")
+    game_id = seed_game(session_factory, shikimori_id=1)
+    set_currency(session_factory, 2, RICH)
+    set_currency(session_factory, 3, RICH)
+    frames = {_URLS[0]: frame_bytes(1), mirror: frame_bytes(1)}
+    context = _image_context(session_factory, frames)
+
+    await _buy_screenshot_as(context, game_id, 2)
+    await _buy_screenshot_as(context, game_id, 3)
+
+    assert _owned_urls(session_factory) == [_URLS[0], _URLS[1]]
+
+
+async def test_only_already_seen_frames_left_charges_nothing(session_factory, monkeypatch) -> None:
+    async def listing(_client, _provider_id):
+        return [_URLS[0]]
+
+    monkeypatch.setattr(shikimori, "screenshots", listing)
+    game_id = seed_game(session_factory, shikimori_id=1, original_image=frame_bytes(1))
+    set_currency(session_factory, 2, RICH)
+    query = make_query(f"shop:buy:{game_id}:screenshot:0")
+
+    await tap(_image_context(session_factory, {_URLS[0]: frame_bytes(1)}), query)
+
+    assert "No other screenshots" in query.answer.await_args.args[0]
+    assert balance(session_factory) == RICH
+    assert purchases(session_factory) == []
+
+
+async def test_the_handout_keeps_the_frames_fingerprint(session_factory, stub_screenshots) -> None:
+    game_id = seed_game(session_factory, shikimori_id=1)
+    set_currency(session_factory, 2, RICH)
+
+    await _buy_screenshot_as(_image_context(session_factory), game_id, 2)
+
+    with session_factory() as session:
+        [row] = handouts.for_game(session, game_id)
+    assert row.fingerprint == fingerprint.fingerprint(_frame_of(row.screenshot_url))
 
 
 async def test_tile_button_opens_grid_without_charge(session_factory) -> None:

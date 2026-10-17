@@ -6,3 +6,5 @@
 - 🎨 Cosmetic previews in `/cosmetics` and `/seasonshop` now show you: your name with the flair, your avatar and name on the win badge, and your own profile card behind a banner.
 - 🖼 Stage frame and reveal transition previews now play out on a real anime screenshot, and a frame is shown on a pixelated picture, just as a round posts it.
 - 🏳 Stuck on a screenshot nobody knows? `/pass` votes to give up: once enough of the group agrees (half of those who played in the last day, at least 3), the round ends and the answer is shown.
+### 🛠 Fixed
+- 🖼 An extra screenshot from `/shop` is always a new one now: never the round's own picture, never one you or anyone else already got that round (even if it was refunded), and picked at random instead of the same one for everybody.

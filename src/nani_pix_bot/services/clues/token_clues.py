@@ -62,6 +62,7 @@ def refund(session: Session, purchase_row: CluePurchase) -> int:
         kind=ClueKind(purchase_row.kind).value,
         purchase_id=purchase_row.id,
         game_id=purchase_row.game_id,
+        screenshot_url=purchase_row.screenshot_url,
     )
     emit_refunded(session, purchase_row)
     return 0
