@@ -696,3 +696,10 @@ def test_purchase_line_says_where_the_screenshot_came_from(session: Session, log
     assert [line.extra["from_author"] for line in bought] == [True, False]
     assert "from the author's list" in bought[0].message
     assert "random pick" in bought[1].message
+
+
+def test_random_mode_with_a_list_and_no_provider_is_not_offered(session: Session) -> None:
+    game, buyer = _setup(session, shikimori_id=None, clue_screenshot_mode=ClueScreenshotMode.RANDOM)
+    _author_entry(session, game)
+
+    assert not _screenshot_offered(session, game, buyer)

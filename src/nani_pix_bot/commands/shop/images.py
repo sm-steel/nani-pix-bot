@@ -51,7 +51,7 @@ class ScreenshotPlan:
     handed out in the game — issue #446); `seen` are fingerprints of frames
     the round already showed, each with what it was, for the same check
     on frames behind another URL or uploaded. `author` are the author's
-    list's unsold entries, tried before any random pick; `mode` says
+    list's unsold entries (none in Random mode), tried before any random pick; `mode` says
     whether a random pick may follow (issue #450)."""
 
     lang: str
@@ -129,21 +129,30 @@ def screenshot_plan(session: Session, user: User, game_id: int) -> ScreenshotPla
         (provider, getattr(game, provider.id_attr_name))
         for provider in shop.clue_screenshot_providers(game)
     )
-    width = stage_width(session, game)
-    author = tuple(
-        AuthorCandidate(author_list.handout_key(entry), entry.image, entry.fingerprint)
-        for entry in author_list.unsold(session, game)
-        if entry.image is not None
-    )
+    mode = ClueScreenshotMode(game.clue_screenshot_mode)
     return ScreenshotPlan(
         lang,
         frozenset(excluded),
         sources,
-        width,
+        stage_width(session, game),
         game.pixel_algorithm,
         tuple(seen),
-        mode=ClueScreenshotMode(game.clue_screenshot_mode),
-        author=author,
+        mode=mode,
+        author=_author_candidates(session, game, mode),
+    )
+
+
+def _author_candidates(
+    session: Session, game: Game, mode: ClueScreenshotMode
+) -> tuple[AuthorCandidate, ...]:
+    """The author's unsold entries, or none in Random mode: Random is the
+    random pick alone, and the list stays stored but unused (issue #450)."""
+    if mode == ClueScreenshotMode.RANDOM:
+        return ()
+    return tuple(
+        AuthorCandidate(author_list.handout_key(entry), entry.image, entry.fingerprint)
+        for entry in author_list.unsold(session, game)
+        if entry.image is not None
     )
 
 

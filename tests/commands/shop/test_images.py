@@ -166,3 +166,26 @@ async def test_author_mode_used_up_refuses_without_charge(session_factory, provi
     assert len(purchases(session_factory)) == 1
     provider.assert_not_awaited()
     assert late.answer.await_args.kwargs.get("show_alert") is True
+
+
+def test_random_mode_plan_has_no_author_candidates(session_factory) -> None:
+    """Random mode is today's pick, unchanged: the stored list is unused."""
+    game_id, _ = _seed_author_game(session_factory, ClueScreenshotMode.RANDOM, shikimori_id=1)
+    set_currency(session_factory, 2, RICH)
+    user = MagicMock(id=2, username="user2")
+
+    with session_factory() as session:
+        plan = images.screenshot_plan(session, user, game_id)
+
+    assert plan.mode == ClueScreenshotMode.RANDOM
+    assert plan.author == ()
+
+
+async def test_random_mode_buy_sells_a_random_frame_not_the_list(session_factory, provider) -> None:
+    game_id, _ = _seed_author_game(session_factory, ClueScreenshotMode.RANDOM, shikimori_id=1)
+    set_currency(session_factory, 2, RICH)
+
+    await tap(_context(session_factory), make_query(f"shop:buy:{game_id}:screenshot:0"))
+
+    assert [p.screenshot_url for p in purchases(session_factory)] == [_RANDOM_URL]
+    provider.assert_awaited_once()
