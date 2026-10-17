@@ -22,8 +22,8 @@ src/nani_pix_bot/release_notes/
   previous-releases-ru.md
 ```
 
-- **`release-notes-<lang>.md`** holds the notes of the release that `develop`
-  is building. Once it ships, they are the running release's notes, and
+- **`release-notes-<lang>.md`** holds the notes of the release that `master`
+  is building (everything merged since the last tag). Once it ships, they are the running release's notes, and
   `/version` puts the running version (`installed_version()`) above them, so
   the file has **no version heading**. An empty file is allowed: `/version`
   then shows the header and "Nothing noted for this build yet."
@@ -82,13 +82,14 @@ characters).
 
 ## When the notes are written
 
-- **Every PR into `develop` that qualifies adds its bullets, in both
-  languages, in that same PR.** Not later, not in a sweep before the release.
-- **The release PR (`develop` → `master`) only reviews the file**: prune,
-  merge overlapping bullets, order by impact.
-- **Nothing is committed to these files during or after a release.** A
-  release is cut from `master`, and `sync-develop.yml` brings the merge back
-  to `develop`; the notes ride along unchanged.
+- **Every PR that qualifies adds its bullets, in both languages, in that
+  same PR.** Not later, not in a sweep before the release.
+- **Just before running the release, review the file as a whole**: prune,
+  merge overlapping bullets, order by impact — in a `docs:` PR if it needs
+  changes.
+- **Nothing is committed to these files during or after a release.** The
+  release workflow tags `master` as it stands; the notes ride along
+  unchanged.
 
 ## Rotation
 
