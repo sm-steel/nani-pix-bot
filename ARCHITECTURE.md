@@ -272,6 +272,17 @@ src/nani_pix_bot/
                    #   numbers.py     the "do the numbers matter?"
                    #                  answer asked before the preview
                    #                  for a number-heavy title (#345)
+                   #   clue_panel.py  the preview's 🖼 clue screenshot panel
+                   #                  (#450): mode, upload, remove, the
+                   #                  source menu, "Start anyway" on the
+                   #                  empty-list warning, and the photo
+                   #                  accepted at AWAITING_CLUE_PHOTO
+                   #   clue_gallery.py  adding to the author's list from a
+                   #                  Shikimori/TMDB gallery (cluegal:)
+                   #   clue_screens.py  the panel screen shared by the two
+                   #   clue_keyboards.py  their keyboards and callback-data
+                   #                  parsers (split out of keyboards.py
+                   #                  for qlty's complexity limit)
                    #   keyboards.py   inline-keyboard builders +
                    #                  callback-data constants for all of
                    #                  the above
@@ -396,7 +407,9 @@ src/nani_pix_bot/
                    #                 share), image clues and the topic
                    #                 "bought" notice
                    #   images.py     the image clues: fetch + pixelate an
-                   #                 extra screenshot (before anyone is
+                   #                 extra screenshot (the author's list
+                   #                 first in Author's/Both mode, from
+                   #                 its stored bytes; before anyone is
                    #                 charged) and render a tile reveal
                    #   keyboards.py  shop menu, 8x8 tile grid (shown only
                    #                 until the round's one tile is chosen;
@@ -903,6 +916,11 @@ src/nani_pix_bot/
                    #   handouts.py  which screenshots the shop handed out
                    #             per game (#446): never sold twice in one
                    #             game, refund or not
+                   #   author_list.py  the author's clue screenshot list
+                   #             (#450): add/remove/reset, the 10-entry and
+                   #             duplicate rules, handout keys, `unsold`
+                   #             (shared by the shop's availability check
+                   #             and the picker), the empty-list warning
                    #   discount.py  stacking of percentage clue discounts (HARD
                    #             MODE sale + the season's): apply
                    #   (economy/) bounty.py   the pot: contribute, pay_out,
@@ -1047,6 +1065,8 @@ src/nani_pix_bot/
     clue_purchase.py  # CluePurchase (one clue a player bought in one game)
     clue_screenshot_handout.py  # ClueScreenshotHandout (a screenshot the
                    #               shop handed out in a game; #446)
+    clue_author_screenshot.py  # ClueAuthorScreenshot (an entry of the
+                   #               author's clue list; #450)
     game_guess.py  # GameGuess (one row per /guess: text, stage/turn,
                    #           correct, partial reveal — #251)
     reveal_video.py  # RevealVideo (the single pre-rendered reveal slot,
@@ -1385,6 +1405,8 @@ erDiagram
 | `season_objectives` | Phase 4 | A completed objective: primary key (`season_id`, `player_id`, `objective_key`) and `completed_at`, so it pays once. Written only by `services/seasons/objectives.py`. |
 | `consumables` | v12 | `player_id`, `kind` (a `ConsumableKind`, stored `clue_token`) and `count`: the clue tokens a player holds. Written only by `services/cosmetics/consumables.py`. |
 | `clue_screenshot_handouts` | #446 | One row per screenshot the clue shop handed out in a game: `game_id` (FK, `ON DELETE CASCADE`), `screenshot_url`, `fingerprint` (the frame's 64-bit perceptual hash from `services/pixelate/fingerprint.py`, signed to fit `BIGINT`; `NULL` for rows the migration backfilled from earlier purchases) and `created_at`, and `image` (the full-quality original for the clue album posted under the reveal; deferred, set to `NULL` after the reveal, the row stays). (`game_id`, `screenshot_url`) is unique by `handouts.sellable`'s check before the charge, not a DB constraint: a 1024-character utf8mb4 column exceeds InnoDB's plain unique-key length, and updates are processed one at a time. Written by `shop.purchase` alongside the `CluePurchase` and deliberately never deleted by a refund, so a screenshot goes out at most once per game, to anyone. The extra-screenshot picker excludes its URLs and skips any candidate whose fingerprint matches one of these or the round's own image(s). Written only via `services/clues/handouts.py`. |
+| `clue_author_screenshots` | #450 | One screenshot of a game's author's clue list, built on the setup preview's clue panel: `game_id` (FK, `ON DELETE CASCADE`, indexed), `source` (a `Provider` as a plain string, Shikimori/TMDB, or `NULL` for an upload), `url` (`NULL` for an upload), `image` (the full-quality original, deferred, set to `NULL` after the reveal; the source of the clue's pixelation and of its handout row's copy), `fingerprint` (64-bit perceptual hash, signed) and `created_at`. At most 10 per game and no two of the same frame, enforced by `services/clues/author_list.py::add`, not by the DB. The shop sells from it by `games.clue_screenshot_mode`; an entry's handout key, written as `screenshot_url` on its `clue_purchases` and `clue_screenshot_handouts` rows, is its `url`, or `author:<id>` for an upload. Emptied by a re-identification during setup, deleted with the game. Written only via `services/clues/author_list.py`. |
+| `games.clue_screenshot_mode` | #450 | `random` (default, also the server default, so older rows read as Random) / `author` / `both`: where the *Extra screenshot* clue gets its pictures (a `ClueScreenshotMode` as a plain string). Chosen on the preview's clue panel, frozen at Confirm; always `random` for autostart and HARD MODE games. `setup_step` also gains `AWAITING_CLUE_PHOTO`, the wait for the author's clue upload. |
 | `clue_purchases` token columns | v12 | `token_used` (the clue was paid with a clue token) and `transfer_id` now nullable: a token purchase has no ledger charge. A failed token delivery gives the token back. |
 | `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string: `admin`, `pass` for a pass reward, or `shop` for a Season Shop purchase), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
 | `equipped_items` | v12 | The item equipped per slot: primary key (`player_id`, `slot`; `slot` a `CosmeticSlot` as a plain string), `item_id`. One item per slot, so equipping replaces. |

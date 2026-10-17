@@ -252,7 +252,7 @@ message right after it.
 
     Also accepted: Mimi wo Sumaseba, 耳をすませば, If You Listen Closely, Mimi o Sumaseba
   </TgMessage>
-  <TgMessage from="nani-pix-bot" buttons={[['✅ Confirm and start'], ['🖼️ Change image'], ['🔍 Re-search title'], ['📝 Add a synonym'], ['🎨 Pixelation: Median'], ['💰 Bounty']]}>
+  <TgMessage from="nani-pix-bot" buttons={[['✅ Confirm and start'], ['🖼️ Change image'], ['🔍 Re-search title'], ['📝 Add a synonym'], ['🎨 Pixelation: Median'], ['🖼 Clue screenshots: Random'], ['💰 Bounty']]}>
     Looks good?
   </TgMessage>
 </TelegramChat>
@@ -270,6 +270,9 @@ message right after it.
   [text clues](/nani-pix-bot/players/pixels-and-shop/) hide the title's digits as
   `_`, like letters, instead of showing them as `X`.
 - **🎨 Pixelation**: choose how the blocks are coloured (see below).
+- **🖼 Clue screenshots**: choose where the shop's *Extra screenshot* clue gets its
+  pictures, and add your own picks (see below). Rounds the bot starts by itself
+  don't have it.
 - **💰 Bounty**: put pixels into the round's pot for whoever solves it (see below).
 - **✅ Confirm and start**: posts stage 1 to the game topic. The round is live.
 
@@ -297,6 +300,52 @@ you can compare.
     **Lanczos** — sharpest blocks; can ring on hard edges
   </TgMessage>
 </TelegramChat>
+
+### Clue screenshots
+
+Players can buy an *Extra screenshot* in the
+[clue shop](/nani-pix-bot/players/pixels-and-shop/). You decide where those
+screenshots come from. The button shows the current choice and opens a panel:
+
+- **Random** (the default): a random frame from Shikimori or TMDB, as always.
+- **Author's**: only the screenshots you add to your list. When they are all
+  handed out, the clue is gone from the shop.
+- **Both**: yours first, in random order, then random frames once your list runs
+  out.
+
+To fill your list (up to 10 screenshots), use **🔍 Add from a source** to pick
+from the Shikimori or TMDB gallery of this anime, or **📤 Upload my own** and send
+a photo. **🗑 Remove…** takes one back out. A screenshot that is the same frame as
+your main screenshot, or as one already on the list, is refused.
+
+<TelegramChat label="Example: the clue screenshots panel">
+  <TgMessage from="nani-pix-bot" buttons={[['Random', "✅ Author's", 'Both'], ['🔍 Add from a source'], ['📤 Upload my own'], ['🗑 Remove…'], ['↩ Back']]}>
+    🖼 Clue screenshots: what the shop's "Extra screenshot" clue sells.
+
+    Random: a random frame from Shikimori or TMDB. Author's: only the screenshots you add here. Both: yours first, then random ones.
+
+    &nbsp;
+
+    Mode: Author's · 2/10 screenshots
+  </TgMessage>
+</TelegramChat>
+
+Good to know:
+
+- The choice is yours only while you set the round up. After
+  **✅ Confirm and start** it can't be changed.
+- Changing the anime (**🔍 Re-search title**, **Pick a different anime**) empties
+  the list and sets the mode back to Random, because the screenshots belonged to
+  the old anime. **🖼️ Change image** keeps the list, and drops any entry that is
+  the new main screenshot when you confirm.
+- If you confirm in Author's or Both mode with an empty list, the bot asks first:
+  **▶️ Start anyway** starts the round in Random mode, **🖼 Add screenshots**
+  takes you back to the panel.
+- Your screenshots work like any other extra screenshot: the price and the
+  limit of 3 per player don't change, each one is handed out once per round, and
+  all of them show up in full quality in the
+  [clue album](/nani-pix-bot/players/how-a-round-ends/#the-clue-album) when the
+  round ends.
 
 ### Bounty
 

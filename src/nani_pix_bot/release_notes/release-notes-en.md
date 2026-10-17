@@ -7,5 +7,6 @@
 - 🖼 Stage frame and reveal transition previews now play out on a real anime screenshot, and a frame is shown on a pixelated picture, just as a round posts it.
 - 🏳 Stuck on a screenshot nobody knows? `/pass` votes to give up: once enough of the group agrees (half of those who played in the last day, at least 3), the round ends and the answer is shown.
 - 🖼 When a round ends, every extra screenshot bought during it is shown in full quality in an album under the reveal. In HARD MODE the video now shows one screenshot, and the other one opens the album.
+- 🖼 Starting a round? The preview now has **Clue screenshots**: choose whether the shop's extra screenshot is random (as before), only your own picks, or yours first and then random. Add up to 10 from the Shikimori or TMDB gallery or upload your own; they show up in the clue album when the round ends. Confirming with an empty list in Author's or Both mode asks before starting in Random.
 ### 🛠 Fixed
 - 🖼 An extra screenshot from `/shop` is always a new one now: never the round's own picture, never one you or anyone else already got that round (even if it was refunded), and picked at random instead of the same one for everybody.
