@@ -437,7 +437,7 @@ async def _start_new_game(
     case it re-shows that game's current step and creates nothing (see
     `_resume_setup`). Both entry points get that for free by sharing
     this helper: a second `/newgame`, and a photo sent on a step that
-    doesn't take one (intake.py handles the two that do), are the same
+    doesn't take one (intake.py handles the ones that do), are the same
     "my setup is already open" mistake arriving by different routes."""
     group_chat_id = context.bot_data["group_chat_id"]
     if not await is_group_member(context.bot, group_chat_id, user.id):
@@ -498,6 +498,11 @@ async def _start_new_game(
 
     if image_bytes is not None:
         await _send_first_stage_preview(message, image_bytes, first_stage, lang)
+    await _send_method_menu(message, context, lang)
+
+
+async def _send_method_menu(message, context: ContextTypes.DEFAULT_TYPE, lang: str) -> None:
+    """The method-selection prompt and keyboard, as a new reply."""
     await message.reply_text(
         i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
         reply_markup=_method_keyboard(context, lang),

@@ -10,3 +10,4 @@
 - 🖼 Starting a round? The preview now has **Clue screenshots**: choose whether the shop's extra screenshot is random (as before), only your own picks, or yours first and then random. Add up to 10 from the Shikimori or TMDB gallery or upload your own; the ones handed out show up in the clue album when the round ends.
 ### 🛠 Fixed
 - 🖼 An extra screenshot from `/shop` is always a new one now: never the round's own picture, never one you or anyone else already got that round (even if it was refunded), and picked at random instead of the same one for everybody.
+- 📷 Sent a different screenshot while setting up a round, before picking the anime (say, after the season's theme turned the first one down)? It now replaces the first one, instead of being ignored while the round went live with the old picture.

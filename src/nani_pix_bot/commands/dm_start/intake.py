@@ -8,7 +8,10 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.dm_start._shared import (
+    _FirstStagePreview,
     _post_preview_album,
+    _send_first_stage_preview,
+    _send_method_menu,
     _stage_preview,
     _start_new_game,
 )
@@ -19,6 +22,7 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import settings
+from nani_pix_bot.services.settings import stage_config
 
 # Setup steps where a DM photo means "use this image for the game I'm
 # already setting up" rather than "start a new game" — see
@@ -48,8 +52,44 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     if await _replace_staged_photo_if_pending(context, session_factory, user, image_bytes):
         return
+    if await _replace_photo_before_identification(message, context, user, image_bytes):
+        return
 
     await _start_new_game(message, context, session_factory, user, image_bytes)
+
+
+async def _replace_photo_before_identification(
+    message, context: ContextTypes.DEFAULT_TYPE, user, image_bytes: bytes
+) -> bool:
+    """A photo while the starter's own setup is still on the method menu:
+    the anime isn't identified yet, so it is the screenshot they mean to
+    play — most often after the season gate refused the first one's anime
+    (issue #456, where it was dropped and the round went live with the
+    old screenshot). It replaces the staged image, and the starter gets
+    its stage-1 preview and the method menu, as for a first photo.
+    Returns whether it was taken."""
+    with session_scope(context.bot_data["session_factory"]) as session:
+        lang = settings.get_language(session)
+        existing = game_service.get_setup_game_for_starter(session, user.id)
+        if existing is None or existing.setup_step != SetupStep.PICKING_METHOD:
+            return False
+        logger.info(
+            "sent a new photo at {step} — it replaces the staged screenshot",
+            step=existing.setup_step.value,
+            game_id=existing.id,
+        )
+        # Leaves any API-picked screenshot behind first, as for every
+        # upload (see _replace_staged_photo_if_pending).
+        clear_screenshot_selection(existing)
+        existing.original_image = image_bytes
+        first_stage = _FirstStagePreview(
+            game_id=existing.id,
+            width=stage_config.get_stage_config(session, game_service.STAGE_ORDER[0]).target_width,
+            algorithm=existing.pixel_algorithm,
+        )
+    await _send_first_stage_preview(message, image_bytes, first_stage, lang)
+    await _send_method_menu(message, context, lang)
+    return True
 
 
 async def _replace_staged_photo_if_pending(

@@ -305,6 +305,12 @@ tapping "Upload my own instead" — someone staring at the source menu who
 just sends a screenshot means the obvious thing, and it lands on the same
 confirmation preview.
 
+**So is one sent from the method menu**, before the anime is identified
+(issue #456) — typically after the season gate refused the first
+screenshot's anime. It replaces the staged screenshot, and the starter gets
+its stage-1 preview and the method menu again; no new game is created. On
+every later step that takes no photo, a DM photo only re-shows that step.
+
 #### When a provider fails
 
 Third-party APIs go down (Jikan served nothing but HTTP 504 for a stretch
@@ -2092,7 +2098,7 @@ plural noun phrase slotted into "This season only {rule} can be played."
 - **Three outcomes.** Passed. **Refused**: off-theme, or unidentifiable (no
   MAL id could be found) — the player is told the rule and picks again. A
   refusal also clears a catalogue screenshot and resets setup to the method
-  pick; a result for a pick that has since changed (a stale verdict) is
+  pick, where a new DM photo replaces the staged screenshot; a result for a pick that has since changed (a stale verdict) is
   dropped. **Unavailable**: no provider answered after retries — the player
   is told to try again, and it is never reported as off-theme. Confirm
   answers the tap before the gate's catalogue lookups (Telegram's callback
