@@ -439,6 +439,7 @@
   "clue_kind.tile": "tile",
   "guess.vote_in_progress": "🗳 Nobody got this one, so it's up to the group: vote on who was actually right in the poll above.",
   "vote.reveal_caption": "🗳 Nobody survived HARD MODE this time. It was {title}.",
+  "reveal.clues_caption": "🖼 Clues from this game",
   "vote.ballot": "🗳 Was anyone actually right? Vote for the guess that really counts — you can't vote for yourself. Closes in {minutes} min; a winner needs at least {min_votes} votes and no tie. Votes so far: {total}.",
   "vote.counted": "✅ Vote counted.",
   "vote.refused.self": "You can't vote for yourself.",

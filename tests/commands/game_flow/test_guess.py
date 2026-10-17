@@ -617,7 +617,9 @@ async def test_guess_command_stage_advance_caption_shows_the_new_stage_budget(
     assert "#" not in kwargs["caption"]
 
 
-async def test_guess_command_hard_mode_won_posts_a_two_photo_album(session_factory) -> None:
+async def test_guess_command_hard_mode_won_posts_the_reveal_then_the_other_screenshot(
+    session_factory,
+) -> None:
     game_id = _active_hard_mode_game(session_factory)
     update = _make_update(user_id=2, args=["frieren"])
     context = _make_context(session_factory, args=["frieren"])
@@ -626,13 +628,11 @@ async def test_guess_command_hard_mode_won_posts_a_two_photo_album(session_facto
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    context.bot.send_media_group.assert_awaited_once()
-    context.bot.send_photo.assert_not_awaited()
-    _, kwargs = context.bot.send_media_group.await_args
-    media = kwargs["media"]
-    assert len(media) == 2
-    assert media[0].media.input_file_content == b"image-a-bytes"
-    assert media[1].media.input_file_content == b"image-b-bytes"
+    context.bot.send_media_group.assert_not_awaited()
+    first, second = context.bot.send_photo.await_args_list  # the reveal, then the other screenshot
+    assert first.kwargs["photo"] == b"image-a-bytes"
+    assert second.kwargs["photo"] == b"image-b-bytes"
+    caption = first.kwargs["caption"]
     # guess.hard_mode_won_caption has a variation pool (see
     # locales/variations/en.json) — a substring check on the dynamic
     # values, not exact equality against a second independent i18n.t()
@@ -640,8 +640,8 @@ async def test_guess_command_hard_mode_won_posts_a_two_photo_album(session_facto
     # (equally valid) phrasing from the pool than the one guess_command
     # itself rendered. Same pool-aware style as
     # test_guess_command_won_caption_names_the_winner above.
-    assert "Guesser Name" in media[0].caption
-    assert "Frieren: Beyond Journey's End" in media[0].caption
+    assert "Guesser Name" in caption
+    assert "Frieren: Beyond Journey's End" in caption
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)
@@ -714,7 +714,7 @@ async def test_final_hard_mode_miss_opens_a_vote_instead_of_ending(session_facto
         assert game.status is GameStatus.VOTING
         assert game.vote_message_id == 1234
         assert game.hard_mode_image_a is not None  # kept until the vote closes
-    context.bot.send_media_group.assert_awaited_once()
+    context.bot.send_photo.assert_awaited()  # the reveal opens the vote
     assert scheduled == []  # no overthrow while the vote is open
     names = [c.kwargs["name"] for c in context.job_queue.run_once.call_args_list]
     assert f"vote-close-{game_id}" in names

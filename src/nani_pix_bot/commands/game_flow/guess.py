@@ -14,6 +14,7 @@ from nani_pix_bot.commands.game_flow.stage_post import (
     prepare_stage_advanced_announcement,
     require_original_image,
     send_announcement,
+    send_reveal_announcement,
     with_suffix,
 )
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
@@ -278,9 +279,11 @@ async def _send_guess_result(
     if result.reply_text is not None:
         await message.reply_text(result.reply_text)
     if result.announcement is not None:
-        sent = await send_announcement(context, session_factory, result.announcement)
         if result.needs_cleanup_after_send:
+            sent = await send_reveal_announcement(context, session_factory, result.announcement)
             timeout_module.clear_image_if_sent(session_factory, result.game_id, sent)
+        else:
+            await send_announcement(context, session_factory, result.announcement)
     if result.reaction is not None:
         await _react_to_win(message, result.reaction)
 

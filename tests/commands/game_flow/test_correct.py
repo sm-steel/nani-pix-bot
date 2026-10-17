@@ -470,18 +470,16 @@ async def test_correct_command_hard_mode_reveals_both_stored_screenshots(session
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    context.bot.send_media_group.assert_awaited_once()
-    context.bot.send_photo.assert_not_awaited()
-    _, kwargs = context.bot.send_media_group.await_args
-    media = kwargs["media"]
-    assert len(media) == 2
-    assert media[0].media.input_file_content == b"image-a-bytes"
-    assert media[1].media.input_file_content == b"image-b-bytes"
+    context.bot.send_media_group.assert_not_awaited()
+    first, second = context.bot.send_photo.await_args_list  # the reveal, then the other screenshot
+    assert first.kwargs["photo"] == b"image-a-bytes"
+    assert second.kwargs["photo"] == b"image-b-bytes"
+    caption = first.kwargs["caption"]
     expected_caption = correct_command_module.i18n.t(
         "correct.hard_mode_caption", "en", winner="winner", title="Frieren: Beyond Journey's End"
     )
-    assert media[0].caption.startswith(expected_caption)  # plus the currency-earnings lines
-    assert "+80" in media[0].caption  # turn-1 win 40 x 2 (HARD MODE)
+    assert caption.startswith(expected_caption)  # plus the currency-earnings lines
+    assert "+80" in caption  # turn-1 win 40 x 2 (HARD MODE)
 
     with session_factory() as session:
         fetched = session.get(Game, game_id)

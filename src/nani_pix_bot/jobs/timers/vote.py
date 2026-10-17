@@ -136,7 +136,7 @@ async def post_vote_ballot(
     await post_reveal_pair(
         context,
         session_factory,
-        target=RevealTarget(game_id, None),
+        target=RevealTarget(game_id, None, clear_clues=False),
         photos=photos,
         caption=caption,
     )

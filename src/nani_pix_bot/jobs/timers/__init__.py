@@ -41,7 +41,6 @@ from nani_pix_bot.jobs.timers.autostart import (
 from nani_pix_bot.jobs.timers.current_image import (
     clear_image_if_sent,
     post_current_image,
-    post_current_images,
     post_reveal,
     post_reveal_pair,
     post_stage_image,
@@ -121,7 +120,6 @@ __all__ = [
     "inactivity_nudge_job_name",
     "maybe_overthrow",
     "post_current_image",
-    "post_current_images",
     "post_reveal",
     "post_reveal_pair",
     "post_stage_image",

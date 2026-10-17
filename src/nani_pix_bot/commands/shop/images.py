@@ -59,6 +59,7 @@ class FetchedScreenshot:
     url: str
     pixelated: bytes
     fingerprint: int
+    original: bytes
 
 
 def stage_width(session: Session, game: Game) -> int:
@@ -195,7 +196,7 @@ def _render(plan: ScreenshotPlan, url: str, data: bytes, print_: int) -> Fetched
     except (OSError, ValueError):
         logger.opt(exception=True).warning("extra screenshot: could not pixelate the download")
         raise ScreenshotFetchError("pixelation failed") from None
-    return FetchedScreenshot(url, pixelated, print_)
+    return FetchedScreenshot(url, pixelated, print_, data)
 
 
 async def fetch_extra_screenshot(

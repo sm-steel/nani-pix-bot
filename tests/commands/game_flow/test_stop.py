@@ -454,17 +454,15 @@ async def test_stop_callback_handler_reveal_posts_hard_mode_two_photo_album(
         turn_state = session.get(TurnState, 1)
         assert turn_state is None or turn_state.next_starter_id is None
 
-    context.bot.send_media_group.assert_awaited_once()
-    context.bot.send_photo.assert_not_awaited()
-    _, kwargs = context.bot.send_media_group.await_args
-    media = kwargs["media"]
-    assert len(media) == 2
-    assert media[0].media.input_file_content == b"image-a-bytes"
-    assert media[1].media.input_file_content == b"image-b-bytes"
+    context.bot.send_media_group.assert_not_awaited()
+    first, second = context.bot.send_photo.await_args_list  # the reveal, then the other screenshot
+    assert first.kwargs["photo"] == b"image-a-bytes"
+    assert second.kwargs["photo"] == b"image-b-bytes"
+    caption = first.kwargs["caption"]
     expected_caption = stop_command_module.i18n.t(
         "stop.hard_mode_stopped_reveal_caption", "en", title="Frieren: Beyond Journey's End"
     )
-    assert media[0].caption == expected_caption + game_service.game_id_line(game_id, "en")
+    assert caption == expected_caption + game_service.game_id_line(game_id, "en")
     # The reveal caption already says the turn is open — no second notice.
     context.bot.send_message.assert_not_awaited()
     update.callback_query.edit_message_text.assert_awaited_once()

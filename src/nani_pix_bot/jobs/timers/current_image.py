@@ -4,7 +4,8 @@ announcement is confirmed sent" tail end every terminal (WON/UNSOLVED)
 outcome needs — see MECHANICS.md's "Pixelation stages" and "Cleanup"
 notes."""
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 
 from loguru import logger
 from sqlalchemy.orm import Session, sessionmaker
@@ -12,7 +13,6 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InputMediaPhoto,
-    InputMediaVideo,
     Message,
 )
 from telegram.error import TelegramError, TimedOut
@@ -25,7 +25,9 @@ from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services.clues import handouts
 from nani_pix_bot.services.economy import bounty
+from nani_pix_bot.services.game import reveal_extras
 from nani_pix_bot.services.reveal import store as reveal_store
 
 
@@ -180,29 +182,6 @@ async def post_stage_image(
     return await _post_photo(context, session_factory, photo, caption, markup)
 
 
-async def post_current_images(
-    context: ContextTypes.DEFAULT_TYPE,
-    session_factory: sessionmaker[Session],
-    *,
-    photos: tuple[bytes, bytes],
-    caption: str,
-) -> tuple[Message, ...] | None:
-    """Sends `photos` to the game topic as a single 2-photo album (a
-    Telegram media group), then best-effort swaps the pinned "current
-    image" for the album's first message — see post_current_image's
-    docstring for the full pin/session-factory contract this mirrors
-    (same session-factory-not-live-session reasoning, same "pin/unpin
-    failures are logged and swallowed, never raised" behaviour, same
-    "returns None rather than raising on a failed send" contract).
-
-    Telegram pins a single message, not an album as a construct — a
-    viewer's pinned-message preview will show only the first photo, not
-    both. Same best-effort spirit as post_current_image's own
-    pin-permission-failure handling: this is a known, accepted
-    limitation, not a bug to work around."""
-    return await _post_album(context, session_factory, _photo_album(photos, caption))
-
-
 def _photo_album(photos: tuple[bytes, bytes], caption: str) -> list[InputMediaPhoto]:
     """The 2-photo album, the caption on the first."""
     return [InputMediaPhoto(media=photos[0], caption=caption), InputMediaPhoto(media=photos[1])]
@@ -211,13 +190,12 @@ def _photo_album(photos: tuple[bytes, bytes], caption: str) -> list[InputMediaPh
 async def _post_album(
     context: ContextTypes.DEFAULT_TYPE,
     session_factory: sessionmaker[Session],
-    media: list[InputMediaPhoto] | list[InputMediaPhoto | InputMediaVideo],
-    reraise_timeout: bool = False,
+    media: list[InputMediaPhoto],
 ) -> tuple[Message, ...] | None:
-    """The shared send-then-pin tail of post_current_images/post_stage_images
-    and the reveal album, which carries a video first. With `reraise_timeout`
-    a `TimedOut` (the album may well have been delivered) propagates after
-    its log line, so the reveal caller can skip its photo fallback."""
+    """The send-then-pin tail of post_stage_images: sends the album, then
+    best-effort swaps the pinned "current image" for its first message (a
+    pin holds one message, so the pinned preview shows only the first photo).
+    Returns None, never raising, on a failed or empty send."""
     chat_id = context.bot_data["group_chat_id"]
     message_thread_id = context.bot_data["game_topic_id"]
     try:
@@ -232,8 +210,6 @@ async def _post_album(
             group_chat_id=chat_id,
             error=exc,
         )
-        if reraise_timeout and isinstance(exc, TimedOut):
-            raise
         return None
 
     if not result:
@@ -259,7 +235,8 @@ async def post_stage_images(
     photos: tuple[bytes, bytes],
     caption: str,
 ) -> tuple[Message, ...] | None:
-    """post_current_images for a HARD MODE *stage* post (never a reveal):
+    """Sends the 2-photo HARD MODE *stage* post (never a reveal) as an album,
+    with the same session-factory/pin contract as post_current_image:
     a media group can't carry buttons, so the DM clue-shop link goes in
     the caption instead (omitted while the bot's username is unknown)."""
     with session_scope(session_factory) as session:
@@ -272,10 +249,15 @@ async def post_stage_images(
 
 @dataclass(frozen=True)
 class RevealTarget:
-    """Which game's pre-rendered reveal to post, and who (if anyone) won it."""
+    """Which game's pre-rendered reveal to post, and who (if anyone) won it.
+    `leading_extras` go first in message 2 of the ending (HARD MODE's other
+    screenshot). `clear_clues` False keeps the game's clue screenshot bytes after a
+    timed-out video (the HARD MODE vote opening: they go when it closes)."""
 
     game_id: int
     winner: RevealWinner | None
+    clear_clues: bool = True
+    leading_extras: tuple[bytes, ...] = ()
 
 
 async def _render(
@@ -335,25 +317,79 @@ async def post_reveal(
     photo: bytes,
     caption: str,
 ) -> Message | None:
-    """post_current_image for the end of a game: sends the animated reveal
-    video (caption and pin as for the photo), falling back to exactly the
-    photo post when there is no video or Telegram rejects it (but not on a
-    timeout: the video may have arrived, so None is returned). Frees the
-    reveal slot once something was confirmed sent; returns None, keeping
-    the slot, when nothing was. `photo` is the game's stored image bytes
-    (what the pre-render used)."""
+    """post_current_image for the end of a game, in two messages.
+
+    Message 1 is the animated reveal video (caption and pin as for the
+    photo), falling back to exactly the photo post when there is no video
+    or Telegram rejects it (but not on a timeout: the video may have
+    arrived, so None is returned). The reveal slot is freed once something
+    was confirmed sent; None, keeping the slot, when nothing was.
+
+    Message 2 is an unpinned album of `target.leading_extras` plus every clue
+    screenshot handed out in the game (originals, refunded ones included).
+    It goes out unless message 1 failed outright. After a timed-out video
+    the clue bytes are cleared here, once the album is confirmed sent
+    (the caller sees None and so never clears them); `target.clear_clues`
+    False keeps them (the HARD MODE vote opening). `photo` is the game's stored
+    image bytes (what the pre-render used)."""
     video = await _render(context, target, photo)
     sent = None
+    timed_out = False
     if video is not None:
         try:
             sent = await _send_video(context, session_factory, video, caption)
         except TimedOut:
-            return None
-    if sent is None:
+            timed_out = True
+    if sent is None and not timed_out:
         sent = await post_current_image(context, session_factory, photo=photo, caption=caption)
     if sent is not None:
         free_reveal_slot(context, target.game_id)
+    elif not timed_out:
+        return None
+    with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
+        clues = handouts.revealed_images(session, target.game_id)
+    extras_sent = await _post_extras(context, [*target.leading_extras, *clues], lang)
+    if timed_out and extras_sent and target.clear_clues:
+        with session_scope(session_factory) as session:
+            handouts.clear_images(session, target.game_id)
     return sent
+
+
+async def _post_extras(
+    context: ContextTypes.DEFAULT_TYPE, images: Sequence[bytes], lang: str
+) -> bool:
+    """Message 2 of an ending: `images` as unpinned photo albums of at most
+    ALBUM_LIMIT, the clues caption on the very first photo. A lone photo is
+    a plain photo (an album needs two). True when every batch was sent;
+    never raises, so a failure here cannot block the reveal or its cleanup."""
+    if not images:
+        return True
+    chat_id = context.bot_data["group_chat_id"]
+    thread_id = context.bot_data["game_topic_id"]
+    caption: str | None = i18n.t("reveal.clues_caption", lang)
+    try:
+        for batch in reveal_extras.batches(images):
+            if len(batch) == 1:
+                await context.bot.send_photo(
+                    chat_id=chat_id, message_thread_id=thread_id, photo=batch[0], caption=caption
+                )
+            else:
+                media = [InputMediaPhoto(media=image) for image in batch]
+                media[0] = InputMediaPhoto(media=batch[0], caption=caption)
+                await context.bot.send_media_group(
+                    chat_id=chat_id, message_thread_id=thread_id, media=media
+                )
+            caption = None
+    except TelegramError as exc:
+        logger.error(
+            "failed to post the clue album to chat {group_chat_id}: {error}",
+            group_chat_id=chat_id,
+            error=exc,
+        )
+        return False
+    logger.info("clue album posted to the group ({count} image(s))", count=len(images))
+    return True
 
 
 async def post_reveal_pair(
@@ -362,34 +398,21 @@ async def post_reveal_pair(
     target: RevealTarget,
     photos: tuple[bytes, bytes],
     caption: str,
-) -> tuple[Message, ...] | None:
-    """post_reveal for hard mode: an album whose first item is the video of
-    the image the slot chose (with the caption), the other screenshot second
-    as a photo. Falls back to the plain 2-photo album like post_reveal."""
+) -> Message | None:
+    """post_reveal for hard mode: the video (or photo) of the screenshot the
+    slot chose is message 1; the other screenshot leads message 2, ahead of
+    the clue screenshots."""
     with session_scope(session_factory) as session:
         slot = reveal_store.load(session)
         choice = slot.image_choice if slot is not None and slot.game_id == target.game_id else None
     first, second = (photos[1], photos[0]) if choice == "b" else photos
-    video = await _render(context, target, first)
-    sent = None
-    if video is not None:
-        media = [
-            InputMediaVideo(media=video, caption=caption, supports_streaming=True),
-            InputMediaPhoto(media=second),
-        ]
-        try:
-            sent = await _post_album(context, session_factory, media, reraise_timeout=True)
-        except TimedOut:
-            return None
-    if sent is None:
-        sent = await post_current_images(context, session_factory, photos=photos, caption=caption)
-    if sent is not None:
-        free_reveal_slot(context, target.game_id)
-    return sent
+    return await post_reveal(
+        context, session_factory, replace(target, leading_extras=(second,)), first, caption
+    )
 
 
 def clear_image_if_sent(
-    session_factory: sessionmaker[Session], game_id: int, sent: Message | tuple[Message, ...] | None
+    session_factory: sessionmaker[Session], game_id: int, sent: Message | None
 ) -> None:
     """Shared tail end of a terminal (WON/UNSOLVED) reveal: only drop the
     stored screenshot bytes once the reveal is confirmed sent (see
@@ -398,15 +421,14 @@ def clear_image_if_sent(
     the time `sent` is known. A no-op if `sent` is None (the announcement
     failed) or the row is somehow already gone.
 
-    `sent` accepts either a single `Message` (post_current_image's normal
-    ruleset reveal) or a `tuple[Message, ...]` (post_current_images'
-    hard-mode 2-photo album reveal) — only ever checked for `is None`
-    here, never inspected for its internal shape, so both callers share
-    this one function untouched."""
+    `sent` is the reveal's message 1 (post_reveal / post_reveal_pair),
+    only ever checked for `is None`. Confirmed sent, it also drops the
+    game's kept clue screenshots (the album went out with the reveal)."""
     if sent is None:
         logger.info("reveal not confirmed sent — keeping the screenshot bytes", game_id=game_id)
         return
     with session_scope(session_factory) as session:
+        handouts.clear_images(session, game_id)
         game = session.get(Game, game_id)
         if game is None:
             logger.debug("row already gone — no screenshot bytes to clear", game_id=game_id)

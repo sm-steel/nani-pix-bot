@@ -180,8 +180,7 @@ async def test_timeout_job_callback_acts_on_hard_mode_game_with_no_original_imag
 
     await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
-    context.bot.send_media_group.assert_awaited_once()
-    context.bot.send_photo.assert_not_awaited()
+    assert context.bot.send_photo.await_count == 2  # the reveal, then the other screenshot
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
@@ -196,11 +195,9 @@ async def test_timeout_job_callback_ends_hard_mode_game_unsolved_via_two_photo_r
 
     await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
-    _, kwargs = context.bot.send_media_group.call_args
-    media = kwargs["media"]
-    assert len(media) == 2
-    assert media[0].media.input_file_content == b"hm-image-a"
-    assert media[1].media.input_file_content == b"hm-image-b"
+    first, second = context.bot.send_photo.await_args_list
+    assert first.kwargs["photo"] == b"hm-image-a"
+    assert second.kwargs["photo"] == b"hm-image-b"
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
@@ -958,11 +955,9 @@ async def test_inactivity_advance_job_callback_ends_hard_mode_unsolved_from_turn
 
     await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
-    context.bot.send_media_group.assert_awaited_once()
-    _, kwargs = context.bot.send_media_group.call_args
-    media = kwargs["media"]
-    assert media[0].media.input_file_content == b"hm-image-a"
-    assert media[1].media.input_file_content == b"hm-image-b"
+    first, second = context.bot.send_photo.await_args_list
+    assert first.kwargs["photo"] == b"hm-image-a"
+    assert second.kwargs["photo"] == b"hm-image-b"
     with session_factory() as session:
         fetched = session.get(Game, game_id)
         assert fetched is not None
@@ -1135,12 +1130,12 @@ def _make_post_images_context(session_factory) -> MagicMock:
     return context
 
 
-async def test_post_current_images_sends_a_media_group_with_caption_on_first_photo_only(
+async def test_post_stage_images_sends_a_media_group_with_caption_on_first_photo_only(
     session_factory,
 ) -> None:
     context = _make_post_images_context(session_factory)
 
-    await timeout_module.post_current_images(
+    await timeout_module.post_stage_images(
         cast(ContextTypes.DEFAULT_TYPE, context),
         session_factory,
         photos=(b"photo-a", b"photo-b"),
@@ -1159,7 +1154,7 @@ async def test_post_current_images_sends_a_media_group_with_caption_on_first_pho
     assert media[1].caption is None
 
 
-async def test_post_current_images_pins_the_first_message_and_unpins_the_old_one(
+async def test_post_stage_images_pins_the_first_message_and_unpins_the_old_one(
     session_factory,
 ) -> None:
     context = _make_post_images_context(session_factory)
@@ -1167,7 +1162,7 @@ async def test_post_current_images_pins_the_first_message_and_unpins_the_old_one
         settings.set_pinned_message_id(session, 111)
         session.commit()
 
-    result = await timeout_module.post_current_images(
+    result = await timeout_module.post_stage_images(
         cast(ContextTypes.DEFAULT_TYPE, context),
         session_factory,
         photos=(b"photo-a", b"photo-b"),
@@ -1184,7 +1179,7 @@ async def test_post_current_images_pins_the_first_message_and_unpins_the_old_one
         assert settings.get_pinned_message_id(session) == 998
 
 
-async def test_post_current_images_returns_none_and_leaves_pin_state_untouched_on_send_failure(
+async def test_post_stage_images_returns_none_and_leaves_pin_state_untouched_on_send_failure(
     session_factory,
 ) -> None:
     context = _make_post_images_context(session_factory)
@@ -1193,7 +1188,7 @@ async def test_post_current_images_returns_none_and_leaves_pin_state_untouched_o
         settings.set_pinned_message_id(session, 111)
         session.commit()
 
-    result = await timeout_module.post_current_images(
+    result = await timeout_module.post_stage_images(
         cast(ContextTypes.DEFAULT_TYPE, context),
         session_factory,
         photos=(b"photo-a", b"photo-b"),
@@ -1207,13 +1202,13 @@ async def test_post_current_images_returns_none_and_leaves_pin_state_untouched_o
         assert settings.get_pinned_message_id(session) == 111
 
 
-async def test_post_current_images_returns_none_and_does_not_raise_on_empty_send_result(
+async def test_post_stage_images_returns_none_and_does_not_raise_on_empty_send_result(
     session_factory,
 ) -> None:
     context = _make_post_images_context(session_factory)
     context.bot.send_media_group = AsyncMock(return_value=[])
 
-    result = await timeout_module.post_current_images(
+    result = await timeout_module.post_stage_images(
         cast(ContextTypes.DEFAULT_TYPE, context),
         session_factory,
         photos=(b"photo-a", b"photo-b"),
@@ -1225,9 +1220,8 @@ async def test_post_current_images_returns_none_and_does_not_raise_on_empty_send
     context.bot.unpin_chat_message.assert_not_awaited()
 
 
-@pytest.mark.parametrize("sent_shape", ["single", "tuple"])
 def test_clear_image_if_sent_clears_hard_mode_images_and_leaves_original_untouched(
-    session_factory, sent_shape
+    session_factory,
 ) -> None:
     game_id = _active_game(
         session_factory,
@@ -1237,7 +1231,7 @@ def test_clear_image_if_sent_clears_hard_mode_images_and_leaves_original_untouch
         hard_mode_image_b=b"image-b",
         original_image=b"should-not-be-touched",
     )
-    sent = MagicMock(message_id=1) if sent_shape == "single" else (MagicMock(message_id=1),)
+    sent = MagicMock(message_id=1)
 
     timeout_module.clear_image_if_sent(session_factory, game_id, sent)
 
@@ -1464,8 +1458,7 @@ async def test_every_unsolved_path_refunds_the_pot_hard_mode_inactivity(session_
 
     await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
-    media = context.bot.send_media_group.call_args.kwargs["media"]
-    assert "70" in media[0].caption
+    assert "70" in context.bot.send_photo.await_args_list[0].kwargs["caption"]
     _assert_refunded(session_factory, game_id, (2, 3))
 
 
@@ -1564,8 +1557,7 @@ async def test_hard_mode_timeout_refunds_the_pot(session_factory) -> None:
 
     await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
-    media = context.bot.send_media_group.call_args.kwargs["media"]
-    assert "70" in media[0].caption
+    assert "70" in context.bot.send_photo.await_args_list[0].kwargs["caption"]
     _assert_refunded(session_factory, game_id, (2, 3))
 
 
@@ -1686,7 +1678,7 @@ async def test_hard_mode_inactivity_on_turn_two_without_guessers_reveals_unsolve
     await timeout_module.inactivity_advance_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
     assert _status(session_factory, game_id) is GameStatus.UNSOLVED
-    context.bot.send_media_group.assert_awaited_once()
+    assert context.bot.send_photo.await_count == 2
 
 
 async def test_hard_mode_timeout_with_a_guesser_opens_a_vote(
@@ -1715,7 +1707,7 @@ async def test_hard_mode_timeout_without_a_guesser_reveals_unsolved(
     await timeout_module.timeout_job_callback(cast(ContextTypes.DEFAULT_TYPE, context))
 
     assert _status(session_factory, game_id) is GameStatus.UNSOLVED
-    context.bot.send_media_group.assert_awaited_once()
+    assert context.bot.send_photo.await_count == 2
 
 
 def _patch_reveals(monkeypatch: pytest.MonkeyPatch, module) -> tuple[AsyncMock, AsyncMock]:
