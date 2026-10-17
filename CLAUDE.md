@@ -393,6 +393,16 @@ from `master`): its sub-PRs target that branch, and it merges into
 need it), then run Release on `master`. A run with no `feat:`/`fix:`
 since the last tag releases nothing.
 
+**The release-notes review and the rotation MUST be done — never skipped,
+whoever presses Release.** Before every Release run (and whenever a PR is
+merged that may be the last one before a release), review the current
+notes as a whole. **Every PR that touches the release notes MUST first
+check whether the current notes already shipped** (the ancestry check in
+[`docs/release-notes.md`](docs/release-notes.md) "Rotation") and, if they
+did, rotate them into `previous-releases-*.md` in that same PR. v1.17.0's
+rotation and v1.18.0's review were both skipped, so the two releases'
+notes ran together and had to be untangled afterwards.
+
 ## Task tracking (GitHub Issues)
 
 Implementation progress is tracked as **GitHub Issues** on this repo
