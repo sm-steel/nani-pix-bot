@@ -65,16 +65,22 @@ def _stages(detail: GameDetail, tz: ZoneInfo, lang: str) -> list[str]:
     return lines + [row(_stage_cells(step, total, tz, lang)) for step in detail.stages]
 
 
+def _candidate(session: Session, candidate_id: int | None, lang: str) -> str:
+    """A vote's choice: a guesser, or Nobody (a NULL candidate)."""
+    if candidate_id is None:
+        return i18n.t("vote.nobody", lang)
+    return name(session, candidate_id)
+
+
 def _people(session: Session, detail: GameDetail, lang: str) -> list[str]:
     lines = []
     if detail.distinct_guessers is not None:
         lines += ["", t("history.detail.guessers", lang, count=detail.distinct_guessers)]
     if detail.votes:
         lines += ["", t("history.detail.votes", lang)]
-        lines += [
-            f"- {md_escape(name(session, voter))} → {md_escape(name(session, candidate))}"
-            for voter, candidate in detail.votes
-        ]
+        for voter, candidate in detail.votes:
+            choice = _candidate(session, candidate, lang)
+            lines.append(f"- {md_escape(name(session, voter))} → {md_escape(choice)}")
     return lines
 
 

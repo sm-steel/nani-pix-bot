@@ -24,7 +24,11 @@ BOT, A, B = 100, 1, 2
 
 
 def _voting_game(
-    session_factory, *, votes: dict[int, int], pot: dict[int, int] | None = None, deadline=None
+    session_factory,
+    *,
+    votes: dict[int, int | None],
+    pot: dict[int, int] | None = None,
+    deadline=None,
 ) -> int:
     with session_factory() as session:
         session.add(Player(telegram_user_id=BOT))
@@ -204,6 +208,32 @@ async def test_a_vote_won_by_the_group_says_the_group_decided(
 
     text = context.bot.send_message.await_args.kwargs["text"]
     assert text.startswith(i18n.t("vote.won", "en", winner=str(A), title=title))
+
+
+async def test_a_vote_for_nobody_says_the_group_decided_no_guess_was_right(
+    session_factory,
+) -> None:
+    """Issue #458: an active Nobody pick reads differently from a vote that
+    simply found no winner."""
+    game_id = _voting_game(session_factory, votes={3: None, 4: None, 5: None})
+    context = _job_context(session_factory, game_id)
+    title = _title(session_factory, game_id)
+
+    await vote_module.finalize_vote(context, session_factory, game_id)
+
+    text = context.bot.send_message.await_args.kwargs["text"]
+    assert text.startswith(i18n.t("vote.nobody_won", "en", title=title))
+
+
+async def test_too_few_votes_still_says_the_vote_picked_nobody(session_factory) -> None:
+    game_id = _voting_game(session_factory, votes={3: None})
+    context = _job_context(session_factory, game_id)
+    title = _title(session_factory, game_id)
+
+    await vote_module.finalize_vote(context, session_factory, game_id)
+
+    text = context.bot.send_message.await_args.kwargs["text"]
+    assert text.startswith(i18n.t("vote.no_winner", "en", title=title))
 
 
 async def test_a_vote_closed_by_setwinner_says_an_admin_decided(

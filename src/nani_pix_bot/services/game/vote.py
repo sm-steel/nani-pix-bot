@@ -9,7 +9,8 @@ state.py and hard_mode.py already follow."""
 
 import enum
 from collections.abc import Mapping
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from loguru import logger
 from sqlalchemy import select
@@ -19,7 +20,7 @@ from nani_pix_bot.models.enums import EventType, GameStatus, WinMethod
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_vote import GameVote
 from nani_pix_bot.services import events, players
-from nani_pix_bot.services.game import guesses, state
+from nani_pix_bot.services.game import guesses, pass_vote, state
 from nani_pix_bot.services.game.clock import deadline_after
 from nani_pix_bot.services.game.hard_mode import HARD_MODE_WIN_AWARD
 from nani_pix_bot.services.game.state import GuessOutcome
@@ -27,6 +28,9 @@ from nani_pix_bot.services.game.state import GuessOutcome
 VOTE_DURATION = timedelta(minutes=15)
 # A winner needs a unique plurality of at least this many votes.
 VOTE_MIN_VOTES = 3
+# The ballot's "Nobody" option — no guess was right (issue #458). It is a
+# vote's candidate like any guesser, stored as a NULL candidate_id.
+NOBODY: None = None
 
 
 class VoteRefusal(enum.StrEnum):
@@ -55,19 +59,74 @@ def end_hard_mode_without_winner(session: Session, game: Game, *, cause: str) ->
     return GuessOutcome.VOTE_OPENED
 
 
-def decide_winner(counts: Mapping[int, int], *, min_votes: int = VOTE_MIN_VOTES) -> int | None:
-    """The unique top candidate, if they have at least `min_votes`."""
+@dataclass(frozen=True)
+class _Leader:
+    candidate_id: int | None  # NOBODY included
+    votes: int
+
+
+def _unique_leader(counts: Mapping[int | None, int]) -> _Leader | None:
+    """The option with strictly the most votes, Nobody included; None on a
+    tie for the top or no votes at all."""
     if not counts:
         return None
     ranked = sorted(counts.items(), key=lambda item: -item[1])
     top_id, top = ranked[0]
-    if top < min_votes or (len(ranked) > 1 and ranked[1][1] == top):
+    if len(ranked) > 1 and ranked[1][1] == top:
         return None
-    return top_id
+    return _Leader(top_id, top)
 
 
-def vote_counts(session: Session, game_id: int) -> dict[int, int]:
-    counts: dict[int, int] = {}
+def decide_winner(
+    counts: Mapping[int | None, int], *, min_votes: int = VOTE_MIN_VOTES
+) -> int | None:
+    """The unique top candidate, if they have at least `min_votes`. Nobody
+    in the lead is no winner."""
+    leader = _unique_leader(counts)
+    if leader is None or leader.votes < min_votes:
+        return None
+    return leader.candidate_id
+
+
+def decided_early(counts: Mapping[int | None, int], *, needed: int) -> bool:
+    """Whether a unique lead — a guesser's or Nobody's — has `needed` votes,
+    which closes the vote before its deadline."""
+    leader = _unique_leader(counts)
+    return leader is not None and leader.votes >= needed
+
+
+def early_close_needed(session: Session, game: Game, now: datetime) -> int:
+    """The early-close bar: /pass's, max(3, ⌈active / 2⌉) of the players
+    active in the last day, minus this game's host."""
+    active = pass_vote.recent_active_count(session, now, exclude={game.starter_id})
+    return pass_vote.threshold(active)
+
+
+def should_close_early(session: Session, game: Game, now: datetime) -> bool:
+    counts = vote_counts(session, game.id)
+    needed = early_close_needed(session, game, now)
+    leader = _unique_leader(counts)
+    if leader is None or not decided_early(counts, needed=needed):
+        return False
+    logger.info(
+        "{leader} leads with {votes} vote(s), at the early-close bar of {needed} — closing",
+        leader=_describe(session, leader.candidate_id),
+        votes=leader.votes,
+        needed=needed,
+        game_id=game.id,
+    )
+    return True
+
+
+def nobody_decided(counts: Mapping[int | None, int]) -> bool:
+    """Whether the group actively picked Nobody: its unique lead with at
+    least VOTE_MIN_VOTES, not just a vote that found no winner."""
+    leader = _unique_leader(counts)
+    return leader is not None and leader.candidate_id is NOBODY and leader.votes >= VOTE_MIN_VOTES
+
+
+def vote_counts(session: Session, game_id: int) -> dict[int | None, int]:
+    counts: dict[int | None, int] = {}
     stmt = select(GameVote.candidate_id).where(GameVote.game_id == game_id)
     for candidate_id in session.scalars(stmt):
         counts[candidate_id] = counts.get(candidate_id, 0) + 1
@@ -86,11 +145,24 @@ def _log_votes(session: Session, game: Game, winner_id: int | None) -> None:
         )
 
 
+def _describe(session: Session, candidate_id: int | None) -> str:
+    if candidate_id is NOBODY:
+        return "Nobody"
+    return players.describe_player_id(session, candidate_id)
+
+
+def _tally(session: Session, counts: Mapping[int | None, int]) -> str:
+    """The counts for a log line, Nobody by name rather than as `None`."""
+    return ", ".join(f"{_describe(session, cid)}: {n}" for cid, n in counts.items()) or "none"
+
+
 def _refusal(
-    session: Session, game: Game, *, voter_id: int, candidate_id: int
+    session: Session, game: Game, *, voter_id: int, candidate_id: int | None
 ) -> VoteRefusal | None:
     if game.status != GameStatus.VOTING:
         return VoteRefusal.CLOSED
+    if candidate_id is NOBODY:
+        return None
     if voter_id == candidate_id:
         return VoteRefusal.SELF
     if candidate_id not in guesses.guessers(session, game.id):
@@ -99,13 +171,14 @@ def _refusal(
 
 
 def cast_vote(
-    session: Session, game: Game, *, voter_id: int, candidate_id: int
+    session: Session, game: Game, *, voter_id: int, candidate_id: int | None
 ) -> VoteRefusal | None:
+    """`candidate_id` NOBODY is a vote that no guess was right."""
     refusal = _refusal(session, game, voter_id=voter_id, candidate_id=candidate_id)
     if refusal is not None:
         logger.warning(
             "vote for {candidate} refused: {reason}",
-            candidate=players.describe_player_id(session, candidate_id),
+            candidate=_describe(session, candidate_id),
             candidate_id=candidate_id,
             reason=refusal.value,
             game_id=game.id,
@@ -120,7 +193,7 @@ def cast_vote(
     session.flush()
     logger.info(
         "voted for {candidate}",
-        candidate=players.describe_player_id(session, candidate_id),
+        candidate=_describe(session, candidate_id),
         candidate_id=candidate_id,
         game_id=game.id,
     )
@@ -134,7 +207,9 @@ def close_vote(session: Session, game: Game, *, forced_winner_id: int | None = N
     winner_id = forced_winner_id if forced_winner_id is not None else decide_winner(counts)
     _log_votes(session, game, winner_id)
     if winner_id is None:
-        state.force_unsolved(game, cause=f"vote closed with no winner (votes {counts})")
+        state.force_unsolved(
+            game, cause=f"vote closed with no winner (votes {_tally(session, counts)})"
+        )
         return None
     how = (
         "named by an admin"

@@ -290,6 +290,7 @@ def test_the_record_shows_clues_bounty_stages_guessers_and_votes(session: Sessio
         reason="sharpened",
     )
     session.add(GameVote(game_id=game.id, voter_id=BOB, candidate_id=ALICE))
+    session.add(GameVote(game_id=game.id, voter_id=HOST, candidate_id=None))  # Nobody
     game.status = GameStatus.UNSOLVED
     events.emit(
         session,
@@ -314,6 +315,7 @@ def test_the_record_shows_clues_bounty_stages_guessers_and_votes(session: Sessio
         md_escape(i18n.t("history.detail.guessers", "en", count=3)),
         md_escape(i18n.t("history.detail.votes", "en")),
         md_escape("@bob → @alice"),
+        md_escape("@host → " + i18n.t("vote.nobody", "en")),
     ):
         assert part in markdown, part
 

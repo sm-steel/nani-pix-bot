@@ -63,15 +63,24 @@ was actually right.
 - The bot posts the answer (the video of one screenshot, then the
   [clue album](/nani-pix-bot/players/how-a-round-ends/#the-clue-album) with
   the other one and every clue screenshot bought), then a ballot with **one button per guesser**, showing
-  what each of them guessed and how many votes they have so far. The counts update
-  as people vote.
+  what each of them guessed and how many votes they have so far, and a last
+  **🙅 Nobody** button for when no guess was right. The counts update as people
+  vote.
 - Any group member can vote, once, and can change their vote by tapping another
-  button. You can't vote for yourself.
-- The vote closes after **15 minutes**, and the buttons disappear. If the group
-  has [quiet hours](/nani-pix-bot/players/how-a-round-ends/#quiet-hours), they
-  push the close back like any other timer.
-- A guesser wins if they get **the most votes, at least 3, with no tie**. They get
-  a normal HARD MODE win, **+30 💠** for the wait (by default), and the next turn.
+  button. You can't vote for yourself, but anyone can vote 🙅 Nobody.
+- **A clear lead closes the vote at once.** As soon as one button has the most
+  votes, with no tie, and at least as many as half the people who played in the
+  last day (never fewer than 3, the same bar as
+  [`/pass`](/nani-pix-bot/players/how-a-round-ends/#giving-up-with-pass)), the
+  vote ends on that tap: a guesser in the lead wins, 🙅 Nobody in the lead means
+  the round stays unsolved.
+- Otherwise the vote closes after **15 minutes**, and the buttons disappear. If
+  the group has [quiet hours](/nani-pix-bot/players/how-a-round-ends/#quiet-hours),
+  they push the close back like any other timer.
+- At the close, a guesser wins if they get **the most votes, at least 3, with no
+  tie**; 🙅 Nobody counts like a guesser here, so its lead means no winner. A
+  winner gets a normal HARD MODE win, **+30 💠** for the wait (by default), and the
+  next turn.
 - Otherwise the round stays unsolved.
 
 <TelegramChat label="Example: a HARD MODE vote that picks a winner">
@@ -80,8 +89,8 @@ was actually right.
 
     🎲 Game #143
   </TgMessage>
-  <TgMessage from="nani-pix-bot" buttons={[['@yuki: nyanko sensei show — 3'], ['@mio: mushishi — 1']]}>
-    🗳 Was anyone actually right? Vote for the guess that really counts — you can't vote for yourself. Closes in 15 min; a winner needs at least 3 votes and no tie. Votes so far: 4.
+  <TgMessage from="nani-pix-bot" buttons={[['@yuki: nyanko sensei show — 3'], ['@mio: mushishi — 1'], ['🙅 Nobody — 0']]}>
+    🗳 Was anyone actually right? Vote for the guess that really counts (not your own), or for 🙅 Nobody if none was. As soon as one option has the most votes, with no tie, and at least 3 of them, the vote closes; otherwise it closes in 15 min, when a winner needs at least 3 votes and no tie. Votes so far: 4.
 
     🎲 Game #143
   </TgMessage>
