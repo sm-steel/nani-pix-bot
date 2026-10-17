@@ -696,7 +696,7 @@ async def test_stop_reveal_posts_the_reveal_without_a_winner(
     post_reveal.assert_awaited_once()
     assert post_reveal.await_args is not None
     kwargs = post_reveal.await_args.kwargs
-    assert kwargs["target"] == RevealTarget(game_id, None)
+    assert kwargs["target"] == RevealTarget(game_id, None, clues=())
     assert kwargs["photo"] == b"file123"
     assert "Frieren: Beyond Journey's End" in kwargs["caption"]
 
@@ -717,7 +717,7 @@ async def test_stop_reveal_hard_mode_posts_the_reveal_pair(
     post_reveal_pair.assert_awaited_once()
     assert post_reveal_pair.await_args is not None
     kwargs = post_reveal_pair.await_args.kwargs
-    assert kwargs["target"] == RevealTarget(game_id, None)
+    assert kwargs["target"] == RevealTarget(game_id, None, clues=())
     assert kwargs["photos"] == (b"image-a-bytes", b"image-b-bytes")
     assert "Frieren: Beyond Journey's End" in kwargs["caption"]
 
@@ -736,3 +736,87 @@ async def test_stop_without_a_reveal_frees_the_reveal_slot(
     )
 
     free.assert_called_once_with(context, game_id)
+
+
+@contextmanager
+def _cascade_handouts_on_game_delete():
+    """SQLite does not enforce the handouts' ON DELETE CASCADE, MariaDB does:
+    emulate it so the rows are gone once the game is deleted."""
+    from sqlalchemy import delete, event
+
+    from nani_pix_bot.models import ClueScreenshotHandout
+
+    def cascade(_mapper, connection, target) -> None:
+        connection.execute(
+            delete(ClueScreenshotHandout).where(ClueScreenshotHandout.game_id == target.id)
+        )
+
+    event.listen(Game, "after_delete", cascade)
+    try:
+        yield
+    finally:
+        event.remove(Game, "after_delete", cascade)
+
+
+def _add_clue_images(session_factory, game_id: int, images: list[bytes]) -> None:
+    from nani_pix_bot.models import ClueScreenshotHandout
+
+    with session_factory() as session:
+        for number, image in enumerate(images):
+            session.add(
+                ClueScreenshotHandout(
+                    game_id=game_id, screenshot_url=f"https://x/{number}.jpg", image=image
+                )
+            )
+        session.commit()
+
+
+async def test_stop_reveal_posts_the_clues_taken_before_the_game_is_deleted(
+    session_factory,
+) -> None:
+    game_id = _active_game(session_factory, starter_id=1)
+    _add_clue_images(session_factory, game_id, [b"c1", b"c2"])
+    update = _make_callback_update(data=STOP_REVEAL_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    with _cascade_handouts_on_game_delete():
+        await stop_command_module.stop_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    context.bot.send_photo.assert_awaited_once()  # the reveal photo; no render worker
+    media = context.bot.send_media_group.await_args.kwargs["media"]
+    assert [item.media.input_file_content for item in media] == [b"c1", b"c2"]
+    context.bot.send_media_group.assert_awaited_once()
+
+
+async def test_stop_reveal_does_not_post_the_clues_twice(session_factory) -> None:
+    """Without the cascade (SQLite) the rows survive the delete: they must
+    still go out once, not once pre-read and once re-read."""
+    game_id = _active_game(session_factory, starter_id=1)
+    _add_clue_images(session_factory, game_id, [b"c1", b"c2"])
+    update = _make_callback_update(data=STOP_REVEAL_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    context.bot.send_media_group.assert_awaited_once()
+
+
+async def test_stop_reveal_hard_mode_keeps_clues_after_the_other_screenshot(
+    session_factory,
+) -> None:
+    game_id = _active_hard_mode_game(session_factory, starter_id=1)
+    _add_clue_images(session_factory, game_id, [b"c1"])
+    update = _make_callback_update(data=STOP_REVEAL_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    with _cascade_handouts_on_game_delete():
+        await stop_command_module.stop_callback_handler(
+            cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+        )
+
+    media = context.bot.send_media_group.await_args.kwargs["media"]
+    assert [item.media.input_file_content for item in media] == [b"image-b-bytes", b"c1"]

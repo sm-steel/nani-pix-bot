@@ -252,12 +252,15 @@ class RevealTarget:
     """Which game's pre-rendered reveal to post, and who (if anyone) won it.
     `leading_extras` go first in message 2 of the ending (HARD MODE's other
     screenshot). `clear_clues` False keeps the game's clue screenshot bytes after a
-    timed-out video (the HARD MODE vote opening: they go when it closes)."""
+    timed-out video (the HARD MODE vote opening: they go when it closes). `clues` are the
+    clue screenshots the caller already holds (/stop deletes the game, and
+    its handouts with it, before the reveal); None reads them from the DB."""
 
     game_id: int
     winner: RevealWinner | None
     clear_clues: bool = True
     leading_extras: tuple[bytes, ...] = ()
+    clues: tuple[bytes, ...] | None = None
 
 
 async def _render(
@@ -348,7 +351,11 @@ async def post_reveal(
         return None
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
-        clues = handouts.revealed_images(session, target.game_id)
+        clues = (
+            target.clues
+            if target.clues is not None
+            else handouts.revealed_images(session, target.game_id)
+        )
     extras_sent = await _post_extras(context, [*target.leading_extras, *clues], lang)
     if timed_out and extras_sent and target.clear_clues:
         with session_scope(session_factory) as session:
@@ -407,7 +414,11 @@ async def post_reveal_pair(
         choice = slot.image_choice if slot is not None and slot.game_id == target.game_id else None
     first, second = (photos[1], photos[0]) if choice == "b" else photos
     return await post_reveal(
-        context, session_factory, replace(target, leading_extras=(second,)), first, caption
+        context,
+        session_factory,
+        replace(target, leading_extras=(second, *target.leading_extras)),
+        first,
+        caption,
     )
 
 
