@@ -15,13 +15,13 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.dm_start import season_gate
 from nani_pix_bot.commands.dm_start._shared import (
     _SYNONYM_SPLIT_RE,
+    _confirming_screen,
     _method_keyboard,
     _method_prompt_key,
     _post_preview_album,
     _prefer_shikimori,
     _reject_stale_tap,
     _stage_preview,
-    numbers_toggle,
 )
 from nani_pix_bot.commands.dm_start.keyboards import (
     BOUNTY_PRESETS,
@@ -43,7 +43,6 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     bounty_keyboard,
     change_image_keyboard,
     pixel_algorithm_keyboard,
-    preview_keyboard,
 )
 from nani_pix_bot.commands.dm_start.screenshots import (
     NO_SOURCE_PROMPT_KEY,
@@ -452,10 +451,7 @@ def _preview_pixel_algorithm(tap: _Tap) -> _Edit:
 
 def _back_to_preview(tap: _Tap) -> _Edit:
     """The same prompt and buttons the album's follow-up message started with."""
-    return _Edit(
-        i18n.t("dm_start.preview_confirm_prompt", tap.lang),
-        preview_keyboard(tap.lang, tap.game.pixel_algorithm, numbers_toggle(tap.game)),
-    )
+    return _Edit(*_confirming_screen(tap.game, tap.lang, tap.context))
 
 
 def _preview_numbers(tap: _Tap) -> _Edit:

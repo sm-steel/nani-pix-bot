@@ -23,7 +23,7 @@ from nani_pix_bot.commands.helpers.mal_config import mal_configured
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.models.enums import PixelAlgorithm, Provider, SetupStep
+from nani_pix_bot.models.enums import ClueScreenshotMode, PixelAlgorithm, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
@@ -270,10 +270,18 @@ def _picking_screenshot_screen(game: Game, lang: str, _context) -> _SetupScreen:
 
 
 def _confirming_screen(game: Game, lang: str, _context) -> _SetupScreen:
-    return (
-        i18n.t("dm_start.preview_confirm_prompt", lang),
-        preview_keyboard(lang, game.pixel_algorithm, numbers_toggle(game)),
-    )
+    """The preview's buttons message, as it was first sent."""
+    return i18n.t("dm_start.preview_confirm_prompt", lang), preview_markup(game, lang)
+
+
+def preview_markup(game: Game, lang: str) -> InlineKeyboardMarkup:
+    return preview_keyboard(lang, game.pixel_algorithm, numbers_toggle(game), clue_panel_mode(game))
+
+
+def clue_panel_mode(game: Game) -> ClueScreenshotMode | None:
+    """The mode the preview's clue panel button shows, or None for a game
+    with no author to choose one (HARD MODE), which gets no button."""
+    return None if game.hard_mode else ClueScreenshotMode(game.clue_screenshot_mode)
 
 
 def _asking_numbers_screen(game: Game, lang: str, _context) -> _SetupScreen:
@@ -545,6 +553,7 @@ class _PreviewAlbum:
     # the keyboard without reaching back into a closed session.
     algorithm: PixelAlgorithm
     numbers_matter: bool | None  # see numbers_toggle
+    clue_mode: ClueScreenshotMode | None = None  # see clue_panel_mode
 
 
 @dataclass(frozen=True)
@@ -666,6 +675,7 @@ def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum | _SetupQues
         caption=caption,
         algorithm=game.pixel_algorithm,
         numbers_matter=numbers_toggle(game),
+        clue_mode=clue_panel_mode(game),
     )
 
 
@@ -701,5 +711,5 @@ async def _post_preview_album(
     await context.bot.send_message(
         chat_id=album.starter_id,
         text=i18n.t("dm_start.preview_confirm_prompt", lang),
-        reply_markup=preview_keyboard(lang, album.algorithm, album.numbers_matter),
+        reply_markup=preview_keyboard(lang, album.algorithm, album.numbers_matter, album.clue_mode),
     )

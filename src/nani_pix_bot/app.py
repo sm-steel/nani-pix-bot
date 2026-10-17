@@ -314,6 +314,9 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(dm_start.preview_callback_handler, pattern=r"^preview:")
     )
     application.add_handler(
+        CallbackQueryHandler(dm_start.clue_panel_callback_handler, pattern=r"^cluepanel:")
+    )
+    application.add_handler(
         CallbackQueryHandler(dm_start.numbers_callback_handler, pattern=r"^numbers:")
     )
     application.add_handler(

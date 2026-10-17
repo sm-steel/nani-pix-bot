@@ -1,6 +1,7 @@
 """DM photo intake — the entry point of the setup flow: a screenshot
 starts a new game (or, mid-setup, replaces the staged one after
-"Change image" was tapped)."""
+"Change image" was tapped, or joins the author's clue screenshots after
+the clue panel's "Upload my own")."""
 
 from loguru import logger
 from telegram import Update
@@ -11,6 +12,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _stage_preview,
     _start_new_game,
 )
+from nani_pix_bot.commands.dm_start.clue_panel import accept_clue_photo
 from nani_pix_bot.commands.dm_start.screenshots import clear_screenshot_selection
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
@@ -41,6 +43,9 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     telegram_file = await context.bot.get_file(message.photo[-1].file_id)
     image_bytes = bytes(await telegram_file.download_as_bytearray())
 
+    # Checked first: a clue upload must never replace the main screenshot.
+    if await accept_clue_photo(context, session_factory, user, image_bytes):
+        return
     if await _replace_staged_photo_if_pending(context, session_factory, user, image_bytes):
         return
 

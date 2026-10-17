@@ -36,6 +36,10 @@ Split across submodules by flow stage:
                        of screenshots.py for its complexity
   repick.py           "Pick a different anime" — back to the methods
                        from any screen after identification (#429)
+  clue_panel.py       the preview's clue screenshot panel (mode,
+                       uploads, removals of the author's list) and
+                       the clue-photo intake; clue_screens.py holds
+                       the panel screen it shares
   preview.py          the confirmation preview (show/confirm/change-
                        image/research/add-synonym) and the final post
                        to the group
@@ -56,6 +60,7 @@ This __init__ re-exports only the PTB handler entrypoints app.py
 registers — not a blanket re-export of every submodule's internals."""
 
 from nani_pix_bot.commands.dm_start.aliases import aliases_callback_handler
+from nani_pix_bot.commands.dm_start.clue_panel import clue_panel_callback_handler
 from nani_pix_bot.commands.dm_start.intake import photo_handler
 from nani_pix_bot.commands.dm_start.mal_browse import (
     mal_list_page_callback_handler,
@@ -82,6 +87,7 @@ from nani_pix_bot.commands.dm_start.source_pick import screenshot_source_callbac
 
 __all__ = [
     "aliases_callback_handler",
+    "clue_panel_callback_handler",
     "mal_list_page_callback_handler",
     "mal_list_pick_callback_handler",
     "method_pick_callback_handler",
