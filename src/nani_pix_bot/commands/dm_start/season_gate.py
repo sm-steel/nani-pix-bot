@@ -88,7 +88,7 @@ def _apply(session: Session, pending: _Pending, result: gate_service.GateResult)
     if result.tags:
         game.anime_tags = anime_tags.to_json(result.tags)
     if result.verdict in gate_service.REFUSED:
-        restart_identification(game)
+        restart_identification(session, game)
     return True
 
 

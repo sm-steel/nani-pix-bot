@@ -27,7 +27,6 @@ from typing import Generic, Literal, TypeVar
 from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from nani_pix_bot.models.clue_author_screenshot import ClueAuthorScreenshot
 from nani_pix_bot.models.enums import (
     DISCOURAGED_ALGORITHMS,
     ClueScreenshotMode,
@@ -106,14 +105,9 @@ PREVIEW_BOUNTY_PICK_PREFIX = "preview:bounty:pick:"
 # The only amounts a setter can put up from the preview; the pick handler
 # validates against this since callback data is client-supplied.
 BOUNTY_PRESETS = (30, 60, 100)
-# The clue screenshot panel (issue #452), opened from the preview, and its
-# buttons. Every one is handled by commands/dm_start/clue_panel.py.
+# The preview's button opening the clue screenshot panel (issue #452);
+# the panel's own buttons are in clue_keyboards.py.
 CLUE_PANEL_OPEN_CALLBACK_DATA = "cluepanel:open"
-CLUE_PANEL_MODE_PREFIX = "cluepanel:mode:"
-CLUE_PANEL_UPLOAD_CALLBACK_DATA = "cluepanel:upload"
-CLUE_PANEL_REMOVE_CALLBACK_DATA = "cluepanel:remove"
-CLUE_PANEL_REMOVE_PREFIX = "cluepanel:remove:"
-CLUE_PANEL_BACK_CALLBACK_DATA = "cluepanel:back"
 
 
 _ResultT = TypeVar("_ResultT")
@@ -484,92 +478,6 @@ def preview_keyboard(
 
 def clue_mode_name(mode: ClueScreenshotMode, lang: str) -> str:
     return i18n.t(f"dm_start.clue_mode_{ClueScreenshotMode(mode).value}", lang)
-
-
-def _clue_back_row(lang: str) -> list[InlineKeyboardButton]:
-    """Back to the clue panel, from its sub-screens."""
-    return [
-        InlineKeyboardButton(
-            i18n.t("keyboards.clue_back", lang), callback_data=CLUE_PANEL_OPEN_CALLBACK_DATA
-        )
-    ]
-
-
-def clue_panel_keyboard(lang: str, mode: ClueScreenshotMode, count: int) -> InlineKeyboardMarkup:
-    """The clue screenshot panel: the three modes (the current one ticked),
-    the ways to add to the author's list, Remove… while it has entries, and
-    Back to the preview buttons."""
-    modes = [
-        InlineKeyboardButton(
-            f"{'✅ ' if option == mode else ''}{clue_mode_name(option, lang)}",
-            callback_data=f"{CLUE_PANEL_MODE_PREFIX}{option.value}",
-        )
-        for option in ClueScreenshotMode
-    ]
-    rows = [
-        modes,
-        [
-            InlineKeyboardButton(
-                i18n.t("keyboards.clue_upload", lang),
-                callback_data=CLUE_PANEL_UPLOAD_CALLBACK_DATA,
-            )
-        ],
-    ]
-    if count:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    i18n.t("keyboards.clue_remove", lang),
-                    callback_data=CLUE_PANEL_REMOVE_CALLBACK_DATA,
-                )
-            ]
-        )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                i18n.t("keyboards.clue_back", lang), callback_data=CLUE_PANEL_BACK_CALLBACK_DATA
-            )
-        ]
-    )
-    return InlineKeyboardMarkup(rows)
-
-
-def clue_back_keyboard(lang: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([_clue_back_row(lang)])
-
-
-def clue_remove_keyboard(lang: str, entries: list[ClueAuthorScreenshot]) -> InlineKeyboardMarkup:
-    """One button per entry of the author's list, numbered in list order
-    and named by where it came from, then Back to the panel."""
-    rows = []
-    for number, entry in enumerate(entries, start=1):
-        source = (
-            Provider(entry.source).display_name
-            if entry.source
-            else i18n.t("dm_start.clue_upload_label", lang)
-        )
-        label = i18n.t("keyboards.clue_remove_entry", lang, number=number, source=source)
-        rows.append(
-            [InlineKeyboardButton(label, callback_data=f"{CLUE_PANEL_REMOVE_PREFIX}{entry.id}")]
-        )
-    rows.append(_clue_back_row(lang))
-    return InlineKeyboardMarkup(rows)
-
-
-def parse_clue_mode(data: str) -> ClueScreenshotMode | None:
-    """The mode a `cluepanel:mode:<mode>` button names, or None (logged)
-    for a forged one."""
-    raw = data.removeprefix(CLUE_PANEL_MODE_PREFIX)
-    try:
-        return ClueScreenshotMode(raw)
-    except ValueError:
-        logger.warning("ignoring unknown clue screenshot mode {raw!r}", raw=raw, data=data)
-        return None
-
-
-def parse_clue_remove(data: str) -> int | None:
-    """The entry id a `cluepanel:remove:<id>` button names, or None (logged)."""
-    return _validated_index(data.removeprefix(CLUE_PANEL_REMOVE_PREFIX), data=data)
 
 
 def _alias_label(suggestion: dict) -> str:

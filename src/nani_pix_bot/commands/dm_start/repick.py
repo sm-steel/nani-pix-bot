@@ -40,7 +40,7 @@ async def repick_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         step, game_id = setup_game.setup_step, setup_game.id
         if step != SetupStep.PICKING_METHOD:
             title = game_service.display_title(setup_game, "EN")
-            restart_identification(setup_game)
+            restart_identification(session, setup_game)
     if step == SetupStep.PICKING_METHOD:
         logger.warning(
             "tapped a stale 'pick a different anime' button — already picking a method",

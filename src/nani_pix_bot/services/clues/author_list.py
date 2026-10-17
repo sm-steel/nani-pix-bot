@@ -13,7 +13,7 @@ from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.clue_author_screenshot import ClueAuthorScreenshot
-from nani_pix_bot.models.enums import Provider
+from nani_pix_bot.models.enums import ClueScreenshotMode, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services.clues import handouts
 from nani_pix_bot.services.pixelate import fingerprint
@@ -158,3 +158,46 @@ def clear_images(session: Session, game_id: int) -> int:
     cleared = cast(CursorResult, session.execute(stmt)).rowcount
     logger.info("cleared {count} author's clue screenshot image(s)", count=cleared, game_id=game_id)
     return cleared
+
+
+def reset(session: Session, game: Game) -> None:
+    """Forget the list and go back to Random mode: the anime is being
+    identified again, and the list's screenshots belong to the old one."""
+    stmt = delete(ClueAuthorScreenshot).where(ClueAuthorScreenshot.game_id == game.id)
+    removed = cast(CursorResult, session.execute(stmt)).rowcount
+    previous = game.clue_screenshot_mode
+    game.clue_screenshot_mode = ClueScreenshotMode.RANDOM
+    logger.info(
+        "reset the author's list ({count} entries removed, mode {previous} -> random)",
+        count=removed,
+        previous=previous,
+        game_id=game.id,
+    )
+
+
+def drop_matching_main(session: Session, game: Game) -> int:
+    """Remove the entries that are now the same frame as the main
+    screenshot ("Change image" since they were added). Run at Confirm.
+    Returns how many went."""
+    main = _main_fingerprint(game)
+    if main is None:
+        return 0
+    matching = [
+        entry.id
+        for entry in entries(session, game.id)
+        if fingerprint.same_frame(entry.fingerprint, main)
+    ]
+    if matching:
+        session.execute(delete(ClueAuthorScreenshot).where(ClueAuthorScreenshot.id.in_(matching)))
+        logger.info(
+            "dropped {count} author's list screenshot(s) matching the main screenshot",
+            count=len(matching),
+            game_id=game.id,
+        )
+    return len(matching)
+
+
+def needs_empty_warning(session: Session, game: Game) -> bool:
+    """Whether Confirm should warn first: the mode wants the author's list,
+    but it is empty."""
+    return game.clue_screenshot_mode != ClueScreenshotMode.RANDOM and not entries(session, game.id)

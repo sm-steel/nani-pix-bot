@@ -23,6 +23,7 @@ from nani_pix_bot.commands.dm_start._shared import (
     _reject_stale_tap,
     _stage_preview,
 )
+from nani_pix_bot.commands.dm_start.clue_keyboards import clue_empty_warning_keyboard
 from nani_pix_bot.commands.dm_start.keyboards import (
     BOUNTY_PRESETS,
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
@@ -63,6 +64,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services.clues import author_list
 from nani_pix_bot.services.cosmetics import flair, reveal_choice
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty, earning, wallet
@@ -240,11 +242,22 @@ async def _handle_gated_confirm(
     catalogues, and Telegram's callback window can run out meanwhile. A
     refusal replaces the preview's buttons with why and a way back to the
     methods; "unavailable" says so in a message of its own and leaves the
-    preview as it is, so Confirm can simply be tapped again."""
+    preview as it is, so Confirm can simply be tapped again.
+
+    Before the gate, the author's clue screenshots are checked (issue
+    #453): see _clue_list_needs_warning."""
     await query.answer()
     with session_scope(session_factory) as session:
+        lang = settings.get_language(session)
         setup_game = game_service.get_setup_game_for_starter(session, user.id)
         step = setup_game.setup_step if setup_game is not None else None
+        warn = step == SetupStep.CONFIRMING and _clue_list_needs_warning(session, setup_game)
+    if warn:
+        await query.edit_message_text(
+            text=i18n.t("dm_start.clue_empty_warning", lang),
+            reply_markup=clue_empty_warning_keyboard(lang),
+        )
+        return
     if setup_game is not None and step != SetupStep.CONFIRMING:
         # The setup moved on without this message (e.g. an older "Pick a
         # different anime" was tapped, #429): its Confirm would post a
@@ -256,8 +269,6 @@ async def _handle_gated_confirm(
         await query.edit_message_reply_markup(reply_markup=None)
         return
     verdict = await season_gate.run_gate(context, session_factory, user.id)
-    with session_scope(session_factory) as session:
-        lang = settings.get_language(session)
     if verdict is Verdict.UNAVAILABLE:
         await context.bot.send_message(
             chat_id=user.id, text=i18n.t("season.gate.unavailable", lang)
@@ -272,6 +283,23 @@ async def _handle_gated_confirm(
     confirmed_lang = await _handle_confirm_tap(context, session_factory, user)
     if confirmed_lang is not None:
         await query.edit_message_text(text=i18n.t("dm_start.posted", confirmed_lang))
+
+
+def _clue_list_needs_warning(session: Session, game: Game | None) -> bool:
+    """Confirm's clue screenshot checks (issue #453): first drop the
+    author's entries that are now the main screenshot's frame (a "Change
+    image" since they were added), then whether the mode wants the list
+    but it is empty, so Confirm warns before going live."""
+    if game is None:
+        return False
+    author_list.drop_matching_main(session, game)
+    if not author_list.needs_empty_warning(session, game):
+        return False
+    logger.info(
+        "tapped Confirm with an empty author's list in {mode} mode — warning first",
+        mode=game.clue_screenshot_mode,
+    )
+    return True
 
 
 async def _handle_confirm_tap(
@@ -405,7 +433,7 @@ def _preview_research(tap: _Tap) -> _Edit:
     logger.info("tapped Re-search title on the preview", game_id=game.id)
     # Re-searching might pick a different anime entirely: its API
     # screenshot goes, a genuine upload stays (restart_identification).
-    restart_identification(game)
+    restart_identification(tap.session, game)
     return _Edit(
         i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
         _method_keyboard(tap.context, lang),

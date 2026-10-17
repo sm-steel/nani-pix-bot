@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models import ClueAuthorScreenshot, ClueScreenshotHandout, Player
-from nani_pix_bot.models.enums import Provider
+from nani_pix_bot.models.enums import ClueScreenshotMode, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services.clues import author_list
 from nani_pix_bot.services.pixelate import fingerprint
@@ -182,3 +182,56 @@ def test_remove_unknown_id_false(session: Session) -> None:
     assert author_list.remove(session, game.id, 999) is False
     assert author_list.remove(session, game.id, foreign.id) is False
     assert len(author_list.entries(session, other.id)) == 1
+
+
+def test_reset_clears_list_and_mode(session: Session, log_records) -> None:
+    game = _game(session)
+    game.clue_screenshot_mode = ClueScreenshotMode.BOTH
+    _entry(session, game, 1)
+    _entry(session, game, 2, url="https://x/2.jpg")
+
+    author_list.reset(session, game)
+
+    assert author_list.entries(session, game.id) == []
+    assert game.clue_screenshot_mode == ClueScreenshotMode.RANDOM
+    assert any(line.level == "INFO" for line in log_records)
+
+
+def test_drop_matching_main(session: Session) -> None:
+    game = _game(session, main_seed=5)
+    kept = _entry(session, game, 1)
+    _entry(session, game, 5, url="https://x/5.jpg")  # what the main image changed to
+
+    assert author_list.drop_matching_main(session, game) == 1
+
+    assert [row.id for row in author_list.entries(session, game.id)] == [kept.id]
+
+
+def test_drop_matching_main_none_match(session: Session) -> None:
+    game = _game(session, main_seed=5)
+    _entry(session, game, 1)
+
+    assert author_list.drop_matching_main(session, game) == 0
+    assert len(author_list.entries(session, game.id)) == 1
+
+
+@pytest.mark.parametrize(
+    ("mode", "listed", "expected"),
+    [
+        (ClueScreenshotMode.RANDOM, False, False),
+        (ClueScreenshotMode.RANDOM, True, False),
+        (ClueScreenshotMode.AUTHOR, False, True),
+        (ClueScreenshotMode.AUTHOR, True, False),
+        (ClueScreenshotMode.BOTH, False, True),
+        (ClueScreenshotMode.BOTH, True, False),
+    ],
+)
+def test_needs_empty_warning(
+    session: Session, mode: ClueScreenshotMode, listed: bool, expected: bool
+) -> None:
+    game = _game(session)
+    game.clue_screenshot_mode = mode
+    if listed:
+        _entry(session, game, 1)
+
+    assert author_list.needs_empty_warning(session, game) is expected

@@ -39,12 +39,16 @@ Split across submodules by flow stage:
   clue_panel.py       the preview's clue screenshot panel (mode,
                        uploads, removals of the author's list) and
                        the clue-photo intake; clue_screens.py holds
-                       the panel screen it shares
+                       the panel screen it shares with clue_gallery.py
+  clue_gallery.py     the panel's "Add from a source": a Shikimori/
+                       TMDB gallery whose pick joins the author's list
   preview.py          the confirmation preview (show/confirm/change-
                        image/research/add-synonym) and the final post
                        to the group
   keyboards.py        inline-keyboard builders + callback-data
                        constants
+  clue_keyboards.py   the clue panel's and clue gallery's keyboards,
+                       split out of keyboards.py for its complexity
   _shared.py          small helpers used by more than one of the
                        above, including _start_new_game() (the
                        eligibility-check + game-creation logic both
@@ -60,6 +64,7 @@ This __init__ re-exports only the PTB handler entrypoints app.py
 registers — not a blanket re-export of every submodule's internals."""
 
 from nani_pix_bot.commands.dm_start.aliases import aliases_callback_handler
+from nani_pix_bot.commands.dm_start.clue_gallery import clue_gallery_callback_handler
 from nani_pix_bot.commands.dm_start.clue_panel import clue_panel_callback_handler
 from nani_pix_bot.commands.dm_start.intake import photo_handler
 from nani_pix_bot.commands.dm_start.mal_browse import (
@@ -87,6 +92,7 @@ from nani_pix_bot.commands.dm_start.source_pick import screenshot_source_callbac
 
 __all__ = [
     "aliases_callback_handler",
+    "clue_gallery_callback_handler",
     "clue_panel_callback_handler",
     "mal_list_page_callback_handler",
     "mal_list_pick_callback_handler",

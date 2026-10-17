@@ -8,7 +8,7 @@ from telegram.constants import ChatMemberStatus
 from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import preview, search
+from nani_pix_bot.commands.dm_start import clue_panel, preview, search
 from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
     PREVIEW_ADD_SYNONYM_CALLBACK_DATA,
@@ -25,8 +25,10 @@ from nani_pix_bot.commands.dm_start.keyboards import (
     PREVIEW_RESEARCH_CALLBACK_DATA,
 )
 from nani_pix_bot.commands.helpers.log_scope import bind_update
+from nani_pix_bot.models import ClueAuthorScreenshot
 from nani_pix_bot.models.enums import (
     DEFAULT_ALGORITHM,
+    ClueScreenshotMode,
     GameStatus,
     PixelAlgorithm,
     Provider,
@@ -38,13 +40,16 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services.clues import author_list
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
+from nani_pix_bot.services.pixelate import fingerprint
 from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.search import shikimori
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.settings import stage_config
 from tests.conftest import LogLine
+from tests.frames import frame_bytes
 
 _FRIEREN = AniListResult(
     anilist_id=99,
@@ -931,3 +936,150 @@ async def test_a_confirm_left_on_an_old_preview_starts_nothing(
     with session_factory() as session:
         assert session.get(Game, game_id).status == GameStatus.SETUP
     assert any(r.level == "WARNING" and "Confirm" in r.message for r in log_records)
+
+
+# --- Confirm and the author's clue screenshot list (issue #453) ---
+
+
+def _clue_entry(session_factory, game_id: int, image: bytes) -> None:
+    with session_factory() as session:
+        session.add(
+            ClueAuthorScreenshot(
+                game_id=game_id, image=image, fingerprint=fingerprint.fingerprint(image)
+            )
+        )
+        session.commit()
+
+
+def _clue_entries(session_factory, game_id: int) -> list[ClueAuthorScreenshot]:
+    with session_factory() as session:
+        return author_list.entries(session, game_id)
+
+
+def _game_row(session_factory, game_id: int) -> Game:
+    with session_factory() as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        return game
+
+
+async def _confirm(session_factory, data: str = PREVIEW_CONFIRM_CALLBACK_DATA):
+    update = _make_preview_callback_update(data=data, user_id=1)
+    update.callback_query.edit_message_reply_markup = AsyncMock()
+    context = _make_callback_context(session_factory)
+    handler = (
+        clue_panel.clue_panel_callback_handler
+        if data.startswith("cluepanel:")
+        else preview.preview_callback_handler
+    )
+    await handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+    return update, context
+
+
+async def test_change_image_keeps_list_drops_match_at_confirm(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    # The main image was changed to frame 5 after both entries were added.
+    game_id = _staged_setup_game(
+        session_factory,
+        original_image=frame_bytes(5),
+        clue_screenshot_mode=ClueScreenshotMode.BOTH,
+    )
+    _clue_entry(session_factory, game_id, frame_bytes(1))
+    _clue_entry(session_factory, game_id, frame_bytes(5))
+
+    _, context = await _confirm(session_factory)
+
+    assert [e.fingerprint for e in _clue_entries(session_factory, game_id)] == [
+        fingerprint.fingerprint(frame_bytes(1))
+    ]
+    assert _game_row(session_factory, game_id).status == GameStatus.ACTIVE
+    context.bot.send_photo.assert_awaited_once()
+
+
+async def test_confirm_empty_author_mode_warns(session_factory, log_records) -> None:
+    game_id = _staged_setup_game(session_factory, clue_screenshot_mode=ClueScreenshotMode.AUTHOR)
+
+    update, context = await _confirm(session_factory)
+
+    kwargs = update.callback_query.edit_message_text.await_args.kwargs
+    assert "Random mode" in kwargs["text"]
+    data = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert data == ["cluepanel:start_random", "cluepanel:open"]
+    game = _game_row(session_factory, game_id)
+    assert game.status == GameStatus.SETUP
+    assert game.clue_screenshot_mode == ClueScreenshotMode.AUTHOR
+    context.bot.send_photo.assert_not_awaited()
+    assert any(line.level == "INFO" and "empty" in line.message for line in log_records)
+
+
+async def test_confirm_with_only_matching_entries_warns(session_factory) -> None:
+    """The match is dropped first, so the list is empty by the time it is checked."""
+    game_id = _staged_setup_game(
+        session_factory,
+        original_image=frame_bytes(5),
+        clue_screenshot_mode=ClueScreenshotMode.BOTH,
+    )
+    _clue_entry(session_factory, game_id, frame_bytes(5))
+
+    update, _ = await _confirm(session_factory)
+
+    assert "Random mode" in update.callback_query.edit_message_text.await_args.kwargs["text"]
+    assert _clue_entries(session_factory, game_id) == []
+
+
+async def test_start_anyway_goes_live_random(
+    session_factory, monkeypatch: pytest.MonkeyPatch, log_records
+) -> None:
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    game_id = _staged_setup_game(session_factory, clue_screenshot_mode=ClueScreenshotMode.BOTH)
+
+    _, context = await _confirm(session_factory, "cluepanel:start_random")
+
+    game = _game_row(session_factory, game_id)
+    assert game.status == GameStatus.ACTIVE
+    assert game.clue_screenshot_mode == ClueScreenshotMode.RANDOM
+    context.bot.send_photo.assert_awaited_once()
+    assert any(line.level == "INFO" and "Start anyway" in line.message for line in log_records)
+
+
+async def test_start_anyway_on_a_stale_warning_does_nothing(session_factory) -> None:
+    game_id = _staged_setup_game(
+        session_factory,
+        clue_screenshot_mode=ClueScreenshotMode.BOTH,
+        setup_step=SetupStep.PICKING_METHOD,
+    )
+
+    update, context = await _confirm(session_factory, "cluepanel:start_random")
+
+    game = _game_row(session_factory, game_id)
+    assert game.status == GameStatus.SETUP
+    assert game.clue_screenshot_mode == ClueScreenshotMode.BOTH
+    context.bot.send_photo.assert_not_awaited()
+    update.callback_query.edit_message_reply_markup.assert_awaited_once_with(reply_markup=None)
+
+
+async def test_add_screenshots_from_warning_opens_panel(session_factory) -> None:
+    _staged_setup_game(session_factory, clue_screenshot_mode=ClueScreenshotMode.AUTHOR)
+    await _confirm(session_factory)
+
+    update, _ = await _confirm(session_factory, "cluepanel:open")
+
+    kwargs = update.callback_query.edit_message_text.await_args.kwargs
+    assert "0/10" in kwargs["text"]
+    data = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert "cluepanel:upload" in data
+
+
+async def test_confirm_random_mode_unchanged(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(stage_cosmetics.pixelate_service, "pixelate", lambda *_: b"pixelated")
+    game_id = _staged_setup_game(session_factory)
+
+    update, context = await _confirm(session_factory)
+
+    assert _game_row(session_factory, game_id).status == GameStatus.ACTIVE
+    context.bot.send_photo.assert_awaited_once()
+    assert "Random mode" not in update.callback_query.edit_message_text.await_args.kwargs["text"]

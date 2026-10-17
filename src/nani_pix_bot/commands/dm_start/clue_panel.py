@@ -15,31 +15,30 @@ from sqlalchemy.orm import Session
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import clue_screens
+from nani_pix_bot.commands.dm_start import clue_screens, preview
 from nani_pix_bot.commands.dm_start._shared import _confirming_screen, _reject_stale_tap
-from nani_pix_bot.commands.dm_start.clue_screens import Screen
-from nani_pix_bot.commands.dm_start.keyboards import (
+from nani_pix_bot.commands.dm_start.clue_keyboards import (
     CLUE_PANEL_BACK_CALLBACK_DATA,
     CLUE_PANEL_MODE_PREFIX,
-    CLUE_PANEL_OPEN_CALLBACK_DATA,
     CLUE_PANEL_REMOVE_CALLBACK_DATA,
     CLUE_PANEL_REMOVE_PREFIX,
+    CLUE_PANEL_SOURCE_CALLBACK_DATA,
+    CLUE_PANEL_START_RANDOM_CALLBACK_DATA,
     CLUE_PANEL_UPLOAD_CALLBACK_DATA,
     clue_back_keyboard,
     clue_remove_keyboard,
+    clue_source_keyboard,
     parse_clue_mode,
     parse_clue_remove,
 )
+from nani_pix_bot.commands.dm_start.clue_screens import Screen
+from nani_pix_bot.commands.dm_start.keyboards import CLUE_PANEL_OPEN_CALLBACK_DATA
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import SetupStep
+from nani_pix_bot.models.enums import ClueScreenshotMode, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.clues import author_list
-
-# The steps a panel button still acts on: the preview, or the upload
-# prompt the panel itself opened.
-_PANEL_STEPS = frozenset({SetupStep.CONFIRMING, SetupStep.AWAITING_CLUE_PHOTO})
+from nani_pix_bot.services.clues import author_list, shop
 
 
 @dataclass(frozen=True)
@@ -93,6 +92,24 @@ def _remove(tap: _Tap) -> Screen:
     return _panel(tap, i18n.t("dm_start.clue_removed", tap.lang) if removed else None)
 
 
+def _source_menu(tap: _Tap) -> Screen:
+    """Where a clue screenshot can be picked from: Shikimori/TMDB only, as
+    the shop (Tenrai's pictures are promotional art that can show the
+    title)."""
+    providers = shop.clue_screenshot_providers(tap.game)
+    logger.info(
+        "opened the clue screenshot sources ({providers})",
+        providers=", ".join(providers) or "none",
+    )
+    tap.game.setup_step = SetupStep.CONFIRMING
+    if not providers:
+        return i18n.t("dm_start.clue_no_source", tap.lang), clue_back_keyboard(tap.lang)
+    return (
+        i18n.t("dm_start.clue_source_prompt", tap.lang),
+        clue_source_keyboard(tap.lang, providers),
+    )
+
+
 def _back(tap: _Tap) -> Screen:
     logger.info("closed the clue screenshot panel")
     tap.game.setup_step = SetupStep.CONFIRMING
@@ -103,6 +120,7 @@ _EXACT: dict[str, Callable[[_Tap], Screen]] = {
     CLUE_PANEL_OPEN_CALLBACK_DATA: _open,
     CLUE_PANEL_UPLOAD_CALLBACK_DATA: _upload,
     CLUE_PANEL_REMOVE_CALLBACK_DATA: _remove_menu,
+    CLUE_PANEL_SOURCE_CALLBACK_DATA: _source_menu,
     CLUE_PANEL_BACK_CALLBACK_DATA: _back,
 }
 _PREFIXED: tuple[tuple[str, Callable[[_Tap], Screen]], ...] = (
@@ -123,6 +141,9 @@ async def clue_panel_callback_handler(update: Update, context: ContextTypes.DEFA
     query = update.callback_query
     if query is None or query.data is None or query.from_user is None:
         return
+    if query.data == CLUE_PANEL_START_RANDOM_CALLBACK_DATA:
+        await _start_anyway(context, query)
+        return
     action = _action(query.data)
     if action is None:
         # Callback data is client-supplied (see keyboards.py's trust-boundary note).
@@ -133,7 +154,7 @@ async def clue_panel_callback_handler(update: Update, context: ContextTypes.DEFA
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
         game = game_service.get_setup_game_for_starter(session, query.from_user.id)
-        if game is not None and game.setup_step in _PANEL_STEPS and not game.hard_mode:
+        if game is not None and clue_screens.accepts_panel_taps(game):
             screen = action(_Tap(session, game, lang, query.data))
         elif game is not None:
             logger.warning(
@@ -150,6 +171,19 @@ async def clue_panel_callback_handler(update: Update, context: ContextTypes.DEFA
         return
     text, markup = screen
     await query.edit_message_text(text=text, reply_markup=markup)
+
+
+async def _start_anyway(context: ContextTypes.DEFAULT_TYPE, query) -> None:
+    """ "Start anyway" on Confirm's empty-list warning (issue #453): Random
+    mode, then the normal Confirm, season gate included. The Confirm itself
+    refuses a setup that moved on since the warning."""
+    session_factory = context.bot_data["session_factory"]
+    with session_scope(session_factory) as session:
+        game = game_service.get_setup_game_for_starter(session, query.from_user.id)
+        if game is not None and game.setup_step == SetupStep.CONFIRMING and not game.hard_mode:
+            game.clue_screenshot_mode = ClueScreenshotMode.RANDOM
+            logger.info("chose Start anyway with no clue screenshots — starting in Random mode")
+    await preview._handle_gated_confirm(context, session_factory, query, query.from_user)
 
 
 async def accept_clue_photo(
