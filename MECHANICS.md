@@ -307,8 +307,12 @@ confirmation preview.
 
 **So is one sent from the method menu**, before the anime is identified
 (issue #456) — typically after the season gate refused the first
-screenshot's anime. It replaces the staged screenshot, and the starter gets
-its stage-1 preview and the method menu again; no new game is created. On
+screenshot's anime. It replaces the staged screenshot; the starter is told
+so (when there was a first one) and gets its stage-1 preview and the method
+menu again; no new game is created. In the few seconds between a pick and
+the preview (the season gate and the alias search running) the step is
+still the method pick: a photo then is taken the same way, but the menu is
+not re-sent, since the preview on its way already shows it. On
 every later step that takes no photo, a DM photo only re-shows that step.
 
 #### When a provider fails
