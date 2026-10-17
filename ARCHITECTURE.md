@@ -707,6 +707,10 @@ src/nani_pix_bot/
                    #                  tiles over the pixelated image)
                    #   algorithms.py  PixelAlgorithm -> implementation
                    #                  registry, and pixelate() itself
+                   #   fingerprint.py perceptual 64-bit difference hash
+                   #                  and same_frame(): is this the same
+                   #                  frame, resized/re-encoded or not
+                   #                  (the screenshot clue, #446)
     reveal/       # the animated reveal video (#295): Pillow + ffmpeg
                    # subprocesses, no telegram imports; runs in the worker
                    # process (jobs/reveal_worker.py):
@@ -891,6 +895,9 @@ src/nani_pix_bot/
                    #             the charge (through economy/wallet.py) plus
                    #             CluePurchase bookkeeping; Refusal and
                    #             ShopRefusedError for the rejected cases
+                   #   handouts.py  which screenshots the shop handed out
+                   #             per game (#446): never sold twice in one
+                   #             game, refund or not
                    #   discount.py  stacking of percentage clue discounts (HARD
                    #             MODE sale + the season's): apply
                    #   (economy/) bounty.py   the pot: contribute, pay_out,
@@ -1033,6 +1040,8 @@ src/nani_pix_bot/
     currency_transfer.py  # CurrencyTransfer (append-only two-sided 💠 ledger)
     currency_config.py  # CurrencyConfig (admin overrides of currency amounts)
     clue_purchase.py  # CluePurchase (one clue a player bought in one game)
+    clue_screenshot_handout.py  # ClueScreenshotHandout (a screenshot the
+                   #               shop handed out in a game; #446)
     game_guess.py  # GameGuess (one row per /guess: text, stage/turn,
                    #           correct, partial reveal — #251)
     reveal_video.py  # RevealVideo (the single pre-rendered reveal slot,
@@ -1370,6 +1379,7 @@ erDiagram
 | `season_shop_purchases` | Phase 4 | One Season Shop purchase: `season_id`, `player_id`, `offer_key`, `transfer_id` (unique, the 🪙 charge) and `created_at`. A player's per-season count per offer enforces its limit. Written only by `services/seasons/season_shop.py`. |
 | `season_objectives` | Phase 4 | A completed objective: primary key (`season_id`, `player_id`, `objective_key`) and `completed_at`, so it pays once. Written only by `services/seasons/objectives.py`. |
 | `consumables` | v12 | `player_id`, `kind` (a `ConsumableKind`, stored `clue_token`) and `count`: the clue tokens a player holds. Written only by `services/cosmetics/consumables.py`. |
+| `clue_screenshot_handouts` | #446 | One row per screenshot the clue shop handed out in a game: `game_id` (FK, `ON DELETE CASCADE`), `screenshot_url`, `fingerprint` (the frame's 64-bit perceptual hash from `services/pixelate/fingerprint.py`, signed to fit `BIGINT`; `NULL` for rows the migration backfilled from earlier purchases) and `created_at`. (`game_id`, `screenshot_url`) is unique by `handouts.sellable`'s check before the charge, not a DB constraint: a 1024-character utf8mb4 column exceeds InnoDB's plain unique-key length, and updates are processed one at a time. Written by `shop.purchase` alongside the `CluePurchase` and deliberately never deleted by a refund, so a screenshot goes out at most once per game, to anyone. The extra-screenshot picker excludes its URLs and skips any candidate whose fingerprint matches one of these or the round's own image(s). Written only via `services/clues/handouts.py`. |
 | `clue_purchases` token columns | v12 | `token_used` (the clue was paid with a clue token) and `transfer_id` now nullable: a token purchase has no ledger charge. A failed token delivery gives the token back. |
 | `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string: `admin`, `pass` for a pass reward, or `shop` for a Season Shop purchase), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
 | `equipped_items` | v12 | The item equipped per slot: primary key (`player_id`, `slot`; `slot` a `CosmeticSlot` as a plain string), `item_id`. One item per slot, so equipping replaces. |

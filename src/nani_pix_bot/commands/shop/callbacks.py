@@ -312,7 +312,9 @@ async def _buy_screenshot(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> N
         if fetched is None:
             return
         with session_scope(session_factory) as session:
-            request = PurchaseRequest(tap.kind, screenshot_url=fetched.url)
+            request = PurchaseRequest(
+                tap.kind, screenshot_url=fetched.url, screenshot_fingerprint=fetched.fingerprint
+            )
             _, row, amount = _charge(session, tap, request)
             bought = _ImageBought(
                 plan.lang,
