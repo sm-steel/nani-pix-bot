@@ -10,7 +10,7 @@ from typing import cast
 
 from loguru import logger
 from sqlalchemy import CursorResult, delete, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from nani_pix_bot.models.clue_author_screenshot import ClueAuthorScreenshot
 from nani_pix_bot.models.enums import ClueScreenshotMode, Provider
@@ -176,6 +176,17 @@ def reset(session: Session, game: Game) -> None:
         previous=previous,
         game_id=game.id,
     )
+
+
+def forget(game: Game) -> None:
+    """`reset` for a caller with no session at hand (identification
+    clearing): the game's own session, or, for a game not saved yet, just
+    the mode, as there is no list to delete."""
+    session = object_session(game)
+    if session is None or game.id is None:
+        game.clue_screenshot_mode = ClueScreenshotMode.RANDOM
+        return
+    reset(session, game)
 
 
 def drop_matching_main(session: Session, game: Game) -> int:

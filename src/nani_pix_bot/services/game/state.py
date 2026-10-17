@@ -15,6 +15,7 @@ from nani_pix_bot import log_context
 from nani_pix_bot.models.enums import EventType, GameStatus, PixelStage, Provider, WinMethod
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import events, i18n, matching, players
+from nani_pix_bot.services.clues import author_list
 from nani_pix_bot.services.clues import text as clue_text
 from nani_pix_bot.services.game import guesses, turns
 from nani_pix_bot.services.game.clock import deadline_after
@@ -415,8 +416,14 @@ def clear_identification(game: Game) -> None:
     not touched — that's `commands/dm_start/screenshots.py`'s
     `clear_screenshot_selection`, which `restart_identification` (the
     preview's "Re-search", "Pick a different anime", a season-gate
-    refusal) runs just before this."""
+    refusal) runs just before this.
+
+    The author's clue screenshots and their mode go too (issue #452):
+    they were picked for the old anime. This is the one place every
+    re-identification passes through (a result pick, a manual entry, a
+    new method, restart_identification)."""
     logger.debug("clearing previous identification (source={source})", source=game.source)
+    author_list.forget(game)
     game.title_romaji = None
     game.title_english = None
     game.title_native = None

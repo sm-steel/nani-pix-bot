@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models import ClueAuthorScreenshot, ClueScreenshotHandout, Player
 from nani_pix_bot.models.enums import ClueScreenshotMode, Provider
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.clues import author_list
 from nani_pix_bot.services.pixelate import fingerprint
 from tests.frames import encode, frame, frame_bytes
@@ -246,3 +247,31 @@ def test_clear_images_logs_no_info(session: Session, log_records) -> None:
     author_list.clear_images(session, game.id)
 
     assert [line.level for line in log_records if "image(s)" in line.message] == ["DEBUG"] * 2
+
+
+def test_clear_identification_resets_the_list(session: Session) -> None:
+    """Every re-identification goes through clear_identification."""
+    game = _game(session)
+    game.clue_screenshot_mode = ClueScreenshotMode.AUTHOR
+    _entry(session, game, 1)
+
+    game_service.clear_identification(game)
+
+    assert author_list.entries(session, game.id) == []
+    assert game.clue_screenshot_mode == ClueScreenshotMode.RANDOM
+
+
+def test_reset_with_nothing_to_reset_logs_no_info(session: Session, log_records) -> None:
+    game = _game(session)
+
+    author_list.reset(session, game)
+
+    assert not [line for line in log_records if line.level == "INFO"]
+
+
+def test_forget_an_unsaved_game_resets_the_mode() -> None:
+    game = Game(starter_id=STARTER, clue_screenshot_mode=ClueScreenshotMode.BOTH)
+
+    author_list.forget(game)
+
+    assert game.clue_screenshot_mode == ClueScreenshotMode.RANDOM

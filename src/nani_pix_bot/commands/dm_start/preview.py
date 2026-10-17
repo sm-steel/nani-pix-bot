@@ -433,7 +433,7 @@ def _preview_research(tap: _Tap) -> _Edit:
     logger.info("tapped Re-search title on the preview", game_id=game.id)
     # Re-searching might pick a different anime entirely: its API
     # screenshot goes, a genuine upload stays (restart_identification).
-    restart_identification(tap.session, game)
+    restart_identification(game)
     return _Edit(
         i18n.t(_method_prompt_key(prefer_shikimori=_prefer_shikimori(lang)), lang),
         _method_keyboard(tap.context, lang),

@@ -382,7 +382,7 @@
   "dm_start.bounty_prompt": "💰 Put up a bounty for whoever solves your round — it comes out of your pixels and goes to the winner (refunded if nobody solves it).\nPot: {pot} 💠 · your balance: {balance} 💠",
   "dm_start.bounty_option": "+{amount} 💠",
   "dm_start.bounty_none_affordable": "You don't have enough pixels for a bounty right now.",
-  "dm_start.clue_upload_prompt": "Send the screenshot to add to your clue screenshots.",
+  "dm_start.clue_upload_prompt": "Send the screenshot to add to your clue screenshots, one photo at a time.",
   "keyboards.clue_panel_button": "🖼 Clue screenshots: {mode}",
   "keyboards.clue_upload": "📤 Upload my own",
   "keyboards.clue_remove": "🗑 Remove…",

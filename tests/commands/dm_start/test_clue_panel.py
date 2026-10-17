@@ -9,7 +9,7 @@ from telegram import InlineKeyboardMarkup, Update
 from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import _shared, clue_panel, intake, search
+from nani_pix_bot.commands.dm_start import _shared, clue_panel, intake, mal_browse, manual, search
 from nani_pix_bot.models import ClueAuthorScreenshot
 from nani_pix_bot.models.enums import ClueScreenshotMode, GameStatus, Provider, SetupStep
 from nani_pix_bot.models.game import Game
@@ -19,6 +19,7 @@ from nani_pix_bot.services.clues import author_list
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.pixelate import fingerprint
 from nani_pix_bot.services.search.anilist import AniListResult
+from nani_pix_bot.services.search.tenrai import TenraiResult
 from tests.frames import frame_bytes
 
 STARTER = 1
@@ -468,3 +469,44 @@ async def test_source_and_start_anyway_taps_log_info(
         assert infos, data
         assert any(line.extra.get("game_id") == game_id for line in infos), data
     assert _game(session_factory, game_id).status == GameStatus.ACTIVE
+
+
+async def test_mal_list_pick_resets_the_clue_list(session_factory, monkeypatch) -> None:
+    game_id = _staged(session_factory, clue_screenshot_mode=ClueScreenshotMode.BOTH)
+    _seed_entries(session_factory, game_id, 2)
+    picked = TenraiResult(
+        tenrai_id=20, title_romaji="Naruto", title_english="Naruto", title_native=None, synonyms=[]
+    )
+    monkeypatch.setattr(mal_browse, "_resolve_picked_mal_entry", AsyncMock(return_value=picked))
+    monkeypatch.setattr(mal_browse.season_gate, "refused", AsyncMock(return_value=False))
+    monkeypatch.setattr(mal_browse, "start_alias_search", MagicMock())
+    update = _query_update("mal_list_pick:20")
+
+    await mal_browse.mal_list_pick_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _context(session_factory))
+    )
+
+    game = _game(session_factory, game_id)
+    assert game.title_english == "Naruto"
+    assert game.clue_screenshot_mode == ClueScreenshotMode.RANDOM
+    assert _entries(session_factory, game_id) == []
+
+
+async def test_manual_entry_resets_the_clue_list(session_factory, monkeypatch) -> None:
+    game_id = _staged(
+        session_factory,
+        source="manual",
+        title_english="Naruto",
+        synonyms=None,
+        setup_step=SetupStep.PICKING_METHOD,
+        clue_screenshot_mode=ClueScreenshotMode.AUTHOR,
+    )
+    _seed_entries(session_factory, game_id, 1)
+    monkeypatch.setattr(manual, "start_alias_search", MagicMock())
+
+    await _type(_context(session_factory), "Naruto Shippuden")
+
+    game = _game(session_factory, game_id)
+    assert game.synonyms == ["Naruto Shippuden"]
+    assert game.clue_screenshot_mode == ClueScreenshotMode.RANDOM
+    assert _entries(session_factory, game_id) == []

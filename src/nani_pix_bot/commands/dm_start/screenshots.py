@@ -26,7 +26,6 @@ from dataclasses import dataclass
 from typing import cast
 
 from loguru import logger
-from sqlalchemy.orm import Session
 from telegram import InputMediaPhoto, Update
 from telegram.error import BadRequest, TelegramError, TimedOut
 from telegram.ext import ContextTypes
@@ -48,7 +47,6 @@ from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
-from nani_pix_bot.services.clues import author_list
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
@@ -371,16 +369,15 @@ def clear_screenshot_selection(game: Game) -> None:
     game.screenshot_source = None
 
 
-def restart_identification(session: Session, game: Game) -> None:
+def restart_identification(game: Game) -> None:
     """Back to picking a method, the anime forgotten: an API-picked
     screenshot of it goes too (an upload stays), and so does everything
     identified about it, so a background lookup still in flight for it is
-    discarded as stale. So do the author's clue screenshots and their mode
-    (issue #452): they belong to the old anime. The preview's "Re-search
-    title" and the "Pick a different anime" button (#429) on every later
-    setup screen."""
+    discarded as stale — the author's clue screenshots and their mode
+    included (clear_identification). The preview's "Re-search title" and
+    the "Pick a different anime" button (#429) on every later setup
+    screen."""
     clear_screenshot_selection(game)
-    author_list.reset(session, game)
     game_service.clear_identification(game)
     game.setup_step = SetupStep.PICKING_METHOD
 

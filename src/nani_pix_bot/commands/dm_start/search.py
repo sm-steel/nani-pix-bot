@@ -55,7 +55,6 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import Provider, SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, mal_link, settings
-from nani_pix_bot.services.clues import author_list
 from nani_pix_bot.services.search import anilist, shikimori, tenrai, tmdb
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
@@ -397,9 +396,6 @@ async def pick_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if setup_game is None:
             await _reject_stale_tap_answered(context, user.id, query.data, lang)
             return
-        # A re-identification: the author's clue screenshots belong to
-        # whatever anime was there before.
-        author_list.reset(session, setup_game)
         game_service.stage_result(setup_game, result, source=source)
         logger.info(
             "picked {title!r} ({provider} {provider_id})",
