@@ -1,3 +1,22 @@
+## v1.18.0 · 2026-10-17
+
+### ✨ New
+- 🖼 Starting a round? The preview now has **Clue screenshots**: choose whether the shop's extra screenshot is random (as before), only your own picks, or yours first and then random. Add up to 10 from the Shikimori or TMDB gallery or upload your own; the ones handed out show up in the clue album when the round ends.
+- 🖼 When a round ends, every extra screenshot bought during it is shown in full quality in an album under the reveal. In HARD MODE the video now shows one screenshot, and the other one opens the album.
+
+### 🛠 Fixed
+- 🖼 An extra screenshot from `/shop` is always a new one now: never the round's own picture, never one you or anyone else already got that round (even if it was refunded), and picked at random instead of the same one for everybody.
+
+## v1.17.0 · 2026-10-14
+
+### ✨ New
+- 🏳 Stuck on a screenshot nobody knows? `/pass` votes to give up: once enough of the group agrees (half of those who played in the last day, at least 3), the round ends and the answer is shown.
+- 🌸 In a season, an anime that's off-theme is turned down the moment you pick it — from search, your MAL list or a typed title — instead of after you've chosen a screenshot.
+- ↩ Picked the wrong anime while setting up a game? **Pick a different anime** now sits under the screenshot menu, the gallery and the setup questions, so there's no need to `/stop` and start over.
+- 🎫 `/seasonpass` is easier to read: the tiers are a table with the free and ⭐ Premium rewards in their own columns, a ⬜ the same size as ✅ for tiers still ahead, a 🔒 on the Premium column until you buy it, and the objectives under a heading of their own.
+- 🪪 `/profile`'s ◀ ▶ and 👥 Players now walk only the people who actually play, most games first — no more lurkers, and never the bot.
+- 🎨 Cosmetic previews in `/cosmetics` and `/seasonshop` now show you — your name with the flair, your avatar and name on the win badge, your own profile card behind a banner — and stage frames and reveal transitions play out on a real pixelated anime screenshot, just as a round posts them.
+
 ## v1.16.0 · 2026-10-11
 
 ### ✨ New
@@ -25,13 +44,3 @@
 - The letter clues now only ever hand out real letters, and the title shape shows digits as `X` and the word "season" in plain sight — unless the whole title is a number, like "22/7".
 - 🔢 A game's creator can now make the numbers in a title count: the preview has a "Numbers count" switch, and the bot asks outright when a title is mostly numbers, like "91 Days".
 - 🔎 When you set up a game, the bot looks the anime up on the other sites too and offers any names it's missing as checkboxes — tick the ones that should also count as a correct guess.
-
-## v1.14.2 · 2026-10-09
-
-### 🛠 Fixed
-- The 🌟 top-players summary for a finished week, month or year no longer goes quiet after a bot update — a slow restart could leave it unposted until the next one.
-
-## v1.14.1 · 2026-10-09
-
-### 🛠 Fixed
-- `/version` shows the release notes again — it came up empty when the bot's language was set to Russian.

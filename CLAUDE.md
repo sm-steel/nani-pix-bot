@@ -393,6 +393,15 @@ from `master`): its sub-PRs target that branch, and it merges into
 need it), then run Release on `master`. A run with no `feat:`/`fix:`
 since the last tag releases nothing.
 
+**The release-notes review and the rotation MUST be done — never skipped,
+whoever presses Release.** Before every Release run, review the current
+notes as a whole. **Every PR that touches the release notes MUST first
+check whether the current notes already shipped** (the ancestry check in
+[`docs/release-notes.md`](docs/release-notes.md) "Rotation") and, if they
+did, rotate them into `previous-releases-*.md` in that same PR. v1.17.0's
+rotation and v1.18.0's review were both skipped, so the two releases'
+notes ran together and had to be untangled afterwards.
+
 ## Task tracking (GitHub Issues)
 
 Implementation progress is tracked as **GitHub Issues** on this repo
@@ -441,7 +450,7 @@ shipped ones), not the commit list semantic-release puts on GitHub. **Every
 PR that a player or admin could notice adds its bullets to
 `release-notes-en.md` and `release-notes-ru.md` in that same PR**; they're
 reviewed as a whole just before a release, and nothing is committed to these
-files during or after one. The rules (what qualifies, the voice, condensing, not
+files during the release run itself. The rules (what qualifies, the voice, condensing, not
 capping) and the rotation into `previous-releases-*.md` are in
 [`docs/release-notes.md`](docs/release-notes.md).
 

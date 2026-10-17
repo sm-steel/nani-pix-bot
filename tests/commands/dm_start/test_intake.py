@@ -448,6 +448,138 @@ async def test_photo_handler_reshows_the_preview_on_a_step_that_takes_no_photo(
     assert PREVIEW_CONFIRM_CALLBACK_DATA in callbacks
 
 
+def _setup_game_picking_method(session_factory) -> None:
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.commit()
+        game = game_service.create_setup_game(session, starter_id=1, original_image=b"old-photo")
+        game.setup_step = SetupStep.PICKING_METHOD
+        session.commit()
+
+
+async def test_photo_handler_replaces_the_image_while_picking_the_method(
+    session_factory, log_records
+) -> None:
+    """Issue #456 (game 172): the season gate refused the anime, the
+    starter sent a different screenshot from the method menu, and the
+    round went live with the first one. A photo before the anime is
+    identified means "use this one instead"."""
+    _setup_game_picking_method(session_factory)
+    new_photo = _real_png()
+    update = _make_update(user_id=1, photo_file_id="new-photo")
+    update.message.reply_photo = AsyncMock()
+    context = _make_context(session_factory)
+    _uploading(context, new_photo)
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        assert session.query(Game).count() == 1  # no new game
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.original_image == new_photo
+        assert fetched.setup_step == SetupStep.PICKING_METHOD
+        game_id = fetched.id
+        first_stage = stage_config.get_stage_config(session, game_service.STAGE_ORDER[0])
+    # The new photo's stage-1 preview, then the method menu again.
+    expected = pixelate_service.pixelate(new_photo, first_stage.target_width, DEFAULT_ALGORITHM)
+    photo_call = update.message.reply_photo.await_args
+    assert photo_call is not None
+    assert photo_call.kwargs["photo"] == expected
+    # Told the swap happened, before the preview and the menu.
+    first_reply = update.message.reply_text.await_args_list[0]
+    assert first_reply.args[0] == i18n.t("dm_start.photo_replaced", "en")
+    _, kwargs = update.message.reply_text.await_args
+    callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert ANILIST_METHOD_CALLBACK_DATA in callbacks
+    context.bot.send_message.assert_not_awaited()  # no second "setup started" notice
+    replaced = [r for r in log_records if r.level == "INFO" and "new photo" in r.message]
+    assert len(replaced) == 1
+    assert replaced[0].extra["game_id"] == game_id
+
+
+async def test_photo_handler_new_photo_while_picking_the_method_drops_a_picked_screenshot(
+    session_factory,
+) -> None:
+    """Defensive: every real route back to the method menu goes through
+    restart_identification, which already drops an API-picked screenshot.
+    Should one still be staged, an upload supersedes it, so nothing still
+    claims the image came from that provider."""
+    _setup_game_picking_method(session_factory)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.screenshot_source = Provider.SHIKIMORI
+        game.shikimori_id = 52991
+        game.shown_screenshot_urls = ["https://example.test/a.jpg"]
+        session.commit()
+    update = _make_update(user_id=1, photo_file_id="new-photo")
+    update.message.reply_photo = AsyncMock()
+    context = _make_context(session_factory)
+    _uploading(context, _real_png())
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.screenshot_source is None
+        assert fetched.shown_screenshot_urls is None
+        assert fetched.original_image == _real_png()
+
+
+async def test_photo_handler_first_photo_for_a_newgame_setup_says_nothing_was_replaced(
+    session_factory,
+) -> None:
+    """A /newgame setup has no screenshot yet: its first photo replaces
+    nothing, so the starter gets the stage-1 preview and the menu only."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.commit()
+        game = game_service.create_setup_game(session, starter_id=1)
+        game.setup_step = SetupStep.PICKING_METHOD
+        session.commit()
+    update = _make_update(user_id=1, photo_file_id="first-photo")
+    update.message.reply_photo = AsyncMock()
+    context = _make_context(session_factory)
+    _uploading(context, _real_png())
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        assert session.query(Game).one().original_image == _real_png()
+    texts = [c.args[0] for c in update.message.reply_text.await_args_list]
+    assert i18n.t("dm_start.photo_replaced", "en") not in texts
+    update.message.reply_photo.assert_awaited_once()
+    assert "reply_markup" in update.message.reply_text.await_args.kwargs
+
+
+async def test_photo_handler_new_photo_after_the_pick_skips_the_method_menu(
+    session_factory,
+) -> None:
+    """Between a pick and the preview (the season gate and the alias
+    search run meanwhile) the step is still PICKING_METHOD. The photo is
+    taken, but the anime is already picked: the starter is told, and the
+    preview on its way shows it — no method menu that would wipe the pick."""
+    _setup_game_picking_method(session_factory)
+    with session_factory() as session:
+        game = session.query(Game).filter_by(starter_id=1).one()
+        game.source = Provider.ANILIST
+        game_service.stage_result(game, _FRIEREN, source=Provider.ANILIST)
+        game.setup_step = SetupStep.PICKING_METHOD
+        session.commit()
+    update = _make_update(user_id=1, photo_file_id="new-photo")
+    update.message.reply_photo = AsyncMock()
+    context = _make_context(session_factory)
+    _uploading(context, _real_png())
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    with session_factory() as session:
+        fetched = session.query(Game).filter_by(starter_id=1).one()
+        assert fetched.original_image == _real_png()
+        assert fetched.anilist_id == _FRIEREN.anilist_id  # the pick survives
+    update.message.reply_text.assert_awaited_once_with(i18n.t("dm_start.photo_replaced", "en"))
+    update.message.reply_photo.assert_not_awaited()
+
+
 async def test_photo_handler_upload_keeps_the_identification_provider_id(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
