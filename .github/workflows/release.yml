@@ -1,13 +1,19 @@
 name: Release
 
-# Fires after checks.yml/tests.yml would already have run on the same
-# push (both trigger on push to master too) -- semantic-release itself
-# doesn't gate on their success, so this assumes master is only ever
-# updated through a merge that already passed CI.
+# Run by hand (Actions -> Release -> Run workflow on master) when the
+# merged PRs should ship -- merging to master never releases by itself, so
+# any number of PRs can accumulate into one version. semantic-release
+# reads every Conventional Commit since the last tag to pick the bump.
+# master only takes PRs whose checks.yml/tests.yml passed (the master
+# ruleset requires both), so whatever it tags has already been through CI.
 on:
-  push:
-    branches: [master]
-    paths-ignore: ["**.md", "docs/**"]
+  workflow_dispatch:
+
+# Two releases at once would compute the same next version and race to
+# push the same tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -16,7 +22,10 @@ permissions:
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.released }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,7 +40,10 @@ jobs:
           git_committer_name: "github-actions"
           git_committer_email: "actions@users.noreply.github.com"
           build: false
-          changelog: true
+          # The player-facing notes are hand-written (docs/release-notes.md),
+          # and with commit: false a generated CHANGELOG.md would never be
+          # committed anyway.
+          changelog: false
           # commit: false is deliberate, not a bug -- master requires PRs,
           # and GITHUB_TOKEN can't push a branch update around that. Tags
           # live in a different ref namespace (refs/tags/*, not
@@ -65,3 +77,14 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/sm-steel/nani-pix-bot:${{ steps.release.outputs.version }}
+
+  # The guide documents the released bot, so it's published with each
+  # release rather than on every merge to master.
+  docs:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml

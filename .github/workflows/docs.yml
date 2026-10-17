@@ -1,9 +1,10 @@
 name: Docs
 
-# The user's guide (docs/site, Astro Starlight). Builds on every PR that
-# can change it; deploys to GitHub Pages only from master — the site
-# documents the released bot. tests.yml ignores docs/**, so the guide's
-# own pytest checks run here.
+# The user's guide (docs/site, Astro Starlight). Builds on every push/PR
+# that can change it; deploys to GitHub Pages only when release.yml calls
+# it after cutting a release (or on a manual run on master) — the site
+# documents the released bot, not whatever has merged since. The guide's
+# own pytest checks run here, not in tests.yml.
 on:
   push:
     paths: &docs_paths
@@ -31,9 +32,12 @@ on:
   pull_request:
     paths: *docs_paths
   workflow_dispatch:
+  workflow_call:
 
+# Keyed on the event too, so a push to master can't cancel the deploy a
+# release (workflow_dispatch) has in flight.
 concurrency:
-  group: docs-${{ github.ref }}
+  group: docs-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -75,7 +79,9 @@ jobs:
           path: docs/site/dist
 
   deploy:
-    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    # Called from release.yml, github.* is the caller's context, so this is
+    # true both for a release and for a manual run of this workflow.
+    if: github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     permissions:

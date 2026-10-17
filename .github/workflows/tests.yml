@@ -1,19 +1,20 @@
 name: Tests
 
+# No paths filter: both are required checks on master, and a required
+# check whose workflow never starts leaves the PR waiting forever. It also
+# keeps the shipped release notes (src/**/release_notes/*.md) under test.
 on:
   push:
-    paths-ignore: ["**.md", "docs/**"]
   pull_request:
-    paths-ignore: ["**.md", "docs/**"]
 
 jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           python-version: "3.11"
 
@@ -25,7 +26,7 @@ jobs:
       # use; mise.toml's locked mode fails the install on any mismatch. The
       # reveal video tests (marked `ffmpeg`) skip without it (issue #295).
       - name: Install pinned tools (ffmpeg)
-        uses: jdx/mise-action@v5.1.1
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: 2026.10.4
 

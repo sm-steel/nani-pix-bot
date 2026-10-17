@@ -1,0 +1,14 @@
+# Keeps the workflows' SHA-pinned actions current: each bump arrives as a
+# PR with the new SHA and its version comment, and goes through CI like
+# any other.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
