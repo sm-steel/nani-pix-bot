@@ -709,6 +709,8 @@ On a win, the bot:
    `Game.original_image` — nothing after this point ever needs to
    re-pixelate the screenshot, so the stored bytes are dropped rather
    than kept around indefinitely.
+6. Posts the **clue album** as a second, unpinned message right after the
+   reveal (see "The clue album" below).
 
 ### The reveal video
 
@@ -724,7 +726,7 @@ way to play it once.
 |---|---|
 | Win by `/guess` or `/correct` | the effect, then the clear image with a celebration: a gold badge with the winner's avatar and `@handle` (their name when they have no username), a crown, a pop-in, one shine sweep and confetti |
 | Unsolved: stage 5 exhausted, 2-day timeout, inactivity on stage 5, `/stop` with reveal | the same effect, then the clear image held, no badge |
-| HARD MODE (any of the above) and the vote opening | the album as before, but the screenshot picked at game start is the reveal video (a badge on a win, none on the vote opening or an unsolved ending) and the other one stays a photo |
+| HARD MODE (any of the above) and the vote opening | the reveal video of the screenshot picked at game start, alone (a badge on a win, none on the vote opening or an unsolved ending); the other screenshot of the pair opens the clue album (see "The clue album") |
 
 The effect is picked **at game start**: the starter's equipped reveal
 transition (see "Cosmetics"), else uniformly at random from `iris`,
@@ -739,6 +741,38 @@ failed, isn't done within 5 seconds of the ending, the render fails, or
 Telegram rejects the video, the bot posts the plain photo exactly as
 before. The one exception is a send that timed out: the video may have
 arrived, so nothing is posted twice.
+
+### The clue album
+
+**Status: Implemented.**
+
+Every ending that reveals the answer posts **two messages**: the reveal
+(the video or photo above, with its caption, pinned) and right after it
+an **unpinned album captioned "🖼 Clues from this game"**
+(`reveal.clues_caption`). That covers a win by `/guess` or `/correct`,
+stage 5 exhausted, the 2-day timeout, inactivity, `/stop` with reveal,
+`/pass`, and the HARD MODE vote opening.
+
+- **What is in it.** In HARD MODE, first the other screenshot of the pair
+  (the one that is not the reveal video). Then every *Extra screenshot*
+  clue handed out in the game, in hand-out order, at **original quality**.
+  A refunded purchase is included: the buyer saw it.
+- **Splitting.** At most 10 photos per album (`ALBUM_LIMIT`,
+  `services/game/reveal_extras.py`); more go out as further albums, the
+  caption on the first photo only. A single image is sent as a plain
+  photo (an album needs two). With nothing to show, nothing is posted.
+- **Where the bytes live.** The original is saved on the
+  `clue_screenshot_handouts` row when the clue is bought
+  (`image`, deferred column) and set to NULL once the album is out; the
+  row stays, so a screenshot is still never handed out twice. After a win,
+  unsolved ending or `/stop`, they are cleared with the reveal's own
+  cleanup. For the HARD MODE vote they are kept while it is open and
+  cleared when it closes. `/stop` reads them before the game and its
+  handouts are deleted.
+- **Failures.** If the video send timed out (it may have arrived), the
+  album is still posted and the bytes cleared once it is confirmed. If the
+  reveal failed completely, no album is posted and the bytes are kept. A
+  failed album send is logged and never blocks the reveal or the cleanup.
 
 ## Ending unsolved
 
@@ -755,7 +789,8 @@ A game ends unsolved one of three ways, handled identically:
 
 Either way, the bot reveals the original screenshot with the anime's
 title, sets `status → UNSOLVED` (stamping `ended_at`), and performs the same `original_image`
-cleanup described in "Winning" above. `turn_state.next_starter_id` is left
+cleanup described in "Winning" above. Right after the reveal it posts the
+clue album, exactly as for a win (see "The clue album"). `turn_state.next_starter_id` is left
 untouched — an unsolved game doesn't hand anyone a forced turn. If it was
 already `null` (open to anyone), it stays that way; if someone was
 designated (unusual for this path, since normally only a win sets it),
@@ -1098,6 +1133,9 @@ HARD MODE replaces stages with **turns**:
   same provider**, posted together as a single Telegram photo album
   (`post_current_images`) rather than one image at a time — see "Picking
   a random anime + screenshot pair" above for how that pair is sourced.
+  (That is the *stage* post only. The reveal at an ending is never a
+  combined album: the video of one screenshot goes out alone and the other
+  opens the clue album, see "The clue album".)
   Both screenshots in the pair are pixelated to that turn's width and
   live for the whole game on `Game.hard_mode_image_a`/`hard_mode_image_b`
   (`original_image` is left unpopulated for these games).
@@ -1150,7 +1188,10 @@ name).
   (`/newgame`, a DM'd screenshot and the autostart timers all treat it
   as a running game), there is no overthrow roll and no turn handoff
   yet, the bounty pot stays held, and both screenshots are kept. The
-  bot posts the answer with the two screenshots, then the ballot.
+  bot posts the answer as the reveal video of the screenshot picked at game
+  start, then the clue album (the other screenshot first, then the clues
+  handed out), then the ballot. The clue originals are kept while the vote is
+  open and cleared when it closes.
 - **Ballot:** one button per guesser, listing each guesser's guesses.
   Any group member votes once, can change their vote by tapping another
   button, and cannot vote for themselves. Only guessers are candidates.
@@ -1668,6 +1709,9 @@ player's balance.
 - *Extra screenshot*: another pixelated screenshot of the same anime, at
   the stage the round is on now (in HARD MODE, at the current turn's
   stage). At most 3 per player per game, with the escalating price above.
+  The full-quality original of each one is kept (on its
+  `clue_screenshot_handouts` row) until the reveal, which shows it in the
+  clue album (see "The clue album"); refunded ones are included.
   Each screenshot goes out **at most once per game** (issue #446). A clue is
   never a screenshot already in play in this round (the one used by the
   round, or either one of a HARD MODE pair, uploaded or not), and never one
