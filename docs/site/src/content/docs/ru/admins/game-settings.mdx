@@ -29,22 +29,22 @@ export const example = stages.map((s) => `${s.width}:${s.wrongGuessLimit}`).join
 - `/setstage <этап 1-5> <ширина> <попытки>` меняет один этап, например
   `/setstage 1 48 1` для ещё более сложного начала.
 
-После изменения бот отвечает обновлённой таблицей, а затем для каждого изменённого
+После изменения Nani Pix отвечает обновлённой таблицей, а затем для каждого изменённого
 этапа присылает две картинки-примера с новой шириной. Под первой — название этапа,
 ширина и число неверных попыток:
 
 <TelegramChat label="Пример: изменение первого этапа">
   <TgMessage out>/setstage 1 48 1</TgMessage>
-  <TgMessage from="nani-pix-bot" image={stage1}>STAGE_1 — 48px, разрешено 1 неверных попыток</TgMessage>
+  <TgMessage from="Nani Pix" image={stage1}>STAGE_1 — 48px, разрешено 1 неверных попыток</TgMessage>
 </TelegramChat>
 
 **Пока раунд готовится, идёт или по нему открыто голосование, менять этапы
-нельзя.** Бот откажет и сразу предложит те же кнопки, что и `/stop`. Когда раунд
+нельзя.** Nani Pix откажет и сразу предложит те же кнопки, что и `/stop`. Когда раунд
 остановлен, отправьте команду ещё раз.
 
 <TelegramChat label="Пример: изменение этапа во время раунда">
   <TgMessage out>/setstage 1 48 1</TgMessage>
-  <TgMessage from="nani-pix-bot" buttons={[['🛑 Да, остановить'], ['🔎 Остановить и раскрыть'], ['❌ Нет, продолжить']]}>
+  <TgMessage from="Nani Pix" buttons={[['🛑 Да, остановить'], ['🔎 Остановить и раскрыть'], ['❌ Нет, продолжить']]}>
     Сейчас идёт игра — сначала остановите её, чтобы изменить настройки этапов.
   </TgMessage>
 </TelegramChat>
@@ -62,7 +62,7 @@ export const example = stages.map((s) => `${s.width}:${s.wrongGuessLimit}`).join
 
 ## Частичные совпадения
 
-Если в неверной догадке есть целые слова из ответа, бот их раскрывает (см.
+Если в неверной догадке есть целые слова из ответа, Nani Pix их раскрывает (см.
 [Догадки](/nani-pix-bot/ru/players/guessing/#частично-верно)). Но только когда в
 совпавших словах набирается достаточно букв.
 
@@ -72,7 +72,7 @@ export const example = stages.map((s) => `${s.width}:${s.wrongGuessLimit}`).join
 
 <TelegramChat label="Пример: повышение порога частичных совпадений">
   <TgMessage out>/partialmatch 5</TgMessage>
-  <TgMessage from="nani-pix-bot">✅ Частичные совпадения теперь раскрываются от 5 совпавших букв (0 = выкл.).</TgMessage>
+  <TgMessage from="Nani Pix">✅ Частичные совпадения теперь раскрываются от 5 совпавших букв (0 = выкл.).</TgMessage>
 </TelegramChat>
 
 ## Награды и цены в пикселях
@@ -86,15 +86,15 @@ export const example = stages.map((s) => `${s.width}:${s.wrongGuessLimit}`).join
 
 <TelegramChat label="Пример: подсказка-фрагмент становится дешевле">
   <TgMessage out>/pixelconfig clue_tile 80</TgMessage>
-  <TgMessage from="nani-pix-bot">✅ clue_tile = 80.</TgMessage>
+  <TgMessage from="Nani Pix">✅ clue_tile = 80.</TgMessage>
 </TelegramChat>
 
 Не каждое значение подходит для каждого ключа:
 
 - **Награду** можно сделать равной 0 — так она отключается.
-- **Цена** должна быть не меньше 1. На меньшее значение бот ответит «Цены —
+- **Цена** должна быть не меньше 1. На меньшее значение Nani Pix ответит «Цены —
   минимум 1 💠.»
-- `clue_cashback_percent` — процент от 0 до 100. На значение больше 100 бот
+- `clue_cashback_percent` — процент от 0 до 100. На значение больше 100 Nani Pix
   ответит «Проценты должны быть от 0 до 100.»
 - `clue_screenshot_step` может быть 0 — тогда каждый доп. скриншот стоит одинаково.
 

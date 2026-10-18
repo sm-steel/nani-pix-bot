@@ -16,14 +16,18 @@ export default defineConfig({
   vite: { server: { fs: { allow: [repoRoot] } } },
   integrations: [
     starlight({
-      title: { en: 'nani-pix-bot guide', ru: 'Гайд по nani-pix-bot' },
+      title: { en: 'Nani Pix guide', ru: 'Гайд по Nani Pix' },
       description: 'Anime-screenshot guessing game for Telegram group chats',
+      logo: { src: './src/assets/mascot/emblem.webp', alt: 'Nani Pix' },
+      head: [
+        { tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/nani-pix-bot/apple-touch-icon.png' } },
+      ],
       defaultLocale: 'root',
       locales: {
         root: { label: 'English', lang: 'en' },
         ru: { label: 'Русский', lang: 'ru' },
       },
-      favicon: '/favicon.svg',
+      favicon: '/favicon.png',
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/sm-steel/nani-pix-bot' },
       ],
@@ -39,6 +43,7 @@ export default defineConfig({
         { label: 'Group admins', translations: { ru: 'Админам группы' }, items: [{ autogenerate: { directory: 'admins' } }] },
         { label: 'Self-hosting', translations: { ru: 'Свой сервер' }, items: [{ autogenerate: { directory: 'self-hosting' } }] },
         { label: "What's new", translations: { ru: 'Что нового' }, link: '/whats-new/' },
+        { label: 'License', translations: { ru: 'Лицензия' }, link: '/license/' },
       ],
       customCss: [
         '@fontsource-variable/inter',
