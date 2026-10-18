@@ -53,7 +53,7 @@
     "🎉 Confirmed correct! @{winner} got {title}. Your turn to start the next game!",
     "✅ The starter says it counts — @{winner} guessed {title}! Your turn next!",
     "🎉 Official ruling: @{winner} was right, it's {title}. Your turn to start the next round!",
-    "😅 Nani Pix missed it, but @{winner} got {title} right. Your turn to start next!"
+    "😅 I missed it, but @{winner} got {title} right. Your turn to start next!"
   ],
   "guess.unsolved_caption": [
     "Nobody got it this time. The answer was {title}.",
