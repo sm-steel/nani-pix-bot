@@ -587,6 +587,40 @@ or `ACTIVE`**, offering a "stop the game" button right there instead
 visual preview — both fixed example images pixelated at the new
 width(s) — so the effect can be checked without a separate step.
 
+### Nani Pix in the picture
+
+**Status: Implemented (issue #461).**
+
+Every game image the bot sends carries **Nani Pix**, the game's host, in
+the bottom-right corner: 16% of the image's width (never wider than her
+384 px source, shrunk to fit a short image, left out on a tiny one), a 2%
+margin from the edges. She is composited **last**, after pixelation, the
+season style and the starter's frame, so she always stays sharp. Her
+pose follows the moment (`services/mascot.py`):
+
+| Moment | Pose |
+|---|---|
+| Stage 1 | cast (winking, casting pixels) |
+| Stage 1 of a game the bot took by overthrow | sly (tossing a pixel crown) |
+| Stages 2–4 (HARD MODE has no middle turn) | nope (teasing) |
+| The last stage or turn | nani (shocked) |
+| Reveal video, the effect part | cast |
+| Reveal video's 2 s ending, the photo fallback, the clue album | win if someone won, oops for every other ending, nani when a HARD MODE vote opens (its outcome isn't known yet) |
+
+The pose depends only on the stage, never on what advanced it (a wrong
+guess, inactivity, `/sharpen`). `/status` re-posts the current stage's
+pose (an overthrow game's turn 1 re-posts as cast). She is also on the
+images sent in private chat: the starter's stage-1 preview and
+confirmation album, bought screenshot and tile clues (the current
+stage's pose), `/stageconfig`'s samples and cosmetic previews (frame
+previews are stage-3 images; reveal-clip previews end like a won game).
+The setup screenshot picker shows source images, not game images, and
+stays without her. The winner's badge in the reveal ending stops short of
+her corner, cutting a long name with "…" earlier.
+
+A failure to load or add her never blocks a post: the image goes out
+without her and the failure is logged at `ERROR`.
+
 ### Which algorithm colours the blocks
 
 The stage width decides *how wide* the mosaic is; a separate, orthogonal

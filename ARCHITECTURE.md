@@ -711,6 +711,12 @@ src/nani_pix_bot/
     matching.py   # normalize + rapidfuzz-match a guess against a game's
                    # cached title/synonyms — pure function, fully
                    # deterministic, no network calls
+    mascot.py     # Nani Pix in the corner of every game image (#461): the
+                   # Pose per moment (stage_pose, ending_pose), where she
+                   # goes (box: bottom-right, 16% wide), compositing her
+                   # last (compose / add_to_png / add_to_jpeg; a failure
+                   # leaves the image without her) and the still the reveal
+                   # video overlays (still_png); poses from assets/mascot/
     pixelate/     # Pillow downscale/upscale pipeline — given raw bytes,
                    # a target width and a PixelAlgorithm, no DB or
                    # PixelStage dependency; callers resolve the width via
@@ -1108,7 +1114,9 @@ assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's k
                    # backgrounds (prompts: docs/card-backgrounds.md),
                    # sample_screenshot.jpg (the season-neutral still frame
                    # and transition previews are drawn on; prompt in the
-                   # same doc) and example1/2 (/stageconfig's examples)
+                   # same doc), example1/2 (/stageconfig's examples) and
+                   # mascot/<pose>.png (Nani Pix's six poses, 384 px wide;
+                   # the full-size art lives in the repo-root assets/mascot/)
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
                    # (EN/RU page parity, every command in its command table)

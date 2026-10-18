@@ -1,8 +1,9 @@
 """Render the user's guide's pixelation-stage images (issue #359).
 
 Runs the bot's own `pixelate()` with the default stage widths and the
-default algorithm on a project-owned card background, so the guide shows
-exactly what a round looks like. Called by `docs/site`'s predev/prebuild
+default algorithm on a project-owned card background, with Nani Pix in each
+stage's pose (issue #461), so the guide shows exactly what a round looks
+like. Called by `docs/site`'s predev/prebuild
 npm scripts; the output directory is gitignored.
 
 Usage: uv run python scripts/gen_docs_stages.py
@@ -15,6 +16,8 @@ from pathlib import Path
 from PIL import Image
 
 from nani_pix_bot.models.enums import DEFAULT_ALGORITHM
+from nani_pix_bot.services import mascot
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.pixelate import pixelate
 from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
 
@@ -31,8 +34,10 @@ def generate(sample: Path, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     source = sample.read_bytes()
     table = []
+    total = len(DEFAULT_STAGE_CONFIG)
     for number, settings in enumerate(DEFAULT_STAGE_CONFIG.values(), start=1):
         png = pixelate(source, settings.target_width, DEFAULT_ALGORITHM)
+        png = mascot.add_to_png(png, mascot.stage_pose(number, total))
         with Image.open(io.BytesIO(png)) as stage:
             # Lossless: lossy WebP smears the block edges the page shows off.
             _save_webp(stage, out_dir / f"stage-{number}.webp", lossless=True)
@@ -44,7 +49,8 @@ def generate(sample: Path, out_dir: Path) -> None:
             }
         )
     with Image.open(sample) as original:
-        _save_webp(original, out_dir / "original.webp", lossless=False)
+        # The answer, as a won round reveals it: Nani cheering.
+        _save_webp(mascot.compose(original, Pose.WIN), out_dir / "original.webp", lossless=False)
     (out_dir / "stages.json").write_text(
         json.dumps(table, indent=2) + "\n", encoding="utf-8", newline="\n"
     )
