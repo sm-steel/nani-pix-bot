@@ -1,12 +1,13 @@
-/* Pixel-anime theme for the user's guide (issue #360), with colours taken
-   from the gold-sunset / violet card art. Starlight tokens:
+/* Pixel-anime theme for the user's guide (issue #360). The accent is Nani
+   Pix's (issue #461): her cyan pixels in dark mode, her hair's deep blue in
+   light mode, on the navy-violet greys. Starlight tokens:
    https://starlight.astro.build/guides/css-and-tailwind/#theming */
 :root {
   --sl-font: 'Inter Variable', system-ui, sans-serif;
   --guide-font-display: 'Cozette', var(--sl-font);
-  --sl-color-accent-low: #3a2a0c;
-  --sl-color-accent: #d99a2b;
-  --sl-color-accent-high: #fde6b0;
+  --sl-color-accent-low: #0e2547;
+  --sl-color-accent: #38c8ff;
+  --sl-color-accent-high: #c6f0ff;
   --sl-color-white: #ffffff;
   --sl-color-gray-1: #eceaf4;
   --sl-color-gray-2: #c4c0d6;
@@ -32,9 +33,9 @@
   font-display: swap;
 }
 :root[data-theme='light'] {
-  --sl-color-accent-low: #e4dcf7;
-  --sl-color-accent: #5b3fa8;
-  --sl-color-accent-high: #2d1b63;
+  --sl-color-accent-low: #dce7ff;
+  --sl-color-accent: #1f56d6;
+  --sl-color-accent-high: #0f2a73;
   --sl-color-white: #18152a;
   --sl-color-gray-1: #2a2540;
   --sl-color-gray-2: #3d3856;
@@ -73,10 +74,63 @@ h1#_top {
   text-align: center;
 }
 
+/* 404: title and tagline, then Nani Pix, then the button, in one column. */
+html:not(:has(.pixel-hero)) .hero {
+  grid-template-columns: 100%;
+}
+html:not(:has(.pixel-hero)) .hero .stack {
+  display: contents;
+}
+html:not(:has(.pixel-hero)) .hero .copy {
+  order: 1;
+}
+html:not(:has(.pixel-hero)) .hero > img {
+  order: 2;
+  width: min(80%, 26rem);
+}
+html:not(:has(.pixel-hero)) .hero .actions {
+  order: 3;
+}
+
 /* The cards sit as far above the first band's dots as below the banner:
    PixelHero's 2rem bottom padding plus the 1rem content gap. */
 .card-grid + .feature-band {
   margin-top: 3rem;
+}
+
+/* Home: Nani Pix beside the title and tagline, the pair centred on the page
+   and the text left-aligned against her; stacked on a phone. */
+html:has(.pixel-hero) .hero > .hero-html {
+  width: auto;
+  margin: 0;
+}
+html:has(.pixel-hero) .hero > .hero-html img {
+  display: block;
+  width: auto;
+  height: 14rem;
+}
+@media (min-width: 50rem) {
+  html:has(.pixel-hero) .hero {
+    grid-template-columns: auto minmax(0, 36rem);
+    justify-content: center;
+    justify-items: start;
+    align-items: center;
+    column-gap: 2rem;
+    text-align: start;
+  }
+  html:has(.pixel-hero) .hero > .hero-html {
+    order: 0;
+  }
+  html:has(.pixel-hero) .hero > .hero-html img {
+    height: 18rem;
+  }
+  html:has(.pixel-hero) .hero .copy,
+  html:has(.pixel-hero) .hero .stack {
+    align-items: flex-start;
+  }
+  html:has(.pixel-hero) .hero .tagline {
+    text-align: start;
+  }
 }
 /* The three home cards sit in one row on wide screens, not 2 + 1. */
 @media (min-width: 72rem) {
@@ -97,6 +151,12 @@ body:has(.feature-band) {
   height: auto;
   border-radius: 0.75rem;
   box-shadow: 0 0 0 4px var(--band-hue);
+}
+.feature-band .band-mascot {
+  display: block;
+  width: min(100%, 22rem);
+  height: auto;
+  margin-inline: auto;
 }
 .feature-band .band-ctas {
   display: grid;
@@ -120,4 +180,19 @@ body:has(.feature-band) {
   width: 100%;
   height: auto;
   image-rendering: pixelated;
+}
+
+/* Nani Pix art beside a page's text: floats right on wide screens, centred
+   above the text on a phone. */
+.mascot-aside {
+  display: block;
+  max-width: 45%;
+  height: auto;
+  margin: 0 auto 1rem;
+}
+@media (min-width: 50rem) {
+  .mascot-aside {
+    float: right;
+    margin: 0 0 1rem 1.5rem;
+  }
 }

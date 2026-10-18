@@ -12,7 +12,7 @@ import original from '../../../assets/generated/original.webp';
 
 ## Someone wins
 
-The first correct `/guess` wins the round. The bot posts a short video in which the
+The first correct `/guess` wins the round. Nani Pix posts a short video in which the
 pixelated picture turns into the original screenshot, names the anime, and
 congratulates the winner, whose avatar appears in a gold badge. The same post lists
 what the win paid: the winner's 💠, the round creator's bonus for a well-pitched
@@ -21,7 +21,7 @@ if anyone put one up, and the [champion points](/nani-pix-bot/players/achievemen
 the win added for the winner and the host.
 
 <TelegramChat label="Example: the post when someone wins">
-  <TgMessage from="nani-pix-bot" image={original}>
+  <TgMessage from="Nani Pix" image={original}>
     🎉 Kenji got it! It was Whisper of the Heart. Your turn to start the next game!
 
     🎲 Game #142
@@ -44,33 +44,33 @@ the win added for the winner and the host.
   </TgMessage>
 </TelegramChat>
 
-**The winner starts the next round.** After 15 minutes the bot reminds them in a
-private message. If it can't message them (they've never started a chat with the
-bot), it mentions them in the game topic instead. If it can't even name them
-(they have no @username), it posts this, so anyone can open the turn:
+**The winner starts the next round.** After 15 minutes Nani Pix reminds them in a
+private message. If she can't message them (they've never started a chat with
+her), she mentions them in the game topic instead. If she can't even name them
+(they have no @username), she posts this, so anyone can open the turn:
 
-<TelegramChat label="Example: the reminder when the bot can't reach or name the player">
-  <TgMessage from="nani-pix-bot">⏰ It's someone's turn to start a new game, but I can't reach them privately — /skip to open it up to anyone!</TgMessage>
+<TelegramChat label="Example: the reminder when Nani Pix can't reach or name the player">
+  <TgMessage from="Nani Pix">⏰ It's someone's turn to start a new game, but I can't reach them privately — /skip to open it up to anyone!</TgMessage>
 </TelegramChat>
 
 <TelegramChat label="Example: the turn reminder in a private chat">
-  <TgMessage from="nani-pix-bot">⏰ Reminder: it's your turn to start a new game! DM me a screenshot whenever you're ready, or send /newgame to pick one instead.</TgMessage>
+  <TgMessage from="Nani Pix">⏰ Reminder: it's your turn to start a new game! DM me a screenshot whenever you're ready, or send /newgame to pick one instead.</TgMessage>
 </TelegramChat>
 
-If they haven't started within 12 hours, the turn opens to everyone and the bot says
+If they haven't started within 12 hours, the turn opens to everyone and Nani Pix says
 so in the topic: "⌛ Nobody started a new game in time — it's open to anyone now!"
 
-**When the bot misses a right answer.** If someone gave a correct answer under a
-name the bot didn't recognise, the round's creator can award them the win with
+**When Nani Pix misses a right answer.** If someone gave a correct answer under a
+name she didn't recognise, the round's creator can award them the win with
 `/correct @username` in the game topic. It works only while the round is running,
-and only once somebody has guessed: it's for a guess the bot missed, not a way to
-skip to the end. The creator can't award the win to themselves or to the bot, and
-the bot has to know the player: anyone who has ever written to the bot or chatted
-in the topic is fine, otherwise they need to message the bot first.
+and only once somebody has guessed: it's for a guess she missed, not a way to
+skip to the end. The creator can't award the win to themselves or to Nani Pix, and
+she has to know the player: anyone who has ever written to her or chatted
+in the topic is fine, otherwise they need to message her first.
 
 <TelegramChat label="Example: the round's creator awarding a missed answer">
   <TgMessage out>/correct @kenji</TgMessage>
-  <TgMessage from="nani-pix-bot" image={original}>
+  <TgMessage from="Nani Pix" image={original}>
     🎉 Correct! @kenji got it — it was Whisper of the Heart. Your turn to start the next game!
 
     🎲 Game #142
@@ -110,11 +110,11 @@ A round ends **unsolved** when:
 - **two days** pass since the round went live, however many guesses were made, or
 - the group **gives up** with `/pass` (see below).
 
-If nobody guesses for 3 hours, the bot first nudges the topic. After 6 hours without
-a guess it posts the next, clearer stage by itself, so a round nobody touches still
+If nobody guesses for 3 hours, Nani Pix first nudges the topic. After 6 hours without
+a guess she posts the next, clearer stage by herself, so a round nobody touches still
 ends within 30 hours.
 
-The bot reveals the screenshot and the title with the same kind of video as a win,
+Nani Pix reveals the screenshot and the title with the same kind of video as a win,
 just without the gold badge. If the video can't be made in time, you get the plain
 screenshot instead. The [clue album](#the-clue-album) follows it. Any [bounty](/nani-pix-bot/players/pixels-and-shop/#spending-in-public)
 goes back to the players who put it up, and the reveal says so.
@@ -123,13 +123,13 @@ An unsolved round doesn't hand the turn to anyone: if the turn was open, it stay
 open.
 
 <TelegramChat label="Example: a round nobody guesses, ending at the two-day limit">
-  <TgMessage from="nani-pix-bot">👀 Still nobody's guessed! Take a look at the pinned image — /guess &lt;anime title&gt; to try, or it'll clear up further on its own before too long.</TgMessage>
-  <TgMessage from="nani-pix-bot" image={stage3} buttons={[['🛒 Clues']]}>
+  <TgMessage from="Nani Pix">👀 Still nobody's guessed! Take a look at the pinned image — /guess &lt;anime title&gt; to try, or it'll clear up further on its own before too long.</TgMessage>
+  <TgMessage from="Nani Pix" image={stage3} buttons={[['🛒 Clues']]}>
     📸 Stage 3/5 — nobody's guessed in a while, so here's a clearer look.
 
     💰 Bounty: 40 💠
   </TgMessage>
-  <TgMessage from="nani-pix-bot" image={original}>
+  <TgMessage from="Nani Pix" image={original}>
     ⏰ Nobody guessed it in time. It was Whisper of the Heart.
 
     🎲 Game #142
@@ -154,9 +154,9 @@ guess when someone has guessed.
 
 ## Stopping a round
 
-The round's creator, or any group admin, can stop a round by sending `/stop` to the
-bot in a **private message**. A round the bot started has no human creator, so only
-an admin can stop it. The bot always asks first:
+The round's creator, or any group admin, can stop a round by sending `/stop` to
+Nani Pix in a **private message**. A round she started has no human creator, so only
+an admin can stop it. She always asks first:
 
 - **🛑 Yes, stop it** ends the round quietly.
 - **🔎 Stop and reveal** ends it and shows the group what the anime was, with the
@@ -169,12 +169,12 @@ asks yes or no and cancels it.
 
 <TelegramChat label="Example: stopping a round from a private chat">
   <TgMessage out>/stop</TgMessage>
-  <TgMessage from="nani-pix-bot" buttons={[['🛑 Yes, stop it'], ['🔎 Stop and reveal'], ['❌ No, keep going']]}>Stop the current game (Whisper of the Heart)? This can't be undone — the turn will open up for anyone to start a new game.</TgMessage>
-  <TgMessage from="nani-pix-bot">Game stopped — the answer was posted to the group.</TgMessage>
+  <TgMessage from="Nani Pix" buttons={[['🛑 Yes, stop it'], ['🔎 Stop and reveal'], ['❌ No, keep going']]}>Stop the current game (Whisper of the Heart)? This can't be undone — the turn will open up for anyone to start a new game.</TgMessage>
+  <TgMessage from="Nani Pix">Game stopped — the answer was posted to the group.</TgMessage>
 </TelegramChat>
 
 <TelegramChat label="Example: what the game topic sees after Stop and reveal">
-  <TgMessage from="nani-pix-bot" image={original}>
+  <TgMessage from="Nani Pix" image={original}>
     🛑 The game was stopped. It was Whisper of the Heart.
 
     Anyone can start a new one now!
@@ -195,38 +195,38 @@ topic:
 
 - `/skip` opens the turn to everyone.
 - `/skip @username` hands it to someone specific. They get the same reminder and
-  12-hour window. As with `/correct`, the bot has to know them, and you can't hand
-  the turn to the bot.
+  12-hour window. As with `/correct`, Nani Pix has to know them, and you can't hand
+  the turn to her.
 
 `/skip` only works while no round is running, and only for the player whose turn it
-is. When the turn is already open to everyone, there's nothing to skip, and the bot
+is. When the turn is already open to everyone, there's nothing to skip, and Nani Pix
 says so.
 
 <TelegramChat label="Example: passing the turn">
   <TgMessage out>/skip @yuki</TgMessage>
-  <TgMessage from="nani-pix-bot">Turn passed to @yuki.</TgMessage>
+  <TgMessage from="Nani Pix">Turn passed to @yuki.</TgMessage>
 </TelegramChat>
 
 <TelegramChat label="Example: opening the turn to everyone">
   <TgMessage out>/skip</TgMessage>
-  <TgMessage from="nani-pix-bot">Turn opened up — anyone can start the next game!</TgMessage>
+  <TgMessage from="Nani Pix">Turn opened up — anyone can start the next game!</TgMessage>
 </TelegramChat>
 
-## When the bot starts a round itself
+## When Nani Pix starts a round herself
 
-If the group's admins have turned it on, the bot can start rounds by itself:
+If the group's admins have turned it on, Nani Pix can start rounds by herself:
 
 - **When nobody starts one for 24 hours** after the turn opened up.
 - **Occasionally right after a round ends.** There's a small chance (about 1 in 8)
-  that the bot "steals" the next turn. If you've just won, you still keep the win
+  that she "steals" the next turn. If you've just won, you still keep the win
   and everything it earned; you just don't get to host the next round. Losing your
   turn this way does come with a consolation: a hidden
   [achievement](/nani-pix-bot/players/achievements/).
 
-Rounds the bot starts are always [HARD MODE](/nani-pix-bot/players/hard-mode/).
+Rounds Nani Pix starts are always [HARD MODE](/nani-pix-bot/players/hard-mode/).
 
-<TelegramChat label="Example: the bot stealing the winner's turn (the first of its two screenshots)">
-  <TgMessage from="nani-pix-bot" image={stage1}>
+<TelegramChat label="Example: Nani Pix stealing the winner's turn (the first of the round's two screenshots)">
+  <TgMessage from="Nani Pix" image={stage1}>
     😈 Nice win, Kenji! But I'm stealing your turn for a HARD MODE round — two screenshots, no mercy.
 
     📸 Turn 1/2 — guesses: 1/1
@@ -241,7 +241,7 @@ Rounds the bot starts are always [HARD MODE](/nani-pix-bot/players/hard-mode/).
 
 ## Quiet hours
 
-Your group may have **quiet hours** set, for example overnight. During them the bot
-sends nothing on its own: no reminders, no automatic stage changes, no timeouts, no
-rounds of its own. Its timers are paused too, so quiet time doesn't count towards
+Your group may have **quiet hours** set, for example overnight. During them Nani Pix
+sends nothing on her own: no reminders, no automatic stage changes, no timeouts, no
+rounds of her own. Her timers are paused too, so quiet time doesn't count towards
 them. Everything you do still works normally, including guessing and winning.

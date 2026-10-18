@@ -8,12 +8,12 @@ import TelegramChat from '../../../components/TelegramChat.astro';
 import TgMessage from '../../../components/TgMessage.astro';
 
 Seasons reward **cosmetics**: items that change how you and your games look. Owning one
-is permanent. Send `/cosmetics` to the bot in a private chat to see what you own, preview
+is permanent. Send `/cosmetics` to Nani Pix in a private chat to see what you own, preview
 it and equip it.
 
 <TelegramChat label="Example: the /cosmetics menu">
   <TgMessage out>/cosmetics</TgMessage>
-  <TgMessage from="nani-pix-bot">
+  <TgMessage from="Nani Pix">
     🎨 Your cosmetics:
     🖼 Stage frame: 1 owned · equipped: Border
     🌸 Name flair: 1 owned · equipped: nothing
@@ -21,7 +21,7 @@ it and equip it.
   </TgMessage>
 </TelegramChat>
 
-Tap a slot to list its items (the equipped one is marked ✅), then tap an item: the bot
+Tap a slot to list its items (the equipped one is marked ✅), then tap an item: Nani Pix
 sends its preview, followed by **Equip** or **Unequip**. You can equip one item per slot.
 
 ## Slots
@@ -32,14 +32,14 @@ sends its preview, followed by **Equip** or **Unequip**. You can equip one item 
 | 🎬 Reveal transition | the reveal video of the rounds you start | a short clip |
 | 🖼 Stage frame | the border on the pixelated images of the rounds you start | an image: a sample screenshot at stage 3, as a round would post it |
 | 🌸 Name flair | an emoji after your name in the group's messages | a line of text |
-| 💬 Guess reaction | the reaction the bot puts on your winning `/guess` | a line of text |
+| 💬 Guess reaction | the reaction Nani Pix puts on your winning `/guess` | a line of text |
 | 🪪 Profile banner | the background of your [profile card](/nani-pix-bot/players/profile/) | an image |
 | 🏷 Title | shown next to your name — pick it with [`/title`](/nani-pix-bot/players/achievements/#titles) | a line of text |
 
 A few limits:
 
 - A win by a vote or by an admin's `/setwinner` has no reveal video, so it has no win effect.
-- Rounds the bot starts by itself (HARD MODE) never use the starter's transition or frame.
+- Rounds Nani Pix starts by herself (HARD MODE) never use the starter's transition or frame.
 - Flair is text only: images such as the profile card and the reveal video show your
   plain name.
 
@@ -56,4 +56,4 @@ banners, shown on a profile card here:
 Previews are drawn on demand, and on you: a name flair follows your own name, a win
 effect's badge carries your avatar and name, and a banner is shown behind your real
 profile card, so you see exactly what equipping it changes. The same goes for the Season
-Shop. If the bot can't show one right now, it says so instead — try again later.
+Shop. If Nani Pix can't show one right now, she says so instead — try again later.

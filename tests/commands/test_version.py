@@ -96,7 +96,7 @@ async def test_shows_the_running_version_and_the_current_notes(
     _bot, target, markdown, markup = _args(sent)
     assert (target.chat_id, target.thread_id) == (555, None)
     assert markdown == i18n.t("version.reply", "en", version="1.3.0", notes=CURRENT.markdown)
-    assert markdown.startswith("🤖 **nani-pix-bot** v1.3.0")
+    assert markdown.startswith("🤖 **Nani Pix** v1.3.0")
     assert _buttons(markup) == [("1/3", NOOP), (i18n.t("achievements.next_page", "en"), "ver:1")]
     line = next(r for r in log_records if r.message.startswith("sent /version"))
     assert (line.level, line.extra["version"]) == ("INFO", "1.3.0")
@@ -167,7 +167,7 @@ async def test_paging_shows_a_previous_release_under_its_own_heading(
     _bot, target, markdown, markup = _args(edited)
     assert (target.chat_id, target.message_id) == (555, 9)
     assert markdown == "## v1.2.0 · 2026-10-08\n\n### 🛠 Fixed\n- Mended."
-    assert "nani-pix-bot" not in markdown
+    assert "Nani Pix" not in markdown
     assert _buttons(markup) == [
         (i18n.t("achievements.prev", "en"), "ver:0"),
         ("2/3", NOOP),
@@ -184,7 +184,7 @@ async def test_paging_back_to_page_zero_shows_the_running_version(
 
     edited = await _edit(_tap("ver:0"), _make_context(session_factory))
 
-    assert _args(edited)[2].startswith("🤖 **nani-pix-bot** v1.3.0")
+    assert _args(edited)[2].startswith("🤖 **Nani Pix** v1.3.0")
 
 
 async def test_a_page_past_the_end_shows_the_oldest_release(

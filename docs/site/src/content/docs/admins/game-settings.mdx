@@ -28,22 +28,22 @@ allows before the next stage. The defaults are:
 - `/setstage <stage 1-5> <width> <guesses>` changes just one stage, for example
   `/setstage 1 48 1` for an even harder start.
 
-After a change, the bot replies with the updated table, then sends two example
+After a change, Nani Pix replies with the updated table, then sends two example
 pictures for each stage you changed, pixelated to the new width. The first one is
 captioned with the stage's name, width and wrong-guess limit:
 
 <TelegramChat label="Example: changing stage 1">
   <TgMessage out>/setstage 1 48 1</TgMessage>
-  <TgMessage from="nani-pix-bot" image={stage1}>STAGE_1 — 48px, 1 wrong guesses allowed</TgMessage>
+  <TgMessage from="Nani Pix" image={stage1}>STAGE_1 — 48px, 1 wrong guesses allowed</TgMessage>
 </TelegramChat>
 
 Stage settings **can't be changed while a round is being set up, played or voted
-on**. The bot refuses and offers the same buttons as `/stop` right there. Once the
+on**. Nani Pix refuses and offers the same buttons as `/stop` right there. Once the
 round is stopped, send the command again.
 
 <TelegramChat label="Example: changing a stage while a round is running">
   <TgMessage out>/setstage 1 48 1</TgMessage>
-  <TgMessage from="nani-pix-bot" buttons={[['🛑 Yes, stop it'], ['🔎 Stop and reveal'], ['❌ No, keep going']]}>
+  <TgMessage from="Nani Pix" buttons={[['🛑 Yes, stop it'], ['🔎 Stop and reveal'], ['❌ No, keep going']]}>
     A game is currently running — stop it before editing stage config.
   </TgMessage>
 </TelegramChat>
@@ -61,8 +61,8 @@ HARD MODE rounds have their own fixed rules and ignore these settings.
 
 ## Partial matches
 
-When a wrong guess shares whole words with the answer, the bot reveals those words
-(see [Guessing](/nani-pix-bot/players/guessing/#partly-right)). It only does so once
+When a wrong guess shares whole words with the answer, Nani Pix reveals those words
+(see [Guessing](/nani-pix-bot/players/guessing/#partly-right)). She only does so once
 the matched words add up to enough letters.
 
 - `/partialmatch` shows the current setting (4 letters by default).
@@ -70,7 +70,7 @@ the matched words add up to enough letters.
 
 <TelegramChat label="Example: raising the partial-match threshold">
   <TgMessage out>/partialmatch 5</TgMessage>
-  <TgMessage from="nani-pix-bot">✅ Partial matches now reveal from 5 matched letters (0 = off).</TgMessage>
+  <TgMessage from="Nani Pix">✅ Partial matches now reveal from 5 matched letters (0 = off).</TgMessage>
 </TelegramChat>
 
 ## Pixel rewards and prices
@@ -84,13 +84,13 @@ of `/sharpen`, can be changed:
 
 <TelegramChat label="Example: making the tile clue cheaper">
   <TgMessage out>/pixelconfig clue_tile 80</TgMessage>
-  <TgMessage from="nani-pix-bot">✅ clue_tile set to 80.</TgMessage>
+  <TgMessage from="Nani Pix">✅ clue_tile set to 80.</TgMessage>
 </TelegramChat>
 
 Not every value is allowed for every key:
 
 - A **reward** can be set to 0, which turns that reward off.
-- A **price** must be at least 1. The bot refuses anything lower with "Prices must
+- A **price** must be at least 1. Nani Pix refuses anything lower with "Prices must
   be at least 1 💠."
 - `clue_cashback_percent` is a percentage from 0 to 100. Anything above 100 gets
   "Percentages must be between 0 and 100."

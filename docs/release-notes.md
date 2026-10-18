@@ -49,8 +49,8 @@ them as a rich message and pages with `ver:<page>`.
 - **No bullet limit, but condense.** A big release is condensed, never cut
   to a count: one bullet per feature (many commits of one feature are one
   bullet), related changes merged into one, the most noticeable first.
-- **One sentence per bullet**, written for players, in the bot's own playful
-  voice (read `locales/en.json` / `ru.json` for it). Use the bot's symbols
+- **One sentence per bullet**, written for players, in Nani Pix's own playful
+  voice (read `locales/en.json` / `ru.json` for it). Use her symbols
   (💠 pixels, 🌟 champion points, 👑 wins, 🏆 achievement points, ❌ wrong
   guesses, ⏱ solve time) and write commands in code spans: `` `/history` ``.
 - **Admin-only** lines start with 👮.

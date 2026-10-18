@@ -1,6 +1,6 @@
 ---
 title: Updating and health checks
-description: How to roll out new versions and how the bot recovers when it gets stuck.
+description: How to roll out new versions and how Nani Pix recovers when she gets stuck.
 sidebar:
   order: 4
 ---
@@ -17,20 +17,20 @@ How you roll updates out is up to you. Any of these work:
 - a small script or your own CI/CD
 - a tool such as [Watchtower](https://containrrr.dev/watchtower/)
 
-The bot updates its database by itself on every start, so there's no migration
+Nani Pix updates her database by herself on every start, so there's no migration
 step to remember.
 
 ## Restarting during a round
 
-You can restart or update the bot at any time, even mid-round. Everything the game
+You can restart or update Nani Pix at any time, even mid-round. Everything the game
 is waiting on (stage timers, reminders, turn windows, an open vote) is kept in the
-database and picked up again on startup. Anything that fell due while the bot was
-down happens right after it starts.
+database and picked up again on startup. Anything that fell due while she was
+down happens right after she starts.
 
 ## Health checks and auto-restart
 
-The bot's container has a health check that watches for successful contact with
-Telegram, so it's marked unhealthy if the bot stops receiving updates even though
+Nani Pix's container has a health check that watches for successful contact with
+Telegram, so it's marked unhealthy if she stops receiving updates even though
 the process is still running. Docker checks every 30 seconds and marks the
 container unhealthy after three checks in a row find no contact with Telegram for
 90 seconds.

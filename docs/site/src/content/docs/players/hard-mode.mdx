@@ -1,6 +1,6 @@
 ---
 title: HARD MODE
-description: The tougher rules the bot plays by when it starts a round itself, and the group vote.
+description: The tougher rules Nani Pix plays by when she starts a round herself, and the group vote.
 sidebar:
   order: 5
 ---
@@ -9,8 +9,8 @@ import TgMessage from '../../../components/TgMessage.astro';
 import stage1 from '../../../assets/generated/stage-1.webp';
 import original from '../../../assets/generated/original.webp';
 
-Every round the **bot starts by itself** is a HARD MODE round (see
-[How a round ends](/nani-pix-bot/players/how-a-round-ends/#when-the-bot-starts-a-round-itself)).
+Every round **Nani Pix starts by herself** is a HARD MODE round (see
+[How a round ends](/nani-pix-bot/players/how-a-round-ends/#when-nani-pix-starts-a-round-herself)).
 Rounds that players start are never HARD MODE.
 
 ## The rules
@@ -32,12 +32,12 @@ Rounds that players start are never HARD MODE.
   every clue.*
 - **The shop is a link.** An album can't carry buttons, so instead of the
   🛒 Clues button, a HARD MODE post ends with a link that opens the shop in a
-  private chat with the bot.
+  private chat with Nani Pix.
 - **No `/correct` and no `/sharpen`.** Nobody hosts the round, so the vote below
   replaces `/correct`.
 
 <TelegramChat label="Example: a HARD MODE round starting (the first of its two screenshots)">
-  <TgMessage from="nani-pix-bot" image={stage1}>
+  <TgMessage from="Nani Pix" image={stage1}>
     ⏰ Nobody started a new round in a while, so here's a HARD MODE one from me — two screenshots, two turns, no mercy.
 
     📸 Turn 1/2 — guesses: 1/1
@@ -55,12 +55,12 @@ two-day limit, and the winner getting the next turn.
 
 ## The vote
 
-The bot's matching is strict, and with one guess per turn a correct answer under
+Nani Pix's matching is strict, and with one guess per turn a correct answer under
 an unusual name can slip through. So when a HARD MODE round ends without a correct
 guess, but somebody did guess, **the group votes** on whether one of the guessers
 was actually right.
 
-- The bot posts the answer (the video of one screenshot, then the
+- Nani Pix posts the answer (the video of one screenshot, then the
   [clue album](/nani-pix-bot/players/how-a-round-ends/#the-clue-album) with
   the other one and every clue screenshot bought), then a ballot with **one button per guesser**, showing
   what each of them guessed and how many votes they have so far, and a last
@@ -84,18 +84,18 @@ was actually right.
 - Otherwise the round stays unsolved.
 
 <TelegramChat label="Example: a HARD MODE vote that picks a winner">
-  <TgMessage from="nani-pix-bot" image={original}>
+  <TgMessage from="Nani Pix" image={original}>
     🗳 Nobody survived HARD MODE this time. It was Natsume's Book of Friends.
 
     🎲 Game #143
   </TgMessage>
-  <TgMessage from="nani-pix-bot" buttons={[['@yuki: nyanko sensei show — 3'], ['@mio: mushishi — 1'], ['🙅 Nobody — 0']]}>
+  <TgMessage from="Nani Pix" buttons={[['@yuki: nyanko sensei show — 3'], ['@mio: mushishi — 1'], ['🙅 Nobody — 0']]}>
     🗳 Was anyone actually right? Vote for the guess that really counts (not your own), or for 🙅 Nobody if none was. As soon as one option has the most votes, with no tie, and at least 3 of them, the vote closes; otherwise it closes in 15 min, when a winner needs at least 3 votes and no tie. Votes so far: 4.
 
     🎲 Game #143
   </TgMessage>
-  <TgMessage from="nani-pix-bot">✅ Vote counted.</TgMessage>
-  <TgMessage from="nani-pix-bot">
+  <TgMessage from="Nani Pix">✅ Vote counted.</TgMessage>
+  <TgMessage from="Nani Pix">
     🎉 The group decided: @yuki was right! It was Natsume's Book of Friends — that's a HARD MODE win (+2 to the score). Your turn to start the next game!
 
     💠 +60 for @yuki
@@ -118,7 +118,7 @@ was actually right.
 posted to the topic.
 
 <TelegramChat label="Example: a HARD MODE vote that picks nobody">
-  <TgMessage from="nani-pix-bot">
+  <TgMessage from="Nani Pix">
     🗳 The vote didn't pick anyone, so this one stays unsolved. It was Natsume's Book of Friends.
 
     💸 HARD MODE cashback: 48 💠 went back to the clue buyers.
