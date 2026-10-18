@@ -13,9 +13,10 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage, SeasonStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule
-from nani_pix_bot.services import i18n
+from nani_pix_bot.services import i18n, mascot
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.game import turns
+from nani_pix_bot.services.mascot import Pose
 
 HOST, ALICE = 1, 2
 
@@ -200,6 +201,31 @@ async def test_silent_outside_the_game_topic(session_factory) -> None:
 
     update.message.reply_text.assert_not_awaited()
     context.bot.send_photo.assert_not_awaited()
+
+
+async def test_the_repost_shows_nani_in_the_current_stages_pose(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    poses: list[Pose] = []
+
+    monkeypatch.setattr(
+        stage_cosmetics, "stage_png_with", lambda image, _w, _a, _f, style=None: image
+    )
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, pose: poses.append(pose) or png)
+    with session_scope(session_factory) as session:
+        _players(session)
+        session.add(
+            Game(
+                starter_id=HOST,
+                status=GameStatus.ACTIVE,
+                current_stage=PixelStage.STAGE_3,
+                original_image=b"img",
+            )
+        )
+
+    await _run(_update(), _context(session_factory))
+
+    assert poses == [Pose.NOPE]
 
 
 async def test_a_season_game_is_reposted_in_its_style(

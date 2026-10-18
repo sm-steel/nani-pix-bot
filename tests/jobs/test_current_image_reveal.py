@@ -10,7 +10,9 @@ from nani_pix_bot.jobs.timers import current_image
 from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models import ClueAuthorScreenshot, ClueScreenshotHandout
 from nani_pix_bot.models.enums import RevealEffect
+from nani_pix_bot.services import mascot
 from nani_pix_bot.services.clues import author_list, handouts
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.reveal import store
 
 
@@ -71,6 +73,27 @@ async def test_the_winners_overlay_reaches_render_reveal(session_factory, monkey
     assert render.await_args.args[3] == RevealWinner(9, "@w", overlay="confetti")
 
 
+@pytest.mark.parametrize(
+    ("target", "pose"),
+    [
+        (RevealTarget(3, RevealWinner(9, "@w")), Pose.WIN),
+        (RevealTarget(3, None), Pose.OOPS),
+        (RevealTarget(3, None, clear_clues=False, vote_open=True), Pose.NANI),
+    ],
+)
+async def test_the_ending_shows_nani_in_the_outcomes_pose(
+    session_factory, monkeypatch, target, pose
+) -> None:
+    render = AsyncMock(return_value=b"mp4")
+    monkeypatch.setattr(reveal, "render_reveal", render)
+    monkeypatch.setattr(reveal, "finished", MagicMock())
+    await current_image.post_reveal(
+        _context(session_factory), session_factory, target=target, photo=b"png", caption="c"
+    )
+    assert render.await_args is not None
+    assert render.await_args.kwargs["ending"] is pose
+
+
 async def test_unsolved_reveal_passes_no_winner(session_factory, monkeypatch) -> None:
     render = AsyncMock(return_value=b"mp4")
     monkeypatch.setattr(reveal, "render_reveal", render)
@@ -99,6 +122,52 @@ async def test_no_video_falls_back_to_photo(session_factory, monkeypatch) -> Non
     context.bot.send_video.assert_not_awaited()
     assert context.bot.send_photo.await_args.kwargs["photo"] == b"png"
     finished.assert_called_once_with(context.application, 3)
+
+
+def _spy_jpeg(monkeypatch) -> list[Pose]:
+    poses: list[Pose] = []
+    monkeypatch.setattr(
+        mascot, "add_to_jpeg", lambda data, pose: poses.append(pose) or data + b"+N"
+    )
+    return poses
+
+
+async def test_the_fallback_photo_shows_nani_in_the_outcomes_pose(
+    session_factory, monkeypatch
+) -> None:
+    render = AsyncMock(return_value=None)
+    monkeypatch.setattr(reveal, "render_reveal", render)
+    monkeypatch.setattr(reveal, "finished", MagicMock())
+    poses = _spy_jpeg(monkeypatch)
+    context = _context(session_factory)
+
+    await current_image.post_reveal(
+        context, session_factory, target=RevealTarget(3, None), photo=b"png", caption="cap"
+    )
+
+    assert context.bot.send_photo.await_args.kwargs["photo"] == b"png+N"
+    assert poses == [Pose.OOPS]
+    assert render.await_args is not None
+    assert render.await_args.args[2] == b"png"  # the pre-render needs the stored bytes
+
+
+async def test_the_clue_album_shows_nani_in_the_reveals_pose(session_factory, monkeypatch) -> None:
+    _video_ok(monkeypatch)
+    poses = _spy_jpeg(monkeypatch)
+    _add_clues(session_factory, 3, [b"c1", b"c2"])
+    context = _context(session_factory)
+
+    await current_image.post_reveal(
+        context,
+        session_factory,
+        target=RevealTarget(3, RevealWinner(9, "@w")),
+        photo=b"png",
+        caption="cap",
+    )
+
+    media = context.bot.send_media_group.await_args.kwargs["media"]
+    assert [item.media.input_file_content for item in media] == [b"c1+N", b"c2+N"]
+    assert poses == [Pose.WIN, Pose.WIN]
 
 
 async def test_telegram_rejecting_video_falls_back_to_photo(session_factory, monkeypatch) -> None:

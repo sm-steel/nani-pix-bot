@@ -56,6 +56,19 @@ class Overlay:
     margin: int = 20
 
 
+@dataclass(frozen=True)
+class Still:
+    """Nani Pix (issue #461) as an RGBA PNG, laid bottom-right `margin` px from the edges,
+    on top of everything else in the frame."""
+
+    png: bytes
+    margin: int
+
+    @property
+    def placement(self) -> str:
+        return f"x=main_w-overlay_w-{self.margin}:y=main_h-overlay_h-{self.margin}"
+
+
 def x264(crf: int | None = None) -> list[str]:
     """The shared encoder contract, optionally with another CRF (rate control isn't in the SPS)."""
     args = list(X264)
@@ -225,6 +238,31 @@ class Part1Options:
     vf: str | None = None  # replaces the default opening-hold `tpad` filter
     max_frames: int | None = None  # cap on the output frame count
     crf: int | None = None  # replaces the contract's default CRF
+    mascot: Still | None = None  # Nani on every frame, after the effect's own filters
+
+
+@dataclass(frozen=True)
+class _StillInput:
+    """Nani's still written next to an encode: the file, and where it goes."""
+
+    path: Path
+    placement: str
+
+
+def _still_input(tmp: str, still: Still | None) -> _StillInput | None:
+    if still is None:
+        return None
+    path = Path(tmp, "nani.png")
+    path.write_bytes(still.png)
+    return _StillInput(path, still.placement)
+
+
+def _part1_filters(vf: str, nani: _StillInput | None) -> list[str]:
+    """`-vf vf`, or with Nani: `vf` then her still overlaid on top (input 1)."""
+    if nani is None:
+        return ["-vf", vf]
+    graph = f"[0:v]{vf}[fx];[fx][1:v]overlay={nani.placement}[o]"
+    return ["-i", str(nani.path), "-filter_complex", graph, "-map", "[o]"]
 
 
 def encode_part1(
@@ -235,11 +273,12 @@ def encode_part1(
     opts = options or Part1Options()
     with _tmp() as tmp:
         out = Path(tmp, "part1.mp4")
+        vf = opts.vf or f"tpad=start_mode=clone:start_duration={HOLD_START}"
         cmd = [
             *_FFMPEG,
             "-f", "rawvideo", "-pix_fmt", opts.pix_fmt, "-s", f"{w}x{h}",
             "-r", str(opts.input_fps), "-i", "pipe:0",
-            "-vf", opts.vf or f"tpad=start_mode=clone:start_duration={HOLD_START}",
+            *_part1_filters(vf, _still_input(tmp, opts.mascot)),
             *(["-frames:v", str(opts.max_frames)] if opts.max_frames else []),
             *x264(opts.crf), str(out),
         ]  # fmt: skip
@@ -291,22 +330,46 @@ def to_ts(part1_mp4: bytes) -> tuple[bytes, float]:
         return dst.read_bytes(), next_pts - _part2_base()
 
 
+@dataclass(frozen=True)
+class EndingLayers:
+    """What goes over the ending's clear image: the winner celebration (None without a
+    winner) and Nani Pix's still (issue #461), which is laid last, over everything."""
+
+    overlay: Overlay | None = None
+    mascot: Still | None = None
+
+
+@dataclass(frozen=True)
+class _EndingInputs:
+    """The ending's file inputs besides the clear frame: confetti and Nani's still."""
+
+    confetti: Path
+    nani: _StillInput | None
+
+
 def _ending_cmd(
-    clear_yuv: Path, size: tuple[int, int], offset: float, overlay: Overlay | None, confetti: Path
-) -> list[str]:
+    clear_yuv: Path, size: tuple[int, int], offset: float, overlay: Overlay | None,
+    inputs: _EndingInputs,
+) -> list[str]:  # fmt: skip
     w, h = size
     cmd = [*_FFMPEG, "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", f"{w}x{h}",
            "-framerate", str(FPS), "-i", str(clear_yuv)]  # fmt: skip
     loop = f"[0:v]loop=loop={ENDING_FRAMES - 1}:size=1:start=0,setpts=N/{FPS}/TB"
     if overlay is None:
-        graph = f"{loop}[o]"
+        graph = f"{loop}[e]"
     else:
         bw, bh = overlay.badge_size
         at = f"x={overlay.margin}:y=main_h-overlay_h-{overlay.margin}"
         graph = (f"{loop}[bg];[bg][1:v]overlay={at}:eof_action=pass:format=yuv420[c];"
-                 f"[c][2:v]overlay={at}:eof_action=repeat:format=yuv420[o]")  # fmt: skip
-        cmd += ["-i", str(confetti), "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{bw}x{bh}",
-                "-framerate", str(FPS), "-i", "pipe:0"]  # fmt: skip
+                 f"[c][2:v]overlay={at}:eof_action=repeat:format=yuv420[e]")  # fmt: skip
+        cmd += ["-i", str(inputs.confetti), "-f", "rawvideo", "-pix_fmt", "rgba",
+                "-s", f"{bw}x{bh}", "-framerate", str(FPS), "-i", "pipe:0"]  # fmt: skip
+    if inputs.nani is None:
+        graph += ";[e]null[o]"
+    else:  # Nani last, over the confetti and the badge; she's the next input
+        index = cmd.count("-i")
+        graph += f";[e][{index}:v]overlay={inputs.nani.placement}:format=yuv420[o]"
+        cmd += ["-i", str(inputs.nani.path)]
     return [*cmd, "-filter_complex", graph, "-map", "[o]", "-frames:v", str(ENDING_FRAMES), *X264,
             "-output_ts_offset", f"{offset:.6f}", "-f", "mpegts", "pipe:1"]  # fmt: skip
 
@@ -316,12 +379,14 @@ def ending_and_join(
     join_offset: float,
     clear_yuv: bytes,
     size: tuple[int, int],
-    overlay: Overlay | None,
+    layers: EndingLayers,
 ) -> bytes:
-    """Encode the ending and join it to part 1 -> final MP4 (`-c copy`, faststart).
+    """Encode the ending and join it to part 1 -> final MP4 (`-c copy`, faststart), with
+    `layers` over the clear image.
 
     The encoder and the muxer run concurrently (one startup hidden behind the other): part 1's
     TS is written into the muxer first, then the encoder's TS is relayed after it."""
+    overlay = layers.overlay
     with _tmp() as tmp, tempfile.TemporaryFile() as enc_err, tempfile.TemporaryFile() as mux_err:
         clear, confetti, out = (
             Path(tmp, "clear.yuv"),
@@ -331,11 +396,12 @@ def ending_and_join(
         clear.write_bytes(clear_yuv)
         if overlay is not None:
             confetti.write_bytes(overlay.confetti_mov)
+        inputs = _EndingInputs(confetti, _still_input(tmp, layers.mascot))
         procs: list[subprocess.Popen[bytes]] = []
         dog = _Watchdog(_ENDING_TIMEOUT, procs)
         try:
             cmds = (
-                _ending_cmd(clear, size, join_offset, overlay, confetti),
+                _ending_cmd(clear, size, join_offset, overlay, inputs),
                 [*_MUX, str(out)],
             )
             _run_ending(cmds, part1_ts, overlay.badge_rgba if overlay else None, procs,

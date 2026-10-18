@@ -21,11 +21,12 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import GameStatus, PixelAlgorithm
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services import i18n, mascot, players, settings
 from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.game import turns
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -51,6 +52,7 @@ class _Repost:
     algorithm: PixelAlgorithm
     frame: str | None
     style: str | None
+    pose: Pose  # the current stage's (an overthrow game's turn 1 shows the usual cast)
 
 
 def caption(live: LiveStatus, lang: str) -> str:
@@ -111,6 +113,7 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
         game.pixel_algorithm,
         stage_cosmetics.frame_for(session, game),
         stage_cosmetics.season_style(session, game),
+        mascot.stage_pose(progress.number, progress.total),
     )
 
 
@@ -133,8 +136,11 @@ def _idle_text(session: Session, game: Game | None, lang: str) -> str:
 
 def _render(repost: _Repost) -> list[bytes]:
     return [
-        stage_cosmetics.stage_png_with(
-            image, repost.width, repost.algorithm, repost.frame, repost.style
+        mascot.add_to_png(
+            stage_cosmetics.stage_png_with(
+                image, repost.width, repost.algorithm, repost.frame, repost.style
+            ),
+            repost.pose,
         )
         for image in repost.images
     ]

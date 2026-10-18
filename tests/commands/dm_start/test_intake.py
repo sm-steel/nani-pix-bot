@@ -9,7 +9,7 @@ from telegram.constants import ChatMemberStatus
 from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.dm_start import intake
+from nani_pix_bot.commands.dm_start import _shared, intake
 from nani_pix_bot.commands.dm_start.keyboards import (
     ANILIST_METHOD_CALLBACK_DATA,
     PREVIEW_CONFIRM_CALLBACK_DATA,
@@ -22,9 +22,10 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n
+from nani_pix_bot.services import i18n, mascot
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.settings import stage_config
 
@@ -229,12 +230,32 @@ async def test_photo_handler_shows_the_first_stage_before_the_method_selection(
 
     with session_factory() as session:
         first_stage = stage_config.get_stage_config(session, game_service.STAGE_ORDER[0])
-    expected = pixelate_service.pixelate(original, first_stage.target_width, DEFAULT_ALGORITHM)
+    expected = mascot.add_to_png(
+        pixelate_service.pixelate(original, first_stage.target_width, DEFAULT_ALGORITHM),
+        Pose.CAST,
+    )
     photo_call = update.message.reply_photo.await_args
     assert photo_call is not None
     assert photo_call.kwargs["photo"] == expected
     assert photo_call.kwargs["caption"] == i18n.t("dm_start.first_stage_preview", "en")
     assert [name for name, _, _ in calls.mock_calls] == ["reply_photo", "reply_text"]
+
+
+def test_the_preview_album_shows_nani_in_each_stages_pose(monkeypatch) -> None:
+    poses: list[Pose] = []
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, pose: poses.append(pose) or png)
+    album = _shared._PreviewAlbum(
+        starter_id=1,
+        image=_real_png(),
+        widths=[64, 80, 128, 192, 512],
+        caption="c",
+        algorithm=DEFAULT_ALGORITHM,
+        numbers_matter=None,
+    )
+
+    _shared._render_preview(album)
+
+    assert poses == [Pose.CAST, Pose.NOPE, Pose.NOPE, Pose.NOPE, Pose.NANI]
 
 
 async def test_photo_handler_still_offers_the_methods_when_the_image_cannot_be_pixelated(
@@ -481,7 +502,10 @@ async def test_photo_handler_replaces_the_image_while_picking_the_method(
         game_id = fetched.id
         first_stage = stage_config.get_stage_config(session, game_service.STAGE_ORDER[0])
     # The new photo's stage-1 preview, then the method menu again.
-    expected = pixelate_service.pixelate(new_photo, first_stage.target_width, DEFAULT_ALGORITHM)
+    expected = mascot.add_to_png(
+        pixelate_service.pixelate(new_photo, first_stage.target_width, DEFAULT_ALGORITHM),
+        Pose.CAST,
+    )
     photo_call = update.message.reply_photo.await_args
     assert photo_call is not None
     assert photo_call.kwargs["photo"] == expected

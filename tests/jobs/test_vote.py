@@ -322,7 +322,7 @@ async def test_the_vote_opening_posts_the_reveal_pair_without_a_winner(
     post_reveal_pair.assert_awaited_once()
     assert post_reveal_pair.await_args is not None
     kwargs = post_reveal_pair.await_args.kwargs
-    assert kwargs["target"] == RevealTarget(game_id, None, clear_clues=False)
+    assert kwargs["target"] == RevealTarget(game_id, None, clear_clues=False, vote_open=True)
     assert kwargs["photos"] == (b"a", b"b")
     assert "Frieren" in kwargs["caption"]
 

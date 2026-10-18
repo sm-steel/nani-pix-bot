@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from PIL import Image
 
 from nani_pix_bot.models.enums import PixelAlgorithm, RevealEffect
+from nani_pix_bot.services import mascot
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.pixelate import pixelate_image
 from nani_pix_bot.services.reveal import celebration, encode, overlays
 from nani_pix_bot.services.reveal.effects import EFFECTS
@@ -153,7 +155,9 @@ def pregenerate(
     with the default overlay and `win_overlays` (those equipped) already drawn."""
     started = time.perf_counter()
     original, stages = prep(image, algorithm, widths)
-    part1_ts, join_offset = encode.to_ts(EFFECTS[effect](original, stages))
+    part1_ts, join_offset = encode.to_ts(
+        EFFECTS[effect](original, stages, _still(Pose.CAST, original.size))
+    )
     static = _new_static(original)
     _confetti(static)  # winner-independent: built now, so a win doesn't pay for it
     _draw_ahead(static, win_overlays)
@@ -162,25 +166,34 @@ def pregenerate(
     return Pregen(part1_ts, join_offset, render_ms)
 
 
-def _overlay(static: _Static, badge: Badge) -> encode.Overlay:
+def _still(pose: Pose, size: tuple[int, int]) -> encode.Still:
+    """Nani Pix in `pose`, sized for a frame of `size` (issue #461)."""
+    return encode.Still(*mascot.still_png(pose, size))
+
+
+def _overlay(static: _Static, badge: Badge, ending: Pose) -> encode.Overlay:
+    """The winner's badge, kept short of Nani's corner however long the name."""
     height = celebration.badge_height(static.size)
+    reserved = static.size[0] - mascot.box(static.size, ending)[0]
     rgba, badge_size = celebration.badge_frames(
         celebration.make_badge(
             badge.avatar,
             badge.handle,
             height,
-            celebration.badge_max_width(static.size[0], encode.Overlay.margin),
+            celebration.badge_max_width(static.size[0], encode.Overlay.margin, reserved),
         )
     )
     return encode.Overlay(_overlay_clip(static, badge.overlay), rgba, badge_size)
 
 
-def finish(pregen: Pregen, clear: bytes, badge: Badge | None) -> bytes:
-    """The final MP4: part 1 plus the ending (with the celebration when there's a `badge`)."""
+def finish(pregen: Pregen, clear: bytes, badge: Badge | None, ending: Pose) -> bytes:
+    """The final MP4: part 1 plus the ending (with the celebration when there's a `badge`),
+    Nani in the `ending` pose on top of it."""
     static = _static_for(clear)
-    overlay = None if badge is None else _overlay(static, badge)
+    overlay = None if badge is None else _overlay(static, badge, ending)
+    layers = encode.EndingLayers(overlay, _still(ending, static.size))
     return encode.ending_and_join(
-        pregen.part1_ts, pregen.join_offset, static.clear_yuv, static.size, overlay
+        pregen.part1_ts, pregen.join_offset, static.clear_yuv, static.size, layers
     )
 
 
@@ -191,14 +204,17 @@ def preview_clip(
     effect: RevealEffect,
     badge: Badge | None,
 ) -> bytes:
-    """A whole reveal MP4 in one go, for a cosmetic's preview (seasons spec §3). Unlike
-    `pregenerate`, it leaves the static cache alone: that entry belongs to the game in
-    progress, whose win must not pay to rebuild it."""
+    """A whole reveal MP4 in one go, for a cosmetic's preview (seasons spec §3), ending like
+    a won game. Unlike `pregenerate`, it leaves the static cache alone: that entry belongs to
+    the game in progress, whose win must not pay to rebuild it."""
     original, stages = prep(image, algorithm, widths)
-    part1_ts, join_offset = encode.to_ts(EFFECTS[effect](original, stages))
+    part1_ts, join_offset = encode.to_ts(
+        EFFECTS[effect](original, stages, _still(Pose.CAST, original.size))
+    )
     static = _new_static(original)
-    overlay = None if badge is None else _overlay(static, badge)
-    return encode.ending_and_join(part1_ts, join_offset, static.clear_yuv, static.size, overlay)
+    overlay = None if badge is None else _overlay(static, badge, Pose.WIN)
+    layers = encode.EndingLayers(overlay, _still(Pose.WIN, static.size))
+    return encode.ending_and_join(part1_ts, join_offset, static.clear_yuv, static.size, layers)
 
 
 def warm_up() -> None:

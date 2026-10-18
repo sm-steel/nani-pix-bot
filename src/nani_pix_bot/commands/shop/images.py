@@ -19,10 +19,12 @@ from nani_pix_bot.commands.dm_start._shared import (
 from nani_pix_bot.models.enums import ClueKind, ClueScreenshotMode, PixelAlgorithm, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services import mascot, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
-from nani_pix_bot.services import players, settings
 from nani_pix_bot.services.clues import author_list, handouts, shop
 from nani_pix_bot.services.clues.shop import Offer, Refusal, ShopRefusedError
+from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.pixelate import fingerprint, render
 from nani_pix_bot.services.settings import stage_config
 
@@ -52,7 +54,8 @@ class ScreenshotPlan:
     the round already showed, each with what it was, for the same check
     on frames behind another URL or uploaded. `author` are the author's
     list's unsold entries (none in Random mode), tried before any random pick; `mode` says
-    whether a random pick may follow (issue #450)."""
+    whether a random pick may follow (issue #450). `pose` is Nani's on the current stage,
+    so the clue looks like the round's own picture (issue #461)."""
 
     lang: str
     excluded: frozenset[str]
@@ -62,6 +65,7 @@ class ScreenshotPlan:
     seen: tuple[tuple[int, str], ...] = ()
     mode: ClueScreenshotMode = ClueScreenshotMode.RANDOM
     author: tuple[AuthorCandidate, ...] = ()
+    pose: Pose = Pose.CAST
 
 
 class ScreenshotFetchError(Exception):
@@ -139,6 +143,7 @@ def screenshot_plan(session: Session, user: User, game_id: int) -> ScreenshotPla
         tuple(seen),
         mode=mode,
         author=_author_candidates(session, game, mode),
+        pose=stage_cosmetics.stage_pose(session, game),
     )
 
 
@@ -235,7 +240,7 @@ def _render(plan: ScreenshotPlan, url: str, data: bytes, print_: int) -> Fetched
             "extra screenshot: could not pixelate {screenshot_url}", screenshot_url=url
         )
         raise ScreenshotFetchError("pixelation failed") from None
-    return FetchedScreenshot(url, pixelated, print_, data)
+    return FetchedScreenshot(url, mascot.add_to_png(pixelated, plan.pose), print_, data)
 
 
 def _author_pick(plan: ScreenshotPlan) -> FetchedScreenshot | None:
@@ -309,4 +314,5 @@ def render_tile_clue(session: Session, game: Game, tile: int) -> bytes:
     pixelated = pixelate_service.pixelate(
         original, stage_width(session, game), game.pixel_algorithm
     )
-    return render.reveal_tiles(original, pixelated, [tile], shop.TILE_GRID)
+    revealed = render.reveal_tiles(original, pixelated, [tile], shop.TILE_GRID)
+    return mascot.add_to_png(revealed, stage_cosmetics.stage_pose(session, game))

@@ -2,6 +2,7 @@ import pickle
 
 import pytest
 
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.reveal import overlays, pipeline
 
 SIZE = (320, 180)
@@ -30,7 +31,7 @@ def test_badge_defaults_to_the_confetti_overlay_and_stays_picklable() -> None:
 def test_the_default_overlay_uses_the_default_clip(monkeypatch, caplog) -> None:
     _renderers(monkeypatch)
     with caplog.at_level("WARNING"):
-        overlay = pipeline._overlay(_static(), pipeline.Badge(None, "@w"))
+        overlay = pipeline._overlay(_static(), pipeline.Badge(None, "@w"), Pose.WIN)
     assert overlay.confetti_mov == b"default-clip"
     assert caplog.records == []
 
@@ -45,9 +46,12 @@ def test_a_registered_overlay_is_used_and_cached_per_overlay(monkeypatch) -> Non
     _renderers(monkeypatch, stars=stars)
     static = _static()
     badge = pipeline.Badge(None, "@w", overlay="stars")
-    assert pipeline._overlay(static, badge).confetti_mov == b"stars-clip"
-    assert pipeline._overlay(static, badge).confetti_mov == b"stars-clip"
-    assert pipeline._overlay(static, pipeline.Badge(None, "@w")).confetti_mov == b"default-clip"
+    assert pipeline._overlay(static, badge, Pose.WIN).confetti_mov == b"stars-clip"
+    assert pipeline._overlay(static, badge, Pose.WIN).confetti_mov == b"stars-clip"
+    assert (
+        pipeline._overlay(static, pipeline.Badge(None, "@w"), Pose.WIN).confetti_mov
+        == b"default-clip"
+    )
     assert len(calls) == 1
 
 
@@ -57,7 +61,7 @@ def test_unknown_or_failing_overlay_falls_back_to_confetti(monkeypatch) -> None:
 
     _renderers(monkeypatch, broken=broken)
     for key in ("nope", "broken"):
-        overlay = pipeline._overlay(_static(), pipeline.Badge(None, "@w", overlay=key))
+        overlay = pipeline._overlay(_static(), pipeline.Badge(None, "@w", overlay=key), Pose.WIN)
         assert overlay.confetti_mov == b"default-clip"
 
 
@@ -69,8 +73,8 @@ def test_the_fallback_warns_via_stdlib_logging(monkeypatch, caplog) -> None:
 
     _renderers(monkeypatch, broken=broken)
     with caplog.at_level("WARNING"):
-        pipeline._overlay(_static(), pipeline.Badge(None, "@w", overlay="nope"))
-        pipeline._overlay(_static(), pipeline.Badge(None, "@w", overlay="broken"))
+        pipeline._overlay(_static(), pipeline.Badge(None, "@w", overlay="nope"), Pose.WIN)
+        pipeline._overlay(_static(), pipeline.Badge(None, "@w", overlay="broken"), Pose.WIN)
     messages = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
     assert len(messages) == 2
     assert "nope" in messages[0]
@@ -93,7 +97,7 @@ def test_drawn_ahead_overlays_are_not_drawn_again_at_the_win(monkeypatch) -> Non
     assert calls == ["stars", "moons"]
     for key in ("stars", "moons"):
         badge = pipeline.Badge(None, "@w", overlay=key)
-        assert pipeline._overlay(static, badge).confetti_mov == f"{key}-clip".encode()
+        assert pipeline._overlay(static, badge, Pose.WIN).confetti_mov == f"{key}-clip".encode()
     assert calls == ["stars", "moons"]  # nothing drawn at the win
 
 
@@ -110,7 +114,7 @@ def test_a_failing_overlay_drawn_ahead_is_skipped_with_a_warning(monkeypatch, ca
     assert "broken" in warnings[0]
     # the win still gets the default, as it would have without drawing ahead
     badge = pipeline.Badge(None, "@w", overlay="broken")
-    assert pipeline._overlay(static, badge).confetti_mov == b"default-clip"
+    assert pipeline._overlay(static, badge, Pose.WIN).confetti_mov == b"default-clip"
 
 
 @pytest.mark.ffmpeg
@@ -118,5 +122,5 @@ def test_the_confetti_overlay_is_unchanged() -> None:
     from nani_pix_bot.services.reveal import celebration
 
     static = _static()
-    clip = pipeline._overlay(static, pipeline.Badge(None, "@w")).confetti_mov
+    clip = pipeline._overlay(static, pipeline.Badge(None, "@w"), Pose.WIN).confetti_mov
     assert clip == celebration.confetti_clip(celebration.badge_height(SIZE))[0]

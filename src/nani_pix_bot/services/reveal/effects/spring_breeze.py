@@ -147,7 +147,9 @@ def frames(original: Image.Image, stages: list[Image.Image]) -> Iterator[bytes]:
     yield clear.tobytes()  # end exactly on the clear frame
 
 
-def render_part1(original: Image.Image, stages: list[Image.Image]) -> bytes:
+def render_part1(
+    original: Image.Image, stages: list[Image.Image], mascot: encode.Still | None = None
+) -> bytes:
     """Part 1 MP4: the pixelated front blowing away as sakura petals, ending on the clear image."""
-    options = encode.Part1Options(crf=CRF)
+    options = encode.Part1Options(crf=CRF, mascot=mascot)
     return encode.encode_part1(frames(original, stages), original.size, options)

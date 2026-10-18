@@ -2,6 +2,7 @@
 (issue #450): the author's list first, random frames only in Random or
 Both mode."""
 
+from dataclasses import replace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -9,8 +10,11 @@ from sqlalchemy import select
 
 from nani_pix_bot.commands.shop import images
 from nani_pix_bot.models import ClueAuthorScreenshot, ClueScreenshotHandout
-from nani_pix_bot.models.enums import ClueScreenshotMode, PixelAlgorithm, Provider
+from nani_pix_bot.models.enums import ClueScreenshotMode, PixelAlgorithm, PixelStage, Provider
+from nani_pix_bot.models.game import Game
+from nani_pix_bot.services import mascot
 from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.pixelate import fingerprint
 from nani_pix_bot.services.search import shikimori
 from tests.commands.shop.helpers import (
@@ -166,6 +170,45 @@ async def test_author_mode_used_up_refuses_without_charge(session_factory, provi
     assert len(purchases(session_factory)) == 1
     provider.assert_not_awaited()
     assert late.answer.await_args.kwargs.get("show_alert") is True
+
+
+def test_the_plan_carries_the_current_stages_pose(session_factory) -> None:
+    game_id, _ = _seed_author_game(
+        session_factory, ClueScreenshotMode.RANDOM, shikimori_id=1, current_stage=PixelStage.STAGE_3
+    )
+    set_currency(session_factory, 2, RICH)
+
+    with session_factory() as session:
+        plan = images.screenshot_plan(session, MagicMock(id=2, username="user2"), game_id)
+
+    assert plan.pose is Pose.NOPE
+
+
+async def test_a_bought_screenshot_shows_nani_in_the_plans_pose(
+    session_factory, provider, monkeypatch
+) -> None:
+    poses: list[Pose] = []
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, pose: poses.append(pose) or png + b"+N")
+    plan = replace(_plan(ClueScreenshotMode.RANDOM, ()), pose=Pose.NANI)
+
+    fetched = await images.fetch_extra_screenshot(_context(session_factory), plan)
+
+    assert fetched is not None
+    assert fetched.pixelated == b"px+N"
+    assert poses == [Pose.NANI]
+
+
+def test_a_tile_clue_shows_nani_in_the_current_stages_pose(session_factory, monkeypatch) -> None:
+    poses: list[Pose] = []
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, pose: poses.append(pose) or png)
+    game_id = seed_game(
+        session_factory, original_image=frame_bytes(3), current_stage=PixelStage.STAGE_5
+    )
+
+    with session_factory() as session:
+        images.render_tile_clue(session, session.get(Game, game_id), 0)
+
+    assert poses == [Pose.NANI]
 
 
 def test_random_mode_plan_has_no_author_candidates(session_factory) -> None:

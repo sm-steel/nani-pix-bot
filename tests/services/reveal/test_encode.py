@@ -54,7 +54,7 @@ def test_encode_part1_adds_the_opening_hold() -> None:
 def test_part1_and_ending_join_without_reencode() -> None:
     mp4 = encode.encode_part1(_frames(10), SIZE)
     ts, offset = encode.to_ts(mp4)
-    final = encode.ending_and_join(ts, offset, _clear_yuv(), SIZE, overlay=None)
+    final = encode.ending_and_join(ts, offset, _clear_yuv(), SIZE, encode.EndingLayers())
     assert decode_clean(final)
     assert probe_frames(final) == probe_frames(mp4) + encode.ENDING_FRAMES
 
@@ -62,7 +62,7 @@ def test_part1_and_ending_join_without_reencode() -> None:
 def test_ending_with_overlay_joins_cleanly() -> None:
     mp4 = encode.encode_part1(_frames(10), SIZE)
     ts, offset = encode.to_ts(mp4)
-    final = encode.ending_and_join(ts, offset, _clear_yuv(), SIZE, overlay=_overlay())
+    final = encode.ending_and_join(ts, offset, _clear_yuv(), SIZE, encode.EndingLayers(_overlay()))
     assert decode_clean(final)
     assert probe_frames(final) == probe_frames(mp4) + encode.ENDING_FRAMES
 
@@ -79,7 +79,7 @@ def test_ending_failure_raises_ffmpeg_error_and_leaks_nothing() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", ResourceWarning)
         with pytest.raises(encode.FfmpegError):
-            encode.ending_and_join(ts, offset, _clear_yuv(), SIZE, overlay=junk)
+            encode.ending_and_join(ts, offset, _clear_yuv(), SIZE, encode.EndingLayers(junk))
         gc.collect()  # a leaked pipe would warn when collected
 
 
@@ -90,7 +90,7 @@ def test_missing_ffmpeg_raises_ffmpeg_error(monkeypatch: pytest.MonkeyPatch) -> 
     with pytest.raises(encode.FfmpegError):
         encode.to_ts(b"x")
     with pytest.raises(encode.FfmpegError):
-        encode.ending_and_join(b"", 0.0, _clear_yuv(), SIZE, overlay=None)
+        encode.ending_and_join(b"", 0.0, _clear_yuv(), SIZE, encode.EndingLayers())
 
 
 def test_hung_ending_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -98,7 +98,7 @@ def test_hung_ending_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
     ts, offset = encode.to_ts(mp4)
     monkeypatch.setattr(encode, "_ENDING_TIMEOUT", 0.001)
     with pytest.raises(encode.FfmpegError, match="timed out"):
-        encode.ending_and_join(ts, offset, _clear_yuv(), SIZE, overlay=None)
+        encode.ending_and_join(ts, offset, _clear_yuv(), SIZE, encode.EndingLayers())
 
 
 def test_part1_timeout_kills_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:

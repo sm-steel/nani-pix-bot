@@ -12,6 +12,8 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
+from nani_pix_bot.services import mascot
+from nani_pix_bot.services.mascot import Pose
 from tests.conftest import LogLine
 
 
@@ -222,6 +224,24 @@ async def test_setstageconfig_command_applies_and_shows_preview(session_factory)
 
     # One media-group album per stage (5 stages changed).
     assert context.bot.send_media_group.await_count == 5
+
+
+async def test_the_stage_samples_show_nani_in_each_stages_pose(
+    session_factory, monkeypatch
+) -> None:
+    poses: list[Pose] = []
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, pose: poses.append(pose) or png)
+    context = _make_context(
+        session_factory, admin_ids={1}, args=["64:1", "80:1", "128:2", "192:3", "512:3"]
+    )
+
+    await stageconfig_module.setstageconfig_command(
+        cast(Update, _make_update(user_id=1)), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    per_stage = len(stageconfig_module._EXAMPLE_IMAGES)
+    expected = [Pose.CAST, Pose.NOPE, Pose.NOPE, Pose.NOPE, Pose.NANI]
+    assert poses == [pose for pose in expected for _ in range(per_stage)]
 
 
 async def test_setstage_command_rejects_out_of_range_stage_number(session_factory) -> None:

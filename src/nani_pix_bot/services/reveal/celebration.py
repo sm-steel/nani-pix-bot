@@ -125,10 +125,11 @@ def _handle_strip(text: str, h: int, tw: int, font_px: int) -> Image.Image:
     return strip.resize((strip.width // SS, strip.height // SS), Image.Resampling.LANCZOS)
 
 
-def badge_max_width(frame_width: int, margin: int) -> int:
+def badge_max_width(frame_width: int, margin: int, reserved_right: int = 0) -> int:
     """The widest badge whose pop-in overshoot (`_SMAX`) still fits `margin` px from both
-    sides of a frame `frame_width` px wide."""
-    return int((frame_width - 2 * margin) / _SMAX)
+    sides of a frame `frame_width` px wide, minus `reserved_right` px on the right (Nani Pix's
+    corner, issue #461)."""
+    return int((frame_width - reserved_right - 2 * margin) / _SMAX)
 
 
 def _fit_label(label: str, font: ImageFont.FreeTypeFont, room: int) -> str:

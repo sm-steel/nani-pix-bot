@@ -21,6 +21,8 @@ FRAME = "demo_1/host_frame.border"
 WIN = "demo_1/win_effect.confetti"
 FLAIR = "demo_1/name_flair.blossom"
 IRIS = "demo_1/host_transition.iris"
+FRAME_KEY = FRAME + previews.WITH_NANI  # the cache key of a preview that shows Nani
+IRIS_KEY = IRIS + previews.WITH_NANI
 
 
 @pytest.fixture(autouse=True)
@@ -82,13 +84,13 @@ async def test_a_still_is_rendered_sent_and_remembered(session_factory) -> None:
 
     assert isinstance(context.bot.send_photo.await_args.kwargs["photo"], bytes)
     with session_factory() as session:
-        row = previews.cached(session, FRAME, "EN")
+        row = previews.cached(session, FRAME_KEY, "EN")
         assert row is not None
         assert (row.kind, row.file_id) == (PreviewKind.PHOTO, "photo-id")
 
 
 async def test_a_cached_file_id_is_reused_without_rendering(session_factory, monkeypatch) -> None:
-    _remember(session_factory, FRAME, PreviewKind.PHOTO, "cached-id")
+    _remember(session_factory, FRAME_KEY, PreviewKind.PHOTO, "cached-id")
 
     def boom(*_args):
         raise AssertionError("must not re-render a cached preview")
@@ -130,7 +132,7 @@ async def test_a_video_renders_in_the_worker(session_factory, monkeypatch) -> No
     assert call.args[1] is pipeline.preview_clip
     assert context.bot.send_video.await_args.kwargs["video"] == b"mp4"
     with session_factory() as session:
-        row = previews.cached(session, IRIS, "EN")
+        row = previews.cached(session, IRIS_KEY, "EN")
         assert row is not None
         assert (row.kind, row.file_id) == (PreviewKind.VIDEO, "video-id")
 
@@ -177,7 +179,7 @@ async def test_a_transition_whose_look_is_gone_falls_back_to_text(
 async def test_a_rejected_cached_file_id_is_dropped_and_the_preview_re_rendered(
     session_factory, log_records: list[LogLine]
 ) -> None:
-    _remember(session_factory, FRAME, PreviewKind.PHOTO, "stale-id")
+    _remember(session_factory, FRAME_KEY, PreviewKind.PHOTO, "stale-id")
     context = _context(session_factory)
     fresh = context.bot.send_photo.return_value
     context.bot.send_photo = AsyncMock(side_effect=[BadRequest("wrong file identifier"), fresh])
@@ -187,14 +189,14 @@ async def test_a_rejected_cached_file_id_is_dropped_and_the_preview_re_rendered(
     assert stale_call.kwargs["photo"] == "stale-id"
     assert isinstance(fresh_call.kwargs["photo"], bytes)
     with session_factory() as session:
-        row = previews.cached(session, FRAME, "EN")
+        row = previews.cached(session, FRAME_KEY, "EN")
         assert row is not None
         assert row.file_id == "photo-id"
     assert any(r.level == "WARNING" and r.extra.get("item_id") == FRAME for r in log_records)
 
 
 async def test_a_cached_preview_telegram_rejects_is_rendered_again(session_factory) -> None:
-    _remember(session_factory, FRAME, PreviewKind.PHOTO, "stale")
+    _remember(session_factory, FRAME_KEY, PreviewKind.PHOTO, "stale")
     context = _context(session_factory)
     context.bot.send_photo = AsyncMock(
         side_effect=[BadRequest("wrong file"), MagicMock(photo=[MagicMock(file_id="fresh")])]
@@ -202,7 +204,7 @@ async def test_a_cached_preview_telegram_rejects_is_rendered_again(session_facto
     await _send(context, FRAME)
 
     with session_factory() as session:
-        row = previews.cached(session, FRAME, "EN")
+        row = previews.cached(session, FRAME_KEY, "EN")
         assert row is not None
         assert row.file_id == "fresh"
 
@@ -217,8 +219,8 @@ async def test_each_language_gets_its_own_cached_preview(session_factory) -> Non
         bytes,
     ]
     with session_factory() as session:
-        assert previews.cached(session, FRAME, "EN") is not None
-        assert previews.cached(session, FRAME, "RU") is not None
+        assert previews.cached(session, FRAME_KEY, "EN") is not None
+        assert previews.cached(session, FRAME_KEY, "RU") is not None
 
 
 async def test_a_telegram_error_is_logged_not_raised(
@@ -341,8 +343,8 @@ async def test_a_win_effect_is_kept_per_viewer(session_factory, worker, avatar) 
 
     assert worker.await_count == 2
     with session_factory() as session:
-        assert previews.cached(session, f"{WIN}@7", "EN") is not None
-        assert previews.cached(session, f"{WIN}@8", "EN") is not None
+        assert previews.cached(session, f"{WIN}@7{previews.WITH_NANI}", "EN") is not None
+        assert previews.cached(session, f"{WIN}@8{previews.WITH_NANI}", "EN") is not None
         assert previews.cached(session, WIN, "EN") is None
 
 
@@ -350,7 +352,7 @@ async def test_a_frame_needs_no_avatar_and_is_shared(session_factory, avatar) ->
     await _send(_context(session_factory), FRAME, viewer=7)
     avatar.assert_not_awaited()
     with session_factory() as session:
-        assert previews.cached(session, FRAME, "EN") is not None
+        assert previews.cached(session, FRAME_KEY, "EN") is not None
 
 
 async def test_a_banner_is_drawn_on_the_viewers_card_every_time(

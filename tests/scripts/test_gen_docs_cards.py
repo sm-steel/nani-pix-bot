@@ -14,7 +14,7 @@ from nani_pix_bot.models.enums import (
     RevealEffect,
 )
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.services import i18n
+from nani_pix_bot.services import i18n, mascot
 from nani_pix_bot.services.achievements.rewards import POINTS
 from nani_pix_bot.services.cards import (
     load_background,
@@ -29,6 +29,7 @@ from nani_pix_bot.services.cards import (
 )
 from nani_pix_bot.services.cosmetics import looks, previews, stage
 from nani_pix_bot.services.economy.config import DEFAULT_AMOUNTS, EconomyKey
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
 from scripts import gen_docs_cards
 
@@ -184,8 +185,11 @@ def test_frame_stills_are_a_real_stage_3_sakura_image() -> None:
     for item in _sakura_items():
         if item.slot is not CosmeticSlot.HOST_FRAME:
             continue
-        expected = stage.stage_png_with(
-            key_visual, width, DEFAULT_ALGORITHM, item.look, style="watercolor"
+        expected = mascot.add_to_png(
+            stage.stage_png_with(
+                key_visual, width, DEFAULT_ALGORITHM, item.look, style="watercolor"
+            ),
+            Pose.NOPE,
         )
         assert stills[f"frame-{_slug(item)}.webp"] == gen_docs_cards.webp(expected)
     assert all(len(data) <= MAX_SAKURA_IMAGE_BYTES for data in stills.values())

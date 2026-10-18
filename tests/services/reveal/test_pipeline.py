@@ -6,6 +6,7 @@ import pytest
 from PIL import Image
 
 from nani_pix_bot.models.enums import PixelAlgorithm, RevealEffect
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.reveal import celebration, overlays, pipeline
 from tests.services.reveal.ffprobe_helpers import decode_clean, probe_frames
 
@@ -44,15 +45,15 @@ def test_pregenerate_then_finish_without_badge(effect) -> None:
     png = _png()
     pregen = pipeline.pregenerate(png, PixelAlgorithm.MEDIAN, WIDTHS, effect)
     assert pregen.part1_ts[:1] == b"\x47"  # MPEG-TS sync byte
-    assert decode_clean(pipeline.finish(pregen, png, None))
+    assert decode_clean(pipeline.finish(pregen, png, None, Pose.OOPS))
 
 
 @pytest.mark.ffmpeg
 def test_finish_with_badge_adds_the_ending() -> None:
     png = _png()
     pregen = pipeline.pregenerate(png, PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS)
-    plain = pipeline.finish(pregen, png, None)
-    badged = pipeline.finish(pregen, png, pipeline.Badge(avatar=None, handle="@winner"))
+    plain = pipeline.finish(pregen, png, None, Pose.OOPS)
+    badged = pipeline.finish(pregen, png, pipeline.Badge(avatar=None, handle="@winner"), Pose.WIN)
     assert decode_clean(badged)
     assert probe_frames(badged) == probe_frames(plain)
     assert badged != plain
@@ -63,9 +64,10 @@ def test_finish_works_from_a_cold_or_replaced_cache() -> None:
     png = _png()
     pregen = pipeline.pregenerate(png, PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS)
     pipeline._static = None
-    assert decode_clean(pipeline.finish(pregen, png, pipeline.Badge(None, "@w")))
+    assert decode_clean(pipeline.finish(pregen, png, pipeline.Badge(None, "@w"), Pose.WIN))
     pipeline.pregenerate(_png((160, 90)), PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS)
-    assert decode_clean(pipeline.finish(pregen, png, None))  # other image cached: rebuilt
+    # other image cached: rebuilt
+    assert decode_clean(pipeline.finish(pregen, png, None, Pose.OOPS))
 
 
 @pytest.mark.ffmpeg
@@ -80,7 +82,7 @@ def test_pregenerate_builds_the_confetti_so_finish_does_not(monkeypatch) -> None
         raise AssertionError("confetti rebuilt at win time")
 
     monkeypatch.setattr(overlays, "WIN_OVERLAYS", {"confetti": boom})
-    assert decode_clean(pipeline.finish(pregen, png, pipeline.Badge(None, "@w")))
+    assert decode_clean(pipeline.finish(pregen, png, pipeline.Badge(None, "@w"), Pose.WIN))
 
 
 @pytest.mark.ffmpeg
@@ -98,7 +100,7 @@ def test_pregenerate_draws_the_equipped_overlays_so_the_win_does_not(monkeypatch
 
     monkeypatch.setattr(overlays, "WIN_OVERLAYS", {"confetti": boom, "petal_drift": boom})
     badge = pipeline.Badge(None, "@w", overlay="petal_drift")
-    assert decode_clean(pipeline.finish(pregen, png, badge))
+    assert decode_clean(pipeline.finish(pregen, png, badge, Pose.WIN))
 
 
 @pytest.mark.ffmpeg

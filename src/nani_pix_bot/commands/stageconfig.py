@@ -22,7 +22,7 @@ from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import DEFAULT_ALGORITHM, PixelStage
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services import i18n, mascot, settings
 from nani_pix_bot.services.pixelate import pixelate
 from nani_pix_bot.services.settings import stage_config
 
@@ -215,6 +215,9 @@ async def _send_preview(
     thread_id = message.message_thread_id
     for stage in sorted(changes, key=lambda s: s.name):
         width, limit = changes[stage]
+        pose = mascot.stage_pose(
+            game_service.STAGE_ORDER.index(stage) + 1, len(game_service.STAGE_ORDER)
+        )
         media = []
         for index, image_path in enumerate(_EXAMPLE_IMAGES):
             if not image_path.exists():
@@ -222,7 +225,9 @@ async def _send_preview(
                     "stageconfig preview: missing example image {path}", path=str(image_path)
                 )
                 continue
-            pixelated = pixelate(image_path.read_bytes(), width, DEFAULT_ALGORITHM)
+            pixelated = mascot.add_to_png(
+                pixelate(image_path.read_bytes(), width, DEFAULT_ALGORITHM), pose
+            )
             caption = (
                 i18n.t(
                     "stageconfig.preview_caption", lang, stage=stage.name, width=width, limit=limit

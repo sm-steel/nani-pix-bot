@@ -35,7 +35,7 @@ from nani_pix_bot.models.enums import (
 )
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import SeasonRun
-from nani_pix_bot.services import i18n
+from nani_pix_bot.services import i18n, mascot
 from nani_pix_bot.services.achievements import catalogue, names
 from nani_pix_bot.services.achievements.definitions import threshold
 from nani_pix_bot.services.achievements.rewards import POINTS
@@ -239,12 +239,20 @@ def cosmetic_stem(resolved: registry.ResolvedItem) -> str:
 
 def frame_stills() -> dict[str, bytes]:
     """Each Sakura frame on the key visual as a real Sakura game posts stage 3: pixelated,
-    painted in the season's style, then framed (`stage_png_with`). No text: one set."""
+    painted in the season's style, framed, then Nani in stage 3's pose (`stage_png_with`).
+    No text: one set."""
     key_visual = _key_visual()
     return {
         f"frame-{cosmetic_stem(resolved)}.webp": webp(
-            stage.stage_png_with(
-                key_visual, FRAME_STAGE_WIDTH, DEFAULT_ALGORITHM, resolved.item.look, run().style
+            mascot.add_to_png(
+                stage.stage_png_with(
+                    key_visual,
+                    FRAME_STAGE_WIDTH,
+                    DEFAULT_ALGORITHM,
+                    resolved.item.look,
+                    run().style,
+                ),
+                mascot.stage_pose(3, 5),
             )
         )
         for resolved in _resolved(CosmeticSlot.HOST_FRAME)

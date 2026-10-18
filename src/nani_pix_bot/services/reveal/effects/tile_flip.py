@@ -251,12 +251,14 @@ def render_yuv(front: Image.Image, original: Image.Image) -> Iterator[_Frame]:
         yield _emit(cores, sizes)
 
 
-def render_part1(original: Image.Image, stages: list[Image.Image]) -> bytes:
+def render_part1(
+    original: Image.Image, stages: list[Image.Image], mascot: encode.Still | None = None
+) -> bytes:
     """Part 1 MP4: front stage -> diagonal wave of card flips -> the clear image, ending on it."""
 
     def planes() -> Iterator[bytes]:
         for frame in render_yuv(stages[0], original):
             yield from frame
 
-    options = encode.Part1Options(pix_fmt="yuv420p", crf=CRF)
+    options = encode.Part1Options(pix_fmt="yuv420p", crf=CRF, mascot=mascot)
     return encode.encode_part1(planes(), original.size, options)

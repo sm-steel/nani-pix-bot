@@ -19,9 +19,10 @@ from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import Gate, GateTag
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services import i18n, mascot, settings
 from nani_pix_bot.services.game import autostart as autostart_service
 from nani_pix_bot.services.game.autostart import AnimePick, GatheredPick, ScreenshotPick
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.quiet_hours import QuietHours
 from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.search import tags as anime_tags
@@ -521,6 +522,42 @@ async def test_run_bot_autostart_creates_a_hard_mode_game_and_posts_both_images(
         assert game.shown_screenshot_urls == ["https://x/a.jpg", "https://x/b.jpg"]
         assert game.original_image is None
         assert game.hard_mode_clue_discount == 20
+
+
+@pytest.mark.parametrize(
+    ("trigger", "pose"),
+    [
+        (autostart_timers.AutostartTrigger.IDLE, Pose.CAST),
+        (autostart_timers.AutostartTrigger.OVERTHROW, Pose.SLY),
+    ],
+)
+async def test_a_bot_started_game_opens_with_nani_casting_or_sly_after_an_overthrow(
+    session_factory, monkeypatch: pytest.MonkeyPatch, trigger, pose
+) -> None:
+    """Both screenshots of turn 1 get the same pose: sly only when the game
+    was taken by overthrow, the usual cast for an idle auto-start."""
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=1))
+        session.add(TurnState(id=1, next_starter_id=None))
+        session.commit()
+    context = _make_context(session_factory)
+    monkeypatch.setattr(
+        "nani_pix_bot.services.pixelate.pixelate", lambda image_bytes, _w, _a: image_bytes
+    )
+
+    async def fake_gather_pick(search_client, tmdb_client, tenrai_client, gate=None):
+        return _fake_pick()
+
+    monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
+    poses: list[Pose] = []
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, p: poses.append(p) or png)
+
+    claim = autostart_timers._AutostartClaim(trigger=trigger, dethroned_winner_name=None)
+    await autostart_timers.run_bot_autostart(
+        cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
+    )
+
+    assert poses == [pose, pose]
 
 
 async def test_run_bot_autostart_reserves_the_reveal_slot_and_starts_the_pre_render_first(

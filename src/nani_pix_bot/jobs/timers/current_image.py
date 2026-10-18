@@ -4,6 +4,7 @@ announcement is confirmed sent" tail end every terminal (WON/UNSOLVED)
 outcome needs — see MECHANICS.md's "Pixelation stages" and "Cleanup"
 notes."""
 
+import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
@@ -24,10 +25,11 @@ from nani_pix_bot.jobs.reveal import RevealWinner
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services import i18n, mascot, settings
 from nani_pix_bot.services.clues import author_list, handouts
 from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.game import reveal_extras
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.reveal import store as reveal_store
 
 
@@ -254,19 +256,29 @@ class RevealTarget:
     screenshot). `clear_clues` False keeps the game's clue screenshot bytes after a
     timed-out video (the HARD MODE vote opening: they go when it closes). `clues` are the
     clue screenshots the caller already holds (/stop deletes the game, and
-    its handouts with it, before the reveal); None reads them from the DB."""
+    its handouts with it, before the reveal); None reads them from the DB.
+    `vote_open`: posted as a HARD MODE winner vote opens, before anyone knows
+    whether it will crown a winner."""
 
     game_id: int
     winner: RevealWinner | None
     clear_clues: bool = True
     leading_extras: tuple[bytes, ...] = ()
     clues: tuple[bytes, ...] | None = None
+    vote_open: bool = False
+
+    @property
+    def pose(self) -> Pose:
+        """Nani Pix's pose on this reveal's ending and photos (issue #461)."""
+        return mascot.ending_pose(won=self.winner is not None, vote_open=self.vote_open)
 
 
 async def _render(
     context: ContextTypes.DEFAULT_TYPE, target: RevealTarget, clear: bytes
 ) -> bytes | None:
-    return await reveal.render_reveal(context.application, target.game_id, clear, target.winner)
+    return await reveal.render_reveal(
+        context.application, target.game_id, clear, target.winner, ending=target.pose
+    )
 
 
 async def _send_video(
@@ -344,7 +356,9 @@ async def post_reveal(
         except TimedOut:
             timed_out = True
     if sent is None and not timed_out:
-        sent = await post_current_image(context, session_factory, photo=photo, caption=caption)
+        # Nani on a copy: `photo` itself stays the stored bytes the pre-render was made from.
+        with_nani = await asyncio.to_thread(mascot.add_to_jpeg, photo, target.pose)
+        sent = await post_current_image(context, session_factory, photo=with_nani, caption=caption)
     if sent is not None:
         free_reveal_slot(context, target.game_id)
     elif not timed_out:
@@ -375,12 +389,18 @@ async def _post_clue_album(
             if target.clues is not None
             else handouts.revealed_images(session, target.game_id)
         )
-    extras_sent = await _post_extras(context, [*target.leading_extras, *clues], lang)
+    images = await asyncio.to_thread(_with_nani, [*target.leading_extras, *clues], target.pose)
+    extras_sent = await _post_extras(context, images, lang)
     if timed_out and extras_sent and target.clear_clues:
         with session_scope(session_factory) as session:
             cleared = handouts.clear_images(session, target.game_id)
             author_list.clear_images(session, target.game_id)
         logger.info("cleared {count} clue image(s) after the reveal", count=cleared)
+
+
+def _with_nani(images: list[bytes], pose: Pose) -> list[bytes]:
+    """The clue album's photos with Nani in the reveal's pose; CPU-bound, run in a thread."""
+    return [mascot.add_to_jpeg(image, pose) for image in images]
 
 
 async def _post_extras(
