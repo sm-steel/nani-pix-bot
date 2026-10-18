@@ -77,6 +77,20 @@ only), checked live via `commands/helpers/membership.py::is_group_admin`
 — the same Telegram `get_chat_member` call `is_group_member` already
 makes for the DM game-setup gate.
 
+## Nani Pix: name and voice
+
+- In player-facing text (bot messages, the user's guide, README), the bot
+  is **Nani Pix**, a girl: "she/her". Never "the bot", "it/itself" or
+  "nani-pix-bot".
+- Russian: feminine forms ("Nani Pix прислала"). "Nani Pix" doesn't
+  decline, so rephrase instead of writing "бота/боту". The mascot is a
+  "маскот", never a "талисман".
+- Exceptions: technical names (repo, package, image, URLs, commands, `.env`
+  keys), and "bot" meaning the Telegram bot account (BotFather, the token,
+  adding the account to a group).
+- New art of her: attach `assets/mascot/main_reference.png` and
+  `reference_sheet.png` to the generator. Code and art are MIT.
+
 ## Tooling
 
 Python 3.11+, managed with `uv`. Don't use pip/venv/poetry directly, and

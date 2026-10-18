@@ -1,90 +1,69 @@
-# nani-pix-bot
+<p align="center">
+  <img src="docs/readme-banner.webp" alt="Nani Pix sitting on a glowing cube, turning a row of pictures into pixels">
+</p>
 
-![nani-pix-bot](docs/social-preview.png)
+<h1 align="center">Nani Pix</h1>
 
-![Checks](https://github.com/sm-steel/nani-pix-bot/actions/workflows/checks.yml/badge.svg)
-![Tests](https://github.com/sm-steel/nani-pix-bot/actions/workflows/tests.yml/badge.svg)
+<p align="center">
+  <b>Guess the anime from a pixelated screenshot: a Telegram game for your group chat.</b>
+</p>
 
-Telegram bot for an anime-screenshot guessing game, played in one topic of a
-group chat. Someone DMs the bot a screenshot — or sends `/newgame` and picks
-a real screenshot from Shikimori/Tenrai/TMDB instead — and identifies the
-anime (see `MECHANICS.md` for exactly how); the bot posts it heavily
-pixelated into the group's game topic, and it gets progressively clearer
-as wrong `/guess` attempts accumulate — each of the five stages has its
-own admin-configurable wrong-guess limit (1/1/2/3/3 by default) — until
-someone's right or it's revealed unsolved.
+<p align="center">
+  <a href="https://github.com/sm-steel/nani-pix-bot/actions/workflows/checks.yml"><img src="https://github.com/sm-steel/nani-pix-bot/actions/workflows/checks.yml/badge.svg" alt="Checks"></a>
+  <a href="https://github.com/sm-steel/nani-pix-bot/actions/workflows/tests.yml"><img src="https://github.com/sm-steel/nani-pix-bot/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
+  <a href="https://github.com/sm-steel/nani-pix-bot/releases"><img src="https://img.shields.io/github/v/release/sm-steel/nani-pix-bot" alt="Release"></a>
+  <br>
+  📖 <a href="https://sm-steel.github.io/nani-pix-bot/">Guide</a> ·
+  🎮 <a href="https://sm-steel.github.io/nani-pix-bot/players/how-to-play/">How to play</a> ·
+  🐳 <a href="https://sm-steel.github.io/nani-pix-bot/self-hosting/">Self-hosting</a>
+</p>
 
-Players also earn a small 💠 currency for guessing and winning: `/balance`
-shows yours, and admins tune the amounts in a DM with `/pixelconfig` (see
-`MECHANICS.md`'s "Pixels" section). Spend it with `/shop` (or the 🛒 under
-each round image) on private clues: a letter, the title's shape, an extra
-screenshot or an unpixelated tile (see "Clue shop" there). Players can also
-put 💠 into a round's bounty with `/bounty`, give some to another player with
-`/tip`, or pay to advance the image a stage with `/sharpen` (see "Public
-spends" there).
+## How to play
 
-📖 **[User's guide](https://sm-steel.github.io/nani-pix-bot/)**: how to play,
-admin commands and self-hosting, in English and Russian.
+Someone picks a screenshot (their own, or one Nani Pix finds on Shikimori,
+Tenrai or TMDB) and tells her which anime it is. She posts it heavily
+pixelated in your group's game topic, and everyone races to `/guess` the
+title. Each wrong guess makes the picture a little sharper, over five
+stages, until someone gets it or she reveals the answer.
 
-See `MECHANICS.md` for the full rules and `ARCHITECTURE.md` for the system
-design.
+## Features
 
-## Stack
-
-- Python 3.11+, managed with [uv](https://docs.astral.sh/uv/)
-- [python-telegram-bot](https://docs.python-telegram-bot.org/) (async, long-polling)
-- SQLAlchemy + Alembic against MariaDB
-- Pillow (pixelation), rapidfuzz (guess matching), httpx (AniList/Shikimori
-  GraphQL, Tenrai/TMDB/MyAnimeList REST), cryptography (Fernet — encrypts
-  linked players' MyAnimeList tokens at rest)
-- Linting/formatting: `ruff`. Type checking: `ty`. Complexity/duplication/secrets: `qlty`.
-
-## Dev setup
-
-```sh
-uv sync                  # install deps + create .venv
-cp .env.example .env     # fill in BOT_TOKEN, DATABASE_URL, etc.
-uv run pytest            # run tests
-uv run ruff check .      # lint
-uv run ruff format .     # format
-uv run ty check          # type check
-```
-
-The animated end-of-game reveal video is rendered with `ffmpeg`, so running
-from source needs `ffmpeg` and `ffprobe` on your `PATH`. `mise.toml` pins
-[BtbN's static ffmpeg 7.1.1 build](https://github.com/BtbN/FFmpeg-Builds)
-(GPL, with libx264) and `mise.lock` records each platform's download URL and
-sha256. Install it with [mise](https://mise.jdx.dev/): run `mise install`
-once (locked mode, set in `mise.toml`, fails on anything that doesn't match
-the lockfile), then run commands through it (`mise exec -- uv run pytest`)
-or let mise's shell activation put it on `PATH`. CI and the Docker image
-install the same locked build, so all three run the identical binary
-(`ffmpeg -version` reports `n7.1.1-57-g1b48158a23`). Without ffmpeg the bot still works:
-every reveal falls back to the plain photo, and the tests marked `ffmpeg`
-skip.
+- 🎯 **Forgiving guesses**: case, punctuation, season numbers and small typos don't matter, and alternative titles count
+- 🎬 **Animated reveal**: the picture sharpens into a short video that ends with the winner's badge
+- 💠 **Currency and clue shop**: earn pixels for playing, spend them on a letter, the title's shape or an extra screenshot
+- 🔥 **HARD MODE**: games Nani Pix starts herself show two screenshots at once
+- 🏆 **Achievements and champions**: titles to unlock, weekly, monthly and yearly winners
+- 📊 **Leaderboards, history and profiles** for every player
+- 🌐 **English and Russian**
+- …and many more, [see the guide](https://sm-steel.github.io/nani-pix-bot/)
 
 ## Self-hosting
 
-Running your own copy (Telegram setup, `.env`, Docker Compose, updates and
-optional MyAnimeList linking) is covered in the
-[user's guide](https://sm-steel.github.io/nani-pix-bot/self-hosting/).
+Nani Pix runs as a Docker Compose stack. The
+[self-hosting guide](https://sm-steel.github.io/nani-pix-bot/self-hosting/)
+walks you through every step, from creating your Telegram bot to updating
+her.
 
-## Continuous Integration
+## Development
 
-Two GitHub Actions workflows run on every push/PR, and both must pass
-before a PR can merge into `master` — **Checks**
-(`.github/workflows/checks.yml`: `ruff`, `ty`, and `qlty smells`, via the
-same `.pre-commit-config.yaml` the local pre-commit hook uses) and **Tests**
-(`.github/workflows/tests.yml`: `pytest`). A third workflow, **Release**
-(`.github/workflows/release.yml`), only runs when started by hand on
-`master` — this repo's only long-lived branch (see `CLAUDE.md`'s
-"Branching & workflow" section), so merged PRs accumulate until then: it
-cuts a semantic-release version from everything since the last tag and,
-when a release actually happens, builds and pushes a versioned image to
-`ghcr.io/sm-steel/nani-pix-bot`. **Docs** (`.github/workflows/docs.yml`)
-builds the user's guide (`docs/site/`) on every PR that touches it, and is
-published to GitHub Pages, together with the MyAnimeList callback page, by
-each release. There is no workflow that deploys
-the bot itself —
-see the guide's [Updating](https://sm-steel.github.io/nani-pix-bot/self-hosting/updating/)
-page for how to roll a release out to your own instance. See `CLAUDE.md` for details.
+You need [uv](https://docs.astral.sh/uv/), [mise](https://mise.jdx.dev/) and
+Docker.
+
+```sh
+git clone https://github.com/sm-steel/nani-pix-bot && cd nani-pix-bot
+mise install                # pinned ffmpeg and Node
+uv sync
+uv run pre-commit install
+uv run pytest
+```
+
+To run your own Nani Pix, create a test bot with
+[@BotFather](https://t.me/BotFather), then `cp .env.example .env`, fill it in
+and run `docker compose up --build`. The game rules are in
+[MECHANICS.md](MECHANICS.md), the code's layout in
+[ARCHITECTURE.md](ARCHITECTURE.md), and the conventions in
+[CLAUDE.md](CLAUDE.md).
+
+## License
+
+[MIT](LICENSE), the Nani Pix artwork included.

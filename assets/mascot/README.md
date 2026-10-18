@@ -1,6 +1,6 @@
 # Nani Pix — character files
 
-Nani Pix is the bot's mascot: a blue-haired anime pixel mage whose spell
+Nani Pix is the game's host and mascot: a blue-haired anime pixel mage whose spell
 turns the world into pixels. These are her official character files, kept
 for making new art of her.
 
@@ -13,9 +13,9 @@ for making new art of her.
 | `poses/nani.webp` | Shocked "nani?!". The last stage, and a HARD MODE vote. |
 | `poses/win.webp` | Cheering. A won round's reveal. |
 | `poses/oops.webp` | Sheepish. An unsolved round's reveal. |
-| `poses/sly.webp` | Scheming, tossing a pixel crown. The first stage of a game the bot took by overthrow. |
+| `poses/sly.webp` | Scheming, tossing a pixel crown. The first stage of a game she took by overthrow. |
 
-The poses are full-size originals (lossless WebP). The bot itself uses small
+The poses are full-size originals (lossless WebP). In the game she uses small
 copies in `src/nani_pix_bot/assets/mascot/`.
 
 ## Making new art
@@ -31,4 +31,4 @@ short wand tipped with a blue diamond crystal.
 
 ## License
 
-CC BY-NC 4.0, see [LICENSE](LICENSE). The bot's code is MIT.
+MIT, like the code: see [LICENSE](../../LICENSE).
