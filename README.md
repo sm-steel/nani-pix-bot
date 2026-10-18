@@ -23,8 +23,8 @@
 Someone picks a screenshot (their own, or one Nani Pix finds on Shikimori,
 Tenrai or TMDB) and tells her which anime it is. She posts it heavily
 pixelated in your group's game topic, and everyone races to `/guess` the
-title. Each wrong guess makes the picture a little sharper, over five
-stages, until someone gets it or she reveals the answer.
+title. The picture gets sharper as wrong guesses pile up, over five stages,
+until someone gets it or she reveals the answer.
 
 ## Features
 
