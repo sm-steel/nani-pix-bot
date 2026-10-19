@@ -27,9 +27,10 @@ from nani_pix_bot.jobs import timers as timeout_module
 from nani_pix_bot.models.enums import ClueScreenshotMode, PixelAlgorithm, Provider, SetupStep
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services import i18n, mascot, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.cosmetics import flair
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.settings import stage_config
 
 # "The provider is unreachable" in all the shapes it actually arrives in.
@@ -535,7 +536,9 @@ async def _send_first_stage_preview(
     not expected in practice) or a failed send is logged and skipped,
     and the method selection is sent regardless."""
     try:
-        pixelated = pixelate_service.pixelate(image_bytes, preview.width, preview.algorithm)
+        pixelated = mascot.add_to_png(
+            pixelate_service.pixelate(image_bytes, preview.width, preview.algorithm), Pose.CAST
+        )
     except OSError:
         logger.opt(exception=True).warning(
             "couldn't pixelate the uploaded screenshot for the stage-1 preview — skipping it",
@@ -631,10 +634,15 @@ def _pending_question(game: Game, lang: str) -> _SetupQuestion | None:
 
 
 def _render_preview(album: _PreviewAlbum) -> list[InputMediaPhoto]:
-    """Every stage, blockiest to clearest; CPU-bound, so run it in a thread."""
+    """Every stage, blockiest to clearest, with Nani in each stage's pose (what
+    the group will see); CPU-bound, so run it in a thread."""
+    total = len(album.widths)
     return [
         InputMediaPhoto(
-            media=pixelate_service.pixelate(album.image, width, album.algorithm),
+            media=mascot.add_to_png(
+                pixelate_service.pixelate(album.image, width, album.algorithm),
+                mascot.stage_pose(index + 1, total),
+            ),
             caption=album.caption if index == 0 else None,
         )
         for index, width in enumerate(album.widths)

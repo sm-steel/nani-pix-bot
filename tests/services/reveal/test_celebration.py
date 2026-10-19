@@ -3,6 +3,8 @@ import io
 import pytest
 from PIL import Image
 
+from nani_pix_bot.services import mascot
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.reveal import celebration, encode
 
 from .ffprobe_helpers import decode_clean, probe_stream
@@ -33,6 +35,18 @@ def test_badge_frames_are_24_rgba_frames() -> None:
     badge = celebration.make_badge(None, "@abc", 60)
     raw, size = celebration.badge_frames(badge)
     assert len(raw) == 24 * size[0] * size[1] * 4
+
+
+@pytest.mark.parametrize("frame_w", [320, 640, 1280])
+def test_a_long_name_stops_short_of_nani(frame_w) -> None:
+    """The badge pops in from the bottom-left with an overshoot; at its widest it still
+    ends a margin before Nani's box in the bottom-right (issue #461)."""
+    size = (frame_w, frame_w * 9 // 16)
+    margin = encode.Overlay.margin
+    nani_x = mascot.box(size, Pose.WIN)[0]
+    max_width = celebration.badge_max_width(frame_w, margin, reserved_right=size[0] - nani_x)
+    badge = celebration.make_badge(None, "@" + "w" * 200, celebration.badge_height(size), max_width)
+    assert margin + badge.width * celebration._SMAX <= nani_x - margin
 
 
 def test_badge_height_scales_with_the_frame() -> None:

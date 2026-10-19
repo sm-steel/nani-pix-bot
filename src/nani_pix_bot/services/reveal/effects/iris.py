@@ -236,10 +236,12 @@ def _frames(frames: IrisFrames) -> Iterator[bytes]:
     yield frames.clear_frame()
 
 
-def render_part1(original: Image.Image, stages: list[Image.Image]) -> bytes:
+def render_part1(
+    original: Image.Image, stages: list[Image.Image], mascot: encode.Still | None = None
+) -> bytes:
     """Part 1 MP4: front stage -> peephole pops open on the focus -> pause -> burst to the clear
     image, ending on it."""
     frames = _frames(IrisFrames(original, stages[0], focus_point(original)))
     return encode.encode_part1(
-        frames, original.size, encode.Part1Options(pix_fmt="yuv420p", crf=CRF)
+        frames, original.size, encode.Part1Options(pix_fmt="yuv420p", crf=CRF, mascot=mascot)
     )

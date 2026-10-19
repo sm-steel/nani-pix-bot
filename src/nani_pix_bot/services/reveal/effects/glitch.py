@@ -159,7 +159,9 @@ def frames(original: Image.Image, stages: list[Image.Image]) -> Iterator[bytes]:
     yield bases[-1].gbrp()  # first fully-clear frame: part 1 ends here
 
 
-def render_part1(original: Image.Image, stages: list[Image.Image]) -> bytes:
+def render_part1(
+    original: Image.Image, stages: list[Image.Image], mascot: encode.Still | None = None
+) -> bytes:
     """Part 1 MP4: glitching stages stepping to the clear image, ending on the clear frame."""
     k = encode.FPS // GLITCH_FPS
     # 0.7 s at 15 fps rounds up to 11 input frames; with the clean first frame itself that is an
@@ -173,5 +175,6 @@ def render_part1(original: Image.Image, stages: list[Image.Image]) -> bytes:
         # every input frame becomes k output frames; cap so the clear frame appears exactly once
         max_frames=k * (hold_in + n_in) - (k - 1),
         crf=CRF,
+        mascot=mascot,
     )
     return encode.encode_part1(frames(original, stages), original.size, options)

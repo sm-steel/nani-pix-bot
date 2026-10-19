@@ -10,8 +10,10 @@ from nani_pix_bot.models.cosmetics import ITEM_ID_LENGTH, ItemPreview
 from nani_pix_bot.models.enums import CosmeticSlot, PixelAlgorithm, PreviewKind, RevealEffect
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import Item
+from nani_pix_bot.services import mascot
 from nani_pix_bot.services.cards import CARD_SIZE, ProfileCard
 from nani_pix_bot.services.cosmetics import looks, previews, stage
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.reveal import pipeline
 from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
 
@@ -110,17 +112,18 @@ def test_frame_previews_as_a_framed_sample_png() -> None:
 
 
 def test_a_frame_previews_on_a_stage_like_a_real_game_posts() -> None:
-    """Pixelated to stage 3, in the item's season style, then framed: what the frame looks
-    like on a real stage post, not on a clear picture."""
+    """Pixelated to stage 3, in the item's season style, framed, then Nani in stage 3's
+    pose: what the frame looks like on a real stage post, not on a clear picture."""
     resolved = _resolved("host_frame.border")
     preview = previews.render(resolved, "EN", AMY)
-    expected = stage.stage_png_with(
+    framed = stage.stage_png_with(
         previews.sample_stage(),
         previews.FRAME_STAGE_WIDTH,
         PixelAlgorithm.MEDIAN,
         resolved.item.look,
         resolved.run.style,
     )
+    expected = mascot.add_to_png(framed, Pose.NOPE)
     assert preview.image == expected
 
 
@@ -167,9 +170,11 @@ def test_win_effect_previews_as_an_iris_clip_with_the_overlay_badge(clip_calls) 
 @pytest.mark.parametrize(
     ("key", "expected"),
     [
-        ("host_frame.border", "demo_1/host_frame.border"),  # the same for everyone
-        ("host_transition.iris", "demo_1/host_transition.iris"),
-        ("win_effect.confetti", "demo_1/win_effect.confetti@7"),  # their avatar and name
+        # The previews that show Nani (issue #461) carry "#nani", so copies cached before
+        # her are never served again.
+        ("host_frame.border", "demo_1/host_frame.border#nani"),  # the same for everyone
+        ("host_transition.iris", "demo_1/host_transition.iris#nani"),
+        ("win_effect.confetti", "demo_1/win_effect.confetti@7#nani"),  # their avatar and name
         ("name_flair.blossom", "demo_1/name_flair.blossom"),  # text: never stored anyway
     ],
 )
@@ -238,11 +243,11 @@ def test_real_pipeline_renders_a_transition_clip() -> None:
 
 
 def test_every_per_viewer_cache_key_fits_the_column() -> None:
-    """`<item id>@<player id>` must fit item_previews.item_id; a Telegram id is at most 20
-    characters with its sign."""
+    """`<item id>@<player id>#nani` must fit item_previews.item_id; a Telegram id is at most
+    20 characters with its sign."""
     longest = max(
         len(item_id)
         for item_id, resolved in registry.all_items().items()
         if resolved.item.slot is CosmeticSlot.WIN_EFFECT
     )
-    assert longest + len("@") + 20 <= ITEM_ID_LENGTH
+    assert longest + len("@") + 20 + len(previews.WITH_NANI) <= ITEM_ID_LENGTH

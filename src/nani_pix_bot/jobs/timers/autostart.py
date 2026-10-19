@@ -247,8 +247,13 @@ def _build_first_turn_post(
     if game.hard_mode_image_a is None or game.hard_mode_image_b is None:
         raise RuntimeError("game.hard_mode_image_a/_b is None in _build_first_turn_post")
     width = game_service.hard_mode_turn_width(game)
-    pixelated_a = stage_cosmetics.stage_png(session, game, game.hard_mode_image_a, width)
-    pixelated_b = stage_cosmetics.stage_png(session, game, game.hard_mode_image_b, width)
+    overthrow = claim.trigger is AutostartTrigger.OVERTHROW
+    pixelated_a = stage_cosmetics.stage_png(
+        session, game, game.hard_mode_image_a, width, overthrow=overthrow
+    )
+    pixelated_b = stage_cosmetics.stage_png(
+        session, game, game.hard_mode_image_b, width, overthrow=overthrow
+    )
     progress = game_service.hard_mode_turn_progress(game)
     caption_kwargs = {
         "turn": progress.number,

@@ -195,7 +195,7 @@ async def test_item_tap_renders_sends_and_remembers_the_preview(session_factory)
     photo = context.bot.send_photo.await_args.kwargs["photo"]
     assert isinstance(photo, bytes)
     with session_factory() as session:
-        row = previews.cached(session, FRAME, "EN")
+        row = previews.cached(session, FRAME + previews.WITH_NANI, "EN")
         assert row is not None
         assert (row.kind, row.file_id) == (PreviewKind.PHOTO, "photo-id")
     item_message = context.bot.send_message.await_args

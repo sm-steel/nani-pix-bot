@@ -11,6 +11,7 @@ import asyncio
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from typing import NamedTuple
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -28,6 +29,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.cosmetics import reveal_choice
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.players import describe_person
 from nani_pix_bot.services.reveal import overlays, pipeline, store
 
@@ -128,9 +130,14 @@ def _overlay_key(overlay: str | None, game_id: int) -> str:
 
 
 async def render_reveal(
-    application: Application, game_id: int, clear: bytes, winner: RevealWinner | None
+    application: Application,
+    game_id: int,
+    clear: bytes,
+    winner: RevealWinner | None,
+    ending: Pose,
 ) -> bytes | None:
-    """The final reveal MP4, or None when the caller should post the photo.
+    """The final reveal MP4, or None when the caller should post the photo. `ending` is
+    Nani Pix's pose over the clear image at the end (issue #461).
 
     `clear` must be the same stored bytes `start_pregeneration` pre-rendered
     from (the game's `original_image`, or the hard-mode image chosen for the
@@ -163,7 +170,14 @@ async def render_reveal(
     finally:
         if avatar_task is not None:
             avatar_task.cancel()  # a no-op once finished; stops it on every other way out
-    return await _finish(application, game_id, clear, pregen, badge)
+    return await _finish(application, game_id, clear, pregen, _Ending(badge, ending))
+
+
+class _Ending(NamedTuple):
+    """What goes over the clear image at the end: the winner's badge, and Nani's pose."""
+
+    badge: pipeline.Badge | None
+    pose: Pose
 
 
 async def _finish(
@@ -171,20 +185,22 @@ async def _finish(
     game_id: int,
     clear: bytes,
     pregen: pipeline.Pregen,
-    badge: pipeline.Badge | None,
+    ending: _Ending,
 ) -> bytes | None:
+    badge, pose = ending
     started = time.perf_counter()
     try:
         video = await asyncio.wait_for(
-            reveal_worker.submit(application.bot_data, pipeline.finish, pregen, clear, badge),
+            reveal_worker.submit(application.bot_data, pipeline.finish, pregen, clear, badge, pose),
             RENDER_TIMEOUT,
         )
         # the worker process can't log with the game's context, so the timing is logged here
         logger.info(
-            "reveal rendered in {ms} ms, {kib} KiB, celebration={celebration}",
+            "reveal rendered in {ms} ms, {kib} KiB, celebration={celebration}, Nani {pose}",
             ms=round((time.perf_counter() - started) * 1000),
             kib=len(video) // 1024,
             celebration=badge is not None,
+            pose=pose.value,
             game_id=game_id,
         )
         return video

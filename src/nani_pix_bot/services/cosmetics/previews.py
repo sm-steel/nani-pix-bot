@@ -26,9 +26,10 @@ from nani_pix_bot.models.enums import (
     RevealEffect,
 )
 from nani_pix_bot.seasons.registry import ResolvedItem
-from nani_pix_bot.services import i18n
+from nani_pix_bot.services import i18n, mascot
 from nani_pix_bot.services.cards import ProfileCard, render_profile_card
 from nani_pix_bot.services.cosmetics import looks, profile, stage
+from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.reveal import pipeline
 from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
 
@@ -77,15 +78,22 @@ class Viewer:
 AVATAR_SLOTS = frozenset({CosmeticSlot.PROFILE_BANNER, CosmeticSlot.WIN_EFFECT})
 
 
+# Appended to the cache key of the previews that show Nani Pix (issue #461), so a copy
+# uploaded before she was added is never served again.
+WITH_NANI = "#nani"
+_NANI_SLOTS = frozenset(
+    {CosmeticSlot.HOST_FRAME, CosmeticSlot.HOST_TRANSITION, CosmeticSlot.WIN_EFFECT}
+)
+
+
 def cache_key(resolved: ResolvedItem, viewer_id: int) -> str | None:
     """Where the uploaded preview is kept: per viewer for a win effect (their badge), not at
     all for a banner (their live card), else once for everyone."""
     slot = resolved.item.slot
     if slot is CosmeticSlot.PROFILE_BANNER:
         return None
-    if slot is CosmeticSlot.WIN_EFFECT:
-        return f"{resolved.item_id}@{viewer_id}"
-    return resolved.item_id
+    key = f"{resolved.item_id}@{viewer_id}" if slot is CosmeticSlot.WIN_EFFECT else resolved.item_id
+    return key + WITH_NANI if slot in _NANI_SLOTS else key
 
 
 @dataclass(frozen=True)
@@ -113,10 +121,12 @@ def clip_job(resolved: ResolvedItem, viewer: Viewer) -> ClipJob | None:
 
 
 def _frame(resolved: ResolvedItem, _lang: str, _viewer: Viewer) -> bytes:
-    """Pixelated, in the item's season style, then framed: a real stage post."""
-    return stage.stage_png_with(
+    """Pixelated, in the item's season style, then framed, with Nani: a real
+    stage-3 post."""
+    framed = stage.stage_png_with(
         sample_stage(), FRAME_STAGE_WIDTH, DEFAULT_ALGORITHM, resolved.item.look, resolved.run.style
     )
+    return mascot.add_to_png(framed, Pose.NOPE)  # FRAME_STAGE_WIDTH is stage 3's
 
 
 def _banner(resolved: ResolvedItem, lang: str, viewer: Viewer) -> bytes:
