@@ -1054,6 +1054,12 @@ src/nani_pix_bot/
                    # gate and watercolor style. Its art (key visual,
                    # stamp.png, stamp_plus.png, banners/) is in
                    # assets/seasons/sakura_1/
+                   # mechanics.py: the optional per-run mechanics (Palette
+                   # and emoji, Haunt, EventDay, GroupGoal, HexRule,
+                   # OmikujiOutcome, BoneSet) as pure data, plus problems(),
+                   # their validation (see MECHANICS.md's "Optional
+                   # mechanics per run"); models/halloween.py holds their
+                   # tables
   release_notes/  # player-facing release notes per language, shown by
                    # /version: release-notes-<lang>.md (the release being
                    # built) and previous-releases-<lang>.md (up to four
@@ -1421,6 +1427,11 @@ erDiagram
 | `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so a preview is uploaded once per language. `item_id` holds `previews.cache_key`: the item id, or `<item id>@<player id>` for a win effect (drawn on its viewer); a banner (drawn on the viewer's live card) is never stored. Emptied by `d7a3f1c9b5e2` when the sample picture changed. |
 | `players.title_key` item encoding | v12 | Besides an achievement title key, `title_key` may be `item:<item id>`, a season title item (`services/achievements/titles.py`). Title item ids are at most 56 bytes (`looks.problems`) so they fit `/title`'s callback data. |
 | `profile_showcase` | v12 | What a player picked to show on their `/profile` card (#413): `player_id` + `kind` (`ShowcaseKind`: `stamp` or `achievement`) + `ref` PK (a season run id, or an `achievement_grants.id` as text) and `position` (tick order). At most 6 stamps and 4 achievements (`services/cosmetics/showcase.py`). A pick that no longer resolves is skipped. With no pick resolving, the card shows the newest seasons and rarest achievements. |
+| `hexes` | Halloween P1 | One hex a player cast on another in a season: `season_id` (FK), `kind` (a `HexKind` as a plain string), `caster_id` and `target_id` (FKs to `players`), `cast_at`, `expires_at` (pranks only), `resolved_at`/`outcome` (set when it is spent or blocked) and `game_id` (FK, the game a kappa/kitsune triggered on). Indexed on (`target_id`, `resolved_at`) and (`caster_id`, `kind`, `cast_at`) for the target's open hexes and the caster's cooldown. Nothing writes it until Phase 5. |
+| `armed_ofuda` | Halloween P1 | An ofuda a player armed for one game: primary key (`player_id`, `game_id`), so at most one per player per game, and `armed_at`. Nothing writes it until Phase 4. |
+| `omikuji_draws` | Halloween P1 | A player's omikuji draw: `season_id`, `player_id`, `local_date`, `outcome` (an `OmikujiKind` as a plain string) and `drawn_at`; unique on (`season_id`, `player_id`, `local_date`) so a day has one draw. Nothing writes it until Phase 4. |
+| `games` Halloween columns | Halloween P1 | `haunt_twist` (nullable string, a `HauntTwist`: set when the game is haunted), `boss_game` and `event_day` (booleans, default false). All three are written from Phase 3 and Phase 6. |
+| `players.hex_opt_out` | Halloween P1 | Boolean, default false: the player refuses hexes cast on them. Read from Phase 5. |
 
 ### Achievements
 

@@ -1947,9 +1947,9 @@ round's bounty, tip a player, or pay to sharpen the image.
 gate; phase 2: inventory and cosmetics; phase 3: Season Coins, the
 Season Pass, Premium and clue tokens; phase 4: the Season Shop, rule
 modifiers, the visual style and objectives; phase 5: season achievements).** Seasons are occasional,
-time-boxed events that run alongside the normal game. No playable season
-ships yet: `seasons/runs/` is empty, so `/season` has nothing to schedule
-until a run module is added.
+time-boxed events that run alongside the normal game. One run ships,
+`seasons/runs/sakura_1.py` (Sakura Season); `/season` schedules it and any
+run module added later.
 
 ### Runs and the schedule
 
@@ -2294,4 +2294,36 @@ function over the season's history). They are merged into the catalogue as
 only while its season is the open one (`active`/`closing`), or for a player
 who holds it; it is left out of everyone else's list and summary total
 (`status.build`). A comparison lists it when either player would see it.
-No run ships one yet.
+`sakura_1` ships none; the Halloween run is the first to.
+
+### Optional mechanics per run
+
+A `SeasonRun` may switch on extra mechanics. Every field is **optional and
+off by default** (`None`, an empty tuple or the Sakura look), so a run that
+sets none of them plays exactly as before. The fields are pure data in
+`seasons/mechanics.py`; `mechanics.problems(run)` validates them and
+`definition.run_problems` appends its result, so a bad run fails the run
+check, not a live game. Phase 1 (the foundation) adds the fields, the
+tables and the validation only; the behavior ships in the phase named in
+the last column.
+
+| Field | Meaning | Implemented by |
+|---|---|---|
+| `palette`, `emoji` | The season card's ribbon and title-gradient colours and the season emoji. Default: the Sakura pink/gold and the cherry blossom, so `sakura_1` renders unchanged. The card reads them from the run. | Phase 1 |
+| `mascot_costume` | A costume key for Nani Pix's picture while the season is open. Needs a season `emoji`. The key itself is validated where costumes live. | Phase 2 |
+| `haunt` | `Haunt(chance_pct, twists, coin_multiplier)`. At activation each season game is haunted with probability `chance_pct`, and a haunted game gets one of the `twists` (`kitsune_mirror`, `tanuki_leaf`, `yurei_double`, `kyokotsu_xray`) stored in `games.haunt_twist`; every 🪙 award of it is multiplied by `coin_multiplier` (at least 1). Needs 1..100, at least one twist, no repeats. | Phase 3 |
+| `event_day` | `EventDay(month, day, names, gate, coin_multiplier, all_haunted)`: one real calendar day (checked against a leap year) with EN and RU names. On that local day `gate` replaces the run gate, 🪙 are multiplied, and with `all_haunted` every game is haunted (so `all_haunted` needs `haunt`). Games on it carry `games.event_day`. | Phase 3 |
+| `ShopOffer.consumable`, `RewardKind.OFUDA` / `OMAMORI` | The ofuda and omamori are consumables that join the clue token as pass rewards and shop offers. An offer's `limit` caps purchases per player per season. | Phase 4 |
+| `omikuji` | A tuple of `OmikujiOutcome(kind, weight, coins, consumable, prank)` for a daily draw (`daikichi`, `kichi`, `shokichi`, `kyo`). Weights are at least 1, `coins` is not negative, and only `kyo` may carry `prank`, which needs a prank hex in `hexes`. One draw per player per season per local day (`omikuji_draws`). | Phase 4 |
+| `hexes` | A tuple of `HexRule(kind, price, cooldown_minutes, duration_hours, amount)`, at most one per kind. Pranks (`nopperabo`, `chochin`) last `duration_hours` (at least 1) and have `amount` 0; `kappa` (percent 1..100 of the target's next win) and `kitsune` (🪙 lost on the next wrong guess, at least 1) last until triggered (`duration_hours` 0). Price at least 1, cooldown 1..1440 minutes. Players can refuse hexes with `players.hex_opt_out`. | Phase 5 |
+| `group_goal` | `GroupGoal(target, per_game, per_haunted, per_event_day, milestone_every, boss_*_multiplier, contributor_coins, contributor_item_key)`: a shared candle count that fills as season games finish, with a boss game (`games.boss_game`) when it is reached. Amounts are not negative; the prize is one of the run's items. | Phase 6 |
+| `bone_set` | `BoneSet(bones, item_key)`: an item earned after `bones` haunted wins. The item is one of the run's items. | Phase 6 |
+| `GoalKind.HEXES_BLOCKED`, `GoalKind.HAUNTED_WINS` | Objective kinds counting hexes a player's ofuda blocked and haunted-game wins. | Phases 4 and 3 |
+
+**One source per item.** An item comes from exactly one place: a pass tier,
+the shop, the group goal's contributor prize or the bone set. `problems`
+rejects a key in two of them.
+
+**Storage.** Hexes, armed ofuda and omikuji draws live in their own tables
+(see `ARCHITECTURE.md`); boss state, candle progress and bones are derived
+from `games` rows, so they have none.
