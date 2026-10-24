@@ -4,12 +4,17 @@ group's timezone (Halloween spec, "Night Parade")."""
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from nani_pix_bot.models.announcement import AnnouncementOutbox
+from nani_pix_bot.models.enums import OutboxKind
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import SeasonRun
+from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.events import as_utc
 from nani_pix_bot.services.seasons import schedule
 from nani_pix_bot.services.settings import bot_settings
@@ -60,3 +65,65 @@ def is_event_day(session: Session, now: datetime) -> bool:
         return False
     found = window(run, season, bot_settings.get_group_timezone(session))
     return found is not None and found[0] <= now < found[1]
+
+
+def _window_of(session: Session, row: SeasonSchedule) -> Window | None:
+    run = registry.get(row.run_id)
+    if run is None:
+        return None
+    return window(run, row, bot_settings.get_group_timezone(session))
+
+
+def _queued(session: Session, row: SeasonSchedule, kind: OutboxKind) -> bool:
+    """Whether a post of this kind was ever queued for the season, posted or not."""
+    stmt = select(AnnouncementOutbox.payload).where(AnnouncementOutbox.kind == kind)
+    return any(payload.get("season_id") == row.id for payload in session.scalars(stmt))
+
+
+def due_posts(
+    session: Session, row: SeasonSchedule, now: datetime, *, finalizing: bool = False
+) -> list[OutboxKind]:
+    """The parade posts owed right now, in posting order. A start is owed
+    only while the day is on, so downtime over the whole day posts nothing
+    stale; a sunrise is owed only after a start went out, and a season that
+    is ending (`finalizing`) mid-day closes the parade first."""
+    found = _window_of(session, row)
+    if found is None:
+        return []
+    start, end = found
+    start_queued = _queued(session, row, OutboxKind.EVENT_DAY_START)
+    due: list[OutboxKind] = []
+    if start <= now < end and not start_queued:
+        due.append(OutboxKind.EVENT_DAY_START)
+    if (
+        (now >= end or finalizing)
+        and start_queued
+        and not _queued(session, row, OutboxKind.EVENT_DAY_END)
+    ):
+        due.append(OutboxKind.EVENT_DAY_END)
+    return due
+
+
+def enqueue_due(
+    session: Session, row: SeasonSchedule, now: datetime, *, finalizing: bool = False
+) -> list[OutboxKind]:
+    due = due_posts(session, row, now, finalizing=finalizing)
+    run = registry.get(row.run_id)
+    for kind in due:
+        outbox.enqueue_season(session, kind, row.id)
+        if run is not None and run.event_day is not None:
+            logger.info(
+                "queued the {kind} post for {event_day_name}",
+                kind=kind.value,
+                event_day_name=run.event_day.names["EN"],
+                season_id=row.id,
+            )
+    return due
+
+
+def next_boundary(session: Session, row: SeasonSchedule, now: datetime) -> datetime | None:
+    """The next edge of the event-day window after `now`, or None."""
+    found = _window_of(session, row)
+    if found is None:
+        return None
+    return next((edge for edge in found if edge > now), None)
