@@ -33,18 +33,19 @@ short wand tipped with a blue diamond crystal.
 
 Her costumes are the same six poses in other outfits. Each is a 384 px wide
 RGBA PNG, at most 480 px tall, in
-`src/nani_pix_bot/assets/mascot/costumes/<key>/<pose>.png`, with the
-full-size lossless WebP original in `assets/mascot/costumes/<key>/<pose>.webp`.
-A costume needs all six poses. The keys are:
+`src/nani_pix_bot/assets/mascot/costumes/<key>/<pose>.png`. The full-size
+originals are kept outside the repo. A costume needs all six poses. Art
+that comes out taller than 480 px is fitted to 480 tall with transparent
+side padding, never squashed. The keys are:
 
 | Key | Costume |
 |---|---|
-| `pumpkin` | The Halloween season's default |
-| `kitsune` | Fox spirit |
-| `bakeneko` | Cat spirit |
-| `chochin` | Paper lantern |
-| `pastel_witch` | Pastel witch |
-| `skeleton` | Skeleton |
+| `pumpkin` | Her usual outfit and navy hat, plus a jack-o'-lantern hairpin, a bat-wings clip and a candy bucket; the free season default |
+| `kitsune` | Fox ears, a kitsune mask at the side, a red-and-white haori and a fox tail, no hat |
+| `bakeneko` | Black cat ears, a forked tail, a bell collar, paw gloves, a purple-black capelet and cat-slit eyes |
+| `chochin` | A red-orange paper-lantern hood with one eye and a lolling tongue, glowing from inside |
+| `pastel_witch` | A pastel-lavender hat and capelet, striped pastel tights, a pumpkin candy bag and a star-crystal wand |
+| `skeleton` | A black bone-print onesie and skull hood; the jaw drops open in oops |
 
 For new costume art, attach only `main_reference.png` and
 `reference_sheet.png` to the generator and describe the pose in the prompt.

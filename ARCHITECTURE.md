@@ -1001,7 +1001,8 @@ src/nani_pix_bot/
                    #   inventory.py    owns/grant/equip/unequip/equipped and
                    #                   look(session, player, slot)
                    #   costume.py      Nani Pix's costume on a game's pictures
-                   #                   (for_game, for_game_id, for_viewer,
+                   #                   (for_player, the core resolver; for_game,
+                   #                   for_game_id, for_viewer,
                    #                   active_run, problems): the starter's
                    #                   equipped one, else the season's
                    #                   default, else plain; read live

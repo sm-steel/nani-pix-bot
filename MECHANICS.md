@@ -640,24 +640,28 @@ starter's equipped costume.
 
 The six costumes are `pumpkin`, `kitsune`, `bakeneko`, `chochin`,
 `pastel_witch` and `skeleton`. Each has all six poses under
-`assets/mascot/costumes/<key>/<pose>.png`. Art that is taller than 480 px
-is fitted to 480 tall with transparent side padding, never squashed, and
-Nani is placed by her own costume's aspect.
+`src/nani_pix_bot/assets/mascot/costumes/<key>/<pose>.png`, an RGBA image
+exactly 384 px wide and at most 480 px tall (`tests/services/test_mascot.py`
+checks it, and that all six poses exist). Nani is placed by her own
+costume's aspect.
 
 In the reveal, the effect part is rendered at pregen time, so it carries the
 costume she had when the game started. The ending, the photo fallback and
 the clue album read the costume again at reveal time. `/stop` reads it
-before it deletes the game row.
+before it deletes the game row, when the reveal can run now.
 
 A failed costume lookup never blocks a reveal or a preview, and a missing
 or unreadable costume file never blocks a post: she is drawn plain, and
 the failure is logged at `ERROR`.
 
-Cosmetic previews show Nani in the viewer's own costume. Their cache key
-is `<item_id>#nani` for a plain viewer and `<item_id>#nani@<costume>` with
-a costume. A costume item's own preview is a sheet of all six poses
-(`previews.costume_sheet`), identical for everyone, so its key doesn't
-depend on the viewer.
+Cosmetic previews show Nani in the viewer's own costume. Only host
+frames, transitions and win effects show her, so only their cache keys
+carry `#nani`, with `@<costume>` after it when the viewer wears one
+(`<item_id>#nani`, `<item_id>#nani@<costume>`). A win effect's key also has
+the viewer (their badge), so it reads `<item_id>@<viewer>#nani[@<costume>]`.
+Banners aren't cached. A costume item's own preview is a sheet of all six
+poses (`previews.costume_sheet`), kept under the bare item id and the same
+for everyone.
 
 ### Which algorithm colours the blocks
 
