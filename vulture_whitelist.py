@@ -27,7 +27,6 @@ from nani_pix_bot.seasons.definition import GoalKind, Reward
 from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
-from nani_pix_bot.services.seasons import event_day
 
 if TYPE_CHECKING:
     from loguru import Record
@@ -47,8 +46,6 @@ _kept = (
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
     # Halloween: wired by P3 (#468)
-    # P3 Task 6
-    event_day.is_event_day,
     # P3 Task 7
     OutboxKind.EVENT_DAY_START,
     OutboxKind.EVENT_DAY_END,
