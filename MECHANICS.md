@@ -2205,7 +2205,7 @@ pays and gates exactly as before.
   reveal video, its pregen and the stills are rendered without it. The pipeline
   order is **pixelate -> twist -> season style -> frame -> Nani**
   (`services/cosmetics/stage.py`; `stage_twist` logs each twist applied).
-- **Boss game.** `games.boss_game` (set by the group goal, after the roll)
+- **Boss game.** `games.boss_game` (set after the roll by the 100 Candles group goal, which a later phase adds)
   makes every stage haunted, with the twist `haunt.twists[(stage - 1) %
   len(twists)]` and `games.haunt_twist` ignored. `haunting.is_haunted(game)` is
   true for a stored twist or a boss game and is what the multipliers and the
@@ -2213,7 +2213,8 @@ pays and gates exactly as before.
 - **Captions.** `haunting.caption_suffix` appends a line (a newline and the
   text) to the stage caption: `haunt.started` on stage 1 (twist name, hint and
   the coin multiplier), `haunt.changed` when a boss game moves to a different
-  twist, `haunt.lifted` on the last stage when a fading twist clears. Twist
+  twist, `haunt.lifted` on the last stage when a fading twist clears (the same twist as
+  the stage before; a boss game switching twist on the last stage says `haunt.changed`). Twist
   names and hints are i18n keys `haunt.twist.*` and `haunt.hint.*`. Other
   stages get no line.
 - **Unknown stored twist.** A `haunt_twist` this release does not know logs a
@@ -2247,7 +2248,7 @@ all_haunted)`) is one local calendar day read in the **group's timezone**
   and `EVENT_DAY_END`, the sunrise (`event_day.post.end`), both rendered in
   `jobs/season_posts.py`. `lifecycle.advance` calls `event_day.enqueue_due`
   while the season is active or closing, and `lifecycle.next_boundary` also
-  wakes at the window's edges. Edge rules (`due_posts`):
+  wakes at the window's edges while the season is active. Edge rules (`due_posts`):
   - a start is owed only while the day is on, so downtime over the whole day
     posts nothing stale; a season starting mid-day still gets its start post;
   - a sunrise is owed only after a start was queued, at the window's end;
