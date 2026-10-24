@@ -68,4 +68,12 @@ def test_multiplied_award_is_logged_with_its_multiplier(
     lines = [r for r in log_records if r.level == "INFO" and "season coins" in r.message]
     assert lines
     assert {r.extra["multiplier"] for r in lines} == {2}
-    assert all("x2" in r.message.replace("00d7", "x") for r in lines)
+    assert all(r.message.endswith(" \N{MULTIPLICATION SIGN}2") for r in lines)
+
+
+def test_an_unmultiplied_award_has_no_suffix(session, tagged_game, emit_win, log_records) -> None:
+    emit_win(winner=1, stage=1)
+    lines = [r for r in log_records if r.level == "INFO" and "season coins" in r.message]
+    assert lines
+    assert {r.extra["multiplier"] for r in lines} == {1}
+    assert not any("\N{MULTIPLICATION SIGN}" in r.message for r in lines)

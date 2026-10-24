@@ -158,17 +158,16 @@ def tagged(session: Session, event: LoggedEvent) -> Tagged | None:
 
 def pay(session: Session, event: LoggedEvent, found: Tagged) -> list[Award]:
     """Season XP for `event`: season_xp rows, returned."""
-    paid = [
-        replace(a, amount=a.amount * xp_multiplier(found.run, found.game, a.source))
-        for a in awards(
-            payable(found.run.xp, found),
-            event,
-            bot_game=found.game.hard_mode,
-            first_guess_of_player=found.first_guess,
-        )
-    ]
+    base = awards(
+        payable(found.run.xp, found),
+        event,
+        bot_game=found.game.hard_mode,
+        first_guess_of_player=found.first_guess,
+    )
+    factors = {a.source: xp_multiplier(found.run, found.game, a.source) for a in base}
+    paid = [replace(a, amount=a.amount * factors[a.source]) for a in base]
     for award in paid:
-        factor = xp_multiplier(found.run, found.game, award.source)
+        factor = factors[award.source]
         session.add(
             SeasonXp(
                 season_id=found.season.id,
@@ -180,7 +179,7 @@ def pay(session: Session, event: LoggedEvent, found: Tagged) -> list[Award]:
         )
         logger.info(
             "season XP +{amount} ({source}) to {recipient}"
-            + (" 00d7{multiplier}" if factor > 1 else ""),
+            + (" \N{MULTIPLICATION SIGN}{multiplier}" if factor > 1 else ""),
             amount=award.amount,
             multiplier=factor,
             source=award.source.value,

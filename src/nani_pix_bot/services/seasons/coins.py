@@ -23,14 +23,13 @@ _REASONS = {
 
 def pay(session: Session, event: LoggedEvent, found: xp.Tagged) -> list[xp.Award]:
     table = xp.payable(found.run.coins.as_xp_table(), found)
-    paid = [
-        replace(a, amount=a.amount * coin_multiplier(found.run, found.game, a.source))
-        for a in xp.awards(
-            table, event, bot_game=found.game.hard_mode, first_guess_of_player=found.first_guess
-        )
-    ]
+    base = xp.awards(
+        table, event, bot_game=found.game.hard_mode, first_guess_of_player=found.first_guess
+    )
+    factors = {a.source: coin_multiplier(found.run, found.game, a.source) for a in base}
+    paid = [replace(a, amount=a.amount * factors[a.source]) for a in base]
     for award in paid:
-        factor = coin_multiplier(found.run, found.game, award.source)
+        factor = factors[award.source]
         player = session.get(Player, award.player_id)
         if player is None:
             logger.error(
@@ -46,7 +45,7 @@ def pay(session: Session, event: LoggedEvent, found: xp.Tagged) -> list[xp.Award
         wallet.credit(session, player, award.amount, entry)
         logger.info(
             "season coins +{amount} 🪙 ({source}) to {recipient}"
-            + (" 00d7{multiplier}" if factor > 1 else ""),
+            + (" \N{MULTIPLICATION SIGN}{multiplier}" if factor > 1 else ""),
             amount=award.amount,
             multiplier=factor,
             source=award.source.value,
