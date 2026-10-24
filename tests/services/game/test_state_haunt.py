@@ -87,3 +87,12 @@ def test_an_untagged_game_is_not_rolled(session, log_records) -> None:
     assert game.haunt_twist is None
     assert game.event_day is False
     assert not any("haunted" in r.message or "activated on" in r.message for r in log_records)
+
+
+def test_a_season_without_haunting_never_rolls(session, active_season, log_records) -> None:
+    game = _setup_game(session)
+    game_service.activate_game(session, game)
+    assert game.season_id == active_season.id
+    assert game.haunt_twist is None
+    assert game.event_day is False
+    assert not any("haunted" in r.message or "activated on" in r.message for r in log_records)

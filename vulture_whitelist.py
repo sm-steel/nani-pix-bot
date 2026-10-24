@@ -47,17 +47,19 @@ _kept = (
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
     # Halloween: wired by P3 (#468)
+    # P3 Task 2
     HauntTwist.KITSUNE_MIRROR,
     HauntTwist.YUREI_DOUBLE,
-    # P3 Task 2
     haunting.FADES_AT_LAST,
     haunting.twist_for_stage,
     # P3 Task 5
     haunting.is_haunted,
     # P3 Task 6
     event_day.is_event_day,
+    # P3 Task 7
     OutboxKind.EVENT_DAY_START,
     OutboxKind.EVENT_DAY_END,
+    # P3 Task 8
     GoalKind.HAUNTED_WINS,
     # Halloween: wired by P4 (#469)
     EventType.OMIKUJI_DRAWN,
