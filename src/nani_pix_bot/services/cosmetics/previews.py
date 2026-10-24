@@ -13,7 +13,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 from loguru import logger
-from PIL import Image, ImageOps
+from PIL import Image, ImageDraw, ImageOps
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.cosmetics import ItemPreview
@@ -28,6 +28,7 @@ from nani_pix_bot.models.enums import (
 from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services import i18n, mascot
 from nani_pix_bot.services.cards import ProfileCard, render_profile_card
+from nani_pix_bot.services.cards.render import font
 from nani_pix_bot.services.cosmetics import looks, profile, stage
 from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.reveal import pipeline
@@ -87,13 +88,18 @@ _NANI_SLOTS = frozenset(
 )
 
 
-def cache_key(resolved: ResolvedItem, viewer_id: int, costume: str | None = None) -> str | None:
+def cache_key(
+    resolved: ResolvedItem, viewer_id: int, costume: str | None = None, lang: str = "EN"
+) -> str | None:
     """Where the uploaded preview is kept: per viewer for a win effect (their badge), not at
-    all for a banner (their live card), else once for everyone. A preview that shows Nani
-    also carries the costume she wears in it; a plain one's key is what it always was."""
+    all for a banner (their live card), per language for a costume's sheet (it names the
+    poses), else once for everyone. A preview that shows Nani also carries the costume she
+    wears in it; a plain one's key is what it always was."""
     slot = resolved.item.slot
     if slot is CosmeticSlot.PROFILE_BANNER:
         return None
+    if slot is CosmeticSlot.MASCOT_COSTUME:
+        return f"{resolved.item_id}#{lang.lower()}"
     key = f"{resolved.item_id}@{viewer_id}" if slot is CosmeticSlot.WIN_EFFECT else resolved.item_id
     if slot not in _NANI_SLOTS:
         return key
@@ -144,34 +150,100 @@ def _banner(resolved: ResolvedItem, lang: str, viewer: Viewer) -> bytes:
     return render_profile_card(card, viewer.avatar, background)
 
 
-SHEET_POSE_WIDTH = 200
+SHEET_BACKGROUND = Path(__file__).resolve().parents[2] / "assets" / "costume_sheet_background.jpg"
 SHEET_COLUMNS = 3
-SHEET_GAP = 12
-SHEET_BACKGROUND = (28, 22, 40)
+SHEET_CELL = (240, 280)
+SHEET_GAP = 18
+SHEET_MARGIN = 28
+SHEET_POSE_WIDTH = 216
+SHEET_LABEL_HEIGHT = 44
+_CARD_RADIUS = 20
+_CARD_FILL = (255, 255, 255, 26)
+_CARD_OUTLINE = (255, 255, 255, 60)
+_PILL_RADIUS = 16
+_PILL_HEIGHT = 32
+_PILL_PADDING = 32
+_PILL_FILL = (18, 12, 34, 210)
+_LABEL_FONT_SIZE = 22
 
 
-def costume_sheet(costume: str) -> bytes:
-    """A PNG of all six poses in `costume`, in Pose order, three to a row, each row's poses
-    standing on one line."""
-    poses = [mascot.sized(pose, SHEET_POSE_WIDTH, costume) for pose in Pose]
-    rows = [poses[i : i + SHEET_COLUMNS] for i in range(0, len(poses), SHEET_COLUMNS)]
-    heights = [max(pose.height for pose in row) for row in rows]
-    width = SHEET_COLUMNS * SHEET_POSE_WIDTH + (SHEET_COLUMNS + 1) * SHEET_GAP
-    height = sum(heights) + (len(rows) + 1) * SHEET_GAP
-    sheet = Image.new("RGBA", (width, height), (*SHEET_BACKGROUND, 255))
-    top = SHEET_GAP
-    for row, row_height in zip(rows, heights, strict=True):
-        for column, pose in enumerate(row):
-            x = SHEET_GAP + column * (SHEET_POSE_WIDTH + SHEET_GAP)
-            sheet.alpha_composite(pose, (x, top + row_height - pose.height))
-        top += row_height + SHEET_GAP
+def _sheet_size() -> tuple[int, int]:
+    cell_w, cell_h = SHEET_CELL
+    rows = -(-len(Pose) // SHEET_COLUMNS)
+    return (
+        2 * SHEET_MARGIN + SHEET_COLUMNS * cell_w + (SHEET_COLUMNS - 1) * SHEET_GAP,
+        2 * SHEET_MARGIN + rows * cell_h + (rows - 1) * SHEET_GAP,
+    )
+
+
+@cache
+def _sheet_background() -> Image.Image:
+    """The night picture fitted to the sheet, decoded once per process."""
+    with Image.open(SHEET_BACKGROUND) as source:
+        return ImageOps.fit(source.convert("RGBA"), _sheet_size(), Image.Resampling.LANCZOS)
+
+
+def _draw_card(sheet: Image.Image, origin: tuple[int, int]) -> None:
+    """A translucent rounded card at `origin`, the background showing through."""
+    layer = Image.new("RGBA", sheet.size, (0, 0, 0, 0))
+    x, y = origin
+    ImageDraw.Draw(layer).rounded_rectangle(
+        [x, y, x + SHEET_CELL[0], y + SHEET_CELL[1]],
+        radius=_CARD_RADIUS,
+        fill=_CARD_FILL,
+        outline=_CARD_OUTLINE,
+        width=2,
+    )
+    sheet.alpha_composite(layer)
+
+
+def _draw_label(sheet: Image.Image, origin: tuple[int, int], text: str) -> None:
+    """The pose's name in a pill under its figure."""
+    cell_w, cell_h = SHEET_CELL
+    draw = ImageDraw.Draw(sheet)
+    label_font = font(_LABEL_FONT_SIZE, bold=True)
+    width = round(draw.textlength(text, font=label_font)) + _PILL_PADDING
+    left = origin[0] + (cell_w - width) // 2
+    top = origin[1] + cell_h - SHEET_LABEL_HEIGHT + 4
+    pill = Image.new("RGBA", sheet.size, (0, 0, 0, 0))
+    ImageDraw.Draw(pill).rounded_rectangle(
+        [left, top, left + width, top + _PILL_HEIGHT], radius=_PILL_RADIUS, fill=_PILL_FILL
+    )
+    sheet.alpha_composite(pill)
+    draw.text(
+        (left + width / 2, top + _PILL_HEIGHT / 2),
+        text,
+        font=label_font,
+        fill=(255, 255, 255, 255),
+        anchor="mm",
+    )
+
+
+def costume_sheet(costume: str, lang: str) -> bytes:
+    """A PNG of all six poses in `costume` on a night background: a card per pose, in Pose
+    order three to a row, every figure standing on one line above its name in `lang`."""
+    sheet = _sheet_background().copy()
+    cell_w, cell_h = SHEET_CELL
+    for index, pose in enumerate(Pose):
+        col, row = index % SHEET_COLUMNS, index // SHEET_COLUMNS
+        origin = (
+            SHEET_MARGIN + col * (cell_w + SHEET_GAP),
+            SHEET_MARGIN + row * (cell_h + SHEET_GAP),
+        )
+        _draw_card(sheet, origin)
+        figure = mascot.sized(pose, SHEET_POSE_WIDTH, costume)
+        bottom = origin[1] + cell_h - SHEET_LABEL_HEIGHT - 4
+        sheet.alpha_composite(
+            figure, (origin[0] + (cell_w - figure.width) // 2, bottom - figure.height)
+        )
+        _draw_label(sheet, origin, i18n.t(f"mascot.pose.{pose.value}", lang))
     out = BytesIO()
     sheet.convert("RGB").save(out, format="PNG")
     return out.getvalue()
 
 
-def _costume_sheet(resolved: ResolvedItem, _lang: str, _viewer: Viewer) -> bytes:
-    return costume_sheet(resolved.item.look)
+def _costume_sheet(resolved: ResolvedItem, lang: str, _viewer: Viewer) -> bytes:
+    return costume_sheet(resolved.item.look, lang)
 
 
 _STILLS: Mapping[CosmeticSlot, Callable[[ResolvedItem, str, Viewer], bytes]] = MappingProxyType(

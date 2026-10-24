@@ -473,3 +473,14 @@ async def test_a_failed_costume_lookup_previews_nani_plain(
     with session_factory() as session:
         assert previews.cached(session, FRAME_KEY, "EN") is not None
     assert any(r.level == "ERROR" and "costume" in r.message for r in log_records)
+
+
+async def test_a_costume_items_preview_is_cached_under_the_language_key(
+    session_factory, costume_art, monkeypatch
+) -> None:
+    _wear_costume(session_factory, monkeypatch, costume_art)
+    context = _context(session_factory)
+    await _send(context, "demo_1/mascot_costume.hat")
+
+    with session_factory() as session:
+        assert previews.cached(session, "demo_1/mascot_costume.hat#en", "EN") is not None

@@ -1133,7 +1133,9 @@ assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's k
                    # mascot/<pose>.png (Nani Pix's six poses, 384 px wide;
                    # the full-size art lives in the repo-root assets/mascot/)
                    # and mascot/costumes/<key>/<pose>.png (the same six
-                   # poses per costume, 384 wide and at most 480 tall)
+                   # poses per costume, 384 wide and at most 480 tall) and
+                   # costume_sheet_background.jpg (the costume preview
+                   # sheet's night background)
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
                    # (EN/RU page parity, every command in its command table)

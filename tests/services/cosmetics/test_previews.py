@@ -295,27 +295,75 @@ def costume_item(costume_art, monkeypatch) -> Iterator[registry.ResolvedItem]:
     registry.all_items.cache_clear()
 
 
-def test_a_costume_item_is_kept_once_for_everyone(costume_item) -> None:
-    assert previews.cache_key(costume_item, 7, "kitsune") == "demo_1/mascot_costume.hat"
+def test_a_costume_item_is_kept_per_language(costume_item) -> None:
+    key_en = previews.cache_key(costume_item, 7, "kitsune", "EN")
+    assert key_en == "demo_1/mascot_costume.hat#en"
+    assert key_en != previews.cache_key(costume_item, 7, "kitsune", "RU")
 
 
-def test_a_costume_item_previews_as_a_six_pose_sheet(costume_item) -> None:
-    preview = previews.render(costume_item, "EN", AMY)
+def test_other_slot_keys_ignore_the_language() -> None:
+    for key in ("host_frame.border", "win_effect.confetti", "name_flair.blossom"):
+        assert previews.cache_key(_resolved(key), 7, None, "RU") == previews.cache_key(
+            _resolved(key), 7
+        )
+
+
+def test_the_longest_costume_key_fits_the_column(costume_item) -> None:
+    key = previews.cache_key(costume_item, 7, None, "RU")
+    assert key is not None
+    assert len(key) <= ITEM_ID_LENGTH
+
+
+def _sheet(costume_item, lang: str = "EN") -> Image.Image:
+    preview = previews.render(costume_item, lang, AMY)
     assert preview.kind is PreviewKind.PHOTO
     assert preview.image is not None
-    width = previews.SHEET_COLUMNS * previews.SHEET_POSE_WIDTH + (previews.SHEET_COLUMNS + 1) * (
-        previews.SHEET_GAP
+    return Image.open(BytesIO(preview.image)).convert("RGB")
+
+
+def _cell_origin(index: int) -> tuple[int, int]:
+    col, row = index % previews.SHEET_COLUMNS, index // previews.SHEET_COLUMNS
+    cell_w, cell_h = previews.SHEET_CELL
+    return (
+        previews.SHEET_MARGIN + col * (cell_w + previews.SHEET_GAP),
+        previews.SHEET_MARGIN + row * (cell_h + previews.SHEET_GAP),
     )
-    with Image.open(BytesIO(preview.image)) as sheet:
-        assert sheet.width == width
-        rgb = sheet.convert("RGB")
-        cell_h = mascot.sized(Pose.CAST, previews.SHEET_POSE_WIDTH, "test_hat").height
-        for index in range(6):
-            col, row = index % 3, index // 3
-            x = previews.SHEET_GAP + col * (previews.SHEET_POSE_WIDTH + previews.SHEET_GAP)
-            y = previews.SHEET_GAP + row * (cell_h + previews.SHEET_GAP)
-            pixel = rgb.getpixel((x + previews.SHEET_POSE_WIDTH // 2, y + cell_h // 2))
-            assert pixel == ORANGE[:3]
+
+
+def test_the_sheet_has_the_designed_size(costume_item) -> None:
+    assert _sheet(costume_item).size == (812, 634)
+
+
+def test_each_cell_shows_its_pose(costume_item) -> None:
+    sheet = _sheet(costume_item)
+    cell_w, cell_h = previews.SHEET_CELL
+    for index in range(len(Pose)):
+        x, y = _cell_origin(index)
+        bottom = y + cell_h - previews.SHEET_LABEL_HEIGHT - 4
+        assert sheet.getpixel((x + cell_w // 2, bottom - 20)) == ORANGE[:3]
+
+
+def test_each_cell_has_a_pill_with_white_text(costume_item) -> None:
+    sheet = _sheet(costume_item)
+    cell_w, cell_h = previews.SHEET_CELL
+    for index in range(len(Pose)):
+        x, y = _cell_origin(index)
+        top = y + cell_h - previews.SHEET_LABEL_HEIGHT + 4
+        box = sheet.crop((x, top, x + cell_w, top + 32))
+        assert box.convert("L").point(lambda v: 255 if v > 240 else 0).getbbox() is not None
+
+
+def test_the_sheet_names_the_poses_in_the_viewers_language(costume_item) -> None:
+    en, ru = _sheet(costume_item, "EN"), _sheet(costume_item, "RU")
+    assert en.size == ru.size
+    assert en.tobytes() != ru.tobytes()
+
+
+def test_the_sheet_background_is_the_night_image(costume_item) -> None:
+    sheet = _sheet(costume_item)
+    with Image.open(previews.SHEET_BACKGROUND) as source:
+        fitted = ImageOps.fit(source.convert("RGB"), sheet.size, Image.Resampling.LANCZOS)
+    assert sheet.getpixel((3, 3)) == fitted.getpixel((3, 3))
 
 
 def test_a_frame_preview_wears_the_viewers_costume(costume_art) -> None:

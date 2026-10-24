@@ -165,7 +165,7 @@ async def send(
 ) -> None:
     """`resolved`'s preview into `chat_id`, drawn on `viewer` (#427)."""
     worn = _worn(context, viewer.id)
-    key = previews.cache_key(resolved, viewer.id, worn)
+    key = previews.cache_key(resolved, viewer.id, worn, lang)
     request = _Request(chat_id, viewer, resolved, lang, key, worn)
     cached = _cached(context, request)
     logger.info(

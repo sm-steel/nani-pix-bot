@@ -660,8 +660,8 @@ carry `#nani`, with `@<costume>` after it when the viewer wears one
 (`<item_id>#nani`, `<item_id>#nani@<costume>`). A win effect's key also has
 the viewer (their badge), so it reads `<item_id>@<viewer>#nani[@<costume>]`.
 Banners aren't cached. A costume item's own preview is a sheet of all six
-poses (`previews.costume_sheet`), kept under the bare item id and the same
-for everyone.
+poses (`previews.costume_sheet`) on a night background, each pose named in the
+viewer's language, so it is kept per language under `<item_id>#<lang>`.
 
 ### Which algorithm colours the blocks
 

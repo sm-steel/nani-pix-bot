@@ -920,5 +920,11 @@
   "season_objective.notice": "🎯 Задание сезона «{season}» выполнено: {name} — {reward}.",
   "season_pass.view.objectives": "🎯 Задания",
   "season_pass.view.objective": "{mark} {name} — {goal} ({progress}/{target}) — {reward}",
-  "season_pass.view.objective_done": "✅ {name} — {reward} · {date}"
+  "season_pass.view.objective_done": "✅ {name} — {reward} · {date}",
+  "mascot.pose.cast": "Колдует",
+  "mascot.pose.nope": "Не-а",
+  "mascot.pose.nani": "Нани?!",
+  "mascot.pose.win": "Победа",
+  "mascot.pose.oops": "Упс",
+  "mascot.pose.sly": "Хитрит"
 }
