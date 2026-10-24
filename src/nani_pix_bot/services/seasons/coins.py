@@ -1,6 +1,8 @@
 """Season Coins (seasons spec §2, §7): what each season game event pays in 🪙,
 priced by the run's coin table through the same rules as Season XP."""
 
+from dataclasses import replace
+
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -10,6 +12,7 @@ from nani_pix_bot.services import players
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.events import LoggedEvent
 from nani_pix_bot.services.seasons import xp
+from nani_pix_bot.services.seasons.multipliers import coin_multiplier
 
 _REASONS = {
     XpSource.WIN: CurrencyReason.SEASON_WIN,
@@ -20,10 +23,14 @@ _REASONS = {
 
 def pay(session: Session, event: LoggedEvent, found: xp.Tagged) -> list[xp.Award]:
     table = xp.payable(found.run.coins.as_xp_table(), found)
-    paid = xp.awards(
-        table, event, bot_game=found.game.hard_mode, first_guess_of_player=found.first_guess
-    )
+    paid = [
+        replace(a, amount=a.amount * coin_multiplier(found.run, found.game, a.source))
+        for a in xp.awards(
+            table, event, bot_game=found.game.hard_mode, first_guess_of_player=found.first_guess
+        )
+    ]
     for award in paid:
+        factor = coin_multiplier(found.run, found.game, award.source)
         player = session.get(Player, award.player_id)
         if player is None:
             logger.error(
@@ -38,8 +45,10 @@ def pay(session: Session, event: LoggedEvent, found: xp.Tagged) -> list[xp.Award
         )
         wallet.credit(session, player, award.amount, entry)
         logger.info(
-            "season coins +{amount} 🪙 ({source}) to {recipient}",
+            "season coins +{amount} 🪙 ({source}) to {recipient}"
+            + (" 00d7{multiplier}" if factor > 1 else ""),
             amount=award.amount,
+            multiplier=factor,
             source=award.source.value,
             recipient=players.describe_player_id(session, award.player_id),
             recipient_id=award.player_id,

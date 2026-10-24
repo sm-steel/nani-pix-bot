@@ -81,7 +81,7 @@ def end_season(session, active_season):
 
 
 def _game_in_use(request) -> Game:
-    for name in ("tagged_game", "bot_tagged_game", "untagged_game"):
+    for name in ("tagged_game", "bot_tagged_game", "untagged_game", "haunted_game"):
         if name in request.fixturenames:
             return request.getfixturevalue(name)
     raise LookupError("emit_* needs a tagged_game, bot_tagged_game or untagged_game fixture")
