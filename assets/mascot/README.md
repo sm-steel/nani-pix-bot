@@ -34,9 +34,11 @@ short wand tipped with a blue diamond crystal.
 Her costumes are the same six poses in other outfits. Each is a 384 px wide
 RGBA PNG, at most 480 px tall, in
 `src/nani_pix_bot/assets/mascot/costumes/<key>/<pose>.png`. The full-size
-originals are kept outside the repo. A costume needs all six poses. Art
-that comes out taller than 480 px is fitted to 480 tall with transparent
-side padding, never squashed. The keys are:
+originals are kept outside the repo. A costume needs all six poses. Every
+1024 px original is scaled by the same factor to 384 px wide and only its
+empty rows above and below are cropped, never by its content: that keeps
+Nani at one size across poses and costumes (a fox tail or a raised wand
+doesn't shrink her). The keys are:
 
 | Key | Costume |
 |---|---|
