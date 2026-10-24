@@ -1,4 +1,3 @@
-import hashlib
 from dataclasses import replace
 from io import BytesIO
 
@@ -164,14 +163,21 @@ def test_the_pill_blur_covers_exactly_the_drawn_pill(monkeypatch) -> None:
     assert _changed_box(board, blurred) == pill
 
 
-_GOLDEN_DEFAULT_CARD = "58f051de8573f8008674b1f297bfce704294f7ac861d71f86e6e9f113c398b77"
+def test_default_palette_is_the_sakura_look() -> None:
+    """The exact colours the card had before palettes existed."""
+    before = Palette(ribbon=(236, 110, 150), title_from=(255, 160, 190), title_to=(246, 206, 120))
+    assert before == DEFAULT_PALETTE
 
 
-def test_default_palette_card_is_unchanged() -> None:
-    """The Sakura look, pixel for pixel (hash taken before the palette refactor)."""
-    card = cards.SeasonBanner(CARD.headline, CARD.title, CARD.subtitle, stamp=_stamp())
-    out = Image.open(BytesIO(cards.render_season_banner(card, _png(_key_visual())))).convert("RGB")
-    assert hashlib.sha256(out.tobytes()).hexdigest() == _GOLDEN_DEFAULT_CARD
+def test_default_palette_card_equals_an_explicit_sakura_palette_card() -> None:
+    """Same process, same fonts: a pixel hash would differ between platforms."""
+    sakura = Palette((236, 110, 150), (255, 160, 190), (246, 206, 120))
+    plain = cards.SeasonBanner(CARD.headline, CARD.title, CARD.subtitle, stamp=_stamp())
+    explicit = replace(plain, palette=sakura)
+    background = _png(_key_visual())
+    assert cards.render_season_banner(plain, background) == cards.render_season_banner(
+        explicit, background
+    )
 
 
 def test_season_card_uses_the_run_palette() -> None:
