@@ -1,3 +1,4 @@
+import sqlalchemy as sa
 from sqlalchemy import BigInteger, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,3 +40,5 @@ class Player(Base):
     # player has no @username.
     first_name: Mapped[str | None] = mapped_column(String(USERNAME_LENGTH), default=None)
     title_key: Mapped[str | None] = mapped_column(String(TITLE_KEY_LENGTH), default=None)
+    # Opted out of being hexed (Halloween season mechanics).
+    hex_opt_out: Mapped[bool] = mapped_column(default=False, server_default=sa.false())

@@ -12,9 +12,17 @@ Anything else vulture reports is dead code: remove it or wire it up.
 
 from typing import TYPE_CHECKING
 
-from nani_pix_bot.models.enums import CosmeticSlot, EventType, ItemSource, OutboxKind
+from nani_pix_bot.models.enums import (
+    CosmeticSlot,
+    EventType,
+    HexOutcome,
+    ItemSource,
+    OutboxKind,
+)
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.halloween import ArmedOfuda, Hex, OmikujiDraw
 from nani_pix_bot.models.mal_link import MalCredentials
+from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import GoalKind, Reward
 from nani_pix_bot.seasons.mechanics import HauntTwist, OmikujiKind
@@ -44,6 +52,8 @@ _kept = (
     OutboxKind.EVENT_DAY_START,
     OutboxKind.EVENT_DAY_END,
     ItemSource.BONES,
+    Game.haunt_twist,
+    Game.boss_game,
     HauntTwist.KITSUNE_MIRROR,
     HauntTwist.TANUKI_LEAF,
     HauntTwist.YUREI_DOUBLE,
@@ -52,6 +62,9 @@ _kept = (
     # Halloween: wired by P4 (#469)
     EventType.OMIKUJI_DRAWN,
     EventType.OFUDA_USED,
+    ArmedOfuda.armed_at,
+    OmikujiDraw.local_date,
+    OmikujiDraw.drawn_at,
     OmikujiKind.DAIKICHI,
     OmikujiKind.KICHI,
     OmikujiKind.SHOKICHI,
@@ -62,6 +75,14 @@ _kept = (
     EventType.HEX_CAST,
     EventType.HEX_BLOCKED,
     EventType.HEX_TRIGGERED,
+    Hex.caster_id,
+    Hex.cast_at,
+    Hex.resolved_at,
+    Player.hex_opt_out,
+    HexOutcome.BLOCKED,
+    HexOutcome.TRIGGERED,
+    HexOutcome.EXPIRED,
+    HexOutcome.CANCELLED,
     # Halloween: wired by P6 (#471)
     EventType.GOAL_REACHED,
     OutboxKind.GOAL_MILESTONE,

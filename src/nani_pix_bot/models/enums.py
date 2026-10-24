@@ -496,6 +496,15 @@ class SeasonStatus(enum.StrEnum):
     CANCELLED = "cancelled"
 
 
+class HexOutcome(enum.StrEnum):
+    """How a `hexes` row ended (Halloween season mechanics). Stored as a plain string."""
+
+    BLOCKED = "blocked"
+    TRIGGERED = "triggered"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
 class CosmeticSlot(enum.StrEnum):
     """Where an equipped season cosmetic shows (seasons spec §3). Stored as a plain string."""
 
