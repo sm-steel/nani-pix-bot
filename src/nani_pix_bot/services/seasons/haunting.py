@@ -17,8 +17,10 @@ from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.seasons.mechanics import HauntTwist
 from nani_pix_bot.services.seasons import event_day, modifiers
 
-# Twists that clear up at the last stage; the others stay until the reveal.
-FADES_AT_LAST: frozenset[HauntTwist] = frozenset({HauntTwist.TANUKI_LEAF, HauntTwist.KYOKOTSU_XRAY})
+# Twists that clear up at the last stage; the mirror stays until the reveal.
+FADES_AT_LAST: frozenset[HauntTwist] = frozenset(
+    {HauntTwist.TANUKI_LEAF, HauntTwist.YUREI_DOUBLE, HauntTwist.KYOKOTSU_XRAY}
+)
 
 TANUKI_HUE_STEPS = 85  # of 256, about +120 degrees
 YUREI_OFFSET = (0.06, 0.04)  # fraction of the width, the height

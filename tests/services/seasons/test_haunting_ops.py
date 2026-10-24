@@ -2,7 +2,7 @@ import colorsys
 from io import BytesIO
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageOps
 
 from nani_pix_bot.seasons.mechanics import HauntTwist
 from nani_pix_bot.services.seasons import haunting
@@ -64,10 +64,10 @@ def test_yurei_blends_a_shifted_copy() -> None:
     assert all(abs(g - e) <= 1 for g, e in zip(got, expected, strict=True))
 
 
-def test_yurei_stays_on_the_last_stage() -> None:
+def test_the_mirror_stays_on_the_last_stage() -> None:
     img = _image()
-    out = haunting.twist_image(img, HauntTwist.YUREI_DOUBLE, last=True)
-    assert out.getpixel((20 + 1, 10)) != BLUE
+    out = haunting.twist_image(img, HauntTwist.KITSUNE_MIRROR, last=True)
+    assert out.tobytes() == ImageOps.mirror(img).tobytes()
 
 
 def test_xray_is_an_inverted_negative() -> None:

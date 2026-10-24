@@ -78,5 +78,5 @@ def test_is_haunted_counts_the_boss(haunted_game) -> None:
     assert haunting.is_haunted(haunted_game)
 
 
-def test_fades_at_last_is_the_two_clearing_twists() -> None:
-    assert {HauntTwist.TANUKI_LEAF, HauntTwist.KYOKOTSU_XRAY} == haunting.FADES_AT_LAST
+def test_only_the_mirror_stays_on_the_last_stage() -> None:
+    assert set(HauntTwist) - {HauntTwist.KITSUNE_MIRROR} == haunting.FADES_AT_LAST
