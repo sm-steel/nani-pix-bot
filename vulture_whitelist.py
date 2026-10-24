@@ -45,9 +45,6 @@ _kept = (
     TurnState.turn_opened_at,
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
-    # Halloween: wired by P3 (#468)
-    # P3 Task 8
-    GoalKind.HAUNTED_WINS,
     # Halloween: wired by P4 (#469)
     EventType.OMIKUJI_DRAWN,
     EventType.OFUDA_USED,

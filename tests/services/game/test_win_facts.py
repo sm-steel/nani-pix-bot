@@ -26,3 +26,19 @@ def test_an_untagged_wins_facts_have_no_gate_tags(session, untagged_game) -> Non
     facts = win_facts.win_facts(session, untagged_game, WINNER, WinMethod.GUESS)
 
     assert facts["gate_tags"] == []
+
+
+def test_win_facts_mark_a_haunted_win(session, haunted_game) -> None:
+    haunted_game.haunt_twist = "tanuki_leaf"
+
+    assert win_facts.win_facts(session, haunted_game, WINNER, WinMethod.GUESS)["haunted"] is True
+
+
+def test_win_facts_mark_a_boss_game_as_haunted(session, haunted_game) -> None:
+    haunted_game.boss_game = True
+
+    assert win_facts.win_facts(session, haunted_game, WINNER, WinMethod.GUESS)["haunted"] is True
+
+
+def test_win_facts_mark_a_plain_win_as_not_haunted(session, haunted_game) -> None:
+    assert win_facts.win_facts(session, haunted_game, WINNER, WinMethod.GUESS)["haunted"] is False
