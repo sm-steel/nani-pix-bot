@@ -13,7 +13,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import mascot
 from nani_pix_bot.services import pixelate as pixelate_service
-from nani_pix_bot.services.cosmetics import frames, inventory
+from nani_pix_bot.services.cosmetics import costume, frames, inventory
 from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.seasons import styles
 
@@ -65,10 +65,23 @@ def season_style(session: Session, game: Game) -> str | None:
     return style
 
 
+def costume_for(session: Session, game: Game) -> str | None:
+    """The costume Nani wears on the game's stage images, logged at INFO when
+    there is one, like `season_style`."""
+    key = costume.for_game(session, game)
+    if key is not None:
+        logger.info(
+            "Nani on the stage image in the {costume!r} costume", costume=key, game_id=game.id
+        )
+    return key
+
+
 def stage_png(
     session: Session, game: Game, image_bytes: bytes, width: int, overthrow: bool = False
 ) -> bytes:
-    """The stage image as posted: styled, framed, Nani on top in the stage's pose."""
+    """The stage image as posted: styled, framed, Nani on top in the stage's pose and costume."""
     style = season_style(session, game)
     png = stage_png_with(image_bytes, width, game.pixel_algorithm, frame_for(session, game), style)
-    return mascot.add_to_png(png, stage_pose(session, game, overthrow=overthrow))
+    return mascot.add_to_png(
+        png, stage_pose(session, game, overthrow=overthrow), costume_for(session, game)
+    )

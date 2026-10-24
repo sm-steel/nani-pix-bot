@@ -23,6 +23,7 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import DEFAULT_ALGORITHM, PixelStage
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, mascot, settings
+from nani_pix_bot.services.cosmetics import costume
 from nani_pix_bot.services.pixelate import pixelate
 from nani_pix_bot.services.settings import stage_config
 
@@ -213,6 +214,9 @@ async def _send_preview(
 ) -> None:
     chat_id = message.chat_id
     thread_id = message.message_thread_id
+    # the group's look, not an admin's own equipped costume
+    with session_scope(context.bot_data["session_factory"]) as session:
+        wears = costume.for_player(session, None, costume.active_run(session))
     for stage in sorted(changes, key=lambda s: s.name):
         width, limit = changes[stage]
         pose = mascot.stage_pose(
@@ -226,7 +230,7 @@ async def _send_preview(
                 )
                 continue
             pixelated = mascot.add_to_png(
-                pixelate(image_path.read_bytes(), width, DEFAULT_ALGORITHM), pose
+                pixelate(image_path.read_bytes(), width, DEFAULT_ALGORITHM), pose, wears
             )
             caption = (
                 i18n.t(

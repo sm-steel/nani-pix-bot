@@ -23,6 +23,7 @@ from nani_pix_bot.services import mascot, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.clues import author_list, handouts, shop
 from nani_pix_bot.services.clues.shop import Offer, Refusal, ShopRefusedError
+from nani_pix_bot.services.cosmetics import costume
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.pixelate import fingerprint, render
@@ -66,6 +67,7 @@ class ScreenshotPlan:
     mode: ClueScreenshotMode = ClueScreenshotMode.RANDOM
     author: tuple[AuthorCandidate, ...] = ()
     pose: Pose = Pose.CAST
+    costume: str | None = None
 
 
 class ScreenshotFetchError(Exception):
@@ -144,6 +146,7 @@ def screenshot_plan(session: Session, user: User, game_id: int) -> ScreenshotPla
         mode=mode,
         author=_author_candidates(session, game, mode),
         pose=stage_cosmetics.stage_pose(session, game),
+        costume=costume.for_game(session, game),
     )
 
 
@@ -240,7 +243,9 @@ def _render(plan: ScreenshotPlan, url: str, data: bytes, print_: int) -> Fetched
             "extra screenshot: could not pixelate {screenshot_url}", screenshot_url=url
         )
         raise ScreenshotFetchError("pixelation failed") from None
-    return FetchedScreenshot(url, mascot.add_to_png(pixelated, plan.pose), print_, data)
+    return FetchedScreenshot(
+        url, mascot.add_to_png(pixelated, plan.pose, plan.costume), print_, data
+    )
 
 
 def _author_pick(plan: ScreenshotPlan) -> FetchedScreenshot | None:
@@ -315,4 +320,6 @@ def render_tile_clue(session: Session, game: Game, tile: int) -> bytes:
         original, stage_width(session, game), game.pixel_algorithm
     )
     revealed = render.reveal_tiles(original, pixelated, [tile], shop.TILE_GRID)
-    return mascot.add_to_png(revealed, stage_cosmetics.stage_pose(session, game))
+    return mascot.add_to_png(
+        revealed, stage_cosmetics.stage_pose(session, game), costume.for_game(session, game)
+    )

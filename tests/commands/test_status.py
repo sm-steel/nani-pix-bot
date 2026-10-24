@@ -17,6 +17,7 @@ from nani_pix_bot.services import i18n, mascot
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.mascot import Pose
+from tests.costume_fixtures import activate_season
 
 HOST, ALICE = 1, 2
 
@@ -211,7 +212,9 @@ async def test_the_repost_shows_nani_in_the_current_stages_pose(
     monkeypatch.setattr(
         stage_cosmetics, "stage_png_with", lambda image, _w, _a, _f, style=None: image
     )
-    monkeypatch.setattr(mascot, "add_to_png", lambda png, pose: poses.append(pose) or png)
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: poses.append(pose) or png
+    )
     with session_scope(session_factory) as session:
         _players(session)
         session.add(
@@ -265,3 +268,30 @@ async def test_a_season_game_is_reposted_in_its_style(
     assert rendered == [fake_runs["demo_1"].style]
     styled = [r for r in log_records if r.message.startswith("stage image in the season style")]
     assert [(r.level, r.extra["style"]) for r in styled] == [("INFO", "plain")]
+
+
+async def test_status_reposts_in_the_costume(
+    session_factory, monkeypatch: pytest.MonkeyPatch, costume_run
+) -> None:
+    costumes: list[str | None] = []
+    monkeypatch.setattr(
+        stage_cosmetics, "stage_png_with", lambda image, _w, _a, _f, style=None: image
+    )
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: costumes.append(costume) or png
+    )
+    with session_scope(session_factory) as session:
+        _players(session)
+        session.add(
+            Game(
+                starter_id=HOST,
+                status=GameStatus.ACTIVE,
+                current_stage=PixelStage.STAGE_3,
+                original_image=b"img",
+                season_id=activate_season(session),
+            )
+        )
+
+    await _run(_update(), _context(session_factory))
+
+    assert costumes == [costume_run]

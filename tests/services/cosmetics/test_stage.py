@@ -10,6 +10,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import mascot, pixelate
 from nani_pix_bot.services.cosmetics import stage
 from nani_pix_bot.services.mascot import Pose
+from tests.costume_fixtures import ORANGE, activate_season
 
 STARTER = 5
 WIDTH = 16
@@ -37,7 +38,9 @@ def _spy_poses(monkeypatch) -> list[Pose]:
     poses: list[Pose] = []
     real = mascot.add_to_png
     monkeypatch.setattr(
-        mascot, "add_to_png", lambda png, pose: poses.append(pose) or real(png, pose)
+        mascot,
+        "add_to_png",
+        lambda png, pose, costume=None: poses.append(pose) or real(png, pose, costume),
     )
     return poses
 
@@ -125,3 +128,30 @@ def test_the_style_goes_under_the_frame(monkeypatch) -> None:
 def test_no_style_no_call(monkeypatch) -> None:
     monkeypatch.setattr(stage.styles, "apply_style", lambda *_: pytest.fail("styled"))
     stage.stage_png_with(_image(), WIDTH, PixelAlgorithm.BOX, None)
+
+
+def _season_game(session, **fields) -> Game:
+    return _game(session, season_id=activate_season(session), **fields)
+
+
+def test_stage_png_dresses_nani_in_the_starters_costume(session, costume_run) -> None:
+    game = _season_game(session)
+    out = Image.open(BytesIO(stage.stage_png(session, game, _image(), 200))).convert("RGB")
+    x, y, width, height = mascot.box(out.size, Pose.CAST, costume_run)
+    assert out.getpixel((x + width // 2, y + height // 2)) == ORANGE[:3]
+
+
+def test_stage_png_logs_the_costume_at_info(session, costume_run, log_records) -> None:
+    game = _season_game(session)
+    stage.stage_png(session, game, _image(), 200)
+    lines = [r for r in log_records if r.extra.get("costume") == "test_hat" and r.level == "INFO"]
+    assert len(lines) == 1
+    assert lines[0].extra["game_id"] == game.id
+
+
+def test_no_season_no_costume_is_byte_identical(session, costume_run) -> None:
+    game = _game(session)
+    assert stage.costume_for(session, game) is None
+    assert stage.stage_png(session, game, _image(), 200) == mascot.add_to_png(
+        pixelate.pixelate(_image(), 200, game.pixel_algorithm), Pose.CAST
+    )
