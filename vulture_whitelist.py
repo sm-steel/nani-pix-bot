@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.turn_state import TurnState
+from nani_pix_bot.seasons.definition import GoalKind, Reward
+from nani_pix_bot.seasons.mechanics import HauntTwist, OmikujiKind, Palette
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 
@@ -35,6 +37,23 @@ _kept = (
     TurnState.turn_opened_at,
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
+    # Halloween: wired by P1 Task 2
+    Palette.title_from,
+    Palette.title_to,
+    # Halloween: wired by P3 (#468)
+    HauntTwist.KITSUNE_MIRROR,
+    HauntTwist.TANUKI_LEAF,
+    HauntTwist.YUREI_DOUBLE,
+    HauntTwist.KYOKOTSU_XRAY,
+    GoalKind.HAUNTED_WINS,
+    # Halloween: wired by P4 (#469)
+    OmikujiKind.DAIKICHI,
+    OmikujiKind.KICHI,
+    OmikujiKind.SHOKICHI,
+    Reward.ofuda,
+    Reward.omamori,
+    # Halloween: wired by P5 (#470)
+    GoalKind.HEXES_BLOCKED,
 )
 
 if TYPE_CHECKING:

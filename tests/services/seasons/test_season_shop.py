@@ -128,3 +128,12 @@ def test_a_purchase_is_logged(session, active_season, run, buyer, log_records) -
     assert record.level == "INFO"
     assert record.extra["offer"] == "name_flair.dango"
     assert record.extra["season_id"] == active_season.id
+
+
+def test_buying_ofuda_grants_the_consumable(session, active_season, buyer) -> None:
+    run = registry.discover("tests.seasons.fake_runs")["demo_3"]
+    index = next(i for i, o in enumerate(run.shop) if o.key == "ofuda")
+    _buy(session, active_season, run, buyer, index)
+    assert consumables.count(session, buyer.telegram_user_id, ConsumableKind.OFUDA) == 1
+    assert consumables.count(session, buyer.telegram_user_id, ConsumableKind.CLUE_TICKET) == 0
+    assert wallet.balance(session, buyer.telegram_user_id, season_id=active_season.id) == 160

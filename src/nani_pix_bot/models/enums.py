@@ -522,8 +522,10 @@ class ShowcaseKind(enum.StrEnum):
 
 
 class ConsumableKind(enum.StrEnum):
-    """A consumable a player holds a count of (seasons spec §3): the clue token
-    only — no free sharpens."""
+    """A consumable a player holds a count of (seasons spec §3): the clue token,
+    plus the Halloween season's ofuda and omamori — no free sharpens."""
 
     # 🎟 the clue token; named so a security linter doesn't read "token" as a secret
     CLUE_TICKET = "clue_token"
+    OFUDA = "ofuda"  # 📜 Halloween season consumable
+    OMAMORI = "omamori"  # 🧧 Halloween season consumable

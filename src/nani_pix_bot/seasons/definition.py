@@ -12,6 +12,18 @@ from nani_pix_bot.models.achievement import KEY_LENGTH as ACHIEVEMENT_KEY_LENGTH
 from nani_pix_bot.models.achievement import PERIOD_KEY_LENGTH
 from nani_pix_bot.models.enums import CosmeticSlot, EventType, Rarity
 from nani_pix_bot.models.season import OBJECTIVE_KEY_LENGTH
+from nani_pix_bot.seasons import mechanics
+from nani_pix_bot.seasons.mechanics import (
+    DEFAULT_EMOJI,
+    DEFAULT_PALETTE,
+    BoneSet,
+    EventDay,
+    GroupGoal,
+    Haunt,
+    HexRule,
+    OmikujiOutcome,
+    Palette,
+)
 
 TagKind = Literal["genre", "theme"]
 
@@ -22,6 +34,8 @@ class RewardKind(enum.StrEnum):
     CURRENCY = "currency"  # 💠
     # 🎟 the clue token; named so a security linter doesn't read "token" as a secret
     CLUE_TICKET = "clue_token"
+    OFUDA = "ofuda"  # 📜 a consumable (Halloween season)
+    OMAMORI = "omamori"  # 🧧 a consumable (Halloween season)
     STAMP = "stamp"  # the season stamp's gold ring (free track); the claim is the reward
     STAMP_PLUS = "stamp_plus"  # the gold season stamp art (premium track)
 
@@ -29,7 +43,7 @@ class RewardKind(enum.StrEnum):
 @dataclass(frozen=True)
 class Reward:
     """One pass reward. `item_key` is a key of the run's items (ITEM); `amount`
-    is the 🪙/💠 paid (COINS/CURRENCY); a CLUE_TICKET reward gives one token."""
+    is the 🪙/💠 paid (COINS/CURRENCY); a CLUE_TICKET/OFUDA/OMAMORI reward gives one."""
 
     kind: RewardKind
     item_key: str = ""
@@ -52,6 +66,14 @@ class Reward:
         return cls(RewardKind.CLUE_TICKET)
 
     @classmethod
+    def ofuda(cls) -> "Reward":
+        return cls(RewardKind.OFUDA)
+
+    @classmethod
+    def omamori(cls) -> "Reward":
+        return cls(RewardKind.OMAMORI)
+
+    @classmethod
     def stamp(cls) -> "Reward":
         return cls(RewardKind.STAMP)
 
@@ -71,7 +93,8 @@ class Tier:
 
 MAX_CLUE_TOKEN_TIERS = 2
 MAX_SHOP_CLUE_TOKENS = 2
-_SHOP_KINDS = (RewardKind.ITEM, RewardKind.CLUE_TICKET)
+CONSUMABLE_REWARDS = (RewardKind.CLUE_TICKET, RewardKind.OFUDA, RewardKind.OMAMORI)
+_SHOP_KINDS = (RewardKind.ITEM, *CONSUMABLE_REWARDS)
 
 
 @dataclass(frozen=True)
@@ -89,8 +112,12 @@ class ShopOffer:
         return cls(RewardKind.ITEM, item_key=key, price=price)
 
     @classmethod
+    def consumable(cls, kind: RewardKind, price: int, limit: int) -> "ShopOffer":
+        return cls(kind, price=price, limit=limit)
+
+    @classmethod
     def clue_ticket(cls, price: int, limit: int) -> "ShopOffer":
-        return cls(RewardKind.CLUE_TICKET, price=price, limit=limit)
+        return cls.consumable(RewardKind.CLUE_TICKET, price, limit)
 
     @property
     def key(self) -> str:
@@ -188,6 +215,8 @@ class GoalKind(enum.StrEnum):
     SHARED_CLUES = "shared_clues"
     TIPS = "tips"
     DAYS_PLAYED = "days_played"
+    HEXES_BLOCKED = "hexes_blocked"
+    HAUNTED_WINS = "haunted_wins"
 
 
 @dataclass(frozen=True)
@@ -259,6 +288,15 @@ class SeasonRun:
     style: str | None = None  # a key into services.seasons.styles.STYLES
     objectives: tuple[Objective, ...] = ()
     achievements: tuple[RunAchievement, ...] = ()
+    palette: Palette = DEFAULT_PALETTE
+    emoji: str = DEFAULT_EMOJI
+    mascot_costume: str | None = None  # a costume key (validated where costumes live)
+    haunt: Haunt | None = None
+    event_day: EventDay | None = None
+    group_goal: GroupGoal | None = None
+    hexes: tuple[HexRule, ...] = ()
+    omikuji: tuple[OmikujiOutcome, ...] = ()
+    bone_set: BoneSet | None = None
 
     def name(self, lang: str) -> str:
         return self.names.get(lang) or self.names["EN"]
@@ -307,10 +345,13 @@ def pass_problems(run: SeasonRun) -> list[str]:
         1
         for tier in run.tiers
         for reward in (tier.free, tier.premium)
-        if reward is not None and reward.kind is RewardKind.CLUE_TICKET
+        if reward is not None and reward.kind in CONSUMABLE_REWARDS
     )
     if tokens > MAX_CLUE_TOKEN_TIERS:
-        problems.append(f"{tokens} clue token rewards; at most {MAX_CLUE_TOKEN_TIERS} per pass")
+        problems.append(
+            f"{tokens} consumable rewards (clue token, ofuda, omamori); "
+            f"at most {MAX_CLUE_TOKEN_TIERS} per pass"
+        )
     if any(tier.premium is not None for tier in run.tiers) and run.premium_price <= 0:
         problems.append("premium rewards need a premium_price")
     return problems + _stamp_problems(run)
@@ -330,7 +371,7 @@ def _offer_problems(run: SeasonRun, offer: ShopOffer) -> list[str]:
     where = f"shop offer {offer.key!r}"
     problems = []
     if offer.kind not in _SHOP_KINDS:
-        problems.append(f"{where}: only items and the clue token are sold")
+        problems.append(f"{where}: only items, the clue token, ofuda and omamori are sold")
     if offer.price <= 0:
         problems.append(f"{where}: price must be positive")
     if offer.kind is RewardKind.ITEM:
@@ -340,7 +381,7 @@ def _offer_problems(run: SeasonRun, offer: ShopOffer) -> list[str]:
             problems.append(f"{where}: already a pass reward; an item is shop- or pass-only")
         if offer.limit != 1:
             problems.append(f"{where}: an item sells once")
-    if offer.kind is RewardKind.CLUE_TICKET and not 1 <= offer.limit <= MAX_SHOP_CLUE_TOKENS:
+    if offer.kind in CONSUMABLE_REWARDS and not 1 <= offer.limit <= MAX_SHOP_CLUE_TOKENS:
         problems.append(f"{where}: limit must be 1..{MAX_SHOP_CLUE_TOKENS}")
     return problems
 
@@ -424,4 +465,5 @@ def run_problems(run: SeasonRun) -> list[str]:
         + modifier_problems(run)
         + objective_problems(run)
         + achievement_problems(run)
+        + mechanics.problems(run)
     )
