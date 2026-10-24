@@ -716,7 +716,10 @@ src/nani_pix_bot/
                    # goes (box: bottom-right, 16% wide), compositing her
                    # last (compose / add_to_png / add_to_jpeg; a failure
                    # leaves the image without her) and the still the reveal
-                   # video overlays (still_png); poses from assets/mascot/
+                   # video overlays (still_png); poses from assets/mascot/;
+                   # every drawing function takes an optional costume key
+                   # (art from assets/mascot/costumes/<key>/<pose>.png; a
+                   # missing file is logged once at ERROR, she is drawn plain)
     pixelate/     # Pillow downscale/upscale pipeline — given raw bytes,
                    # a target width and a PixelAlgorithm, no DB or
                    # PixelStage dependency; callers resolve the width via
@@ -997,6 +1000,11 @@ src/nani_pix_bot/
                    #                   MAX_TITLE_ID_BYTES
                    #   inventory.py    owns/grant/equip/unequip/equipped and
                    #                   look(session, player, slot)
+                   #   costume.py      Nani Pix's costume on a game's pictures
+                   #                   (for_game, for_game_id, for_viewer,
+                   #                   active_run, problems): the starter's
+                   #                   equipped one, else the season's
+                   #                   default, else plain; read live
                    #   flair.py        named(): a name plus its flair emoji
                    #   frames.py       FRAMES and apply_frame
                    #   paper_frames.py the Sakura paper frames, "paper" and
@@ -1123,6 +1131,8 @@ assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's k
                    # same doc), example1/2 (/stageconfig's examples) and
                    # mascot/<pose>.png (Nani Pix's six poses, 384 px wide;
                    # the full-size art lives in the repo-root assets/mascot/)
+                   # and mascot/costumes/<key>/<pose>.png (the same six
+                   # poses per costume, 384 wide and at most 480 tall)
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
                    # (EN/RU page parity, every command in its command table)

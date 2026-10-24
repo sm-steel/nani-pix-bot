@@ -621,6 +621,44 @@ her corner, cutting a long name with "…" earlier.
 A failure to load or add her never blocks a post: the image goes out
 without her and the failure is logged at `ERROR`.
 
+#### Costumes
+
+Nani Pix can wear a costume on every picture she is on
+(`services/cosmetics/costume.py`). The costume is resolved in this order:
+
+1. the game starter's equipped costume item (slot `mascot_costume`);
+2. else the active season run's default costume (`SeasonRun.mascot_costume`;
+   the Halloween run's is `pumpkin`);
+3. else plain Nani.
+
+It is read **live at each render**, like the host frame, so equipping a
+costume changes the next picture of a running game. Which run counts
+depends on the game: a game in SETUP has no season yet and uses the
+currently active run; a started game uses the run it was tagged with
+(`modifiers.season_of`), and an untagged game gets no run default, only the
+starter's equipped costume.
+
+The six costumes are `pumpkin`, `kitsune`, `bakeneko`, `chochin`,
+`pastel_witch` and `skeleton`. Each has all six poses under
+`assets/mascot/costumes/<key>/<pose>.png`. Art that is taller than 480 px
+is fitted to 480 tall with transparent side padding, never squashed, and
+Nani is placed by her own costume's aspect.
+
+In the reveal, the effect part is rendered at pregen time, so it carries the
+costume she had when the game started. The ending, the photo fallback and
+the clue album read the costume again at reveal time. `/stop` reads it
+before it deletes the game row.
+
+A failed costume lookup never blocks a reveal or a preview, and a missing
+or unreadable costume file never blocks a post: she is drawn plain, and
+the failure is logged at `ERROR`.
+
+Cosmetic previews show Nani in the viewer's own costume. Their cache key
+is `<item_id>#nani` for a plain viewer and `<item_id>#nani@<costume>` with
+a costume. A costume item's own preview is a sheet of all six poses
+(`previews.costume_sheet`), identical for everyone, so its key doesn't
+depend on the viewer.
+
 ### Which algorithm colours the blocks
 
 The stage width decides *how wide* the mosaic is; a separate, orthogonal

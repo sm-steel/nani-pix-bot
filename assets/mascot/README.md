@@ -29,6 +29,26 @@ diamond-shaped crystal pin; a navy capelet with the same trim and a crystal
 brooch; white blouse, navy pleated skirt, dark tights, navy ankle boots; a
 short wand tipped with a blue diamond crystal.
 
+## Costumes
+
+Her costumes are the same six poses in other outfits. Each is a 384 px wide
+RGBA PNG, at most 480 px tall, in
+`src/nani_pix_bot/assets/mascot/costumes/<key>/<pose>.png`, with the
+full-size lossless WebP original in `assets/mascot/costumes/<key>/<pose>.webp`.
+A costume needs all six poses. The keys are:
+
+| Key | Costume |
+|---|---|
+| `pumpkin` | The Halloween season's default |
+| `kitsune` | Fox spirit |
+| `bakeneko` | Cat spirit |
+| `chochin` | Paper lantern |
+| `pastel_witch` | Pastel witch |
+| `skeleton` | Skeleton |
+
+For new costume art, attach only `main_reference.png` and
+`reference_sheet.png` to the generator and describe the pose in the prompt.
+
 ## License
 
 MIT, like the code: see [LICENSE](../../LICENSE).
