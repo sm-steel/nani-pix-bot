@@ -53,6 +53,7 @@ class _Repost:
     frame: str | None
     style: str | None
     pose: Pose  # the current stage's (an overthrow game's turn 1 shows the usual cast)
+    costume: str | None
 
 
 def caption(live: LiveStatus, lang: str) -> str:
@@ -114,6 +115,7 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
         stage_cosmetics.frame_for(session, game),
         stage_cosmetics.season_style(session, game),
         mascot.stage_pose(progress.number, progress.total),
+        stage_cosmetics.costume_for(session, game),
     )
 
 
@@ -141,6 +143,7 @@ def _render(repost: _Repost) -> list[bytes]:
                 image, repost.width, repost.algorithm, repost.frame, repost.style
             ),
             repost.pose,
+            repost.costume,
         )
         for image in repost.images
     ]

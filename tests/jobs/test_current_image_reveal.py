@@ -9,11 +9,15 @@ from nani_pix_bot.jobs.reveal import RevealWinner
 from nani_pix_bot.jobs.timers import current_image
 from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models import ClueAuthorScreenshot, ClueScreenshotHandout
-from nani_pix_bot.models.enums import RevealEffect
+from nani_pix_bot.models.enums import GameStatus, PixelStage, RevealEffect
+from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import mascot
 from nani_pix_bot.services.clues import author_list, handouts
+from nani_pix_bot.services.cosmetics import costume as costumes
 from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.reveal import store
+from tests.costume_fixtures import activate_season
 
 
 def _context(session_factory) -> MagicMock:
@@ -91,7 +95,7 @@ async def test_the_ending_shows_nani_in_the_outcomes_pose(
         _context(session_factory), session_factory, target=target, photo=b"png", caption="c"
     )
     assert render.await_args is not None
-    assert render.await_args.kwargs["ending"] is pose
+    assert render.await_args.kwargs["nani"].pose is pose
 
 
 async def test_unsolved_reveal_passes_no_winner(session_factory, monkeypatch) -> None:
@@ -124,12 +128,142 @@ async def test_no_video_falls_back_to_photo(session_factory, monkeypatch) -> Non
     finished.assert_called_once_with(context.application, 3)
 
 
-def _spy_jpeg(monkeypatch) -> list[Pose]:
-    poses: list[Pose] = []
+def _spy_jpeg(monkeypatch) -> list[tuple[Pose, str | None]]:
+    """Records the (pose, costume) of every photo Nani is drawn on."""
+    calls: list[tuple[Pose, str | None]] = []
     monkeypatch.setattr(
-        mascot, "add_to_jpeg", lambda data, pose: poses.append(pose) or data + b"+N"
+        mascot,
+        "add_to_jpeg",
+        lambda data, pose, costume=None: calls.append((pose, costume)) or data + b"+N",
     )
-    return poses
+    return calls
+
+
+def _season_game(session_factory) -> int:
+    """An ACTIVE game of the active "demo_1" season."""
+    with session_scope(session_factory) as session:
+        session.add(Player(telegram_user_id=1))
+        game = Game(
+            starter_id=1,
+            original_image=b"png",
+            status=GameStatus.ACTIVE,
+            current_stage=PixelStage.STAGE_1,
+            season_id=activate_season(session),
+        )
+        session.add(game)
+        session.flush()
+        return game.id
+
+
+async def test_the_photo_fallback_and_clue_album_wear_the_costume(
+    session_factory, monkeypatch, costume_run
+) -> None:
+    render = AsyncMock(return_value=None)
+    monkeypatch.setattr(reveal, "render_reveal", render)
+    monkeypatch.setattr(reveal, "finished", MagicMock())
+    calls = _spy_jpeg(monkeypatch)
+    game_id = _season_game(session_factory)
+
+    await current_image.post_reveal(
+        _context(session_factory),
+        session_factory,
+        target=RevealTarget(game_id, None, leading_extras=(b"other",)),
+        photo=b"png",
+        caption="cap",
+    )
+
+    assert render.await_args is not None
+    assert render.await_args.kwargs["nani"].costume == costume_run
+    # the photo, then the clue album
+    assert calls == [(Pose.OOPS, costume_run), (Pose.OOPS, costume_run)]
+
+
+async def test_the_targets_own_costume_dresses_a_deleted_games_reveal(
+    session_factory, monkeypatch
+) -> None:
+    render = AsyncMock(return_value=None)
+    monkeypatch.setattr(reveal, "render_reveal", render)
+    monkeypatch.setattr(reveal, "finished", MagicMock())
+    calls = _spy_jpeg(monkeypatch)
+
+    await current_image.post_reveal(
+        _context(session_factory),
+        session_factory,
+        target=RevealTarget(3, None, costume="test_hat"),
+        photo=b"png",
+        caption="cap",
+    )
+
+    assert render.await_args is not None
+    assert render.await_args.kwargs["nani"].costume == "test_hat"
+    assert calls == [(Pose.OOPS, "test_hat")]
+
+
+async def test_a_failed_costume_lookup_still_reveals_nani_plain(
+    session_factory, monkeypatch, log_records
+) -> None:
+    render = AsyncMock(return_value=None)
+    monkeypatch.setattr(reveal, "render_reveal", render)
+    monkeypatch.setattr(reveal, "finished", MagicMock())
+    calls = _spy_jpeg(monkeypatch)
+
+    def _boom(_session, _game):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(costumes, "for_game", _boom)
+    game_id = _season_game(session_factory)
+    context = _context(session_factory)
+
+    sent = await current_image.post_reveal(
+        context, session_factory, target=RevealTarget(game_id, None), photo=b"png", caption="c"
+    )
+
+    assert sent is not None
+    assert render.await_args is not None
+    assert render.await_args.kwargs["nani"].costume is None
+    assert calls == [(Pose.OOPS, None)]
+    [error] = [line for line in log_records if line.level == "ERROR"]
+    assert error.extra["game_id"] == game_id
+
+
+async def test_the_photo_fallback_logs_nanis_costume(
+    session_factory, monkeypatch, log_records
+) -> None:
+    monkeypatch.setattr(reveal, "render_reveal", AsyncMock(return_value=None))
+    monkeypatch.setattr(reveal, "finished", MagicMock())
+    _spy_jpeg(monkeypatch)
+
+    await current_image.post_reveal(
+        _context(session_factory),
+        session_factory,
+        target=RevealTarget(3, None, costume="test_hat"),
+        photo=b"png",
+        caption="c",
+    )
+
+    [line] = [line for line in log_records if line.message.startswith("posting the reveal photo")]
+    assert (line.level, line.extra["costume"]) == ("INFO", "test_hat")
+    # the one INFO line that names the costume (the render line is mocked away here)
+    assert [r for r in log_records if r.level == "INFO" and "costume" in r.extra] == [line]
+
+
+async def test_a_plain_games_reveal_has_no_costume(session_factory, monkeypatch) -> None:
+    render = AsyncMock(return_value=None)
+    monkeypatch.setattr(reveal, "render_reveal", render)
+    monkeypatch.setattr(reveal, "finished", MagicMock())
+    calls = _spy_jpeg(monkeypatch)
+
+    await current_image.post_reveal(
+        _context(session_factory),
+        session_factory,
+        target=RevealTarget(3, None),
+        photo=b"png",
+        caption="cap",
+    )
+
+    assert render.await_args is not None
+    assert render.await_args.kwargs["nani"].costume is None
+    assert calls == [(Pose.OOPS, None)]
 
 
 async def test_the_fallback_photo_shows_nani_in_the_outcomes_pose(
@@ -138,7 +272,7 @@ async def test_the_fallback_photo_shows_nani_in_the_outcomes_pose(
     render = AsyncMock(return_value=None)
     monkeypatch.setattr(reveal, "render_reveal", render)
     monkeypatch.setattr(reveal, "finished", MagicMock())
-    poses = _spy_jpeg(monkeypatch)
+    calls = _spy_jpeg(monkeypatch)
     context = _context(session_factory)
 
     await current_image.post_reveal(
@@ -146,14 +280,14 @@ async def test_the_fallback_photo_shows_nani_in_the_outcomes_pose(
     )
 
     assert context.bot.send_photo.await_args.kwargs["photo"] == b"png+N"
-    assert poses == [Pose.OOPS]
+    assert calls == [(Pose.OOPS, None)]
     assert render.await_args is not None
     assert render.await_args.args[2] == b"png"  # the pre-render needs the stored bytes
 
 
 async def test_the_clue_album_shows_nani_in_the_reveals_pose(session_factory, monkeypatch) -> None:
     _video_ok(monkeypatch)
-    poses = _spy_jpeg(monkeypatch)
+    calls = _spy_jpeg(monkeypatch)
     _add_clues(session_factory, 3, [b"c1", b"c2"])
     context = _context(session_factory)
 
@@ -167,7 +301,7 @@ async def test_the_clue_album_shows_nani_in_the_reveals_pose(session_factory, mo
 
     media = context.bot.send_media_group.await_args.kwargs["media"]
     assert [item.media.input_file_content for item in media] == [b"c1+N", b"c2+N"]
-    assert poses == [Pose.WIN, Pose.WIN]
+    assert calls == [(Pose.WIN, None), (Pose.WIN, None)]
 
 
 async def test_telegram_rejecting_video_falls_back_to_photo(session_factory, monkeypatch) -> None:

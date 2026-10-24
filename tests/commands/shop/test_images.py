@@ -26,6 +26,7 @@ from tests.commands.shop.helpers import (
     set_currency,
     tap,
 )
+from tests.costume_fixtures import activate_season
 from tests.frames import frame_bytes
 
 _RANDOM_URL = "https://x/random.jpg"
@@ -188,7 +189,9 @@ async def test_a_bought_screenshot_shows_nani_in_the_plans_pose(
     session_factory, provider, monkeypatch
 ) -> None:
     poses: list[Pose] = []
-    monkeypatch.setattr(mascot, "add_to_png", lambda png, pose: poses.append(pose) or png + b"+N")
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: poses.append(pose) or png + b"+N"
+    )
     plan = replace(_plan(ClueScreenshotMode.RANDOM, ()), pose=Pose.NANI)
 
     fetched = await images.fetch_extra_screenshot(_context(session_factory), plan)
@@ -200,7 +203,9 @@ async def test_a_bought_screenshot_shows_nani_in_the_plans_pose(
 
 def test_a_tile_clue_shows_nani_in_the_current_stages_pose(session_factory, monkeypatch) -> None:
     poses: list[Pose] = []
-    monkeypatch.setattr(mascot, "add_to_png", lambda png, pose: poses.append(pose) or png)
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: poses.append(pose) or png
+    )
     game_id = seed_game(
         session_factory, original_image=frame_bytes(3), current_stage=PixelStage.STAGE_5
     )
@@ -232,3 +237,43 @@ async def test_random_mode_buy_sells_a_random_frame_not_the_list(session_factory
 
     assert [p.screenshot_url for p in purchases(session_factory)] == [_RANDOM_URL]
     provider.assert_awaited_once()
+
+
+def _costume_game(session_factory) -> int:
+    with session_factory() as session:
+        season_id = activate_season(session)
+        session.commit()
+    return seed_game(
+        session_factory, original_image=frame_bytes(3), shikimori_id=1, season_id=season_id
+    )
+
+
+async def test_a_bought_screenshot_wears_the_costume(
+    session_factory, provider, monkeypatch, costume_run
+) -> None:
+    costumes: list[str | None] = []
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: costumes.append(costume) or png
+    )
+    game_id = _costume_game(session_factory)
+    set_currency(session_factory, 2, RICH)
+    with session_factory() as session:
+        plan = images.screenshot_plan(session, MagicMock(id=2, username="user2"), game_id)
+    assert plan.costume == costume_run
+
+    await images.fetch_extra_screenshot(_context(session_factory), plan)
+
+    assert costumes == [costume_run]
+
+
+def test_a_tile_clue_wears_the_costume(session_factory, monkeypatch, costume_run) -> None:
+    costumes: list[str | None] = []
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: costumes.append(costume) or png
+    )
+    game_id = _costume_game(session_factory)
+
+    with session_factory() as session:
+        images.render_tile_clue(session, session.get(Game, game_id), 0)
+
+    assert costumes == [costume_run]

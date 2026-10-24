@@ -20,6 +20,10 @@ SIZE = (640, 360)
 FLAT = (90, 140, 200)
 
 
+def _end(badge: pipeline.Badge | None, pose: Pose, costume: str | None = None) -> pipeline.Ending:
+    return pipeline.Ending(badge, pipeline.Nani(pose, costume))
+
+
 def _flat_png() -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", SIZE, FLAT).save(buf, "PNG")
@@ -44,7 +48,7 @@ def test_the_effect_part_shows_cast_and_the_ending_the_outcome(effect) -> None:
     png = _flat_png()
     pregen = pipeline.pregenerate(png, PixelAlgorithm.MEDIAN, WIDTHS, effect)
 
-    frames = decode_frames(pipeline.finish(pregen, png, None, Pose.WIN), SIZE)
+    frames = decode_frames(pipeline.finish(pregen, png, _end(None, Pose.WIN)), SIZE)
 
     assert _shows(frames[3], Pose.CAST, Pose.WIN)
     assert _shows(frames[-1], Pose.WIN, Pose.CAST)
@@ -55,7 +59,7 @@ def test_an_unsolved_ending_shows_oops() -> None:
     png = _flat_png()
     pregen = pipeline.pregenerate(png, PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS)
 
-    frames = decode_frames(pipeline.finish(pregen, png, None, Pose.OOPS), SIZE)
+    frames = decode_frames(pipeline.finish(pregen, png, _end(None, Pose.OOPS)), SIZE)
 
     assert _shows(frames[-1], Pose.OOPS, Pose.WIN)
 
@@ -69,7 +73,7 @@ def test_a_reveal_rendered_before_nani_still_ends_with_her() -> None:
     part1_ts, join_offset = encode.to_ts(EFFECTS[RevealEffect.IRIS](original, stages, None))
     old = pipeline.Pregen(part1_ts, join_offset, render_ms=0)
 
-    frames = decode_frames(pipeline.finish(old, png, None, Pose.OOPS), SIZE)
+    frames = decode_frames(pipeline.finish(old, png, _end(None, Pose.OOPS)), SIZE)
 
     assert _shows(frames[-1], Pose.OOPS, Pose.CAST)
 
@@ -80,7 +84,7 @@ def test_the_winner_badge_and_nani_share_the_ending() -> None:
     pregen = pipeline.pregenerate(png, PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS)
     badge = pipeline.Badge(avatar=None, handle="@" + "w" * 120)
 
-    frames = decode_frames(pipeline.finish(pregen, png, badge, Pose.WIN), SIZE)
+    frames = decode_frames(pipeline.finish(pregen, png, _end(badge, Pose.WIN)), SIZE)
 
     assert _shows(frames[-1], Pose.WIN, Pose.CAST)
 
@@ -88,8 +92,42 @@ def test_the_winner_badge_and_nani_share_the_ending() -> None:
 @pytest.mark.ffmpeg
 def test_a_cosmetic_reveal_preview_ends_like_a_won_game() -> None:
     clip = pipeline.preview_clip(
-        _flat_png(), PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS, None
+        _flat_png(), PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS, _end(None, Pose.WIN)
     )
     frames = decode_frames(clip, SIZE)
     assert _shows(frames[3], Pose.CAST, Pose.WIN)
     assert _shows(frames[-1], Pose.WIN, Pose.CAST)
+
+
+def _orange(frame: Image.Image, pose: Pose, costume: str) -> bool:
+    """Whether `frame`'s Nani corner is mostly the fake costume's solid orange."""
+    x, y, w, h = mascot.box(SIZE, pose, costume)
+    red, _green, blue = ImageStat.Stat(frame.crop((x, y, x + w, y + h))).mean
+    return red > 200 and blue < 80
+
+
+@pytest.mark.ffmpeg
+def test_the_effect_part_and_the_ending_wear_the_costume(costume_art) -> None:
+    png = _flat_png()
+    pregen = pipeline.pregenerate(
+        png, PixelAlgorithm.MEDIAN, WIDTHS, RevealEffect.IRIS, pipeline.Looks(costume=costume_art)
+    )
+
+    frames = decode_frames(pipeline.finish(pregen, png, _end(None, Pose.WIN, costume_art)), SIZE)
+
+    assert _orange(frames[3], Pose.CAST, costume_art)
+    assert _orange(frames[-1], Pose.WIN, costume_art)
+
+
+@pytest.mark.ffmpeg
+def test_preview_clip_wears_the_costume(costume_art) -> None:
+    clip = pipeline.preview_clip(
+        _flat_png(),
+        PixelAlgorithm.MEDIAN,
+        WIDTHS,
+        RevealEffect.IRIS,
+        _end(None, Pose.WIN, costume_art),
+    )
+    frames = decode_frames(clip, SIZE)
+    assert _orange(frames[3], Pose.CAST, costume_art)
+    assert _orange(frames[-1], Pose.WIN, costume_art)

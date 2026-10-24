@@ -1,16 +1,20 @@
 """What a valid item looks like, per slot (seasons spec §3)."""
 
+import re
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from types import MappingProxyType
 
 from nani_pix_bot.models.enums import CosmeticSlot, RevealEffect
 from nani_pix_bot.seasons.registry import ResolvedItem
+from nani_pix_bot.services import mascot
 from nani_pix_bot.services.cosmetics.frames import FRAMES
 from nani_pix_bot.services.reveal.overlays import WIN_OVERLAYS
 
 SEASON_ART_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "seasons"
 MAX_FLAIR_CHARS = 8
+MAX_COSTUME_KEY = 16
+_COSTUME_KEY = re.compile(rf"^[a-z][a-z_]{{0,{MAX_COSTUME_KEY - 1}}}$")
 # A title item id rides in /title callback data ("title:i:" + id, Telegram caps it
 # at 64 bytes) and in Player.title_key ("item:" + id, String(96)); the callback is
 # the tighter bound.
@@ -138,6 +142,19 @@ def _title_problem(resolved: ResolvedItem) -> str | None:
     return f"title id too long for /title callbacks ({size} bytes > {MAX_TITLE_ID_BYTES})"
 
 
+def costume_problems(key: str) -> list[str]:
+    """Why `key` is not a usable Nani Pix costume: a badly shaped key, or one
+    problem per pose file that is absent."""
+    if not _COSTUME_KEY.fullmatch(key):
+        return [f"bad costume key {key!r} (lowercase letters and _, at most {MAX_COSTUME_KEY})"]
+    paths = (mascot.pose_path(pose, key) for pose in mascot.Pose)
+    return [f"missing costume pose file {path}" for path in paths if not path.is_file()]
+
+
+def _costume_problem(resolved: ResolvedItem) -> str | None:
+    return next(iter(costume_problems(resolved.item.look)), None)
+
+
 # A slot with no entry has no look to check.
 _LOOK_CHECKS: Mapping[CosmeticSlot, Callable[[ResolvedItem], str | None]] = MappingProxyType(
     {
@@ -148,6 +165,7 @@ _LOOK_CHECKS: Mapping[CosmeticSlot, Callable[[ResolvedItem], str | None]] = Mapp
         CosmeticSlot.WIN_EFFECT: _overlay_problem,
         CosmeticSlot.PROFILE_BANNER: _banner_problem,
         CosmeticSlot.TITLE: _title_problem,
+        CosmeticSlot.MASCOT_COSTUME: _costume_problem,
     }
 )
 

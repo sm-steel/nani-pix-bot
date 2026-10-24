@@ -920,5 +920,11 @@
   "season_objective.notice": "🎯 {season} objective done: {name} — {reward}.",
   "season_pass.view.objectives": "🎯 Objectives",
   "season_pass.view.objective": "{mark} {name} — {goal} ({progress}/{target}) — {reward}",
-  "season_pass.view.objective_done": "✅ {name} — {reward} · {date}"
+  "season_pass.view.objective_done": "✅ {name} — {reward} · {date}",
+  "mascot.pose.cast": "Cast",
+  "mascot.pose.nope": "Nope",
+  "mascot.pose.nani": "Nani?!",
+  "mascot.pose.win": "Win",
+  "mascot.pose.oops": "Oops",
+  "mascot.pose.sly": "Sly"
 }

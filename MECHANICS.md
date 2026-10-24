@@ -621,6 +621,48 @@ her corner, cutting a long name with "…" earlier.
 A failure to load or add her never blocks a post: the image goes out
 without her and the failure is logged at `ERROR`.
 
+#### Costumes
+
+Nani Pix can wear a costume on every picture she is on
+(`services/cosmetics/costume.py`). The costume is resolved in this order:
+
+1. the game starter's equipped costume item (slot `mascot_costume`);
+2. else the active season run's default costume (`SeasonRun.mascot_costume`;
+   the Halloween run's is `pumpkin`);
+3. else plain Nani.
+
+It is read **live at each render**, like the host frame, so equipping a
+costume changes the next picture of a running game. Which run counts
+depends on the game: a game in SETUP has no season yet and uses the
+currently active run; a started game uses the run it was tagged with
+(`modifiers.season_of`), and an untagged game gets no run default, only the
+starter's equipped costume.
+
+The six costumes are `pumpkin`, `kitsune`, `bakeneko`, `chochin`,
+`pastel_witch` and `skeleton`. Each has all six poses under
+`src/nani_pix_bot/assets/mascot/costumes/<key>/<pose>.png`, an RGBA image
+exactly 384 px wide and at most 480 px tall (`tests/services/test_mascot.py`
+checks it, and that all six poses exist). Nani is placed by her own
+costume's aspect.
+
+In the reveal, the effect part is rendered at pregen time, so it carries the
+costume she had when the game started. The ending, the photo fallback and
+the clue album read the costume again at reveal time. `/stop` reads it
+before it deletes the game row, when the reveal can run now.
+
+A failed costume lookup never blocks a reveal or a preview, and a missing
+or unreadable costume file never blocks a post: she is drawn plain, and
+the failure is logged at `ERROR`.
+
+Cosmetic previews show Nani in the viewer's own costume. Only host
+frames, transitions and win effects show her, so only their cache keys
+carry `#nani`, with `@<costume>` after it when the viewer wears one
+(`<item_id>#nani`, `<item_id>#nani@<costume>`). A win effect's key also has
+the viewer (their badge), so it reads `<item_id>@<viewer>#nani[@<costume>]`.
+Banners aren't cached. A costume item's own preview is a sheet of all six
+poses (`previews.costume_sheet`) on a night background, each pose named in the
+viewer's language, so it is kept per language under `<item_id>#<lang>`.
+
 ### Which algorithm colours the blocks
 
 The stage width decides *how wide* the mosaic is; a separate, orthogonal

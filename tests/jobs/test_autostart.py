@@ -550,7 +550,7 @@ async def test_a_bot_started_game_opens_with_nani_casting_or_sly_after_an_overth
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
     poses: list[Pose] = []
-    monkeypatch.setattr(mascot, "add_to_png", lambda png, p: poses.append(p) or png)
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, p, costume=None: poses.append(p) or png)
 
     claim = autostart_timers._AutostartClaim(trigger=trigger, dethroned_winner_name=None)
     await autostart_timers.run_bot_autostart(

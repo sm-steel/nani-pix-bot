@@ -28,6 +28,7 @@ from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.settings import stage_config
+from tests.costume_fixtures import activate_season
 
 _FRIEREN = AniListResult(
     anilist_id=99,
@@ -243,7 +244,9 @@ async def test_photo_handler_shows_the_first_stage_before_the_method_selection(
 
 def test_the_preview_album_shows_nani_in_each_stages_pose(monkeypatch) -> None:
     poses: list[Pose] = []
-    monkeypatch.setattr(mascot, "add_to_png", lambda png, pose: poses.append(pose) or png)
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: poses.append(pose) or png
+    )
     album = _shared._PreviewAlbum(
         starter_id=1,
         image=_real_png(),
@@ -640,3 +643,45 @@ async def test_photo_handler_upload_keeps_the_identification_provider_id(
         assert fetched.screenshot_source is None
         assert fetched.screenshot_picker_provider is None
         assert fetched.setup_step == SetupStep.CONFIRMING
+
+
+def test_the_dm_preview_album_wears_the_active_runs_costume(
+    session_factory, monkeypatch, costume_run
+) -> None:
+    costumes: list[str | None] = []
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: costumes.append(costume) or png
+    )
+    with session_factory() as session:
+        activate_season(session)
+        session.add(Player(telegram_user_id=1))
+        game = Game(starter_id=1, status=GameStatus.SETUP, original_image=_real_png())
+        session.add(game)
+        session.flush()
+        album = _shared._stage_preview(session, game, "en")
+    assert isinstance(album, _shared._PreviewAlbum)
+    assert album.costume == costume_run
+
+    _shared._render_preview(album)
+
+    assert costumes == [costume_run] * 5
+
+
+async def test_the_stage_1_preview_wears_the_active_runs_costume(
+    session_factory, monkeypatch, costume_run
+) -> None:
+    costumes: list[str | None] = []
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: costumes.append(costume) or png
+    )
+    with session_factory() as session:
+        activate_season(session)
+        session.commit()
+    update = _make_update(user_id=1, photo_file_id="file123")
+    update.message.reply_photo = AsyncMock()
+    context = _make_context(session_factory)
+    _uploading(context, _real_png())
+
+    await intake.photo_handler(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert costumes == [costume_run]

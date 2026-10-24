@@ -14,7 +14,7 @@ from nani_pix_bot.db import make_session_factory
 from nani_pix_bot.models.base import Base
 from nani_pix_bot.services.quiet_hours import QuietHours
 
-pytest_plugins = ["tests.seasons_fixtures"]
+pytest_plugins = ["tests.seasons_fixtures", "tests.costume_fixtures"]
 
 
 @pytest.fixture

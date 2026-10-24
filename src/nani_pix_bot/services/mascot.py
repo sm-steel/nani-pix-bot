@@ -13,6 +13,7 @@ from loguru import logger
 from PIL import Image
 
 POSE_DIR = Path(__file__).resolve().parent.parent / "assets" / "mascot"
+COSTUME_DIR = POSE_DIR / "costumes"  # <costume>/<pose>.png, same six poses
 
 SHARE = 0.16  # her width, as a share of the image's width
 MARGIN = 0.02  # gap to the right and bottom edges, as a share of the image's width
@@ -47,30 +48,55 @@ def ending_pose(*, won: bool, vote_open: bool = False) -> Pose:
     return Pose.WIN if won else Pose.OOPS
 
 
-@functools.cache
-def _source(pose: Pose) -> Image.Image:
-    with Image.open(POSE_DIR / f"{pose.value}.png") as img:
+def pose_path(pose: Pose, costume: str | None = None) -> Path:
+    """The pose's PNG: plain Nani, or in `costume`."""
+    if costume is None:
+        return POSE_DIR / f"{pose.value}.png"
+    return COSTUME_DIR / costume / f"{pose.value}.png"
+
+
+def _read(path: Path) -> Image.Image:
+    with Image.open(path) as img:
         return img.convert("RGBA")
 
 
+@functools.cache
+def _source(pose: Pose, costume: str | None = None) -> Image.Image:
+    """The pose's decoded art. A costume whose file is missing or unreadable is
+    logged once (the result is cached) and she is drawn plain instead."""
+    path = pose_path(pose, costume)
+    if costume is None:
+        return _read(path)
+    try:
+        return _read(path)
+    except Exception as exc:
+        logger.opt(exception=exc).error(
+            "costume {costume!r} has no usable {pose} pose — plain Nani instead",
+            costume=costume,
+            pose=pose.value,
+            path=str(path),
+        )
+        return _source(pose)
+
+
 @functools.lru_cache(maxsize=64)
-def sized(pose: Pose, width: int) -> Image.Image:
+def sized(pose: Pose, width: int, costume: str | None = None) -> Image.Image:
     """`pose` at `width` px wide, its aspect kept. Decoded once per process, then
     cached per width (a read-only asset cache, not feature state)."""
-    source = _source(pose)
+    source = _source(pose, costume)
     if width == source.width:
         return source
     height = round(source.height * width / source.width)
     return source.resize((width, height), Image.Resampling.LANCZOS)
 
 
-def box(size: tuple[int, int], pose: Pose) -> tuple[int, int, int, int]:
+def box(size: tuple[int, int], pose: Pose, costume: str | None = None) -> tuple[int, int, int, int]:
     """(x, y, width, height) of Nani in an image of `size`: bottom-right, SHARE of
     its width, MARGIN from the edges, shrunk to fit a short image. Width 0: too
     small to draw her."""
     image_w, image_h = size
     margin = round(image_w * MARGIN)
-    source = _source(pose)
+    source = _source(pose, costume)
     width = min(round(image_w * SHARE), SOURCE_WIDTH)
     room = image_h - 2 * margin
     if source.height * width > room * source.width:
@@ -81,57 +107,66 @@ def box(size: tuple[int, int], pose: Pose) -> tuple[int, int, int, int]:
     return image_w - width - margin, image_h - height - margin, width, height
 
 
-def compose(image: Image.Image, pose: Pose) -> Image.Image:
+def compose(image: Image.Image, pose: Pose, costume: str | None = None) -> Image.Image:
     """An RGB copy of `image` with Nani on top. On any failure: logged at ERROR,
     and the copy comes back without her."""
     try:
-        x, y, width, _ = box(image.size, pose)
+        x, y, width, _ = box(image.size, pose, costume)
         if width == 0:
             return image.convert("RGB")
         canvas = image.convert("RGBA")
-        canvas.alpha_composite(sized(pose, width), (x, y))
+        canvas.alpha_composite(sized(pose, width, costume), (x, y))
     except Exception as exc:
         logger.opt(exception=exc).error(
-            "couldn't add Nani ({pose}) to the image — it goes out without her",
+            "couldn't add Nani ({pose}, costume {costume}) to the image — it goes out without her",
             pose=pose.value,
+            costume=costume,
         )
         return image.convert("RGB")
-    logger.debug("added Nani ({pose}) at {width}px", pose=pose.value, width=width)
+    logger.debug(
+        "added Nani ({pose}, costume {costume}) at {width}px",
+        pose=pose.value,
+        costume=costume,
+        width=width,
+    )
     return canvas.convert("RGB")
 
 
-def _add(data: bytes, pose: Pose, fmt: str, **save: object) -> bytes:
+def _add(data: bytes, pose: Pose, costume: str | None, fmt: str, **save: object) -> bytes:
     """compose() on encoded image bytes, re-encoded as `fmt`; bytes that can't
     be decoded or encoded go out unchanged (logged at ERROR)."""
     try:
         with Image.open(io.BytesIO(data)) as image:
-            out = compose(image, pose)
+            out = compose(image, pose, costume)
         buf = io.BytesIO()
         out.save(buf, fmt, **save)
     except Exception as exc:
         logger.opt(exception=exc).error(
-            "couldn't add Nani ({pose}) to the image — it goes out without her",
+            "couldn't add Nani ({pose}, costume {costume}) to the image — it goes out without her",
             pose=pose.value,
+            costume=costume,
         )
         return data
     return buf.getvalue()
 
 
-def add_to_png(png: bytes, pose: Pose) -> bytes:
+def add_to_png(png: bytes, pose: Pose, costume: str | None = None) -> bytes:
     """compose() for a rendered PNG (stage images, previews), PNG out."""
-    return _add(png, pose, "PNG")
+    return _add(png, pose, costume, "PNG")
 
 
-def add_to_jpeg(image: bytes, pose: Pose) -> bytes:
+def add_to_jpeg(image: bytes, pose: Pose, costume: str | None = None) -> bytes:
     """compose() for a stored photo in any format (the sharp reveal, clue
     screenshots), JPEG out."""
-    return _add(image, pose, "JPEG", quality=JPEG_QUALITY, optimize=True)
+    return _add(image, pose, costume, "JPEG", quality=JPEG_QUALITY, optimize=True)
 
 
-def still_png(pose: Pose, frame_size: tuple[int, int]) -> tuple[bytes, int]:
+def still_png(
+    pose: Pose, frame_size: tuple[int, int], costume: str | None = None
+) -> tuple[bytes, int]:
     """Nani as an RGBA PNG sized for a video frame of `frame_size`, and the margin
     to place her with (bottom-right), for an ffmpeg overlay."""
-    _, _, width, _ = box(frame_size, pose)
+    _, _, width, _ = box(frame_size, pose, costume)
     buf = io.BytesIO()
-    sized(pose, max(width, 1)).save(buf, "PNG")
+    sized(pose, max(width, 1), costume).save(buf, "PNG")
     return buf.getvalue(), round(frame_size[0] * MARGIN)

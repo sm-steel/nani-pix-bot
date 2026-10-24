@@ -1,6 +1,8 @@
 import asyncio
+import multiprocessing
+import pickle
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
@@ -16,8 +18,11 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.services.cosmetics import reveal_choice
 from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.reveal import overlays, pipeline, store
+from tests.costume_fixtures import activate_season
 
 PREGEN = pipeline.Pregen(part1_ts=b"\x47ts", join_offset=1.0, render_ms=12)
+WIN = pipeline.Nani(Pose.WIN)
+OOPS = pipeline.Nani(Pose.OOPS)
 
 
 def _application(session_factory) -> MagicMock:
@@ -104,7 +109,7 @@ async def test_pregeneration_draws_the_equipped_win_overlays_ahead(
     application = _application(session_factory)
     reveal.start_pregeneration(application, game_id)
     await _settle(application)
-    assert seen[0][-1] == ("petal_drift", "sakura_storm")
+    assert seen[0][4].win_overlays == ("petal_drift", "sakura_storm")
     started = next(line for line in log_records if "pre-render started" in line.message)
     assert "petal_drift, sakura_storm" in started.message
 
@@ -155,7 +160,7 @@ async def test_reveal_waits_then_falls_back(session_factory, monkeypatch, log_re
     application.bot_data["reveal_cache"].pending(
         game_id, asyncio.get_running_loop().create_future()
     )
-    assert await reveal.render_reveal(application, game_id, b"png", None, ending=Pose.OOPS) is None
+    assert await reveal.render_reveal(application, game_id, b"png", None, nani=OOPS) is None
     assert any(line.level == "WARNING" for line in log_records)
     assert any("photo" in line.message for line in log_records if line.level == "INFO")
 
@@ -166,15 +171,13 @@ async def test_ready_cache_renders_with_badge(session_factory, monkeypatch) -> N
     application = _application(session_factory)
     application.bot_data["reveal_cache"].ready(5, PREGEN)
     assert (
-        await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"), ending=Pose.WIN)
+        await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"), nani=WIN)
         == b"mp4"
     )
-    pregen, clear, badge, ending = finish.call_args.args
-    assert (pregen, clear, badge, ending) == (
+    assert finish.call_args.args == (
         PREGEN,
         b"png",
-        pipeline.Badge(avatar=None, handle="@w"),
-        Pose.WIN,
+        pipeline.Ending(pipeline.Badge(avatar=None, handle="@w"), pipeline.Nani(Pose.WIN)),
     )
 
 
@@ -187,10 +190,8 @@ async def test_the_badge_carries_a_registered_overlay_or_the_default(
     application = _application(session_factory)
     application.bot_data["reveal_cache"].ready(5, PREGEN)
     for overlay, expected in (("stars", "stars"), (None, "confetti")):
-        await reveal.render_reveal(
-            application, 5, b"png", RevealWinner(9, "@w", overlay), ending=Pose.WIN
-        )
-        assert finish.call_args.args[2] == pipeline.Badge(None, "@w", overlay=expected)
+        await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w", overlay), nani=WIN)
+        assert finish.call_args.args[2].badge == pipeline.Badge(None, "@w", overlay=expected)
 
 
 async def test_an_unknown_overlay_warns_and_uses_confetti(
@@ -200,10 +201,8 @@ async def test_an_unknown_overlay_warns_and_uses_confetti(
     monkeypatch.setattr(pipeline, "finish", finish)
     application = _application(session_factory)
     application.bot_data["reveal_cache"].ready(5, PREGEN)
-    await reveal.render_reveal(
-        application, 5, b"png", RevealWinner(9, "@w", "nope"), ending=Pose.WIN
-    )
-    assert finish.call_args.args[2] == pipeline.Badge(None, "@w", overlay="confetti")
+    await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w", "nope"), nani=WIN)
+    assert finish.call_args.args[2].badge == pipeline.Badge(None, "@w", overlay="confetti")
     warnings = [line for line in log_records if line.level == "WARNING"]
     assert [line.extra["overlay"] for line in warnings] == ["nope"]
     assert warnings[0].extra["game_id"] == 5
@@ -224,7 +223,7 @@ async def test_broken_worker_falls_back_and_is_replaced(session_factory, monkeyp
     application = _application(session_factory)
     old_executor = application.bot_data["reveal_executor"]
     application.bot_data["reveal_cache"].ready(5, PREGEN)
-    assert await reveal.render_reveal(application, 5, b"png", None, ending=Pose.OOPS) is None
+    assert await reveal.render_reveal(application, 5, b"png", None, nani=OOPS) is None
     assert replacements == [application.bot_data["reveal_executor"]]
     assert application.bot_data["reveal_executor"] is not old_executor
     old_executor.shutdown()
@@ -408,7 +407,7 @@ async def test_pregeneration_is_a_quiet_noop_without_a_worker(
 
 async def test_render_without_a_worker_falls_back_to_the_photo(log_records) -> None:
     application = MagicMock()
-    assert await reveal.render_reveal(application, 5, b"png", None, ending=Pose.OOPS) is None
+    assert await reveal.render_reveal(application, 5, b"png", None, nani=OOPS) is None
     assert any("photo" in line.message for line in log_records if line.level == "INFO")
 
 
@@ -518,7 +517,7 @@ async def test_avatar_timeout_warns_with_the_winner(
     application = _application(session_factory)
     application.bot_data["reveal_cache"].ready(5, PREGEN)
     assert (
-        await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"), ending=Pose.WIN)
+        await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"), nani=WIN)
         == b"mp4"
     )
     warnings = [line for line in log_records if line.level == "WARNING"]
@@ -552,7 +551,7 @@ async def test_a_slow_render_times_out_and_falls_back(
     monkeypatch.setattr(pipeline, "finish", _slow)
     application = _application(session_factory)
     application.bot_data["reveal_cache"].ready(5, PREGEN)
-    assert await reveal.render_reveal(application, 5, b"png", None, ending=Pose.OOPS) is None
+    assert await reveal.render_reveal(application, 5, b"png", None, nani=OOPS) is None
     assert any(line.level == "WARNING" for line in log_records)
     assert any("photo" in line.message for line in log_records if line.level == "INFO")
     gate.set()
@@ -580,9 +579,9 @@ async def test_the_avatar_fetch_overlaps_the_pre_render_wait(session_factory, mo
     monkeypatch.setattr(pipeline, "finish", finish)
     monkeypatch.setattr(reveal, "AVATAR_TIMEOUT", 30.0)  # a serial run must deadlock, not time out
     application = _application(session_factory)
-    render = reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"), ending=Pose.WIN)
+    render = reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"), nani=WIN)
     assert await asyncio.wait_for(render, 1) == b"mp4"
-    assert finish.call_args.args[2] == pipeline.Badge(avatar=b"avatar", handle="@w")
+    assert finish.call_args.args[2].badge == pipeline.Badge(avatar=b"avatar", handle="@w")
     application.bot_data["reveal_executor"].shutdown()
 
 
@@ -592,7 +591,7 @@ async def test_a_finished_render_logs_its_timing_with_the_game(
     monkeypatch.setattr(pipeline, "finish", MagicMock(return_value=b"mp4"))
     application = _application(session_factory)
     application.bot_data["reveal_cache"].ready(5, PREGEN)
-    assert await reveal.render_reveal(application, 5, b"png", None, ending=Pose.OOPS) == b"mp4"
+    assert await reveal.render_reveal(application, 5, b"png", None, nani=OOPS) == b"mp4"
     [line] = [line for line in log_records if line.message.startswith("reveal rendered")]
     assert line.level == "INFO"
     assert line.extra["game_id"] == 5
@@ -668,7 +667,7 @@ async def test_the_avatar_task_is_cancelled_when_finding_the_pregen_raises(
     monkeypatch.setattr(reveal, "_find_pregen", _boom)
     application = _application(session_factory)
     with pytest.raises(RuntimeError, match="db down"):
-        await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"), ending=Pose.WIN)
+        await reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"), nani=WIN)
     await asyncio.wait_for(asyncio.wait(tasks), 5)
     assert tasks[0].cancelled()
     application.bot_data["reveal_executor"].shutdown()
@@ -685,7 +684,7 @@ async def test_the_avatar_task_is_cancelled_when_the_render_is_cancelled(
     monkeypatch.setattr(reveal, "_find_pregen", _wait_forever)
     application = _application(session_factory)
     render = asyncio.ensure_future(
-        reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"), ending=Pose.WIN)
+        reveal.render_reveal(application, 5, b"png", RevealWinner(9, "@w"), nani=WIN)
     )
     await started.wait()
     render.cancel()
@@ -758,4 +757,88 @@ async def test_a_failed_mark_with_no_slot_says_so(session_factory, log_records) 
     lines = [line.message for line in log_records if line.level == "INFO"]
     assert any("no reveal slot any more" in m for m in lines)
     assert not any("another game" in m for m in lines)
+    application.bot_data["reveal_executor"].shutdown()
+
+
+def _season_game(session_factory) -> int:
+    """An ACTIVE game of the active "demo_1" season, its slot reserved."""
+    with session_scope(session_factory) as session:
+        season_id = activate_season(session)
+    game_id = _game(session_factory)
+    with session_scope(session_factory) as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        game.season_id = season_id
+    _reserve(session_factory, game_id)
+    return game_id
+
+
+def test_pregen_inputs_carry_the_games_costume(session_factory, costume_run) -> None:
+    game_id = _season_game(session_factory)
+    with session_scope(session_factory) as session:
+        inputs = reveal_pregen._read_inputs(session, game_id)
+    assert inputs is not None
+    assert inputs[4].costume == costume_run
+
+
+def test_pregen_inputs_of_a_plain_game_carry_no_costume(session_factory) -> None:
+    game_id = _game(session_factory)
+    _reserve(session_factory, game_id)
+    with session_scope(session_factory) as session:
+        inputs = reveal_pregen._read_inputs(session, game_id)
+    assert inputs is not None
+    assert inputs[4].costume is None
+
+
+def test_pipeline_args_stay_picklable(session_factory, costume_run) -> None:
+    """The pre-render inputs, a costumed ending and costumed looks survive the trip to a
+    real spawn worker and back, as reveal_worker sends them (pickled both ways)."""
+    game_id = _season_game(session_factory)
+    with session_scope(session_factory) as session:
+        inputs = reveal_pregen._read_inputs(session, game_id)
+    assert pickle.dumps(inputs)
+    values = (
+        inputs,
+        pipeline.Ending(
+            pipeline.Badge(b"avatar", "@w", overlay="stars"), pipeline.Nani(Pose.WIN, "x")
+        ),
+        pipeline.Looks(("petal_drift",), "x"),
+    )
+    context = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=1, mp_context=context) as pool:
+        assert pool.submit(tuple, values).result(timeout=60) == values
+
+
+async def test_the_pre_render_wears_the_costume_and_logs_it(
+    session_factory, monkeypatch, log_records, costume_run
+) -> None:
+    seen: list[tuple] = []
+    monkeypatch.setattr(pipeline, "pregenerate", lambda *args: seen.append(args) or PREGEN)
+    game_id = _season_game(session_factory)
+    application = _application(session_factory)
+    reveal.start_pregeneration(application, game_id)
+    await _settle(application)
+    assert seen[0][4].costume == costume_run
+    started = next(line for line in log_records if "pre-render started" in line.message)
+    assert started.extra["costume"] == costume_run
+
+
+async def test_the_reveal_render_wears_the_costume_and_logs_it(
+    session_factory, monkeypatch, log_records
+) -> None:
+    finish = MagicMock(return_value=b"mp4")
+    monkeypatch.setattr(pipeline, "finish", finish)
+    application = _application(session_factory)
+    application.bot_data["reveal_cache"].ready(5, PREGEN)
+    video = await reveal.render_reveal(
+        application, 5, b"png", None, nani=pipeline.Nani(Pose.OOPS, "test_hat")
+    )
+    assert video == b"mp4"
+    assert finish.call_args.args == (
+        PREGEN,
+        b"png",
+        pipeline.Ending(None, pipeline.Nani(Pose.OOPS, "test_hat")),
+    )
+    [line] = [line for line in log_records if line.message.startswith("reveal rendered")]
+    assert line.extra["costume"] == "test_hat"
     application.bot_data["reveal_executor"].shutdown()

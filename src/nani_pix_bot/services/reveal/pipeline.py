@@ -44,6 +44,35 @@ class Badge:
     overlay: str = overlays.DEFAULT_OVERLAY
 
 
+@dataclass(frozen=True)
+class Nani:
+    """Nani Pix over a frame: her pose and the key of her costume (None: plain)."""
+
+    pose: Pose
+    costume: str | None = None
+
+
+@dataclass(frozen=True)
+class Ending:
+    """What goes over the clear image at the end: the winner's badge (None: no
+    celebration) and Nani."""
+
+    badge: Badge | None
+    nani: Nani
+
+
+@dataclass(frozen=True)
+class Looks:
+    """The players' looks a pre-render needs: the win overlays they have equipped (drawn
+    ahead, so a win doesn't wait) and Nani's costume on the effect part."""
+
+    win_overlays: tuple[str, ...] = ()
+    costume: str | None = None
+
+
+DEFAULT_LOOKS = Looks()  # only the default overlay drawn ahead, Nani plain
+
+
 @dataclass
 class _Static:
     """Winner-independent data of one image: its clear frame and the win-overlay clips, keyed by
@@ -149,32 +178,33 @@ def pregenerate(
     algorithm: PixelAlgorithm,
     widths: tuple[int, ...],
     effect: RevealEffect,
-    win_overlays: tuple[str, ...] = (),
+    looks: Looks = DEFAULT_LOOKS,
 ) -> Pregen:
-    """Render the effect part for `image` as MPEG-TS and warm the static cache for it,
-    with the default overlay and `win_overlays` (those equipped) already drawn."""
+    """Render the effect part for `image` as MPEG-TS, Nani in the costume of `looks`, and
+    warm the static cache for it, with the default overlay and the win overlays of
+    `looks` already drawn."""
     started = time.perf_counter()
     original, stages = prep(image, algorithm, widths)
     part1_ts, join_offset = encode.to_ts(
-        EFFECTS[effect](original, stages, _still(Pose.CAST, original.size))
+        EFFECTS[effect](original, stages, _still(Nani(Pose.CAST, looks.costume), original.size))
     )
     static = _new_static(original)
     _confetti(static)  # winner-independent: built now, so a win doesn't pay for it
-    _draw_ahead(static, win_overlays)
+    _draw_ahead(static, looks.win_overlays)
     _remember(image, static)
     render_ms = round((time.perf_counter() - started) * 1000)
     return Pregen(part1_ts, join_offset, render_ms)
 
 
-def _still(pose: Pose, size: tuple[int, int]) -> encode.Still:
-    """Nani Pix in `pose`, sized for a frame of `size` (issue #461)."""
-    return encode.Still(*mascot.still_png(pose, size))
+def _still(nani: Nani, size: tuple[int, int]) -> encode.Still:
+    """Nani Pix as `nani` says, sized for a frame of `size` (issue #461)."""
+    return encode.Still(*mascot.still_png(nani.pose, size, nani.costume))
 
 
-def _overlay(static: _Static, badge: Badge, ending: Pose) -> encode.Overlay:
+def _overlay(static: _Static, badge: Badge, nani: Nani) -> encode.Overlay:
     """The winner's badge, kept short of Nani's corner however long the name."""
     height = celebration.badge_height(static.size)
-    reserved = static.size[0] - mascot.box(static.size, ending)[0]
+    reserved = static.size[0] - mascot.box(static.size, nani.pose, nani.costume)[0]
     rgba, badge_size = celebration.badge_frames(
         celebration.make_badge(
             badge.avatar,
@@ -186,12 +216,17 @@ def _overlay(static: _Static, badge: Badge, ending: Pose) -> encode.Overlay:
     return encode.Overlay(_overlay_clip(static, badge.overlay), rgba, badge_size)
 
 
-def finish(pregen: Pregen, clear: bytes, badge: Badge | None, ending: Pose) -> bytes:
-    """The final MP4: part 1 plus the ending (with the celebration when there's a `badge`),
-    Nani in the `ending` pose on top of it."""
+def _layers(static: _Static, ending: Ending) -> encode.EndingLayers:
+    badge = ending.badge
+    overlay = None if badge is None else _overlay(static, badge, ending.nani)
+    return encode.EndingLayers(overlay, _still(ending.nani, static.size))
+
+
+def finish(pregen: Pregen, clear: bytes, ending: Ending) -> bytes:
+    """The final MP4: part 1 plus the ending (with the celebration when there's a badge),
+    Nani on top of it."""
     static = _static_for(clear)
-    overlay = None if badge is None else _overlay(static, badge, ending)
-    layers = encode.EndingLayers(overlay, _still(ending, static.size))
+    layers = _layers(static, ending)
     return encode.ending_and_join(
         pregen.part1_ts, pregen.join_offset, static.clear_yuv, static.size, layers
     )
@@ -202,18 +237,19 @@ def preview_clip(
     algorithm: PixelAlgorithm,
     widths: tuple[int, ...],
     effect: RevealEffect,
-    badge: Badge | None,
+    ending: Ending,
 ) -> bytes:
-    """A whole reveal MP4 in one go, for a cosmetic's preview (seasons spec §3), ending like
-    a won game. Unlike `pregenerate`, it leaves the static cache alone: that entry belongs to
-    the game in progress, whose win must not pay to rebuild it."""
+    """A whole reveal MP4 in one go, for a cosmetic's preview (seasons spec §3): the effect
+    part with Nani casting in the ending's costume, then `ending`. Unlike `pregenerate`, it
+    leaves the static cache alone: that entry belongs to the game in progress, whose win
+    must not pay to rebuild it."""
     original, stages = prep(image, algorithm, widths)
+    cast = Nani(Pose.CAST, ending.nani.costume)
     part1_ts, join_offset = encode.to_ts(
-        EFFECTS[effect](original, stages, _still(Pose.CAST, original.size))
+        EFFECTS[effect](original, stages, _still(cast, original.size))
     )
     static = _new_static(original)
-    overlay = None if badge is None else _overlay(static, badge, Pose.WIN)
-    layers = encode.EndingLayers(overlay, _still(Pose.WIN, static.size))
+    layers = _layers(static, ending)
     return encode.ending_and_join(part1_ts, join_offset, static.clear_yuv, static.size, layers)
 
 
