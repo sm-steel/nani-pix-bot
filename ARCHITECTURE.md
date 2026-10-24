@@ -965,6 +965,18 @@ src/nani_pix_bot/
                    #                 SeasonShopPurchase), ShopRefusedError
                    #   modifiers.py  season_of / for_game: a game's season run
                    #                 and its rule modifiers (clue discount)
+                   #   haunting.py   haunted rounds: the roll at activation
+                   #                 (on_activation), the stored twist, the
+                   #                 twist ops on a stage PNG (pipeline:
+                   #                 pixelate -> twist -> style -> frame ->
+                   #                 Nani; the reveal is never twisted) and
+                   #                 the caption lines
+                   #   event_day.py  the Night Parade window in the group's
+                   #                 timezone, is_event_day, the start/sunrise
+                   #                 posts (due_posts/enqueue_due, called from
+                   #                 lifecycle.advance) and next_boundary
+                   #   multipliers.py  haunted/event-day/boss factors on 🪙
+                   #                 and XP awards (the boss host is exempt)
                    #   styles.py     season visual styles on a stage image
                    #                 (style_for, apply_style); watercolor.py
                    #                 is the watercolor drawing
