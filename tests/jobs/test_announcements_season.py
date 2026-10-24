@@ -247,3 +247,24 @@ def test_end_post_says_sunrise(session) -> None:
 def test_cancelled_season_skips_parade_posts(session, kind) -> None:
     row = _parade_row(session, kind, status=SeasonStatus.CANCELLED)
     assert _render_parade(session, row) is None
+
+
+def test_start_post_has_no_haunted_line_when_the_day_is_not_all_haunted(
+    session, monkeypatch
+) -> None:
+    demo3 = registry.get("demo_3")
+    assert demo3 is not None
+    assert demo3.event_day is not None
+    calm = replace(demo3, event_day=replace(demo3.event_day, all_haunted=False))
+    monkeypatch.setattr(registry, "get", lambda run_id: calm if run_id == "demo_3" else None)
+    post = _render_parade(session, _parade_row(session, OutboxKind.EVENT_DAY_START))
+    assert "haunted" not in post.text
+    assert post.text.startswith("🏮 Halloween has begun!")
+
+
+def test_a_run_without_event_day_is_skipped_with_a_warning(session, log_records) -> None:
+    row = _parade_row(session, OutboxKind.EVENT_DAY_START, run_id="demo_1")
+    assert _render_parade(session, row) is None
+    line = next(r for r in log_records if r.level == "WARNING")
+    assert line.extra["kind"] == "event_day_start"
+    assert line.extra["run_id"] == "demo_1"

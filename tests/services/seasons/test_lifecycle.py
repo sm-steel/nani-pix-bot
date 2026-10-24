@@ -13,7 +13,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule, SeasonXp
 from nani_pix_bot.services.events import LoggedEvent, as_utc
-from nani_pix_bot.services.seasons import consumer, lifecycle
+from nani_pix_bot.services.seasons import consumer, event_day, lifecycle
 
 NOW = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
 
@@ -242,3 +242,15 @@ def test_next_boundary_is_the_next_window_edge(session, haunted_season) -> None:
     assert lifecycle.next_boundary(session, datetime(2026, 11, 2, tzinfo=UTC)) == as_utc(
         haunted_season.end_at
     )
+
+
+def test_parade_follows_the_group_timezone(session, haunted_season, set_group_tz) -> None:
+    set_group_tz("Europe/Moscow")
+    local_start = datetime(2026, 10, 30, 21, tzinfo=UTC)  # Oct 31 00:00 MSK
+    local_end = datetime(2026, 10, 31, 21, tzinfo=UTC)  # Nov 1 00:00 MSK
+    assert lifecycle.next_boundary(session, datetime(2026, 10, 28, tzinfo=UTC)) == local_start
+    assert lifecycle.next_boundary(session, datetime(2026, 10, 31, 12, tzinfo=UTC)) == local_end
+    before = datetime(2026, 10, 30, 20, 30, tzinfo=UTC)
+    during = datetime(2026, 10, 30, 22, 30, tzinfo=UTC)  # 01:30 MSK
+    assert event_day.due_posts(session, haunted_season, before) == []
+    assert event_day.due_posts(session, haunted_season, during) == [OutboxKind.EVENT_DAY_START]

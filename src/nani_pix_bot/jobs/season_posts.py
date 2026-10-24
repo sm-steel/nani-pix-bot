@@ -123,8 +123,16 @@ def _event_day_post(
 ) -> Callable[[Session, AnnouncementOutbox, str], Post | None]:
     def render(session: Session, row: AnnouncementOutbox, lang: str) -> Post | None:
         found = _open_season(session, row, kind)
-        event = found[1].event_day if found is not None else None
-        if found is None or event is None:
+        if found is None:
+            return None
+        event = found[1].event_day
+        if event is None:
+            logger.warning(
+                "skipped {kind}: run {run_id} has no event day",
+                kind=kind.value,
+                run_id=found[1].run_id,
+                season_id=found[0].id,
+            )
             return None
         lines = _event_day_lines(session, kind, event, found[1], lang)
         return Post((row.id,), "\n".join(lines))

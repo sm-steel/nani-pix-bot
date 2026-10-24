@@ -107,17 +107,19 @@ def due_posts(
 def enqueue_due(
     session: Session, row: SeasonSchedule, now: datetime, *, finalizing: bool = False
 ) -> list[OutboxKind]:
-    due = due_posts(session, row, now, finalizing=finalizing)
     run = registry.get(row.run_id)
+    event = run.event_day if run is not None else None
+    if event is None:
+        return []
+    due = due_posts(session, row, now, finalizing=finalizing)
     for kind in due:
         outbox.enqueue_season(session, kind, row.id)
-        if run is not None and run.event_day is not None:
-            logger.info(
-                "queued the {kind} post for {event_day_name}",
-                kind=kind.value,
-                event_day_name=run.event_day.names["EN"],
-                season_id=row.id,
-            )
+        logger.info(
+            "queued the {kind} post for {event_day_name}",
+            kind=kind.value,
+            event_day_name=event.names["EN"],
+            season_id=row.id,
+        )
     return due
 
 
