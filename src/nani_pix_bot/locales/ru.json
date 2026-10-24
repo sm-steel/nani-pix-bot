@@ -926,5 +926,16 @@
   "mascot.pose.nani": "Нани?!",
   "mascot.pose.win": "Победа",
   "mascot.pose.oops": "Упс",
-  "mascot.pose.sly": "Хитрит"
+  "mascot.pose.sly": "Хитрит",
+  "haunt.twist.kitsune_mirror": "Иллюзия кицунэ",
+  "haunt.twist.tanuki_leaf": "Лист тануки",
+  "haunt.twist.yurei_double": "Двойник-юрэй",
+  "haunt.twist.kyokotsu_xray": "Рентген кёкоцу",
+  "haunt.hint.kitsune_mirror": "картинка отражена зеркально",
+  "haunt.hint.tanuki_leaf": "цвета заколдованы до последнего этапа",
+  "haunt.hint.yurei_double": "до последнего этапа поверх картинки плывёт призрачный двойник",
+  "haunt.hint.kyokotsu_xray": "до последнего этапа вы видите её как рентген",
+  "haunt.started": "👻 В этом раунде водятся призраки — {twist}: {hint}. Сезонные монеты ×{multiplier}!",
+  "haunt.changed": "👻 На этом этапе новое наваждение — {twist}: {hint}.",
+  "haunt.lifted": "✨ {twist} рассеивается — на последнем этапе чистая картинка!"
 }

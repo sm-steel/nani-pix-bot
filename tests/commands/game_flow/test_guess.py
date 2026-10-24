@@ -7,6 +7,7 @@ from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import guess as guess_command_module
+from nani_pix_bot.commands.game_flow import stage_post
 from nani_pix_bot.jobs import timers as timers_package
 from nani_pix_bot.jobs.reveal import RevealWinner
 from nani_pix_bot.jobs.timers.current_image import RevealTarget
@@ -1166,3 +1167,17 @@ async def test_stage_advance_posts_the_starters_equipped_frame(
     # is the only thing that can change the corner.
     assert posted.getpixel((0, 0)) != posted.getpixel((posted.width // 2, posted.height // 2))
     assert game_id
+
+
+def test_stage_advanced_caption_on_last_stage_says_lifted(
+    session, fake_runs, haunted_game, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(stage_cosmetics, "stage_png", lambda *_a, **_k: b"x")
+    haunted_game.haunt_twist = "tanuki_leaf"
+    haunted_game.current_stage = PixelStage.STAGE_5
+    haunted_game.original_image = b"file123"
+    announcement = stage_post.prepare_stage_advanced_announcement(
+        session, MagicMock(), haunted_game, "en"
+    )
+    assert announcement.caption is not None
+    assert "lifts" in announcement.caption

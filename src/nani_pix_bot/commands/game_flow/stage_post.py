@@ -14,6 +14,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
+from nani_pix_bot.services.seasons import haunting
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -93,6 +94,9 @@ def prepare_stage_advanced_announcement(
         total=progress.total,
         remaining=progress.remaining,
         limit=progress.limit,
+    )
+    caption += haunting.caption_suffix(
+        session, game, lang, number=progress.number, total=progress.total
     )
     return Announcement(
         photo=pixelated,

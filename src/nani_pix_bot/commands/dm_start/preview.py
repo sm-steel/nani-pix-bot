@@ -70,6 +70,7 @@ from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty, earning, wallet
 from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.seasons import gate as gate_service
+from nani_pix_bot.services.seasons import haunting
 from nani_pix_bot.services.seasons.gate import Verdict
 from nani_pix_bot.services.settings import stage_config
 
@@ -118,8 +119,11 @@ def _activate_and_stage_first_post(
         remaining=first_stage_settings.wrong_guess_limit,
         limit=first_stage_settings.wrong_guess_limit,
     )
-    caption += game_service.game_id_line(game.id, lang)
     game_service.activate_game(session, game)
+    caption += haunting.caption_suffix(
+        session, game, lang, number=1, total=len(game_service.STAGE_ORDER)
+    )
+    caption += game_service.game_id_line(game.id, lang)
     # Rendered only after activation: activate_game() tags the game with the
     # running season, which picks the stage style (styles.style_for).
     pixelated = stage_cosmetics.stage_png(

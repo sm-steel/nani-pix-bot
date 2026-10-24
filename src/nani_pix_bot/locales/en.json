@@ -926,5 +926,16 @@
   "mascot.pose.nani": "Nani?!",
   "mascot.pose.win": "Win",
   "mascot.pose.oops": "Oops",
-  "mascot.pose.sly": "Sly"
+  "mascot.pose.sly": "Sly",
+  "haunt.twist.kitsune_mirror": "Kitsune illusion",
+  "haunt.twist.tanuki_leaf": "Tanuki leaf",
+  "haunt.twist.yurei_double": "Yūrei double",
+  "haunt.twist.kyokotsu_xray": "Kyōkotsu X-ray",
+  "haunt.hint.kitsune_mirror": "the picture is mirrored",
+  "haunt.hint.tanuki_leaf": "the colours are bewitched until the last stage",
+  "haunt.hint.yurei_double": "a ghostly double drifts over the picture until the last stage",
+  "haunt.hint.kyokotsu_xray": "you see it as an X-ray until the last stage",
+  "haunt.started": "👻 This round is haunted — {twist}: {hint}. Season Coins ×{multiplier}!",
+  "haunt.changed": "👻 A new haunting for this stage — {twist}: {hint}.",
+  "haunt.lifted": "✨ The {twist} lifts — a clear picture for the last stage!"
 }

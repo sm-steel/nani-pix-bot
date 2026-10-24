@@ -3,6 +3,7 @@ import pytest
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.seasons.mechanics import HauntTwist
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.seasons import haunting
 from tests.seasons_fixtures import FixedRng
 
@@ -80,3 +81,57 @@ def test_is_haunted_counts_the_boss(haunted_game) -> None:
 
 def test_only_the_mirror_stays_on_the_last_stage() -> None:
     assert set(HauntTwist) - {HauntTwist.KITSUNE_MIRROR} == haunting.FADES_AT_LAST
+
+
+def test_first_stage_announces_the_twist_and_multiplier(session, haunted_game) -> None:
+    haunted_game.haunt_twist = "kitsune_mirror"
+    line = haunting.announcement(session, haunted_game, "en", number=1, total=5)
+    assert line is not None
+    assert "Kitsune illusion" in line
+    assert "\N{MULTIPLICATION SIGN}2" in line
+
+
+def test_middle_stage_is_silent(session, haunted_game) -> None:
+    haunted_game.haunt_twist = "kitsune_mirror"
+    assert haunting.announcement(session, haunted_game, "en", number=3, total=5) is None
+
+
+def test_fading_twist_announces_lifting_on_the_last_stage(session, haunted_game) -> None:
+    haunted_game.haunt_twist = "tanuki_leaf"
+    line = haunting.announcement(session, haunted_game, "en", number=5, total=5)
+    assert line is not None
+    assert "lifts" in line
+
+
+def test_yurei_double_announces_lifting_on_the_last_stage(session, haunted_game) -> None:
+    haunted_game.haunt_twist = "yurei_double"
+    line = haunting.announcement(session, haunted_game, "en", number=5, total=5)
+    assert line is not None
+    assert "Yūrei double" in line
+    assert "lifts" in line
+
+
+def test_mirror_does_not_announce_on_the_last_stage(session, haunted_game) -> None:
+    haunted_game.haunt_twist = "kitsune_mirror"
+    assert haunting.announcement(session, haunted_game, "en", number=5, total=5) is None
+
+
+def test_boss_game_announces_each_new_twist(session, haunted_game, demo3) -> None:
+    haunted_game.boss_game = True
+    line = haunting.announcement(session, haunted_game, "en", number=2, total=5)
+    assert line is not None
+    assert "new haunting" in line
+    assert i18n.t(f"haunt.twist.{demo3.haunt.twists[1].value}", "en") in line
+
+
+def test_unhaunted_game_gets_no_line(session, tagged_game) -> None:
+    for number in (1, 5):
+        assert haunting.announcement(session, tagged_game, "en", number=number, total=5) is None
+
+
+def test_caption_suffix_is_a_newline_line_or_nothing(session, haunted_game) -> None:
+    assert haunting.caption_suffix(session, haunted_game, "en", number=1, total=5) == ""
+    haunted_game.haunt_twist = "kitsune_mirror"
+    suffix = haunting.caption_suffix(session, haunted_game, "en", number=1, total=5)
+    assert suffix.startswith("\n")
+    assert "Kitsune illusion" in suffix

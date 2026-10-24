@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.seasons.mechanics import HauntTwist
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.seasons import event_day, modifiers
 
 # Twists that clear up at the last stage; the mirror stays until the reveal.
@@ -169,3 +170,36 @@ def apply_twist(png: bytes, twist: HauntTwist, *, last: bool) -> bytes:
     out = BytesIO()
     twist_image(Image.open(BytesIO(png)), twist, last=last).save(out, format="PNG")
     return out.getvalue()
+
+
+def announcement(session: Session, game: Game, lang: str, number: int, total: int) -> str | None:
+    """The haunted-round line for stage `number` of `total`: the start, a boss
+    game's new twist, or a fading twist lifting on the last stage."""
+    run = modifiers.season_of(session, game)
+    twist = twist_for_stage(run, game, number)
+    if run is None or twist is None:
+        return None
+    name = i18n.t(f"haunt.twist.{twist.value}", lang)
+    hint = i18n.t(f"haunt.hint.{twist.value}", lang)
+    if number == 1:
+        # Local import: multipliers imports this module.
+        from nani_pix_bot.services.seasons import multipliers
+
+        return i18n.t(
+            "haunt.started",
+            lang,
+            twist=name,
+            hint=hint,
+            multiplier=multipliers.coin_multiplier(run, game),
+        )
+    if twist is not twist_for_stage(run, game, number - 1):
+        return i18n.t("haunt.changed", lang, twist=name, hint=hint)
+    if number == total and twist in FADES_AT_LAST:
+        return i18n.t("haunt.lifted", lang, twist=name)
+    return None
+
+
+def caption_suffix(session: Session, game: Game, lang: str, number: int, total: int) -> str:
+    """`announcement` as a caption tail: a newline and the line, or nothing."""
+    line = announcement(session, game, lang, number=number, total=total)
+    return "" if line is None else "\n" + line
