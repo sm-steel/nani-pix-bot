@@ -145,6 +145,17 @@ def _cached(
         return (PreviewKind(row.kind), row.file_id) if row is not None else None
 
 
+def _worn(context: ContextTypes.DEFAULT_TYPE, viewer_id: int) -> str | None:
+    """Nani's costume on the viewer's previews. A failed lookup is logged and leaves her
+    plain: it never blocks a preview."""
+    try:
+        with session_scope(context.bot_data["session_factory"]) as session:
+            return costume.for_viewer(session, viewer_id)
+    except Exception as exc:
+        logger.opt(exception=exc).error("couldn't read Nani's costume; previewing her plain")
+        return None
+
+
 async def send(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
@@ -153,13 +164,12 @@ async def send(
     viewer: User,
 ) -> None:
     """`resolved`'s preview into `chat_id`, drawn on `viewer` (#427)."""
-    with session_scope(context.bot_data["session_factory"]) as session:
-        worn = costume.for_viewer(session, viewer.id)
+    worn = _worn(context, viewer.id)
     key = previews.cache_key(resolved, viewer.id, worn)
     request = _Request(chat_id, viewer, resolved, lang, key, worn)
     cached = _cached(context, request)
     logger.info(
-        "previewed {item_id} ({source}) in costume {costume}",
+        "previewed {item_id} ({source})",
         item_id=resolved.item_id,
         costume=worn,
         source="cached" if cached else "rendered",

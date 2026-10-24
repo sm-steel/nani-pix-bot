@@ -309,7 +309,7 @@ def test_a_costume_item_previews_as_a_six_pose_sheet(costume_item) -> None:
     with Image.open(BytesIO(preview.image)) as sheet:
         assert sheet.width == width
         rgb = sheet.convert("RGB")
-        cell_h = round(440 * previews.SHEET_POSE_WIDTH / 384)
+        cell_h = mascot.sized(Pose.CAST, previews.SHEET_POSE_WIDTH, "test_hat").height
         for index in range(6):
             col, row = index % 3, index // 3
             x = previews.SHEET_GAP + col * (previews.SHEET_POSE_WIDTH + previews.SHEET_GAP)

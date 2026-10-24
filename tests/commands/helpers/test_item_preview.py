@@ -457,3 +457,19 @@ async def test_a_plain_viewers_preview_is_unchanged(
         assert previews.cached(session, FRAME_KEY, "EN") is not None
     [line] = [r for r in log_records if r.message.startswith("previewed")]
     assert line.extra["costume"] is None
+
+
+async def test_a_failed_costume_lookup_previews_nani_plain(
+    session_factory, monkeypatch, log_records: list[LogLine]
+) -> None:
+    def broken(*_args):
+        raise RuntimeError("db hiccup")
+
+    monkeypatch.setattr(item_preview.costume, "for_viewer", broken)
+    context = _context(session_factory)
+    await _send(context, FRAME)
+
+    assert isinstance(context.bot.send_photo.await_args.kwargs["photo"], bytes)
+    with session_factory() as session:
+        assert previews.cached(session, FRAME_KEY, "EN") is not None
+    assert any(r.level == "ERROR" and "costume" in r.message for r in log_records)
