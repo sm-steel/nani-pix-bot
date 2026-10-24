@@ -25,7 +25,6 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import GoalKind, Reward
 from nani_pix_bot.seasons.mechanics import HauntTwist, OmikujiKind
-from nani_pix_bot.services.cosmetics import costume
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 
@@ -46,8 +45,6 @@ _kept = (
     TurnState.turn_opened_at,
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
-    # Halloween: wired by P2 (#467)
-    costume.for_viewer,
     # Halloween: wired by P3 (#468)
     OutboxKind.EVENT_DAY_START,
     OutboxKind.EVENT_DAY_END,

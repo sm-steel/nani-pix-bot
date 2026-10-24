@@ -8,12 +8,13 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers import item_preview
-from nani_pix_bot.models.enums import CosmeticSlot, PreviewKind
+from nani_pix_bot.models.enums import CosmeticSlot, ItemSource, PreviewKind
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.definition import Item
 from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services import i18n
-from nani_pix_bot.services.cosmetics import previews
+from nani_pix_bot.services.cosmetics import inventory, previews
 from nani_pix_bot.services.reveal import pipeline
 from tests.conftest import LogLine
 
@@ -412,3 +413,47 @@ async def test_a_viewer_that_cannot_be_drawn_says_the_preview_is_unavailable(
 
     text = context.bot.send_message.await_args.kwargs["text"]
     assert text == i18n.t("cosmetics.preview_unavailable", "EN")
+
+
+def _wear_costume(session_factory, monkeypatch, costume_art, player_id: int = 1) -> None:
+    hat = Item(
+        "mascot_costume.hat",
+        CosmeticSlot.MASCOT_COSTUME,
+        costume_art,
+        {"EN": "Hat", "RU": "Hat"},
+    )
+    demo = registry.all_runs()["demo_1"]
+    runs = {"demo_1": replace(demo, items=(*demo.items, hat))}
+    monkeypatch.setattr(registry, "all_runs", lambda: runs)
+    registry.all_items.cache_clear()
+    with session_factory() as session:
+        item_id = "demo_1/mascot_costume.hat"
+        inventory.grant(session, player_id, inventory.ItemGrant(item_id, ItemSource.ADMIN))
+        inventory.equip(session, player_id, item_id)
+        session.commit()
+
+
+async def test_send_keys_the_preview_by_the_viewers_costume(
+    session_factory, costume_art, monkeypatch, log_records: list[LogLine]
+) -> None:
+    _wear_costume(session_factory, monkeypatch, costume_art)
+    context = _context(session_factory)
+    await _send(context, FRAME)
+
+    with session_factory() as session:
+        assert previews.cached(session, FRAME_KEY + "@test_hat", "EN") is not None
+        assert previews.cached(session, FRAME_KEY, "EN") is None
+    [line] = [r for r in log_records if r.message.startswith("previewed")]
+    assert line.extra["costume"] == "test_hat"
+
+
+async def test_a_plain_viewers_preview_is_unchanged(
+    session_factory, log_records: list[LogLine]
+) -> None:
+    context = _context(session_factory)
+    await _send(context, FRAME)
+
+    with session_factory() as session:
+        assert previews.cached(session, FRAME_KEY, "EN") is not None
+    [line] = [r for r in log_records if r.message.startswith("previewed")]
+    assert line.extra["costume"] is None

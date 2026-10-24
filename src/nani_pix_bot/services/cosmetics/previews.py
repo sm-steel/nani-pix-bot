@@ -72,6 +72,7 @@ class Viewer:
     full_name: str
     avatar: bytes | None = None
     card: ProfileCard | None = None
+    costume: str | None = None  # the costume Nani wears on their previews (None: plain)
 
 
 # The slots whose preview shows the viewer's avatar.
@@ -86,14 +87,17 @@ _NANI_SLOTS = frozenset(
 )
 
 
-def cache_key(resolved: ResolvedItem, viewer_id: int) -> str | None:
+def cache_key(resolved: ResolvedItem, viewer_id: int, costume: str | None = None) -> str | None:
     """Where the uploaded preview is kept: per viewer for a win effect (their badge), not at
-    all for a banner (their live card), else once for everyone."""
+    all for a banner (their live card), else once for everyone. A preview that shows Nani
+    also carries the costume she wears in it; a plain one's key is what it always was."""
     slot = resolved.item.slot
     if slot is CosmeticSlot.PROFILE_BANNER:
         return None
     key = f"{resolved.item_id}@{viewer_id}" if slot is CosmeticSlot.WIN_EFFECT else resolved.item_id
-    return key + WITH_NANI if slot in _NANI_SLOTS else key
+    if slot not in _NANI_SLOTS:
+        return key
+    return key + WITH_NANI + (f"@{costume}" if costume else "")
 
 
 @dataclass(frozen=True)
@@ -102,10 +106,11 @@ class ClipJob:
 
     effect: RevealEffect
     badge: pipeline.Badge | None
+    costume: str | None = None
 
     def ending(self) -> pipeline.Ending:
-        """Like a won game's: the badge (if any), Nani in the win pose."""
-        return pipeline.Ending(self.badge, pipeline.Nani(Pose.WIN))
+        """Like a won game's: the badge (if any), Nani in the win pose and her costume."""
+        return pipeline.Ending(self.badge, pipeline.Nani(Pose.WIN, self.costume))
 
     def args(self) -> tuple[bytes, PixelAlgorithm, tuple[int, ...], RevealEffect, pipeline.Ending]:
         return sample_stage(), DEFAULT_ALGORITHM, STAGE_WIDTHS, self.effect, self.ending()
@@ -115,20 +120,20 @@ def clip_job(resolved: ResolvedItem, viewer: Viewer) -> ClipJob | None:
     """The clip a transition or win effect previews as; None for every other slot."""
     item = resolved.item
     if item.slot is CosmeticSlot.HOST_TRANSITION:
-        return ClipJob(RevealEffect[item.look], None)
+        return ClipJob(RevealEffect[item.look], None, viewer.costume)
     if item.slot is CosmeticSlot.WIN_EFFECT:
         badge = pipeline.Badge(viewer.avatar, viewer.handle, overlay=item.look)
-        return ClipJob(RevealEffect.IRIS, badge)
+        return ClipJob(RevealEffect.IRIS, badge, viewer.costume)
     return None
 
 
-def _frame(resolved: ResolvedItem, _lang: str, _viewer: Viewer) -> bytes:
-    """Pixelated, in the item's season style, then framed, with Nani: a real
-    stage-3 post."""
+def _frame(resolved: ResolvedItem, _lang: str, viewer: Viewer) -> bytes:
+    """Pixelated, in the item's season style, then framed, with Nani in the viewer's
+    costume: a real stage-3 post."""
     framed = stage.stage_png_with(
         sample_stage(), FRAME_STAGE_WIDTH, DEFAULT_ALGORITHM, resolved.item.look, resolved.run.style
     )
-    return mascot.add_to_png(framed, Pose.NOPE)  # FRAME_STAGE_WIDTH is stage 3's
+    return mascot.add_to_png(framed, Pose.NOPE, viewer.costume)  # FRAME_STAGE_WIDTH is stage 3's
 
 
 def _banner(resolved: ResolvedItem, lang: str, viewer: Viewer) -> bytes:
@@ -139,8 +144,42 @@ def _banner(resolved: ResolvedItem, lang: str, viewer: Viewer) -> bytes:
     return render_profile_card(card, viewer.avatar, background)
 
 
+SHEET_POSE_WIDTH = 200
+SHEET_COLUMNS = 3
+SHEET_GAP = 12
+SHEET_BACKGROUND = (28, 22, 40)
+
+
+def costume_sheet(costume: str) -> bytes:
+    """A PNG of all six poses in `costume`, in Pose order, three to a row, each row's poses
+    standing on one line."""
+    poses = [mascot.sized(pose, SHEET_POSE_WIDTH, costume) for pose in Pose]
+    rows = [poses[i : i + SHEET_COLUMNS] for i in range(0, len(poses), SHEET_COLUMNS)]
+    heights = [max(pose.height for pose in row) for row in rows]
+    width = SHEET_COLUMNS * SHEET_POSE_WIDTH + (SHEET_COLUMNS + 1) * SHEET_GAP
+    height = sum(heights) + (len(rows) + 1) * SHEET_GAP
+    sheet = Image.new("RGBA", (width, height), (*SHEET_BACKGROUND, 255))
+    top = SHEET_GAP
+    for row, row_height in zip(rows, heights, strict=True):
+        for column, pose in enumerate(row):
+            x = SHEET_GAP + column * (SHEET_POSE_WIDTH + SHEET_GAP)
+            sheet.alpha_composite(pose, (x, top + row_height - pose.height))
+        top += row_height + SHEET_GAP
+    out = BytesIO()
+    sheet.convert("RGB").save(out, format="PNG")
+    return out.getvalue()
+
+
+def _costume_sheet(resolved: ResolvedItem, _lang: str, _viewer: Viewer) -> bytes:
+    return costume_sheet(resolved.item.look)
+
+
 _STILLS: Mapping[CosmeticSlot, Callable[[ResolvedItem, str, Viewer], bytes]] = MappingProxyType(
-    {CosmeticSlot.HOST_FRAME: _frame, CosmeticSlot.PROFILE_BANNER: _banner}
+    {
+        CosmeticSlot.HOST_FRAME: _frame,
+        CosmeticSlot.PROFILE_BANNER: _banner,
+        CosmeticSlot.MASCOT_COSTUME: _costume_sheet,
+    }
 )
 
 
