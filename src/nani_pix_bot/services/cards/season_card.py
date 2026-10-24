@@ -1,5 +1,6 @@
 """A season's teaser/start/end card (seasons spec §6): the run's key visual,
-unshaded, with a pink ribbon tag, the season name in a pink-to-gold gradient,
+unshaded, with a ribbon tag, the season name in a two-colour gradient (the
+run's palette; Sakura's is pink-to-gold),
 the run's stamp tilted like a seal and the dates in a frosted pill. Pure
 Pillow, no Telegram; the caller localizes every string."""
 
@@ -10,6 +11,7 @@ from io import BytesIO
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from nani_pix_bot.seasons.mechanics import DEFAULT_PALETTE, Palette
 from nani_pix_bot.services.cards.icons import ICON_DIR
 from nani_pix_bot.services.cards.render import (
     _BACKGROUND,
@@ -24,7 +26,6 @@ from nani_pix_bot.services.cards.render import (
 )
 
 CALENDAR_ICON = ICON_DIR / "calendar.png"
-_PINK = (236, 110, 150)
 _INK = (70, 40, 60)  # the date's colour on the frosted pill
 # The ribbon tag carrying the headline, top centre.
 _RIBBON_TOP = 34
@@ -35,8 +36,6 @@ _RIBBON_ALPHA = 235
 _RIBBON_SHINE_INSET = 24
 _RIBBON_SIZE = 32
 # The season name: a horizontal gradient fill, white outline, a faint shine on its upper half.
-_TITLE_FROM = (255, 160, 190)
-_TITLE_TO = (246, 206, 120)
 _TITLE_SIZES = (100, 88, 76, 64)
 _TITLE_STROKE = 7
 _TITLE_SHINE = 5  # the shine is the glyph mask divided by this
@@ -72,6 +71,7 @@ class SeasonBanner:
     title: str
     subtitle: str
     stamp: bytes | None = None  # the run's stamp art (PNG); None draws no seal
+    palette: Palette = DEFAULT_PALETTE  # the run's ribbon and title colours
 
 
 def _layer() -> Image.Image:
@@ -87,8 +87,8 @@ def _shadow(layer: Image.Image) -> Image.Image:
     return moved.filter(ImageFilter.GaussianBlur(_SHADOW_BLUR))
 
 
-def _ribbon_layer(text: str) -> Image.Image:
-    """A pink ribbon with a notch at both ends and a faint highlight line, the
+def _ribbon_layer(text: str, color: tuple[int, int, int]) -> Image.Image:
+    """A ribbon in `color` with a notch at both ends and a faint highlight line, the
     headline in white bold on it."""
     ribbon_font = font(_RIBBON_SIZE, bold=True)
     layer = _layer()
@@ -107,7 +107,7 @@ def _ribbon_layer(text: str) -> Image.Image:
             (left, bottom),
             (left + _RIBBON_NOTCH, middle),
         ],
-        fill=(*_PINK, _RIBBON_ALPHA),
+        fill=(*color, _RIBBON_ALPHA),
     )
     shine = (left + _RIBBON_SHINE_INSET, top + 6), (right - _RIBBON_SHINE_INSET, top + 6)
     draw.line(shine, fill=(255, 255, 255, 90), width=2)
@@ -127,22 +127,25 @@ def _title_font(
 
 
 @lru_cache(maxsize=8)
-def _gradient_row(left: int, right: int) -> Image.Image:
+def _gradient_row(left: int, right: int, palette: Palette) -> Image.Image:
     """One pixel row of _gradient: cached, as it is tiny (a whole card is not)."""
     row = Image.new("RGBA", (_WIDTH, 1))
     for x in range(_WIDTH):
         t = min(1.0, max(0.0, (x - left) / max(1, right - left)))
-        color = tuple(round(a + (b - a) * t) for a, b in zip(_TITLE_FROM, _TITLE_TO, strict=True))
+        color = tuple(
+            round(a + (b - a) * t)
+            for a, b in zip(palette.title_from, palette.title_to, strict=True)
+        )
         row.putpixel((x, 0), (*color, 255))
     return row
 
 
-def _gradient(left: int, right: int) -> Image.Image:
-    """_TITLE_FROM at x=left to _TITLE_TO at x=right, flat beyond, over the whole card."""
-    return _gradient_row(left, right).resize(CARD_SIZE, Image.Resampling.NEAREST)
+def _gradient(left: int, right: int, palette: Palette) -> Image.Image:
+    """The palette's title_from at x=left to title_to at x=right, flat beyond, card-wide."""
+    return _gradient_row(left, right, palette).resize(CARD_SIZE, Image.Resampling.NEAREST)
 
 
-def title_layer(text: str, *, stamped: bool) -> Image.Image:
+def title_layer(text: str, *, stamped: bool, palette: Palette = DEFAULT_PALETTE) -> Image.Image:
     """The season name: centred right of the stamp seal when there is one, else on
     the card; gradient-filled, outlined in white, a faint shine on the upper half."""
     left = _STAMP_RIGHT + _STAMP_TITLE_GAP if stamped else _WIDTH - _TITLE_RIGHT
@@ -158,7 +161,7 @@ def title_layer(text: str, *, stamped: bool) -> Image.Image:
     white = Image.new("RGBA", CARD_SIZE, (255, 255, 255, 255))
     layer = _layer()
     layer.paste(white, (0, 0), outline)
-    layer.paste(_gradient(box[0], box[2]), (0, 0), glyphs)
+    layer.paste(_gradient(box[0], box[2], palette), (0, 0), glyphs)
     shine = glyphs.point(lambda v: v // _TITLE_SHINE)
     ImageDraw.Draw(shine).rectangle((0, int(_TITLE_Y - 6) + 1, _WIDTH, _HEIGHT), fill=0)
     layer.paste(white, (0, 0), shine)
@@ -231,8 +234,13 @@ def render_season_banner(card: SeasonBanner, background: bytes | None = None) ->
         picture = Image.new("RGB", CARD_SIZE, _BACKGROUND)
     image = picture.convert("RGBA")
     seal = _stamp_layer(card.stamp) if card.stamp is not None else None
-    ribbon = _ribbon_layer(card.headline) if card.headline else None
-    for layer in (seal, title_layer(card.title, stamped=seal is not None), ribbon):
+    headline, palette = card.headline, card.palette
+    ribbon = _ribbon_layer(headline, palette.ribbon) if headline else None
+    for layer in (
+        seal,
+        title_layer(card.title, stamped=seal is not None, palette=card.palette),
+        ribbon,
+    ):
         if layer is not None:
             image.alpha_composite(_shadow(layer))
             image.alpha_composite(layer)

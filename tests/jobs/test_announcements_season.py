@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -8,6 +9,7 @@ from nani_pix_bot.models.enums import CurrencyReason, OutboxKind, SeasonStatus
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
 from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.mechanics import Palette
 from nani_pix_bot.services.achievements import engine, outbox
 from nani_pix_bot.services.cards import SeasonBanner, UnlockCard, backgrounds
 from nani_pix_bot.services.economy import wallet
@@ -164,3 +166,20 @@ def test_an_untitled_season_unlock_posts_its_name_not_a_raw_key(
     assert isinstance(post.card, UnlockCard)
     assert post.card.name == shown
     assert not [message for level, message in records if level == "ERROR"]
+
+
+def test_season_start_post_uses_the_run_emoji(session, monkeypatch) -> None:
+    runs = registry.discover("tests.seasons.fake_runs")
+    runs["demo_1"] = replace(runs["demo_1"], emoji="🎃")
+    monkeypatch.setattr(registry, "all_runs", lambda: runs)
+    post = _render(session, OutboxKind.SEASON_START)
+    assert post.text.startswith("🎃")
+
+
+def test_the_banner_carries_the_runs_palette(session, monkeypatch) -> None:
+    palette = Palette((1, 2, 3), (4, 5, 6), (7, 8, 9))
+    runs = registry.discover("tests.seasons.fake_runs")
+    runs["demo_1"] = replace(runs["demo_1"], palette=palette)
+    monkeypatch.setattr(registry, "all_runs", lambda: runs)
+    post = _render(session, OutboxKind.SEASON_START)
+    assert post.card.palette == palette
