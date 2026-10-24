@@ -103,10 +103,12 @@ class ClipJob:
     effect: RevealEffect
     badge: pipeline.Badge | None
 
-    def args(
-        self,
-    ) -> tuple[bytes, PixelAlgorithm, tuple[int, ...], RevealEffect, pipeline.Badge | None]:
-        return sample_stage(), DEFAULT_ALGORITHM, STAGE_WIDTHS, self.effect, self.badge
+    def ending(self) -> pipeline.Ending:
+        """Like a won game's: the badge (if any), Nani in the win pose."""
+        return pipeline.Ending(self.badge, pipeline.Nani(Pose.WIN))
+
+    def args(self) -> tuple[bytes, PixelAlgorithm, tuple[int, ...], RevealEffect, pipeline.Ending]:
+        return sample_stage(), DEFAULT_ALGORITHM, STAGE_WIDTHS, self.effect, self.ending()
 
 
 def clip_job(resolved: ResolvedItem, viewer: Viewer) -> ClipJob | None:

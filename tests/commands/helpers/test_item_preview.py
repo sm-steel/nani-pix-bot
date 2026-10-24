@@ -329,7 +329,7 @@ async def test_a_win_effect_shows_the_viewers_avatar_and_name(
     _player(session_factory, 7, "amy")
     await _send(_context(session_factory), WIN, viewer=7)
 
-    badge = worker.await_args.args[-1]
+    badge = worker.await_args.args[-1].badge
     assert badge == pipeline.Badge(b"amy-avatar", "@amy", overlay="confetti")
     avatar.assert_awaited_once()
 
@@ -388,7 +388,7 @@ async def test_the_badge_names_a_player_without_username_by_full_name(
     await item_preview.send(
         cast(ContextTypes.DEFAULT_TYPE, _context(session_factory)), 9, _resolved(WIN), "EN", user
     )
-    assert worker.await_args.args[-1].handle == "Bob Smith"
+    assert worker.await_args.args[-1].badge.handle == "Bob Smith"
 
 
 async def test_a_slow_avatar_previews_with_initials(session_factory, worker, monkeypatch) -> None:
@@ -400,7 +400,7 @@ async def test_a_slow_avatar_previews_with_initials(session_factory, worker, mon
     monkeypatch.setattr(item_preview, "AVATAR_TIMEOUT", 0.01)
     await _send(_context(session_factory), WIN, viewer=7)
 
-    assert worker.await_args.args[-1].avatar is None
+    assert worker.await_args.args[-1].badge.avatar is None
 
 
 async def test_a_viewer_that_cannot_be_drawn_says_the_preview_is_unavailable(

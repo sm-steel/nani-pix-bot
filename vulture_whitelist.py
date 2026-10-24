@@ -47,7 +47,6 @@ _kept = (
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
     # Halloween: wired by P2 (#467)
-    costume.for_game_id,
     costume.for_viewer,
     # Halloween: wired by P3 (#468)
     OutboxKind.EVENT_DAY_START,

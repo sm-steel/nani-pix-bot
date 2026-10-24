@@ -297,7 +297,7 @@ def generate_clips(out_dir: Path) -> None:
     image = clip_image()
     for file_name, job in clip_jobs().items():
         clip = pipeline.preview_clip(
-            image, DEFAULT_ALGORITHM, previews.STAGE_WIDTHS, job.effect, job.badge
+            image, DEFAULT_ALGORITHM, previews.STAGE_WIDTHS, job.effect, job.ending()
         )
         (out_dir / file_name).write_bytes(clip)
 

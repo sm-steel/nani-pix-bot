@@ -151,20 +151,20 @@ def test_transition_previews_as_a_clip_with_that_effect_and_no_badge(clip_calls)
     preview = previews.render(_resolved("host_transition.iris"), "EN", AMY)
     assert preview.kind is PreviewKind.VIDEO
     assert preview.video == b"mp4"
-    [(image, algorithm, widths, effect, badge)] = clip_calls
+    [(image, algorithm, widths, effect, ending)] = clip_calls
     assert image == previews.sample_stage()
     assert algorithm is PixelAlgorithm.MEDIAN
     assert widths == tuple(s.target_width for s in DEFAULT_STAGE_CONFIG.values())
     assert effect is RevealEffect.IRIS
-    assert badge is None
+    assert ending == pipeline.Ending(None, pipeline.Nani(Pose.WIN))
 
 
 def test_win_effect_previews_as_an_iris_clip_with_the_overlay_badge(clip_calls) -> None:
     preview = previews.render(_resolved("win_effect.confetti"), "EN", AMY)
     assert preview.kind is PreviewKind.VIDEO
-    [(_image, _algorithm, _widths, effect, badge)] = clip_calls
+    [(_image, _algorithm, _widths, effect, ending)] = clip_calls
     assert effect is RevealEffect.IRIS
-    assert badge == pipeline.Badge(b"avatar-bytes", "@amy", overlay="confetti")
+    assert ending.badge == pipeline.Badge(b"avatar-bytes", "@amy", overlay="confetti")
 
 
 @pytest.mark.parametrize(
