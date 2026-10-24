@@ -24,7 +24,7 @@ from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import GoalKind, Reward
-from nani_pix_bot.seasons.mechanics import HauntTwist, OmikujiKind
+from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 from nani_pix_bot.services.seasons import event_day, haunting
@@ -47,11 +47,6 @@ _kept = (
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
     # Halloween: wired by P3 (#468)
-    # P3 Task 2
-    HauntTwist.KITSUNE_MIRROR,
-    HauntTwist.YUREI_DOUBLE,
-    haunting.FADES_AT_LAST,
-    haunting.twist_for_stage,
     # P3 Task 5
     haunting.is_haunted,
     # P3 Task 6

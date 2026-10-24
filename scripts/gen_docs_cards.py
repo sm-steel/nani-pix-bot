@@ -250,7 +250,7 @@ def frame_stills() -> dict[str, bytes]:
                     FRAME_STAGE_WIDTH,
                     DEFAULT_ALGORITHM,
                     resolved.item.look,
-                    run().style,
+                    stage.SeasonLook(run().style),
                 ),
                 mascot.stage_pose(3, 5),
             )

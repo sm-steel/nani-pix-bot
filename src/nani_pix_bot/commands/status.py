@@ -51,7 +51,7 @@ class _Repost:
     width: int
     algorithm: PixelAlgorithm
     frame: str | None
-    style: str | None
+    look: stage_cosmetics.SeasonLook
     pose: Pose  # the current stage's (an overthrow game's turn 1 shows the usual cast)
     costume: str | None
 
@@ -113,10 +113,18 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
         width,
         game.pixel_algorithm,
         stage_cosmetics.frame_for(session, game),
-        stage_cosmetics.season_style(session, game),
+        stage_cosmetics.SeasonLook(
+            stage_cosmetics.season_style(session, game),
+            _haunt(session, game, progress.number, progress.total),
+        ),
         mascot.stage_pose(progress.number, progress.total),
         stage_cosmetics.costume_for(session, game),
     )
+
+
+def _haunt(session: Session, game: Game, number: int, total: int) -> stage_cosmetics.Haunt | None:
+    twist = stage_cosmetics.stage_twist(session, game, number)
+    return None if twist is None else stage_cosmetics.Haunt(twist, number == total)
 
 
 def _idle_text(session: Session, game: Game | None, lang: str) -> str:
@@ -140,7 +148,11 @@ def _render(repost: _Repost) -> list[bytes]:
     return [
         mascot.add_to_png(
             stage_cosmetics.stage_png_with(
-                image, repost.width, repost.algorithm, repost.frame, repost.style
+                image,
+                repost.width,
+                repost.algorithm,
+                repost.frame,
+                repost.look,
             ),
             repost.pose,
             repost.costume,

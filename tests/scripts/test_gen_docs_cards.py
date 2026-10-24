@@ -187,7 +187,7 @@ def test_frame_stills_are_a_real_stage_3_sakura_image() -> None:
             continue
         expected = mascot.add_to_png(
             stage.stage_png_with(
-                key_visual, width, DEFAULT_ALGORITHM, item.look, style="watercolor"
+                key_visual, width, DEFAULT_ALGORITHM, item.look, stage.SeasonLook("watercolor")
             ),
             Pose.NOPE,
         )

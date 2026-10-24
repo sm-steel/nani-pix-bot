@@ -5,9 +5,11 @@ services.game (activate_game calls in here)."""
 import random
 from collections.abc import Sequence
 from datetime import datetime
+from io import BytesIO
 from typing import Protocol
 
 from loguru import logger
+from PIL import Image, ImageChops, ImageOps
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.game import Game
@@ -17,6 +19,11 @@ from nani_pix_bot.services.seasons import event_day, modifiers
 
 # Twists that clear up at the last stage; the others stay until the reveal.
 FADES_AT_LAST: frozenset[HauntTwist] = frozenset({HauntTwist.TANUKI_LEAF, HauntTwist.KYOKOTSU_XRAY})
+
+TANUKI_HUE_STEPS = 85  # of 256, about +120 degrees
+YUREI_OFFSET = (0.06, 0.04)  # fraction of the width, the height
+YUREI_ALPHA = 0.35
+XRAY_DARK, XRAY_LIGHT = (10, 20, 40), (200, 240, 255)
 
 _RNG = random.Random()  # noqa: S311 - a game's flavour, not a secret
 
@@ -118,3 +125,45 @@ def twist_for_stage(run: SeasonRun | None, game: Game, stage: int) -> HauntTwist
     if game.boss_game:
         return run.haunt.twists[(stage - 1) % len(run.haunt.twists)]
     return stored_twist(game)
+
+
+def _tanuki(image: Image.Image) -> Image.Image:
+    hue, sat, val = image.convert("HSV").split()
+    hue = hue.point(lambda h: (h + TANUKI_HUE_STEPS) % 256)
+    return Image.merge("HSV", (hue, sat, val)).convert("RGB")
+
+
+def _yurei(image: Image.Image) -> Image.Image:
+    dx = round(image.width * YUREI_OFFSET[0])
+    dy = round(image.height * YUREI_OFFSET[1])
+    return Image.blend(image, ImageChops.offset(image, dx, dy), YUREI_ALPHA)
+
+
+def _xray(image: Image.Image) -> Image.Image:
+    negative = ImageOps.invert(ImageOps.grayscale(image))
+    return ImageOps.colorize(negative, XRAY_DARK, XRAY_LIGHT)
+
+
+_OPS = {
+    HauntTwist.KITSUNE_MIRROR: ImageOps.mirror,
+    HauntTwist.TANUKI_LEAF: _tanuki,
+    HauntTwist.YUREI_DOUBLE: _yurei,
+    HauntTwist.KYOKOTSU_XRAY: _xray,
+}
+
+
+def twist_image(image: Image.Image, twist: HauntTwist, *, last: bool) -> Image.Image:
+    """`image` with the twist on; the fading twists leave the last stage clean."""
+    rgb = image.convert("RGB")
+    if last and twist in FADES_AT_LAST:
+        return rgb
+    return _OPS[twist](rgb)
+
+
+def apply_twist(png: bytes, twist: HauntTwist, *, last: bool) -> bytes:
+    if last and twist in FADES_AT_LAST:
+        logger.debug("{twist} skipped on the last stage", twist=twist.value)
+        return png
+    out = BytesIO()
+    twist_image(Image.open(BytesIO(png)), twist, last=last).save(out, format="PNG")
+    return out.getvalue()
