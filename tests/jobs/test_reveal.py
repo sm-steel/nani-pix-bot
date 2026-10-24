@@ -1,7 +1,8 @@
 import asyncio
+import multiprocessing
 import pickle
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
@@ -790,10 +791,22 @@ def test_pregen_inputs_of_a_plain_game_carry_no_costume(session_factory) -> None
 
 
 def test_pipeline_args_stay_picklable(session_factory, costume_run) -> None:
+    """The pre-render inputs, a costumed ending and costumed looks survive the trip to a
+    real spawn worker and back, as reveal_worker sends them (pickled both ways)."""
     game_id = _season_game(session_factory)
     with session_scope(session_factory) as session:
         inputs = reveal_pregen._read_inputs(session, game_id)
-    assert pickle.dumps(inputs)  # the worker gets them pickled
+    assert pickle.dumps(inputs)
+    values = (
+        inputs,
+        pipeline.Ending(
+            pipeline.Badge(b"avatar", "@w", overlay="stars"), pipeline.Nani(Pose.WIN, "x")
+        ),
+        pipeline.Looks(("petal_drift",), "x"),
+    )
+    context = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=1, mp_context=context) as pool:
+        assert pool.submit(tuple, values).result(timeout=60) == values
 
 
 async def test_the_pre_render_wears_the_costume_and_logs_it(

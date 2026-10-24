@@ -842,8 +842,9 @@ def _wear_a_costume(session_factory, monkeypatch: pytest.MonkeyPatch, look: str)
 
 
 async def test_a_stopped_games_reveal_keeps_the_starters_costume(
-    session_factory, monkeypatch: pytest.MonkeyPatch, costume_art
+    session_factory, monkeypatch: pytest.MonkeyPatch, costume_art, request
 ) -> None:
+    request.addfinalizer(registry.all_items.cache_clear)  # runs even if an assert fails
     game_id = _active_game(session_factory, starter_id=1)
     _wear_a_costume(session_factory, monkeypatch, costume_art)
     render = AsyncMock(return_value=None)
@@ -860,4 +861,3 @@ async def test_a_stopped_games_reveal_keeps_the_starters_costume(
     assert render.await_args is not None
     assert render.await_args.kwargs["nani"].costume == costume_art
     context.bot.send_photo.assert_awaited_once()
-    registry.all_items.cache_clear()

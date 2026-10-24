@@ -291,17 +291,19 @@ async def _render(
 
 def _dressed(session_factory: sessionmaker[Session], target: RevealTarget) -> RevealTarget:
     """`target` with Nani's costume filled in: its own, else the game's, read live (a
-    deleted game's is None). Logged at INFO when she wears one."""
-    costume = target.costume
-    if costume is None:
+    deleted game's is None). A failed lookup is logged and leaves her plain: it never
+    blocks the reveal. The render and photo lines log the costume she ends up in."""
+    if target.costume is not None:
+        return target
+    try:
         with session_scope(session_factory) as session:
             costume = costumes.for_game_id(session, target.game_id)
-    if costume is None:
+    except Exception as exc:
+        logger.opt(exception=exc).error(
+            "couldn't read Nani's costume; the reveal shows her plain", game_id=target.game_id
+        )
         return target
-    logger.info(
-        "Nani on the reveal in the {costume!r} costume", costume=costume, game_id=target.game_id
-    )
-    return replace(target, costume=costume)
+    return target if costume is None else replace(target, costume=costume)
 
 
 async def _send_video(
@@ -381,6 +383,12 @@ async def post_reveal(
             timed_out = True
     if sent is None and not timed_out:
         # Nani on a copy: `photo` itself stays the stored bytes the pre-render was made from.
+        logger.info(
+            "posting the reveal photo, Nani {pose}, costume={costume}",
+            pose=target.pose.value,
+            costume=target.costume,
+            game_id=target.game_id,
+        )
         with_nani = await asyncio.to_thread(mascot.add_to_jpeg, photo, target.pose, target.costume)
         sent = await post_current_image(context, session_factory, photo=with_nani, caption=caption)
     if sent is not None:
