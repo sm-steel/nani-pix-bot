@@ -94,7 +94,7 @@ def on_activation(session: Session, game: Game, now: datetime, rng: _Rng | None 
         )
     else:
         logger.info(
-            "haunted — {twist}",
+            "haunted — {twist} (rolled {roll}, chance {chance})",
             twist=twist.value,
             roll=drawn.number,
             chance=run.haunt.chance_pct,

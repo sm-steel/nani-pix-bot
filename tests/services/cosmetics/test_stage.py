@@ -280,3 +280,24 @@ def test_the_stored_twist_really_changes_the_pixels(session, haunted_game) -> No
     haunted_game.haunt_twist = "kyokotsu_xray"
     assert stage.stage_png(session, haunted_game, _image(), WIDTH) != clean
     assert haunting.stored_twist(haunted_game) is HauntTwist.KYOKOTSU_XRAY
+
+
+def test_current_haunt_names_the_twist_and_whether_it_is_last(
+    session, haunted_game, fake_runs
+) -> None:
+    haunted_game.haunt_twist = "tanuki_leaf"
+    haunted_game.current_stage = PixelStage.STAGE_5
+
+    haunt = stage.current_haunt(session, haunted_game)
+
+    assert haunt == stage.Haunt(HauntTwist.TANUKI_LEAF, True)
+    assert haunt is not None
+    assert haunt.faded
+
+
+def test_current_haunt_is_none_for_a_clean_game(session, haunted_game, fake_runs) -> None:
+    assert stage.current_haunt(session, haunted_game) is None
+
+
+def test_the_mirror_never_fades() -> None:
+    assert not stage.Haunt(HauntTwist.KITSUNE_MIRROR, True).faded

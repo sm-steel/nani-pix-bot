@@ -217,7 +217,7 @@ def test_start_post_lists_haunted_gate_and_coins(session, monkeypatch) -> None:
     post = _render_parade(session, row)
     assert post.text.split("\n") == [
         "🏮 Halloween has begun! Special rules until midnight (UTC).",
-        "👻 Every round today is haunted.",
+        "👻 Every round started today is haunted.",
         "Today only horror anime can be played.",
         "🪙 Season Coins pay \u00d73 all day.",
     ]

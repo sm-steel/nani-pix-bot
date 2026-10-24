@@ -341,3 +341,85 @@ async def test_status_repost_of_a_haunted_game_is_twisted(
     await _run(_update(), _context(session_factory))
 
     assert seen == [(HauntTwist.TANUKI_LEAF, True)]
+
+
+def test_the_caption_names_a_haunted_twist_its_hint_and_the_multiplier() -> None:
+    live = status.LiveStatus(
+        game_id=7,
+        hard_mode=False,
+        number=2,
+        total=5,
+        remaining=1,
+        limit=2,
+        pot=0,
+        time_left=None,
+        twist=HauntTwist.KITSUNE_MIRROR,
+        multiplier=3,
+    )
+
+    lines = status.caption(live, "en").splitlines()
+
+    assert lines[1] == i18n.t(
+        "status.haunted",
+        "en",
+        twist=i18n.t("haunt.twist.kitsune_mirror", "en"),
+        hint=i18n.t("haunt.hint.kitsune_mirror", "en"),
+        multiplier=3,
+    )
+
+
+def _live_after_repost(session_factory, **fields) -> status.LiveStatus:
+    with session_scope(session_factory) as session:
+        _players(session)
+        game = Game(
+            starter_id=HOST,
+            status=GameStatus.ACTIVE,
+            original_image=b"img",
+            season_id=_haunted_season(session),
+            **fields,
+        )
+        session.add(game)
+        session.flush()
+        repost = status._repost(session, game, datetime.now(UTC))
+        assert repost is not None
+        return repost.live
+
+
+def test_the_live_status_of_a_haunted_game_carries_the_twist_and_multiplier(
+    session_factory, fake_runs
+) -> None:
+    live = _live_after_repost(
+        session_factory, current_stage=PixelStage.STAGE_2, haunt_twist="kyokotsu_xray"
+    )
+
+    assert live.twist is HauntTwist.KYOKOTSU_XRAY
+    assert live.multiplier == fake_runs["demo_3"].haunt.coin_multiplier
+
+
+def test_a_faded_twist_on_the_last_stage_gives_no_status_line(session_factory, fake_runs) -> None:
+    live = _live_after_repost(
+        session_factory, current_stage=PixelStage.STAGE_5, haunt_twist="kyokotsu_xray"
+    )
+
+    assert live.twist is None
+
+
+def test_the_mirror_stays_in_the_status_on_the_last_stage(session_factory, fake_runs) -> None:
+    live = _live_after_repost(
+        session_factory, current_stage=PixelStage.STAGE_5, haunt_twist="kitsune_mirror"
+    )
+
+    assert live.twist is HauntTwist.KITSUNE_MIRROR
+
+
+def test_a_boss_games_status_names_its_current_stage_twist(session_factory, fake_runs) -> None:
+    live = _live_after_repost(session_factory, current_stage=PixelStage.STAGE_2, boss_game=True)
+
+    assert live.twist is list(HauntTwist)[1]
+
+
+def test_an_unhaunted_game_has_no_status_twist(session_factory, fake_runs) -> None:
+    live = _live_after_repost(session_factory, current_stage=PixelStage.STAGE_2)
+
+    assert live.twist is None
+    assert live.multiplier == 1

@@ -29,6 +29,11 @@ class Haunt(NamedTuple):
     twist: HauntTwist
     last: bool
 
+    @property
+    def faded(self) -> bool:
+        """A fading twist on the last stage: the image is clean."""
+        return self.last and self.twist in haunting.FADES_AT_LAST
+
 
 class SeasonLook(NamedTuple):
     """What the season does to a stage image: its style key and the haunted
@@ -102,6 +107,21 @@ def stage_twist(session: Session, game: Game, number: int) -> HauntTwist | None:
     return twist
 
 
+def haunt_at(
+    session: Session, game: Game, progress: StageProgress | HardModeTurnProgress
+) -> Haunt | None:
+    """The twist the game's stage (or HARD MODE turn) `progress` wears and
+    whether it is the last one, logged like `stage_twist`. Every site that
+    renders or describes the current stage's twist reads it through here."""
+    twist = stage_twist(session, game, progress.number)
+    return None if twist is None else Haunt(twist, progress.number == progress.total)
+
+
+def current_haunt(session: Session, game: Game) -> Haunt | None:
+    """`haunt_at` for the game's current stage or turn."""
+    return haunt_at(session, game, _progress(session, game))
+
+
 def costume_for(session: Session, game: Game) -> str | None:
     """The costume Nani wears on the game's stage images, logged at INFO when
     there is one, like `season_style`."""
@@ -119,16 +139,12 @@ def stage_png(
     """The stage image as posted: twisted, styled, framed, Nani on top in her
     pose and costume."""
     progress = _progress(session, game)
-    twist = stage_twist(session, game, progress.number)
     png = stage_png_with(
         image_bytes,
         width,
         game.pixel_algorithm,
         frame_for(session, game),
-        SeasonLook(
-            season_style(session, game),
-            Haunt(twist, progress.number == progress.total) if twist is not None else None,
-        ),
+        SeasonLook(season_style(session, game), haunt_at(session, game, progress)),
     )
     pose = mascot.stage_pose(progress.number, progress.total, overthrow=overthrow)
     return mascot.add_to_png(png, pose, costume_for(session, game))

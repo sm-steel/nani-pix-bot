@@ -66,6 +66,7 @@ def test_activation_logs_a_haunting(session, haunted_season, monkeypatch, log_re
     game_service.activate_game(session, game)
     line = next(r for r in log_records if r.message.startswith("haunted"))
     assert line.level == "INFO"
+    assert line.message == "haunted — tanuki_leaf (rolled 3, chance 25)"
     assert line.extra["twist"] == "tanuki_leaf"
     assert line.extra["chance"] == 25
     assert line.extra["event_day"] is False
