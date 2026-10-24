@@ -61,9 +61,7 @@ def test_unknown_or_failing_overlay_falls_back_to_confetti(monkeypatch) -> None:
 
     _renderers(monkeypatch, broken=broken)
     for key in ("nope", "broken"):
-        overlay = pipeline._overlay(
-            _static(), pipeline.Badge(None, "@w", overlay=key), pipeline.Nani(Pose.WIN)
-        )
+        overlay = pipeline._overlay(_static(), pipeline.Badge(None, "@w", overlay=key), WIN)
         assert overlay.confetti_mov == b"default-clip"
 
 
@@ -75,12 +73,8 @@ def test_the_fallback_warns_via_stdlib_logging(monkeypatch, caplog) -> None:
 
     _renderers(monkeypatch, broken=broken)
     with caplog.at_level("WARNING"):
-        pipeline._overlay(
-            _static(), pipeline.Badge(None, "@w", overlay="nope"), pipeline.Nani(Pose.WIN)
-        )
-        pipeline._overlay(
-            _static(), pipeline.Badge(None, "@w", overlay="broken"), pipeline.Nani(Pose.WIN)
-        )
+        pipeline._overlay(_static(), pipeline.Badge(None, "@w", overlay="nope"), WIN)
+        pipeline._overlay(_static(), pipeline.Badge(None, "@w", overlay="broken"), WIN)
     messages = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
     assert len(messages) == 2
     assert "nope" in messages[0]
@@ -128,7 +122,5 @@ def test_the_confetti_overlay_is_unchanged() -> None:
     from nani_pix_bot.services.reveal import celebration
 
     static = _static()
-    clip = pipeline._overlay(
-        static, pipeline.Badge(None, "@w"), pipeline.Nani(Pose.WIN)
-    ).confetti_mov
+    clip = pipeline._overlay(static, pipeline.Badge(None, "@w"), WIN).confetti_mov
     assert clip == celebration.confetti_clip(celebration.badge_height(SIZE))[0]
