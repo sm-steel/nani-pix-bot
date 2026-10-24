@@ -13,7 +13,6 @@ Anything else vulture reports is dead code: remove it or wire it up.
 from typing import TYPE_CHECKING
 
 from nani_pix_bot.models.enums import (
-    CosmeticSlot,
     EventType,
     HexOutcome,
     ItemSource,
@@ -26,6 +25,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import GoalKind, Reward
 from nani_pix_bot.seasons.mechanics import HauntTwist, OmikujiKind
+from nani_pix_bot.services.cosmetics import costume
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 
@@ -47,7 +47,8 @@ _kept = (
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
     # Halloween: wired by P2 (#467)
-    CosmeticSlot.MASCOT_COSTUME,
+    costume.for_game_id,
+    costume.for_viewer,
     # Halloween: wired by P3 (#468)
     OutboxKind.EVENT_DAY_START,
     OutboxKind.EVENT_DAY_END,
