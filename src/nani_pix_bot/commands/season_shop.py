@@ -16,7 +16,7 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SeasonStatus
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.seasons.definition import SeasonRun
+from nani_pix_bot.seasons.definition import RewardKind, SeasonRun
 from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.cosmetics import clue_token_icon
@@ -55,7 +55,7 @@ def _resolved(row: Stock) -> ResolvedItem | None:
 def _name(row: Stock, lang: str) -> str:
     resolved = _resolved(row)
     if resolved is None:
-        return i18n.t("season_pass.reward.clue_token", lang)
+        return i18n.t(f"season_pass.reward.{row.offer.kind.value}", lang)
     return resolved.item.name(lang)
 
 
@@ -144,7 +144,7 @@ def _offer(
         price=row.offer.price,
         balance=balance,
     )
-    if row.item_id is None:
+    if row.offer.kind is RewardKind.CLUE_TICKET:
         text += "\n" + i18n.t("season_shop.offer_token_note", lang)
     buttons = []
     if row.left > 0:

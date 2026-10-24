@@ -23,6 +23,7 @@ from nani_pix_bot.models.enums import CurrencyParty as CurrencyParty
 from nani_pix_bot.models.enums import CurrencyReason as CurrencyReason
 from nani_pix_bot.models.enums import EventType as EventType
 from nani_pix_bot.models.enums import GameStatus as GameStatus
+from nani_pix_bot.models.enums import HexOutcome as HexOutcome
 from nani_pix_bot.models.enums import ItemSource as ItemSource
 from nani_pix_bot.models.enums import OutboxKind as OutboxKind
 from nani_pix_bot.models.enums import PeriodType as PeriodType
@@ -35,6 +36,9 @@ from nani_pix_bot.models.event_log import EventLog as EventLog
 from nani_pix_bot.models.game import Game as Game
 from nani_pix_bot.models.game_guess import GameGuess as GameGuess
 from nani_pix_bot.models.game_vote import GameVote as GameVote
+from nani_pix_bot.models.halloween import ArmedOfuda as ArmedOfuda
+from nani_pix_bot.models.halloween import Hex as Hex
+from nani_pix_bot.models.halloween import OmikujiDraw as OmikujiDraw
 from nani_pix_bot.models.mal_link import MalCredentials as MalCredentials
 from nani_pix_bot.models.mal_link import PendingMalLink as PendingMalLink
 from nani_pix_bot.models.pass_vote import PassVote as PassVote

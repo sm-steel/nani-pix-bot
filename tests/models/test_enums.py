@@ -7,7 +7,14 @@ columns."""
 
 import pytest
 
-from nani_pix_bot.models.enums import Provider
+from nani_pix_bot.models.enums import (
+    ConsumableKind,
+    CosmeticSlot,
+    EventType,
+    ItemSource,
+    OutboxKind,
+    Provider,
+)
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services.search import anilist, shikimori, tenrai, tmdb
 
@@ -137,3 +144,30 @@ def test_provider_search_module_covers_all_four_providers_including_anilist() ->
     assert Provider.SHIKIMORI.search_module is shikimori.service
     assert Provider.TENRAI.search_module is tenrai.service
     assert Provider.TMDB.search_module is tmdb.service
+
+
+def test_halloween_enum_values() -> None:
+    assert CosmeticSlot.MASCOT_COSTUME == "mascot_costume"
+    assert (ConsumableKind.OFUDA, ConsumableKind.OMAMORI) == ("ofuda", "omamori")
+    assert (ItemSource.GOAL, ItemSource.BONES) == ("goal", "bones")
+    assert [
+        EventType.HEX_CAST,
+        EventType.HEX_BLOCKED,
+        EventType.HEX_TRIGGERED,
+        EventType.OMIKUJI_DRAWN,
+        EventType.OFUDA_USED,
+        EventType.GOAL_REACHED,
+    ] == [
+        "hex_cast",
+        "hex_blocked",
+        "hex_triggered",
+        "omikuji_drawn",
+        "ofuda_used",
+        "group_goal_reached",
+    ]
+    assert [
+        OutboxKind.GOAL_MILESTONE,
+        OutboxKind.GOAL_REACHED,
+        OutboxKind.EVENT_DAY_START,
+        OutboxKind.EVENT_DAY_END,
+    ] == ["goal_milestone", "goal_reached", "event_day_start", "event_day_end"]

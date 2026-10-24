@@ -1,8 +1,10 @@
+from dataclasses import replace
 from io import BytesIO
 
 import pytest
 from PIL import Image, ImageChops
 
+from nani_pix_bot.seasons.mechanics import DEFAULT_PALETTE, Palette
 from nani_pix_bot.services import cards
 from nani_pix_bot.services.cards import render, season_card
 
@@ -130,11 +132,12 @@ def test_stamp_bytes_that_are_no_image_draw_no_seal(log_records) -> None:
 
 
 def test_the_title_gradient_is_built_per_call_not_shared() -> None:
-    first = season_card._gradient(400, 800)
+    first = season_card._gradient(400, 800, DEFAULT_PALETTE)
     assert first.size == cards.CARD_SIZE
-    assert season_card._gradient(400, 800) is not first
+    assert season_card._gradient(400, 800, DEFAULT_PALETTE) is not first
     first.paste((0, 0, 0, 0), (0, 0, W, H))  # a caller scribbling on its copy...
-    assert season_card._gradient(400, 800).getpixel((0, 0)) != (0, 0, 0, 0)  # ...leaves no trace
+    fresh = season_card._gradient(400, 800, DEFAULT_PALETTE)
+    assert fresh.getpixel((0, 0)) != (0, 0, 0, 0)  # ...leaves no trace
 
 
 def _changed_box(before: Image.Image, after: Image.Image) -> tuple[int, int, int, int] | None:
@@ -158,3 +161,36 @@ def test_the_pill_blur_covers_exactly_the_drawn_pill(monkeypatch) -> None:
 
     assert pill is not None
     assert _changed_box(board, blurred) == pill
+
+
+def test_default_palette_is_the_sakura_look() -> None:
+    """The exact colours the card had before palettes existed."""
+    before = Palette(ribbon=(236, 110, 150), title_from=(255, 160, 190), title_to=(246, 206, 120))
+    assert before == DEFAULT_PALETTE
+
+
+def test_default_palette_card_equals_an_explicit_sakura_palette_card() -> None:
+    """Same process, same fonts: a pixel hash would differ between platforms."""
+    sakura = Palette((236, 110, 150), (255, 160, 190), (246, 206, 120))
+    plain = cards.SeasonBanner(CARD.headline, CARD.title, CARD.subtitle, stamp=_stamp())
+    explicit = replace(plain, palette=sakura)
+    background = _png(_key_visual())
+    assert cards.render_season_banner(plain, background) == cards.render_season_banner(
+        explicit, background
+    )
+
+
+def test_season_card_uses_the_run_palette() -> None:
+    palette = Palette((10, 20, 30), (40, 50, 60), (70, 80, 90))
+    card = replace(CARD, palette=palette)
+    out = Image.open(BytesIO(cards.render_season_banner(card))).convert("RGB")
+    pixel = out.getpixel((W // 2 - 130, 34 + 40))
+    assert isinstance(pixel, tuple)
+    assert all(abs(got - want) <= 30 for got, want in zip(pixel, palette.ribbon, strict=True))
+
+
+def test_season_card_title_gradient_uses_the_palette_ends() -> None:
+    palette = Palette((10, 20, 30), (200, 0, 0), (0, 0, 200))
+    gradient = season_card._gradient(400, 800, palette)
+    assert gradient.getpixel((0, 0)) == (200, 0, 0, 255)
+    assert gradient.getpixel((W - 1, 0)) == (0, 0, 200, 255)

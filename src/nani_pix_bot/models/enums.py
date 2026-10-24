@@ -420,6 +420,13 @@ class EventType(enum.StrEnum):
     ITEM_GAINED = "item_gained"  # a season cosmetic was granted (any source)
     TRACK_COMPLETED = "pass_completed"  # a pass track finished; data["first"] for the free one
     SEASON_ENDED = "season_ended"  # one per ranked player when a season finalizes
+    # Halloween season mechanics
+    HEX_CAST = "hex_cast"
+    HEX_BLOCKED = "hex_blocked"
+    HEX_TRIGGERED = "hex_triggered"
+    OMIKUJI_DRAWN = "omikuji_drawn"
+    OFUDA_USED = "ofuda_used"
+    GOAL_REACHED = "group_goal_reached"
 
 
 class WinMethod(enum.StrEnum):
@@ -453,6 +460,11 @@ class OutboxKind(enum.StrEnum):
     SEASON_COMPLETE = "season_pass_done"
     # a player's DM for a completed season objective
     SEASON_OBJECTIVE = "season_objective"
+    # Halloween: the group goal and the event day
+    GOAL_MILESTONE = "goal_milestone"
+    GOAL_REACHED = "goal_reached"
+    EVENT_DAY_START = "event_day_start"
+    EVENT_DAY_END = "event_day_end"
 
 
 class PeriodType(enum.StrEnum):
@@ -484,6 +496,15 @@ class SeasonStatus(enum.StrEnum):
     CANCELLED = "cancelled"
 
 
+class HexOutcome(enum.StrEnum):
+    """How a `hexes` row ended (Halloween season mechanics). Stored as a plain string."""
+
+    BLOCKED = "blocked"
+    TRIGGERED = "triggered"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
 class CosmeticSlot(enum.StrEnum):
     """Where an equipped season cosmetic shows (seasons spec §3). Stored as a plain string."""
 
@@ -494,6 +515,7 @@ class CosmeticSlot(enum.StrEnum):
     GUESS_REACTION = "guess_reaction"
     PROFILE_BANNER = "profile_banner"
     TITLE = "title"
+    MASCOT_COSTUME = "mascot_costume"  # 🎭 Halloween: how Nani Pix looks on game pictures
 
 
 class ItemSource(enum.StrEnum):
@@ -502,6 +524,8 @@ class ItemSource(enum.StrEnum):
     ADMIN = "admin"
     TIER = "pass"
     SHOP = "shop"
+    GOAL = "goal"  # the 100 Candles group goal: every contributor gets it
+    BONES = "bones"  # a completed bone set
 
 
 class PreviewKind(enum.StrEnum):
@@ -522,8 +546,10 @@ class ShowcaseKind(enum.StrEnum):
 
 
 class ConsumableKind(enum.StrEnum):
-    """A consumable a player holds a count of (seasons spec §3): the clue token
-    only — no free sharpens."""
+    """A consumable a player holds a count of (seasons spec §3): the clue token,
+    plus the Halloween season's ofuda and omamori — no free sharpens."""
 
     # 🎟 the clue token; named so a security linter doesn't read "token" as a secret
     CLUE_TICKET = "clue_token"
+    OFUDA = "ofuda"  # 📜 Halloween season consumable
+    OMAMORI = "omamori"  # 🧧 Halloween season consumable

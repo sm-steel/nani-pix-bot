@@ -108,7 +108,8 @@ def _deliver(
     if row.item_id is not None:
         inventory.grant(session, pid, ItemGrant(row.item_id, ItemSource.SHOP, season.id))
     else:
-        consumables.add(session, pid, ConsumableKind.CLUE_TICKET, why=f"{run.run_id} shop")
+        kind = ConsumableKind(row.offer.kind.value)
+        consumables.add(session, pid, kind, why=f"{run.run_id} shop")
 
 
 def buy(

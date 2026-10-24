@@ -31,7 +31,9 @@ def _season_lines(
 ) -> list[str]:
     tz = settings.get_group_timezone(session)
     when = {"start": _local(season.start_at, tz), "end": _local(season.end_at, tz), "tz": tz.key}
-    lines = [i18n.t(f"season.post.{kind.value}", lang, name=run.name(lang), **when)]
+    lines = [
+        i18n.t(f"season.post.{kind.value}", lang, name=run.name(lang), emoji=run.emoji, **when)
+    ]
     if kind is OutboxKind.SEASON_START and run.gate is not None:
         rule = run.gate.description.get(lang) or run.gate.description["EN"]
         lines.append(i18n.t("season.post.gate", lang, rule=rule))
@@ -73,6 +75,7 @@ def _season_post(
             title=run.name(lang),
             subtitle=f"{_local(season.start_at, tz)} \u2013 {_local(season.end_at, tz)} ({tz.key})",
             stamp=season_stamp(season.run_id, plus=False),
+            palette=run.palette,
         )
         return Post(
             (row.id,),

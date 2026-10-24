@@ -18,7 +18,7 @@ from nani_pix_bot.models.enums import (
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonPass, SeasonSchedule, SeasonXp
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.seasons.definition import Reward, RewardKind, SeasonRun
+from nani_pix_bot.seasons.definition import CONSUMABLE_REWARDS, Reward, RewardKind, SeasonRun
 from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.cosmetics import consumables, inventory
@@ -84,10 +84,9 @@ def _give(
     elif reward.kind is RewardKind.CURRENCY:
         entry = wallet.LedgerEntry(CurrencyReason.TIER_REWARD, season_id=season.id)
         wallet.credit(session, player, reward.amount, entry)
-    elif reward == Reward.clue_ticket():
-        consumables.add(
-            session, player.telegram_user_id, ConsumableKind.CLUE_TICKET, why=f"{run.run_id} pass"
-        )
+    elif reward.kind in CONSUMABLE_REWARDS:
+        kind = ConsumableKind(reward.kind.value)
+        consumables.add(session, player.telegram_user_id, kind, why=f"{run.run_id} pass")
     elif reward.kind not in _CLAIM_ONLY:
         raise ValueError(f"unknown pass reward {reward!r}")
     return True

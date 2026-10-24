@@ -254,3 +254,14 @@ def test_a_run_without_a_premium_track_sells_none(session, season, demo, rich) -
 def test_the_purchase_is_logged(session, season, demo, rich, log_records) -> None:
     season_pass.buy_premium(session, season, demo, rich)
     assert any(r.level == "INFO" and "bought Premium" in r.message for r in log_records)
+
+
+def test_ofuda_and_omamori_rewards_grant_their_consumables(session, season) -> None:
+    run = registry.discover("tests.seasons.fake_runs")["demo_3"]
+    for reward in (Reward.ofuda(), Reward.omamori()):
+        player = session.get(Player, 1)
+        assert season_pass._give(session, season, run, player, reward) is True
+    assert consumables.count(session, 1, ConsumableKind.OFUDA) == 1
+    assert consumables.count(session, 1, ConsumableKind.OMAMORI) == 1
+    assert season_pass.describe(run, Reward.ofuda(), "EN") == "📜 Ofuda"
+    assert season_pass.describe(run, Reward.omamori(), "RU") == "🧧 Омамори"

@@ -55,8 +55,13 @@ def test_shared_clues_and_days() -> None:
     assert goals.progress(Goal(GoalKind.DAYS_PLAYED, 4), history) == 2
 
 
+# Declared by the Halloween foundation, wired (triggers, progress, texts) by its later
+# phases, which delete this set.
+_UNWIRED = {GoalKind.HEXES_BLOCKED, GoalKind.HAUNTED_WINS}
+
+
 def test_every_kind_has_triggers_and_a_description() -> None:
-    for kind in GoalKind:
+    for kind in set(GoalKind) - _UNWIRED:
         assert goals.TRIGGERS[kind]
         for lang in ("EN", "RU"):
             stage = 2 if kind is GoalKind.WINS else None
@@ -115,7 +120,7 @@ _RU_PLURALS: dict[tuple[GoalKind, int | None], tuple[str, ...]] = {
 
 
 def test_the_ru_plural_table_covers_every_kind() -> None:
-    assert {kind for kind, _stage in _RU_PLURALS} == set(GoalKind)
+    assert {kind for kind, _stage in _RU_PLURALS} == set(GoalKind) - _UNWIRED
 
 
 @pytest.mark.parametrize(("kind", "stage"), list(_RU_PLURALS))

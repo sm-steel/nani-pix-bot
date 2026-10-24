@@ -6,7 +6,7 @@ from nani_pix_bot.seasons.definition import SeasonRun
 
 def test_discover_finds_every_run_module_by_its_id() -> None:
     runs = registry.discover("tests.seasons.fake_runs")
-    assert list(runs) == ["demo_1", "demo_2"]
+    assert list(runs) == ["demo_1", "demo_2", "demo_3"]
     assert isinstance(runs["demo_1"], SeasonRun)
 
 
