@@ -755,6 +755,9 @@ or stale pin (its caption's guess count is frozen at post time).
   - stage (or turn) and guesses left at it
   - the bounty, if any
   - how long until the game ends on its own
+  - for a haunted game, the twist on the current image, its hint and the
+    Season Coins multiplier (`status.haunted`); none when a fading twist
+    has cleared on the last stage
   - the 🎲 game number
 - **Otherwise** it says what is happening instead: who is setting up the
   next game, that a vote is open, or whose turn it is to start one.
@@ -2205,6 +2208,13 @@ pays and gates exactly as before.
   reveal video, its pregen and the stills are rendered without it. The pipeline
   order is **pixelate -> twist -> season style -> frame -> Nani**
   (`services/cosmetics/stage.py`; `stage_twist` logs each twist applied).
+- **Tile clue.** The *Reveal a tile* picture wears the current stage's twist
+  too: the original and the pixelated image are both twisted (same twist and
+  same last-stage fade as the stage image) before the tile is revealed, so the
+  tapped grid cell lines up with what the buyer sees, mirror included.
+  `stage.haunt_at`/`current_haunt` is the one place that says which twist stage
+  N wears and whether it is the last; stage posts, `/status` and the tile clue
+  all read it.
 - **Boss game.** `games.boss_game` (set after the roll by the 100 Candles group goal, which a later phase adds)
   makes every stage haunted, with the twist `haunt.twists[(stage - 1) %
   len(twists)]` and `games.haunt_twist` ignored. `haunting.is_haunted(game)` is
