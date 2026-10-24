@@ -27,6 +27,7 @@ from nani_pix_bot.seasons.definition import GoalKind, Reward
 from nani_pix_bot.seasons.mechanics import HauntTwist, OmikujiKind
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
+from nani_pix_bot.services.seasons import event_day, haunting
 
 if TYPE_CHECKING:
     from loguru import Record
@@ -46,15 +47,17 @@ _kept = (
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
     # Halloween: wired by P3 (#468)
+    HauntTwist.KITSUNE_MIRROR,
+    HauntTwist.YUREI_DOUBLE,
+    # P3 Task 2
+    haunting.FADES_AT_LAST,
+    haunting.twist_for_stage,
+    # P3 Task 5
+    haunting.is_haunted,
+    # P3 Task 6
+    event_day.is_event_day,
     OutboxKind.EVENT_DAY_START,
     OutboxKind.EVENT_DAY_END,
-    ItemSource.BONES,
-    Game.haunt_twist,
-    Game.boss_game,
-    HauntTwist.KITSUNE_MIRROR,
-    HauntTwist.TANUKI_LEAF,
-    HauntTwist.YUREI_DOUBLE,
-    HauntTwist.KYOKOTSU_XRAY,
     GoalKind.HAUNTED_WINS,
     # Halloween: wired by P4 (#469)
     EventType.OMIKUJI_DRAWN,
@@ -81,6 +84,7 @@ _kept = (
     HexOutcome.EXPIRED,
     HexOutcome.CANCELLED,
     # Halloween: wired by P6 (#471)
+    ItemSource.BONES,
     EventType.GOAL_REACHED,
     OutboxKind.GOAL_MILESTONE,
     OutboxKind.GOAL_REACHED,

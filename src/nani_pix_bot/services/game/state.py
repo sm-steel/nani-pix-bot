@@ -25,6 +25,7 @@ from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
+from nani_pix_bot.services.seasons import haunting
 from nani_pix_bot.services.seasons import schedule as season_schedule
 from nani_pix_bot.services.settings import bot_settings, stage_config
 
@@ -453,8 +454,10 @@ def activate_game(session: Session, game: Game) -> None:
     stage_result): move to the first stage and open the turn (the
     designated starter's turn is now consumed)."""
     game.status = GameStatus.ACTIVE
-    game.activated_at = datetime.now(UTC)
+    now = datetime.now(UTC)
+    game.activated_at = now
     game.season_id = season_schedule.active_id(session)
+    haunting.on_activation(session, game, now)
     if game.hard_mode:
         game.hard_mode_turn = 1
     else:
