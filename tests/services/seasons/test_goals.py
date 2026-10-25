@@ -77,13 +77,25 @@ def test_shared_clues_and_days() -> None:
     assert goals.progress(Goal(GoalKind.DAYS_PLAYED, 4), history) == 2
 
 
-# Declared by the Halloween foundation, wired (triggers, progress, texts) by its later
-# phases, which delete this set.
-_UNWIRED = {GoalKind.HEXES_BLOCKED}
+def test_hexes_blocked_counts_my_blocks() -> None:
+    history = _history(
+        ev(E.HEX_BLOCKED, 1, 2),
+        ev(E.HEX_BLOCKED, 1, 3),
+        ev(E.HEX_BLOCKED, 2, 1),
+    )
+    assert goals.progress(Goal(GoalKind.HEXES_BLOCKED, 3), history) == 2
+
+
+def test_hexes_blocked_trigger_on_a_block() -> None:
+    assert goals.TRIGGERS[GoalKind.HEXES_BLOCKED] == (E.HEX_BLOCKED,)
+
+
+def test_describe_hexes_blocked() -> None:
+    assert goals.describe(Goal(GoalKind.HEXES_BLOCKED, 1), "EN") == "Block 1 hex"
 
 
 def test_every_kind_has_triggers_and_a_description() -> None:
-    for kind in set(GoalKind) - _UNWIRED:
+    for kind in set(GoalKind):
         assert goals.TRIGGERS[kind]
         for lang in ("EN", "RU"):
             stage = 2 if kind is GoalKind.WINS else None
@@ -138,6 +150,11 @@ _RU_PLURALS: dict[tuple[GoalKind, int | None], tuple[str, ...]] = {
         "Победите в 2 раундах \u0441 призраками",
         "Победите в 5 раундах \u0441 призраками",
     ),
+    (GoalKind.HEXES_BLOCKED, None): (
+        "Отразите 1 порчу",
+        "Отразите 2 порчи",
+        "Отразите 5 порчей",
+    ),
     (GoalKind.DAYS_PLAYED, None): (
         "Играйте 1 день",
         "Играйте 2 разных дня",
@@ -147,7 +164,7 @@ _RU_PLURALS: dict[tuple[GoalKind, int | None], tuple[str, ...]] = {
 
 
 def test_the_ru_plural_table_covers_every_kind() -> None:
-    assert {kind for kind, _stage in _RU_PLURALS} == set(GoalKind) - _UNWIRED
+    assert {kind for kind, _stage in _RU_PLURALS} == set(GoalKind)
 
 
 @pytest.mark.parametrize(("kind", "stage"), list(_RU_PLURALS))

@@ -4,9 +4,17 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 
 from nani_pix_bot.models.announcement import AnnouncementOutbox
-from nani_pix_bot.models.enums import CurrencyReason, EventType, OutboxKind, XpSource
-from nani_pix_bot.models.season import SeasonObjective, SeasonXp
+from nani_pix_bot.models.enums import (
+    CurrencyReason,
+    EventType,
+    OutboxKind,
+    SeasonStatus,
+    XpSource,
+)
+from nani_pix_bot.models.player import Player
+from nani_pix_bot.models.season import SeasonObjective, SeasonSchedule, SeasonXp
 from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.definition import Goal, GoalKind, Objective
 from nani_pix_bot.services import events
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.events import Involved
@@ -206,3 +214,32 @@ def test_a_broken_objective_keeps_the_games_xp_and_coins(
     assert any(
         r.level == "ERROR" and r.message.startswith("season objectives failed") for r in log_records
     )
+
+
+def test_a_block_completes_an_exorcist_objective(session, monkeypatch) -> None:
+    demo = registry.get("demo_3")
+    assert demo is not None
+    objective = Objective(
+        key="exorcist", names={"EN": "Exorcist"}, goal=Goal(GoalKind.HEXES_BLOCKED, 1), xp=10
+    )
+    run = replace(demo, objectives=(objective,))
+    monkeypatch.setattr(registry, "get", lambda run_id: run if run_id == "demo_3" else None)
+    now = datetime.now(UTC)
+    season = SeasonSchedule(
+        run_id="demo_3",
+        start_at=now - timedelta(days=1),
+        end_at=now + timedelta(days=9),
+        status=SeasonStatus.ACTIVE,
+        created_by=9,
+    )
+    session.add_all([season, Player(telegram_user_id=1), Player(telegram_user_id=2)])
+    session.flush()
+    events.emit(
+        session,
+        EventType.HEX_BLOCKED,
+        Involved(actor_id=2, subject_id=1),
+        season_id=season.id,
+        kind="kappa",
+        hex_id=1,
+    )
+    assert _done(session) == [(2, "exorcist")]

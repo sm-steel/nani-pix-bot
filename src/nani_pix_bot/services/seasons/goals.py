@@ -20,6 +20,7 @@ TRIGGERS: Mapping[GoalKind, tuple[EventType, ...]] = MappingProxyType(
         GoalKind.TIPS: (E.CURRENCY_MOVED,),
         GoalKind.DAYS_PLAYED: (E.GUESS, E.GAME_ACTIVATED),
         GoalKind.HAUNTED_WINS: (E.GAME_WON,),
+        GoalKind.HEXES_BLOCKED: (E.HEX_BLOCKED,),
     }
 )
 
@@ -40,6 +41,10 @@ def _wins(max_stage: int | None, history: History) -> int:
 def _haunted_wins(history: History) -> int:
     # Wins recorded before the `haunted` fact existed count as not haunted.
     return sum(1 for e in history.mine(E.GAME_WON) if e.data.get("haunted"))
+
+
+def _blocked(history: History) -> int:
+    return len(history.mine(E.HEX_BLOCKED))
 
 
 def _guessed_in(history: History) -> int:
@@ -68,6 +73,7 @@ _COUNTS: Mapping[GoalKind, Callable[[History], int]] = MappingProxyType(
         GoalKind.TIPS: _tips,
         GoalKind.DAYS_PLAYED: _days,
         GoalKind.HAUNTED_WINS: _haunted_wins,
+        GoalKind.HEXES_BLOCKED: _blocked,
     }
 )
 

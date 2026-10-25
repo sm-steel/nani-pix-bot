@@ -9,7 +9,7 @@ from loguru import logger
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import CurrencyReason, EventType, HexOutcome
+from nani_pix_bot.models.enums import ConsumableKind, CurrencyReason, EventType, HexOutcome
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.halloween import Hex
@@ -19,6 +19,7 @@ from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.seasons.mechanics import PRANK_HEXES, HexKind, HexRule
 from nani_pix_bot.services import events, players
+from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.seasons import schedule
 from nani_pix_bot.services.seasons.hex_marks import active_hex_for as active_hex_for
@@ -57,7 +58,7 @@ class OpenHexes:
 @dataclass(frozen=True)
 class CastResult:
     hex: Hex
-    blocked: bool  # always False until the ofuda block lands
+    blocked: bool  # an omamori ate the hex
     price: int
 
 
@@ -174,9 +175,15 @@ def _pay(session: Session, caster: Player, season_id: int, price: int) -> None:
 
 
 def _write_hex(
-    session: Session, who: tuple[Player, Player], rule: HexRule, season_id: int, now: datetime
+    session: Session,
+    who: tuple[Player, Player],
+    rule: HexRule,
+    season_id: int,
+    now: datetime,
 ) -> Hex:
+    """The hex row; an omamori of the target's, if any, is spent and the hex lands blocked."""
     caster, target = who
+    blocked = consumables.take(session, target.telegram_user_id, ConsumableKind.OMAMORI)
     stamp = naive_utc(now)
     expires = stamp + timedelta(hours=rule.duration_hours) if rule.kind in PRANK_HEXES else None
     row = Hex(
@@ -186,6 +193,8 @@ def _write_hex(
         target_id=target.telegram_user_id,
         cast_at=stamp,
         expires_at=expires,
+        resolved_at=stamp if blocked else None,
+        outcome=HexOutcome.BLOCKED.value if blocked else None,
     )
     session.add(row)
     session.flush()
@@ -206,26 +215,46 @@ def cast(
     _check_cast(session, season_id, (caster, target), rule, now)
     _pay(session, caster, season_id, rule.price)
     row = _write_hex(session, (caster, target), rule, season_id, now)
+    blocked = row.outcome == HexOutcome.BLOCKED.value
+    _log_cast(session, row, target, rule.price)
+    _emit_cast(session, row, (caster, target), blocked)
+    return CastResult(hex=row, blocked=blocked, price=rule.price)
+
+
+def _log_cast(session: Session, row: Hex, target: Player, price: int) -> None:
+    note = " — blocked by their omamori" if row.outcome else ""
     logger.info(
-        "cast {kind} on {target} for {price} 🪙",
-        kind=kind.value,
+        "cast {kind} on {target} for {price} 🪙" + note,
+        kind=row.kind,
         target=players.describe_player_id(session, target.telegram_user_id),
-        price=rule.price,
+        price=price,
         hex_id=row.id,
         target_id=target.telegram_user_id,
-        season_id=season_id,
+        season_id=row.season_id,
     )
+
+
+def _emit_cast(session: Session, row: Hex, who: tuple[Player, Player], blocked: bool) -> None:
+    caster, target = who
     events.emit(
         session,
         EventType.HEX_CAST,
         events.Involved(actor_id=caster.telegram_user_id, subject_id=target.telegram_user_id),
-        season_id=season_id,
-        kind=kind.value,
+        season_id=row.season_id,
+        kind=row.kind,
         hex_id=row.id,
-        outcome=None,
+        outcome=HexOutcome.BLOCKED.value if blocked else None,
         self_prank=False,
     )
-    return CastResult(hex=row, blocked=False, price=rule.price)
+    if blocked:
+        events.emit(
+            session,
+            EventType.HEX_BLOCKED,
+            events.Involved(actor_id=target.telegram_user_id, subject_id=caster.telegram_user_id),
+            season_id=row.season_id,
+            kind=row.kind,
+            hex_id=row.id,
+        )
 
 
 def _last_cast_at(session: Session, player_id: int) -> datetime | None:

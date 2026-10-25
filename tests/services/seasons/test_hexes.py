@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import func, select
 
 from nani_pix_bot.models.enums import (
+    ConsumableKind,
     CurrencyReason,
     EventType,
     GameStatus,
@@ -20,6 +21,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.mechanics import HexKind
+from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.economy.wallet import LedgerEntry
 from nani_pix_bot.services.seasons import hexes
@@ -342,3 +344,66 @@ def test_expire_due_counts_the_rows_it_stamps(session, hex_season):
     assert hexes.expire_due(session, NOW) == 0
     assert hexes.expire_due(session, later) == 1
     assert hexes.expire_due(session, later) == 0
+
+
+def _omamori(session, player_id: int, n: int = 1) -> None:
+    consumables.add(session, player_id, ConsumableKind.OMAMORI, why="test", n=n)
+
+
+def test_an_omamori_blocks_the_hex_and_is_used_up(session, hex_season):
+    _omamori(session, 2)
+    result = _cast(session, 1, 2, HexKind.KITSUNE)
+    assert result.blocked
+    assert result.hex.outcome == HexOutcome.BLOCKED.value
+    assert result.hex.resolved_at == _naive(NOW)
+    assert consumables.count(session, 2, ConsumableKind.OMAMORI) == 0
+    assert hexes.active_hex_for(session, 2, NOW) is None
+    assert wallet.balance(session, 1, season_id=hex_season.id) == 200 - result.price
+    cast = _events(session, EventType.HEX_CAST)[0]
+    assert cast.data["outcome"] == HexOutcome.BLOCKED.value
+    blocked = _events(session, EventType.HEX_BLOCKED)[0]
+    assert (blocked.actor_id, blocked.subject_id) == (2, 1)
+    assert blocked.data == {
+        "season_id": hex_season.id,
+        "kind": "kitsune",
+        "hex_id": result.hex.id,
+    }
+
+
+def test_only_one_hex_is_blocked_per_omamori(session, hex_season):
+    _omamori(session, 2)
+    _cast(session, 1, 2, HexKind.KITSUNE)
+    entry = LedgerEntry(CurrencyReason.SEASON_WIN, season_id=hex_season.id, coins=True)
+    wallet.credit(session, _p(session, 4), 200, entry)
+    second = _cast(session, 4, 2, HexKind.KAPPA)
+    assert not second.blocked
+    active = hexes.active_hex_for(session, 2, NOW)
+    assert active is not None
+    assert active.id == second.hex.id
+
+
+def test_a_blocked_hex_still_starts_the_cooldown(session, hex_season):
+    _omamori(session, 2)
+    _cast(session, 1, 2, HexKind.NOPPERABO)
+    with pytest.raises(HexRefusedError) as error:
+        _cast(session, 1, 4, HexKind.NOPPERABO, NOW + timedelta(minutes=1))
+    assert error.value.refusal is HexRefusal.COOLDOWN
+
+
+def test_a_refused_hex_keeps_the_omamori(session, hex_season):
+    _cast(session, 1, 2, HexKind.KAPPA)
+    _omamori(session, 2)
+    entry = LedgerEntry(CurrencyReason.SEASON_WIN, season_id=hex_season.id, coins=True)
+    wallet.credit(session, _p(session, 4), 200, entry)
+    with pytest.raises(HexRefusedError) as error:
+        _cast(session, 4, 2, HexKind.KITSUNE)
+    assert error.value.refusal is HexRefusal.ALREADY_HEXED
+    assert consumables.count(session, 2, ConsumableKind.OMAMORI) == 1
+
+
+def test_a_block_is_logged(session, hex_season, log_records):
+    _omamori(session, 2)
+    _cast(session, 1, 2, HexKind.KAPPA)
+    line = next(r for r in log_records if r.message.endswith("blocked by their omamori"))
+    assert line.level == "INFO"
+    assert line.extra["target_id"] == 2
