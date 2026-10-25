@@ -10,6 +10,7 @@ SHOP_PREFIX = "shop:"
 SHOP_BUY_PREFIX = f"{SHOP_PREFIX}buy:"
 SHOP_TILE_PREFIX = f"{SHOP_PREFIX}tile:"
 SHOP_SHARE_PREFIX = f"{SHOP_PREFIX}share:"
+SHOP_OFUDA_PREFIX = f"{SHOP_PREFIX}ofuda:"
 
 
 def _offer_label(offer: Offer, lang: str) -> str:
@@ -20,13 +21,17 @@ def _offer_label(offer: Offer, lang: str) -> str:
     return label if offer.affordable else i18n.t("shop.locked", lang, label=label)
 
 
-def shop_keyboard(offers: list[Offer], game_id: int, lang: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton(_offer_label(o, lang), callback_data=_buy_data(game_id, o))]
-            for o in offers
-        ]
-    )
+def shop_keyboard(
+    offers: list[Offer], game_id: int, lang: str, ofuda_held: int = 0
+) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(_offer_label(o, lang), callback_data=_buy_data(game_id, o))]
+        for o in offers
+    ]
+    if ofuda_held > 0:
+        label = i18n.t("shop.ofuda_button", lang, count=ofuda_held)
+        rows.append([InlineKeyboardButton(label, callback_data=f"{SHOP_OFUDA_PREFIX}{game_id}")])
+    return InlineKeyboardMarkup(rows)
 
 
 def _buy_data(game_id: int, offer: Offer) -> str:

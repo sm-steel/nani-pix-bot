@@ -4,14 +4,16 @@ import pytest
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import GameStatus, PixelStage, Provider
+from nani_pix_bot.models.enums import ConsumableKind, GameStatus, PixelStage, Provider
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
+from nani_pix_bot.models.halloween import ArmedOfuda
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import quiet_hours, settings
+from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.game import guesses, state, turns
 from nani_pix_bot.services.quiet_hours import QuietHours
 from nani_pix_bot.services.search.anilist import AniListResult
@@ -1520,3 +1522,44 @@ def test_synonyms_alone_never_count_as_numbered_titles(session: Session) -> None
     game.synonyms = ["MP100"]
     assert not game_service.titles_have_numbers(game)
     assert not game_service.should_ask_if_numbers_matter(game)
+
+
+def _armed_game(session: Session, *, stage: PixelStage = PixelStage.STAGE_1) -> Game:
+    game = _active_game(session, stage=stage)
+    consumables.add(session, 1, ConsumableKind.OFUDA, "test")
+    session.add(ArmedOfuda(player_id=1, game_id=game.id, armed_at=datetime.now(UTC)))
+    session.commit()
+    return game
+
+
+def test_forgiven_miss_does_not_count(session: Session) -> None:
+    _seed_stage_limit(session, PixelStage.STAGE_1, wrong_guess_limit=2)
+    game = _armed_game(session)
+
+    first = game_service.record_guess(session, game, guesser_id=1, guess_text="nope")
+    assert first is game_service.GuessOutcome.FORGIVEN
+    assert (game.wrong_guess_count, game.total_guess_count) == (0, 1)
+    second = game_service.record_guess(session, game, guesser_id=1, guess_text="nope")
+    assert second is game_service.GuessOutcome.WRONG
+    assert game.wrong_guess_count == 1
+
+
+def test_forgiven_miss_on_the_last_stage_keeps_the_round_alive(session: Session) -> None:
+    _seed_stage_limit(session, PixelStage.STAGE_5, wrong_guess_limit=2)
+    game = _armed_game(session, stage=PixelStage.STAGE_5)
+    game.wrong_guess_count = 1
+
+    outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="nope")
+
+    assert outcome is game_service.GuessOutcome.FORGIVEN
+    assert game.status == GameStatus.ACTIVE
+    assert game.current_stage == PixelStage.STAGE_5
+
+
+def test_a_correct_guess_leaves_the_ofuda_armed(session: Session) -> None:
+    game = _armed_game(session)
+
+    outcome = game_service.record_guess(session, game, guesser_id=1, guess_text="frieren")
+
+    assert outcome is game_service.GuessOutcome.WON
+    assert consumables.count(session, 1, ConsumableKind.OFUDA) == 1

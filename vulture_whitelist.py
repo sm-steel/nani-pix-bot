@@ -19,12 +19,13 @@ from nani_pix_bot.models.enums import (
     OutboxKind,
 )
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.models.halloween import ArmedOfuda, Hex, OmikujiDraw
+from nani_pix_bot.models.halloween import Hex, OmikujiDraw
 from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import GoalKind, Reward
 from nani_pix_bot.seasons.mechanics import OmikujiKind
+from nani_pix_bot.services.cards import moments
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 
@@ -47,16 +48,18 @@ _kept = (
     MalAnimeListEntry.image_url,
     # Halloween: wired by P4 (#469)
     EventType.OMIKUJI_DRAWN,
-    EventType.OFUDA_USED,
-    ArmedOfuda.armed_at,
     OmikujiDraw.local_date,
     OmikujiDraw.drawn_at,
     OmikujiKind.DAIKICHI,
     OmikujiKind.KICHI,
     OmikujiKind.SHOKICHI,
-    Reward.ofuda,
+    # Halloween: wired by P8 (#473)
     Reward.omamori,
+    # Vulture only skips Reward.ofuda today because the `ofuda` module name matches;
+    # it is listed so the entry survives a rename.
+    Reward.ofuda,
     # Halloween: wired by P5 (#470)
+    moments.duel_card,
     GoalKind.HEXES_BLOCKED,
     EventType.HEX_CAST,
     EventType.HEX_BLOCKED,

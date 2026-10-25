@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.enums import ConsumableKind, CurrencyReason, ItemSource, SeasonStatus
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule, SeasonShopPurchase
-from nani_pix_bot.seasons.definition import RewardKind, SeasonRun, ShopOffer
+from nani_pix_bot.seasons.definition import CONSUMABLE_REWARDS, RewardKind, SeasonRun, ShopOffer
 from nani_pix_bot.services.cosmetics import consumables, inventory
 from nani_pix_bot.services.cosmetics.inventory import ItemGrant
 from nani_pix_bot.services.economy import wallet
@@ -102,13 +102,22 @@ def _check_buyable(
     return before
 
 
+def consumable_of(offer: ShopOffer) -> ConsumableKind | None:
+    """The consumable an offer hands over; None for a cosmetic item."""
+    if offer.kind not in CONSUMABLE_REWARDS:
+        return None
+    return ConsumableKind(offer.kind.value)
+
+
 def _deliver(
     session: Session, season: SeasonSchedule, run: SeasonRun, pid: int, row: Stock
 ) -> None:
     if row.item_id is not None:
         inventory.grant(session, pid, ItemGrant(row.item_id, ItemSource.SHOP, season.id))
     else:
-        kind = ConsumableKind(row.offer.kind.value)
+        kind = consumable_of(row.offer)
+        if kind is None:
+            raise ValueError(f"unknown shop offer {row.offer!r}")
         consumables.add(session, pid, kind, why=f"{run.run_id} shop")
 
 

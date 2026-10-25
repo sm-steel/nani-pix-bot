@@ -32,3 +32,12 @@ def test_adding_logs_why(session, log_records) -> None:
     line = next(r for r in log_records if r.level == "INFO")
     assert "pass tier 3" in line.message
     assert line.extra["recipient_id"] == 1
+
+
+def test_holdings_lists_every_kind_with_zeros(session) -> None:
+    consumables.add(session, 1, ConsumableKind.OMAMORI, why="test")
+    assert consumables.holdings(session, 1) == {
+        ConsumableKind.CLUE_TICKET: 0,
+        ConsumableKind.OFUDA: 0,
+        ConsumableKind.OMAMORI: 1,
+    }

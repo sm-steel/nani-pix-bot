@@ -14,3 +14,7 @@ Source: [Noto Emoji](https://github.com/googlefonts/noto-emoji), tag
 `v2026-09-24-unicode18_0`. The images are licensed under the
 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
 (© Google LLC); unchanged.
+
+`ofuda.png` and `omamori.png` are different: 512x512 RGBA art of the two Halloween
+charms (Ofuda, Omamori), generated for Nani Pix (MIT, like the rest of her art), drawn
+on the consumable preview card (`services/cosmetics/consumable_card.py`).

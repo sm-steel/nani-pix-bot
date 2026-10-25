@@ -17,6 +17,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import events, i18n, matching, players
 from nani_pix_bot.services.clues import author_list
 from nani_pix_bot.services.clues import text as clue_text
+from nani_pix_bot.services.cosmetics import ofuda
 from nani_pix_bot.services.game import guesses, turns
 from nani_pix_bot.services.game.clock import deadline_after
 from nani_pix_bot.services.game.win_facts import win_facts
@@ -80,6 +81,7 @@ class GuessOutcome(enum.Enum):
 
     WON = "won"
     WRONG = "wrong"
+    FORGIVEN = "forgiven"  # a wrong guess an armed Ofuda kept off the stage limit
     STAGE_ADVANCED = "stage_advanced"
     TURN_ADVANCED = "turn_advanced"
     UNSOLVED = "unsolved"
@@ -570,8 +572,27 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
         _win(session, game, winner_id=guesser_id)
         return GuessOutcome.WON
 
+    return _count_wrong(session, game, guesser_id, guess_text, game.current_stage)
+
+
+def _count_wrong(
+    session: Session, game: Game, guesser_id: int, guess_text: str, current_stage: PixelStage
+) -> GuessOutcome:
+    """The wrong-guess tail of record_guess: count the miss against the stage
+    limit (or let an armed Ofuda forgive it) and advance the stage at the limit."""
+    stage = stage_label(current_stage)
+    limit = stage_config.get_stage_config(session, current_stage).wrong_guess_limit
+    if ofuda.forgive(session, game, guesser_id):
+        logger.info(
+            "guessed {guess!r} — wrong at {stage}, forgiven by an Ofuda ({wrong}/{limit})",
+            guess=guess_text,
+            stage=stage,
+            wrong=game.wrong_guess_count,
+            limit=limit,
+            game_id=game.id,
+        )
+        return GuessOutcome.FORGIVEN
     game.wrong_guess_count += 1
-    limit = stage_config.get_stage_config(session, game.current_stage).wrong_guess_limit
     logger.info(
         "guessed {guess!r} — wrong at {stage} ({wrong}/{limit})",
         guess=guess_text,

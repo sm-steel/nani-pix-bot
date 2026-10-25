@@ -13,19 +13,18 @@ from nani_pix_bot.commands.achievements.common import MAX_ID, outsider_refusal
 from nani_pix_bot.commands.helpers import item_preview
 from nani_pix_bot.commands.helpers.dm_view import DmCommand, reply_with_view
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import SeasonStatus
+from nani_pix_bot.models.enums import ConsumableKind, SeasonStatus
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.seasons.definition import RewardKind, SeasonRun
+from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services import i18n, players, settings
-from nani_pix_bot.services.cosmetics import clue_token_icon
+from nani_pix_bot.services.cosmetics import consumable_card
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.seasons import schedule, season_shop
 from nani_pix_bot.services.seasons.season_shop import ShopRefusal, ShopRefusedError, Stock
 
 PREFIX = "sshop:"
-CLUE_ICON_KEY = "consumable/clue_token"
 
 
 def _button(
@@ -116,11 +115,16 @@ async def season_shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 # --- taps ---
 
 
+# The clue token's note keeps its original key.
+_NOTES = {ConsumableKind.CLUE_TICKET: "season_shop.offer_token_note"}
+
+
 @dataclass(frozen=True)
 class _Offer:
     text: str
     keyboard: InlineKeyboardMarkup
     resolved: ResolvedItem | None
+    consumable: ConsumableKind | None
 
 
 def _offer(
@@ -144,14 +148,16 @@ def _offer(
         price=row.offer.price,
         balance=balance,
     )
-    if row.offer.kind is RewardKind.CLUE_TICKET:
-        text += "\n" + i18n.t("season_shop.offer_token_note", lang)
+    consumable = season_shop.consumable_of(row.offer)
+    if consumable is not None:
+        note = _NOTES.get(consumable, f"season_shop.offer_note.{consumable.value}")
+        text += "\n" + i18n.t(note, lang)
     buttons = []
     if row.left > 0:
         buy_label = i18n.t("season_shop.buy", lang, price=row.offer.price)
         buttons.append(_button(buy_label, "b", season_id, index))
     buttons.append(_button(i18n.t("season_shop.back", lang), "m", season_id))
-    return _Offer(text, InlineKeyboardMarkup([buttons]), _resolved(row))
+    return _Offer(text, InlineKeyboardMarkup([buttons]), _resolved(row), consumable)
 
 
 def _language(context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -183,7 +189,12 @@ async def _send_preview(
     if offer.resolved is not None:
         await item_preview.send(context, user.id, offer.resolved, lang, user)
         return
-    picture = item_preview.Picture(CLUE_ICON_KEY, clue_token_icon.icon)
+    kind = offer.consumable
+    if kind is None:
+        return
+    picture = item_preview.Picture(
+        consumable_card.cache_key(kind, lang), lambda: consumable_card.render(kind, lang)
+    )
     await item_preview.send_image(context, user.id, picture, lang)
 
 

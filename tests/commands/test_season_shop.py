@@ -13,6 +13,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.cosmetics import consumable_card
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.economy.wallet import LedgerEntry
 from tests.conftest import LogLine
@@ -193,7 +194,7 @@ async def test_opening_the_clue_token_sends_its_icon(
     monkeypatch.setattr(season_shop_module.item_preview, "send_image", sent)
     context = _context(session_factory)
     await _tap(session_factory, context, "sshop:i:1:2")
-    assert sent.await_args_list[0].args[2].cache_key == "consumable/clue_token"
+    assert sent.await_args_list[0].args[2].cache_key == "consumable/clue_token#EN"
     assert (
         i18n.t("season_shop.offer_token_note", "EN")
         in context.bot.send_message.await_args.kwargs["text"]
@@ -305,3 +306,62 @@ async def test_the_icon_has_no_caption_of_its_own(
     monkeypatch.setattr(season_shop_module.item_preview, "send_image", sent)
     await _tap(session_factory, _context(session_factory), "sshop:i:1:2")
     assert sent.await_args_list[0].args[2].caption is None
+
+
+def _demo_3_season(session_factory) -> None:
+    with session_factory() as session:
+        session.add(
+            SeasonSchedule(
+                run_id="demo_3",
+                start_at=NOW - timedelta(days=1),
+                end_at=NOW + timedelta(days=9),
+                status=SeasonStatus.ACTIVE,
+                created_by=9,
+            )
+        )
+        session.commit()
+
+
+CHARMS = pytest.mark.parametrize(
+    ("index", "kind", "name"), [(3, "ofuda", "📜 Ofuda"), (4, "omamori", "🧿 Omamori")]
+)
+
+
+@CHARMS
+async def test_season_shop_names_and_notes_a_charm_offer(
+    session_factory, monkeypatch, index, kind, name
+) -> None:
+    _demo_3_season(session_factory)
+    monkeypatch.setattr(season_shop_module.item_preview, "send_image", AsyncMock())
+    text = await _run(session_factory, _update())
+    context = _context(session_factory)
+    await _tap(session_factory, context, f"sshop:i:1:{index}")
+    assert name in text
+    sent = context.bot.send_message.await_args.kwargs["text"]
+    assert name in sent
+    assert i18n.t(f"season_shop.offer_note.{kind}", "EN") in sent
+    assert i18n.t("season_shop.offer_token_note", "EN") not in sent
+
+
+@CHARMS
+async def test_charm_offer_preview_uses_its_own_card_key(
+    session_factory, monkeypatch, index, kind, name
+) -> None:
+    _demo_3_season(session_factory)
+    sent = AsyncMock()
+    monkeypatch.setattr(season_shop_module.item_preview, "send_image", sent)
+    await _tap(session_factory, _context(session_factory), f"sshop:i:1:{index}")
+    assert sent.await_args_list[0].args[2].cache_key == f"consumable/{kind}#EN"
+
+
+async def test_missing_art_still_shows_the_offer(
+    session_factory, tmp_path, monkeypatch, log_records
+) -> None:
+    _demo_3_season(session_factory)
+    monkeypatch.setattr(consumable_card, "ICON_DIR", tmp_path)
+    context = _context(session_factory)
+    context.bot.send_photo = AsyncMock()
+    await _tap(session_factory, context, "sshop:i:1:3")
+    context.bot.send_photo.assert_not_awaited()
+    assert "📜 Ofuda" in context.bot.send_message.await_args_list[-1].kwargs["text"]
+    assert any(r.level == "ERROR" and "consumable/ofuda#EN" in r.message for r in log_records)

@@ -10,13 +10,14 @@ from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
 from nani_pix_bot.commands.shop.keyboards import shop_keyboard
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.enums import ConsumableKind, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons.definition import Modifier
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.clues import shop
+from nani_pix_bot.services.cosmetics import consumables, ofuda
 from nani_pix_bot.services.seasons import modifiers as season_modifiers
 
 
@@ -24,7 +25,8 @@ def render_shop(
     session: Session, game: Game, buyer: Player, lang: str
 ) -> tuple[str, InlineKeyboardMarkup | None]:
     """The shop menu text and keyboard for `buyer` in `game`. With nothing
-    left to buy there is no keyboard, just the balance line plus a note."""
+    left to buy there is no keyboard (just the balance line plus a note),
+    unless an Ofuda can be armed."""
     text = i18n.t("shop.menu", lang, balance=buyer.currency)
     if game.hard_mode and game.hard_mode_clue_discount:
         text += "\n" + i18n.t("shop.hard_mode_discount", lang, percent=game.hard_mode_clue_discount)
@@ -35,9 +37,13 @@ def render_shop(
             "shop.season_discount", lang, season=season_run.name(lang), percent=percent
         )
     offers = shop.offers(session, game, buyer, lang)
+    held = 0
+    if ofuda.refusal(session, game, buyer.telegram_user_id) is None:
+        held = consumables.count(session, buyer.telegram_user_id, ConsumableKind.OFUDA)
     if not offers:
-        return f"{text}\n{i18n.t('shop.nothing_left', lang)}", None
-    return text, shop_keyboard(offers, game.id, lang)
+        text = f"{text}\n{i18n.t('shop.nothing_left', lang)}"
+        return text, shop_keyboard([], game.id, lang, held) if held else None
+    return text, shop_keyboard(offers, game.id, lang, held)
 
 
 async def open_shop(message: Message, context: ContextTypes.DEFAULT_TYPE, user: User) -> None:

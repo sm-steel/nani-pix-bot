@@ -9,7 +9,8 @@ from telegram import InlineKeyboardMarkup, User
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.models.enums import ClueKind
+from nani_pix_bot.jobs.moments import CharmMoment, post_charm_moment
+from nani_pix_bot.models.enums import ClueKind, ConsumableKind
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n
@@ -111,16 +112,39 @@ async def deliver_image_clue(
     return message.photo[-1].file_id
 
 
-async def post_bought_notice(
-    context: ContextTypes.DEFAULT_TYPE, game_id: int, buyer_name: str, kind: ClueKind, lang: str
-) -> None:
-    """Tell the game topic that someone bought a clue (not what it says)."""
-    notice = i18n.t(
+def bought_notice(buyer_name: str, kind: ClueKind, lang: str) -> str:
+    """The topic line saying someone bought a clue (not what it says)."""
+    return i18n.t(
         "shop.bought_notice",
         lang,
         name=buyer_name,
         item=i18n.t(f"shop.item_name.{kind.value}", lang),
     )
+
+
+def token_moment(user: User, notice: str, lang: str) -> CharmMoment:
+    """The card for a clue paid with a token: the notice is its caption."""
+    return CharmMoment(
+        kind=ConsumableKind.CLUE_TICKET,
+        user_id=user.id,
+        display_name=user.full_name,
+        title=i18n.t("shop.token_card_title", lang),
+        caption=notice,
+    )
+
+
+async def post_bought_notice(
+    context: ContextTypes.DEFAULT_TYPE,
+    game_id: int,
+    notice: str,
+    kind: ClueKind,
+    moment: CharmMoment | None = None,
+) -> None:
+    """Tell the game topic that someone bought a clue: a moment card when it was
+    paid with a token, else `notice` as plain text."""
+    if moment is not None:
+        await post_charm_moment(context, moment, game_id=game_id)
+        return
     try:
         await context.bot.send_message(
             chat_id=context.bot_data["group_chat_id"],

@@ -264,4 +264,5 @@ def test_ofuda_and_omamori_rewards_grant_their_consumables(session, season) -> N
     assert consumables.count(session, 1, ConsumableKind.OFUDA) == 1
     assert consumables.count(session, 1, ConsumableKind.OMAMORI) == 1
     assert season_pass.describe(run, Reward.ofuda(), "EN") == "📜 Ofuda"
-    assert season_pass.describe(run, Reward.omamori(), "RU") == "🧧 Омамори"
+    assert season_pass.describe(run, Reward.omamori(), "RU") == "🧿 Омамори"
+    assert season_pass.describe(run, Reward.omamori(), "EN") == "🧿 Omamori"
