@@ -1,5 +1,5 @@
-"""The hex notices' posts: a Kappa or Kitsune going off, and an omikuji
-self-prank. Text only, in the game topic."""
+"""The hex notices' posts: a Kappa or Kitsune going off. Text only, in the game
+topic. (An omikuji self-prank posts its own Kyō card from /omikuji instead.)"""
 
 from collections.abc import Callable
 
@@ -11,6 +11,7 @@ from nani_pix_bot.models.announcement import AnnouncementOutbox
 from nani_pix_bot.models.enums import EventType, OutboxKind
 from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.halloween import Hex
+from nani_pix_bot.seasons.mechanics import HexKind
 from nani_pix_bot.services import i18n, players
 
 
@@ -28,25 +29,16 @@ def _amount(session: Session, row: Hex) -> int:
 
 
 def _triggered(session: Session, row: Hex, lang: str) -> str:
+    amount = _amount(session, row)
+    key = f"hex.notice.triggered.{row.kind}"
+    if row.kind == HexKind.KITSUNE and amount == 0:
+        key = "hex.notice.triggered.kitsune_empty"  # nothing in the purse to take
     return i18n.t(
-        f"hex.notice.triggered.{row.kind}",
+        key,
         lang,
         target=players.display_name(session, row.target_id),
         caster=players.display_name(session, row.caster_id),
-        amount=_amount(session, row),
-    )
-
-
-def _self_prank(session: Session, row: Hex, lang: str) -> str:
-    hours = 0
-    if row.expires_at is not None:
-        hours = round((row.expires_at - row.cast_at).total_seconds() / 3600)
-    return i18n.t(
-        f"hex.notice.self_prank.{row.kind}",
-        lang,
-        # the hex has just landed: like the cast notice, this one names its victim
-        target=players.display_name(session, row.target_id, unmasked=True),
-        hours=hours,
+        amount=amount,
     )
 
 
@@ -54,8 +46,7 @@ def _hex_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post | No
     hexed = session.get(Hex, row.payload["hex_id"])
     if hexed is None:
         return None
-    render = _self_prank if row.payload["notice"] == "self_prank" else _triggered
-    return Post((row.id,), render(session, hexed, lang))
+    return Post((row.id,), _triggered(session, hexed, lang))
 
 
 RENDERERS: dict[OutboxKind, Callable[[Session, AnnouncementOutbox, str], Post | None]] = {

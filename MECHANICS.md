@@ -2654,8 +2654,8 @@ effect. It emits `HEX_CAST` (with `outcome="blocked"`) and `HEX_BLOCKED`
     Telegram. A missing art file logs one `ERROR` and the real photo is used.
   - *Not masked.* The cast notice and its card name the victim by @username
     (the card's photo is already the faceless art), so the group learns who
-    was hexed; the `/hex` player and kind pickers and the omikuji self-prank
-    notice also name them unmasked. **Logs always keep real ids and
+    was hexed; the `/hex` player and kind pickers and the omikuji Kyō card
+    also name them unmasked. **Logs always keep real ids and
     @usernames** (`describe_player_id`).
 - **💀** marks a hexed name in group-facing text drawn through `flair.named`
   (`hex_marks.marked_name`). It is text only: cards and the reveal badge use
@@ -2672,10 +2672,19 @@ the hex.
   Omamori, the hex art torn apart). The notice line is the caption, and a
   failed render falls back to it as plain text. From a DM the caster also gets
   a short confirmation; from the topic the notice speaks for itself.
-- **Triggered (Kappa, Kitsune) and self-prank** are queued in the
-  announcement outbox (`HEX_NOTICE`) and posted as plain text by the
-  announcements job, in id order. **Nothing is posted during quiet hours**:
-  the rows wait and go out after.
+- **Triggered (Kappa, Kitsune)** are queued in the announcement outbox
+  (`HEX_NOTICE`) and posted as plain text by the announcements job, in id
+  order. **Nothing is posted during quiet hours**: the rows wait and go out
+  after. A Kitsune that finds an empty purse (it took 0 🪙) posts
+  `hex.notice.triggered.kitsune_empty`, a laugh at the empty purse, instead
+  of "cost … 0 🪙".
+- **Kyō** (an omikuji self-prank) is posted by `/omikuji` right after the
+  draw commits, wherever it was drawn (DM or topic), as a moment card: the
+  charm layout on the curse background, the drawer's avatar (the faceless art
+  under a Nopperabō) beside the prank hex's art, the title
+  `omikuji.card_title` and the hex's effect detail. The self-prank notice line
+  (`hex.notice.self_prank.<kind>`) is the caption, and a failed render falls
+  back to it as plain text. A spared kyō posts nothing.
 
 **Expiry and the season end.** Nopperabō and Chōchin expire at `expires_at`
 (outcome `EXPIRED`). An expired hex stops marking at once (`active_hex_for`
@@ -2689,7 +2698,8 @@ with `hexes.apply_self_prank`: a random prank hex (Nopperabō or Chōchin) from
 the run's `hexes`, free, with no cooldown and **ignoring the Omamori**. It is
 refused for an opted-out player, and a player already under a hex keeps that
 one unchanged. It emits `HEX_CAST` with `self_prank=True` (so `hex_master`
-skips it) and queues the self-prank notice, which names the player unmasked.
+skips it); `/omikuji` then posts the Kyō card (see "Notices"), which names
+the player unmasked.
 A normal cast's `HEX_CAST` carries `outcome` (`"blocked"` or `None`) and
 `self_prank=False`.
 

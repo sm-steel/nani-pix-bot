@@ -468,5 +468,5 @@ def apply_self_prank(session: Session, run: SeasonRun, player_id: int, now: date
         outcome=None,
         self_prank=True,
     )
-    outbox.enqueue_hex_notice(session, row.id, "self_prank")
+    # no outbox notice: /omikuji posts the Kyō card itself once the draw commits
     return row

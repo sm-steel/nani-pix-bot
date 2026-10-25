@@ -25,7 +25,6 @@ from nani_pix_bot.seasons.definition import Reward
 from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
-from nani_pix_bot.services.seasons import omikuji
 
 if TYPE_CHECKING:
     from loguru import Record
@@ -49,7 +48,6 @@ _kept = (
     OmikujiKind.DAIKICHI,
     OmikujiKind.KICHI,
     OmikujiKind.SHOKICHI,
-    omikuji.slip_png,  # the /omikuji handler (Task 7)
     # Halloween: wired by P8 (#473)
     Reward.omamori,
     # Vulture only skips Reward.ofuda today because the `ofuda` module name matches;

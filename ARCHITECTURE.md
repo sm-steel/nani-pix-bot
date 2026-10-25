@@ -487,6 +487,9 @@ src/nani_pix_bot/
     hexes/        # /hex and /hexes (Halloween): casting (casting.py),
                    # pickers and taps (views.py, callback.py), public
                    # notices (notices.py), opt-out (opt_out.py)
+    omikuji.py    # /omikuji (Halloween): today's fortune slip (picture +
+                   # caption, text without the art) and, for a kyō prank,
+                   # the Kyō moment card in the game topic
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
                    # `/start ach_<id>`, the achievements one, and
                    # `/start rules`/`/start recent` for standings_dm.py), /help
@@ -610,7 +613,8 @@ src/nani_pix_bot/
                    # caption) to the game topic with the plain line as the
                    # caption; a failed avatar/render/send falls back to the
                    # caption as text. Used by /guess (a forgiven miss) and
-                   # the clue shop (a token-paid clue)
+                   # the clue shop (a token-paid clue); DuelMoment for a hex
+                   # cast or block; KyoMoment for /omikuji's kyō
     season_posts.py  # turns the season pass rows (SEASON_TIER DMs,
                    # SEASON_COMPLETE topic line) into Posts
     announcements.py  # the announcement outbox drain: a repeating 20s

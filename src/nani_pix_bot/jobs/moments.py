@@ -1,10 +1,11 @@
-"""Posting a moment card (Halloween) to the game topic: a charm used in a round, or a
-hex cast at someone, as a picture with the plain line as its caption. A card that
+"""Posting a moment card (Halloween) to the game topic: a charm used in a round, a
+hex cast at someone, or an omikuji kyō, as a picture with the plain line as its caption. A card that
 can't be drawn or sent never blocks anything: the caption goes out as text instead."""
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from functools import partial
 
 from loguru import logger
 from PIL import Image
@@ -26,6 +27,20 @@ class CharmMoment:
     title: str
     detail: str  # the effect line under the title: what happens to the player
     caption: str  # the line the plain text would have been
+
+
+@dataclass(frozen=True)
+class KyoMoment:
+    """An omikuji kyō: the drawer's own prank hex lands on them, shown like a charm
+    card on the curse background, with the hex's art beside their avatar."""
+
+    kind: str  # the prank's HexKind value
+    user_id: int
+    card_name: str  # the name pill: plain, no flair
+    art: Image.Image | None  # None: the art is missing, so the plain line goes out
+    title: str
+    detail: str
+    caption: str
 
 
 @dataclass(frozen=True)
@@ -62,6 +77,14 @@ def _render(moment: CharmMoment, avatar: bytes | None) -> bytes:
     face = Face(avatar, moment.display_name, moment.user_id)
     caption = Caption(moment.title, moment.detail)
     return moment_cards.charm_card(Mood.CHARM, face, consumable_card.art(moment.kind), caption)
+
+
+def _render_kyo(moment: KyoMoment, avatar: bytes | None) -> bytes:
+    if moment.art is None:
+        raise FileNotFoundError(f"no art for the kyō {moment.kind} card")
+    face = Face(avatar, moment.card_name, moment.user_id)
+    caption = Caption(moment.title, moment.detail)
+    return moment_cards.charm_card(Mood.CURSE, face, moment.art, caption)
 
 
 def _render_duel(moment: DuelMoment, avatars: list[bytes | None]) -> bytes:
@@ -111,18 +134,35 @@ async def _post(context: ContextTypes.DEFAULT_TYPE, post: _Post) -> bool:
     return True
 
 
+def _solo_draw(
+    context: ContextTypes.DEFAULT_TYPE, user_id: int, render: Callable[[bytes | None], bytes]
+) -> Callable[[], Awaitable[bytes]]:
+    """Draws a one-player card: fetches their avatar, then renders off the loop."""
+
+    async def draw() -> bytes:
+        factory = context.bot_data["session_factory"]
+        avatar = await fetch_avatar(context.bot, user_id, factory)
+        return await asyncio.to_thread(render, avatar)
+
+    return draw
+
+
 async def post_charm_moment(
     context: ContextTypes.DEFAULT_TYPE, moment: CharmMoment, *, game_id: int
 ) -> None:
     """Draw and post the card; on any failure post the caption as plain text."""
-
-    async def draw() -> bytes:
-        factory = context.bot_data["session_factory"]
-        avatar = await fetch_avatar(context.bot, moment.user_id, factory)
-        return await asyncio.to_thread(_render, moment, avatar)
-
+    draw = _solo_draw(context, moment.user_id, partial(_render, moment))
     log = {"moment": moment.kind.value, "game_id": game_id}
     await _post(context, _Post(draw, moment.caption, log))
+
+
+async def post_kyo_moment(
+    context: ContextTypes.DEFAULT_TYPE, moment: KyoMoment, **log: object
+) -> bool:
+    """Draw and post a kyō card; on any failure post the caption as plain text.
+    True when either reached the topic."""
+    draw = _solo_draw(context, moment.user_id, partial(_render_kyo, moment))
+    return await _post(context, _Post(draw, moment.caption, {"moment": "kyō", **log}))
 
 
 async def post_duel_moment(

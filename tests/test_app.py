@@ -124,6 +124,7 @@ def test_build_application_registers_every_command() -> None:
         "tip",
         "hex",
         "hexes",
+        "omikuji",
         "pixelconfig",
         "partialmatch",
         "refund",

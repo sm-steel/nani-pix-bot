@@ -60,7 +60,8 @@ def enqueue_objective(
 
 
 def enqueue_hex_notice(session: Session, hex_id: int, notice: str) -> AnnouncementOutbox:
-    """The topic post for a hex going off: notice is "triggered" or "self_prank"."""
+    """The topic post for a hex going off: notice is "triggered" (the only one; an
+    omikuji self-prank posts its Kyō card straight from /omikuji)."""
     payload = {"hex_id": hex_id, "notice": notice}
     return _add(session, AnnouncementOutbox(kind=OutboxKind.HEX_NOTICE, payload=payload))
 

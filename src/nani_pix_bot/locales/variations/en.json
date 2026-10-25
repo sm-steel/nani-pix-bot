@@ -112,5 +112,9 @@
   "hex.notice.cast.chochin": ["🏮 A paper lantern grins at {target}: thanks to {caster}, each of their guesses gets a 🤪 for {hours} h.", "🏮 {caster} lit a chōchin-obake over {target}. {hours} h of 🤪 on every guess!"],
   "hex.notice.cast.kappa": ["🥒 A kappa now lurks beside {target}: {caster} gets {amount}% of their next winnings.", "🥒 {caster} left a kappa's dish for {target}. Their next win shares {amount}% of its 🪙 with {caster}."],
   "hex.notice.cast.kitsune": ["🦊 A kitsune is watching {target}, courtesy of {caster}: one wrong guess, up to {amount} 🪙 gone.", "🦊 {caster} whispered to a kitsune. {target}'s next miss costs up to {amount} 🪙."],
-  "hex.notice.blocked": ["🧿 {target}'s omamori flared and swallowed {caster}'s {hex}!", "🧿 Nope! {caster} tried {hex} on {target}, and an omamori ate it whole."]
+  "hex.notice.blocked": ["🧿 {target}'s omamori flared and swallowed {caster}'s {hex}!", "🧿 Nope! {caster} tried {hex} on {target}, and an omamori ate it whole."],
+  "omikuji.slip.daikichi": ["⛩ The shrine smiles on {name}: 大吉 Daikichi, the best slip there is!", "⛩ {name} unfolds 大吉 Daikichi — fortune is on their side!"],
+  "omikuji.slip.kichi": ["⛩ {name} unfolds 吉 Kichi — a good day ahead.", "⛩ 吉 Kichi for {name}: the spirits nod kindly."],
+  "omikuji.slip.shokichi": ["⛩ {name} unfolds 小吉 Shōkichi — a little luck goes a long way.", "⛩ 小吉 Shōkichi for {name}: modest, but it's luck."],
+  "omikuji.slip.kyo": ["⛩ Uh-oh. {name} unfolds 凶 Kyō — the spirits giggle. 💀", "⛩ 凶 Kyō for {name}! Better tie that slip to the shrine tree. 💀"]
 }

@@ -41,6 +41,7 @@ from nani_pix_bot.commands import (
     language,
     leaderboard,
     mal_link,
+    omikuji,
     onboarding,
     partialmatch,
     profile,
@@ -434,6 +435,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("tip", tip.tip_command))
     application.add_handler(CommandHandler("hex", hexes.hex_command))
     application.add_handler(CommandHandler("hexes", hexes.hexes_command))
+    application.add_handler(CommandHandler("omikuji", omikuji.omikuji_command))
     application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))
     application.add_handler(CommandHandler("partialmatch", partialmatch.partialmatch_command))
     application.add_handler(CommandHandler("refund", refund.refund_command))
