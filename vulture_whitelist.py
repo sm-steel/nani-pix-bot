@@ -26,7 +26,6 @@ from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import GoalKind, Reward
 from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services.cards import moments
-from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 
@@ -49,7 +48,6 @@ _kept = (
     MalAnimeListEntry.image_url,
     # Halloween: wired by P4 (#469)
     EventType.OMIKUJI_DRAWN,
-    consumables.holdings,
     OmikujiDraw.local_date,
     OmikujiDraw.drawn_at,
     OmikujiKind.DAIKICHI,
