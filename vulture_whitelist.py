@@ -53,7 +53,11 @@ _kept = (
     OmikujiKind.DAIKICHI,
     OmikujiKind.KICHI,
     OmikujiKind.SHOKICHI,
+    # Halloween: wired by P8 (#473)
     Reward.omamori,
+    # Vulture only skips Reward.ofuda today because the `ofuda` module name matches;
+    # it is listed so the entry survives a rename.
+    Reward.ofuda,
     # Halloween: wired by P5 (#470)
     moments.duel_card,
     GoalKind.HEXES_BLOCKED,

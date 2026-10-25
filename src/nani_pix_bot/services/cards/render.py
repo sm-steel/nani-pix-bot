@@ -211,12 +211,12 @@ def smooth_mask(
 
 
 def avatar_disc(avatar: bytes | None, name: str, seed: int, size: int) -> Image.Image:
-    mask = smooth_mask(
-        (size, size), lambda draw, k: draw.ellipse((0, 0, size * k - 1, size * k - 1), fill=255)
-    )
-    face = _photo(avatar, size) or _initials_face(name, seed, size)
-    disc = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    disc.paste(face, (0, 0), mask)
+    """The face cut to a circle with a hard mask. Callers draw it large and shrink it
+    (the shrink antialiases the edge); one that shows it as is does the supersampling."""
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size - 1, size - 1), fill=255)
+    disc = (_photo(avatar, size) or _initials_face(name, seed, size)).convert("RGBA")
+    disc.putalpha(mask)
     return disc
 
 

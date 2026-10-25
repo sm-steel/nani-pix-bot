@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
-from nani_pix_bot.services.cards.render import avatar_disc, font, smooth_mask
+from nani_pix_bot.services.cards.render import SUPERSAMPLE, avatar_disc, font, smooth_mask
 from nani_pix_bot.services.cosmetics import card_style
 
 MOMENT_ASSETS = Path(__file__).resolve().parents[2] / "assets" / "moments"
@@ -127,6 +127,13 @@ def _paint(
     canvas.alpha_composite(layer, (x0, y0))
 
 
+def _face_disc(face: Face, size: int) -> Image.Image:
+    """The avatar disc drawn at SUPERSAMPLE times the size and shrunk once, so its edge
+    is antialiased (alpha only: the colour at the edge stays the avatar's)."""
+    big = avatar_disc(face.avatar, _plain(face.name), face.seed, size * SUPERSAMPLE)
+    return big.resize((size, size), Image.Resampling.LANCZOS)
+
+
 def _glow_disc(
     canvas: Image.Image,
     face: Face,
@@ -153,10 +160,7 @@ def _glow_disc(
 
     _paint(canvas, box, (*colour, _HALO_ALPHA), halo, blur=_HALO_BLUR)
     _paint(canvas, box, (*colour, 255), ring)
-    canvas.alpha_composite(
-        avatar_disc(face.avatar, _plain(face.name), face.seed, size),
-        (round(x - size / 2), round(y - size / 2)),
-    )
+    canvas.alpha_composite(_face_disc(face, size), (round(x - size / 2), round(y - size / 2)))
 
 
 def _art(

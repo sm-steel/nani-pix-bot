@@ -65,10 +65,10 @@ def test_a_photo_avatar_replaces_the_initials_disc() -> None:
     assert fallback.getpixel((20, 50)) != (255, 0, 0)
 
 
-def test_the_avatar_disc_edge_is_antialiased() -> None:
+def test_the_avatar_disc_has_a_hard_edge() -> None:
+    """Callers draw it large and shrink it, so it stays cheap: no supersampled mask."""
     alpha = cards.avatar_disc(_red_avatar(), "@alice", 42, 100).getchannel("A")
-    edge = [v for v in cast(list[int], list(alpha.get_flattened_data())) if 0 < v < 255]
-    assert len(edge) > 40  # a hard mask has only 0 and 255
+    assert set(cast(list[int], list(alpha.get_flattened_data()))) == {0, 255}
 
 
 def test_a_broken_avatar_falls_back_to_initials() -> None:

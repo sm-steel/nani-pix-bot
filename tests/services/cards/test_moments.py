@@ -192,3 +192,28 @@ def test_the_ring_edge_is_antialiased() -> None:
     reds = [_px(image, (480, y))[0] for y in range(232, 246)]
     low, high = min(reds), max(reds)
     assert any(low + 0.2 * (high - low) < r < high - 0.2 * (high - low) for r in reds)
+
+
+def _white_face() -> Face:
+    buffer = BytesIO()
+    Image.new("RGB", (64, 64), (255, 255, 255)).save(buffer, "PNG")
+    return Face(buffer.getvalue(), "Wendy", 3)
+
+
+def test_the_disc_edge_is_antialiased() -> None:
+    alpha = moments._face_disc(ALICE, 100).getchannel("A")
+    edge = [v for v in cast(list[int], list(alpha.get_flattened_data())) if 0 < v < 255]
+    assert len(edge) > 40  # a hard mask has only 0 and 255
+
+
+def test_the_disc_edge_keeps_the_avatar_colour() -> None:
+    disc = moments._face_disc(_white_face(), 100)
+
+    edge = [
+        p
+        for p in cast(list[tuple[int, int, int, int]], list(disc.get_flattened_data()))
+        if 0 < p[3] < 255
+    ]
+    assert edge
+    for red, green, blue, _ in edge:
+        assert min(red, green, blue) >= 250  # not darkened by the transparent canvas
