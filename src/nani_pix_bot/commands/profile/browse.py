@@ -57,7 +57,7 @@ class Viewing:
 
 
 def card_keyboard(order: list[int], viewing: Viewing, lang: str) -> InlineKeyboardMarkup:
-    """◀ ▶, 👥 Players, 👥 Someone else on your own card and, on an editable
+    """◀ ▶, 👥 Players, 🔍 Someone else on your own card and, on an editable
     card, ✏️."""
     owner, target = viewing.owner, viewing.target
     rows = []

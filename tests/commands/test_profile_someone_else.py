@@ -1,4 +1,4 @@
-"""👥 Someone else under your own /profile card: the player picker it opens,
+"""🔍 Someone else under your own /profile card: the player picker it opens,
 and a pick sending that player's card the way /profile @user does."""
 
 from typing import cast

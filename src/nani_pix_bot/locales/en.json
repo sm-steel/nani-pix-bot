@@ -1060,10 +1060,10 @@
   "refund.no_one": "Nobody to pick: no one holds a clue purchase to refund.",
   "grant_item.pick_player": "🎁 Who gets {item} ({item_id})? Pick the player:",
   "grant_item.no_one": "Nobody to pick: I don't know any players yet.",
-  "profile.someone_else": "👥 Someone else",
+  "profile.someone_else": "🔍 Someone else",
   "profile.pick_player": "👥 Whose card do you want to see?",
   "profile.no_one": "There's no one else to show yet.",
-  "achievements.someone_else": "👥 Someone else",
+  "achievements.someone_else": "🔍 Someone else",
   "achievements.pick_player": "🏅 Whose achievements do you want to see?",
   "achievements.no_one": "There's no one else to show yet."
 }

@@ -1060,10 +1060,10 @@
   "refund.no_one": "Выбрать некого: ни у кого нет покупок подсказок для возврата.",
   "grant_item.pick_player": "🎁 Кому выдать {item} ({item_id})? Выберите игрока:",
   "grant_item.no_one": "Выбрать некого: я пока не знаю ни одного игрока.",
-  "profile.someone_else": "👥 Кто-то другой",
+  "profile.someone_else": "🔍 Кто-то другой",
   "profile.pick_player": "👥 Чью карточку показать?",
   "profile.no_one": "Пока больше некого показать.",
-  "achievements.someone_else": "👥 Кто-то другой",
+  "achievements.someone_else": "🔍 Кто-то другой",
   "achievements.pick_player": "🏅 Чьи достижения показать?",
   "achievements.no_one": "Пока больше некого показать."
 }

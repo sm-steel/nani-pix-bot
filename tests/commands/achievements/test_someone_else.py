@@ -1,4 +1,4 @@
-"""👥 Someone else under your own /achievements list: the button, the player
+"""🔍 Someone else under your own /achievements list: the button, the player
 picker it opens, and a pick showing that player's list the way
 /achievements @user does (the browser in DM, the summary in the topic)."""
 

@@ -1,4 +1,4 @@
-"""👥 Someone else under your own /achievements list (issue #479): a player
+"""🔍 Someone else under your own /achievements list (issue #479): a player
 picker, and a pick shows that player's achievements the way
 `/achievements @user` does: the browser in DM, the summary in the game topic
 (helpers/someone_else.py)."""

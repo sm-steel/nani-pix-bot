@@ -34,7 +34,7 @@ def _summary_markup(
     context: ContextTypes.DEFAULT_TYPE, viewer_id: int, owner_id: int, lang: str
 ) -> InlineKeyboardMarkup | None:
     """Browse in DM (once the bot's username is known) and, under your own
-    summary, 👥 Someone else."""
+    summary, 🔍 Someone else."""
     rows = []
     url = dm_link(context, f"{DEEP_LINK_PREFIX}{owner_id}")
     if url is not None:

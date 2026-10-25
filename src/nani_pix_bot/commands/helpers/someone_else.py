@@ -1,4 +1,4 @@
-"""The 👥 Someone else button under your own /profile card and /achievements
+"""The 🔍 Someone else button under your own /profile card and /achievements
 list (issue #479). It opens a player picker in a new message (every known
 player but you and Nani Pix, most active first, labels unmasked), and a pick
 shows that player's card or list the way `/profile @user` or
@@ -46,7 +46,7 @@ class SomeoneElse:
 
 
 def button(prefix: str, namespace: str, viewer_id: int, lang: str) -> InlineKeyboardButton:
-    """The 👥 Someone else button that opens `prefix`'s picker for `viewer_id`."""
+    """The 🔍 Someone else button that opens `prefix`'s picker for `viewer_id`."""
     return InlineKeyboardButton(
         i18n.t(f"{namespace}.someone_else", lang),
         callback_data=Picker(prefix, viewer_id).own(OPEN),
