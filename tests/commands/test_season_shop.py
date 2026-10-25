@@ -322,25 +322,36 @@ def _demo_3_season(session_factory) -> None:
         session.commit()
 
 
-async def test_season_shop_names_and_notes_an_ofuda_offer(session_factory, monkeypatch) -> None:
+CHARMS = pytest.mark.parametrize(
+    ("index", "kind", "name"), [(3, "ofuda", "📜 Ofuda"), (4, "omamori", "🧿 Omamori")]
+)
+
+
+@CHARMS
+async def test_season_shop_names_and_notes_a_charm_offer(
+    session_factory, monkeypatch, index, kind, name
+) -> None:
     _demo_3_season(session_factory)
     monkeypatch.setattr(season_shop_module.item_preview, "send_image", AsyncMock())
     text = await _run(session_factory, _update())
     context = _context(session_factory)
-    await _tap(session_factory, context, "sshop:i:1:3")
-    assert "📜 Ofuda" in text
+    await _tap(session_factory, context, f"sshop:i:1:{index}")
+    assert name in text
     sent = context.bot.send_message.await_args.kwargs["text"]
-    assert "📜 Ofuda" in sent
-    assert i18n.t("season_shop.offer_note.ofuda", "EN") in sent
+    assert name in sent
+    assert i18n.t(f"season_shop.offer_note.{kind}", "EN") in sent
     assert i18n.t("season_shop.offer_token_note", "EN") not in sent
 
 
-async def test_ofuda_offer_preview_uses_its_own_card_key(session_factory, monkeypatch) -> None:
+@CHARMS
+async def test_charm_offer_preview_uses_its_own_card_key(
+    session_factory, monkeypatch, index, kind, name
+) -> None:
     _demo_3_season(session_factory)
     sent = AsyncMock()
     monkeypatch.setattr(season_shop_module.item_preview, "send_image", sent)
-    await _tap(session_factory, _context(session_factory), "sshop:i:1:3")
-    assert sent.await_args_list[0].args[2].cache_key == "consumable/ofuda#EN"
+    await _tap(session_factory, _context(session_factory), f"sshop:i:1:{index}")
+    assert sent.await_args_list[0].args[2].cache_key == f"consumable/{kind}#EN"
 
 
 async def test_missing_art_still_shows_the_offer(
@@ -353,4 +364,4 @@ async def test_missing_art_still_shows_the_offer(
     await _tap(session_factory, context, "sshop:i:1:3")
     context.bot.send_photo.assert_not_awaited()
     assert "📜 Ofuda" in context.bot.send_message.await_args_list[-1].kwargs["text"]
-    assert any(r.level == "ERROR" for r in log_records)
+    assert any(r.level == "ERROR" and "consumable/ofuda#EN" in r.message for r in log_records)

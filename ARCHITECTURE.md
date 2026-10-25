@@ -1039,6 +1039,9 @@ src/nani_pix_bot/
                    #                   newest seasons / rarest achievements
                    #   previews.py     render + the item_previews cache
                    #   clue_token_icon.py  the clue token's golden-ticket picture
+                   #   card_style.py   the translucent card and name pill the
+                   #                   costume sheet and consumable card share
+                   #   consumable_card.py  a consumable's preview card (art, name)
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,
                    #                    games-enabled flag, autostart-

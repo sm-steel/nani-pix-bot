@@ -40,7 +40,11 @@ RUN = replace(
     names=_names("Third Demo", "Третий демо-сезон"),
     items=(*demo_1.RUN.items, CANDLE, BONE),
     tiers=(*demo_1.RUN.tiers, Tier(200, Reward.omamori(), None)),
-    shop=(*demo_1.RUN.shop, ShopOffer.consumable(RewardKind.OFUDA, 40, 2)),
+    shop=(
+        *demo_1.RUN.shop,
+        ShopOffer.consumable(RewardKind.OFUDA, 40, 2),
+        ShopOffer.consumable(RewardKind.OMAMORI, 50, 1),
+    ),
     haunt=Haunt(25, tuple(HauntTwist)),
     event_day=EventDay(
         10,

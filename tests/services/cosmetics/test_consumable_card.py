@@ -4,7 +4,7 @@ import pytest
 from PIL import Image, ImageOps
 
 from nani_pix_bot.models.enums import ConsumableKind
-from nani_pix_bot.services.cosmetics import consumable_card
+from nani_pix_bot.services.cosmetics import card_style, consumable_card
 
 KINDS = list(ConsumableKind)
 SIZE = consumable_card.CARD_SIZE
@@ -52,8 +52,6 @@ def test_the_name_is_in_the_viewers_language() -> None:
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_the_art_area_shows_the_item(kind) -> None:
-    from nani_pix_bot.services.cosmetics import card_style
-
     bare = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     card_style.draw_card(bare, consumable_card.CARD_BOX, consumable_card.CARD_RADIUS)
     area = (150, 150, 490, 450)

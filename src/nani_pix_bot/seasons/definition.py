@@ -35,7 +35,7 @@ class RewardKind(enum.StrEnum):
     # 🎟 the clue token; named so a security linter doesn't read "token" as a secret
     CLUE_TICKET = "clue_token"
     OFUDA = "ofuda"  # 📜 a consumable (Halloween season)
-    OMAMORI = "omamori"  # 🧧 a consumable (Halloween season)
+    OMAMORI = "omamori"  # 🧿 a consumable (Halloween season)
     STAMP = "stamp"  # the season stamp's gold ring (free track); the claim is the reward
     STAMP_PLUS = "stamp_plus"  # the gold season stamp art (premium track)
 

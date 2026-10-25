@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 from sqlalchemy import func, select
 
@@ -13,6 +15,7 @@ from nani_pix_bot.models.enums import (
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonShopPurchase
 from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.definition import RewardKind, ShopOffer
 from nani_pix_bot.services.cosmetics import consumables, inventory
 from nani_pix_bot.services.cosmetics.inventory import ItemGrant
 from nani_pix_bot.services.economy import wallet
@@ -137,3 +140,12 @@ def test_buying_ofuda_grants_the_consumable(session, active_season, buyer) -> No
     assert consumables.count(session, buyer.telegram_user_id, ConsumableKind.OFUDA) == 1
     assert consumables.count(session, buyer.telegram_user_id, ConsumableKind.CLUE_TICKET) == 0
     assert wallet.balance(session, buyer.telegram_user_id, season_id=active_season.id) == 160
+
+
+def test_an_offer_that_is_neither_item_nor_consumable_is_refused(
+    session, active_season, run
+) -> None:
+    offer = replace(ShopOffer.clue_ticket(30, 2), kind=RewardKind.COINS)
+    row = season_shop.Stock(offer, None, 0, False)
+    with pytest.raises(ValueError, match="unknown shop offer"):
+        season_shop._deliver(session, active_season, run, 1, row)

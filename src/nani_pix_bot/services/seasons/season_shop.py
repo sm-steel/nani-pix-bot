@@ -116,8 +116,9 @@ def _deliver(
         inventory.grant(session, pid, ItemGrant(row.item_id, ItemSource.SHOP, season.id))
     else:
         kind = consumable_of(row.offer)
-        if kind is not None:
-            consumables.add(session, pid, kind, why=f"{run.run_id} shop")
+        if kind is None:
+            raise ValueError(f"unknown shop offer {row.offer!r}")
+        consumables.add(session, pid, kind, why=f"{run.run_id} shop")
 
 
 def buy(
