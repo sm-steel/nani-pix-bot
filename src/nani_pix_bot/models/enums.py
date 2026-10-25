@@ -370,6 +370,8 @@ class CurrencyReason(enum.StrEnum):
     SEASON_SHOP = "season_shop"
     # 🪙 paid for completing a season objective
     SEASON_OBJECTIVE = "season_objective"
+    # 🪙 paid for an omikuji slip
+    SEASON_OMIKUJI = "season_omikuji"
     # 🪙 spent casting a hex; paid to the caster when a kappa hex triggers; lost to a kitsune
     HEX_CAST = "hex_cast"
     HEX_KAPPA = "hex_kappa"
