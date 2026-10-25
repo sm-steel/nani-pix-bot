@@ -31,6 +31,7 @@ from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import earning, settlement
 from nani_pix_bot.services.economy.messages import earnings_suffix
 from nani_pix_bot.services.game import guesses
+from nani_pix_bot.services.seasons import haunting
 
 # Outcomes whose post reveals the title anyway.
 _NO_PARTIAL_REVEAL = frozenset(
@@ -141,6 +142,9 @@ def _prepare_turn_advanced_announcement(
         total=progress.total,
         remaining=progress.remaining,
         limit=progress.limit,
+    )
+    caption += haunting.caption_suffix(
+        session, game, lang, number=progress.number, total=progress.total
     )
     return Announcement(
         photos=(pixelated_a, pixelated_b),

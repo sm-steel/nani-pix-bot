@@ -183,3 +183,88 @@ def test_the_banner_carries_the_runs_palette(session, monkeypatch) -> None:
     monkeypatch.setattr(registry, "all_runs", lambda: runs)
     post = _render(session, OutboxKind.SEASON_START)
     assert post.card.palette == palette
+
+
+def _parade_row(
+    session, kind, *, status=SeasonStatus.ACTIVE, run_id="demo_3"
+) -> AnnouncementOutbox:
+    season = SeasonSchedule(
+        run_id=run_id,
+        start_at=datetime(2026, 10, 26, tzinfo=UTC),
+        end_at=datetime(2026, 11, 9, tzinfo=UTC),
+        status=status,
+        created_by=9,
+    )
+    session.add(season)
+    session.flush()
+    row = AnnouncementOutbox(kind=kind, payload={"season_id": season.id})
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _render_parade(session, row, lang="EN"):
+    return announcements.RENDERERS[row.kind](session, row, lang)
+
+
+def test_start_post_lists_haunted_gate_and_coins(session, monkeypatch) -> None:
+    demo3 = registry.get("demo_3")
+    assert demo3 is not None
+    assert demo3.event_day is not None
+    boosted = replace(demo3, event_day=replace(demo3.event_day, coin_multiplier=3))
+    monkeypatch.setattr(registry, "get", lambda run_id: boosted if run_id == "demo_3" else None)
+    row = _parade_row(session, OutboxKind.EVENT_DAY_START)
+    post = _render_parade(session, row)
+    assert post.text.split("\n") == [
+        "🏮 Halloween has begun! Special rules until midnight (UTC).",
+        "👻 Every round started today is haunted.",
+        "Today only horror anime can be played.",
+        "🪙 Season Coins pay \u00d73 all day.",
+    ]
+    assert post.card is None
+    ru = _render_parade(session, row, "RU").text.split("\n")
+    assert ru[0] == "🏮 Начинается праздник «Хэллоуин»! До полуночи (UTC) действуют особые правила."
+    assert ru[2] == "Сегодня можно играть только в ужасы."
+    assert ru[3] == "🪙 Весь день сезонные монеты \u00d73."
+
+
+def test_start_post_skips_lines_the_day_does_not_have(session) -> None:
+    post = _render_parade(session, _parade_row(session, OutboxKind.EVENT_DAY_START))
+    assert "Season Coins" not in post.text
+
+
+def test_end_post_says_sunrise(session) -> None:
+    row = _parade_row(session, OutboxKind.EVENT_DAY_END)
+    assert _render_parade(session, row).text == (
+        "🌅 Sunrise — Halloween is over. Rounds are back to normal."
+    )
+    assert _render_parade(session, row, "RU").text == (
+        "🌅 Рассвет — праздник «Хэллоуин» завершён. Раунды снова обычные."
+    )
+
+
+@pytest.mark.parametrize("kind", [OutboxKind.EVENT_DAY_START, OutboxKind.EVENT_DAY_END])
+def test_cancelled_season_skips_parade_posts(session, kind) -> None:
+    row = _parade_row(session, kind, status=SeasonStatus.CANCELLED)
+    assert _render_parade(session, row) is None
+
+
+def test_start_post_has_no_haunted_line_when_the_day_is_not_all_haunted(
+    session, monkeypatch
+) -> None:
+    demo3 = registry.get("demo_3")
+    assert demo3 is not None
+    assert demo3.event_day is not None
+    calm = replace(demo3, event_day=replace(demo3.event_day, all_haunted=False))
+    monkeypatch.setattr(registry, "get", lambda run_id: calm if run_id == "demo_3" else None)
+    post = _render_parade(session, _parade_row(session, OutboxKind.EVENT_DAY_START))
+    assert "haunted" not in post.text
+    assert post.text.startswith("🏮 Halloween has begun!")
+
+
+def test_a_run_without_event_day_is_skipped_with_a_warning(session, log_records) -> None:
+    row = _parade_row(session, OutboxKind.EVENT_DAY_START, run_id="demo_1")
+    assert _render_parade(session, row) is None
+    line = next(r for r in log_records if r.level == "WARNING")
+    assert line.extra["kind"] == "event_day_start"
+    assert line.extra["run_id"] == "demo_1"

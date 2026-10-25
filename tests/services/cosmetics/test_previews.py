@@ -123,7 +123,7 @@ def test_a_frame_previews_on_a_stage_like_a_real_game_posts() -> None:
         previews.FRAME_STAGE_WIDTH,
         PixelAlgorithm.MEDIAN,
         resolved.item.look,
-        resolved.run.style,
+        stage.SeasonLook(resolved.run.style),
     )
     expected = mascot.add_to_png(framed, Pose.NOPE)
     assert preview.image == expected

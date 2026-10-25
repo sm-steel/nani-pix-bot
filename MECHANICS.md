@@ -755,6 +755,9 @@ or stale pin (its caption's guess count is frozen at post time).
   - stage (or turn) and guesses left at it
   - the bounty, if any
   - how long until the game ends on its own
+  - for a haunted game, the twist on the current image, its hint and the
+    Season Coins multiplier (`status.haunted`); none when a fading twist
+    has cleared on the last stage
   - the 🎲 game number
 - **Otherwise** it says what is happening instead: who is setting up the
   next game, that a vote is open, or whose turn it is to start one.
@@ -2103,6 +2106,22 @@ emptied and paid out as `coins // run.coins_per_currency` 💠 (default 2 🪙 =
 1 💠; the remainder is dropped). The end post states how many players'
 coins became how much 💠, and the rate.
 
+**Multipliers (Halloween).** `services/seasons/multipliers.py` scales the
+base amounts before they are paid (`coins.py` and `xp.py` apply it per award
+and log the factor at INFO). All factors are integers and multiply together:
+
+| | Factor | When |
+|---|---|---|
+| 🪙 coins | `haunt.coin_multiplier` | the game is haunted (stored twist **or** boss) |
+| | `event_day.coin_multiplier` | `game.event_day` |
+| | `group_goal.boss_coin_multiplier` | `game.boss_game` and the award is not `HOST` |
+| XP | `group_goal.boss_xp_multiplier` | `game.boss_game` and the award is not `HOST`, else 1 |
+
+So an event-day haunted game pays 🪙 x (haunt x event-day); the **host** of a
+boss game is paid normally, apart from the haunt/event-day factors (the boss
+boost is for guessers only). A run with no `haunt`, `event_day` or
+`group_goal` always gets 1.
+
 ### Season Shop
 
 `/seasonshop` (DM, group members only) lists the run's `shop` offers, bought
@@ -2157,6 +2176,96 @@ played (days with a guess or a hosted game).
   (`CurrencyReason.SEASON_OBJECTIVE`), syncs the pass and queues a DM. Progress
   is shown capped at the target; a finished objective shows its date.
 - `/seasonpass` lists each objective with `progress/target` and its reward.
+
+### Haunted rounds
+
+A run with `haunt` rolls each of its games **once, at activation**
+(`services/game/state.py` calls `haunting.on_activation`, which also sets the
+game's `event_day` flag). Only a game tagged to a season whose run has `haunt`
+is rolled; a run without it (`sakura_1`) never rolls and renders, captions,
+pays and gates exactly as before.
+
+- **The roll.** `rng.randrange(100) < haunt.chance_pct` makes the game
+  haunted, and `rng.choice(haunt.twists)` picks its twist, stored as the
+  `HauntTwist` value in `games.haunt_twist`. The 0-99 number is always drawn.
+  On an event day whose `all_haunted` is set the game is haunted regardless of
+  the number. Every roll, and every deliberate "not haunted", is logged at INFO
+  with the number and the chance.
+- **Twists** (`services/seasons/haunting.py`):
+
+| Twist | Effect | Last stage |
+|---|---|---|
+| `kitsune_mirror` | mirrored picture | stays until the reveal |
+| `tanuki_leaf` | hue shift (+85 of 256, about 120 degrees) | clears |
+| `yurei_double` | offset ghost copy blended at 35% (6% of the width, 4% of the height) | clears |
+| `kyokotsu_xray` | inverted greyscale negative, dark blue to pale cyan | clears |
+
+  `FADES_AT_LAST` holds the three that clear on the final stage (the Yurei
+  ghost was added after a visual preview); only the mirror stays to the last
+  stage.
+- **The reveal is always clean.** The twist is part of the stage image only
+  (`stage_png_with` with a `SeasonLook` carrying a `Haunt(twist, last)`); the
+  reveal video, its pregen and the stills are rendered without it. The pipeline
+  order is **pixelate -> twist -> season style -> frame -> Nani**
+  (`services/cosmetics/stage.py`; `stage_twist` logs each twist applied).
+- **Tile clue.** The *Reveal a tile* picture wears the current stage's twist
+  too: the original and the pixelated image are both twisted (same twist and
+  same last-stage fade as the stage image) before the tile is revealed, so the
+  tapped grid cell lines up with what the buyer sees, mirror included.
+  `stage.haunt_at`/`current_haunt` is the one place that says which twist stage
+  N wears and whether it is the last; stage posts, `/status` and the tile clue
+  all read it.
+- **Boss game.** `games.boss_game` (set after the roll by the 100 Candles group goal, which a later phase adds)
+  makes every stage haunted, with the twist `haunt.twists[(stage - 1) %
+  len(twists)]` and `games.haunt_twist` ignored. `haunting.is_haunted(game)` is
+  true for a stored twist or a boss game and is what the multipliers and the
+  `haunted` win fact read.
+- **Captions.** `haunting.caption_suffix` appends a line (a newline and the
+  text) to the stage caption: `haunt.started` on stage 1 (twist name, hint and
+  the coin multiplier), `haunt.changed` when a boss game moves to a different
+  twist, `haunt.lifted` on the last stage when a fading twist clears (the same twist as
+  the stage before; a boss game switching twist on the last stage says `haunt.changed`). Twist
+  names and hints are i18n keys `haunt.twist.*` and `haunt.hint.*`. Other
+  stages get no line.
+- **Unknown stored twist.** A `haunt_twist` this release does not know logs a
+  WARNING and the game renders untwisted instead of failing.
+- **Objective.** `GoalKind.HAUNTED_WINS` counts the player's `GAME_WON` events
+  whose `haunted` fact is set (`services/game/win_facts.py`); wins recorded
+  before the fact existed count as not haunted.
+
+### Event day (Night Parade)
+
+A run's `event_day` (`EventDay(month, day, names, gate, coin_multiplier,
+all_haunted)`) is one local calendar day read in the **group's timezone**
+(`settings.get_group_timezone`), not UTC.
+
+- **Window** (`services/seasons/event_day.py::window`): local 00:00 up to the
+  next local 00:00, as a UTC `[start, end)`, in the year whose window overlaps
+  the season. A month-day that does not exist that year (Feb 29) gives no
+  window.
+- **Flag.** `games.event_day` is set at activation when `activated_at` is in the
+  window, and never changes afterwards: a game activated at 23:59 local stays an
+  event-day game past midnight, one activated at 00:00 the next day is not.
+- **Gate swap.** `gate.active_gate` returns `event_day.gate` while
+  `event_day.is_event_day(now)` and the event day has a gate (narrower than the
+  run's); otherwise `run.gate`. It binds `event_day=True` into the log context.
+- **Rewards.** `all_haunted` makes every game of the day haunted; its
+  `coin_multiplier` stacks with the haunt's (see the multipliers table under
+  "Season Coins, Pass and Premium").
+- **Posts.** Two group posts through the announcement outbox, held by quiet
+  hours like any other: `EVENT_DAY_START` (`event_day.post.start`, plus lines
+  for all-haunted, the gate rule and the coin multiplier when each applies)
+  and `EVENT_DAY_END`, the sunrise (`event_day.post.end`), both rendered in
+  `jobs/season_posts.py`. `lifecycle.advance` calls `event_day.enqueue_due`
+  while the season is active or closing, and `lifecycle.next_boundary` also
+  wakes at the window's edges while the season is active. Edge rules (`due_posts`):
+  - a start is owed only while the day is on, so downtime over the whole day
+    posts nothing stale; a season starting mid-day still gets its start post;
+  - a sunrise is owed only after a start was queued, at the window's end;
+  - a season ending mid-day (`finalizing`) queues the sunrise **before** its
+    own end post;
+  - each kind is queued once per season (checked against the outbox), so a
+    second `advance` never posts twice.
 
 ### Announcements
 
@@ -2353,8 +2462,8 @@ the last column.
 |---|---|---|
 | `palette`, `emoji` | The season card's ribbon and title-gradient colours and the season emoji. Default: the Sakura pink/gold and the cherry blossom, so `sakura_1` renders unchanged. The card reads them from the run. | Phase 1 |
 | `mascot_costume` | A costume key for Nani Pix's picture while the season is open. Needs a season `emoji`. The key itself is validated where costumes live. | Phase 2 |
-| `haunt` | `Haunt(chance_pct, twists, coin_multiplier)`. At activation each season game is haunted with probability `chance_pct`, and a haunted game gets one of the `twists` (`kitsune_mirror`, `tanuki_leaf`, `yurei_double`, `kyokotsu_xray`) stored in `games.haunt_twist`; every 🪙 award of it is multiplied by `coin_multiplier` (at least 1). Needs 1..100, at least one twist, no repeats. | Phase 3 |
-| `event_day` | `EventDay(month, day, names, gate, coin_multiplier, all_haunted)`: one real calendar day (checked against a leap year) with EN and RU names. On that local day `gate` replaces the run gate, 🪙 are multiplied, and with `all_haunted` every game is haunted (so `all_haunted` needs `haunt`). Games on it carry `games.event_day`. | Phase 3 |
+| `haunt` | `Haunt(chance_pct, twists, coin_multiplier)`. At activation each season game is haunted with probability `chance_pct`, and a haunted game gets one of the `twists` (`kitsune_mirror`, `tanuki_leaf`, `yurei_double`, `kyokotsu_xray`) stored in `games.haunt_twist` (see "Haunted rounds"); every 🪙 award of it is multiplied by `coin_multiplier` (at least 1). Needs 1..100, at least one twist, no repeats. | Phase 3 |
+| `event_day` | `EventDay(month, day, names, gate, coin_multiplier, all_haunted)`: one real calendar day (checked against a leap year) with EN and RU names. On that local day `gate` replaces the run gate, 🪙 are multiplied, and with `all_haunted` every game is haunted (so `all_haunted` needs `haunt`). Games on it carry `games.event_day`. See "Event day (Night Parade)". | Phase 3 |
 | `ShopOffer.consumable`, `RewardKind.OFUDA` / `OMAMORI` | The ofuda and omamori are consumables that join the clue token as pass rewards and shop offers. The enum values exist from Phase 1; their behavior ships in Phase 4. An offer's `limit` caps purchases per player per season. | Phase 4 |
 | `omikuji` | A tuple of `OmikujiOutcome(kind, weight, coins, consumable, prank)` for a daily draw (`daikichi`, `kichi`, `shokichi`, `kyo`). Weights are at least 1, `coins` is not negative, and only `kyo` may carry `prank`, which needs a prank hex in `hexes`. One draw per player per season per local day (`omikuji_draws`). | Phase 4 |
 | `hexes` | A tuple of `HexRule(kind, price, cooldown_minutes, duration_hours, amount)`, at most one per kind. Pranks (`nopperabo`, `chochin`) last `duration_hours` (at least 1) and have `amount` 0; `kappa` (percent 1..100 of the target's next win) and `kitsune` (🪙 lost on the next wrong guess, at least 1) last until triggered (`duration_hours` 0). Price at least 1, cooldown 1..1440 minutes. Players can refuse hexes with `players.hex_opt_out`. | Phase 5 |

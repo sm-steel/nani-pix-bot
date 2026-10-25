@@ -13,7 +13,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.game import guesses
-from nani_pix_bot.services.seasons import gate
+from nani_pix_bot.services.seasons import gate, haunting
 from nani_pix_bot.services.settings import stage_config
 
 _STAGES = list(PixelStage)
@@ -67,5 +67,6 @@ def win_facts(session: Session, game: Game, winner_id: int, how: WinMethod) -> d
         "winner_wrong": _wrong_guesses(session, game.id, winner_id),
         "first_guess": how is WinMethod.GUESS and game.total_guess_count == 1,
         "gate_tags": gate.won_tags(session, game),
+        "haunted": haunting.is_haunted(game),
         "ended_at": ended.isoformat(),
     }

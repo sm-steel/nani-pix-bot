@@ -1,9 +1,13 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import MappingProxyType
 from unittest.mock import MagicMock
 
+from loguru import logger
+
 from nani_pix_bot.models.enums import SeasonStatus
 from nani_pix_bot.models.season import SeasonSchedule
+from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import Gate, GateTag
 from nani_pix_bot.services.search.tags import AnimeTag
 from nani_pix_bot.services.seasons import gate as gate_service
@@ -93,6 +97,52 @@ def test_active_gate_is_the_running_seasons_gate(session) -> None:
 def test_active_gate_of_an_active_season(session, fake_runs) -> None:
     _season(session, SeasonStatus.ACTIVE)
     assert gate_service.active_gate(session) == fake_runs["demo_1"].gate
+
+
+OCT31_NOON_LOCAL = datetime(2026, 10, 31, 9, 0, tzinfo=UTC)  # Europe/Moscow
+NOV1_NOON_LOCAL = datetime(2026, 11, 1, 9, 0, tzinfo=UTC)  # Europe/Moscow
+
+
+def _demo(run_id: str):
+    run = registry.get(run_id)
+    assert run is not None
+    return run
+
+
+def test_event_day_replaces_the_gate(session, haunted_season, set_group_tz) -> None:
+    set_group_tz("Europe/Moscow")
+    demo3 = _demo("demo_3")
+    assert demo3.event_day is not None
+    assert gate_service.active_gate(session, OCT31_NOON_LOCAL) == demo3.event_day.gate
+
+
+def test_outside_the_event_day_the_run_gate_applies(session, haunted_season, set_group_tz) -> None:
+    set_group_tz("Europe/Moscow")
+    assert gate_service.active_gate(session, NOV1_NOON_LOCAL) == _demo("demo_3").gate
+
+
+def test_event_day_without_its_own_gate_keeps_the_run_gate(
+    session, haunted_season, set_group_tz, monkeypatch
+) -> None:
+    set_group_tz("Europe/Moscow")
+    demo3 = _demo("demo_3")
+    assert demo3.event_day is not None
+    bare = replace(demo3, event_day=replace(demo3.event_day, gate=None))
+    monkeypatch.setattr(registry, "get", lambda _run_id: bare)
+    assert gate_service.active_gate(session, OCT31_NOON_LOCAL) == demo3.gate
+
+
+def test_no_event_day_keeps_the_run_gate(session, active_season) -> None:
+    assert gate_service.active_gate(session, OCT31_NOON_LOCAL) == _demo("demo_1").gate
+
+
+def test_event_day_gate_binds_the_log_context(
+    session, haunted_season, set_group_tz, log_records
+) -> None:
+    set_group_tz("Europe/Moscow")
+    gate_service.active_gate(session, OCT31_NOON_LOCAL)
+    logger.info("after the gate")
+    assert log_records[-1].extra["event_day"] is True
 
 
 def test_won_tags_are_the_gate_tags_the_game_matches(session, tagged_game) -> None:

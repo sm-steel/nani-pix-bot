@@ -91,6 +91,29 @@ async def test_pregeneration_fills_cache_and_db(session_factory, monkeypatch) ->
     assert _slot(session_factory) == (game_id, RevealStatus.READY)
 
 
+async def test_a_haunted_games_reveal_pregen_gets_the_clear_image(
+    session_factory, monkeypatch
+) -> None:
+    captured: list[bytes] = []
+
+    def fake_pregenerate(image, *_args):
+        captured.append(image)
+        return PREGEN
+
+    monkeypatch.setattr(pipeline, "pregenerate", fake_pregenerate)
+    game_id = _game(session_factory)
+    with session_scope(session_factory) as session:
+        game = session.get(Game, game_id)
+        assert game is not None
+        game.haunt_twist = "kitsune_mirror"
+    _reserve(session_factory, game_id)
+    application = _application(session_factory)
+    reveal.start_pregeneration(application, game_id)
+    await asyncio.wait_for(application.bot_data["reveal_cache"].future, 2)
+    await _settle(application)
+    assert captured == [b"png-bytes"]
+
+
 async def test_pregeneration_draws_the_equipped_win_overlays_ahead(
     session_factory, monkeypatch, log_records
 ) -> None:

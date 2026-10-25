@@ -5,17 +5,42 @@ applied uniformly: pixelate, then the season style, then the frame, then
 Nani on top of everything (both stay crisp). The DM preview album and shop
 clue images are not stage posts and stay unframed."""
 
+from typing import NamedTuple
+
 from loguru import logger
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import CosmeticSlot, PixelAlgorithm
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.seasons.mechanics import HauntTwist
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import mascot
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.cosmetics import costume, frames, inventory
+from nani_pix_bot.services.game import HardModeTurnProgress, StageProgress
 from nani_pix_bot.services.mascot import Pose
-from nani_pix_bot.services.seasons import styles
+from nani_pix_bot.services.seasons import haunting, modifiers, styles
+
+
+class Haunt(NamedTuple):
+    """The haunted twist a stage render wears; `last` is the final stage, where
+    the fading twists clear up."""
+
+    twist: HauntTwist
+    last: bool
+
+    @property
+    def faded(self) -> bool:
+        """A fading twist on the last stage: the image is clean."""
+        return self.last and self.twist in haunting.FADES_AT_LAST
+
+
+class SeasonLook(NamedTuple):
+    """What the season does to a stage image: its style key and the haunted
+    twist (the twist goes under the style)."""
+
+    style: str | None = None
+    haunt: Haunt | None = None
 
 
 def frame_for(session: Session, game: Game) -> str | None:
@@ -29,29 +54,35 @@ def stage_png_with(
     width: int,
     algorithm: PixelAlgorithm,
     frame: str | None,
-    style: str | None = None,
+    look: SeasonLook | None = None,
 ) -> bytes:
-    """Pixelate, then the season style, then the frame on top. For renders
-    outside a session (the keys are read inside it and passed in). Callers
-    add Nani on top of the result (`mascot.add_to_png`)."""
+    """Pixelate, then the haunted twist, then the season style, then the frame
+    on top. For renders outside a session (the keys are read inside it and
+    passed in). Callers add Nani on top of the result (`mascot.add_to_png`)."""
     png = pixelate_service.pixelate(image_bytes, width, algorithm)
-    if style is not None:
-        logger.debug("styling the stage image with {style!r}", style=style)
-        png = styles.apply_style(png, style)
+    if look is not None and look.haunt is not None:
+        png = haunting.apply_twist(png, look.haunt.twist, last=look.haunt.last)
+    if look is not None and look.style is not None:
+        logger.debug("styling the stage image with {style!r}", style=look.style)
+        png = styles.apply_style(png, look.style)
     if frame is None:
         return png
     logger.debug("framing the stage image with {frame!r}", frame=frame)
     return frames.apply_frame(png, frame)
 
 
-def stage_pose(session: Session, game: Game, *, overthrow: bool = False) -> Pose:
-    """Nani's pose for `game`'s current stage (or HARD MODE turn); `overthrow`
-    for turn 1 of a game the bot took by overthrow."""
-    progress = (
+def _progress(session: Session, game: Game) -> StageProgress | HardModeTurnProgress:
+    return (
         game_service.hard_mode_turn_progress(game)
         if game.hard_mode
         else game_service.stage_progress(session, game)
     )
+
+
+def stage_pose(session: Session, game: Game, *, overthrow: bool = False) -> Pose:
+    """Nani's pose for `game`'s current stage (or HARD MODE turn); `overthrow`
+    for turn 1 of a game the bot took by overthrow."""
+    progress = _progress(session, game)
     return mascot.stage_pose(progress.number, progress.total, overthrow=overthrow)
 
 
@@ -63,6 +94,32 @@ def season_style(session: Session, game: Game) -> str | None:
     if style is not None:
         logger.info("stage image in the season style {style!r}", style=style, game_id=game.id)
     return style
+
+
+def stage_twist(session: Session, game: Game, number: int) -> HauntTwist | None:
+    """The haunted twist stage `number` wears, logged at INFO when there is one,
+    like `season_style`."""
+    twist = haunting.twist_for_stage(modifiers.season_of(session, game), game, number)
+    if twist is not None:
+        logger.info(
+            "stage image haunted with {twist}", twist=twist.value, stage=number, game_id=game.id
+        )
+    return twist
+
+
+def haunt_at(
+    session: Session, game: Game, progress: StageProgress | HardModeTurnProgress
+) -> Haunt | None:
+    """The twist the game's stage (or HARD MODE turn) `progress` wears and
+    whether it is the last one, logged like `stage_twist`. Every site that
+    renders or describes the current stage's twist reads it through here."""
+    twist = stage_twist(session, game, progress.number)
+    return None if twist is None else Haunt(twist, progress.number == progress.total)
+
+
+def current_haunt(session: Session, game: Game) -> Haunt | None:
+    """`haunt_at` for the game's current stage or turn."""
+    return haunt_at(session, game, _progress(session, game))
 
 
 def costume_for(session: Session, game: Game) -> str | None:
@@ -79,9 +136,15 @@ def costume_for(session: Session, game: Game) -> str | None:
 def stage_png(
     session: Session, game: Game, image_bytes: bytes, width: int, overthrow: bool = False
 ) -> bytes:
-    """The stage image as posted: styled, framed, Nani on top in the stage's pose and costume."""
-    style = season_style(session, game)
-    png = stage_png_with(image_bytes, width, game.pixel_algorithm, frame_for(session, game), style)
-    return mascot.add_to_png(
-        png, stage_pose(session, game, overthrow=overthrow), costume_for(session, game)
+    """The stage image as posted: twisted, styled, framed, Nani on top in her
+    pose and costume."""
+    progress = _progress(session, game)
+    png = stage_png_with(
+        image_bytes,
+        width,
+        game.pixel_algorithm,
+        frame_for(session, game),
+        SeasonLook(season_style(session, game), haunt_at(session, game, progress)),
     )
+    pose = mascot.stage_pose(progress.number, progress.total, overthrow=overthrow)
+    return mascot.add_to_png(png, pose, costume_for(session, game))

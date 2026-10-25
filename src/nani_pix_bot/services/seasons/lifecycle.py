@@ -4,7 +4,7 @@ tagged games is still running. `advance` does every step that's due in one
 pass, which is also the catch-up after downtime."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from loguru import logger
 from sqlalchemy import func, select
@@ -17,7 +17,7 @@ from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import events, players
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.events import LoggedEvent, as_utc
-from nani_pix_bot.services.seasons import conversion, schedule, xp
+from nani_pix_bot.services.seasons import conversion, event_day, schedule, xp
 
 _RUNNING = (GameStatus.ACTIVE, GameStatus.VOTING)
 
@@ -122,6 +122,8 @@ def _finalize(session: Session, row: SeasonSchedule, now: datetime) -> Transitio
     row.ended_at = now
     session.flush()
     _log_frozen(session, row, standings)
+    # A season ending mid-parade closes it before its own end post.
+    event_day.enqueue_due(session, row, now, finalizing=True)
     # Queued before SEASON_ENDED so the end post leads its podium/Veteran
     # unlocks; it reads the conversion back from the ledger when it's posted.
     outbox.enqueue_season(session, OutboxKind.SEASON_END, row.id)
@@ -141,6 +143,8 @@ def advance(session: Session, now: datetime) -> list[Transition]:
         outbox.enqueue_season(session, OutboxKind.SEASON_START, row.id)
     if row.status == SeasonStatus.ACTIVE and as_utc(row.end_at) <= now:
         done.append(_move(row, SeasonStatus.CLOSING))
+    if row.status in (SeasonStatus.ACTIVE, SeasonStatus.CLOSING):
+        event_day.enqueue_due(session, row, now)
     if row.status == SeasonStatus.CLOSING:
         running = _running_games(session, row.id)
         if running:
@@ -155,7 +159,7 @@ def advance(session: Session, now: datetime) -> list[Transition]:
     return done
 
 
-def next_boundary(session: Session) -> datetime | None:
+def next_boundary(session: Session, now: datetime | None = None) -> datetime | None:
     """When advance next has something to do on the clock; None while
     nothing is open or a closing season waits for its games (their end
     triggers it — see on_game_ended)."""
@@ -165,7 +169,9 @@ def next_boundary(session: Session) -> datetime | None:
     if row.status == SeasonStatus.SCHEDULED:
         return as_utc(row.start_at)
     if row.status == SeasonStatus.ACTIVE:
-        return as_utc(row.end_at)
+        edge = event_day.next_boundary(session, row, now or datetime.now(UTC))
+        end = as_utc(row.end_at)
+        return end if edge is None else min(end, edge)
     return None
 
 

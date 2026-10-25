@@ -137,7 +137,11 @@ def _frame(resolved: ResolvedItem, _lang: str, viewer: Viewer) -> bytes:
     """Pixelated, in the item's season style, then framed, with Nani in the viewer's
     costume: a real stage-3 post."""
     framed = stage.stage_png_with(
-        sample_stage(), FRAME_STAGE_WIDTH, DEFAULT_ALGORITHM, resolved.item.look, resolved.run.style
+        sample_stage(),
+        FRAME_STAGE_WIDTH,
+        DEFAULT_ALGORITHM,
+        resolved.item.look,
+        stage.SeasonLook(resolved.run.style),
     )
     return mascot.add_to_png(framed, Pose.NOPE, viewer.costume)  # FRAME_STAGE_WIDTH is stage 3's
 

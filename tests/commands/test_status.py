@@ -13,6 +13,7 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage, SeasonStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule
+from nani_pix_bot.seasons.mechanics import HauntTwist
 from nani_pix_bot.services import i18n, mascot
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.game import turns
@@ -210,7 +211,7 @@ async def test_the_repost_shows_nani_in_the_current_stages_pose(
     poses: list[Pose] = []
 
     monkeypatch.setattr(
-        stage_cosmetics, "stage_png_with", lambda image, _w, _a, _f, style=None: image
+        stage_cosmetics, "stage_png_with", lambda image, _w, _a, _f, look=None: image
     )
     monkeypatch.setattr(
         mascot, "add_to_png", lambda png, pose, costume=None: poses.append(pose) or png
@@ -236,8 +237,9 @@ async def test_a_season_game_is_reposted_in_its_style(
 ) -> None:
     rendered: list[str | None] = []
 
-    def fake_stage_png_with(image, _width, _algorithm, _frame, style=None) -> bytes:
-        rendered.append(style)
+    def fake_stage_png_with(image, _width, _algorithm, _frame, look=None) -> bytes:
+        assert look is not None
+        rendered.append(look.style)
         return image
 
     monkeypatch.setattr(stage_cosmetics, "stage_png_with", fake_stage_png_with)
@@ -275,7 +277,7 @@ async def test_status_reposts_in_the_costume(
 ) -> None:
     costumes: list[str | None] = []
     monkeypatch.setattr(
-        stage_cosmetics, "stage_png_with", lambda image, _w, _a, _f, style=None: image
+        stage_cosmetics, "stage_png_with", lambda image, _w, _a, _f, look=None: image
     )
     monkeypatch.setattr(
         mascot, "add_to_png", lambda png, pose, costume=None: costumes.append(costume) or png
@@ -295,3 +297,129 @@ async def test_status_reposts_in_the_costume(
     await _run(_update(), _context(session_factory))
 
     assert costumes == [costume_run]
+
+
+def _haunted_season(session: Session) -> int:
+    season = SeasonSchedule(
+        run_id="demo_3",
+        start_at=datetime.now(UTC) - timedelta(days=1),
+        end_at=datetime.now(UTC) + timedelta(days=9),
+        status=SeasonStatus.ACTIVE,
+        created_by=HOST,
+    )
+    session.add(season)
+    session.flush()
+    return season.id
+
+
+async def test_status_repost_of_a_haunted_game_is_twisted(
+    session_factory, monkeypatch: pytest.MonkeyPatch, fake_runs
+) -> None:
+    seen: list[tuple[HauntTwist | None, bool]] = []
+
+    def fake_stage_png_with(image, _w, _a, _f, look=None) -> bytes:
+        assert look is not None
+        assert look.haunt is not None
+        seen.append((look.haunt.twist, look.haunt.last))
+        return image
+
+    monkeypatch.setattr(stage_cosmetics, "stage_png_with", fake_stage_png_with)
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, _pose, _costume=None: png)
+    with session_scope(session_factory) as session:
+        _players(session)
+        session.add(
+            Game(
+                starter_id=HOST,
+                status=GameStatus.ACTIVE,
+                current_stage=PixelStage.STAGE_5,
+                original_image=b"img",
+                season_id=_haunted_season(session),
+                haunt_twist="tanuki_leaf",
+            )
+        )
+
+    await _run(_update(), _context(session_factory))
+
+    assert seen == [(HauntTwist.TANUKI_LEAF, True)]
+
+
+def test_the_caption_names_a_haunted_twist_its_hint_and_the_multiplier() -> None:
+    live = status.LiveStatus(
+        game_id=7,
+        hard_mode=False,
+        number=2,
+        total=5,
+        remaining=1,
+        limit=2,
+        pot=0,
+        time_left=None,
+        twist=HauntTwist.KITSUNE_MIRROR,
+        multiplier=3,
+    )
+
+    lines = status.caption(live, "en").splitlines()
+
+    assert lines[1] == i18n.t(
+        "status.haunted",
+        "en",
+        twist=i18n.t("haunt.twist.kitsune_mirror", "en"),
+        hint=i18n.t("haunt.hint.kitsune_mirror", "en"),
+        multiplier=3,
+    )
+
+
+def _live_after_repost(session_factory, **fields) -> status.LiveStatus:
+    with session_scope(session_factory) as session:
+        _players(session)
+        game = Game(
+            starter_id=HOST,
+            status=GameStatus.ACTIVE,
+            original_image=b"img",
+            season_id=_haunted_season(session),
+            **fields,
+        )
+        session.add(game)
+        session.flush()
+        repost = status._repost(session, game, datetime.now(UTC))
+        assert repost is not None
+        return repost.live
+
+
+def test_the_live_status_of_a_haunted_game_carries_the_twist_and_multiplier(
+    session_factory, fake_runs
+) -> None:
+    live = _live_after_repost(
+        session_factory, current_stage=PixelStage.STAGE_2, haunt_twist="kyokotsu_xray"
+    )
+
+    assert live.twist is HauntTwist.KYOKOTSU_XRAY
+    assert live.multiplier == fake_runs["demo_3"].haunt.coin_multiplier
+
+
+def test_a_faded_twist_on_the_last_stage_gives_no_status_line(session_factory, fake_runs) -> None:
+    live = _live_after_repost(
+        session_factory, current_stage=PixelStage.STAGE_5, haunt_twist="kyokotsu_xray"
+    )
+
+    assert live.twist is None
+
+
+def test_the_mirror_stays_in_the_status_on_the_last_stage(session_factory, fake_runs) -> None:
+    live = _live_after_repost(
+        session_factory, current_stage=PixelStage.STAGE_5, haunt_twist="kitsune_mirror"
+    )
+
+    assert live.twist is HauntTwist.KITSUNE_MIRROR
+
+
+def test_a_boss_games_status_names_its_current_stage_twist(session_factory, fake_runs) -> None:
+    live = _live_after_repost(session_factory, current_stage=PixelStage.STAGE_2, boss_game=True)
+
+    assert live.twist is list(HauntTwist)[1]
+
+
+def test_an_unhaunted_game_has_no_status_twist(session_factory, fake_runs) -> None:
+    live = _live_after_repost(session_factory, current_stage=PixelStage.STAGE_2)
+
+    assert live.twist is None
+    assert live.multiplier == 1

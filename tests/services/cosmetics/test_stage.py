@@ -7,9 +7,11 @@ from nani_pix_bot.models.cosmetics import EquippedItem
 from nani_pix_bot.models.enums import CosmeticSlot, PixelAlgorithm, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.seasons.mechanics import HauntTwist
 from nani_pix_bot.services import mascot, pixelate
 from nani_pix_bot.services.cosmetics import stage
 from nani_pix_bot.services.mascot import Pose
+from nani_pix_bot.services.seasons import haunting
 from tests.costume_fixtures import ORANGE, activate_season
 
 STARTER = 5
@@ -121,7 +123,9 @@ def test_the_style_goes_under_the_frame(monkeypatch) -> None:
     monkeypatch.setattr(
         stage.frames, "apply_frame", lambda png, key: calls.append(("frame", key)) or png
     )
-    stage.stage_png_with(_image(), WIDTH, PixelAlgorithm.BOX, "simple_border", style="plain")
+    stage.stage_png_with(
+        _image(), WIDTH, PixelAlgorithm.BOX, "simple_border", stage.SeasonLook("plain")
+    )
     assert calls == [("style", "plain"), ("frame", "simple_border")]
 
 
@@ -155,3 +159,145 @@ def test_no_season_no_costume_is_byte_identical(session, costume_run) -> None:
     assert stage.stage_png(session, game, _image(), 200) == mascot.add_to_png(
         pixelate.pixelate(_image(), 200, game.pixel_algorithm), Pose.CAST
     )
+
+
+def test_the_twist_goes_under_the_style(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        stage.haunting,
+        "apply_twist",
+        lambda png, twist, *, last: calls.append(("twist", twist, last)) or png,
+    )
+    monkeypatch.setattr(
+        stage.styles, "apply_style", lambda png, key: calls.append(("style", key)) or png
+    )
+    monkeypatch.setattr(
+        stage.frames, "apply_frame", lambda png, key: calls.append(("frame", key)) or png
+    )
+    stage.stage_png_with(
+        _image(),
+        WIDTH,
+        PixelAlgorithm.BOX,
+        "simple_border",
+        stage.SeasonLook("plain", stage.Haunt(HauntTwist.KITSUNE_MIRROR, False)),
+    )
+    assert calls == [
+        ("twist", HauntTwist.KITSUNE_MIRROR, False),
+        ("style", "plain"),
+        ("frame", "simple_border"),
+    ]
+
+
+def test_no_twist_no_call(monkeypatch) -> None:
+    monkeypatch.setattr(stage.haunting, "apply_twist", lambda *_a, **_k: pytest.fail("twisted"))
+    stage.stage_png_with(_image(), WIDTH, PixelAlgorithm.BOX, None)
+
+
+def test_an_unhaunted_game_renders_exactly_as_before(session, tagged_game) -> None:
+    tagged_game.pixel_algorithm = PixelAlgorithm.BOX
+    expected = mascot.add_to_png(
+        stage.stage_png_with(
+            _image(),
+            WIDTH,
+            tagged_game.pixel_algorithm,
+            stage.frame_for(session, tagged_game),
+            stage.SeasonLook("plain"),
+        ),
+        Pose.CAST,
+        stage.costume_for(session, tagged_game),
+    )
+    assert stage.stage_png(session, tagged_game, _image(), WIDTH) == expected
+
+
+def _spy_render(monkeypatch) -> list[dict]:
+    seen: list[dict] = []
+    real = stage.stage_png_with
+
+    def spy(*args, **kwargs):
+        look = args[4] if len(args) > 4 else kwargs.get("look")
+        haunt = look and look.haunt
+        seen.append({"twist": haunt and haunt.twist, "last": haunt and haunt.last})
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(stage, "stage_png_with", spy)
+    return seen
+
+
+def test_haunted_game_passes_twist_and_last_flag(session, haunted_game, monkeypatch) -> None:
+    haunted_game.haunt_twist = "tanuki_leaf"
+    haunted_game.current_stage = PixelStage.STAGE_5
+    seen = _spy_render(monkeypatch)
+    stage.stage_png(session, haunted_game, _image(), WIDTH)
+    assert seen == [{"twist": HauntTwist.TANUKI_LEAF, "last": True}]
+
+
+def test_an_early_stage_is_not_last(session, haunted_game, monkeypatch) -> None:
+    haunted_game.haunt_twist = "tanuki_leaf"
+    seen = _spy_render(monkeypatch)
+    stage.stage_png(session, haunted_game, _image(), WIDTH)
+    assert seen == [{"twist": HauntTwist.TANUKI_LEAF, "last": False}]
+
+
+def test_hard_mode_last_turn_is_last(session, haunted_game, monkeypatch) -> None:
+    haunted_game.haunt_twist = "kyokotsu_xray"
+    haunted_game.hard_mode = True
+    haunted_game.hard_mode_turn = 2
+    haunted_game.current_stage = None
+    seen = _spy_render(monkeypatch)
+    stage.stage_png(session, haunted_game, _image(), WIDTH)
+    assert seen == [{"twist": HauntTwist.KYOKOTSU_XRAY, "last": True}]
+
+
+def test_a_boss_game_cycles_the_twists_by_stage(session, haunted_game, monkeypatch) -> None:
+    haunted_game.boss_game = True
+    haunted_game.current_stage = PixelStage.STAGE_2
+    seen = _spy_render(monkeypatch)
+    stage.stage_png(session, haunted_game, _image(), WIDTH)
+    run = stage.modifiers.season_of(session, haunted_game)
+    assert run is not None
+    assert run.haunt is not None
+    assert seen[0]["twist"] is run.haunt.twists[1 % len(run.haunt.twists)]
+
+
+def test_twist_is_logged_once_per_render(session, haunted_game, log_records) -> None:
+    haunted_game.haunt_twist = "kitsune_mirror"
+    stage.stage_png(session, haunted_game, _image(), WIDTH)
+    lines = [
+        r for r in log_records if r.extra.get("twist") == "kitsune_mirror" and r.level == "INFO"
+    ]
+    assert len(lines) == 1
+    assert lines[0].extra["stage"] == 1
+    assert lines[0].extra["game_id"] == haunted_game.id
+
+
+def test_a_clean_game_logs_no_twist(session, tagged_game, log_records) -> None:
+    stage.stage_png(session, tagged_game, _image(), WIDTH)
+    assert not [r for r in log_records if "twist" in r.extra]
+
+
+def test_the_stored_twist_really_changes_the_pixels(session, haunted_game) -> None:
+    clean = stage.stage_png(session, haunted_game, _image(), WIDTH)
+    haunted_game.haunt_twist = "kyokotsu_xray"
+    assert stage.stage_png(session, haunted_game, _image(), WIDTH) != clean
+    assert haunting.stored_twist(haunted_game) is HauntTwist.KYOKOTSU_XRAY
+
+
+def test_current_haunt_names_the_twist_and_whether_it_is_last(
+    session, haunted_game, fake_runs
+) -> None:
+    haunted_game.haunt_twist = "tanuki_leaf"
+    haunted_game.current_stage = PixelStage.STAGE_5
+
+    haunt = stage.current_haunt(session, haunted_game)
+
+    assert haunt == stage.Haunt(HauntTwist.TANUKI_LEAF, True)
+    assert haunt is not None
+    assert haunt.faded
+
+
+def test_current_haunt_is_none_for_a_clean_game(session, haunted_game, fake_runs) -> None:
+    assert stage.current_haunt(session, haunted_game) is None
+
+
+def test_the_mirror_never_fades() -> None:
+    assert not stage.Haunt(HauntTwist.KITSUNE_MIRROR, True).faded

@@ -2,13 +2,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from nani_pix_bot.models.bot_settings import BotSettings
 from nani_pix_bot.models.enums import EventType, GameStatus, PixelStage, SeasonStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.services import events
+from nani_pix_bot.services import events, settings
 
 STARTER, WINNER = 2, 1
 NOW = datetime(2026, 11, 1, tzinfo=UTC)
@@ -80,7 +81,7 @@ def end_season(session, active_season):
 
 
 def _game_in_use(request) -> Game:
-    for name in ("tagged_game", "bot_tagged_game", "untagged_game"):
+    for name in ("tagged_game", "bot_tagged_game", "untagged_game", "haunted_game"):
         if name in request.fixturenames:
             return request.getfixturevalue(name)
     raise LookupError("emit_* needs a tagged_game, bot_tagged_game or untagged_game fixture")
@@ -139,3 +140,45 @@ def buyer(session, request) -> Player:
     player = session.get(Player, WINNER)
     assert player is not None
     return player
+
+
+class FixedRng:
+    """A stand-in for random.Random with fixed answers (index into choice)."""
+
+    def __init__(self, *, randrange: int = 0, choice: int = 0) -> None:
+        self._randrange, self._choice = randrange, choice
+
+    def randrange(self, _stop: int) -> int:
+        return self._randrange
+
+    def choice(self, seq):
+        return seq[self._choice]
+
+
+@pytest.fixture
+def haunted_season(session) -> SeasonSchedule:
+    """An active demo_3 season (haunt 25%, event day Oct 31) around Oct 31 2026."""
+    row = SeasonSchedule(
+        run_id="demo_3",
+        start_at=datetime(2026, 10, 26, tzinfo=UTC),
+        end_at=datetime(2026, 11, 9, tzinfo=UTC),
+        status=SeasonStatus.ACTIVE,
+        created_by=9,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+@pytest.fixture
+def haunted_game(session, haunted_season) -> Game:
+    return _make_game(session, season_id=haunted_season.id)
+
+
+@pytest.fixture
+def set_group_tz(session):
+    def _set(name: str) -> None:
+        session.add(BotSettings(id=settings.SETTINGS_ID, quiet_timezone=name))
+        session.flush()
+
+    return _set

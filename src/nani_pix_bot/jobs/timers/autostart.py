@@ -33,6 +33,7 @@ from nani_pix_bot.services.game import autostart as autostart_service
 from nani_pix_bot.services.reveal import store as reveal_store
 from nani_pix_bot.services.search import tags as anime_tags
 from nani_pix_bot.services.seasons import gate as gate_service
+from nani_pix_bot.services.seasons import haunting
 
 IDLE_AUTOSTART_JOB_NAME = "idle-autostart"
 
@@ -278,6 +279,9 @@ def _build_first_turn_post(
         caption += "\n" + i18n.t(
             "hard_mode.discount_line", lang, percent=game.hard_mode_clue_discount
         )
+    caption += haunting.caption_suffix(
+        session, game, lang, number=progress.number, total=progress.total
+    )
     caption += game_service.game_id_line(game.id, lang)
     schedule_timeout(context.job_queue, game)
     schedule_inactivity_timers(context.job_queue, game)

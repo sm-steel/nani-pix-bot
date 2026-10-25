@@ -24,7 +24,7 @@ from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import GoalKind, Reward
-from nani_pix_bot.seasons.mechanics import HauntTwist, OmikujiKind
+from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 
@@ -45,17 +45,6 @@ _kept = (
     TurnState.turn_opened_at,
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
-    # Halloween: wired by P3 (#468)
-    OutboxKind.EVENT_DAY_START,
-    OutboxKind.EVENT_DAY_END,
-    ItemSource.BONES,
-    Game.haunt_twist,
-    Game.boss_game,
-    HauntTwist.KITSUNE_MIRROR,
-    HauntTwist.TANUKI_LEAF,
-    HauntTwist.YUREI_DOUBLE,
-    HauntTwist.KYOKOTSU_XRAY,
-    GoalKind.HAUNTED_WINS,
     # Halloween: wired by P4 (#469)
     EventType.OMIKUJI_DRAWN,
     EventType.OFUDA_USED,
@@ -81,6 +70,7 @@ _kept = (
     HexOutcome.EXPIRED,
     HexOutcome.CANCELLED,
     # Halloween: wired by P6 (#471)
+    ItemSource.BONES,
     EventType.GOAL_REACHED,
     OutboxKind.GOAL_MILESTONE,
     OutboxKind.GOAL_REACHED,

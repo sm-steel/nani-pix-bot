@@ -27,6 +27,7 @@ from nani_pix_bot.services.cosmetics import costume
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.pixelate import fingerprint, render
+from nani_pix_bot.services.seasons import haunting
 from nani_pix_bot.services.settings import stage_config
 
 # How many candidate screenshots one purchase may download before giving
@@ -311,7 +312,8 @@ async def fetch_extra_screenshot(
 
 
 def render_tile_clue(session: Session, game: Game, tile: int) -> bytes:
-    """The pixelated screenshot with the round's `tile` shown unpixelated."""
+    """The pixelated screenshot with the round's `tile` shown unpixelated, both
+    wearing the current stage's haunted twist."""
     original = game.original_image
     if original is None:
         logger.error("no original image for a tile clue", game_id=game.id)
@@ -319,6 +321,12 @@ def render_tile_clue(session: Session, game: Game, tile: int) -> bytes:
     pixelated = pixelate_service.pixelate(
         original, stage_width(session, game), game.pixel_algorithm
     )
+    haunt = stage_cosmetics.current_haunt(session, game)
+    if haunt is not None:
+        # Both images wear the stage's twist, so the tapped tile lines up with
+        # what the buyer sees (the mirror included).
+        original = haunting.apply_twist(original, haunt.twist, last=haunt.last)
+        pixelated = haunting.apply_twist(pixelated, haunt.twist, last=haunt.last)
     revealed = render.reveal_tiles(original, pixelated, [tile], shop.TILE_GRID)
     return mascot.add_to_png(
         revealed, stage_cosmetics.stage_pose(session, game), costume.for_game(session, game)

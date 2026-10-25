@@ -30,6 +30,7 @@ from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import SeasonRun, XpTable
 from nani_pix_bot.services import players
 from nani_pix_bot.services.events import LoggedEvent
+from nani_pix_bot.services.seasons.multipliers import xp_multiplier
 
 _HANDLED = frozenset({EventType.GAME_WON, EventType.GAME_UNSOLVED, EventType.GUESS})
 
@@ -157,13 +158,16 @@ def tagged(session: Session, event: LoggedEvent) -> Tagged | None:
 
 def pay(session: Session, event: LoggedEvent, found: Tagged) -> list[Award]:
     """Season XP for `event`: season_xp rows, returned."""
-    paid = awards(
+    base = awards(
         payable(found.run.xp, found),
         event,
         bot_game=found.game.hard_mode,
         first_guess_of_player=found.first_guess,
     )
+    factors = {a.source: xp_multiplier(found.run, found.game, a.source) for a in base}
+    paid = [replace(a, amount=a.amount * factors[a.source]) for a in base]
     for award in paid:
+        factor = factors[award.source]
         session.add(
             SeasonXp(
                 season_id=found.season.id,
@@ -174,8 +178,10 @@ def pay(session: Session, event: LoggedEvent, found: Tagged) -> list[Award]:
             )
         )
         logger.info(
-            "season XP +{amount} ({source}) to {recipient}",
+            "season XP +{amount} ({source}) to {recipient}"
+            + (" \N{MULTIPLICATION SIGN}{multiplier}" if factor > 1 else ""),
             amount=award.amount,
+            multiplier=factor,
             source=award.source.value,
             recipient=players.describe_player_id(session, award.player_id),
             recipient_id=award.player_id,

@@ -34,6 +34,28 @@ def test_wins_with_a_stage_limit() -> None:
     assert goals.progress(Goal(GoalKind.WINS, 3), history) == 4
 
 
+def test_haunted_wins_count_only_haunted_wins() -> None:
+    history = _history(
+        ev(E.GAME_WON, 1, haunted=True),
+        ev(E.GAME_WON, 1, haunted=False),
+        ev(E.GAME_WON, 1, haunted=True, hard_mode=True),
+    )
+    assert goals.progress(Goal(GoalKind.HAUNTED_WINS, 3), history) == 2
+
+
+def test_haunted_wins_trigger_on_a_win() -> None:
+    assert goals.TRIGGERS[GoalKind.HAUNTED_WINS] == (E.GAME_WON,)
+
+
+def test_old_win_events_without_the_fact_are_not_haunted() -> None:
+    history = _history(ev(E.GAME_WON, 1, stage=1, hard_mode=False))
+    assert goals.progress(Goal(GoalKind.HAUNTED_WINS, 1), history) == 0
+
+
+def test_describe_haunted_wins() -> None:
+    assert goals.describe(Goal(GoalKind.HAUNTED_WINS, 3), "EN") == "Win 3 haunted rounds"
+
+
 def test_guessed_in_counts_games_not_guesses() -> None:
     history = _history(ev(E.GUESS, 1, game=1), ev(E.GUESS, 1, game=1), ev(E.GUESS, 1, game=2))
     assert goals.progress(Goal(GoalKind.GUESSED_IN, 5), history) == 2
@@ -57,7 +79,7 @@ def test_shared_clues_and_days() -> None:
 
 # Declared by the Halloween foundation, wired (triggers, progress, texts) by its later
 # phases, which delete this set.
-_UNWIRED = {GoalKind.HEXES_BLOCKED, GoalKind.HAUNTED_WINS}
+_UNWIRED = {GoalKind.HEXES_BLOCKED}
 
 
 def test_every_kind_has_triggers_and_a_description() -> None:
@@ -111,6 +133,11 @@ _RU_PLURALS: dict[tuple[GoalKind, int | None], tuple[str, ...]] = {
         "Поделитесь подсказкой 5 раз",
     ),
     (GoalKind.TIPS, None): ("Дайте чаевые 1 раз", "Дайте чаевые 2 раза", "Дайте чаевые 5 раз"),
+    (GoalKind.HAUNTED_WINS, None): (
+        "Победите в 1 раунде \u0441 призраками",
+        "Победите в 2 раундах \u0441 призраками",
+        "Победите в 5 раундах \u0441 призраками",
+    ),
     (GoalKind.DAYS_PLAYED, None): (
         "Играйте 1 день",
         "Играйте 2 разных дня",
