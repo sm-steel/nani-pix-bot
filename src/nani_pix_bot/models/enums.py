@@ -469,6 +469,8 @@ class OutboxKind(enum.StrEnum):
     GOAL_REACHED = "goal_reached"
     EVENT_DAY_START = "event_day_start"
     EVENT_DAY_END = "event_day_end"
+    # Halloween: a Kappa/Kitsune going off, or an omikuji self-prank
+    HEX_NOTICE = "hex_notice"
 
 
 class PeriodType(enum.StrEnum):

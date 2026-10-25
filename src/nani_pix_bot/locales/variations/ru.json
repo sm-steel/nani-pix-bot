@@ -105,5 +105,7 @@
   "haunt.started": [
     "🎃 Nani Pix чует ёкаев — {twist}: {hint}. Сезонные монеты ×{multiplier}!",
     "🕯 Этот раунд кто-то преследует — {twist}: {hint}. Сезонные монеты ×{multiplier}!"
-  ]
+  ],
+  "hex.notice.triggered.kappa": ["🥒 Тарелка каппы опрокидывается! {caster} забирает {amount} 🪙 из выигрыша {target}.", "🥒 Плюх! Каппа отсыпает {caster} {amount} 🪙 прямо из награды {target}."],
+  "hex.notice.triggered.kitsune": ["🦊 Кицунэ хихикает в темноте: {target} платит {amount} 🪙 за этот промах.", "🦊 Снова обман! Эта ошибка утащила {amount} 🪙 из кармана {target}."]
 }

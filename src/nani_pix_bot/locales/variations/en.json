@@ -105,5 +105,7 @@
   "haunt.started": [
     "🎃 Nani Pix smells yōkai — {twist}: {hint}. Season Coins ×{multiplier}!",
     "🕯 Something haunts this round — {twist}: {hint}. Season Coins ×{multiplier}!"
-  ]
+  ],
+  "hex.notice.triggered.kappa": ["🥒 The kappa's dish tips over! {caster} takes {amount} 🪙 from {target}'s winnings.", "🥒 Splash! A kappa hands {caster} {amount} 🪙 straight out of {target}'s prize."],
+  "hex.notice.triggered.kitsune": ["🦊 A kitsune giggles in the dark: {target} just paid {amount} 🪙 for that miss.", "🦊 Tricked again! That wrong guess slips {amount} 🪙 out of {target}'s pocket."]
 }

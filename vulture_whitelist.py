@@ -13,14 +13,13 @@ Anything else vulture reports is dead code: remove it or wire it up.
 from typing import TYPE_CHECKING
 
 from nani_pix_bot.models.enums import (
-    CurrencyReason,
     EventType,
     HexOutcome,
     ItemSource,
     OutboxKind,
 )
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.models.halloween import Hex, OmikujiDraw
+from nani_pix_bot.models.halloween import OmikujiDraw
 from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
@@ -63,21 +62,14 @@ _kept = (
     # Halloween: wired by P5 (#470)
     moments.duel_card,
     EventType.HEX_CAST,
-    CurrencyReason.HEX_KAPPA,
-    CurrencyReason.HEX_KITSUNE,
     hex_marks.SKULL,
     hex_marks.FACELESS,
     hex_marks.CHOCHIN_REACTION,
     hexes.CastResult.hex,
     hexes.set_opt_out,
-    EventType.HEX_TRIGGERED,
-    Hex.caster_id,
-    Hex.cast_at,
-    Hex.resolved_at,
+    hexes.apply_self_prank,  # P4b's omikuji kyō hook
     Player.hex_opt_out,
-    HexOutcome.TRIGGERED,
     HexOutcome.EXPIRED,
-    HexOutcome.CANCELLED,
     # Halloween: wired by P6 (#471)
     ItemSource.BONES,
     EventType.GOAL_REACHED,

@@ -1,5 +1,5 @@
 import dataclasses
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import func, select
@@ -8,13 +8,10 @@ from nani_pix_bot.models.enums import (
     ConsumableKind,
     CurrencyReason,
     EventType,
-    GameStatus,
     HexOutcome,
-    PixelStage,
     SeasonStatus,
 )
 from nani_pix_bot.models.event_log import EventLog
-from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.halloween import Hex
 from nani_pix_bot.models.player import Player
@@ -26,12 +23,7 @@ from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.economy.wallet import LedgerEntry
 from nani_pix_bot.services.seasons import hexes
 from nani_pix_bot.services.seasons.hexes import HexRefusal, HexRefusedError
-
-NOW = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
-
-
-def _naive(at: datetime) -> datetime:
-    return at.replace(tzinfo=None)
+from tests.services.seasons.conftest import NOW, make_game, naive
 
 
 def _rule(kind: HexKind):
@@ -40,41 +32,6 @@ def _rule(kind: HexKind):
     rule = hexes.rule_for(run, kind)
     assert rule is not None
     return rule
-
-
-def _game(session, season_id, starter, *, activated: bool = True) -> Game:
-    game = Game(
-        starter_id=starter,
-        status=GameStatus.ACTIVE,
-        current_stage=PixelStage.STAGE_1,
-        title_english="Clannad",
-        season_id=season_id,
-        activated_at=_naive(NOW) if activated else None,
-    )
-    session.add(game)
-    session.flush()
-    return game
-
-
-@pytest.fixture
-def hex_season(session) -> SeasonSchedule:
-    season = SeasonSchedule(
-        run_id="demo_3",
-        start_at=NOW - timedelta(days=1),
-        end_at=NOW + timedelta(days=9),
-        status=SeasonStatus.ACTIVE,
-        created_by=9,
-    )
-    session.add(season)
-    session.add_all([Player(telegram_user_id=u) for u in (1, 2, 3, 4)])
-    session.flush()
-    game = _game(session, season.id, 4)
-    session.add_all([GameGuess(game_id=game.id, player_id=u, text="x", stage=1) for u in (1, 2)])
-    session.flush()
-    for user in (1, 2):
-        entry = LedgerEntry(CurrencyReason.SEASON_WIN, season_id=season.id, coins=True)
-        wallet.credit(session, session.get(Player, user), 200, entry)
-    return season
 
 
 def _p(session, user: int) -> Player:
@@ -98,7 +55,7 @@ def test_cast_charges_the_price_and_writes_an_active_hex(session, hex_season):
     assert not result.blocked
     assert result.price == rule.price
     assert wallet.balance(session, 1, season_id=hex_season.id) == 200 - result.price
-    expected = _naive(NOW + timedelta(hours=rule.duration_hours))
+    expected = naive(NOW + timedelta(hours=rule.duration_hours))
     assert result.hex.expires_at == expected
     active = hexes.active_hex_for(session, 2, NOW)
     assert active is not None
@@ -139,12 +96,12 @@ def test_a_host_of_an_activated_game_counts_as_played(session, hex_season):
 
 
 def test_a_setup_only_game_does_not_count_as_played(session, hex_season):
-    _game(session, hex_season.id, 3, activated=False)
+    make_game(session, hex_season.id, 3, activated=False)
     assert not hexes.played_in_season(session, hex_season.id, 3)
 
 
 def test_a_guess_in_another_season_does_not_count(session, hex_season):
-    other = _game(session, None, 3)
+    other = make_game(session, None, 3)
     session.add(GameGuess(game_id=other.id, player_id=3, text="x", stage=1))
     session.flush()
     assert not hexes.played_in_season(session, hex_season.id, 3)
@@ -259,7 +216,7 @@ def test_opting_back_in_is_never_locked(session, hex_season):
         kind="kappa",
         caster_id=1,
         target_id=2,
-        cast_at=_naive(NOW),
+        cast_at=naive(NOW),
     )
     session.add(_cast_row)
     session.flush()
@@ -288,7 +245,7 @@ def test_cast_and_refusal_are_logged(session, hex_season, log_records):
 
 def _self_prank(session, season_id: int, kind: HexKind) -> None:
     session.add(
-        Hex(season_id=season_id, kind=kind.value, caster_id=1, target_id=1, cast_at=_naive(NOW))
+        Hex(season_id=season_id, kind=kind.value, caster_id=1, target_id=1, cast_at=naive(NOW))
     )
     session.flush()
 
@@ -316,7 +273,7 @@ def test_opt_out_lock_ignores_a_self_prank(session, hex_season):
 
 
 def test_a_hard_mode_hosted_game_does_not_count_as_played(session, hex_season):
-    game = _game(session, hex_season.id, 3)
+    game = make_game(session, hex_season.id, 3)
     game.hard_mode = True
     session.flush()
     assert not hexes.played_in_season(session, hex_season.id, 3)
@@ -332,7 +289,7 @@ def test_a_guess_in_a_game_of_another_season_does_not_count(session, hex_season)
     )
     session.add(other)
     session.flush()
-    game = _game(session, other.id, 4)
+    game = make_game(session, other.id, 4)
     session.add(GameGuess(game_id=game.id, player_id=3, text="x", stage=1))
     session.flush()
     assert not hexes.played_in_season(session, hex_season.id, 3)
@@ -355,7 +312,7 @@ def test_an_omamori_blocks_the_hex_and_is_used_up(session, hex_season):
     result = _cast(session, 1, 2, HexKind.KITSUNE)
     assert result.blocked
     assert result.hex.outcome == HexOutcome.BLOCKED.value
-    assert result.hex.resolved_at == _naive(NOW)
+    assert result.hex.resolved_at == naive(NOW)
     assert consumables.count(session, 2, ConsumableKind.OMAMORI) == 0
     assert hexes.active_hex_for(session, 2, NOW) is None
     assert wallet.balance(session, 1, season_id=hex_season.id) == 200 - result.price

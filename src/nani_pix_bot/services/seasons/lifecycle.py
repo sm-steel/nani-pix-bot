@@ -17,7 +17,7 @@ from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import events, players
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.events import LoggedEvent, as_utc
-from nani_pix_bot.services.seasons import conversion, event_day, schedule, xp
+from nani_pix_bot.services.seasons import conversion, event_day, hexes, schedule, xp
 
 _RUNNING = (GameStatus.ACTIVE, GameStatus.VOTING)
 
@@ -120,6 +120,7 @@ def _finalize(session: Session, row: SeasonSchedule, now: datetime) -> Transitio
             )
         )
     row.ended_at = now
+    hexes.cancel_open(session, row.id, now)
     session.flush()
     _log_frozen(session, row, standings)
     # A season ending mid-parade closes it before its own end post.

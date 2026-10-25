@@ -972,5 +972,9 @@
   "haunt.lifted": "✨ The {twist} lifts — a clear picture for the last stage!",
   "ofuda.used": "📜 {name}'s Ofuda burned away — that miss didn't count!",
   "ofuda.card_title": "That miss didn't count!",
-  "shop.token_card_title": "Paid with a clue token"
+  "shop.token_card_title": "Paid with a clue token",
+  "hex.notice.triggered.kappa": "🥒 Kappa's dish! {caster} scoops {amount} 🪙 out of {target}'s winnings.",
+  "hex.notice.triggered.kitsune": "🦊 The kitsune laughs: that wrong guess cost {target} {amount} 🪙.",
+  "hex.notice.self_prank.nopperabo": "🎴 {target} drew kyō… and wakes up as a nopperabō for {hours} h.",
+  "hex.notice.self_prank.chochin": "🎴 {target} drew kyō… and wakes up as a chōchin lantern for {hours} h."
 }

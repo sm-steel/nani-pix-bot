@@ -22,7 +22,7 @@ from telegram.error import Forbidden, TelegramError
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs import season_posts
+from nani_pix_bot.jobs import hex_posts, season_posts
 from nani_pix_bot.jobs.avatars import fetch_avatar
 from nani_pix_bot.jobs.post import Post
 from nani_pix_bot.jobs.timers._shared import job_log_scope
@@ -124,6 +124,7 @@ RENDERERS: dict[OutboxKind, Callable[[Session, AnnouncementOutbox, str], Post | 
     OutboxKind.UNLOCK: _unlock_post,
     OutboxKind.PERIOD_SUMMARY: _period_post,
     **season_posts.RENDERERS,
+    **hex_posts.RENDERERS,
 }
 
 

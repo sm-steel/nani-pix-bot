@@ -972,5 +972,9 @@
   "haunt.lifted": "✨ {twist} рассеивается — на последнем этапе чистая картинка!",
   "ofuda.used": "📜 Офуда игрока {name} сгорела — эта ошибка не засчитана!",
   "ofuda.card_title": "Эта ошибка не засчитана!",
-  "shop.token_card_title": "Оплачено жетоном подсказки"
+  "shop.token_card_title": "Оплачено жетоном подсказки",
+  "hex.notice.triggered.kappa": "🥒 Тарелка каппы! {caster} вычерпывает {amount} 🪙 из выигрыша {target}.",
+  "hex.notice.triggered.kitsune": "🦊 Кицунэ хохочет: эта ошибка стоила {target} {amount} 🪙.",
+  "hex.notice.self_prank.nopperabo": "🎴 {target} тянет кё… и просыпается ноппэрабо на {hours} ч.",
+  "hex.notice.self_prank.chochin": "🎴 {target} тянет кё… и просыпается фонарём тётин на {hours} ч."
 }

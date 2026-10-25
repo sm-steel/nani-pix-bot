@@ -1,6 +1,7 @@
 """Casting hexes (Halloween spec): who may hex whom, what it costs, the
 cooldown per kind, one active hex per target, and the caster's opt-out lock."""
 
+import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -9,7 +10,13 @@ from loguru import logger
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import ConsumableKind, CurrencyReason, EventType, HexOutcome
+from nani_pix_bot.models.enums import (
+    ConsumableKind,
+    CurrencyReason,
+    EventType,
+    HexOutcome,
+    XpSource,
+)
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.halloween import Hex
@@ -19,9 +26,11 @@ from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.seasons.mechanics import PRANK_HEXES, HexKind, HexRule
 from nani_pix_bot.services import events, players
+from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.economy import wallet
-from nani_pix_bot.services.seasons import schedule
+from nani_pix_bot.services.events import LoggedEvent
+from nani_pix_bot.services.seasons import schedule, xp
 from nani_pix_bot.services.seasons.hex_marks import active_hex_for as active_hex_for
 from nani_pix_bot.services.seasons.hex_marks import naive_utc
 
@@ -276,3 +285,168 @@ def set_opt_out(session: Session, player: Player, off: bool, now: datetime) -> N
     player.hex_opt_out = off
     session.flush()
     logger.info("hex opt-out {state}", state="on" if off else "off", opted_out=off)
+
+
+def _active_of(
+    session: Session, player_id: int, found: xp.Tagged, kind: HexKind, at: datetime
+) -> Hex | None:
+    """The player's active hex when it is a `kind` hex of this season."""
+    row = active_hex_for(session, player_id, at)
+    if row is None or row.kind != kind.value or row.season_id != found.season.id:
+        return None
+    return row
+
+
+def _resolve(session: Session, row: Hex, game_id: int, amount: int, at: datetime) -> None:
+    """A Kappa/Kitsune went off: close the hex, log it, emit it, queue its notice."""
+    row.resolved_at = naive_utc(at)
+    row.outcome = HexOutcome.TRIGGERED.value
+    row.game_id = game_id
+    session.flush()
+    logger.info(
+        "{kind} hex on {target} triggered for {amount} 🪙 (cast by {caster})",
+        kind=row.kind,
+        target=players.describe_player_id(session, row.target_id),
+        caster=players.describe_player_id(session, row.caster_id),
+        amount=amount,
+        hex_id=row.id,
+        target_id=row.target_id,
+        caster_id=row.caster_id,
+        season_id=row.season_id,
+        game_id=game_id,
+    )
+    events.emit(
+        session,
+        EventType.HEX_TRIGGERED,
+        events.Involved(actor_id=row.target_id, subject_id=row.caster_id, game_id=game_id),
+        season_id=row.season_id,
+        kind=row.kind,
+        hex_id=row.id,
+        amount=amount,
+    )
+    outbox.enqueue_hex_notice(session, row.id, "triggered")
+
+
+def _move_coins(
+    session: Session, row: Hex, found: xp.Tagged, reason: CurrencyReason, amount: int
+) -> int:
+    """Up to `amount` 🪙 from the hexed player to the caster; returns what moved."""
+    target = session.get(Player, row.target_id)
+    caster = session.get(Player, row.caster_id)
+    moved = min(amount, wallet.balance(session, row.target_id, season_id=row.season_id))
+    if target is None or caster is None or moved <= 0:
+        return 0
+    entry = wallet.LedgerEntry(reason, game_id=found.game.id, season_id=row.season_id, coins=True)
+    wallet.transfer(session, wallet.Party.of(target), wallet.Party.of(caster), moved, entry)
+    return moved
+
+
+def _kappa(session: Session, event: LoggedEvent, found: xp.Tagged, paid: list[xp.Award]) -> None:
+    actor = event.actor_id
+    won = sum(a.amount for a in paid if a.player_id == actor and a.source == XpSource.WIN)
+    if actor is None or won <= 0:
+        return
+    row = _active_of(session, actor, found, HexKind.KAPPA, event.occurred_at)
+    rule = rule_for(found.run, HexKind.KAPPA)
+    if row is None or rule is None:
+        return
+    moved = _move_coins(session, row, found, CurrencyReason.HEX_KAPPA, won * rule.amount // 100)
+    _resolve(session, row, found.game.id, moved, event.occurred_at)
+
+
+def _kitsune(session: Session, event: LoggedEvent, found: xp.Tagged) -> None:
+    actor = event.actor_id
+    if actor is None:
+        return
+    row = _active_of(session, actor, found, HexKind.KITSUNE, event.occurred_at)
+    rule = rule_for(found.run, HexKind.KITSUNE)
+    if row is None or rule is None:
+        return
+    moved = _move_coins(session, row, found, CurrencyReason.HEX_KITSUNE, rule.amount)
+    _resolve(session, row, found.game.id, moved, event.occurred_at)
+
+
+def on_season_event(
+    session: Session, event: LoggedEvent, found: xp.Tagged, paid: list[xp.Award]
+) -> None:
+    """Kappa waits for its target's next win that pays coins; Kitsune for the
+    next wrong guess. An ofuda doesn't stop a Kitsune: the guess still happened."""
+    if event.event_type == EventType.GAME_WON:
+        _kappa(session, event, found, paid)
+    elif event.event_type == EventType.GUESS and event.data.get("correct") is False:
+        _kitsune(session, event, found)
+
+
+def cancel_open(session: Session, season_id: int, now: datetime) -> int:
+    """The season ended: every still-open hex of it is cancelled."""
+    stmt = select(Hex).where(Hex.season_id == season_id, Hex.resolved_at.is_(None))
+    rows = list(session.scalars(stmt))
+    for row in rows:
+        row.resolved_at = naive_utc(now)
+        row.outcome = HexOutcome.CANCELLED.value
+    session.flush()
+    logger.info(
+        "season ended: cancelled {count} open hex(es)", count=len(rows), season_id=season_id
+    )
+    return len(rows)
+
+
+def _self_prank_season(session: Session, run: SeasonRun, player_id: int) -> SeasonSchedule:
+    player = session.get(Player, player_id)
+    season = schedule.active(session)
+    if player is None or season is None or season.run_id != run.run_id:
+        raise _refuse(HexRefusal.CLOSED)
+    if player.hex_opt_out:
+        raise _refuse(HexRefusal.TARGET_OPTED_OUT)
+    return season
+
+
+def apply_self_prank(session: Session, run: SeasonRun, player_id: int, now: datetime) -> Hex:
+    """An omikuji kyō: a random prank hex on the drawer themselves. Free, and no
+    omamori or cooldown applies. A player already hexed keeps that hex, returned
+    unchanged (a new one has caster_id == player_id and cast_at == naive(now))."""
+    season = _self_prank_season(session, run, player_id)
+    expire_due(session, now)
+    existing = active_hex_for(session, player_id, now)
+    if existing is not None:
+        logger.info(
+            "self-prank skipped: already under a {kind} hex",
+            kind=existing.kind,
+            hex_id=existing.id,
+            season_id=season.id,
+        )
+        return existing
+    rules = [rule for rule in run.hexes if rule.kind in PRANK_HEXES]
+    if not rules:
+        raise _refuse(HexRefusal.UNKNOWN_KIND)
+    rule = random.choice(rules)  # noqa: S311 - a game roll, not security
+    stamp = naive_utc(now)
+    row = Hex(
+        season_id=season.id,
+        kind=rule.kind.value,
+        caster_id=player_id,
+        target_id=player_id,
+        cast_at=stamp,
+        expires_at=stamp + timedelta(hours=rule.duration_hours),
+    )
+    session.add(row)
+    session.flush()
+    logger.info(
+        "omikuji self-prank: {kind} for {hours} h",
+        kind=row.kind,
+        hours=rule.duration_hours,
+        hex_id=row.id,
+        season_id=season.id,
+    )
+    events.emit(
+        session,
+        EventType.HEX_CAST,
+        events.Involved(actor_id=player_id, subject_id=player_id),
+        season_id=season.id,
+        kind=row.kind,
+        hex_id=row.id,
+        outcome=None,
+        self_prank=True,
+    )
+    outbox.enqueue_hex_notice(session, row.id, "self_prank")
+    return row
