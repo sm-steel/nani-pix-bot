@@ -107,12 +107,30 @@ def _draw_star(draw: ImageDraw.ImageDraw, box, perforation: int) -> None:
     draw.polygon(points, fill=INK)
 
 
+def _ticket_box() -> tuple[int, int, int, int]:
+    return (int(CANVAS * 0.12), int(CANVAS * 0.27), int(CANVAS * 0.88), int(CANVAS * 0.73))
+
+
+def _ticket_outline() -> Image.Image:
+    return _ticket_mask(_ticket_box(), int(CANVAS * 0.05), int(CANVAS * 0.055))
+
+
+@cache
+def ticket() -> Image.Image:
+    """The ticket alone, as 512x512 RGBA: the icon cut out along its own shape, for a card
+    that has its own background. Don't draw on the returned image."""
+    alpha = _ticket_outline().resize((SIZE, SIZE), Image.Resampling.LANCZOS)
+    image = Image.open(BytesIO(icon())).convert("RGBA")
+    image.putalpha(alpha)
+    return image
+
+
 @cache
 def icon() -> bytes:
     """The ticket as a 512x512 PNG; the same bytes every call."""
     image = _gradient((CANVAS, CANVAS), (46, 38, 74), (24, 20, 40))
-    box = (int(CANVAS * 0.12), int(CANVAS * 0.27), int(CANVAS * 0.88), int(CANVAS * 0.73))
-    mask = _ticket_mask(box, int(CANVAS * 0.05), int(CANVAS * 0.055))
+    box = _ticket_box()
+    mask = _ticket_outline()
     _paste_shadow(image, mask)
     _paste_gold(image, mask)
     _paste_inner_border(image, box)

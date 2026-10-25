@@ -1147,7 +1147,10 @@ assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's k
                    # and mascot/costumes/<key>/<pose>.png (the same six
                    # poses per costume, 384 wide and at most 480 tall) and
                    # costume_sheet_background.jpg (the costume preview
-                   # sheet's night background)
+                   # sheet's night background), item_card_background.jpg
+                   # (the consumable preview card's background) and
+                   # icons/{ofuda,omamori}.png (512 px RGBA art of the two
+                   # Halloween charms, drawn on the consumable preview card)
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
                    # (EN/RU page parity, every command in its command table)

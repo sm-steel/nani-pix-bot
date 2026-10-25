@@ -54,7 +54,6 @@ _kept = (
     OmikujiKind.DAIKICHI,
     OmikujiKind.KICHI,
     OmikujiKind.SHOKICHI,
-    Reward.ofuda,
     Reward.omamori,
     # Halloween: wired by P5 (#470)
     GoalKind.HEXES_BLOCKED,

@@ -13,7 +13,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 from loguru import logger
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageOps
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.cosmetics import ItemPreview
@@ -28,8 +28,7 @@ from nani_pix_bot.models.enums import (
 from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services import i18n, mascot
 from nani_pix_bot.services.cards import ProfileCard, render_profile_card
-from nani_pix_bot.services.cards.render import font
-from nani_pix_bot.services.cosmetics import looks, profile, stage
+from nani_pix_bot.services.cosmetics import card_style, looks, profile, stage
 from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.reveal import pipeline
 from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
@@ -162,13 +161,7 @@ SHEET_MARGIN = 28
 SHEET_POSE_WIDTH = 216
 SHEET_LABEL_HEIGHT = 44
 _CARD_RADIUS = 20
-_CARD_FILL = (255, 255, 255, 26)
-_CARD_OUTLINE = (255, 255, 255, 60)
-_PILL_RADIUS = 16
-_PILL_HEIGHT = 32
-_PILL_PADDING = 32
-_PILL_FILL = (18, 12, 34, 210)
-_LABEL_FONT_SIZE = 22
+_LABEL_PILL = card_style.PillSize(height=32, radius=16, font_size=22, padding=32)
 
 
 def _sheet_size() -> tuple[int, int]:
@@ -187,39 +180,19 @@ def _sheet_background() -> Image.Image:
         return ImageOps.fit(source.convert("RGBA"), _sheet_size(), Image.Resampling.LANCZOS)
 
 
-def _draw_card(sheet: Image.Image, origin: tuple[int, int]) -> None:
-    """A translucent rounded card at `origin`, the background showing through."""
-    layer = Image.new("RGBA", sheet.size, (0, 0, 0, 0))
+def _draw_cell_card(sheet: Image.Image, origin: tuple[int, int]) -> None:
     x, y = origin
-    ImageDraw.Draw(layer).rounded_rectangle(
-        [x, y, x + SHEET_CELL[0], y + SHEET_CELL[1]],
-        radius=_CARD_RADIUS,
-        fill=_CARD_FILL,
-        outline=_CARD_OUTLINE,
-        width=2,
-    )
-    sheet.alpha_composite(layer)
+    card_style.draw_card(sheet, (x, y, x + SHEET_CELL[0], y + SHEET_CELL[1]), radius=_CARD_RADIUS)
 
 
 def _draw_label(sheet: Image.Image, origin: tuple[int, int], text: str) -> None:
     """The pose's name in a pill under its figure."""
     cell_w, cell_h = SHEET_CELL
-    draw = ImageDraw.Draw(sheet)
-    label_font = font(_LABEL_FONT_SIZE, bold=True)
-    width = round(draw.textlength(text, font=label_font)) + _PILL_PADDING
-    left = origin[0] + (cell_w - width) // 2
-    top = origin[1] + cell_h - SHEET_LABEL_HEIGHT + 4
-    pill = Image.new("RGBA", sheet.size, (0, 0, 0, 0))
-    ImageDraw.Draw(pill).rounded_rectangle(
-        [left, top, left + width, top + _PILL_HEIGHT], radius=_PILL_RADIUS, fill=_PILL_FILL
-    )
-    sheet.alpha_composite(pill)
-    draw.text(
-        (left + width / 2, top + _PILL_HEIGHT / 2),
+    card_style.draw_pill(
+        sheet,
         text,
-        font=label_font,
-        fill=(255, 255, 255, 255),
-        anchor="mm",
+        _LABEL_PILL,
+        (origin[0], origin[0] + cell_w, origin[1] + cell_h - SHEET_LABEL_HEIGHT + 4),
     )
 
 
@@ -234,7 +207,7 @@ def costume_sheet(costume: str, lang: str) -> bytes:
             SHEET_MARGIN + col * (cell_w + SHEET_GAP),
             SHEET_MARGIN + row * (cell_h + SHEET_GAP),
         )
-        _draw_card(sheet, origin)
+        _draw_cell_card(sheet, origin)
         figure = mascot.sized(pose, SHEET_POSE_WIDTH, costume)
         bottom = origin[1] + cell_h - SHEET_LABEL_HEIGHT - 4
         sheet.alpha_composite(
