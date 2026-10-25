@@ -1,6 +1,7 @@
 """Moment cards for the game topic (Halloween): a player's profile photo in a glowing
-ring beside the item's art, a title pill on top and name pills below, over a generated
-background. Pure Pillow, no Telegram: the caller fetches avatars and localizes the text."""
+ring beside the item's art, a title pill on top with a smaller effect pill under it,
+and name pills below, over a generated background. Pure Pillow, no Telegram: the caller
+fetches avatars and localizes the text."""
 
 import enum
 import math
@@ -27,6 +28,15 @@ _TITLE_PILL = card_style.PillSize(height=61, radius=30, font_size=38, padding=53
 _NAME_PILL = card_style.PillSize(height=54, radius=27, font_size=34, padding=48)
 _SMALL_PILL = card_style.PillSize(height=42, radius=21, font_size=26, padding=36)
 _TITLE_WIDTH = 1040
+_TITLE_CENTRE_Y = 70
+_DETAIL_FONT = 26
+_DETAIL_WIDTH = 900  # the widest the effect pill gets
+_DETAIL_PADDING = 40
+_DETAIL_LINE = 30
+_DETAIL_MARGIN = 14  # inside the pill, above and below the text
+_DETAIL_GAP = 14  # between the title pill and the effect pill
+_DETAIL_FILL = (18, 12, 34, 190)
+_DETAIL_MAX_LINES = 2
 _NAME_WIDTH = 360
 _SMALL_NAME_WIDTH = 300
 _FADED_ALPHA = 0.6
@@ -42,6 +52,7 @@ _CHARM_ART_X = 790
 _CHARM_CLEAR_X = 480 + 170 + _HALO_PAD + 24  # the avatar disc's halo, plus a gap
 _DUEL_ART_BOX = (300, 300)
 _ATTACK_ART_BOX = (230, 230)
+_ATTACK_CENTRE = (230, 320)  # low enough to clear a two-line effect pill
 _DEFENCE_ART_BOX = (330, 330)
 _TRAIL_SPACING = 28
 _TRAIL_HEIGHT = 20  # a chevron's arm-to-arm span
@@ -59,6 +70,14 @@ RING: dict[Mood, tuple[int, int, int]] = {
     Mood.CHARM: (255, 170, 60),
     Mood.CURSE: (180, 110, 255),
 }
+
+
+@dataclass(frozen=True)
+class Caption:
+    """The words on a card: the title pill and the effect line under it."""
+
+    title: str
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -84,9 +103,9 @@ def _plain(text: str) -> str:
     return " ".join(kept.split()) or text.strip()
 
 
-def _clip(text: str, size: int, width: int) -> str:
+def _clip(text: str, size: int, width: int, *, bold: bool = True) -> str:
     """`text` cut with an ellipsis so it fits `width` at `size` in the pill font."""
-    label_font = font(size, bold=True)
+    label_font = font(size, bold=bold)
     if label_font.getlength(text) <= width:
         return text
     while text and label_font.getlength(text + "…") > width:
@@ -196,14 +215,63 @@ def _jpeg(canvas: Image.Image) -> bytes:
     return buffer.getvalue()
 
 
-def _title(canvas: Image.Image, title: str) -> None:
-    _pill(canvas, title, _TITLE_PILL, (WIDTH // 2, 70), _TITLE_WIDTH)
+def _detail_lines(text: str) -> list[str]:
+    """`text` (emoji stripped) wrapped to at most two lines of the effect pill's text
+    width; what does not fit on the second line is cut with an ellipsis."""
+    width = _DETAIL_WIDTH - _DETAIL_PADDING
+    detail_font = font(_DETAIL_FONT)
+    lines: list[str] = []
+    current = ""
+    for word in _plain(text).split():
+        trial = f"{current} {word}".strip()
+        if not current or detail_font.getlength(trial) <= width:
+            current = trial
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    if len(lines) > _DETAIL_MAX_LINES:
+        lines = [*lines[: _DETAIL_MAX_LINES - 1], " ".join(lines[_DETAIL_MAX_LINES - 1 :])]
+    return [_clip(line, _DETAIL_FONT, width, bold=False) for line in lines]
 
 
-def charm_card(mood: Mood, face: Face, art: Image.Image, title: str) -> bytes:
+def _detail(canvas: Image.Image, text: str, top: int) -> None:
+    """The effect line in a smaller, more transparent pill centred under the title,
+    its top at `top`; nothing for an empty text."""
+    if not text.strip():
+        return
+    lines = _detail_lines(text)
+    detail_font = font(_DETAIL_FONT)
+    width = round(max(detail_font.getlength(line) for line in lines)) + _DETAIL_PADDING
+    height = len(lines) * _DETAIL_LINE + 2 * _DETAIL_MARGIN
+    radius = min(height // 2, 30)
+    mask = smooth_mask(
+        (width, height),
+        lambda shape, k: shape.rounded_rectangle(
+            (0, 0, width * k - 1, height * k - 1), radius=radius * k, fill=255
+        ),
+    )
+    pill = Image.new("RGBA", (width, height), (*_DETAIL_FILL[:3], 0))
+    pill.putalpha(mask.point(lambda v: v * _DETAIL_FILL[3] // 255))
+    left = (WIDTH - width) // 2
+    canvas.alpha_composite(pill, (left, top))
+    draw = ImageDraw.Draw(canvas)
+    for i, line in enumerate(lines):
+        y = top + _DETAIL_MARGIN + _DETAIL_LINE * i + _DETAIL_LINE / 2
+        draw.text((WIDTH / 2, y), line, font=detail_font, fill=(255, 255, 255, 255), anchor="mm")
+
+
+def _caption(canvas: Image.Image, caption: Caption) -> None:
+    """The title pill on top and, just below it, the effect pill."""
+    _pill(canvas, caption.title, _TITLE_PILL, (WIDTH // 2, _TITLE_CENTRE_Y), _TITLE_WIDTH)
+    top = _TITLE_CENTRE_Y - _TITLE_PILL.height // 2 + _TITLE_PILL.height + _DETAIL_GAP
+    _detail(canvas, caption.detail, top)
+
+
+def charm_card(mood: Mood, face: Face, art: Image.Image, caption: Caption) -> bytes:
     """One player and the item they used: avatar left, tilted art right."""
     canvas = _background(mood).copy()
-    _title(canvas, title)
+    _caption(canvas, caption)
     _glow_disc(canvas, face, 340, (480, 420), RING[mood])
     picture = _art(art, _CHARM_ART_BOX, angle=-12)
     # a wide item (the ticket) is pushed right so it never reaches the avatar's ring
@@ -352,28 +420,30 @@ class Duel:
 
 
 def blocked_duel_card(
-    mood: Mood, duel: Duel, attack: Image.Image, defence: Image.Image, title: str
+    mood: Mood, duel: Duel, attack: Image.Image, defence: Image.Image, caption: Caption
 ) -> bytes:
     """A hex blocked: the target in the middle beside their `defence` art, while the
     `attack` art lies faded and torn into a cross next to the small caster's name."""
     canvas = _background(mood).copy()
-    _title(canvas, title)
-    _spent_art(canvas, attack, (230, 300))
-    _pill(canvas, duel.actor.name, _SMALL_PILL, (230, 470), _SMALL_NAME_WIDTH)
+    _caption(canvas, caption)
+    _spent_art(canvas, attack, _ATTACK_CENTRE)
+    _pill(canvas, duel.actor.name, _SMALL_PILL, (230, 490), _SMALL_NAME_WIDTH)
     _glow_disc(canvas, duel.target, 320, (560, 420), RING[mood])
     _paste(canvas, _art(defence, _DEFENCE_ART_BOX), (860, 470))
     _pill(canvas, duel.target.name, _NAME_PILL, (560, 640), _NAME_WIDTH)
     return _jpeg(canvas)
 
 
-def duel_card(mood: Mood, duel: Duel, art: Image.Image, title: str, blocked: bool = False) -> bytes:
+def duel_card(
+    mood: Mood, duel: Duel, art: Image.Image, caption: Caption, blocked: bool = False
+) -> bytes:
     """Caster, art, target in a row (a hex being cast). With `blocked`, the blocked
     layout using `art` for both sides; `blocked_duel_card` takes one art each."""
     if blocked:
-        return blocked_duel_card(mood, duel, art, art, title)
+        return blocked_duel_card(mood, duel, art, art, caption)
     canvas = _background(mood).copy()
     colour = RING[mood]
-    _title(canvas, title)
+    _caption(canvas, caption)
     _spirit_trail(canvas, (349, 430), (736, 420), colour)
     _glow_disc(canvas, duel.actor, 210, (230, 430), colour)
     _paste(canvas, _art(art, _DUEL_ART_BOX), (560, 400))

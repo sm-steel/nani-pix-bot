@@ -178,6 +178,55 @@ def _caption(context: MagicMock) -> str:
 # --- /hex @user <kind> ---
 
 
+def _spy_cards(monkeypatch: pytest.MonkeyPatch) -> list:
+    """Every Caption the duel cards are drawn with."""
+    captions: list = []
+    cards = moments.moment_cards
+    real_duel, real_blocked = cards.duel_card, cards.blocked_duel_card
+
+    def duel(mood, duel_, art, caption, blocked=False):
+        captions.append(caption)
+        return real_duel(mood, duel_, art, caption, blocked)
+
+    def blocked(mood, duel_, attack, defence, caption):
+        captions.append(caption)
+        return real_blocked(mood, duel_, attack, defence, caption)
+
+    monkeypatch.setattr(cards, "duel_card", duel)
+    monkeypatch.setattr(cards, "blocked_duel_card", blocked)
+    return captions
+
+
+@pytest.mark.parametrize("kind", ["nopperabo", "chochin", "kappa", "kitsune"])
+async def test_every_cast_card_carries_an_effect_line(
+    session_factory, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    _seed(session_factory)
+    captions = _spy_cards(monkeypatch)
+
+    await _hex(session_factory, ["@bob", kind])
+
+    [caption] = captions
+    assert caption.detail.strip()
+    assert "{" not in caption.detail
+
+
+async def test_a_blocked_card_names_the_caster_and_the_hex_in_its_effect_line(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed(session_factory)
+    with session_factory() as session:
+        consumables.add(session, BOB, ConsumableKind.OMAMORI, why="test")
+        session.commit()
+    captions = _spy_cards(monkeypatch)
+
+    await _hex(session_factory, ["@bob", "kitsune"])
+
+    [caption] = captions
+    assert "@alice" in caption.detail
+    assert i18n.t("hex.kind.kitsune.name", "EN") in caption.detail
+
+
 async def test_hex_with_a_kind_casts_and_posts_the_notice_to_the_topic(session_factory) -> None:
     season_id = _seed(session_factory)
 

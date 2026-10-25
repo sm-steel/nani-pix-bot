@@ -25,6 +25,22 @@ def _caption(sides: tuple[Person, Person], rule: HexRule, blocked: bool, lang: s
     )
 
 
+def _detail(sides: tuple[Person, Person], rule: HexRule, blocked: bool, lang: str) -> str:
+    """The effect line on the card: what the hex does to the target."""
+    kind = rule.kind.value
+    if blocked:
+        return i18n.t(
+            "hex.card_detail.blocked", lang, caster=sides[0].display_name, hex=kind_name(kind, lang)
+        )
+    return i18n.t(
+        f"hex.card_detail.{kind}",
+        lang,
+        caster=sides[0].display_name,
+        hours=rule.duration_hours,
+        amount=rule.amount,
+    )
+
+
 def moment(sides: tuple[Person, Person], rule: HexRule, blocked: bool, lang: str) -> DuelMoment:
     """The card for a cast at `sides` = (caster, target); `blocked` when an Omamori ate it."""
     actor, target = sides
@@ -38,6 +54,7 @@ def moment(sides: tuple[Person, Person], rule: HexRule, blocked: bool, lang: str
         target=target,
         art=hex_art.art(rule.kind.value),
         title=title,
+        detail=_detail(sides, rule, blocked, lang),
         caption=_caption(sides, rule, blocked, lang),
         shield=hex_art.art(hex_art.OMAMORI) if blocked else None,
         blocked=blocked,

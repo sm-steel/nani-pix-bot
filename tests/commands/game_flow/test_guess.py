@@ -18,6 +18,7 @@ from nani_pix_bot.models.halloween import ArmedOfuda
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.cards import moments as moment_cards
 from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
@@ -558,6 +559,14 @@ async def test_forgiven_guess_replies_with_remaining_and_posts_the_ofuda_card(
     session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("nani_pix_bot.jobs.moments.fetch_avatar", AsyncMock(return_value=None))
+    captions: list = []
+    real_card = moment_cards.charm_card
+
+    def spy(mood, face, art, caption):
+        captions.append(caption)
+        return real_card(mood, face, art, caption)
+
+    monkeypatch.setattr(moment_cards, "charm_card", spy)
     _arm_ofuda(session_factory)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
@@ -566,6 +575,9 @@ async def test_forgiven_guess_replies_with_remaining_and_posts_the_ofuda_card(
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
+    [caption] = captions
+    assert caption.title
+    assert caption.detail.strip()  # the effect line rides on the card too
     text = update.message.reply_text.await_args.args[0]
     assert "2/2" in text  # the stage budget is untouched (wording varies, the count doesn't)
     assert "Ofuda" not in text  # the line rides on the card instead

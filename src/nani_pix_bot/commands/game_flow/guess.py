@@ -277,6 +277,7 @@ def _ofuda_moment(user: User, name: str, lang: str) -> CharmMoment:
         user_id=user.id,
         display_name=user.full_name,
         title=i18n.t("ofuda.card_title", lang),
+        detail=i18n.t("ofuda.card_detail", lang, name=name),
         caption=i18n.t("ofuda.used", lang, name=name),
     )
 

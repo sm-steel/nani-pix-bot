@@ -2209,16 +2209,19 @@ A **moment card** (`services/cards/moments.py`, posted by
 `jobs/moments.py::post_charm_moment`) is a 1200x800 JPEG sent to the game
 topic with the plain line as its caption: the player's profile photo in a
 glowing ring (`Face`), the item's art (tilted, fitted in a box, trimmed to
-its drawn shape), a title pill on top and the player's name in a pill below,
+its drawn shape), a title pill on top with a smaller, more transparent
+**effect pill** under it (`Caption(title, detail)`: one line saying what
+happens to the affected player, wrapped to at most two lines within 900 px
+and ellipsized), and the player's name in a pill below,
 over `assets/moments/<mood>_background.jpg` (`Mood.CHARM`, a warm shrine;
 `Mood.CURSE`, violet mist). Pill text is stripped of emoji (the font has
 none) and clipped with an ellipsis; the name pill is the plain name, no
 flair. The module is pure Pillow, with no Telegram. Posted today:
 
-| Moment | When | Art | Title / caption |
+| Moment | When | Art | Title / effect line / caption |
 |---|---|---|---|
-| Ofuda saves a miss | after the reply to a `FORGIVEN` `/guess` | Ofuda | "That miss didn't count!" / "Ofuda burned away" |
-| Token-paid clue | in place of the plain "bought a clue" topic notice, when the purchase used a clue token (`token_used`) | the golden ticket | "bought" notice is the caption |
+| Ofuda saves a miss | after the reply to a `FORGIVEN` `/guess` | Ofuda | "That miss didn't count!" / "{name}'s ofuda burned away: this miss doesn't count" / "Ofuda burned away" |
+| Token-paid clue | in place of the plain "bought a clue" topic notice, when the purchase used a clue token (`token_used`) | the golden ticket | "Paid with a clue token" / "{name} paid for this clue with a clue token" / the "bought" notice |
 
 Failure never blocks a game. The post runs after the guess or purchase is
 committed. The avatar is fetched with `jobs/avatars.py::fetch_avatar`; with

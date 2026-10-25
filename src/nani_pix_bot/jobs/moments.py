@@ -14,7 +14,7 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.jobs.avatars import fetch_avatar
 from nani_pix_bot.models.enums import ConsumableKind
 from nani_pix_bot.services.cards import moments as moment_cards
-from nani_pix_bot.services.cards.moments import Duel, Face, Mood
+from nani_pix_bot.services.cards.moments import Caption, Duel, Face, Mood
 from nani_pix_bot.services.cosmetics import consumable_card
 
 
@@ -24,6 +24,7 @@ class CharmMoment:
     user_id: int
     display_name: str  # the name pill: plain, no flair
     title: str
+    detail: str  # the effect line under the title: what happens to the player
     caption: str  # the line the plain text would have been
 
 
@@ -43,6 +44,7 @@ class DuelMoment:
     target: Person
     art: Image.Image | None  # None: the art is missing, so the plain line goes out
     title: str
+    detail: str
     caption: str
     shield: Image.Image | None = None
     blocked: bool = False
@@ -57,7 +59,8 @@ class _Post:
 
 def _render(moment: CharmMoment, avatar: bytes | None) -> bytes:
     face = Face(avatar, moment.display_name, moment.user_id)
-    return moment_cards.charm_card(Mood.CHARM, face, consumable_card.art(moment.kind), moment.title)
+    caption = Caption(moment.title, moment.detail)
+    return moment_cards.charm_card(Mood.CHARM, face, consumable_card.art(moment.kind), caption)
 
 
 def _render_duel(moment: DuelMoment, avatars: list[bytes | None]) -> bytes:
@@ -66,11 +69,12 @@ def _render_duel(moment: DuelMoment, avatars: list[bytes | None]) -> bytes:
     duel = Duel(actor, target)
     if moment.art is None:
         raise FileNotFoundError(f"no art for the {moment.name} card")
+    caption = Caption(moment.title, moment.detail)
     if not moment.blocked:
-        return moment_cards.duel_card(Mood.CURSE, duel, moment.art, moment.title)
+        return moment_cards.duel_card(Mood.CURSE, duel, moment.art, caption)
     if moment.shield is None:
         raise FileNotFoundError(f"no shield art for the {moment.name} card")
-    return moment_cards.blocked_duel_card(Mood.CHARM, duel, moment.art, moment.shield, moment.title)
+    return moment_cards.blocked_duel_card(Mood.CHARM, duel, moment.art, moment.shield, caption)
 
 
 async def _send_text(context: ContextTypes.DEFAULT_TYPE, post: _Post) -> bool:

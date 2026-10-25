@@ -20,7 +20,14 @@ def _context() -> MagicMock:
 
 
 def _moment(kind: ConsumableKind = ConsumableKind.OFUDA) -> CharmMoment:
-    return CharmMoment(kind, user_id=2, display_name="Alice", title="Saved!", caption=CAPTION)
+    return CharmMoment(
+        kind,
+        user_id=2,
+        display_name="Alice",
+        title="Saved!",
+        detail="Alice kept going",
+        caption=CAPTION,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -107,6 +114,7 @@ def _duel(*, blocked: bool = False, art=True) -> moments.DuelMoment:
         target=moments.Person(2, "@bob"),
         art=picture,
         title="@bob is hexed!",
+        detail="Their next wrong guess costs up to 20 coins",
         caption=CAPTION,
         shield=shield,
         blocked=blocked,

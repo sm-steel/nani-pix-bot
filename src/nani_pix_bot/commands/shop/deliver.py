@@ -129,6 +129,7 @@ def token_moment(user: User, notice: str, lang: str) -> CharmMoment:
         user_id=user.id,
         display_name=user.full_name,
         title=i18n.t("shop.token_card_title", lang),
+        detail=i18n.t("shop.token_card_detail", lang, name=user.full_name),
         caption=notice,
     )
 

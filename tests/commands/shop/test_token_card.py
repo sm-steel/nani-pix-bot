@@ -44,8 +44,16 @@ def _topic_texts(context) -> list[str]:
 
 
 async def test_a_token_paid_clue_posts_the_card_with_the_notice_as_caption(
-    session_factory,
+    session_factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    captions: list = []
+    real_card = moments.moment_cards.charm_card
+
+    def spy(mood, face, art, caption):
+        captions.append(caption)
+        return real_card(mood, face, art, caption)
+
+    monkeypatch.setattr(moments.moment_cards, "charm_card", spy)
     game_id = seed_game(session_factory)
     set_currency(session_factory, 2, 0)
     _give_token(session_factory)
@@ -59,6 +67,8 @@ async def test_a_token_paid_clue_posts_the_card_with_the_notice_as_caption(
     assert "Buyer Name" in sent["caption"]
     assert "first letter" in sent["caption"]
     assert _topic_texts(context) == []
+    [caption] = captions
+    assert "Buyer Name" in caption.detail  # the card says who paid, not only the caption
 
 
 async def test_a_paid_clue_keeps_the_plain_notice(session_factory) -> None:
