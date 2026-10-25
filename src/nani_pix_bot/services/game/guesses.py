@@ -5,7 +5,7 @@ guessed) and by the clue shop (a partial reveal locks the title-shape clue)."""
 from dataclasses import dataclass
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import EventType
@@ -99,3 +99,22 @@ def guessers(session: Session, game_id: int) -> list[int]:
     """Everyone who guessed in the game, in first-guess order — the people a
     hard-mode vote can name."""
     return list(guess_texts(session, game_id))
+
+
+def recent_guessers(session: Session, game_id: int) -> list[int]:
+    """Everyone who guessed in the game, whoever guessed last first: the order a
+    player picker for the game's guessers shows them in."""
+    stmt = (
+        select(GameGuess.player_id)
+        .where(GameGuess.game_id == game_id)
+        .group_by(GameGuess.player_id)
+        .order_by(func.max(GameGuess.id).desc())
+    )
+    return list(session.scalars(stmt))
+
+
+def winner_candidates(session: Session, game: Game, *, bot_id: int) -> list[int]:
+    """Whom a picker may name `game`'s winner (/correct, /setwinner): its
+    guessers, whoever guessed last first, minus its starter and Nani Pix."""
+    excluded = {game.starter_id, bot_id}
+    return [pid for pid in recent_guessers(session, game.id) if pid not in excluded]

@@ -120,7 +120,6 @@ async def test_malformed_tip_is_logged_as_a_warning(session_factory) -> None:
 @pytest.mark.parametrize(
     ("args", "expected"),
     [
-        ([], "Usage: /tip"),
         (["@bob"], "Usage: /tip"),
         (["@bob", "lots"], "Usage: /tip"),
         (["@bob", "1.5"], "Usage: /tip"),

@@ -7,27 +7,13 @@ from sqlalchemy.orm import Session
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from nani_pix_bot.commands.helpers.durations import duration
-from nani_pix_bot.commands.helpers.player_picker import (
-    PickEntry,
-    PickerData,
-    picker_keyboard,
-)
-from nani_pix_bot.commands.hexes.common import (
-    ICONS,
-    cancel_data,
-    cast_data,
-    kind_name,
-    now,
-    page_data,
-    target_data,
-)
+from nani_pix_bot.commands.helpers.player_picker import PickEntry, View, entries, picker_keyboard
+from nani_pix_bot.commands.hexes.common import ICONS, cast_data, kind_name, now, picker
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons.mechanics import HexRule
 from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.seasons import hexes
 from nani_pix_bot.services.seasons.hex_targets import hex_targets
-
-View = tuple[str, InlineKeyboardMarkup | None]
 
 
 def status_line(session: Session, player_id: int, lang: str) -> str:
@@ -59,20 +45,7 @@ def _help(session: Session, opened: hexes.OpenHexes, caster_id: int, lang: str) 
 
 def _entries(session: Session, opened: hexes.OpenHexes, caster_id: int) -> list[PickEntry]:
     targets = hex_targets(session, opened.season, caster_id, now())
-    return [
-        PickEntry(
-            p.telegram_user_id, players.display_name(session, p.telegram_user_id, unmasked=True)
-        )
-        for p in targets
-    ]
-
-
-def picker_data(caster_id: int) -> PickerData:
-    return PickerData(
-        pick=lambda entry: target_data(caster_id, entry.player_id),
-        page=lambda page: page_data(caster_id, page),
-        cancel=cancel_data(caster_id),
-    )
+    return entries(session, [p.telegram_user_id for p in targets])
 
 
 def start_view(session: Session, caster_id: int, page: int, lang: str) -> View:
@@ -81,10 +54,10 @@ def start_view(session: Session, caster_id: int, page: int, lang: str) -> View:
     if opened is None:
         return i18n.t("hex.closed", lang), None
     help_text = _help(session, opened, caster_id, lang)
-    entries = _entries(session, opened, caster_id)
-    if not entries:
+    found = _entries(session, opened, caster_id)
+    if not found:
         return f"{help_text}\n\n{i18n.t('hex.no_targets', lang)}", None
-    keyboard = picker_keyboard(entries, page, picker_data(caster_id), lang)
+    keyboard = picker_keyboard(found, page, picker(caster_id).data(), lang)
     return f"{help_text}\n\n{i18n.t('hex.pick_target', lang)}", keyboard
 
 
@@ -105,10 +78,11 @@ def kind_view(session: Session, caster_id: int, target_id: int, lang: str) -> Vi
     if opened is None:
         return i18n.t("hex.closed", lang), None
     rows = [[_kind_button(caster_id, target_id, rule, lang)] for rule in opened.run.hexes]
+    back = picker(caster_id)
     rows.append(
         [
-            InlineKeyboardButton(i18n.t("hex.back", lang), callback_data=page_data(caster_id, 0)),
-            InlineKeyboardButton(i18n.t("hex.cancel", lang), callback_data=cancel_data(caster_id)),
+            InlineKeyboardButton(i18n.t("hex.back", lang), callback_data=back.page(0)),
+            InlineKeyboardButton(i18n.t("hex.cancel", lang), callback_data=back.cancel()),
         ]
     )
     text = i18n.t("hex.pick", lang, target=players.display_name(session, target_id, unmasked=True))

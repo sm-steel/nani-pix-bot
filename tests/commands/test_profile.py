@@ -93,7 +93,7 @@ async def test_profile_in_the_topic_sends_a_card_photo_with_a_caption(session_fa
     update.message.reply_text.assert_not_awaited()
 
 
-async def test_the_card_has_prev_next_and_players_buttons(session_factory) -> None:
+async def test_the_card_has_prev_next_players_and_someone_else_buttons(session_factory) -> None:
     update = _update()
     await _run(session_factory, update)
 
@@ -103,6 +103,7 @@ async def test_the_card_has_prev_next_and_players_buttons(session_factory) -> No
     assert data == [
         [cb.card_data(1, 7, "p"), cb.card_data(1, 7, "n")],
         [cb.list_data(1, 0)],
+        ["prs:1:o"],
     ]
 
 
@@ -194,3 +195,11 @@ async def test_topic_profile_does_not_check_membership(session_factory) -> None:
 
     update.message.reply_photo.assert_awaited_once()
     context.bot.get_chat_member.assert_not_awaited()
+
+
+async def test_profile_in_dm_leaves_quoting_to_telegrams_default(session_factory) -> None:
+    update = _update(chat_type=ChatType.PRIVATE, thread_id=None)
+    await _run(session_factory, update)
+
+    # None: PTB quotes only outside a DM, so a DM card isn't a reply to /profile.
+    assert update.message.reply_photo.await_args.kwargs.get("do_quote") is None

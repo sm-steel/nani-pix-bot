@@ -17,7 +17,13 @@ from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, 
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements import render
-from nani_pix_bot.commands.achievements.common import MAX_ID, PREFIX, outsider_refusal
+from nani_pix_bot.commands.achievements.common import (
+    MAX_ID,
+    PREFIX,
+    SOMEONE_ELSE_PREFIX,
+    outsider_refusal,
+)
+from nani_pix_bot.commands.helpers import someone_else
 from nani_pix_bot.commands.helpers.keyboards import tab_button
 from nani_pix_bot.commands.helpers.paging import clamp_page, nav_row, page_count
 from nani_pix_bot.commands.helpers.rich import RichTarget, edit_rich, md_escape, send_rich
@@ -96,6 +102,10 @@ def _keyboard(request: Browse, pages: int, lang: str) -> InlineKeyboardMarkup:
         InlineKeyboardButton(i18n.t("achievements.top_button", lang), callback_data=top_data(0))
     )
     rows.append(extra)
+    if request.viewer_id == request.owner_id:
+        rows.append(
+            [someone_else.button(SOMEONE_ELSE_PREFIX, "achievements", request.viewer_id, lang)]
+        )
     return InlineKeyboardMarkup(rows)
 
 

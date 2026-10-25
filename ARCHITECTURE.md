@@ -324,7 +324,13 @@ src/nani_pix_bot/
                    # none of these four is individually large:
                    #   guess.py    /guess — the only handler most
                    #               wrong-guess traffic hits
-                   #   correct.py  /correct @user — author override
+                   #   correct.py  /correct [@user] — author override
+                   #   correct_picker.py  /correct's player menu: this
+                   #               round's guessers (#479)
+                   #   correct_award.py  what /correct does once its
+                   #               target is known, typed or picked
+                   #   skip_picker.py  /skip's menu: open the turn or hand
+                   #               it to a player (#479)
                    #   skip.py     /skip [@user] — turn handoff when no
                    #               game is running
                    #   stop.py     /stop — DM-only; starter or a group
@@ -341,7 +347,9 @@ src/nani_pix_bot/
                    #   stage_post.py  the stage-advance announcement,
                    #               shared by /guess and /sharpen (the timers
                    #               can't import commands/)
-    tip.py        # /tip @user <amount> — topic or DM
+    tip/          # /tip [@user] [amount] — topic or DM: command.py,
+                   # the pickers (views.py), taps (callback.py), the send
+                   # and reply (sending.py) (#479)
     leaderboard.py  # /leaderboard — all-time rich table (👑 wins, 💠, 🏆
                    # points, the chosen title in «» after the name) from
                    # players.leaderboard, paged with lb:<page>; topic or DM
@@ -383,15 +391,19 @@ src/nani_pix_bot/
                    # bot_settings.partial_match_min_letters, how many
                    # matched letters a wrong guess needs before part of
                    # the title is revealed (#250)
-    refund.py     # /refund @user — DM-only, admin-gated: a paginated
+    refund.py     # /refund [@user] — DM-only, admin-gated: a paginated
                    # picker of the player's clue purchases, a confirm
                    # step, then services/clues/shop.py's refund() and a
                    # DM to the player (#249)
-    setwinner.py  # /setwinner <game id> @user — DM-only, admin-gated:
+    refund_picker.py  # /refund's menu of players with refundable
+                   # purchases (#479); refund_views.py the purchase list
+    setwinner.py  # /setwinner <game id> [@user] — DM-only, admin-gated:
                    # re-finishes an UNSOLVED game through
                    # services/game/refinish.py, or closes a VOTING game's
                    # vote with that winner through jobs/timers/vote.py's
                    # finalize_vote (#253)
+    setwinner_picker.py  # /setwinner's menu of the game's guessers (#479);
+                   # setwinner_apply.py the shared re-finish/vote close
     shop/         # the private clue shop (#209) — see MECHANICS.md's "Clue
                    # shop". /shop and `/start shop` open it in DM; the 🛒
                    # on stage posts deep-links there
@@ -465,15 +477,25 @@ src/nani_pix_bot/
                    # wrapping) and 👥 Players list, edited in place,
                    # tappable only by whoever sent /profile; edit.py the
                    # ✏️ editor (own card, DM only) for what the card
-                   # shows; data.py the prof:… callback data
+                   # shows; data.py the prof:… callback data;
+                   # someone_else_picker.py the 👥 Someone else picker
+                   # (#479); achievements/ has the same for its list
     grant_item.py # /grantitem — admin-gated: give a player an item
                    # (ItemSource.ADMIN)
+    grant_item_picker.py  # /grantitem <item id>'s menu of players (#479);
+                   # grant_item_apply.py the shared grant
+    hexes/        # /hex and /hexes (Halloween): casting (casting.py),
+                   # pickers and taps (views.py, callback.py), public
+                   # notices (notices.py), opt-out (opt_out.py)
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
                    # `/start ach_<id>`, the achievements one, and
                    # `/start rules`/`/start recent` for standings_dm.py), /help
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
-                   # (membership.py), Telegram rich messages (headings,
+                   # (membership.py), the shared player picker (paged
+                   # buttons, opener-only taps: player_picker.py) and the
+                   # 👥 Someone else button logic (someone_else.py) (#479),
+                   # Telegram rich messages (headings,
                    # checklists, tables) sent or edited from markdown,
                    # with md_escape and a plain-text fallback, for the
                    # achievements views and /standings (rich.py), the
@@ -1479,11 +1501,13 @@ erDiagram
 | `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so a preview is uploaded once per language. `item_id` holds `previews.cache_key`: the item id, or `<item id>@<player id>` for a win effect (drawn on its viewer); a banner (drawn on the viewer's live card) is never stored. Emptied by `d7a3f1c9b5e2` when the sample picture changed. |
 | `players.title_key` item encoding | v12 | Besides an achievement title key, `title_key` may be `item:<item id>`, a season title item (`services/achievements/titles.py`). Title item ids are at most 56 bytes (`looks.problems`) so they fit `/title`'s callback data. |
 | `profile_showcase` | v12 | What a player picked to show on their `/profile` card (#413): `player_id` + `kind` (`ShowcaseKind`: `stamp` or `achievement`) + `ref` PK (a season run id, or an `achievement_grants.id` as text) and `position` (tick order). At most 6 stamps and 4 achievements (`services/cosmetics/showcase.py`). A pick that no longer resolves is skipped. With no pick resolving, the card shows the newest seasons and rarest achievements. |
-| `hexes` | Halloween P1 | One hex a player cast on another in a season: `season_id` (FK), `kind` (a `HexKind` as a plain string), `caster_id` and `target_id` (FKs to `players`), `cast_at`, `expires_at` (pranks only), `resolved_at`/`outcome` (set when it is spent or blocked) and `game_id` (FK, the game a kappa/kitsune triggered on). Indexed on (`target_id`, `resolved_at`) and (`caster_id`, `kind`, `cast_at`) for the target's open hexes and the caster's cooldown. Nothing writes it until Phase 5. |
+| `used_menus` | #479 | A menu message whose one action already ran: (`chat_id`, `message_id`) PK. `services/used_menus.py::claim` inserts it in the same transaction as the picker's action, so a second tap finds it claimed and does nothing, and a rolled-back action releases it. Never pruned. |
+| `pass_votes` | #428 | One player's `/pass` vote in one round: `game_id` (FK, `ON DELETE CASCADE`), `player_id`, `stage` (the PixelStage number or hard-mode turn), unique per (game, player, stage), so a stage advance resets the tally without deleting rows. |
+| `hexes` | Halloween P1 | One hex a player cast on another in a season: `season_id` (FK), `kind` (a `HexKind` as a plain string), `caster_id` and `target_id` (FKs to `players`), `cast_at`, `expires_at` (pranks only), `resolved_at`/`outcome` (set when it is spent or blocked) and `game_id` (FK, the game a kappa/kitsune triggered on). Indexed on (`target_id`, `resolved_at`) and (`caster_id`, `kind`, `cast_at`) for the target's open hexes and the caster's cooldown. Written by `commands/hexes/`. |
 | `armed_ofuda` | Halloween P1 | An ofuda a player armed for one game: primary key (`player_id`, `game_id`), so at most one per player per game, and `armed_at`. Written by `services/cosmetics/ofuda.py::arm` (the shop's Arm button) and deleted when the Ofuda forgives a miss. |
 | `omikuji_draws` | Halloween P1 | A player's omikuji draw: `season_id`, `player_id`, `local_date`, `outcome` (an `OmikujiKind` as a plain string) and `drawn_at`; unique on (`season_id`, `player_id`, `local_date`) so a day has one draw. Nothing writes it until Phase 4. |
 | `games` Halloween columns | Halloween P1 | `haunt_twist` (nullable string, a `HauntTwist`: set when the game is haunted), `boss_game` and `event_day` (booleans, default false). All three are written from Phase 3 and Phase 6. |
-| `players.hex_opt_out` | Halloween P1 | Boolean, default false: the player refuses hexes cast on them. Read from Phase 5. |
+| `players.hex_opt_out` | Halloween P1 | Boolean, default false: the player refuses hexes cast on them. Read by `commands/hexes/`. |
 
 ### Achievements
 

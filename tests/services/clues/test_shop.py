@@ -703,3 +703,19 @@ def test_random_mode_with_a_list_and_no_provider_is_not_offered(session: Session
     _author_entry(session, game)
 
     assert not _screenshot_offered(session, game, buyer)
+
+
+def test_refundable_player_ids_lists_who_holds_a_purchase_until_it_is_refunded(
+    session: Session,
+) -> None:
+    game, buyer = _setup(session)
+    assert shop.refundable_player_ids(session) == []
+
+    bought = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.FIRST_LETTER))
+    second = shop.purchase(session, game, buyer, shop.PurchaseRequest(ClueKind.LAST_LETTER))
+    assert shop.refundable_player_ids(session) == [BUYER]
+
+    shop.refund(session, bought)
+    assert shop.refundable_player_ids(session) == [BUYER]
+    shop.refund(session, second)
+    assert shop.refundable_player_ids(session) == []

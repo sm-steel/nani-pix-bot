@@ -20,9 +20,16 @@ from telegram.constants import ChatType
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.helpers import paging
+from nani_pix_bot.commands.helpers import paging, someone_else
 from nani_pix_bot.commands.profile import card, edit
-from nani_pix_bot.commands.profile.data import VIAS, card_data, edit_data, list_data, parse
+from nani_pix_bot.commands.profile.data import (
+    SOMEONE_ELSE_PREFIX,
+    VIAS,
+    card_data,
+    edit_data,
+    list_data,
+    parse,
+)
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import ShowcaseKind
 from nani_pix_bot.services import i18n, players, settings
@@ -50,7 +57,8 @@ class Viewing:
 
 
 def card_keyboard(order: list[int], viewing: Viewing, lang: str) -> InlineKeyboardMarkup:
-    """◀ ▶, 👥 Players and, on an editable card, ✏️."""
+    """◀ ▶, 👥 Players, 🔍 Someone else on your own card and, on an editable
+    card, ✏️."""
     owner, target = viewing.owner, viewing.target
     rows = []
     if len(order) > 1:
@@ -70,6 +78,8 @@ def card_keyboard(order: list[int], viewing: Viewing, lang: str) -> InlineKeyboa
         i18n.t("profile.players", lang), callback_data=list_data(owner, _page_of(order, target))
     )
     rows.append([players_button])
+    if owner == target:
+        rows.append([someone_else.button(SOMEONE_ELSE_PREFIX, "profile", owner, lang)])
     if viewing.editable:
         edit_button = InlineKeyboardButton(
             i18n.t("profile.edit", lang), callback_data=edit_data(owner, ShowcaseKind.STAMP, 0)

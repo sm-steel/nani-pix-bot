@@ -23,11 +23,19 @@ class RefinishRefusal(enum.StrEnum):
     STARTER = "starter"
 
 
-def refinish_refusal(game: Game | None, *, winner_id: int, bot_id: int) -> RefinishRefusal | None:
+def game_refusal(game: Game | None) -> RefinishRefusal | None:
+    """Why `game` can't be re-finished whoever is named, or None if it can."""
     if game is None:
         return RefinishRefusal.NOT_FOUND
     if game.status not in (GameStatus.UNSOLVED, GameStatus.VOTING):
         return RefinishRefusal.NOT_UNSOLVED
+    return None
+
+
+def refinish_refusal(game: Game | None, *, winner_id: int, bot_id: int) -> RefinishRefusal | None:
+    refusal = game_refusal(game)
+    if game is None or refusal is not None:
+        return refusal
     if winner_id == bot_id:
         return RefinishRefusal.BOT
     if winner_id == game.starter_id:

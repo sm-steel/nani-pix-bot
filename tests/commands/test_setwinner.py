@@ -156,7 +156,7 @@ async def test_non_admin_is_refused(monkeypatch, session_factory) -> None:
 
 
 async def test_bad_args_reply_with_usage(monkeypatch, session_factory) -> None:
-    for args in ([], ["12"], ["abc", "@winner"], ["1", "@a", "extra"]):
+    for args in ([], ["abc"], ["abc", "@winner"], ["1", "@a", "extra"]):
         update, _ = await _command(monkeypatch, session_factory, args)
         assert _reply(update) == i18n.t("setwinner.usage", "en")
 

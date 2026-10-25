@@ -13,9 +13,9 @@ Nani Pix's matching is strict, so sometimes a right answer doesn't count. There 
 two fixes:
 
 - **While the round is running**, its creator can use `/correct @username` in the
-  game topic. This doesn't work on HARD MODE rounds, which nobody hosts.
+  game topic, or just `/correct` to pick from a menu of the round's guessers. This doesn't work on HARD MODE rounds, which nobody hosts.
 - **After the round ended unsolved**, or while a HARD MODE vote is open, an admin
-  can send `/setwinner <game id> @username` to Nani Pix. The game id is the 🎲 number
+  can send `/setwinner <game id> @username` to Nani Pix, or `/setwinner <game id>` alone to pick from a menu of that game's guessers. The game id is the 🎲 number
   on every post about the round, and in `/history`. You can type it with or without
   the `#`, so `/setwinner #142 @kenji` works too, and the `@` before the name is
   optional.
@@ -74,7 +74,7 @@ Nani Pix refuses when she can't do it:
 
 ## Refunding a clue
 
-`/refund @username` lists that player's clue purchases, newest first, five to a
+`/refund @username` lists that player's clue purchases (`/refund` alone first shows a menu of the players who have refundable ones), newest first, five to a
 page, with ◀ and ▶ to page through. Each button shows the game number, the clue,
 the amount the refund would pay back and the date. Tap one, check the amount, and confirm.
 

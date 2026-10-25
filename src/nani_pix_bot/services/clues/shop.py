@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from loguru import logger
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, aliased
 
 from nani_pix_bot.models.clue_purchase import CluePurchase
@@ -415,13 +415,26 @@ class RefundableItem:
     cashback_deducted: int = 0
 
 
+def _refundable(stmt: Select) -> Select:
+    """`stmt` narrowed to refundable purchases: paid in 💠 (a token purchase
+    charged nothing to give back) and still held. A refunded purchase's row is
+    deleted (refund()), so whatever is left is refundable."""
+    return stmt.join(CurrencyTransfer, CurrencyTransfer.id == CluePurchase.transfer_id).where(
+        CluePurchase.token_used.is_(False)
+    )
+
+
+def refundable_player_ids(session: Session) -> list[int]:
+    """Everyone with at least one refundable purchase, in no particular order."""
+    stmt = _refundable(select(CluePurchase.player_id).distinct())
+    return list(session.scalars(stmt))
+
+
 def refundable_purchases(session: Session, player_id: int) -> list[RefundableItem]:
-    """Every clue purchase `player_id` still holds, newest first. A refunded
-    purchase's row is deleted (refund()), so whatever is here is refundable."""
+    """Every refundable clue purchase `player_id` holds, newest first."""
     stmt = (
-        select(CluePurchase, CurrencyTransfer.amount)
-        .join(CurrencyTransfer, CurrencyTransfer.id == CluePurchase.transfer_id)
-        .where(CluePurchase.player_id == player_id, CluePurchase.token_used.is_(False))
+        _refundable(select(CluePurchase, CurrencyTransfer.amount))
+        .where(CluePurchase.player_id == player_id)
         .order_by(CluePurchase.created_at.desc(), CluePurchase.id.desc())
     )
     items = []
