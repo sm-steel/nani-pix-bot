@@ -33,6 +33,9 @@ from nani_pix_bot.services.economy.messages import earnings_suffix
 from nani_pix_bot.services.game import guesses
 from nani_pix_bot.services.seasons import haunting
 
+# Outcomes answered with the remaining-guesses reply (a forgiven miss included).
+_WRONG_LIKE = frozenset({game_service.GuessOutcome.WRONG, game_service.GuessOutcome.FORGIVEN})
+
 # Outcomes whose post reveals the title anyway.
 _NO_PARTIAL_REVEAL = frozenset(
     {
@@ -237,7 +240,7 @@ def _dispatch_non_won_outcome(
     only reply text for guess_command to actually await sending (this
     function stays synchronous, message.reply_text is the only async
     call any outcome needs, so it's left to the caller)."""
-    if outcome is game_service.GuessOutcome.WRONG:
+    if outcome in _WRONG_LIKE:
         return None, False, _prepare_wrong_feedback(session, context, game, lang)
     if outcome is game_service.GuessOutcome.STAGE_ADVANCED:
         return prepare_stage_advanced_announcement(session, context, game, lang), False, None
@@ -339,6 +342,9 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         if outcome not in _NO_PARTIAL_REVEAL:
             suffix = _partial_reveal_line(session, game, lang) + suffix
+        if outcome is game_service.GuessOutcome.FORGIVEN:
+            name = flair.named(session, user.id, user.full_name)
+            suffix = "\n" + i18n.t("ofuda.used", lang, name=name) + suffix
         if outcome is game_service.GuessOutcome.WON:
             announcement = _prepare_won_announcement_dispatch(session, context, game, lang, user)
             reaction = inventory.look(session, user.id, CosmeticSlot.GUESS_REACTION)

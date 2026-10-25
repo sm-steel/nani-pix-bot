@@ -50,7 +50,6 @@ _kept = (
     EventType.OMIKUJI_DRAWN,
     consumables.holdings,
     ofuda.arm,
-    ofuda.forgive,
     OmikujiDraw.local_date,
     OmikujiDraw.drawn_at,
     OmikujiKind.DAIKICHI,

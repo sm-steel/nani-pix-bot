@@ -946,5 +946,6 @@
   "haunt.hint.kyokotsu_xray": "you see it as an X-ray until the last stage",
   "haunt.started": "👻 This round is haunted — {twist}: {hint}. Season Coins ×{multiplier}!",
   "haunt.changed": "👻 A new haunting for this stage — {twist}: {hint}.",
-  "haunt.lifted": "✨ The {twist} lifts — a clear picture for the last stage!"
+  "haunt.lifted": "✨ The {twist} lifts — a clear picture for the last stage!",
+  "ofuda.used": "📜 {name}'s Ofuda burned away — that miss didn't count!"
 }
