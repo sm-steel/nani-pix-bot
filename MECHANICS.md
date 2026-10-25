@@ -2613,7 +2613,7 @@ effect. It emits `HEX_CAST` (with `outcome="blocked"`) and `HEX_BLOCKED`
 | Nopperabō | `duration_hours` | hides the player everywhere (below) |
 | Chōchin-obake | `duration_hours` | 🤪 reaction on every guess they make |
 | Kappa | until it triggers | on the target's next win that pays any 🪙, takes `amount` percent (rounded down) of that win's 🪙 and gives it to the caster |
-| Kitsune | until it triggers | on the target's next wrong guess, takes up to `amount` 🪙 and gives it to the caster |
+| Kitsune | until it triggers | on the target's next wrong guess, takes up to `amount` 🪙 (gone to the house, the caster gets nothing) |
 
 - **Kappa and Kitsune** resolve from the season event consumer
   (`on_season_event`) with outcome `TRIGGERED`, the game id and a

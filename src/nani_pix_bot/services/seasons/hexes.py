@@ -231,12 +231,14 @@ def cast(
 
 
 def _log_cast(session: Session, row: Hex, target: Player, price: int) -> None:
-    note = " — blocked by their omamori" if row.outcome else ""
+    blocked = row.outcome == HexOutcome.BLOCKED.value
+    note = " — blocked by their omamori" if blocked else ""
     logger.info(
         "cast {kind} on {target} for {price} 🪙" + note,
         kind=row.kind,
         target=players.describe_player_id(session, target.telegram_user_id),
         price=price,
+        blocked=blocked,
         hex_id=row.id,
         target_id=target.telegram_user_id,
         season_id=row.season_id,
@@ -327,18 +329,31 @@ def _resolve(session: Session, row: Hex, game_id: int, amount: int, at: datetime
     outbox.enqueue_hex_notice(session, row.id, "triggered")
 
 
-def _move_coins(
-    session: Session, row: Hex, found: xp.Tagged, reason: CurrencyReason, amount: int
-) -> int:
-    """Up to `amount` 🪙 from the hexed player to the caster; returns what moved."""
+def _move_coins(session: Session, row: Hex, found: xp.Tagged, amount: int) -> int:
+    """Kappa: up to `amount` 🪙 from the hexed player to the caster; returns what moved."""
     target = session.get(Player, row.target_id)
     caster = session.get(Player, row.caster_id)
     moved = min(amount, wallet.balance(session, row.target_id, season_id=row.season_id))
     if target is None or caster is None or moved <= 0:
         return 0
-    entry = wallet.LedgerEntry(reason, game_id=found.game.id, season_id=row.season_id, coins=True)
+    entry = wallet.LedgerEntry(
+        CurrencyReason.HEX_KAPPA, game_id=found.game.id, season_id=row.season_id, coins=True
+    )
     wallet.transfer(session, wallet.Party.of(target), wallet.Party.of(caster), moved, entry)
     return moved
+
+
+def _take_for_house(session: Session, row: Hex, found: xp.Tagged, amount: int) -> int:
+    """Kitsune: up to `amount` 🪙 off the hexed player, paid to the house; returns what went."""
+    target = session.get(Player, row.target_id)
+    taken = min(amount, wallet.balance(session, row.target_id, season_id=row.season_id))
+    if target is None or taken <= 0:
+        return 0
+    entry = wallet.LedgerEntry(
+        CurrencyReason.HEX_KITSUNE, game_id=found.game.id, season_id=row.season_id, coins=True
+    )
+    wallet.debit(session, target, taken, entry)
+    return taken
 
 
 def _kappa(session: Session, event: LoggedEvent, found: xp.Tagged, paid: list[xp.Award]) -> None:
@@ -350,7 +365,7 @@ def _kappa(session: Session, event: LoggedEvent, found: xp.Tagged, paid: list[xp
     rule = rule_for(found.run, HexKind.KAPPA)
     if row is None or rule is None:
         return
-    moved = _move_coins(session, row, found, CurrencyReason.HEX_KAPPA, won * rule.amount // 100)
+    moved = _move_coins(session, row, found, won * rule.amount // 100)
     _resolve(session, row, found.game.id, moved, event.occurred_at)
 
 
@@ -362,7 +377,7 @@ def _kitsune(session: Session, event: LoggedEvent, found: xp.Tagged) -> None:
     rule = rule_for(found.run, HexKind.KITSUNE)
     if row is None or rule is None:
         return
-    moved = _move_coins(session, row, found, CurrencyReason.HEX_KITSUNE, rule.amount)
+    moved = _take_for_house(session, row, found, rule.amount)
     _resolve(session, row, found.game.id, moved, event.occurred_at)
 
 

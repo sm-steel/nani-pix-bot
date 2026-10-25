@@ -7,6 +7,7 @@ from nani_pix_bot.models.announcement import AnnouncementOutbox
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
 from nani_pix_bot.models.enums import (
     ConsumableKind,
+    CurrencyParty,
     CurrencyReason,
     EventType,
     HexOutcome,
@@ -121,9 +122,16 @@ def test_kappa_ignores_someone_elses_win(session, hex_season):
 def test_kitsune_costs_the_next_wrong_guess(session, hex_season):
     _cast(session, 1, 2, HexKind.KITSUNE)
     amount = _rule(HexKind.KITSUNE).amount
+    sid = hex_season.id
+    target_before = wallet.balance(session, 2, season_id=sid)
+    caster_before = wallet.balance(session, 1, season_id=sid)
     _guess(session, 2, correct=False)
     (moved,) = _transfers(session, CurrencyReason.HEX_KITSUNE)
-    assert (moved.amount, moved.from_player_id, moved.to_player_id) == (amount, 2, 1)
+    assert (moved.amount, moved.from_player_id) == (amount, 2)
+    assert moved.to_type == CurrencyParty.HOUSE
+    assert moved.to_player_id is None
+    assert wallet.balance(session, 2, season_id=sid) == target_before - amount
+    assert wallet.balance(session, 1, season_id=sid) == caster_before
     assert _only_hex(session).outcome == HexOutcome.TRIGGERED.value
     assert _events(session, EventType.HEX_TRIGGERED)[0].data["amount"] == amount
     assert [notice["notice"] for _, notice in _outbox(session)] == ["triggered"]
@@ -140,6 +148,7 @@ def test_kitsune_takes_only_what_the_target_has(session, hex_season):
     _drain(session, 2, hex_season.id, keep=3)
     _guess(session, 2, correct=False)
     assert [t.amount for t in _transfers(session, CurrencyReason.HEX_KITSUNE)] == [3]
+    assert wallet.balance(session, 2, season_id=hex_season.id) == 0
     assert _events(session, EventType.HEX_TRIGGERED)[0].data["amount"] == 3
 
 
