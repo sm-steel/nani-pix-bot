@@ -33,8 +33,7 @@ SPEC = PickerSpec(PREFIX, "/correct", state_parts=1)
 
 
 def _candidates(session: Session, game: Game, bot_id: int) -> list[int]:
-    excluded = {game.starter_id, bot_id}
-    return [pid for pid in guesses.recent_guessers(session, game.id) if pid not in excluded]
+    return guesses.winner_candidates(session, game, bot_id=bot_id)
 
 
 def players_view(session: Session, game: Game, bot_id: int, page: int) -> View:

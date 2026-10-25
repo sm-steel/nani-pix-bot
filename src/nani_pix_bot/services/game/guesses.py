@@ -111,3 +111,10 @@ def recent_guessers(session: Session, game_id: int) -> list[int]:
         .order_by(func.max(GameGuess.id).desc())
     )
     return list(session.scalars(stmt))
+
+
+def winner_candidates(session: Session, game: Game, *, bot_id: int) -> list[int]:
+    """Whom a picker may name `game`'s winner (/correct, /setwinner): its
+    guessers, whoever guessed last first, minus its starter and Nani Pix."""
+    excluded = {game.starter_id, bot_id}
+    return [pid for pid in recent_guessers(session, game.id) if pid not in excluded]

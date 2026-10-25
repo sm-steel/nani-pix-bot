@@ -50,6 +50,7 @@ from nani_pix_bot.commands import (
     season_shop,
     setautostart,
     setwinner,
+    setwinner_picker,
     shop,
     stageconfig,
     standings,
@@ -369,6 +370,17 @@ def build_application(config: Config) -> Application:
     application.add_handler(
         CallbackQueryHandler(
             game_flow.correct_callback, pattern=rf"^{re.escape(game_flow.CORRECT_PREFIX)}"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            game_flow.skip_callback, pattern=rf"^{re.escape(game_flow.SKIP_PREFIX)}"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            setwinner_picker.setwinner_callback,
+            pattern=rf"^{re.escape(setwinner_picker.PREFIX)}",
         )
     )
     application.add_handler(

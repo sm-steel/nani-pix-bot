@@ -30,7 +30,12 @@ from nani_pix_bot.services.game.numbers import (
     should_ask_if_numbers_matter,
     titles_have_numbers,
 )
-from nani_pix_bot.services.game.refinish import RefinishRefusal, refinish, refinish_refusal
+from nani_pix_bot.services.game.refinish import (
+    RefinishRefusal,
+    game_refusal,
+    refinish,
+    refinish_refusal,
+)
 from nani_pix_bot.services.game.state import (
     INACTIVITY_ADVANCE_DELAY,
     INACTIVITY_NUDGE_DELAY,
@@ -150,6 +155,7 @@ __all__ = [
     "force_unsolved",
     "force_win",
     "game_id_line",
+    "game_refusal",
     "get_setup_game_for_starter",
     "get_turn_state",
     "hard_mode_reveal_images",

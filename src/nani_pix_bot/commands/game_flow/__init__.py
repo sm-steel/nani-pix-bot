@@ -13,11 +13,14 @@ from nani_pix_bot.commands.game_flow.guess import guess_command
 from nani_pix_bot.commands.game_flow.pass_vote import pass_command
 from nani_pix_bot.commands.game_flow.sharpen import sharpen_callback_handler, sharpen_command
 from nani_pix_bot.commands.game_flow.skip import skip_command
+from nani_pix_bot.commands.game_flow.skip_picker import PREFIX as SKIP_PREFIX
+from nani_pix_bot.commands.game_flow.skip_picker import skip_callback
 from nani_pix_bot.commands.game_flow.stop import stop_callback_handler, stop_command
 from nani_pix_bot.commands.game_flow.vote import vote_callback_handler
 
 __all__ = [
     "CORRECT_PREFIX",
+    "SKIP_PREFIX",
     "bounty_command",
     "correct_callback",
     "correct_command",
@@ -25,6 +28,7 @@ __all__ = [
     "pass_command",
     "sharpen_callback_handler",
     "sharpen_command",
+    "skip_callback",
     "skip_command",
     "stop_callback_handler",
     "stop_command",

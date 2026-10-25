@@ -1,16 +1,17 @@
 """The /skip command — hands off or opens the turn to start the next
-game. See MECHANICS.md's "Turn handoff" section."""
+game. See MECHANICS.md's "Turn handoff" section. `/skip @user` hands the turn
+to that player at once; `/skip` alone shows a menu (skip_picker.py) whose
+first row opens the turn to everyone."""
 
 from loguru import logger
 from telegram import Update
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.game_flow import skip_picker
+from nani_pix_bot.commands.game_flow.skip_turn import hand_turn, refusal_key
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs import timers as timeout_module
-from nani_pix_bot.models.turn_state import TurnState
-from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.cosmetics import flair
 
@@ -29,69 +30,35 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     session_factory = context.bot_data["session_factory"]
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
-        refusal_key = _refusal_key(session, user.id)
-        if refusal_key is not None:
-            await message.reply_text(i18n.t(refusal_key, lang))
+        refusal = refusal_key(session, user.id)
+        if refusal is not None:
+            await message.reply_text(i18n.t(refusal, lang))
             return
-
-        turn_state: TurnState | None = None
         if not context.args:
-            turn_state = _open_turn(context, session)
-            reply_key, reply_kwargs = "skip.opened", {}
-        else:
-            target_label = await _pass_turn(message, context, session, lang, context.args[0])
-            if target_label is None:
-                return
-            reply_key, reply_kwargs = "skip.passed", {"username": target_label}
+            text, keyboard = skip_picker.menu_view(session, user.id, context.bot.id, 0)
+            logger.info("opened the /skip menu")
+            await message.reply_text(text, reply_markup=keyboard)
+            return
+        target_label = await _pass_turn(message, context, session, lang, context.args[0])
+        if target_label is None:
+            return
     # Block closed and committed above — the turn-state change is durable
     # now regardless of whether the confirmation below actually reaches
     # the group (see jobs/timers/current_image.py's post_current_image
     # docstring for the general principle).
-    if turn_state is not None:
-        timeout_module.schedule_idle_autostart(context.job_queue, turn_state)
     try:
-        await message.reply_text(i18n.t(reply_key, lang, **reply_kwargs))
+        await message.reply_text(i18n.t("skip.passed", lang, username=target_label))
     except TelegramError as exc:
         logger.warning("failed to send the /skip confirmation: {error}", error=exc)
-
-
-def _refusal_key(session, user_id: int) -> str | None:
-    """Why `user_id` may not /skip right now, as the reply's locale key —
-    or None if they may. Only the designated starter may /skip, and only
-    between games (MECHANICS.md's "Turn handoff"). Logs the refusal."""
-    if game_service.active_or_setup_game(session) is not None:
-        logger.warning("tried /skip while a game is running")
-        return "skip.game_running"
-    turn_state = game_service.get_turn_state(session)
-    current = turn_state.next_starter_id if turn_state is not None else None
-    if current is None:
-        # An open turn names nobody, so there's nothing to hand off — not
-        # a free-for-all where anyone may designate a starter (issue #235).
-        logger.warning("tried /skip while the turn is open to anyone")
-        return "skip.turn_open"
-    if current != user_id:
-        logger.warning(
-            "tried /skip out of turn (designated: {next_starter})",
-            next_starter=players.describe_player_id(session, current),
-            next_starter_id=current,
-        )
-        return "skip.not_your_turn"
-    return None
-
-
-def _open_turn(context: ContextTypes.DEFAULT_TYPE, session) -> TurnState:
-    turn_state = game_service.set_next_starter(session, None, reason="/skip")
-    timeout_module.cancel_turn_timers(context.job_queue)
-    return turn_state
 
 
 async def _pass_turn(
     message, context: ContextTypes.DEFAULT_TYPE, session, lang: str, raw_username: str
 ) -> str | None:
-    """Returns the target's label (username plus flair) on success, or None for an unknown
+    """Returns the target's label (@username plus flair) on success, or None for an unknown
     username — that failure reply goes out here, inline: no mutation
     happened on this path, so there's nothing for a timeout to roll
-    back (unlike the two successful outcomes, whose confirmation the
+    back (unlike the successful outcome, whose confirmation the
     caller sends only after this whole session commits)."""
     target_username = raw_username.lstrip("@")
     target = players.find_player_by_username(session, target_username)
@@ -123,7 +90,5 @@ async def _pass_turn(
         await message.reply_text(i18n.t("skip.cannot_target_bot", lang))
         return None
 
-    turn_state = game_service.set_next_starter(session, target.telegram_user_id, reason="/skip")
-    timeout_module.cancel_idle_autostart(context.job_queue)
-    timeout_module.schedule_turn_timers(context.job_queue, turn_state)
-    return flair.named(session, target.telegram_user_id, target_username)
+    hand_turn(context, session, target.telegram_user_id)
+    return flair.named(session, target.telegram_user_id, f"@{target_username}")

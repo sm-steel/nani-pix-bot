@@ -108,3 +108,13 @@ def test_recent_guessers_of_a_game_with_no_guess_is_empty(session: Session) -> N
     game = _game(session)
 
     assert guesses.recent_guessers(session, game.id) == []
+
+
+def test_winner_candidates_leave_out_the_starter_and_the_bot(session: Session) -> None:
+    game = _game(session)
+    session.add(Player(telegram_user_id=99))
+    for player_id in (2, 1, 99, 3):
+        record = guesses.GuessRecord(player_id=player_id, text="x", stage=1, correct=False)
+        guesses.log_guess(session, game, record)
+
+    assert guesses.winner_candidates(session, game, bot_id=99) == [3, 2]

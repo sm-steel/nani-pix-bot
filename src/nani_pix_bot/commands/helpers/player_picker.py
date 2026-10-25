@@ -102,6 +102,10 @@ class Picker:
     def cancel(self) -> str:
         return f"{self._head()}:x"
 
+    def own(self, *parts: str) -> str:
+        """A button of the command's own beside the picker's; its tap's `rest`."""
+        return ":".join([self._head(), *parts])
+
     def data(self) -> PickerData:
         return PickerData(
             pick=lambda entry: self.target(entry.player_id), page=self.page, cancel=self.cancel()

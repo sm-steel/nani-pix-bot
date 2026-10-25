@@ -16,7 +16,14 @@ from telegram.error import Conflict, NetworkError
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, TypeHandler
 
 from nani_pix_bot import app, db
-from nani_pix_bot.commands import game_flow, leaderboard, quiet_hours, standings_dm, tip
+from nani_pix_bot.commands import (
+    game_flow,
+    leaderboard,
+    quiet_hours,
+    setwinner_picker,
+    standings_dm,
+    tip,
+)
 from nani_pix_bot.commands.dm_start import (
     pick_callback_handler,
     screenshot_gallery_callback_handler,
@@ -470,6 +477,8 @@ def test_player_pickers_route_their_taps_to_their_own_handlers() -> None:
 
     assert _callback_for(application, "tip:1:0:t:2") is tip.tip_callback
     assert _callback_for(application, "cor:1:5:t:2") is game_flow.correct_callback
+    assert _callback_for(application, "skp:1:o") is game_flow.skip_callback
+    assert _callback_for(application, "sw:1:5:t:2") is setwinner_picker.setwinner_callback
 
 
 async def test_post_init_starts_the_reveal_worker_then_reloads_the_slot(

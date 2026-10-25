@@ -8,7 +8,12 @@ from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.game import turns
-from nani_pix_bot.services.game.refinish import RefinishRefusal, refinish, refinish_refusal
+from nani_pix_bot.services.game.refinish import (
+    RefinishRefusal,
+    game_refusal,
+    refinish,
+    refinish_refusal,
+)
 
 BOT, STARTER, WINNER = 100, 1, 2
 ENDED = datetime(2026, 10, 5, 21, 11, tzinfo=UTC)
@@ -40,6 +45,16 @@ def test_refusals(session: Session) -> None:
     assert refinish_refusal(game, winner_id=WINNER, bot_id=BOT) is RefinishRefusal.NOT_UNSOLVED
     game.status = GameStatus.VOTING
     assert refinish_refusal(game, winner_id=WINNER, bot_id=BOT) is None
+
+
+def test_game_refusal_checks_only_the_game(session: Session) -> None:
+    game = _unsolved(session)
+    assert game_refusal(None) is RefinishRefusal.NOT_FOUND
+    assert game_refusal(game) is None
+    game.status = GameStatus.VOTING
+    assert game_refusal(game) is None
+    game.status = GameStatus.WON
+    assert game_refusal(game) is RefinishRefusal.NOT_UNSOLVED
 
 
 def test_starter_cannot_be_named(session: Session) -> None:
