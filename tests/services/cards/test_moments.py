@@ -98,15 +98,6 @@ def test_the_duel_target_is_on_the_right() -> None:
     assert _near(_px(image, (900, 420)), (20, 120, 20), 10)
 
 
-def test_the_blocked_attacker_is_faded() -> None:
-    attack = Image.new("RGBA", (200, 300), (255, 0, 0, 255))
-    image = _open(moments.blocked_duel_card(Mood.CHARM, DUEL, attack, ART, "Title"))
-
-    # the art sits at (230, 300); at 55% the red is blended into the background
-    red = _px(image, (200, 250))[0]
-    assert 100 < red < 235
-
-
 def _count_red(image: Image.Image, box: tuple[int, int, int, int]) -> int:
     crop = image.crop(box)
     pixels = cast(list[tuple[int, int, int]], list(crop.get_flattened_data()))
@@ -140,3 +131,42 @@ def test_the_spirit_trail_is_solid_mood_colour_between_the_rings() -> None:
 
     dots = sum(1 for x in range(349, 737) if _near(_px(image, (x, 425)), colour, 30))
     assert dots > 40
+
+
+def _blocked(attack: Image.Image) -> Image.Image:
+    return _open(moments.blocked_duel_card(Mood.CHARM, DUEL, attack, ART, "Title"))
+
+
+def test_the_blocked_hex_is_snapped_in_two() -> None:
+    attack = Image.new("RGBA", (200, 300), (255, 0, 0, 255))
+    snapped = _blocked(attack)
+    empty = _blocked(Image.new("RGBA", (200, 300), (0, 0, 0, 0)))
+
+    def far(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
+        return max(abs(x - y) for x, y in zip(a, b, strict=True))
+
+    # the 153 x 230 art is centred at (230, 300): its middle is the gap between the halves
+    assert far(_px(snapped, (230, 300)), _px(empty, (230, 300))) < 12
+    # a little way off the break, along its normal, are the two halves
+    assert far(_px(snapped, (194, 316)), _px(empty, (194, 316))) > 12
+    assert far(_px(snapped, (266, 284)), _px(empty, (266, 284))) > 12
+
+
+def test_the_spent_hex_is_drained_and_has_no_white_line() -> None:
+    attack = Image.new("RGBA", (200, 300), (255, 0, 0, 255))
+    image = _blocked(attack)
+    area = (100, 170, 360, 430)
+
+    assert _count_red(image, area) == 0  # no longer the art's full red
+    assert _whites(image, area) == 0  # nothing drawn over it
+    empty = _blocked(Image.new("RGBA", (200, 300), (0, 0, 0, 0)))
+    assert image.crop(area).tobytes() != empty.crop(area).tobytes()
+
+
+def test_the_ring_edge_is_antialiased() -> None:
+    image = _open(moments.charm_card(Mood.CHARM, ALICE, ART, "Title"))
+
+    # down the ring's top: dark halo, then the ring colour; a hard edge would jump straight
+    reds = [_px(image, (480, y))[0] for y in range(232, 246)]
+    low, high = min(reds), max(reds)
+    assert any(low + 0.2 * (high - low) < r < high - 0.2 * (high - low) for r in reds)

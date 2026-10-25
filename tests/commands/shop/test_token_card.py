@@ -1,11 +1,12 @@
 """A clue paid with a token posts a moment card to the topic; a 💠 one stays text."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from nani_pix_bot.commands.shop import callbacks
 from nani_pix_bot.jobs import moments
-from nani_pix_bot.models.enums import ConsumableKind
+from nani_pix_bot.models.enums import ClueKind, ConsumableKind
 from nani_pix_bot.services.cosmetics import consumables
 from tests.commands.shop.helpers import (
     RICH,
@@ -85,4 +86,29 @@ async def test_a_failed_card_falls_back_to_the_plain_notice(
 
     await tap(context, make_query(f"shop:buy:{game_id}:first_letter"))
 
+    assert "first letter" in _topic_texts(context)[0]
+
+
+async def test_a_zero_cost_clue_that_was_not_token_paid_keeps_the_plain_notice(
+    session_factory,
+) -> None:
+    """The card follows `token_used`, not a zero amount."""
+    context = _context(session_factory)
+    user = MagicMock(id=2, full_name="Buyer Name")
+    tap_ = MagicMock(user=user, game_id=1, kind=ClueKind.FIRST_LETTER)
+    tap_.query.answer = AsyncMock()
+    bought = callbacks._Bought(
+        lang="en",
+        purchase_id=1,
+        amount=0,
+        message="clue",
+        followup=None,
+        followup_purchase_id=None,
+        buyer="Buyer Name",
+        token_used=False,
+    )
+
+    await callbacks._announce(context, tap_, bought)
+
+    context.bot.send_photo.assert_not_awaited()
     assert "first letter" in _topic_texts(context)[0]

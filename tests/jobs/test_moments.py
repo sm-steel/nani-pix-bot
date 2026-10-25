@@ -86,3 +86,12 @@ async def test_a_refused_text_fallback_is_only_logged(log_records) -> None:
     await moments.post_charm_moment(context, _moment(), game_id=5)
 
     assert sum(r.level == "WARNING" for r in log_records) >= 2
+
+
+async def test_no_visible_avatar_still_posts_the_card_with_the_initials_disc() -> None:
+    context = _context()  # the autouse fixture makes fetch_avatar return None
+
+    await moments.post_charm_moment(context, _moment(), game_id=5)
+
+    context.bot.send_photo.assert_awaited_once()
+    context.bot.send_message.assert_not_awaited()

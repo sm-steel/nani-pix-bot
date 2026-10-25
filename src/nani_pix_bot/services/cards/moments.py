@@ -5,14 +5,15 @@ background. Pure Pillow, no Telegram: the caller fetches avatars and localizes t
 import enum
 import math
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
-from nani_pix_bot.services.cards.render import avatar_disc, font
+from nani_pix_bot.services.cards.render import avatar_disc, font, smooth_mask
 from nani_pix_bot.services.cosmetics import card_style
 
 MOMENT_ASSETS = Path(__file__).resolve().parents[2] / "assets" / "moments"
@@ -28,7 +29,11 @@ _SMALL_PILL = card_style.PillSize(height=42, radius=21, font_size=26, padding=36
 _TITLE_WIDTH = 1040
 _NAME_WIDTH = 360
 _SMALL_NAME_WIDTH = 300
-_FADED_ALPHA = 0.55
+_FADED_ALPHA = 0.6
+_FADED_COLOUR = 0.4  # ImageEnhance.Color factor: 60% desaturated
+_SNAP_GAP = 18  # how far the two halves of a spent hex are pushed apart
+_SNAP_TURNS = (-8, 10)  # degrees each half is turned
+_SPARKLE = (255, 215, 90)
 _CHARM_ART_BOX = (360, 420)
 _CHARM_ART_X = 790
 _CHARM_CLEAR_X = 480 + 170 + _HALO_PAD + 24  # the avatar disc's halo, plus a gap
@@ -101,6 +106,24 @@ def _pill(
     )
 
 
+def _paint(
+    canvas: Image.Image,
+    box: tuple[int, int, int, int],
+    colour: tuple[int, int, int, int],
+    shape: Callable[[ImageDraw.ImageDraw, int], None],
+    blur: float = 0.0,
+) -> None:
+    """`shape` (drawn in the box's own coordinates, at 4x) in `colour` over `box`,
+    antialiased, optionally blurred; the box must lie inside the canvas."""
+    x0, y0, x1, y1 = box
+    mask = smooth_mask((x1 - x0, y1 - y0), shape)
+    if blur:
+        mask = mask.filter(ImageFilter.GaussianBlur(blur))
+    layer = Image.new("RGBA", mask.size, (*colour[:3], 0))
+    layer.putalpha(mask.point(lambda v: v * colour[3] // 255))
+    canvas.alpha_composite(layer, (x0, y0))
+
+
 def _glow_disc(
     canvas: Image.Image,
     face: Face,
@@ -110,19 +133,23 @@ def _glow_disc(
 ) -> None:
     """The avatar disc with a blurred halo and a ring in the mood colour."""
     x, y = centre
-    radius = size / 2 + _HALO_PAD
-    halo = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    ImageDraw.Draw(halo).ellipse(
-        (x - radius, y - radius, x + radius, y + radius), fill=(*colour, _HALO_ALPHA)
-    )
-    canvas.alpha_composite(halo.filter(ImageFilter.GaussianBlur(_HALO_BLUR)))
-    ring = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    ImageDraw.Draw(ring).ellipse(
-        (x - radius + 4, y - radius + 4, x + radius - 4, y + radius - 4),
-        outline=(*colour, 255),
-        width=_RING_WIDTH,
-    )
-    canvas.alpha_composite(ring)
+    radius = size // 2 + _HALO_PAD
+    reach = radius + 3 * _HALO_BLUR
+    box = (x - reach, y - reach, x + reach, y + reach)
+
+    def disc(draw: ImageDraw.ImageDraw, k: int, r: int, fill: int) -> None:
+        mid = reach * k
+        draw.ellipse((mid - r * k, mid - r * k, mid + r * k, mid + r * k), fill=fill)
+
+    def halo(draw: ImageDraw.ImageDraw, k: int) -> None:
+        disc(draw, k, radius, 255)
+
+    def ring(draw: ImageDraw.ImageDraw, k: int) -> None:
+        disc(draw, k, radius - 4, 255)
+        disc(draw, k, radius - 4 - _RING_WIDTH, 0)
+
+    _paint(canvas, box, (*colour, _HALO_ALPHA), halo, blur=_HALO_BLUR)
+    _paint(canvas, box, (*colour, 255), ring)
     canvas.alpha_composite(
         avatar_disc(face.avatar, _plain(face.name), face.seed, size),
         (round(x - size / 2), round(y - size / 2)),
@@ -184,35 +211,105 @@ def _spirit_trail(
     colour: tuple[int, int, int],
 ) -> None:
     """A trail of solid dots from `start` to `end`, a soft glow of the same dots under them."""
-    length = math.dist(start, end)
-    count = max(2, round(length / _TRAIL_SPACING) + 1)
-    layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(layer)
-    for i in range(count):
-        t = i / (count - 1)
-        x = start[0] + (end[0] - start[0]) * t
-        y = start[1] + (end[1] - start[1]) * t
-        draw.ellipse(
-            (x - _TRAIL_DOT, y - _TRAIL_DOT, x + _TRAIL_DOT, y + _TRAIL_DOT), fill=(*colour, 255)
+    count = max(2, round(math.dist(start, end) / _TRAIL_SPACING) + 1)
+    pad = _TRAIL_DOT + 3 * 9
+    x0, y0 = min(start[0], end[0]) - pad, min(start[1], end[1]) - pad
+    box = (x0, y0, max(start[0], end[0]) + pad, max(start[1], end[1]) + pad)
+
+    def dots(draw: ImageDraw.ImageDraw, k: int) -> None:
+        for i in range(count):
+            t = i / (count - 1)
+            x = (start[0] + (end[0] - start[0]) * t - x0) * k
+            y = (start[1] + (end[1] - start[1]) * t - y0) * k
+            r = _TRAIL_DOT * k
+            draw.ellipse((x - r, y - r, x + r, y + r), fill=255)
+
+    _paint(canvas, box, (*colour, 255), dots, blur=9)
+    _paint(canvas, box, (*colour, 255), dots)
+
+
+Point = tuple[float, float]
+
+
+def _break_line(width: int, height: int) -> list[Point]:
+    """A zigzag from the top-left to the bottom-right of a `width` x `height` picture."""
+    start, end = (width * 0.15, -4.0), (width * 0.85, height + 4.0)
+    direction = (end[0] - start[0], end[1] - start[1])
+    length = math.hypot(*direction)
+    normal = (-direction[1] / length, direction[0] / length)
+    points = []
+    for t, wobble in zip((0.0, 0.25, 0.5, 0.75, 1.0), (0, 1, 0, -1, 0), strict=True):
+        offset = wobble * width * 0.07
+        points.append(
+            (
+                start[0] + direction[0] * t + normal[0] * offset,
+                start[1] + direction[1] * t + normal[1] * offset,
+            )
         )
-    canvas.alpha_composite(layer.filter(ImageFilter.GaussianBlur(9)))
-    canvas.alpha_composite(layer)
+    return points
 
 
-def _crack(canvas: Image.Image, centre: tuple[int, int], height: int) -> None:
-    """A jagged crack line across the faded attacking art."""
-    x, y = centre
-    top, bottom = y - height // 2 - 10, y + height // 2 + 10
-    points = [
-        (x - 12, top),
-        (x + 14, y - height // 4),
-        (x - 10, y - 6),
-        (x + 16, y + height // 4),
-        (x - 6, bottom),
-    ]
-    layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    ImageDraw.Draw(layer).line(points, fill=(255, 255, 255, 235), width=5, joint="curve")
-    canvas.alpha_composite(layer)
+def _half(picture: Image.Image, line: list[Point], first: bool) -> Image.Image:
+    """One side of `picture` cut along `line`: the left/lower side if `first`, else the
+    other. The two masks are exact complements, so together they cover the picture."""
+    width, height = picture.size
+    if first:
+        polygon = [*line, (-10, height + 10), (-10, -10)]
+    else:
+        polygon = [*line, (width + 10, height + 10), (width + 10, -10)]
+
+    def side(draw: ImageDraw.ImageDraw, k: int) -> None:
+        draw.polygon([(x * k, y * k) for x, y in polygon], fill=255)
+
+    mask = smooth_mask(picture.size, side)
+    half = picture.copy()
+    half.putalpha(ImageChops.multiply(picture.getchannel("A"), mask))
+    return half
+
+
+def _sparkle(canvas: Image.Image, centre: Point, radius: int) -> None:
+    """A small golden four-point star."""
+    x, y = round(centre[0]), round(centre[1])
+    reach = radius + 2
+    box = (x - reach, y - reach, x + reach, y + reach)
+
+    def star(draw: ImageDraw.ImageDraw, k: int) -> None:
+        mid, r, inner = reach * k, radius * k, radius * k * 0.28
+        points = []
+        for i in range(8):
+            angle = math.pi / 4 * i - math.pi / 2
+            d = r if i % 2 == 0 else inner
+            points.append((mid + d * math.cos(angle), mid + d * math.sin(angle)))
+        draw.polygon(points, fill=255)
+
+    _paint(canvas, box, (*_SPARKLE, 255), star)
+
+
+def _broken_art(canvas: Image.Image, art: Image.Image, centre: tuple[int, int]) -> None:
+    """The attacking item snapped in two along a zigzag: the halves pushed apart and
+    turned, drained of colour and faded, with golden sparkles in the gap."""
+    picture = _art(art, _ATTACK_ART_BOX)
+    drained = ImageEnhance.Color(picture.convert("RGB")).enhance(_FADED_COLOUR).convert("RGBA")
+    drained.putalpha(picture.getchannel("A").point(lambda a: round(a * _FADED_ALPHA)))
+    line = _break_line(*drained.size)
+    direction = (line[-1][0] - line[0][0], line[-1][1] - line[0][1])
+    length = math.hypot(*direction)
+    normal = (-direction[1] / length, direction[0] / length)  # towards the first half
+    origin = (centre[0] - drained.width / 2, centre[1] - drained.height / 2)
+    for first, turn, sign in ((True, _SNAP_TURNS[0], 1), (False, _SNAP_TURNS[1], -1)):
+        half = _half(drained, line, first)
+        bounds = half.getchannel("A").getbbox()
+        if bounds is None:
+            continue
+        piece = half.crop(bounds).rotate(turn, expand=True, resample=Image.Resampling.BICUBIC)
+        middle = (
+            origin[0] + (bounds[0] + bounds[2]) / 2 + normal[0] * sign * _SNAP_GAP / 2,
+            origin[1] + (bounds[1] + bounds[3]) / 2 + normal[1] * sign * _SNAP_GAP / 2,
+        )
+        _paste(canvas, piece, (round(middle[0]), round(middle[1])))
+    for t, radius in ((0.2, 9), (0.4, 6), (0.62, 7), (0.82, 10)):
+        spot = (line[0][0] + direction[0] * t, line[0][1] + direction[1] * t)
+        _sparkle(canvas, (origin[0] + spot[0], origin[1] + spot[1]), radius)
 
 
 @dataclass(frozen=True)
@@ -225,11 +322,10 @@ def blocked_duel_card(
     mood: Mood, duel: Duel, attack: Image.Image, defence: Image.Image, title: str
 ) -> bytes:
     """A hex blocked: the target in the middle beside their `defence` art, while the
-    `attack` art lies faded and cracked next to the small caster's name."""
+    `attack` art lies snapped in two and faded next to the small caster's name."""
     canvas = _background(mood).copy()
     _title(canvas, title)
-    _paste(canvas, _art(attack, _ATTACK_ART_BOX, angle=18, alpha=_FADED_ALPHA), (230, 300))
-    _crack(canvas, (230, 300), 230)
+    _broken_art(canvas, attack, (230, 300))
     _pill(canvas, duel.actor.name, _SMALL_PILL, (230, 470), _SMALL_NAME_WIDTH)
     _glow_disc(canvas, duel.target, 320, (560, 420), RING[mood])
     _paste(canvas, _art(defence, _DEFENCE_ART_BOX), (860, 470))

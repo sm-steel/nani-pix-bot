@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from PIL import Image, ImageDraw
 
-from nani_pix_bot.services.cards.render import font
+from nani_pix_bot.services.cards.render import font, smooth_mask
 
 CARD_FILL = (255, 255, 255, 26)
 CARD_OUTLINE = (255, 255, 255, 60)
@@ -36,11 +36,15 @@ def draw_pill(canvas: Image.Image, text: str, size: PillSize, area: tuple[int, i
     label_font = font(size.font_size, bold=True)
     width = round(draw.textlength(text, font=label_font)) + size.padding
     left = span_left + (span_right - span_left - width) // 2
-    pill = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    ImageDraw.Draw(pill).rounded_rectangle(
-        [left, top, left + width, top + size.height], radius=size.radius, fill=PILL_FILL
+    mask = smooth_mask(
+        (width, size.height),
+        lambda shape, k: shape.rounded_rectangle(
+            (0, 0, width * k - 1, size.height * k - 1), radius=size.radius * k, fill=255
+        ),
     )
-    canvas.alpha_composite(pill)
+    pill = Image.new("RGBA", (width, size.height), (*PILL_FILL[:3], 0))
+    pill.putalpha(mask.point(lambda v: v * PILL_FILL[3] // 255))
+    canvas.alpha_composite(pill, (left, top))
     draw.text(
         (left + width / 2, top + size.height / 2),
         text,
