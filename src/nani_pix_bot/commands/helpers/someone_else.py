@@ -136,10 +136,11 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE, which: So
         with session_scope(context.bot_data["session_factory"]) as session:
             view = _view(session, which, tap.picker, context.bot.id, tap.number)
         await player_picker.turn_page(query, which.spec, tap.number, view)
-    elif tap.rest == (OPEN,) or tap.action == "t":
-        if await _refused(query, context, which.spec.command):
-            return
-        opener = _open if tap.action == "" else _pick
-        await opener(query, context, which, tap)
+    elif tap.rest == (OPEN,):
+        if not await _refused(query, context, which.spec.command):
+            await _open(query, context, which, tap)
+    elif tap.action == "t":
+        if not await _refused(query, context, which.spec.command):
+            await _pick(query, context, which, tap)
     else:
         await player_picker.malformed(query, which.spec)

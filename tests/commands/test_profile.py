@@ -195,3 +195,11 @@ async def test_topic_profile_does_not_check_membership(session_factory) -> None:
 
     update.message.reply_photo.assert_awaited_once()
     context.bot.get_chat_member.assert_not_awaited()
+
+
+async def test_profile_in_dm_leaves_quoting_to_telegrams_default(session_factory) -> None:
+    update = _update(chat_type=ChatType.PRIVATE, thread_id=None)
+    await _run(session_factory, update)
+
+    # None: PTB quotes only outside a DM, so a DM card isn't a reply to /profile.
+    assert update.message.reply_photo.await_args.kwargs.get("do_quote") is None

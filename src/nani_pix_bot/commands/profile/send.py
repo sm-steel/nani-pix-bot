@@ -18,7 +18,7 @@ class CardRequest:
     viewer_id: int  # who asked, and the only one who may tap the card
     target_id: int
     private: bool  # in a DM with the bot
-    quote: bool = True  # reply to `message`, or just send beside it
+    quote: bool | None = None  # None: PTB's default (quote outside a DM)
 
 
 async def send_card(

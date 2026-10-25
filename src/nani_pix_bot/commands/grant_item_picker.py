@@ -1,18 +1,18 @@
 """The /grantitem menu: `/grantitem <item id>` with no @username lists every
 known player, most active first, and a pick grants them the item exactly as
-`/grantitem @user <item id>` does. Callback data carries the item:
+`/grantitem @user <item id>` does. Callback data carries the item as a digest:
 
-- `gi:<admin>:<item>:t:<player>`: grant the item to that player.
-- `gi:<admin>:<item>:p:<page>`: a page of the menu.
-- `gi:<admin>:<item>:x`: cancel.
+- `gi:<admin>:<digest>:t:<player>`: grant the item to that player.
+- `gi:<admin>:<digest>:p:<page>`: a page of the menu.
+- `gi:<admin>:<digest>:x`: cancel.
 
-<item> is the item id itself when every button's data stays within
-Telegram's 64 bytes, else `#<row>`, a services/pending_picks.py row holding
-it (item ids never contain `#`); the row goes once the menu grants or is
-cancelled. A pick re-checks the admin's rights, and each menu message acts
-once (services/used_menus.py)."""
+Item ids run to ~40 bytes, too long beside two Telegram ids within the 64-byte
+cap, so <digest> is the first DIGEST_LENGTH hex characters of the id's sha1,
+looked up again among every registered item (a test keeps them unique). A
+pick re-checks the admin's rights, and each menu message acts once
+(services/used_menus.py)."""
 
-from collections.abc import Sequence
+import hashlib
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -25,26 +25,34 @@ from nani_pix_bot.commands.helpers.player_picker import Picker, PickerSpec, Tap,
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.registry import ResolvedItem
-from nani_pix_bot.services import i18n, pending_picks, players, settings, used_menus
+from nani_pix_bot.services import i18n, players, settings, used_menus
 
 PREFIX = "gi:"
 SPEC = PickerSpec(PREFIX, "/grantitem", state_parts=1)
-CALLBACK_DATA_LIMIT = 64  # bytes, Telegram's cap
-_KEPT = "#"
+DIGEST_LENGTH = 8
+
+
+def item_digest(item_id: str) -> str:
+    """The short, fixed-length stand-in for `item_id` in callback data."""
+    return hashlib.sha1(item_id.encode(), usedforsecurity=False).hexdigest()[:DIGEST_LENGTH]
+
+
+def item_by_digest(digest: str) -> ResolvedItem | None:
+    """The registered item whose id has this digest; None for an unknown one."""
+    return next(
+        (item for item_id, item in registry.all_items().items() if item_digest(item_id) == digest),
+        None,
+    )
+
+
+def picker(admin_id: int, item_id: str) -> Picker:
+    return Picker(PREFIX, admin_id, (item_digest(item_id),))
 
 
 def _candidates(session: Session, bot_id: int) -> list[int]:
     """Every known player but Nani Pix herself, most active first."""
     known = [pid for pid in players.known_ids(session) if pid != bot_id]
     return players.by_activity(session, known, None)
-
-
-def _item_state(session: Session, admin_id: int, item_id: str, candidates: Sequence[int]) -> str:
-    """The item id when the longest button's data fits, else a kept row's `#<id>`."""
-    longest = Picker(PREFIX, admin_id, (item_id,)).target(max(candidates))
-    if len(longest.encode()) <= CALLBACK_DATA_LIMIT:
-        return item_id
-    return f"{_KEPT}{pending_picks.keep(session, item_id)}"
 
 
 def _view(
@@ -61,40 +69,21 @@ def _view(
 def open_view(session: Session, admin_id: int, resolved: ResolvedItem, bot_id: int) -> View:
     """The menu for granting `resolved`, or the "no one" reply."""
     candidates = _candidates(session, bot_id)
-    if not candidates:
-        logger.info("opened the /grantitem picker", item_id=resolved.item_id, has_targets=False)
-        return i18n.t("grant_item.no_one", settings.get_language(session)), None
-    state = _item_state(session, admin_id, resolved.item_id, candidates)
     logger.info(
         "opened the /grantitem picker",
         item_id=resolved.item_id,
-        has_targets=True,
-        kept=state.startswith(_KEPT),
+        has_targets=bool(candidates),
     )
-    return _view(session, Picker(PREFIX, admin_id, (state,)), resolved, candidates, 0)
-
-
-def _resolve(session: Session, state: str) -> ResolvedItem | None:
-    """The item a menu's state names; None once its kept row is gone."""
-    item_id: str | None = state
-    if state.startswith(_KEPT):
-        row_id = player_picker.number(state.removeprefix(_KEPT))
-        item_id = None if row_id is None else pending_picks.item_id(session, row_id)
-    return None if item_id is None else registry.item(item_id)
-
-
-def _forget(session: Session, state: str) -> None:
-    row_id = player_picker.number(state.removeprefix(_KEPT))
-    if state.startswith(_KEPT) and row_id is not None:
-        pending_picks.forget(session, row_id)
+    if not candidates:
+        return i18n.t("grant_item.no_one", settings.get_language(session)), None
+    return _view(session, picker(admin_id, resolved.item_id), resolved, candidates, 0)
 
 
 def _grant(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, tap: Tap) -> str | None:
     """Grant the item to the tapped player: the reply, or None for a stale or
     used menu."""
-    state, target_id = tap.picker.state[0], tap.number
+    resolved, target_id = item_by_digest(tap.picker.state[0]), tap.number
     with session_scope(context.bot_data["session_factory"]) as session:
-        resolved = _resolve(session, state)
         if resolved is None or target_id not in _candidates(session, context.bot.id):
             logger.warning("refused a stale /grantitem pick", target_id=target_id)
             return None
@@ -110,7 +99,6 @@ def _grant(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, tap: Tap) -
             target_id=target_id,
             item_id=resolved.item_id,
         )
-        _forget(session, state)
         return grant_item_apply.give(session, target_id, resolved, settings.get_language(session))
 
 
@@ -126,25 +114,18 @@ async def _pick(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, tap: T
 
 
 async def _page(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, tap: Tap) -> None:
-    with session_scope(context.bot_data["session_factory"]) as session:
-        resolved = _resolve(session, tap.picker.state[0])
-        view = (
-            None
-            if resolved is None
-            else _view(
-                session, tap.picker, resolved, _candidates(session, context.bot.id), tap.number
-            )
-        )
-    if view is None:
+    resolved = item_by_digest(tap.picker.state[0])
+    if resolved is None:
         logger.warning("refused a stale /grantitem page")
         await player_picker.refuse_stale(query, context)
         return
+    with session_scope(context.bot_data["session_factory"]) as session:
+        candidates = _candidates(session, context.bot.id)
+        view = _view(session, tap.picker, resolved, candidates, tap.number)
     await player_picker.turn_page(query, SPEC, tap.number, view)
 
 
-async def _cancel(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, tap: Tap) -> None:
-    with session_scope(context.bot_data["session_factory"]) as session:
-        _forget(session, tap.picker.state[0])
+async def _cancel(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, _tap: Tap) -> None:
     await player_picker.cancel(query, context, SPEC)
 
 
