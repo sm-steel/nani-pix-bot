@@ -105,3 +105,38 @@ def test_the_blocked_attacker_is_faded() -> None:
     # the art sits at (230, 300); at 55% the red is blended into the background
     red = _px(image, (200, 250))[0]
     assert 100 < red < 235
+
+
+def _count_red(image: Image.Image, box: tuple[int, int, int, int]) -> int:
+    crop = image.crop(box)
+    pixels = cast(list[tuple[int, int, int]], list(crop.get_flattened_data()))
+    return sum(1 for r, g, b in pixels if r > 180 and g < 60 and b < 60)
+
+
+def test_a_wide_art_stays_clear_of_the_avatar_and_inside_the_card() -> None:
+    wide = Image.new("RGBA", (800, 300), (230, 0, 0, 255))
+    image = _open(moments.charm_card(Mood.CHARM, ALICE, wide, "Title"))
+
+    # the avatar's whole area (disc, ring and halo) has no art in it
+    assert _count_red(image, (480 - 184, 420 - 184, 480 + 184, 420 + 184)) == 0
+    # but the art is on the card, to the right, within the 360 px box (plus its tilt)
+    assert _count_red(image, (640, 200, 1200, 640)) > 5000
+    assert _count_red(image, (1100, 0, 1200, 800)) == 0
+
+
+def test_a_wide_art_fits_its_duel_box() -> None:
+    wide = Image.new("RGBA", (800, 300), (230, 0, 0, 255))
+    image = _open(moments.duel_card(Mood.CURSE, DUEL, wide, "Title"))
+
+    # 300 px wide at (560, 400): nothing beyond its box
+    assert _count_red(image, (0, 0, 400, 800)) == 0
+    assert _count_red(image, (720, 0, 1200, 800)) == 0
+    assert _count_red(image, (410, 300, 710, 500)) > 3000
+
+
+def test_the_spirit_trail_is_solid_mood_colour_between_the_rings() -> None:
+    image = _open(moments.duel_card(Mood.CURSE, DUEL, ART, "Title"))
+    colour = moments.RING[Mood.CURSE]
+
+    dots = sum(1 for x in range(349, 737) if _near(_px(image, (x, 425)), colour, 30))
+    assert dots > 40

@@ -29,6 +29,14 @@ _TITLE_WIDTH = 1040
 _NAME_WIDTH = 360
 _SMALL_NAME_WIDTH = 300
 _FADED_ALPHA = 0.55
+_CHARM_ART_BOX = (360, 420)
+_CHARM_ART_X = 790
+_CHARM_CLEAR_X = 480 + 170 + _HALO_PAD + 24  # the avatar disc's halo, plus a gap
+_DUEL_ART_BOX = (300, 300)
+_ATTACK_ART_BOX = (230, 230)
+_DEFENCE_ART_BOX = (330, 330)
+_TRAIL_SPACING = 28
+_TRAIL_DOT = 8
 _PILL_REACH = 400  # half the span a pill is centred in; wider than any pill
 
 
@@ -121,15 +129,18 @@ def _glow_disc(
     )
 
 
-def _art(image: Image.Image, height: int, angle: float = 0, alpha: float = 1.0) -> Image.Image:
-    """`image` trimmed to what is drawn, `height` tall, turned by `angle` degrees
-    (counter-clockwise)."""
+def _art(
+    image: Image.Image, box: tuple[int, int], angle: float = 0, alpha: float = 1.0
+) -> Image.Image:
+    """`image` trimmed to what is drawn and scaled to fit inside `box` (width, height),
+    keeping its aspect, then turned by `angle` degrees (counter-clockwise)."""
     picture = image.convert("RGBA")
-    box = picture.getchannel("A").getbbox()
-    if box is not None:
-        picture = picture.crop(box)
-    width = max(1, round(picture.width * height / picture.height))
-    picture = picture.resize((width, height), Image.Resampling.LANCZOS)
+    bounds = picture.getchannel("A").getbbox()
+    if bounds is not None:
+        picture = picture.crop(bounds)
+    scale = min(box[0] / picture.width, box[1] / picture.height)
+    size = (max(1, round(picture.width * scale)), max(1, round(picture.height * scale)))
+    picture = picture.resize(size, Image.Resampling.LANCZOS)
     if angle:
         picture = picture.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
     if alpha < 1.0:
@@ -158,7 +169,10 @@ def charm_card(mood: Mood, face: Face, art: Image.Image, title: str) -> bytes:
     canvas = _background(mood).copy()
     _title(canvas, title)
     _glow_disc(canvas, face, 340, (480, 420), RING[mood])
-    _paste(canvas, _art(art, 420, angle=-12), (790, 420))
+    picture = _art(art, _CHARM_ART_BOX, angle=-12)
+    # a wide item (the ticket) is pushed right so it never reaches the avatar's ring
+    x = max(_CHARM_ART_X, _CHARM_CLEAR_X + picture.width // 2)
+    _paste(canvas, picture, (x, 420))
     _pill(canvas, face.name, _NAME_PILL, (480, 650), _NAME_WIDTH)
     return _jpeg(canvas)
 
@@ -169,17 +183,20 @@ def _spirit_trail(
     end: tuple[int, int],
     colour: tuple[int, int, int],
 ) -> None:
-    """A dotted trail from `start` to `end`, the dots swelling toward the target."""
+    """A trail of solid dots from `start` to `end`, a soft glow of the same dots under them."""
+    length = math.dist(start, end)
+    count = max(2, round(length / _TRAIL_SPACING) + 1)
     layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
-    dots = 14
-    for i in range(dots):
-        t = (i + 0.5) / dots
+    for i in range(count):
+        t = i / (count - 1)
         x = start[0] + (end[0] - start[0]) * t
-        y = start[1] + (end[1] - start[1]) * t - 40 * math.sin(math.pi * t)
-        r = 4 + 6 * t
-        draw.ellipse((x - r, y - r, x + r, y + r), fill=(*colour, 70 + round(150 * t)))
-    canvas.alpha_composite(layer.filter(ImageFilter.GaussianBlur(1)))
+        y = start[1] + (end[1] - start[1]) * t
+        draw.ellipse(
+            (x - _TRAIL_DOT, y - _TRAIL_DOT, x + _TRAIL_DOT, y + _TRAIL_DOT), fill=(*colour, 255)
+        )
+    canvas.alpha_composite(layer.filter(ImageFilter.GaussianBlur(9)))
+    canvas.alpha_composite(layer)
 
 
 def _crack(canvas: Image.Image, centre: tuple[int, int], height: int) -> None:
@@ -211,11 +228,11 @@ def blocked_duel_card(
     `attack` art lies faded and cracked next to the small caster's name."""
     canvas = _background(mood).copy()
     _title(canvas, title)
-    _paste(canvas, _art(attack, 230, angle=18, alpha=_FADED_ALPHA), (230, 300))
+    _paste(canvas, _art(attack, _ATTACK_ART_BOX, angle=18, alpha=_FADED_ALPHA), (230, 300))
     _crack(canvas, (230, 300), 230)
     _pill(canvas, duel.actor.name, _SMALL_PILL, (230, 470), _SMALL_NAME_WIDTH)
     _glow_disc(canvas, duel.target, 320, (560, 420), RING[mood])
-    _paste(canvas, _art(defence, 330), (860, 470))
+    _paste(canvas, _art(defence, _DEFENCE_ART_BOX), (860, 470))
     _pill(canvas, duel.target.name, _NAME_PILL, (560, 640), _NAME_WIDTH)
     return _jpeg(canvas)
 
@@ -228,9 +245,9 @@ def duel_card(mood: Mood, duel: Duel, art: Image.Image, title: str, blocked: boo
     canvas = _background(mood).copy()
     colour = RING[mood]
     _title(canvas, title)
-    _spirit_trail(canvas, (335, 430), (750, 420), colour)
+    _spirit_trail(canvas, (349, 430), (736, 420), colour)
     _glow_disc(canvas, duel.actor, 210, (230, 430), colour)
-    _paste(canvas, _art(art, 300), (560, 400))
+    _paste(canvas, _art(art, _DUEL_ART_BOX), (560, 400))
     _glow_disc(canvas, duel.target, 300, (900, 420), colour)
     _pill(canvas, duel.actor.name, _SMALL_PILL, (230, 590), _SMALL_NAME_WIDTH)
     _pill(canvas, duel.target.name, _NAME_PILL, (900, 630), _NAME_WIDTH)
