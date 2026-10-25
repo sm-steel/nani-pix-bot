@@ -44,7 +44,9 @@ _DUEL_ART_BOX = (300, 300)
 _ATTACK_ART_BOX = (230, 230)
 _DEFENCE_ART_BOX = (330, 330)
 _TRAIL_SPACING = 28
-_TRAIL_DOT = 8
+_TRAIL_HEIGHT = 20  # a chevron's arm-to-arm span
+_TRAIL_DEPTH = 10  # tip to the arms' ends, along the trail
+_TRAIL_STROKE = 6
 _PILL_REACH = 400  # half the span a pill is centred in; wider than any pill
 
 
@@ -211,31 +213,53 @@ def charm_card(mood: Mood, face: Face, art: Image.Image, title: str) -> bytes:
     return _jpeg(canvas)
 
 
+Point = tuple[float, float]
+
+
+def _chevron(centre: tuple[float, float], direction: tuple[float, float]) -> list[Point]:
+    """The three points of an open chevron (arm, tip, arm) around `centre`, its tip
+    leading along the unit vector `direction`."""
+    ux, uy = direction
+    tip = (centre[0] + ux * _TRAIL_DEPTH / 2, centre[1] + uy * _TRAIL_DEPTH / 2)
+    back = (centre[0] - ux * _TRAIL_DEPTH / 2, centre[1] - uy * _TRAIL_DEPTH / 2)
+    reach = _TRAIL_HEIGHT / 2
+    return [
+        (back[0] - uy * reach, back[1] + ux * reach),
+        tip,
+        (back[0] + uy * reach, back[1] - ux * reach),
+    ]
+
+
 def _spirit_trail(
     canvas: Image.Image,
     start: tuple[int, int],
     end: tuple[int, int],
     colour: tuple[int, int, int],
 ) -> None:
-    """A trail of solid dots from `start` to `end`, a soft glow of the same dots under them."""
-    count = max(2, round(math.dist(start, end) / _TRAIL_SPACING) + 1)
-    pad = _TRAIL_DOT + 3 * 9
+    """A trail of chevrons from `start` to `end`, all pointing at `end`, a soft glow of
+    the same chevrons under them."""
+    length = math.dist(start, end)
+    direction = ((end[0] - start[0]) / length, (end[1] - start[1]) / length)
+    count = max(2, round(length / _TRAIL_SPACING) + 1)
+    pad = _TRAIL_HEIGHT + 3 * 9
     x0, y0 = min(start[0], end[0]) - pad, min(start[1], end[1]) - pad
     box = (x0, y0, max(start[0], end[0]) + pad, max(start[1], end[1]) + pad)
 
-    def dots(draw: ImageDraw.ImageDraw, k: int) -> None:
+    def chevrons(draw: ImageDraw.ImageDraw, k: int) -> None:
+        half = _TRAIL_STROKE * k / 2
         for i in range(count):
             t = i / (count - 1)
-            x = (start[0] + (end[0] - start[0]) * t - x0) * k
-            y = (start[1] + (end[1] - start[1]) * t - y0) * k
-            r = _TRAIL_DOT * k
-            draw.ellipse((x - r, y - r, x + r, y + r), fill=255)
+            centre = (
+                start[0] + (end[0] - start[0]) * t - x0,
+                start[1] + (end[1] - start[1]) * t - y0,
+            )
+            points = [(x * k, y * k) for x, y in _chevron(centre, direction)]
+            draw.line(points, fill=255, width=_TRAIL_STROKE * k, joint="curve")
+            for x, y in (points[0], points[2]):  # round caps
+                draw.ellipse((x - half, y - half, x + half, y + half), fill=255)
 
-    _paint(canvas, box, (*colour, 255), dots, blur=9)
-    _paint(canvas, box, (*colour, 255), dots)
-
-
-Point = tuple[float, float]
+    _paint(canvas, box, (*colour, 255), chevrons, blur=9)
+    _paint(canvas, box, (*colour, 255), chevrons)
 
 
 def _torn_band(start: Point, end: Point) -> list[Point]:

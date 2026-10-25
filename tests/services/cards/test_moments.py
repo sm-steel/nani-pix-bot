@@ -129,8 +129,60 @@ def test_the_spirit_trail_is_solid_mood_colour_between_the_rings() -> None:
     image = _open(moments.duel_card(Mood.CURSE, DUEL, ART, "Title"))
     colour = moments.RING[Mood.CURSE]
 
-    dots = sum(1 for x in range(349, 737) if _near(_px(image, (x, 425)), colour, 30))
-    assert dots > 40
+    lit = sum(
+        1 for x in range(349, 737) for y in range(405, 445) if _near(_px(image, (x, y)), colour, 30)
+    )
+    assert lit > 150
+
+
+def _lit(canvas: Image.Image) -> list[tuple[int, int]]:
+    alpha = canvas.getchannel("A")
+    return [
+        (x, y)
+        for y in range(alpha.height)
+        for x in range(alpha.width)
+        if cast(int, alpha.getpixel((x, y))) > 200
+    ]
+
+
+@pytest.mark.parametrize(("start", "end"), [((60, 50), (300, 50)), ((300, 50), (60, 50))])
+def test_the_trail_lies_between_actor_and_target(
+    start: tuple[int, int], end: tuple[int, int]
+) -> None:
+    canvas = Image.new("RGBA", (360, 100), (0, 0, 0, 0))
+
+    moments._spirit_trail(canvas, start, end, (255, 255, 255))
+
+    xs = [x for x, _ in _lit(canvas)]
+    assert xs
+    assert min(xs) >= min(start[0], end[0]) - 12
+    assert max(xs) <= max(start[0], end[0]) + 12
+
+
+def test_the_chevrons_point_from_actor_to_target() -> None:
+    right = moments._chevron((50, 50), (1, 0))
+    left = moments._chevron((50, 50), (-1, 0))
+
+    # the tip is the middle point: right of both arms going right, left of them going left
+    assert right[1][0] > right[0][0] == right[2][0]
+    assert left[1][0] < left[0][0] == left[2][0]
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "sign"), [((60, 50), (300, 50), 1), ((300, 50), (60, 50), -1)]
+)
+def test_a_drawn_chevron_has_its_tip_toward_the_target(
+    start: tuple[int, int], end: tuple[int, int], sign: int
+) -> None:
+    canvas = Image.new("RGBA", (360, 100), (0, 0, 0, 0))
+
+    moments._spirit_trail(canvas, start, end, (255, 255, 255))
+
+    # only the first chevron (at `start`): its tip row against its arm rows
+    lit = [(x, y) for x, y in _lit(canvas) if abs(x - start[0]) < 14]
+    tip_x = max((sign * x for x, y in lit if y == 50)) * sign
+    arm_x = min(sign * x for x, y in lit if y < 45) * sign
+    assert sign * (tip_x - arm_x) > 4
 
 
 def _blocked(attack: Image.Image) -> Image.Image:

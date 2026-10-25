@@ -2229,7 +2229,7 @@ the **caption is sent as a plain topic message instead**, and if that fails
 too it is only logged. Plain-text notices (a clue paid with 💠) are
 unchanged.
 
-Also built, not posted yet: `duel_card` (caster, art, spirit trail, target)
+Also built, not posted yet: `duel_card` (caster, art, a spirit trail of chevrons pointing from caster to target, target)
 and `blocked_duel_card` (the target beside their defence art, the attacking
 art faded and torn along a see-through cross into four pieces that sit slightly
 apart, with a few golden sparkles over it), for Phase 5's hexes; each takes
