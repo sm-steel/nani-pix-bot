@@ -780,8 +780,10 @@ A game ends in a win one of two ways:
   a win for a specific player at any time while the game is `ACTIVE`, for
   the case where the fuzzy matcher fails to recognize a guess that was
   actually correct (an alternate title/spelling AniList doesn't list as a
-  synonym, for example). Only the starter may run this command; it's a
-  fixed `@username` argument, not a reply-based selection.
+  synonym, for example). Only the starter may run this command. The player
+  is a typed `@username` or, with no argument, a pick from a menu of the
+  game's guessers (latest guess first, minus the starter and the bot), not a
+  reply-based selection.
 
   The `@username` is resolved against the `players` table, which the bot
   fills in from **any** update it sees — a DM, a command, or plain chat
@@ -1054,6 +1056,9 @@ for everyone: there's no turn to hand off.
 - `/skip` (no argument) sets `next_starter_id` to `null` — the turn opens
   up, and anyone can DM the bot a screenshot to start the next game.
   Cancels the reminder/expiry timers below.
+- Bare `/skip` shows a player menu whose first row, **Open to everyone**,
+  does exactly what this bullet describes; the other rows hand the turn to
+  that player, like the next bullet.
 - `/skip @username` hands the designation directly to that person instead
   — (re)schedules the timers below for the new designee. Same `players`
   lookup and same "I don't know them yet" reply as `/correct` above.
@@ -1147,7 +1152,8 @@ either way: **`/correct` has no direct use on a bot-started game.**
 (`user.id == game.starter_id`), and for a bot-started game the starter
 *is* the bot — no human can ever satisfy that check. A game that ended
 wrongly has two remedies instead: the HARD MODE vote (see below), and an
-admin's `/setwinner <game id> @user` (DM only). `/setwinner` re-finishes
+admin's `/setwinner <game id> [@user]` (DM only; without the `@user`, a menu
+of that game's guessers). `/setwinner` re-finishes
 an `UNSOLVED` game as a normal win — the usual win reward and a text
 announcement in the game topic, but no change to whose turn it is and no
 bounty (the pot was already refunded when the game ended). On a game
@@ -1684,7 +1690,8 @@ holds; one that can't be drawn goes out as plain text.
 - `/achievements` in the game topic: a rich summary (count, points, rank,
   title, latest unlocks) with a **Browse in DM** button; `/achievements top`
   for the top 10 by points.
-- The DM browser (`/achievements [@username]` or the button): one message
+- The DM browser (`/achievements [@username]` or the button; a **Someone else** button under
+  your own list or summary opens a player menu): one message
   edited in place, tabs All / Earned / Not yet, 8 rows per page, a ladder
   as one row with progress to its next tier.
 - **Compare** with another player (All / Only they have / Only you have)
@@ -1936,7 +1943,8 @@ share is recorded in the event log (`clue_shared`) with what was shared.
   price by accident.
 - If a round is stopped (`/stop`) its clue purchases are refunded in
   full, since they die with the round.
-- An admin can refund any single clue purchase with `/refund @user` (DM): a
+- An admin can refund any single clue purchase with `/refund [@user]` (DM; without the `@user`, a menu of the players
+  who have a refundable purchase): a
   paginated list of the player's purchases, newest first; the refund is the
   same reversal as a failed delivery, and the player gets a DM saying so
   (issue #249). If the round already paid that player HARD MODE cashback,
@@ -1969,7 +1977,10 @@ round's bounty, tip a player, or pay to sharpen the image.
 - The pot is derived from the `currency_transfers` ledger (contributions into
   the pot minus what has left it); there is no `games.bounty` column.
 
-**`/tip @username <amount>`.** Sends 💠 from you to another player.
+**`/tip [@username] [amount]`.** Sends 💠 from you to another player.
+- Without the `@username`, a player menu opens (everyone but you). Without an
+  amount, amount buttons follow the pick (10, 25, 50, 100, only the
+  affordable ones). Each menu tips at most once.
 - Works in the game topic or in a DM, with a minimum of 1.
 - You cannot tip yourself or the bot, the recipient must be a player the bot
   knows by username, and you need the balance.
@@ -2452,7 +2463,8 @@ the profile card. Its ◀ ▶ and 👥 Players list walk only players who
 played a finished game (hosted, won or guessed in it, as in `/history`'s
 "I played"), most games first, then by name; the bot never appears, and
 the viewer is always included (last, before their first game).
-`/profile @someone` still opens anyone's card. A season title is picked with `/title`, not in
+`/profile @someone` still opens anyone's card, as does the **Someone else**
+button under your own. A season title is picked with `/title`, not in
 `/cosmetics`, which only shows a hint for that slot.
 
 | Slot | `look` | Where it shows |
@@ -2579,7 +2591,8 @@ list), `commands/hexes/` (`/hex`, `/hexes`).
   recent activity). Tapping a player opens the kind picker (price on each
   button, ◀ Back, ✖). Every button names the caster, so **only the caster's
   taps count** (anyone else gets an alert).
-- `/hex @user` opens that player's kind picker; `/hex @user <kind>` casts at
+- `/hex [@user]` opens that player's kind picker (without the `@user`, a
+  player menu comes first); `/hex @user <kind>` casts at
   once (`nopperabo`, `chochin`, `kappa`, `kitsune`).
 - `/hexes` shows the caller's status: opted in or out, the hex on them and
   its time left, their cooldowns. `/hexes off` / `/hexes on` switch the
