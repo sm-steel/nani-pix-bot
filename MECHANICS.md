@@ -2682,8 +2682,8 @@ effect. It emits `HEX_CAST` (with `outcome="blocked"`) and `HEX_BLOCKED`
     Telegram. A missing art file logs one `ERROR` and the real photo is used.
   - *Not masked.* The cast notice and its card name the victim by @username
     (the card's photo is already the faceless art), so the group learns who
-    was hexed; the `/hex` player and kind pickers and the omikuji card also
-    name them unmasked. **Logs always keep real ids and
+    was hexed; the `/hex` player and kind pickers, and the omikuji card of
+    the draw whose kyō prank lands, also name them unmasked. **Logs always keep real ids and
     @usernames** (`describe_player_id`).
 - **💀** marks a hexed name in group-facing text drawn through `flair.named`
   (`hex_marks.marked_name`). It is text only: cards and the reveal badge use
