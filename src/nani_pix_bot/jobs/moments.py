@@ -100,15 +100,17 @@ def _render_duel(moment: DuelMoment, avatars: list[bytes | None]) -> bytes:
     return moment_cards.blocked_duel_card(Mood.CHARM, duel, moment.art, moment.shield, caption)
 
 
-async def _send_text(context: ContextTypes.DEFAULT_TYPE, post: _Post) -> bool:
+async def _send_text(
+    context: ContextTypes.DEFAULT_TYPE, caption: str, log: Mapping[str, object]
+) -> bool:
     try:
         await context.bot.send_message(
             chat_id=context.bot_data["group_chat_id"],
             message_thread_id=context.bot_data["game_topic_id"],
-            text=post.caption,
+            text=caption,
         )
     except TelegramError:
-        logger.opt(exception=True).warning("could not post the {moment} line either", **post.log)
+        logger.opt(exception=True).warning("could not post the {moment} line either", **log)
         return False
     return True
 
@@ -128,7 +130,7 @@ async def _post(context: ContextTypes.DEFAULT_TYPE, post: _Post) -> bool:
         logger.opt(exception=True).warning(
             "could not post the {moment} card — posting the line instead", **post.log
         )
-        return await _send_text(context, post)
+        return await _send_text(context, post.caption, post.log)
     logger.info("posted the {moment} card", **post.log)
     return True
 
@@ -173,15 +175,15 @@ async def post_omikuji_card(
 ) -> bool:
     """Post the already drawn omikuji card to the game topic, or `caption` as text
     when there is none or the send fails. True when either reached the topic."""
-    photo = b"" if card is None else card
+    log = {"moment": "omikuji", **log}
+    if card is None:
+        return await _send_text(context, caption, log)
+    photo = card
 
     async def drawn() -> bytes:
         return photo
 
-    post = _Post(drawn, caption, {"moment": "omikuji", **log})
-    if card is None:
-        return await _send_text(context, post)
-    return await _post(context, post)
+    return await _post(context, _Post(drawn, caption, log))
 
 
 async def post_duel_moment(

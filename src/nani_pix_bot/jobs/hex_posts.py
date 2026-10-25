@@ -1,5 +1,5 @@
 """The hex notices' posts: a Kappa or Kitsune going off. Text only, in the game
-topic. (An omikuji self-prank posts its own Kyō card from /omikuji instead.)"""
+topic. (An omikuji self-prank is shown by the omikuji card from /omikuji instead.)"""
 
 from collections.abc import Callable
 

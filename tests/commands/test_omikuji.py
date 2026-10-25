@@ -307,10 +307,7 @@ async def test_a_dm_kyo_posts_the_same_card_to_the_topic(session_factory, monkey
     context.bot.send_message.assert_not_awaited()
 
 
-async def test_the_card_names_the_drawer_unmasked(session_factory, monkeypatch, slip):
-    _season(session_factory)
-    force(monkeypatch, OmikujiKind.KYO)
-    monkeypatch.setattr(hexes, "PRANK_HEXES", frozenset({HexKind.NOPPERABO}))
+def _spy_cards(monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
     drawn: list[tuple] = []
     real = moment_cards.charm_card
 
@@ -319,6 +316,56 @@ async def test_the_card_names_the_drawer_unmasked(session_factory, monkeypatch, 
         return real(mood, face, art, caption)
 
     monkeypatch.setattr(moments.moment_cards, "charm_card", spy)
+    return drawn
+
+
+def _already_faceless(session_factory) -> None:
+    """Bob's Nopperabō has been on Alice for an hour."""
+    now = datetime.now(UTC).replace(tzinfo=None)
+    with session_factory() as session:
+        season = session.scalars(select(SeasonSchedule)).one()
+        session.add(Player(telegram_user_id=2, username="bob"))
+        session.add(
+            Hex(
+                season_id=season.id,
+                kind=HexKind.NOPPERABO.value,
+                caster_id=2,
+                target_id=ALICE,
+                cast_at=now - timedelta(hours=1),
+                expires_at=now + timedelta(hours=5),
+            )
+        )
+        session.commit()
+
+
+@pytest.mark.parametrize("kind", [OmikujiKind.KICHI, OmikujiKind.KYO])
+async def test_an_already_faceless_drawer_stays_masked(session_factory, monkeypatch, slip, kind):
+    """Only a prank landing now unmasks the drawer: a Nopperabō they're already
+    under masks the card and the caption (a kyō is spared: they're hexed)."""
+    _season(session_factory)
+    _already_faceless(session_factory)
+    force(monkeypatch, kind)
+    drawn = _spy_cards(monkeypatch)
+    update, context = await _omikuji(session_factory, TOPIC)
+    ((_mood, face, card),) = drawn
+    faceless = i18n.t("faceless.label", "en")
+    assert face.name == faceless
+    assert card.title == i18n.t(f"omikuji.card_title.{kind.value}", "en", name=faceless)
+    assert faceless in card.detail
+    reply = update.message.reply_photo.await_args.kwargs["caption"]
+    for text in (face.name, card.title, card.detail, reply):
+        assert "alice" not in text
+    assert "👤" in reply
+    context.bot.send_photo.assert_not_awaited()
+    context.bot.send_message.assert_not_awaited()
+
+
+async def test_the_card_names_the_drawer_unmasked(session_factory, monkeypatch, slip):
+    """A Nopperabō kyō landing now: the one moment the real name shows."""
+    _season(session_factory)
+    force(monkeypatch, OmikujiKind.KYO)
+    monkeypatch.setattr(hexes, "PRANK_HEXES", frozenset({HexKind.NOPPERABO}))
+    drawn = _spy_cards(monkeypatch)
     await _omikuji(session_factory)
     ((mood, face, caption),) = drawn
     assert mood == moment_cards.Mood.OMIKUJI

@@ -220,7 +220,7 @@ def test_self_prank_puts_a_prank_on_yourself(session, hex_season):
     assert row.caster_id == row.target_id == 2
     assert row.expires_at is not None
     assert row.cast_at == naive(NOW)
-    assert _outbox(session) == []  # /omikuji posts the Kyō card itself
+    assert _outbox(session) == []  # /omikuji's omikuji card shows it
     event = _events(session, EventType.HEX_CAST)[-1]
     assert event.data["self_prank"] is True
     assert event.data["outcome"] is None

@@ -99,8 +99,12 @@ def card_detail(draw: Draw, name: str, lang: str) -> str:
 
 
 def _drawn_reply(session: Session, user_id: int, drawn: Draw, slip_name: str, lang: str) -> _Reply:
-    # the prank has just landed: like a cast notice, the card names the drawer unmasked
-    name = players.display_name(session, user_id, unmasked=True)
+    # A prank landing now is the one moment the drawer is named unmasked (like a
+    # cast notice); otherwise a Nopperabō they're already under masks the card too.
+    if drawn.prank is not None:
+        name = players.display_name(session, user_id, unmasked=True)
+    else:
+        name = players.image_name(session, user_id, lang)
     card = _Card(
         drawn.run.run_id,
         drawn.outcome.kind,
