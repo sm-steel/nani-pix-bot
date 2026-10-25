@@ -2261,6 +2261,33 @@ the current `ACTIVE` round; with Ofuda held and none armed it ends with a
 hint to arm one from `/shop`. Holding nothing shows a single "empty" line.
 Read-only; it takes nothing and logs the holdings at `INFO`.
 
+### Omikuji
+
+`/omikuji` works in a DM (group members only, like `/shop`) or the game
+topic. It draws one fortune slip per player per season per **group-local
+day** (the day turns at midnight in the group timezone); the
+`omikuji_draws` row's unique key enforces it, so a race on the same day is
+refused, not paid twice. Outside an `ACTIVE` season, or in a run whose
+`omikuji` is empty, the shrine is "closed".
+
+The service (`services/seasons/omikuji.py::draw`) resolves the season,
+checks today's row, picks an outcome from `run.omikuji` by weight, stores
+the row, and only then pays: so a refusal never pays anything.
+- Coins go in as season coins 🪙 (`CurrencyReason.SEASON_OMIKUJI`).
+- A `consumable` on the outcome (Ofuda or Omamori, typically on a
+  daikichi) is added to the player's holdings.
+- A **kyō** with `prank` puts a random prank hex (Nopperabō or
+  Chōchin-obake) on the drawer for free (see "Hexes": no cooldown, and an
+  Omamori does **not** block it). A drawer who opted out of hexes, or who
+  already carries an active hex, is **spared**: the slip says the spirits
+  passed them by and nothing is applied.
+
+The reply is the omikuji moment card (see "Moment cards" above) with the
+slip text as its caption; without the slip art it is the text alone. A kyō
+prank drawn in a DM also posts the same card to the game topic, since every
+hex is public. The draw logs at `INFO`; a refusal logs at `WARNING` (an
+`already` refusal carries when that day's slip was drawn).
+
 ### Rule modifiers
 
 A run may set `modifiers`; only what a run uses is built. Today that is

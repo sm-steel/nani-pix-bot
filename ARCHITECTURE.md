@@ -1033,6 +1033,18 @@ src/nani_pix_bot/
                    #   goals.py      progress toward and wording of a Goal
                    #   objectives.py check (complete + pay + DM), status
                    #   pass_view.py  the /seasonpass text and its tier lines
+                   #   omikuji.py    the daily draw: one slip per group-local
+                   #                 day (omikuji_draws), weighted pick,
+                   #                 🪙 + charm payout, a kyō's self-prank
+                   #                 (or spared), slip_png
+                   #   hexes.py      hexes: cast (🪙, cooldown, Omamori
+                   #                 block), triggers (Kappa/Kitsune),
+                   #                 expiry, the omikuji self-prank
+                   #   hex_marks.py  which hex is on a player now, and the
+                   #                 marks prank hexes draw (💀, faceless)
+                   #   hex_targets.py  who a player may hex now, most
+                   #                 active first (the /hex picker)
+                   #   hex_art.py    the hex moment cards' art per kind
                    #   conversion.py leftover 🪙 -> 💠 at the season's end
                    #                 (called from lifecycle._finalize)
                    #   consumer.py   hooks the above into services/
