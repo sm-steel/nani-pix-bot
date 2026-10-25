@@ -10,7 +10,7 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.membership import is_group_member
-from nani_pix_bot.commands.shop import images, parsing, share, tile_grid
+from nani_pix_bot.commands.shop import images, ofuda_button, parsing, share, tile_grid
 from nani_pix_bot.commands.shop.deliver import (
     deliver_image_clue,
     deliver_text_clue,
@@ -19,6 +19,7 @@ from nani_pix_bot.commands.shop.deliver import (
 )
 from nani_pix_bot.commands.shop.keyboards import (
     SHOP_BUY_PREFIX,
+    SHOP_OFUDA_PREFIX,
     SHOP_SHARE_PREFIX,
     SHOP_TILE_PREFIX,
     share_keyboard,
@@ -109,6 +110,8 @@ async def shop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         handled = await _route_tile(context, query, query.from_user)
     elif query.data.startswith(SHOP_SHARE_PREFIX):
         handled = await share.route_share(context, query, query.from_user)
+    elif query.data.startswith(SHOP_OFUDA_PREFIX):
+        handled = await ofuda_button.route_ofuda(context, query, query.from_user)
     else:
         handled = False
     if not handled:
