@@ -107,5 +107,10 @@
     "🕯 Something haunts this round — {twist}: {hint}. Season Coins ×{multiplier}!"
   ],
   "hex.notice.triggered.kappa": ["🥒 The kappa's dish tips over! {caster} takes {amount} 🪙 from {target}'s winnings.", "🥒 Splash! A kappa hands {caster} {amount} 🪙 straight out of {target}'s prize."],
-  "hex.notice.triggered.kitsune": ["🦊 A kitsune giggles in the dark: {target} just paid {amount} 🪙 for that miss.", "🦊 Tricked again! That wrong guess slips {amount} 🪙 out of {target}'s pocket."]
+  "hex.notice.triggered.kitsune": ["🦊 A kitsune giggles in the dark: {target} just paid {amount} 🪙 for that miss.", "🦊 Tricked again! That wrong guess slips {amount} 🪙 out of {target}'s pocket."],
+  "hex.notice.cast.nopperabo": ["👤 {target} just lost their face: {caster}'s nopperabō hides their name for {hours} h.", "👤 A faceless yokai follows {target} now. {caster} cursed them for {hours} h."],
+  "hex.notice.cast.chochin": ["🏮 A paper lantern grins at {target}: thanks to {caster}, each of their guesses gets a 🤪 for {hours} h.", "🏮 {caster} lit a chōchin-obake over {target}. {hours} h of 🤪 on every guess!"],
+  "hex.notice.cast.kappa": ["🥒 A kappa now lurks beside {target}: {caster} gets {amount}% of their next winnings.", "🥒 {caster} left a kappa's dish for {target}. Their next win shares {amount}% of its 🪙 with {caster}."],
+  "hex.notice.cast.kitsune": ["🦊 A kitsune is watching {target}, courtesy of {caster}: one wrong guess, up to {amount} 🪙 gone.", "🦊 {caster} whispered to a kitsune. {target}'s next miss costs up to {amount} 🪙."],
+  "hex.notice.blocked": ["🧿 {target}'s omamori flared and swallowed {caster}'s {hex}!", "🧿 Nope! {caster} tried {hex} on {target}, and an omamori ate it whole."]
 }

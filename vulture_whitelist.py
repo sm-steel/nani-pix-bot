@@ -14,18 +14,15 @@ from typing import TYPE_CHECKING
 
 from nani_pix_bot.models.enums import (
     EventType,
-    HexOutcome,
     ItemSource,
     OutboxKind,
 )
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.halloween import OmikujiDraw
 from nani_pix_bot.models.mal_link import MalCredentials
-from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import Reward
 from nani_pix_bot.seasons.mechanics import OmikujiKind
-from nani_pix_bot.services.cards import moments
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 from nani_pix_bot.services.seasons import hexes
@@ -60,13 +57,7 @@ _kept = (
     # it is listed so the entry survives a rename.
     Reward.ofuda,
     # Halloween: wired by P5 (#470)
-    moments.duel_card,
-    EventType.HEX_CAST,
-    hexes.CastResult.hex,
-    hexes.set_opt_out,
     hexes.apply_self_prank,  # P4b's omikuji kyō hook
-    Player.hex_opt_out,
-    HexOutcome.EXPIRED,
     # Halloween: wired by P6 (#471)
     ItemSource.BONES,
     EventType.GOAL_REACHED,

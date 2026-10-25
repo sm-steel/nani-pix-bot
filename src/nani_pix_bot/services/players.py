@@ -3,15 +3,19 @@ case-insensitive username lookup, and the /leaderboard query. Win
 increments themselves live in services/game/state.py's _win() (the
 only place that mutates a Game/Player pair together)."""
 
+from collections.abc import Collection
 from dataclasses import dataclass
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from loguru import logger
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select, union_all
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.enums import CurrencyReason
+from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import USERNAME_LENGTH, Player
 from nani_pix_bot.services.economy import config as economy_config
 from nani_pix_bot.services.economy import wallet
@@ -173,3 +177,40 @@ def display_name(session: Session, telegram_user_id: int) -> str:
     if player.username:
         return f"@{player.username}"
     return player.first_name or str(telegram_user_id)
+
+
+HOSTED_WEIGHT = 3  # an activated game someone started counts as this many guesses
+
+
+def _activity_rows(player_ids: Collection[int], since: datetime | None):
+    guesses = select(
+        GameGuess.player_id.label("player_id"),
+        literal(1).label("points"),
+        GameGuess.created_at.label("at"),
+    ).where(GameGuess.player_id.in_(player_ids))
+    hosted = select(
+        Game.starter_id.label("player_id"),
+        literal(HOSTED_WEIGHT).label("points"),
+        Game.activated_at.label("at"),
+    ).where(
+        Game.starter_id.in_(player_ids),
+        Game.activated_at.is_not(None),
+        Game.hard_mode.is_(False),
+    )
+    if since is not None:
+        guesses = guesses.where(GameGuess.created_at >= since)
+        hosted = hosted.where(Game.activated_at >= since)
+    return union_all(guesses, hosted).subquery()
+
+
+def by_activity(session: Session, player_ids: Collection[int], since: datetime | None) -> list[int]:
+    """`player_ids`, most active first: guesses plus HOSTED_WEIGHT per activated,
+    non-hard game started (since `since`, when given); ties go to the most recent
+    activity, then the lower id. Players with no activity come last, by id."""
+    rows = _activity_rows(player_ids, since)
+    stmt = select(rows.c.player_id, func.sum(rows.c.points), func.max(rows.c.at)).group_by(
+        rows.c.player_id
+    )
+    scored = {pid: (int(points), at) for pid, points, at in session.execute(stmt)}
+    active = sorted(scored, key=lambda pid: (-scored[pid][0], -scored[pid][1].timestamp(), pid))
+    return active + sorted(pid for pid in set(player_ids) if pid not in scored)

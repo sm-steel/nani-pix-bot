@@ -109,6 +109,8 @@ def test_build_application_registers_every_command() -> None:
         "seasonpass",
         "seasonshop",
         "tip",
+        "hex",
+        "hexes",
         "pixelconfig",
         "partialmatch",
         "refund",
