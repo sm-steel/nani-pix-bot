@@ -304,6 +304,8 @@ async def test_a_double_tap_tips_once(session_factory, log_records) -> None:
     second.answer.assert_awaited_once_with(i18n.t("player_picker.stale", "EN"), show_alert=True)
     second.edit_message_text.assert_not_awaited()
     assert any(r.level == "WARNING" and "used /tip menu" in r.message for r in log_records)
+    assert not [r for r in log_records if r.level == "INFO" and "chose to tip" in r.message]
+    assert len([r for r in log_records if r.level == "INFO" and "tipped" in r.message]) == 1
 
 
 async def test_another_menu_can_still_tip(session_factory) -> None:

@@ -40,14 +40,13 @@ def _menu(query: CallbackQuery) -> Menu | None:
     return None if message is None else Menu(message.chat.id, message.message_id)
 
 
-def _log_pick(context: ContextTypes.DEFAULT_TYPE, recipient_id: int, amount: int) -> None:
+def _log_recipient_pick(context: ContextTypes.DEFAULT_TYPE, recipient_id: int) -> None:
+    """The amount-buttons step. A pick with an amount logs nothing here: the
+    transfer itself (`tips.tip`) logs once it succeeds, so a refused double tap
+    leaves no second "choice"."""
     with session_scope(context.bot_data["session_factory"]) as session:
         recipient = players.describe_player_id(session, recipient_id)
-    log = {"recipient": recipient, "recipient_id": recipient_id, "amount": amount}
-    if amount:
-        logger.info("chose to tip {recipient} {amount} 💠", **log)
-    else:
-        logger.info("picked {recipient} to tip", **log)
+    logger.info("picked {recipient} to tip", recipient=recipient, recipient_id=recipient_id)
 
 
 async def _pick(
@@ -56,8 +55,8 @@ async def _pick(
     """Tip, or show the amount buttons; the answer comes after the work, so the
     spinner covers the transfer."""
     recipient_id = tap.number
-    _log_pick(context, recipient_id, amount)
     if not amount:
+        _log_recipient_pick(context, recipient_id)
         view = _amounts(context, tap.picker.opener_id, recipient_id)
     else:
         request = TipRequest(amount, player_id=recipient_id, menu=_menu(query))

@@ -132,7 +132,10 @@ async def test_setwinner_with_a_game_id_lists_its_guessers_latest_first(
         [(CANCEL, f"sw:9:{game_id}:x")],
     ]
     assert any(
-        r.level == "INFO" and "opened the /setwinner picker" in r.message for r in log_records
+        r.level == "INFO"
+        and "opened the /setwinner picker" in r.message
+        and r.extra["game_id"] == game_id
+        for r in log_records
     )
 
 
@@ -213,6 +216,27 @@ async def test_someone_elses_tap_is_refused(monkeypatch, session_factory, data: 
 
     query.answer.assert_awaited_once_with(i18n.t("player_picker.not_yours", "EN"), show_alert=True)
     assert _game(session_factory, game_id) == (GameStatus.UNSOLVED, None)
+
+
+async def test_a_pick_is_logged_with_its_game(monkeypatch, session_factory, log_records) -> None:
+    game_id = _seed(session_factory)
+
+    await _tap(monkeypatch, session_factory, f"sw:9:{game_id}:t:2")
+
+    picks = [r for r in log_records if r.level == "INFO" and "winner" in r.message]
+    assert any(r.extra["game_id"] == game_id and r.extra["target_id"] == BOB for r in picks)
+
+
+async def test_a_page_of_a_vanished_game_is_refused_and_logged(
+    monkeypatch, session_factory, log_records
+) -> None:
+    query, _ = await _tap(monkeypatch, session_factory, "sw:9:999:p:1")
+
+    query.answer.assert_awaited_once_with(i18n.t("player_picker.stale", "EN"), show_alert=True)
+    assert any(
+        r.level == "WARNING" and "stale /setwinner page" in r.message and r.extra["game_id"] == 999
+        for r in log_records
+    )
 
 
 async def test_a_pick_after_the_game_was_refinished_is_refused(

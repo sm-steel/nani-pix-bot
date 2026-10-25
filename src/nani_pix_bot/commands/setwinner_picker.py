@@ -45,6 +45,7 @@ def open_view(session: Session, admin_id: int, game_id: int, bot_id: int) -> Vie
     logger.info(
         "opened the /setwinner picker for game {target_game}",
         target_game=game_id,
+        game_id=game_id,
         has_targets=view[1] is not None,
     )
     return view
@@ -57,6 +58,7 @@ async def _page(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, tap: T
             None if game is None else _view(session, tap.picker, game, context.bot.id, tap.number)
         )
     if view is None:
+        logger.warning("refused a stale /setwinner page", game_id=int(tap.picker.state[0]))
         await player_picker.refuse_stale(query, context)
         return
     await player_picker.turn_page(query, SPEC, tap.number, view)
@@ -87,6 +89,7 @@ def _name_winner(
             target=players.describe_player_id(session, winner_id),
             target_id=winner_id,
             target_game=game_id,
+            game_id=game_id,
         )
         name = players.display_name(session, winner_id, unmasked=True)
         return setwinner_apply.apply(session, game, Winner(winner_id, name), lang)
