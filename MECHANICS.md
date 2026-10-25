@@ -2162,12 +2162,16 @@ the first wrong guess its holder makes in that round.
   the tapper is the round's starter (they cannot guess); the round is HARD
   MODE (it has no per-stage limit to protect, and `record_guess` hands those
   rounds to the hard-mode path before the Ofuda is looked at); none held;
-  already armed in this round. One armed Ofuda per player per round.
+  already armed in this round. One armed at a time: a player holding two can
+  arm again once the first has forgiven.
 - **When it is taken.** `state._count_wrong`, on a wrong guess by a player
   with an `armed_ofuda` row for that game: the row is deleted, one Ofuda is
   taken (`consumables.take`) and an `OFUDA_USED` event is emitted. A correct
   guess never touches it. A round that ends with the Ofuda still armed (won,
-  unsolved, stopped) leaves the count alone, so it is **kept**. An armed
+  unsolved, stopped) leaves the count alone, so the Ofuda stays held, since
+  arming never took it. A stopped round's `armed_ofuda` row is dropped with the
+  game (`ON DELETE CASCADE`); a hex's `game_id` is `ON DELETE SET NULL`, since a
+  hex outlives the round it was cast in. An armed
   row whose Ofuda is gone (count 0 at that moment) is dropped, logged at
   `WARNING`, and the miss counts normally.
 - **`GuessOutcome.FORGIVEN`.** The guess is still a guess and still a wrong
@@ -2227,7 +2231,8 @@ unchanged.
 
 Also built, not posted yet: `duel_card` (caster, art, spirit trail, target)
 and `blocked_duel_card` (the target beside their defence art, the attacking
-item faded and crossed out by a red X), for Phase 5's hexes; each takes
+art faded and torn along a see-through cross into four pieces that sit slightly
+apart, with a few golden sparkles over it), for Phase 5's hexes; each takes
 a `Duel(actor, target)` of `Face`s.
 
 ### `/inventory`

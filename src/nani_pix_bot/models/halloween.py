@@ -31,7 +31,9 @@ class Hex(Base):
     expires_at: Mapped[datetime | None] = mapped_column(default=None)
     resolved_at: Mapped[datetime | None] = mapped_column(default=None)
     outcome: Mapped[str | None] = mapped_column(String(KIND_LENGTH), default=None)
-    game_id: Mapped[int | None] = mapped_column(ForeignKey("games.id"), default=None)
+    game_id: Mapped[int | None] = mapped_column(
+        ForeignKey("games.id", ondelete="SET NULL"), default=None
+    )
 
 
 class ArmedOfuda(Base):
@@ -42,7 +44,9 @@ class ArmedOfuda(Base):
     player_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("players.telegram_user_id"), primary_key=True
     )
-    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), primary_key=True)
+    game_id: Mapped[int] = mapped_column(
+        ForeignKey("games.id", ondelete="CASCADE"), primary_key=True
+    )
     armed_at: Mapped[datetime]
 
 
