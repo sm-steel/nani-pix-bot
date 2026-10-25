@@ -1,8 +1,9 @@
 """/omikuji — draw today's fortune slip, in a DM or the game topic (Halloween).
 
-The reply is the slip's picture with its caption (the caption alone when the art
-is missing). A kyō prank also posts a Kyō card to the game topic, wherever the
-slip was drawn: every hex is public."""
+The reply is the omikuji moment card (the drawer beside their slip, and what it
+did) with the slip text as its caption; the text alone when the slip art is
+missing or the card can't be drawn. A kyō prank drawn in a DM also posts the same
+card to the game topic, captioned with the self-prank line: every hex is public."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -16,12 +17,25 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs.moments import KyoMoment, post_kyo_moment
+from nani_pix_bot.jobs.moments import OmikujiMoment, draw_omikuji_card, post_omikuji_card
 from nani_pix_bot.models.halloween import Hex
+from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.cosmetics import flair
-from nani_pix_bot.services.seasons import hex_art, omikuji
+from nani_pix_bot.services.seasons import omikuji
 from nani_pix_bot.services.seasons.omikuji import Draw, OmikujiRefusedError
+
+
+@dataclass(frozen=True)
+class _Card:
+    """The card's words, worked out inside the session; the slip art is read after."""
+
+    run_id: str
+    kind: OmikujiKind
+    user_id: int
+    name: str  # the drawer's @username, unmasked
+    title: str
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -29,8 +43,9 @@ class _Reply:
     """What /omikuji sends once its session has committed."""
 
     text: str
-    drawn: Draw | None  # None: refused, so the reply is text only
-    kyo: KyoMoment | None  # the card for the topic, when a prank landed
+    card: _Card | None = None  # None: refused, so the reply is text only
+    public: str | None = None  # the topic's caption, when a prank landed
+    hex_kind: str | None = None
 
 
 def _hours(prank: Hex) -> int:
@@ -55,20 +70,51 @@ def caption(draw: Draw, name: str, lang: str) -> str:
     return "\n".join(lines)
 
 
-def _kyo_moment(session: Session, prank: Hex, lang: str) -> KyoMoment:
-    """The Kyō card: the hex has just landed, so like a cast notice it names the
-    drawer unmasked, even under the Nopperabō it gave them."""
-    name = players.display_name(session, prank.target_id, unmasked=True)
-    hours = _hours(prank)
-    return KyoMoment(
-        kind=prank.kind,
-        user_id=prank.target_id,
-        card_name=name,
-        art=hex_art.art(prank.kind),
-        title=i18n.t("omikuji.card_title", lang, target=name),
-        detail=i18n.t(f"hex.card_detail.{prank.kind}", lang, target=name, hours=hours),
-        caption=i18n.t(f"hex.notice.self_prank.{prank.kind}", lang, target=name, hours=hours),
+def card_title(draw: Draw, name: str, lang: str) -> str:
+    return i18n.t(f"omikuji.card_title.{draw.outcome.kind.value}", lang, name=name)
+
+
+def _gift_detail(draw: Draw, name: str, lang: str) -> str:
+    """What a slip without a prank gave: coins, a charm, both, or nothing."""
+    coins, consumable = draw.outcome.coins, draw.outcome.consumable
+    if consumable is None:
+        key = "omikuji.card_detail.coins" if coins > 0 else "omikuji.card_detail.nothing"
+        return i18n.t(key, lang, coins=coins, name=name)
+    gift = i18n.t(f"omikuji.card_gift.{consumable.value}", lang)
+    if coins > 0:
+        return i18n.t("omikuji.card_detail.coins_gift", lang, coins=coins, gift=gift, name=name)
+    # the gift opens the line here, so it takes a capital
+    return i18n.t("omikuji.card_detail.gift", lang, gift=gift[:1].upper() + gift[1:], name=name)
+
+
+def card_detail(draw: Draw, name: str, lang: str) -> str:
+    """The card's effect line: what the slip did to `name`. No emoji: the card
+    font has none."""
+    if draw.prank is not None:
+        kind = draw.prank.kind
+        return i18n.t(f"hex.card_detail.{kind}", lang, target=name, hours=_hours(draw.prank))
+    if draw.spared:
+        return i18n.t("omikuji.card_detail.spared", lang, name=name)
+    return _gift_detail(draw, name, lang)
+
+
+def _drawn_reply(session: Session, user_id: int, drawn: Draw, slip_name: str, lang: str) -> _Reply:
+    # the prank has just landed: like a cast notice, the card names the drawer unmasked
+    name = players.display_name(session, user_id, unmasked=True)
+    card = _Card(
+        drawn.run.run_id,
+        drawn.outcome.kind,
+        user_id,
+        name,
+        card_title(drawn, name, lang),
+        card_detail(drawn, name, lang),
     )
+    text = caption(drawn, slip_name, lang)
+    prank = drawn.prank
+    if prank is None:
+        return _Reply(text, card)
+    public = i18n.t(f"hex.notice.self_prank.{prank.kind}", lang, target=name, hours=_hours(prank))
+    return _Reply(text, card, public, prank.kind)
 
 
 def _draw(session: Session, user: User) -> _Reply:
@@ -80,24 +126,29 @@ def _draw(session: Session, user: User) -> _Reply:
     try:
         drawn = omikuji.draw(session, player, now)
     except OmikujiRefusedError as refused:
-        return _Reply(i18n.t(f"omikuji.{refused.refusal.value}", lang), None, None)
-    kyo = None if drawn.prank is None else _kyo_moment(session, drawn.prank, lang)
-    return _Reply(caption(drawn, name, lang), drawn, kyo)
+        return _Reply(i18n.t(f"omikuji.{refused.refusal.value}", lang))
+    return _drawn_reply(session, user.id, drawn, name, lang)
 
 
-async def _send_slip(message: Message, reply: _Reply) -> None:
-    drawn = reply.drawn
-    slip = None if drawn is None else omikuji.slip_png(drawn.run.run_id, drawn.outcome.kind)
-    if slip is not None:
+async def _draw_card(context: ContextTypes.DEFAULT_TYPE, card: _Card | None) -> bytes | None:
+    """The card's JPEG, or None when there is no slip art or it can't be drawn."""
+    slip = None if card is None else omikuji.slip_png(card.run_id, card.kind)
+    if card is None or slip is None:
+        return None
+    moment = OmikujiMoment(card.user_id, card.name, slip, card.title, card.detail)
+    return await draw_omikuji_card(context, moment)
+
+
+async def _send_reply(message: Message, text: str, card: bytes | None) -> None:
+    if card is not None:
         try:
-            await message.reply_photo(photo=slip, caption=reply.text)
+            await message.reply_photo(photo=card, caption=text)
             return
         except TelegramError as error:
             logger.warning(
-                "could not send the omikuji slip photo — sending its text: {error}",
-                error=str(error),
+                "could not send the omikuji card — sending its text: {error}", error=str(error)
             )
-    await message.reply_text(reply.text)
+    await message.reply_text(text)
 
 
 def _where(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str | None:
@@ -129,10 +180,12 @@ async def omikuji_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     logger.info("drew /omikuji in {where}", where=where)
     with session_scope(factory) as session:
         reply = _draw(session, user)
+    card = await _draw_card(context, reply.card)
     try:
-        await _send_slip(message, reply)
+        await _send_reply(message, reply.text, card)
     except TelegramError:
-        # the draw (and any hex) is committed: the Kyō card still goes out
+        # the draw (and any hex) is committed: the topic still hears of the prank
         logger.opt(exception=True).warning("could not send the omikuji slip reply")
-    if reply.kyo is not None:
-        await post_kyo_moment(context, reply.kyo, hex_kind=reply.kyo.kind)
+    # in the topic the reply itself is public; from a DM a prank goes to the topic too
+    if where == "dm" and reply.public is not None:
+        await post_omikuji_card(context, card, reply.public, hex_kind=reply.hex_kind)

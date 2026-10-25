@@ -64,11 +64,13 @@ _PILL_REACH = 400  # half the span a pill is centred in; wider than any pill
 class Mood(enum.StrEnum):
     CHARM = "charm"  # warm shrine background
     CURSE = "curse"  # violet mist background
+    OMIKUJI = "omikuji"  # night shrine background, gold ring
 
 
 RING: dict[Mood, tuple[int, int, int]] = {
     Mood.CHARM: (255, 170, 60),
     Mood.CURSE: (180, 110, 255),
+    Mood.OMIKUJI: (255, 200, 90),
 }
 
 

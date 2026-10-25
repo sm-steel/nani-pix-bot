@@ -353,3 +353,11 @@ def test_the_effect_pill_is_drawn_through_the_antialiased_mask() -> None:
     corner = canvas.crop((left[0], 100, left[0] + 30, 130)).convert("L")
     values = set(cast(list[int], list(corner.get_flattened_data())))
     assert len(values) > 4
+
+
+def test_the_omikuji_mood_has_its_shrine_background_and_gold_ring() -> None:
+    assert (moments.MOMENT_ASSETS / "omikuji_background.jpg").is_file()
+    assert moments.RING[Mood.OMIKUJI] == (255, 200, 90)
+    card = moments.charm_card(Mood.OMIKUJI, ALICE, ART, CAP)
+    assert card[:2] == b"\xff\xd8"  # a JPEG
+    assert _open(card).size == (1200, 800)

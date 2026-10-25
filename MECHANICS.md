@@ -2226,7 +2226,7 @@ its drawn shape), a title pill on top with a smaller, more transparent
 happens to the affected player, wrapped to at most two lines within 900 px
 and ellipsized), and the player's name in a pill below,
 over `assets/moments/<mood>_background.jpg` (`Mood.CHARM`, a warm shrine;
-`Mood.CURSE`, violet mist). Pill text is stripped of emoji (the font has
+`Mood.CURSE`, violet mist; `Mood.OMIKUJI`, a night shrine with a gold ring). Pill text is stripped of emoji (the font has
 none) and clipped with an ellipsis; the name pill is the plain name, no
 flair. The module is pure Pillow, with no Telegram. Posted today:
 
@@ -2234,6 +2234,7 @@ flair. The module is pure Pillow, with no Telegram. Posted today:
 |---|---|---|---|
 | Ofuda saves a miss | after the reply to a `FORGIVEN` `/guess` | Ofuda | "That miss didn't count!" / "{name}'s ofuda burned away: this miss doesn't count" / "Ofuda burned away" |
 | Token-paid clue | in place of the plain "bought a clue" topic notice, when the purchase used a clue token (`token_used`) | the golden ticket | "Paid with a clue token" / "{name} paid for this clue with a clue token" / the "bought" notice |
+| Omikuji draw | the `/omikuji` reply, in a DM or the topic (`Mood.OMIKUJI`); a kyō prank drawn in a DM also posts it to the topic | the drawn slip | `omikuji.card_title.<kind>` ("{name} drew Daikichi!") / what the slip did (`omikuji.card_detail.*`: coins, a charm, both or nothing; for a kyō, `hex.card_detail.<kind>` or the spared line) / the slip text, or in the topic `hex.notice.self_prank.<kind>` |
 
 Failure never blocks a game. The post runs after the guess or purchase is
 committed. The avatar is fetched with `jobs/avatars.py::fetch_avatar`; with
@@ -2654,8 +2655,8 @@ effect. It emits `HEX_CAST` (with `outcome="blocked"`) and `HEX_BLOCKED`
     Telegram. A missing art file logs one `ERROR` and the real photo is used.
   - *Not masked.* The cast notice and its card name the victim by @username
     (the card's photo is already the faceless art), so the group learns who
-    was hexed; the `/hex` player and kind pickers and the omikuji Kyō card
-    also name them unmasked. **Logs always keep real ids and
+    was hexed; the `/hex` player and kind pickers and the omikuji card also
+    name them unmasked. **Logs always keep real ids and
     @usernames** (`describe_player_id`).
 - **💀** marks a hexed name in group-facing text drawn through `flair.named`
   (`hex_marks.marked_name`). It is text only: cards and the reveal badge use
@@ -2678,13 +2679,14 @@ the hex.
   after. A Kitsune that finds an empty purse (it took 0 🪙) posts
   `hex.notice.triggered.kitsune_empty`, a laugh at the empty purse, instead
   of "cost … 0 🪙".
-- **Kyō** (an omikuji self-prank) is posted by `/omikuji` right after the
-  draw commits, wherever it was drawn (DM or topic), as a moment card: the
-  charm layout on the curse background, the drawer's avatar (the faceless art
-  under a Nopperabō) beside the prank hex's art, the title
-  `omikuji.card_title` and the hex's effect detail. The self-prank notice line
-  (`hex.notice.self_prank.<kind>`) is the caption, and a failed render falls
-  back to it as plain text. A spared kyō posts nothing.
+- **Kyō** (an omikuji self-prank) is shown by the omikuji card itself (see
+  "Moment cards"): the kyō slip beside the drawer's avatar (the faceless art
+  under a Nopperabō, with the real @username in the pill) and the hex's effect
+  line. In the topic the `/omikuji` reply is that card, so nothing else is
+  posted. From a DM the same card (drawn once) also goes to the topic right
+  after the draw commits, captioned with `hex.notice.self_prank.<kind>`; with
+  no slip art, or a failed render, that line goes out as plain text. A spared
+  kyō posts nothing to the topic.
 
 **Expiry and the season end.** Nopperabō and Chōchin expire at `expires_at`
 (outcome `EXPIRED`). An expired hex stops marking at once (`active_hex_for`
@@ -2698,8 +2700,8 @@ with `hexes.apply_self_prank`: a random prank hex (Nopperabō or Chōchin) from
 the run's `hexes`, free, with no cooldown and **ignoring the Omamori**. It is
 refused for an opted-out player, and a player already under a hex keeps that
 one unchanged. It emits `HEX_CAST` with `self_prank=True` (so `hex_master`
-skips it); `/omikuji` then posts the Kyō card (see "Notices"), which names
-the player unmasked.
+skips it); the omikuji card shows it (see "Notices"), naming the player
+unmasked.
 A normal cast's `HEX_CAST` carries `outcome` (`"blocked"` or `None`) and
 `self_prank=False`.
 

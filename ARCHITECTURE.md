@@ -487,9 +487,9 @@ src/nani_pix_bot/
     hexes/        # /hex and /hexes (Halloween): casting (casting.py),
                    # pickers and taps (views.py, callback.py), public
                    # notices (notices.py), opt-out (opt_out.py)
-    omikuji.py    # /omikuji (Halloween): today's fortune slip (picture +
-                   # caption, text without the art) and, for a kyō prank,
-                   # the Kyō moment card in the game topic
+    omikuji.py    # /omikuji (Halloween): today's fortune slip as the
+                   # omikuji moment card (text without the art); a kyō
+                   # prank drawn in a DM also posts the card to the topic
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
                    # `/start ach_<id>`, the achievements one, and
                    # `/start rules`/`/start recent` for standings_dm.py), /help
@@ -614,7 +614,8 @@ src/nani_pix_bot/
                    # caption; a failed avatar/render/send falls back to the
                    # caption as text. Used by /guess (a forgiven miss) and
                    # the clue shop (a token-paid clue); DuelMoment for a hex
-                   # cast or block; KyoMoment for /omikuji's kyō
+                   # cast or block; OmikujiMoment for the /omikuji card
+                   # (drawn once: draw_omikuji_card, post_omikuji_card)
     season_posts.py  # turns the season pass rows (SEASON_TIER DMs,
                    # SEASON_COMPLETE topic line) into Posts
     announcements.py  # the announcement outbox drain: a repeating 20s
@@ -1199,8 +1200,8 @@ assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's k
                    # (the consumable preview card's background) and
                    # icons/{ofuda,omamori}.png (512 px RGBA art of the two
                    # Halloween charms, drawn on the consumable preview card)
-                   # and moments/{charm,curse}_background.jpg (1200x800
-                   # backgrounds of the moment cards)
+                   # and moments/{charm,curse,omikuji}_background.jpg
+                   # (1200x800 backgrounds of the moment cards)
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
                    # (EN/RU page parity, every command in its command table)

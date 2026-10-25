@@ -1,11 +1,13 @@
 """Posting a moment card (Halloween) to the game topic: a charm used in a round, a
-hex cast at someone, or an omikuji kyō, as a picture with the plain line as its caption. A card that
-can't be drawn or sent never blocks anything: the caption goes out as text instead."""
+hex cast at someone, or an omikuji draw, as a picture with the plain line as its
+caption. A card that can't be drawn or sent never blocks anything: the caption goes
+out as text instead."""
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
+from io import BytesIO
 
 from loguru import logger
 from PIL import Image
@@ -30,17 +32,14 @@ class CharmMoment:
 
 
 @dataclass(frozen=True)
-class KyoMoment:
-    """An omikuji kyō: the drawer's own prank hex lands on them, shown like a charm
-    card on the curse background, with the hex's art beside their avatar."""
+class OmikujiMoment:
+    """An omikuji draw: the drawer beside their slip, on the night shrine background."""
 
-    kind: str  # the prank's HexKind value
     user_id: int
     card_name: str  # the name pill: plain, no flair
-    art: Image.Image | None  # None: the art is missing, so the plain line goes out
+    slip: bytes  # the slip's PNG
     title: str
-    detail: str
-    caption: str
+    detail: str  # what the slip did: coins, a charm, the prank
 
 
 @dataclass(frozen=True)
@@ -79,12 +78,12 @@ def _render(moment: CharmMoment, avatar: bytes | None) -> bytes:
     return moment_cards.charm_card(Mood.CHARM, face, consumable_card.art(moment.kind), caption)
 
 
-def _render_kyo(moment: KyoMoment, avatar: bytes | None) -> bytes:
-    if moment.art is None:
-        raise FileNotFoundError(f"no art for the kyō {moment.kind} card")
+def _render_omikuji(moment: OmikujiMoment, avatar: bytes | None) -> bytes:
+    with Image.open(BytesIO(moment.slip)) as source:
+        slip = source.convert("RGBA")
     face = Face(avatar, moment.card_name, moment.user_id)
     caption = Caption(moment.title, moment.detail)
-    return moment_cards.charm_card(Mood.CURSE, face, moment.art, caption)
+    return moment_cards.charm_card(Mood.OMIKUJI, face, slip, caption)
 
 
 def _render_duel(moment: DuelMoment, avatars: list[bytes | None]) -> bytes:
@@ -156,13 +155,33 @@ async def post_charm_moment(
     await _post(context, _Post(draw, moment.caption, log))
 
 
-async def post_kyo_moment(
-    context: ContextTypes.DEFAULT_TYPE, moment: KyoMoment, **log: object
+async def draw_omikuji_card(
+    context: ContextTypes.DEFAULT_TYPE, moment: OmikujiMoment
+) -> bytes | None:
+    """The omikuji card's JPEG, drawn once for every place it goes; None (logged)
+    when the avatar or the render fails, so the caller sends text instead."""
+    draw = _solo_draw(context, moment.user_id, partial(_render_omikuji, moment))
+    try:
+        return await draw()
+    except (OSError, ValueError):
+        logger.opt(exception=True).warning("could not draw the omikuji card — sending text")
+        return None
+
+
+async def post_omikuji_card(
+    context: ContextTypes.DEFAULT_TYPE, card: bytes | None, caption: str, **log: object
 ) -> bool:
-    """Draw and post a kyō card; on any failure post the caption as plain text.
-    True when either reached the topic."""
-    draw = _solo_draw(context, moment.user_id, partial(_render_kyo, moment))
-    return await _post(context, _Post(draw, moment.caption, {"moment": "kyō", **log}))
+    """Post the already drawn omikuji card to the game topic, or `caption` as text
+    when there is none or the send fails. True when either reached the topic."""
+    photo = b"" if card is None else card
+
+    async def drawn() -> bytes:
+        return photo
+
+    post = _Post(drawn, caption, {"moment": "omikuji", **log})
+    if card is None:
+        return await _send_text(context, post)
+    return await _post(context, post)
 
 
 async def post_duel_moment(
