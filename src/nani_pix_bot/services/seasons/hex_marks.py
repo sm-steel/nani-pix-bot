@@ -10,6 +10,9 @@ from nani_pix_bot.models.enums import SeasonStatus
 from nani_pix_bot.models.halloween import Hex
 from nani_pix_bot.models.season import SeasonSchedule
 
+# A closing season still runs its tagged games, so its hexes stay on.
+LIVE_STATUSES = (SeasonStatus.ACTIVE, SeasonStatus.CLOSING)
+
 SKULL = "💀"
 FACELESS = "👤"
 CHOCHIN_REACTION = "🤪"
@@ -23,7 +26,7 @@ def naive_utc(at: datetime) -> datetime:
 
 
 def active_hex_for(session: Session, player_id: int, now: datetime) -> Hex | None:
-    """The unresolved, unexpired hex on a player in an ACTIVE season, if any."""
+    """The unresolved, unexpired hex on a player in an ACTIVE or CLOSING season."""
     stamp = naive_utc(now)
     stmt = (
         select(Hex)
@@ -31,7 +34,7 @@ def active_hex_for(session: Session, player_id: int, now: datetime) -> Hex | Non
         .where(
             Hex.target_id == player_id,
             Hex.resolved_at.is_(None),
-            SeasonSchedule.status == SeasonStatus.ACTIVE,
+            SeasonSchedule.status.in_(LIVE_STATUSES),
             or_(Hex.expires_at.is_(None), Hex.expires_at > stamp),
         )
         .order_by(Hex.id.desc())

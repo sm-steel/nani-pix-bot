@@ -261,6 +261,10 @@ def test_opting_back_in_is_never_locked(session, hex_season):
     )
     session.add(_cast_row)
     session.flush()
+    _p(session, 1).hex_opt_out = False
+    with pytest.raises(HexRefusedError):
+        hexes.set_opt_out(session, _p(session, 1), True, NOW)
+    _p(session, 1).hex_opt_out = True
     hexes.set_opt_out(session, _p(session, 1), False, NOW)
     assert not _p(session, 1).hex_opt_out
 
@@ -278,3 +282,63 @@ def test_cast_and_refusal_are_logged(session, hex_season, log_records):
     ]
     assert refused
     assert refused[0].extra["refusal"] == "self"
+
+
+def _self_prank(session, season_id: int, kind: HexKind) -> None:
+    session.add(
+        Hex(season_id=season_id, kind=kind.value, caster_id=1, target_id=1, cast_at=_naive(NOW))
+    )
+    session.flush()
+
+
+def test_a_closing_season_keeps_its_hex_until_it_ends(session, hex_season):
+    _cast(session, 1, 2, HexKind.KAPPA)
+    hex_season.status = SeasonStatus.CLOSING
+    session.flush()
+    assert hexes.active_hex_for(session, 2, NOW) is not None
+    hex_season.status = SeasonStatus.ENDED
+    session.flush()
+    assert hexes.active_hex_for(session, 2, NOW) is None
+
+
+def test_cooldown_ignores_a_self_prank_of_that_kind(session, hex_season):
+    _self_prank(session, hex_season.id, HexKind.NOPPERABO)
+    rule = _rule(HexKind.NOPPERABO)
+    assert hexes.cooldown_left(session, 1, rule, NOW) == timedelta(0)
+
+
+def test_opt_out_lock_ignores_a_self_prank(session, hex_season):
+    _self_prank(session, hex_season.id, HexKind.NOPPERABO)
+    hexes.set_opt_out(session, _p(session, 1), True, NOW)
+    assert _p(session, 1).hex_opt_out
+
+
+def test_a_hard_mode_hosted_game_does_not_count_as_played(session, hex_season):
+    game = _game(session, hex_season.id, 3)
+    game.hard_mode = True
+    session.flush()
+    assert not hexes.played_in_season(session, hex_season.id, 3)
+
+
+def test_a_guess_in_a_game_of_another_season_does_not_count(session, hex_season):
+    other = SeasonSchedule(
+        run_id="demo_1",
+        start_at=NOW - timedelta(days=30),
+        end_at=NOW - timedelta(days=20),
+        status=SeasonStatus.ENDED,
+        created_by=9,
+    )
+    session.add(other)
+    session.flush()
+    game = _game(session, other.id, 4)
+    session.add(GameGuess(game_id=game.id, player_id=3, text="x", stage=1))
+    session.flush()
+    assert not hexes.played_in_season(session, hex_season.id, 3)
+
+
+def test_expire_due_counts_the_rows_it_stamps(session, hex_season):
+    _cast(session, 1, 2, HexKind.CHOCHIN)
+    later = NOW + timedelta(hours=_rule(HexKind.CHOCHIN).duration_hours)
+    assert hexes.expire_due(session, NOW) == 0
+    assert hexes.expire_due(session, later) == 1
+    assert hexes.expire_due(session, later) == 0

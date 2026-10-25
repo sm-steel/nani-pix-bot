@@ -62,7 +62,11 @@ class CastResult:
 
 
 def _refuse(refusal: HexRefusal, wait: timedelta | None = None) -> HexRefusedError:
-    logger.warning("hex refused: {refusal}", refusal=refusal.value)
+    logger.warning(
+        "hex refused: {refusal}",
+        refusal=refusal.value,
+        wait=None if wait is None else wait.total_seconds(),
+    )
     return HexRefusedError(refusal, wait)
 
 
@@ -169,7 +173,9 @@ def _pay(session: Session, caster: Player, season_id: int, price: int) -> None:
         raise _refuse(HexRefusal.INSUFFICIENT) from None
 
 
-def _write_hex(session: Session, who: tuple[Player, Player], rule: HexRule, season_id: int, now):
+def _write_hex(
+    session: Session, who: tuple[Player, Player], rule: HexRule, season_id: int, now: datetime
+) -> Hex:
     caster, target = who
     stamp = naive_utc(now)
     expires = stamp + timedelta(hours=rule.duration_hours) if rule.kind in PRANK_HEXES else None
