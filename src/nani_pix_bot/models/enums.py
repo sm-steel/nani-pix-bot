@@ -552,4 +552,4 @@ class ConsumableKind(enum.StrEnum):
     # 🎟 the clue token; named so a security linter doesn't read "token" as a secret
     CLUE_TICKET = "clue_token"
     OFUDA = "ofuda"  # 📜 Halloween season consumable
-    OMAMORI = "omamori"  # 🧧 Halloween season consumable
+    OMAMORI = "omamori"  # 🧿 Halloween season consumable
