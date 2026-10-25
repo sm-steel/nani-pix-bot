@@ -18,7 +18,6 @@ from nani_pix_bot.models.enums import (
     OutboxKind,
 )
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.models.halloween import OmikujiDraw
 from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import Reward
@@ -43,12 +42,10 @@ _kept = (
     TurnState.turn_opened_at,
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
-    # Halloween: wired by P4 (#469)
-    OmikujiDraw.drawn_at,
+    # Halloween: wired by P8 (#473)
     OmikujiKind.DAIKICHI,
     OmikujiKind.KICHI,
     OmikujiKind.SHOKICHI,
-    # Halloween: wired by P8 (#473)
     Reward.omamori,
     # Vulture only skips Reward.ofuda today because the `ofuda` module name matches;
     # it is listed so the entry survives a rename.

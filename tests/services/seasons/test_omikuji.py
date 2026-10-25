@@ -258,6 +258,7 @@ def test_a_refusal_logs_a_warning(session, omikuji_season, log_records):
     line = next(r for r in log_records if r.message == "omikuji refused: already")
     assert line.level == "WARNING"
     assert line.extra["refusal"] == "already"
+    assert line.extra["drawn_at"] == naive(NOW).isoformat()
 
 
 def test_slip_png_reads_the_run_art(tmp_path, monkeypatch):

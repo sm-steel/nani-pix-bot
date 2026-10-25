@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import select
 from telegram import Update
 from telegram.constants import ChatType
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import omikuji as omikuji_command
@@ -15,9 +16,9 @@ from nani_pix_bot.models.enums import ConsumableKind, SeasonStatus
 from nani_pix_bot.models.halloween import Hex, OmikujiDraw
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule
-from nani_pix_bot.seasons.mechanics import OmikujiKind
+from nani_pix_bot.seasons.mechanics import HexKind, OmikujiKind
 from nani_pix_bot.services import i18n
-from nani_pix_bot.services.seasons import omikuji
+from nani_pix_bot.services.seasons import hexes, omikuji
 from nani_pix_bot.services.seasons.omikuji import Draw
 from tests.seasons.fake_runs.demo_3 import RUN as DEMO_3
 
@@ -198,15 +199,19 @@ async def test_omikuji_falls_back_to_text_without_art(session_factory, monkeypat
 async def test_kyo_in_dm_posts_the_kyo_card(session_factory, monkeypatch, slip):
     _season(session_factory)
     force(monkeypatch, OmikujiKind.KYO)
+    monkeypatch.setattr(hexes, "PRANK_HEXES", frozenset({HexKind.NOPPERABO}))
     update, context = await _omikuji(session_factory)
     (prank,) = _hexes(session_factory)
     assert prank.target_id == prank.caster_id == ALICE
+    assert prank.kind == HexKind.NOPPERABO.value
     update.message.reply_photo.assert_awaited_once()
     context.bot.send_photo.assert_awaited_once()
     kwargs = context.bot.send_photo.await_args.kwargs
     assert (kwargs["chat_id"], kwargs["message_thread_id"]) == (555, 7)
-    assert "🎴" in kwargs["caption"]
-    assert "@alice" in kwargs["caption"]
+    assert prank.expires_at is not None
+    hours = round((prank.expires_at - prank.cast_at).total_seconds() / 3600)
+    expected = i18n.t("hex.notice.self_prank.nopperabo", "en", target="@alice", hours=hours)
+    assert kwargs["caption"] == expected  # unmasked, even under the fresh Nopperabō
     assert kwargs["photo"]
     context.bot.send_message.assert_not_awaited()
 
@@ -222,6 +227,26 @@ async def test_kyo_in_the_topic_replies_and_posts_exactly_one_card(
     context.bot.send_photo.assert_awaited_once()
     assert "🎴" in context.bot.send_photo.await_args.kwargs["caption"]
     context.bot.send_message.assert_not_awaited()
+
+
+async def test_a_failed_slip_reply_still_posts_the_kyo_card(
+    session_factory, monkeypatch, slip, log_records
+):
+    _season(session_factory)
+    force(monkeypatch, OmikujiKind.KYO)
+    update = _update()
+    update.message.reply_photo = AsyncMock(side_effect=TimedOut())
+    update.message.reply_text = AsyncMock(side_effect=TimedOut())
+    context = _context(session_factory)
+    await omikuji_command.omikuji_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+    context.bot.send_photo.assert_awaited_once()
+    assert "🎴" in context.bot.send_photo.await_args.kwargs["caption"]
+    failed = [r for r in log_records if r.message == "could not send the omikuji slip reply"]
+    assert [r.level for r in failed] == ["WARNING"]
+    with session_factory() as session:
+        assert len(list(session.scalars(select(OmikujiDraw)))) == 1
 
 
 async def test_kyo_card_falls_back_to_its_line(session_factory, monkeypatch, slip):

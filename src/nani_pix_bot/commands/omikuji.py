@@ -129,6 +129,10 @@ async def omikuji_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     logger.info("drew /omikuji in {where}", where=where)
     with session_scope(factory) as session:
         reply = _draw(session, user)
-    await _send_slip(message, reply)
+    try:
+        await _send_slip(message, reply)
+    except TelegramError:
+        # the draw (and any hex) is committed: the Kyō card still goes out
+        logger.opt(exception=True).warning("could not send the omikuji slip reply")
     if reply.kyo is not None:
         await post_kyo_moment(context, reply.kyo, hex_kind=reply.kyo.kind)

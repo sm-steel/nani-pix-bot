@@ -69,8 +69,8 @@ def drawn_today(session: Session, season_id: int, player_id: int, day: date) -> 
     return session.scalars(stmt).first()
 
 
-def _refuse(refusal: OmikujiRefusal) -> OmikujiRefusedError:
-    logger.warning("omikuji refused: {refusal}", refusal=refusal.value)
+def _refuse(refusal: OmikujiRefusal, **fields: object) -> OmikujiRefusedError:
+    logger.warning("omikuji refused: {refusal}", refusal=refusal.value, **fields)
     return OmikujiRefusedError(refusal)
 
 
@@ -110,8 +110,9 @@ def _prank(session: Session, player: Player, run: SeasonRun, now: datetime) -> H
 def draw(session: Session, player: Player, now: datetime, rng: random.Random = _RNG) -> Draw:
     season, run = _resolve(session)
     day = local_day(now, get_group_timezone(session))
-    if drawn_today(session, season.id, player.telegram_user_id, day) is not None:
-        raise _refuse(OmikujiRefusal.ALREADY)
+    earlier = drawn_today(session, season.id, player.telegram_user_id, day)
+    if earlier is not None:
+        raise _refuse(OmikujiRefusal.ALREADY, drawn_at=earlier.drawn_at.isoformat())
     outcome = pick(run.omikuji, rng)
     row = OmikujiDraw(
         season_id=season.id,
