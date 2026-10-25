@@ -31,8 +31,9 @@ _NAME_WIDTH = 360
 _SMALL_NAME_WIDTH = 300
 _FADED_ALPHA = 0.6
 _FADED_COLOUR = 0.4  # ImageEnhance.Color factor: 60% desaturated
-_SNAP_GAP = 18  # how far the two halves of a spent hex are pushed apart
-_SNAP_TURNS = (-8, 10)  # degrees each half is turned
+_SNAP_GAP = 44  # how far the two halves of a spent hex are pushed apart
+_SNAP_TURNS = (-14, 16)  # degrees each half is turned
+_SNAP_DROP = 12  # the second half has fallen this much lower
 _SPARKLE = (255, 215, 90)
 _CHARM_ART_BOX = (360, 420)
 _CHARM_ART_X = 790
@@ -239,7 +240,7 @@ def _break_line(width: int, height: int) -> list[Point]:
     normal = (-direction[1] / length, direction[0] / length)
     points = []
     for t, wobble in zip((0.0, 0.25, 0.5, 0.75, 1.0), (0, 1, 0, -1, 0), strict=True):
-        offset = wobble * width * 0.07
+        offset = wobble * width * 0.14
         points.append(
             (
                 start[0] + direction[0] * t + normal[0] * offset,
@@ -304,10 +305,13 @@ def _broken_art(canvas: Image.Image, art: Image.Image, centre: tuple[int, int]) 
         piece = half.crop(bounds).rotate(turn, expand=True, resample=Image.Resampling.BICUBIC)
         middle = (
             origin[0] + (bounds[0] + bounds[2]) / 2 + normal[0] * sign * _SNAP_GAP / 2,
-            origin[1] + (bounds[1] + bounds[3]) / 2 + normal[1] * sign * _SNAP_GAP / 2,
+            origin[1]
+            + (bounds[1] + bounds[3]) / 2
+            + normal[1] * sign * _SNAP_GAP / 2
+            + (0 if first else _SNAP_DROP),
         )
         _paste(canvas, piece, (round(middle[0]), round(middle[1])))
-    for t, radius in ((0.2, 9), (0.4, 6), (0.62, 7), (0.82, 10)):
+    for t, radius in ((0.2, 14), (0.4, 11), (0.62, 12), (0.82, 15)):
         spot = (line[0][0] + direction[0] * t, line[0][1] + direction[1] * t)
         _sparkle(canvas, (origin[0] + spot[0], origin[1] + spot[1]), radius)
 

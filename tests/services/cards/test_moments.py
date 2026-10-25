@@ -148,8 +148,8 @@ def test_the_blocked_hex_is_snapped_in_two() -> None:
     # the 153 x 230 art is centred at (230, 300): its middle is the gap between the halves
     assert far(_px(snapped, (230, 300)), _px(empty, (230, 300))) < 12
     # a little way off the break, along its normal, are the two halves
-    assert far(_px(snapped, (194, 316)), _px(empty, (194, 316))) > 12
-    assert far(_px(snapped, (266, 284)), _px(empty, (266, 284))) > 12
+    assert far(_px(snapped, (166, 329)), _px(empty, (166, 329))) > 25
+    assert far(_px(snapped, (276, 280)), _px(empty, (276, 280))) > 25
 
 
 def test_the_spent_hex_is_drained_and_has_no_white_line() -> None:
