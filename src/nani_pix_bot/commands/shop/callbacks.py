@@ -248,8 +248,10 @@ async def _announce(
     moment = None
     if bought.token_used:
         with session_scope(context.bot_data["session_factory"]) as session:
-            handle = players.display_name(session, tap.user.id)
-        moment = token_moment(tap.user, handle, notice, bought.lang)
+            lang = bought.lang
+            handle = players.image_name(session, tap.user.id, lang)
+            pill = players.image_name(session, tap.user.id, lang, tap.user.full_name)
+        moment = token_moment(tap.user, handle, pill, notice, bought.lang)
     await post_bought_notice(context, tap.game_id, notice, tap.kind, moment)
     try:
         await tap.query.answer()

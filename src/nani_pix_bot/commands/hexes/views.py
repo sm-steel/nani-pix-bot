@@ -60,7 +60,9 @@ def _help(session: Session, opened: hexes.OpenHexes, caster_id: int, lang: str) 
 def _entries(session: Session, opened: hexes.OpenHexes, caster_id: int) -> list[PickEntry]:
     targets = hex_targets(session, opened.season, caster_id, now())
     return [
-        PickEntry(p.telegram_user_id, players.display_name(session, p.telegram_user_id))
+        PickEntry(
+            p.telegram_user_id, players.display_name(session, p.telegram_user_id, unmasked=True)
+        )
         for p in targets
     ]
 
@@ -109,5 +111,5 @@ def kind_view(session: Session, caster_id: int, target_id: int, lang: str) -> Vi
             InlineKeyboardButton(i18n.t("hex.cancel", lang), callback_data=cancel_data(caster_id)),
         ]
     )
-    text = i18n.t("hex.pick", lang, target=players.display_name(session, target_id))
+    text = i18n.t("hex.pick", lang, target=players.display_name(session, target_id, unmasked=True))
     return text, InlineKeyboardMarkup(rows)

@@ -1021,6 +1021,7 @@
   "hex.card_detail.kappa": "{amount}% монет со следующей победы {target} уйдут {caster}",
   "hex.card_detail.kitsune": "Следующая ошибка {target} обойдётся до {amount} монет",
   "hex.card_detail.blocked": "Омамори сожгла проклятие от {caster}: {hex}",
+  "faceless.label": "Без лица",
   "hex.refusal.closed": "Проклятия закрыты: сезон с проклятиями не идёт.",
   "hex.refusal.unknown_kind": "Такого проклятия в этом сезоне нет.",
   "hex.refusal.self": "Себя проклясть нельзя.",

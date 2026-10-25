@@ -33,6 +33,7 @@ from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.economy import messages, settlement
 from nani_pix_bot.services.game import guesses
+from nani_pix_bot.services.seasons import hex_marks
 
 VOTE_PREFIX = "vote:"
 # The Nobody button's candidate part: `vote:<game id>:none`.
@@ -83,6 +84,8 @@ def cancel_vote_close(job_queue: JobQueue | None, game_id: int) -> None:
 
 
 def _handle(session: Session, player_id: int) -> str:
+    if hex_marks.is_faceless(session, player_id, datetime.now(UTC)):
+        return hex_marks.FACELESS
     player = session.get(Player, player_id)
     if player is not None and player.username:
         return f"@{player.username}"

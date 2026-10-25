@@ -2565,16 +2565,29 @@ A hex is a prank or a tax one player casts on another (`/hex`). Four kinds:
 Nopperabō and Chōchin-obake last `duration_hours`; Kappa's dish and the Kitsune
 trick last until they trigger.
 
-**Nopperabō.** While it is on a player, their name shows as a faceless 👤 💀
-in group text (name, flair and title are all hidden). Every image that draws
-their profile photo draws `assets/icons/hex/nopperabo_avatar.jpg` instead: the
-moment cards (including the Nopperabō cast card's own target), the profile
-card, the podium and the reveal celebration. All of them fetch the photo through
-`jobs/avatars.py::fetch_avatar`, which checks `hex_marks.is_faceless` and, while
-the curse lasts, hands back the art without asking Telegram. Pillow cards have no
-emoji font, so a name drawn on a card stays the plain name for now. The photo
-comes back as soon as the hex expires or is resolved. A missing art file logs
-one ERROR and falls back to the real photo.
+**Nopperabō.** While it is on a player, Nani Pix hides them everywhere, text
+and images, except the cast notice itself; logs keep the real name.
+- **Text.** Every mention in a Telegram message shows 👤 instead of the name
+  (guess replies, hex notices, standings, leaderboard, achievements, profile
+  captions, reveal posts, tips, ballots). `services/players.py::display_name`
+  and `services/cosmetics/flair.py::named` are the seams; `display_name(...,
+  unmasked=True)` skips the mask and is used only for the cast notice, the
+  self-prank notice, the `/hex` target picker and internal ordering.
+- **Images.** Pillow has no emoji font, so a name drawn on a card (name pills,
+  card titles and effect lines, the profile card, podium and unlock cards, the
+  reveal badge) is the localized `faceless.label` ("Faceless" / «Без лица»),
+  via `players.image_name`. The profile photo is replaced by
+  `assets/icons/hex/nopperabo_avatar.jpg`. Every image fetches the photo through
+  `jobs/avatars.py::fetch_avatar`, which checks `hex_marks.is_faceless` and
+  hands back the art without asking Telegram. A missing art file logs one ERROR
+  and falls back to the real photo.
+- **The exception.** The Nopperabō cast notice and its card name the target by
+  their real @username, so the group learns who was hexed (the card's photo is
+  already the faceless art). It is the single `unmask_target` line in
+  `commands/hexes/casting.py`.
+- **Logs.** `describe_player_id` and every loguru line keep the real id and
+  @username: admins need them.
+- The mask lifts when the hex expires or is resolved (`is_faceless`).
 
 ### Optional mechanics per run
 

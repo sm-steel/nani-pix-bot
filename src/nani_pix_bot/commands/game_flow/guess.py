@@ -56,12 +56,14 @@ def _partial_reveal_line(session, game: Game, lang: str) -> str:
     return "\n" + i18n.t("guess.partial_reveal", lang, reveal=row.partial_reveal)
 
 
-def _reveal_winner(session, user: User) -> RevealWinner:
+def _reveal_winner(session, user: User, lang: str) -> RevealWinner:
     """The reveal badge's winner: "@username", or the full name for a
     player with no username, plus their equipped win overlay."""
     return RevealWinner(
         user.id,
-        players.badge_handle(user.username, user.full_name),
+        players.image_name(
+            session, user.id, lang, players.badge_handle(user.username, user.full_name)
+        ),
         inventory.look(session, user.id, CosmeticSlot.WIN_EFFECT),
     )
 
@@ -73,7 +75,7 @@ def _prepare_won_announcement(
     lang: str,
     user: User,
 ) -> Announcement:
-    winner = _reveal_winner(session, user)
+    winner = _reveal_winner(session, user, lang)
     original_bytes = require_original_image(game, "a WON outcome")
     timeout_module.cancel_timeout(context.job_queue, game.id)
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
@@ -104,7 +106,7 @@ def _prepare_hard_mode_won_announcement(
     of a single post_reveal call. Timer/turn-state
     handling is identical to the normal-mode helper; only the reveal
     photos and caption key differ."""
-    winner = _reveal_winner(session, user)
+    winner = _reveal_winner(session, user, lang)
     photos = game_service.hard_mode_reveal_images(game)
     timeout_module.cancel_timeout(context.job_queue, game.id)
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
@@ -270,12 +272,13 @@ class _GuessResult:
     moment: CharmMoment | None = None  # the card that follows the reply (a forgiven miss)
 
 
-def _ofuda_moment(user: User, name: str, handle: str, lang: str) -> CharmMoment:
+def _ofuda_moment(session, user: User, name: str, lang: str) -> CharmMoment:
     """The card for a miss an Ofuda forgave: the old reply line is its caption."""
+    handle = players.image_name(session, user.id, lang, players.display_name(session, user.id))
     return CharmMoment(
         kind=ConsumableKind.OFUDA,
         user_id=user.id,
-        display_name=user.full_name,
+        display_name=players.image_name(session, user.id, lang, user.full_name),
         title=i18n.t("ofuda.card_title", lang),
         detail=i18n.t("ofuda.card_detail", lang, name=handle),
         caption=i18n.t("ofuda.used", lang, name=name),
@@ -375,7 +378,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             if outcome is game_service.GuessOutcome.FORGIVEN:
                 result = replace(
                     result,
-                    moment=_ofuda_moment(user, name, players.display_name(session, user.id), lang),
+                    moment=_ofuda_moment(session, user, name, lang),
                 )
         result = replace(result, reaction=_reaction_for(session, user.id, outcome))
     # Block closed and committed above — the outcome (and the currency it

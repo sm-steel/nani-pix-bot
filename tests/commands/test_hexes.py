@@ -24,7 +24,7 @@ from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.halloween import Hex
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule
-from nani_pix_bot.services import i18n
+from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.economy import wallet
 from tests.seasons.fake_runs.demo_3 import RUN as DEMO_3
@@ -210,6 +210,69 @@ async def test_every_cast_card_carries_an_effect_line(
     assert caption.detail.strip()
     assert "{" not in caption.detail
     assert "@bob" in caption.detail  # the target by @username, never "their"
+
+
+def _spy_duels(monkeypatch: pytest.MonkeyPatch) -> list:
+    """Every (Duel, Caption) a duel card is drawn with."""
+    drawn: list = []
+    cards = moments.moment_cards
+    real = cards.duel_card
+
+    def duel(mood, duel_, art, caption, blocked=False):
+        drawn.append((duel_, caption))
+        return real(mood, duel_, art, caption, blocked)
+
+    monkeypatch.setattr(cards, "duel_card", duel)
+    return drawn
+
+
+def _make_faceless(session_factory, season_id: int, user: int) -> None:
+    with session_factory() as session:
+        session.add(
+            Hex(
+                season_id=season_id,
+                kind="nopperabo",
+                caster_id=DAVE,
+                target_id=user,
+                cast_at=_now(),
+                expires_at=_now() + timedelta(hours=3),
+            )
+        )
+        session.commit()
+
+
+async def test_the_nopperabo_cast_names_its_victim_on_card_and_notice(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed(session_factory)
+    drawn = _spy_duels(monkeypatch)
+
+    _, context = await _hex(session_factory, ["@bob", "nopperabo"])
+
+    [(duel, caption)] = drawn
+    assert duel.target.name == "@bob"  # the one unmasked mention
+    assert "@bob" in caption.detail
+    assert "@bob" in _caption(context)
+    # ...but the card's photo is already the faceless art, and from now on the name is masked
+    with session_factory() as session:
+        assert players.display_name(session, BOB) == "👤"
+
+
+async def test_a_faceless_player_is_masked_on_every_later_card_and_notice(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    season_id = _seed(session_factory)
+    _make_faceless(session_factory, season_id, ALICE)
+    drawn = _spy_duels(monkeypatch)
+
+    _, context = await _hex(session_factory, ["@bob", "kitsune"])
+
+    [(duel, _)] = drawn
+    assert duel.actor.name == "Faceless"  # drawn on the card: the label, not an emoji
+    assert duel.target.name == "@bob"
+    notice = _caption(context)
+    assert "👤" in notice
+    assert "@alice" not in notice
 
 
 async def test_a_blocked_card_names_the_caster_and_the_hex_in_its_effect_line(

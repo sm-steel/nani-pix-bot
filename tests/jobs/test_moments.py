@@ -110,8 +110,8 @@ def _duel(*, blocked: bool = False, art=True) -> moments.DuelMoment:
     shield = Image.new("RGBA", (64, 64), (50, 200, 50, 255)) if blocked else None
     return moments.DuelMoment(
         name="hex kappa",
-        actor=moments.Person(1, "@alice"),
-        target=moments.Person(2, "@bob"),
+        actor=moments.Person(1, "@alice", "@alice"),
+        target=moments.Person(2, "@bob", "@bob"),
         art=picture,
         title="@bob is hexed!",
         detail="Their next wrong guess costs up to 20 coins",

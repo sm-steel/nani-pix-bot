@@ -67,7 +67,7 @@ def _unlock_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post |
     if granted is None:
         return None
     defn = catalogue.get(granted.key)
-    who = players.display_name(session, granted.player_id)
+    who = players.display_name(session, granted.player_id, unmasked=True)
     name = names.title(defn, granted.tier, granted.period_key, lang)
     desc = names.description(defn, granted.tier, lang)
     rarity = i18n.t(f"achievement.rarity.{granted.rarity}", lang)
@@ -85,7 +85,7 @@ def _unlock_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post |
         headline=i18n.t("card.unlocked", lang),
         name=name,
         description=_card_text(desc),
-        handle=who,
+        handle=players.image_name(session, granted.player_id, lang, who),
         reward=granted.reward,
         points_label=i18n.t("card.points", lang, points=granted.points),
         rarity_label=rarity,

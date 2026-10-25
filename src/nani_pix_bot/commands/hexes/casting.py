@@ -41,6 +41,17 @@ class _Done:
     lang: str
 
 
+def _person(session: Session, player_id: int, lang: str, unmasked: bool = False) -> Person:
+    plain = players.display_name(session, player_id, unmasked=True)
+    if unmasked:
+        return Person(player_id, plain, plain)
+    return Person(
+        player_id,
+        players.display_name(session, player_id),
+        players.image_name(session, player_id, lang),
+    )
+
+
 def _commit(session: Session, user: User, cast: Cast) -> _Done:
     lang = settings.get_language(session)
     caster = players.get_or_create_player(session, user.id, username=user.username)
@@ -53,10 +64,10 @@ def _commit(session: Session, user: User, cast: Cast) -> _Done:
     rule = None if opened is None else hexes.rule_for(opened.run, cast.kind)
     if rule is None:  # cast() just found both, in this same transaction
         raise HexRefusedError(HexRefusal.CLOSED)
-    sides = (
-        Person(user.id, players.display_name(session, user.id)),
-        Person(cast.target_id, players.display_name(session, cast.target_id)),
-    )
+    # The one exception to the Nopperabo curse: its own cast names the victim, so the
+    # group learns who was hexed. Every later mention of them is masked.
+    unmask_target = cast.kind is HexKind.NOPPERABO
+    sides = (_person(session, user.id, lang), _person(session, cast.target_id, lang, unmask_target))
     card = notices.moment(sides, rule, result.blocked, lang)
     target_log = players.describe_player_id(session, cast.target_id)
     return _Done(card, result.hex.id, target_log, lang)

@@ -5,7 +5,7 @@ only place that mutates a Game/Player pair together)."""
 
 from collections.abc import Collection
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from loguru import logger
@@ -17,9 +17,11 @@ from nani_pix_bot.models.enums import CurrencyReason
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import USERNAME_LENGTH, Player
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.economy import config as economy_config
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.quiet_hours import parse_timezone
+from nani_pix_bot.services.seasons import hex_marks
 
 
 def describe_person(user_id: int, *, username: str | None = None, name: str | None = None) -> str:
@@ -168,15 +170,36 @@ def badge_handle(username: str | None, full_name: str) -> str:
     return f"@{username}" if username else full_name
 
 
-def display_name(session: Session, telegram_user_id: int) -> str:
+def display_name(session: Session, telegram_user_id: int, *, unmasked: bool = False) -> str:
     """How a person is named in group-facing text: @username, else their
-    first name, else their id."""
+    first name, else their id. A player under Nopperabo shows as 👤 instead
+    (`unmasked=True` skips that: the cast notice and internal ordering only).
+    Logs never use this: they name people through `describe_player_id`."""
+    if not unmasked and _faceless(session, telegram_user_id):
+        return hex_marks.FACELESS
     player = session.get(Player, telegram_user_id)
     if player is None:
         return str(telegram_user_id)
     if player.username:
         return f"@{player.username}"
     return player.first_name or str(telegram_user_id)
+
+
+def _faceless(session: Session, telegram_user_id: int) -> bool:
+    return hex_marks.is_faceless(session, telegram_user_id, datetime.now(UTC))
+
+
+def image_name(
+    session: Session,
+    telegram_user_id: int,
+    lang: str,
+    name: str | None = None,
+) -> str:
+    """A name to draw on an image (no emoji font there): `name`, else the
+    @username, but the localized "Faceless" label for a player under Nopperabo."""
+    if _faceless(session, telegram_user_id):
+        return i18n.t("faceless.label", lang)
+    return name if name is not None else display_name(session, telegram_user_id, unmasked=True)
 
 
 HOSTED_WEIGHT = 3  # an activated game someone started counts as this many guesses

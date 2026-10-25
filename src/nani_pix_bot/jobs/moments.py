@@ -31,7 +31,8 @@ class CharmMoment:
 @dataclass(frozen=True)
 class Person:
     user_id: int
-    display_name: str  # the name pill: plain, no flair or marker
+    display_name: str  # the name in the caption (text): plain, no flair or marker
+    card_name: str  # the name pill and card lines: Pillow has no emoji font
 
 
 @dataclass(frozen=True)
@@ -64,8 +65,8 @@ def _render(moment: CharmMoment, avatar: bytes | None) -> bytes:
 
 
 def _render_duel(moment: DuelMoment, avatars: list[bytes | None]) -> bytes:
-    actor = Face(avatars[0], moment.actor.display_name, moment.actor.user_id)
-    target = Face(avatars[1], moment.target.display_name, moment.target.user_id)
+    actor = Face(avatars[0], moment.actor.card_name, moment.actor.user_id)
+    target = Face(avatars[1], moment.target.card_name, moment.target.user_id)
     duel = Duel(actor, target)
     if moment.art is None:
         raise FileNotFoundError(f"no art for the {moment.name} card")

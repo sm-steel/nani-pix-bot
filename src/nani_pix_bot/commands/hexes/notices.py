@@ -30,13 +30,13 @@ def _detail(sides: tuple[Person, Person], rule: HexRule, blocked: bool, lang: st
     kind = rule.kind.value
     if blocked:
         return i18n.t(
-            "hex.card_detail.blocked", lang, caster=sides[0].display_name, hex=kind_name(kind, lang)
+            "hex.card_detail.blocked", lang, caster=sides[0].card_name, hex=kind_name(kind, lang)
         )
     return i18n.t(
         f"hex.card_detail.{kind}",
         lang,
-        caster=sides[0].display_name,
-        target=sides[1].display_name,
+        caster=sides[0].card_name,
+        target=sides[1].card_name,
         hours=rule.duration_hours,
         amount=rule.amount,
     )
@@ -48,7 +48,7 @@ def moment(sides: tuple[Person, Person], rule: HexRule, blocked: bool, lang: str
     if blocked:
         title = i18n.t("hex.card_title.blocked", lang)
     else:
-        title = i18n.t("hex.card_title.cast", lang, target=target.display_name)
+        title = i18n.t("hex.card_title.cast", lang, target=target.card_name)
     return DuelMoment(
         name=f"hex {rule.kind.value}" + (" blocked" if blocked else ""),
         actor=actor,

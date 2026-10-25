@@ -60,7 +60,7 @@ async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             game_id,
             RevealWinner(
                 target.telegram_user_id,
-                f"@{target_username}",
+                players.image_name(session, target.telegram_user_id, lang, f"@{target_username}"),
                 inventory.look(session, target.telegram_user_id, CosmeticSlot.WIN_EFFECT),
             ),
         )

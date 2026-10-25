@@ -42,9 +42,13 @@ async def _viewer(context: ContextTypes.DEFAULT_TYPE, request: _Request) -> prev
     capped like the reveal's (AVATAR_TIMEOUT): updates are handled one at a time."""
     user, slot = request.viewer, request.resolved.item.slot
     card = None
-    if slot is CosmeticSlot.PROFILE_BANNER:
-        with session_scope(context.bot_data["session_factory"]) as session:
+    with session_scope(context.bot_data["session_factory"]) as session:
+        if slot is CosmeticSlot.PROFILE_BANNER:
             card = profile.card(profile.build(session, user.id, request.lang), request.lang)
+        handle = players.image_name(
+            session, user.id, request.lang, players.badge_handle(user.username, user.full_name)
+        )
+        full_name = players.image_name(session, user.id, request.lang, user.full_name)
     avatar = None
     if slot in previews.AVATAR_SLOTS:
         try:
@@ -57,8 +61,7 @@ async def _viewer(context: ContextTypes.DEFAULT_TYPE, request: _Request) -> prev
                 "the avatar took over {seconds:g} s; previewing with initials",
                 seconds=AVATAR_TIMEOUT,
             )
-    handle = players.badge_handle(user.username, user.full_name)
-    return previews.Viewer(user.id, handle, user.full_name, avatar, card, request.costume)
+    return previews.Viewer(user.id, handle, full_name, avatar, card, request.costume)
 
 
 async def _render(context: ContextTypes.DEFAULT_TYPE, request: _Request) -> previews.Preview:

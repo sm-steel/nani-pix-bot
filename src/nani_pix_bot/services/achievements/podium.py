@@ -40,7 +40,7 @@ def card(session: Session, placed: list[PeriodResult], title: str, lang: str) ->
     large #1 styling)."""
     entries = tuple(
         PodiumEntry(
-            players.display_name(session, r.player_id),
+            players.image_name(session, r.player_id, lang),
             i18n.t("card.score", lang, score=r.score, wins=r.wins),
             r.player_id,
             r.rank,

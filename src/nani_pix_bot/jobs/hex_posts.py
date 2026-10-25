@@ -44,7 +44,8 @@ def _self_prank(session: Session, row: Hex, lang: str) -> str:
     return i18n.t(
         f"hex.notice.self_prank.{row.kind}",
         lang,
-        target=players.display_name(session, row.target_id),
+        # the hex has just landed: like the cast notice, this one names its victim
+        target=players.display_name(session, row.target_id, unmasked=True),
         hours=hours,
     )
 

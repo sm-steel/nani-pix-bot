@@ -1021,6 +1021,7 @@
   "hex.card_detail.kappa": "{amount}% of {target}'s next win goes to {caster}",
   "hex.card_detail.kitsune": "{target}'s next wrong guess costs up to {amount} coins",
   "hex.card_detail.blocked": "The omamori burned away {caster}'s {hex}",
+  "faceless.label": "Faceless",
   "hex.refusal.closed": "Hexes are closed: no season with hexes is running.",
   "hex.refusal.unknown_kind": "That hex isn't part of this season.",
   "hex.refusal.self": "You can't hex yourself.",
