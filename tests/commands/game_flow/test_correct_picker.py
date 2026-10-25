@@ -14,6 +14,7 @@ from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons.mechanics import HexKind
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.seasons import hex_marks
 from tests.hex_fixtures import add_hex
 
 STARTER, BOB, CAROL, DAVE, BOT = 1, 2, 3, 4, 99
@@ -231,3 +232,16 @@ async def test_a_faceless_guesser_shows_unmasked_in_the_picker(session_factory, 
     _, rows = _picker(await _correct(session_factory))
 
     assert [row[0][0] for row in rows[:-1]] == ["@dave", "@bob", "@carol"]
+
+
+async def test_a_faceless_pick_is_masked_in_the_reveal_caption(session_factory, fake_runs) -> None:
+    game_id = _seed(session_factory)
+    with session_factory() as session:
+        add_hex(session, BOB, HexKind.NOPPERABO, hours=2)
+        session.commit()
+
+    _, context = await _tap(session_factory, f"cor:1:{game_id}:t:2")
+
+    caption = context.bot.send_photo.await_args.kwargs["caption"]
+    assert hex_marks.FACELESS in caption
+    assert "@bob" not in caption

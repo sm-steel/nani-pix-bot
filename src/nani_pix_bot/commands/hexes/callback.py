@@ -87,5 +87,4 @@ async def hex_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     elif (cast := _cast_of(tap)) is not None:
         await _cast(query, context, cast)
     else:
-        logger.warning("ignored a malformed /hex tap {data!r}", data=query.data)
-        await query.answer()
+        await player_picker.malformed(query, SPEC)

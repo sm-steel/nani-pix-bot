@@ -132,5 +132,4 @@ async def correct_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     elif tap.action == "p":
         await _page(query, context, tap)
     else:
-        logger.warning("ignored a malformed /correct tap {data!r}", data=query.data)
-        await query.answer()
+        await player_picker.malformed(query, SPEC)

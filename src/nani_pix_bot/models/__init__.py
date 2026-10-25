@@ -51,3 +51,4 @@ from nani_pix_bot.models.season import SeasonSchedule as SeasonSchedule
 from nani_pix_bot.models.season import SeasonXp as SeasonXp
 from nani_pix_bot.models.stage_config import StageConfig as StageConfig
 from nani_pix_bot.models.turn_state import TurnState as TurnState
+from nani_pix_bot.models.used_menu import UsedMenu as UsedMenu

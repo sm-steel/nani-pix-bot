@@ -46,8 +46,9 @@ async def _open_picker(
         tipper = session.get(Player, user.id)
         balance = 0 if tipper is None else tipper.currency
         refusal = None if amount is None else tips.amount_refusal(amount, balance)
-        at = views.picker(user.id, amount or 0)
-        view = views.players_view(session, at, context.bot.id, 0)
+        if refusal is None:
+            at = views.picker(user.id, amount or 0)
+            view = views.players_view(session, at, context.bot.id, 0)
     if refusal is not None:
         await message.reply_text(refusal_reply(session_factory, user.id, refusal))
         return

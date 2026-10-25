@@ -18,7 +18,7 @@ from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, 
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
-from nani_pix_bot.commands.achievements.common import MAX_ID
+from nani_pix_bot.commands.helpers.ids import MAX_ID
 from nani_pix_bot.commands.helpers.paging import clamp_page
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, players, settings
@@ -169,10 +169,7 @@ async def read_tap(
         return None
     tap = parse_tap(query.data, spec.prefix, spec.state_parts)
     if tap is None:
-        logger.warning(
-            "ignored a malformed {command} tap {data!r}", command=spec.command, data=query.data
-        )
-        await query.answer()
+        await malformed(query, spec)
         return None
     if query.from_user.id != tap.picker.opener_id:
         logger.warning(
@@ -183,6 +180,19 @@ async def read_tap(
         await query.answer(i18n.t(spec.not_yours_key, language(context)), show_alert=True)
         return None
     return query, tap
+
+
+async def malformed(query: CallbackQuery, spec: PickerSpec) -> None:
+    logger.warning(
+        "ignored a malformed {command} tap {data!r}", command=spec.command, data=query.data
+    )
+    await query.answer()
+
+
+async def refuse_stale(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """A tap on a picker that already acted, or that is out of date (the
+    caller logs why)."""
+    await query.answer(i18n.t("player_picker.stale", language(context)), show_alert=True)
 
 
 async def edit(query: CallbackQuery, view: View) -> None:

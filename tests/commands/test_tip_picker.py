@@ -73,7 +73,9 @@ async def _tip(session_factory, args: list[str]) -> MagicMock:
     return update
 
 
-async def _tap(session_factory, data: str, user_id: int = ALICE) -> MagicMock:
+async def _tap(
+    session_factory, data: str, user_id: int = ALICE, message_id: int = 500
+) -> MagicMock:
     update = MagicMock()
     query = update.callback_query
     query.data = data
@@ -81,6 +83,8 @@ async def _tap(session_factory, data: str, user_id: int = ALICE) -> MagicMock:
     query.from_user.username = "alice" if user_id == ALICE else None
     query.from_user.full_name = "Alice" if user_id == ALICE else "Someone"
     query.message.chat.type = ChatType.PRIVATE
+    query.message.chat.id = ALICE
+    query.message.message_id = message_id
     query.answer = AsyncMock()
     query.edit_message_text = AsyncMock()
     await tip_module.tip_callback(
@@ -287,4 +291,75 @@ async def test_a_malformed_tap_is_only_answered(session_factory, data: str) -> N
 
     query.answer.assert_awaited_once_with()
     query.edit_message_text.assert_not_awaited()
+    assert _balances(session_factory) == (50, 0, 0)
+
+
+async def test_a_double_tap_tips_once(session_factory, log_records) -> None:
+    _seed(session_factory)
+
+    await _tap(session_factory, "tip:1:20:t:2")
+    second = await _tap(session_factory, "tip:1:20:t:2")
+
+    assert _balances(session_factory) == (30, 20, 1)
+    second.answer.assert_awaited_once_with(i18n.t("player_picker.stale", "EN"), show_alert=True)
+    second.edit_message_text.assert_not_awaited()
+    assert any(r.level == "WARNING" and "used /tip menu" in r.message for r in log_records)
+
+
+async def test_another_menu_can_still_tip(session_factory) -> None:
+    _seed(session_factory)
+
+    await _tap(session_factory, "tip:1:20:t:2")
+    await _tap(session_factory, "tip:1:20:t:2", message_id=501)
+
+    assert _balances(session_factory) == (10, 40, 2)
+
+
+async def test_a_refused_tip_leaves_the_menu_usable(session_factory) -> None:
+    _seed(session_factory)
+
+    await _tap(session_factory, "tip:1:100:t:2")
+    query = await _tap(session_factory, "tip:1:20:t:2")
+
+    assert _balances(session_factory) == (30, 20, 1)
+    assert "20" in _edited(query)
+
+
+async def test_the_answer_comes_after_the_transfer(session_factory) -> None:
+    _seed(session_factory)
+    seen: list[tuple[int, int, int]] = []
+
+    async def answer(*_args, **_kwargs) -> None:
+        seen.append(_balances(session_factory))
+
+    update = MagicMock()
+    query = update.callback_query
+    query.data = "tip:1:20:t:2"
+    query.from_user.id, query.from_user.username, query.from_user.full_name = ALICE, "alice", "A"
+    query.message.chat.id, query.message.message_id = ALICE, 500
+    query.answer = answer
+    query.edit_message_text = AsyncMock()
+    await tip_module.tip_callback(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, _context(session_factory))
+    )
+
+    assert seen == [(30, 20, 1)]
+
+
+async def test_tip_with_an_amount_then_a_pick_tips_it(session_factory) -> None:
+    _seed(session_factory)
+
+    _, rows = _picker(await _tip(session_factory, ["50"]))
+    query = await _tap(session_factory, rows[0][0][1])
+
+    assert _balances(session_factory) == (0, 50, 1)
+    assert _edited(query) == i18n.t("tip.done", "EN", sender="Alice", recipient="@bob", amount=50)
+
+
+async def test_a_pick_naming_no_player_is_stale(session_factory) -> None:
+    _seed(session_factory)
+
+    query = await _tap(session_factory, "tip:1:20:t:77")
+
+    query.answer.assert_awaited_once_with(i18n.t("player_picker.stale", "EN"), show_alert=True)
     assert _balances(session_factory) == (50, 0, 0)

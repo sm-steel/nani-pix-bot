@@ -10,9 +10,17 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.player import Player
-from nani_pix_bot.services import i18n, players, settings
+from nani_pix_bot.services import i18n, players, settings, used_menus
 from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.economy import tips
+
+
+@dataclass(frozen=True)
+class Menu:
+    """The picker message a tap came from: it tips once (services/used_menus.py)."""
+
+    chat_id: int
+    message_id: int
 
 
 @dataclass(frozen=True)
@@ -20,6 +28,11 @@ class TipRequest:
     amount: int
     username: str | None = None  # typed after /tip, without the @
     player_id: int | None = None  # picked from the menu
+    menu: Menu | None = None  # the menu it was picked from
+
+
+class StaleMenuError(Exception):
+    """The menu already tipped, or names someone who is no player."""
 
 
 def _unknown_user_reply(context: ContextTypes.DEFAULT_TYPE, username: str, lang: str) -> str:
@@ -40,11 +53,18 @@ def _recipient(session: Session, request: TipRequest) -> Player | None:
             )
         return found
     found = None if request.player_id is None else session.get(Player, request.player_id)
-    if found is None:
+    if found is None:  # only forged callback data gets here
         logger.warning(
             "tried /tip to {recipient_id}, who is no player", recipient_id=request.player_id
         )
+        raise StaleMenuError
     return found
+
+
+def _claim(session: Session, menu: Menu | None) -> None:
+    if menu is not None and not used_menus.claim(session, menu.chat_id, menu.message_id):
+        logger.warning("refused a second tap on a used /tip menu", message_id=menu.message_id)
+        raise StaleMenuError
 
 
 def _recipient_name(session: Session, recipient_id: int, request: TipRequest) -> str:
@@ -58,6 +78,7 @@ def _attempt(
     session: Session, context: ContextTypes.DEFAULT_TYPE, user: User, request: TipRequest
 ) -> str:
     lang = settings.get_language(session)
+    _claim(session, request.menu)
     recipient = _recipient(session, request)
     if recipient is None:
         return _unknown_user_reply(context, request.username or str(request.player_id), lang)
@@ -79,7 +100,8 @@ def _attempt(
 
 
 def tip_reply(context: ContextTypes.DEFAULT_TYPE, user: User, request: TipRequest) -> str:
-    """Send the tip and say how it went: done, or why not."""
+    """Send the tip and say how it went: done, or why not. A tap on a menu that
+    already tipped raises StaleMenuError, and nothing moves."""
     session_factory = context.bot_data["session_factory"]
     try:
         with session_scope(session_factory) as session:
