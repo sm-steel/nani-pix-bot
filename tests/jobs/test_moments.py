@@ -13,7 +13,7 @@ CAPTION = "📜 Alice's Ofuda burned away"
 
 def _context() -> MagicMock:
     context = MagicMock()
-    context.bot_data = {"group_chat_id": 555, "game_topic_id": 7}
+    context.bot_data = {"group_chat_id": 555, "game_topic_id": 7, "session_factory": MagicMock()}
     context.bot.send_photo = AsyncMock()
     context.bot.send_message = AsyncMock()
     return context

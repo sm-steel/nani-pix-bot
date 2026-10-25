@@ -214,7 +214,9 @@ async def _faces(
     """The post's avatars; each player is fetched once per drain, not once per card."""
     for user_id in post.avatar_ids:
         if user_id not in cache:
-            cache[user_id] = await fetch_avatar(context.bot, user_id)
+            cache[user_id] = await fetch_avatar(
+                context.bot, user_id, context.bot_data["session_factory"]
+            )
     return [cache[user_id] for user_id in post.avatar_ids]
 
 

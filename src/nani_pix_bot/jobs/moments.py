@@ -116,7 +116,8 @@ async def post_charm_moment(
     """Draw and post the card; on any failure post the caption as plain text."""
 
     async def draw() -> bytes:
-        avatar = await fetch_avatar(context.bot, moment.user_id)
+        factory = context.bot_data["session_factory"]
+        avatar = await fetch_avatar(context.bot, moment.user_id, factory)
         return await asyncio.to_thread(_render, moment, avatar)
 
     log = {"moment": moment.kind.value, "game_id": game_id}
@@ -130,9 +131,10 @@ async def post_duel_moment(
     the caption as plain text. True when either reached the topic."""
 
     async def draw() -> bytes:
+        factory = context.bot_data["session_factory"]
         avatars = await asyncio.gather(
-            fetch_avatar(context.bot, moment.actor.user_id),
-            fetch_avatar(context.bot, moment.target.user_id),
+            fetch_avatar(context.bot, moment.actor.user_id, factory),
+            fetch_avatar(context.bot, moment.target.user_id, factory),
         )
         return await asyncio.to_thread(_render_duel, moment, list(avatars))
 

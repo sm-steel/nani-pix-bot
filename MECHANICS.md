@@ -2559,6 +2559,23 @@ who holds it; it is left out of everyone else's list and summary total
 (`status.build`). A comparison lists it when either player would see it.
 `sakura_1` ships none; a later run (Phase 8) is the first to.
 
+### Hexes
+
+A hex is a prank or a tax one player casts on another (`/hex`). Four kinds:
+Nopperabō and Chōchin-obake last `duration_hours`; Kappa's dish and the Kitsune
+trick last until they trigger.
+
+**Nopperabō.** While it is on a player, their name shows as a faceless 👤 💀
+in group text (name, flair and title are all hidden). Every image that draws
+their profile photo draws `assets/icons/hex/nopperabo_avatar.jpg` instead: the
+moment cards (including the Nopperabō cast card's own target), the profile
+card, the podium and the reveal celebration. All of them fetch the photo through
+`jobs/avatars.py::fetch_avatar`, which checks `hex_marks.is_faceless` and, while
+the curse lasts, hands back the art without asking Telegram. Pillow cards have no
+emoji font, so a name drawn on a card stays the plain name for now. The photo
+comes back as soon as the hex expires or is resolved. A missing art file logs
+one ERROR and falls back to the real photo.
+
 ### Optional mechanics per run
 
 A `SeasonRun` may switch on extra mechanics. Every field is **optional and

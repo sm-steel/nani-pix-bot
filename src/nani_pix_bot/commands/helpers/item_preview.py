@@ -48,7 +48,10 @@ async def _viewer(context: ContextTypes.DEFAULT_TYPE, request: _Request) -> prev
     avatar = None
     if slot in previews.AVATAR_SLOTS:
         try:
-            avatar = await asyncio.wait_for(fetch_avatar(context.bot, user.id), AVATAR_TIMEOUT)
+            avatar = await asyncio.wait_for(
+                fetch_avatar(context.bot, user.id, context.bot_data["session_factory"]),
+                AVATAR_TIMEOUT,
+            )
         except TimeoutError:
             logger.warning(
                 "the avatar took over {seconds:g} s; previewing with initials",
