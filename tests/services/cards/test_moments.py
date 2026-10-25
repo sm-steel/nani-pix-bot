@@ -137,36 +137,51 @@ def _blocked(attack: Image.Image) -> Image.Image:
     return _open(moments.blocked_duel_card(Mood.CHARM, DUEL, attack, ART, "Title"))
 
 
-def _is_x_red(pixel: tuple[int, int, int]) -> bool:
-    return pixel[0] > 200 and pixel[1] < 110 and pixel[2] < 120
+def _far(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
+    return max(abs(x - y) for x, y in zip(a, b, strict=True))
 
 
-def test_the_blocked_hex_is_crossed_out_with_a_red_x() -> None:
-    image = _blocked(Image.new("RGBA", (200, 300), (60, 200, 60, 255)))
-
-    # both diagonals of the 230 px box at (230, 300), near its centre and towards the corners
-    for offset in (0, 30, 60, -30, -60):
-        assert _is_x_red(_px(image, (230 + offset, 300 + offset)))
-        assert _is_x_red(_px(image, (230 + offset, 300 - offset)))
+WHITE_ART = Image.new("RGBA", (200, 200), (255, 255, 255, 255))
+NO_ART = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
 
 
-def test_the_blocked_hex_is_whole_and_faded_away_from_the_strokes() -> None:
-    attack = Image.new("RGBA", (300, 200), (60, 200, 60, 255))
-    image = _blocked(attack)
-    empty = _blocked(Image.new("RGBA", (300, 200), (0, 0, 0, 0)))
+def test_the_blocked_hex_is_torn_along_an_x() -> None:
+    image = _blocked(WHITE_ART)
+    empty = _blocked(NO_ART)
 
-    # the art is 230 x 153: points on it away from both diagonals show it, faded, not red
-    for point in ((230, 300 - 55), (230, 300 + 55)):
-        assert not _is_x_red(_px(image, point))
-        assert _px(image, point) != _px(empty, point)
+    # the 230 px art sits at (230, 300): both diagonals, clear of the sparkles, show only background
+    for offset in (30, 90, -30, -90):
+        for point in ((230 + offset, 300 + offset), (230 + offset, 300 - offset)):
+            assert _far(_px(image, point), _px(empty, point)) < 12
 
 
-def test_the_x_edge_is_antialiased() -> None:
-    image = _blocked(Image.new("RGBA", (200, 300), (60, 200, 60, 255)))
+def test_golden_sparkles_sit_in_the_gap() -> None:
+    image = _blocked(WHITE_ART)
 
-    # across the backslash stroke at (280, 350), perpendicular to it: red inside, art outside
-    values = [_px(image, (280 + t, 350 - t))[0] for t in range(-14, 15)]
+    def golden(box: tuple[int, int, int, int]) -> int:
+        pixels = cast(list[tuple[int, int, int]], list(image.crop(box).get_flattened_data()))
+        return sum(1 for r, g, b in pixels if r > 220 and 170 < g < 235 and b < 140)
+
+    for dx, dy in ((0, 0), (52, 52), (-52, 52), (52, -52)):
+        assert golden((230 + dx - 14, 300 + dy - 14, 230 + dx + 14, 300 + dy + 14)) > 8
+
+
+def test_each_of_the_four_pieces_keeps_faded_art() -> None:
+    image = _blocked(WHITE_ART)
+    empty = _blocked(NO_ART)
+
+    for point in ((230, 300 - 70), (230 + 70, 300), (230, 300 + 70), (230 - 70, 300)):
+        assert _far(_px(image, point), _px(empty, point)) > 25
+        assert min(_px(image, point)) < 235  # faded, not the art's pure white
+
+
+def test_the_gap_edge_is_antialiased() -> None:
+    image = _blocked(WHITE_ART)
+
+    # across the gap of the backslash diagonal at (280, 350), perpendicular to it
+    values = [_px(image, (280 + t, 350 - t))[1] for t in range(-20, 21)]
     low, high = min(values), max(values)
+    assert high - low > 40
     assert any(low + 0.2 * (high - low) < v < high - 0.2 * (high - low) for v in values)
 
 
