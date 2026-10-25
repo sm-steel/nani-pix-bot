@@ -2,7 +2,7 @@
 isn't markdown syntax goes through md_escape — names and titles included."""
 
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from types import MappingProxyType
 
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from nani_pix_bot.services.achievements import names, status, titles
 from nani_pix_bot.services.achievements.definitions import Kind, rarity_of, reached
 from nani_pix_bot.services.achievements.status import State, Status
 from nani_pix_bot.services.cosmetics import flair
+from nani_pix_bot.services.seasons import hex_marks
 
 MEDALS: Mapping[Rarity, str] = MappingProxyType(
     {Rarity.BRONZE: "🥉", Rarity.SILVER: "🥈", Rarity.GOLD: "🥇", Rarity.PLATINUM: "💎"}
@@ -151,7 +152,8 @@ def summary(session: Session, owner_id: int, lang: str, now: datetime) -> str:
         header_line(session, owner_id, items, lang),
     ]
     owner = session.get(Player, owner_id)
-    owner_title = titles.text(owner.title_key, lang) if owner else None
+    faceless = hex_marks.is_faceless(session, owner_id, now)
+    owner_title = titles.text(owner.title_key, lang) if owner and not faceless else None
     if owner_title:
         lines.append(_t("achievements.summary.title", lang, title=owner_title))
     latest = status.newest_first(s for s in items if s.state is State.EARNED)[:_LATEST]
@@ -183,7 +185,8 @@ def top_table(session: Session, rows: Sequence[status.TopRow], lang: str, offset
             )
         )
         holder = session.get(Player, top_row.player_id)
-        title = titles.text(holder.title_key, lang) if holder else None
+        faceless = hex_marks.is_faceless(session, top_row.player_id, datetime.now(UTC))
+        title = titles.text(holder.title_key, lang) if holder and not faceless else None
         if title:
             name += f" «{md_escape(title)}»"
         lines.append(f"| {rank} | {name} | {top_row.count} | {top_row.points} |")

@@ -5,6 +5,8 @@ achievement points), paged in place with lb:<page>. Works in the game topic
 and, for group members, in DM. Only the DM copy has a "you" line: the topic
 message is shared, so whoever pages it isn't who it would describe."""
 
+from datetime import UTC, datetime
+
 from loguru import logger
 from sqlalchemy.orm import Session
 from telegram import InlineKeyboardMarkup, Update
@@ -19,6 +21,7 @@ from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.achievements import titles
 from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.players import LeaderRow
+from nani_pix_bot.services.seasons import hex_marks
 
 LEADERBOARD_SIZE = 10
 PREFIX = "lb:"
@@ -36,6 +39,8 @@ def parse_page(data: str) -> int | None:
 
 def _name(session: Session, row: LeaderRow, lang: str) -> str:
     name = flair.named(session, row.player_id, players.display_name(session, row.player_id))
+    if hex_marks.is_faceless(session, row.player_id, datetime.now(UTC)):
+        return name
     title = titles.text(row.title_key, lang)
     return f"{name} «{title}»" if title else name
 

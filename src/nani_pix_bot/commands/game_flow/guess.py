@@ -2,6 +2,7 @@
 "Pixelation stages" sections."""
 
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 
 from loguru import logger
 from telegram import Message, Update, User
@@ -32,7 +33,7 @@ from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import earning, settlement
 from nani_pix_bot.services.economy.messages import earnings_suffix
 from nani_pix_bot.services.game import guesses
-from nani_pix_bot.services.seasons import haunting
+from nani_pix_bot.services.seasons import haunting, hex_marks
 
 # Outcomes answered with the remaining-guesses reply (a forgiven miss included).
 _WRONG_LIKE = frozenset({game_service.GuessOutcome.WRONG, game_service.GuessOutcome.FORGIVEN})
@@ -265,7 +266,7 @@ class _GuessResult:
     reply_text: str | None
     announcement: Announcement | None
     needs_cleanup_after_send: bool
-    reaction: str | None = None  # the winner's equipped reaction, for a WON guess only
+    reaction: str | None = None  # the equipped reaction on a win, or Chochin's prank on any guess
     moment: CharmMoment | None = None  # the card that follows the reply (a forgiven miss)
 
 
@@ -280,18 +281,27 @@ def _ofuda_moment(user: User, name: str, lang: str) -> CharmMoment:
     )
 
 
-async def _react_to_win(message: Message, reaction: str) -> None:
-    """Reacts to the winning /guess; a refused reaction never blocks the win."""
+async def _react(message: Message, reaction: str) -> None:
+    """Reacts to the /guess; a refused reaction never blocks the guess."""
+    chochin = reaction == hex_marks.CHOCHIN_REACTION
     try:
         await message.set_reaction(reaction=reaction)
     except TelegramError as error:
         logger.warning(
-            "couldn't react {reaction} to the winning guess: {error}",
+            "couldn't react {reaction} to the guess: {error}",
             reaction=reaction,
             error=str(error),
+            chochin=chochin,
         )
     else:
-        logger.info("reacted {reaction} to the winning guess", reaction=reaction)
+        logger.info("reacted {reaction} to the guess", reaction=reaction, chochin=chochin)
+
+
+def _reaction_for(session, user_id: int, outcome) -> str | None:
+    """Chochin's prank on any guess, else the equipped reaction on a win."""
+    won = outcome is game_service.GuessOutcome.WON
+    equipped = inventory.look(session, user_id, CosmeticSlot.GUESS_REACTION) if won else None
+    return hex_marks.guess_reaction(session, user_id, equipped, won, datetime.now(UTC))
 
 
 async def _send_guess_result(
@@ -308,7 +318,7 @@ async def _send_guess_result(
         else:
             await send_announcement(context, session_factory, result.announcement)
     if result.reaction is not None:
-        await _react_to_win(message, result.reaction)
+        await _react(message, result.reaction)
 
 
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -358,12 +368,12 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             suffix = _partial_reveal_line(session, game, lang) + suffix
         if outcome is game_service.GuessOutcome.WON:
             announcement = _prepare_won_announcement_dispatch(session, context, game, lang, user)
-            reaction = inventory.look(session, user.id, CosmeticSlot.GUESS_REACTION)
-            result = _GuessResult(game.id, None, with_suffix(announcement, suffix), True, reaction)
+            result = _GuessResult(game.id, None, with_suffix(announcement, suffix), True)
         else:
             result = _non_won_result(session, context, game, outcome, suffix)
             if outcome is game_service.GuessOutcome.FORGIVEN:
                 result = replace(result, moment=_ofuda_moment(user, name, lang))
+        result = replace(result, reaction=_reaction_for(session, user.id, outcome))
     # Block closed and committed above — the outcome (and the currency it
     # paid) is durable now regardless of whether the reply/announcement
     # below actually reaches the group (see post_current_image's docstring).

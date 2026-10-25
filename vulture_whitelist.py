@@ -28,7 +28,7 @@ from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services.cards import moments
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
-from nani_pix_bot.services.seasons import hex_marks, hexes
+from nani_pix_bot.services.seasons import hexes
 
 if TYPE_CHECKING:
     from loguru import Record
@@ -62,9 +62,6 @@ _kept = (
     # Halloween: wired by P5 (#470)
     moments.duel_card,
     EventType.HEX_CAST,
-    hex_marks.SKULL,
-    hex_marks.FACELESS,
-    hex_marks.CHOCHIN_REACTION,
     hexes.CastResult.hex,
     hexes.set_opt_out,
     hexes.apply_self_prank,  # P4b's omikuji kyō hook
