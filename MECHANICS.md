@@ -2126,15 +2126,119 @@ boost is for guessers only). A run with no `haunt`, `event_day` or
 
 `/seasonshop` (DM, group members only) lists the run's `shop` offers, bought
 with 🪙 and only while the season is `active`. Tapping an offer shows its
-preview (an item's usual preview; the clue token's is a golden-ticket icon),
-then **Buy** or **Back**. An offer is an item or a clue token with a
-per-season `limit`; an item is also refused when the player already owns it
+preview (an item's usual preview; a consumable's is its 640x640 card, see
+"Ofuda and Omamori"), then **Buy** or **Back**. An offer is an item or a
+consumable (clue token, Ofuda, Omamori) with a per-season `limit`; an item is also refused when the player already owns it
 (no refunds). The purchase is one `season_shop_purchases` row tied to its 🪙
 `currency_transfers` row, and the limit is the count of a player's rows for
 that offer in that season. Refusals: closed, unknown offer, owned, sold out,
 insufficient 🪙. Items are put on in `/cosmetics`. An item sold in the shop
 is never also a pass reward (free or premium); the run loader rejects a run
 that does both.
+
+### Ofuda and Omamori
+
+Two Halloween charms, consumables like the clue token (`consumables`: a count
+per player and kind). Both are `ShopOffer.consumable(...)` offers in the
+Season Shop and can be pass rewards; the shop and pass name them (`season_shop.offer_note.*`,
+`season_pass.reward.*`), only the shop shows their picture.
+
+**Consumables outlive the season.** A count is never converted, expired or
+reset when a season finalizes (only 🪙 is converted): an unused Ofuda or
+Omamori stays in `/inventory` for the next run.
+
+**Ofuda (📜) forgives one miss.** It is armed for one round, then spent by
+the first wrong guess its holder makes in that round.
+
+- **Arming** is private: the DM `/shop` menu (group members only) gets a
+  "Arm an Ofuda (N held)" button (`shop:ofuda:<game_id>`) under the clue
+  offers, drawn only when arming would be accepted, so it is also shown on a
+  menu with nothing else left to buy. Tapping it writes one `armed_ofuda` row
+  (`services/cosmetics/ofuda.py::arm`), answers the tapper with an alert and
+  redraws their menu without the button. Nothing is posted to the topic and
+  **arming takes nothing**: the count is unchanged until the Ofuda forgives.
+- **Refused** (`ArmRefusal`, an alert, logged at `WARNING`): the round is not
+  the `ACTIVE` game any more (stale button, or a button from an older round);
+  the tapper is the round's starter (they cannot guess); the round is HARD
+  MODE (it has no per-stage limit to protect, and `record_guess` hands those
+  rounds to the hard-mode path before the Ofuda is looked at); none held;
+  already armed in this round. One armed Ofuda per player per round.
+- **When it is taken.** `state._count_wrong`, on a wrong guess by a player
+  with an `armed_ofuda` row for that game: the row is deleted, one Ofuda is
+  taken (`consumables.take`) and an `OFUDA_USED` event is emitted. A correct
+  guess never touches it. A round that ends with the Ofuda still armed (won,
+  unsolved, stopped) leaves the count alone, so it is **kept**. An armed
+  row whose Ofuda is gone (count 0 at that moment) is dropped, logged at
+  `WARNING`, and the miss counts normally.
+- **`GuessOutcome.FORGIVEN`.** The guess is still a guess and still a wrong
+  one: `total_guess_count` goes up, it is logged in `guesses`, and `earning`
+  pays the first-guess bonus and the wrong-guess 💠 as for any miss (the
+  Ofuda protects the stage budget, not the wallet). What it skips is
+  `wrong_guess_count`: the miss is not counted against the stage's limit, so
+  it can never advance the stage or end the round unsolved. The reply is the
+  normal remaining-guesses reply (same as `WRONG`).
+- **The moment card.** A forgiven miss then posts a moment card to the game
+  topic after that reply (see "Moment cards" below), captioned with the line
+  "Ofuda burned away".
+
+**Omamori (🧿) is held, not armed.** It has no round, button or command: it is
+only a count, shown in `/inventory`. Nothing in the current build spends
+it. It is held for the hexes of Phase 5, which take it with
+`consumables.take(session, player_id, ConsumableKind.OMAMORI)` to block the
+next hex cast on its holder (see the hex section once it exists).
+
+**Previews.** A consumable's preview is a 640x640 PNG
+(`services/cosmetics/consumable_card.py`): the item's art over
+`assets/item_card_background.jpg` in a translucent card
+(`card_style.draw_card`), its name in a pill under it (`card_style.draw_pill`,
+the same pieces the costume sheet uses). The art is `assets/icons/<kind>.png`
+(the clue token's is drawn by `clue_token_icon`). The picture is kept as a
+Telegram `file_id` in `item_previews` like other previews, per language since
+the name is the viewer's: key `consumable/<kind>#<lang>` (for example
+`consumable/ofuda#en`, `consumable/clue_token#ru`), and a costume sheet's is
+`<item_id>#<lang>`. A file_id Telegram rejects is dropped and the card is
+drawn again.
+
+#### Moment cards
+
+A **moment card** (`services/cards/moments.py`, posted by
+`jobs/moments.py::post_charm_moment`) is a 1200x800 JPEG sent to the game
+topic with the plain line as its caption: the player's profile photo in a
+glowing ring (`Face`), the item's art (tilted, fitted in a box, trimmed to
+its drawn shape), a title pill on top and the player's name in a pill below,
+over `assets/moments/<mood>_background.jpg` (`Mood.CHARM`, a warm shrine;
+`Mood.CURSE`, violet mist). Pill text is stripped of emoji (the font has
+none) and clipped with an ellipsis; the name pill is the plain name, no
+flair. The module is pure Pillow, with no Telegram. Posted today:
+
+| Moment | When | Art | Title / caption |
+|---|---|---|---|
+| Ofuda saves a miss | after the reply to a `FORGIVEN` `/guess` | Ofuda | "That miss didn't count!" / "Ofuda burned away" |
+| Token-paid clue | in place of the plain "bought a clue" topic notice, when the purchase used a clue token (`token_used`) | the golden ticket | "bought" notice is the caption |
+
+Failure never blocks a game. The post runs after the guess or purchase is
+committed. The avatar is fetched with `jobs/avatars.py::fetch_avatar`; with
+none visible, or on a Telegram error (`WARNING`), the card draws the name's
+initials on a colour seeded by the player id. If drawing or sending the
+photo fails (`OSError`, `ValueError`, `TelegramError`, logged at `WARNING`),
+the **caption is sent as a plain topic message instead**, and if that fails
+too it is only logged. Plain-text notices (a clue paid with 💠) are
+unchanged.
+
+Also built, not posted yet: `duel_card` (caster, art, spirit trail, target)
+and `blocked_duel_card` (the target beside their defence art, the attacking
+item faded and crossed out by a red X), for Phase 5's hexes; each takes
+a `Duel(actor, target)` of `Face`s.
+
+### `/inventory`
+
+`/inventory` works in a DM or the game topic (elsewhere it is ignored) and
+replies in the same place with the caller's holdings: a header, then one
+line per kind they hold (clue tokens 🎟, Ofuda 📜, Omamori 🧿, in enum order;
+zero counts are left out). The Ofuda line is suffixed when one is armed for
+the current `ACTIVE` round; with Ofuda held and none armed it ends with a
+hint to arm one from `/shop`. Holding nothing shows a single "empty" line.
+Read-only; it takes nothing and logs the holdings at `INFO`.
 
 ### Rule modifiers
 
