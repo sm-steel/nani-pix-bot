@@ -137,30 +137,37 @@ def _blocked(attack: Image.Image) -> Image.Image:
     return _open(moments.blocked_duel_card(Mood.CHARM, DUEL, attack, ART, "Title"))
 
 
-def test_the_blocked_hex_is_snapped_in_two() -> None:
-    attack = Image.new("RGBA", (200, 300), (255, 0, 0, 255))
-    snapped = _blocked(attack)
-    empty = _blocked(Image.new("RGBA", (200, 300), (0, 0, 0, 0)))
-
-    def far(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
-        return max(abs(x - y) for x, y in zip(a, b, strict=True))
-
-    # the 153 x 230 art is centred at (230, 300): its middle is the gap between the halves
-    assert far(_px(snapped, (230, 300)), _px(empty, (230, 300))) < 12
-    # a little way off the break, along its normal, are the two halves
-    assert far(_px(snapped, (166, 329)), _px(empty, (166, 329))) > 25
-    assert far(_px(snapped, (276, 280)), _px(empty, (276, 280))) > 25
+def _is_x_red(pixel: tuple[int, int, int]) -> bool:
+    return pixel[0] > 200 and pixel[1] < 110 and pixel[2] < 120
 
 
-def test_the_spent_hex_is_drained_and_has_no_white_line() -> None:
-    attack = Image.new("RGBA", (200, 300), (255, 0, 0, 255))
+def test_the_blocked_hex_is_crossed_out_with_a_red_x() -> None:
+    image = _blocked(Image.new("RGBA", (200, 300), (60, 200, 60, 255)))
+
+    # both diagonals of the 230 px box at (230, 300), near its centre and towards the corners
+    for offset in (0, 30, 60, -30, -60):
+        assert _is_x_red(_px(image, (230 + offset, 300 + offset)))
+        assert _is_x_red(_px(image, (230 + offset, 300 - offset)))
+
+
+def test_the_blocked_hex_is_whole_and_faded_away_from_the_strokes() -> None:
+    attack = Image.new("RGBA", (300, 200), (60, 200, 60, 255))
     image = _blocked(attack)
-    area = (100, 170, 360, 430)
+    empty = _blocked(Image.new("RGBA", (300, 200), (0, 0, 0, 0)))
 
-    assert _count_red(image, area) == 0  # no longer the art's full red
-    assert _whites(image, area) == 0  # nothing drawn over it
-    empty = _blocked(Image.new("RGBA", (200, 300), (0, 0, 0, 0)))
-    assert image.crop(area).tobytes() != empty.crop(area).tobytes()
+    # the art is 230 x 153: points on it away from both diagonals show it, faded, not red
+    for point in ((230, 300 - 55), (230, 300 + 55)):
+        assert not _is_x_red(_px(image, point))
+        assert _px(image, point) != _px(empty, point)
+
+
+def test_the_x_edge_is_antialiased() -> None:
+    image = _blocked(Image.new("RGBA", (200, 300), (60, 200, 60, 255)))
+
+    # across the backslash stroke at (280, 350), perpendicular to it: red inside, art outside
+    values = [_px(image, (280 + t, 350 - t))[0] for t in range(-14, 15)]
+    low, high = min(values), max(values)
+    assert any(low + 0.2 * (high - low) < v < high - 0.2 * (high - low) for v in values)
 
 
 def test_the_ring_edge_is_antialiased() -> None:

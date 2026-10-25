@@ -11,7 +11,7 @@ from functools import cache
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
 from nani_pix_bot.services.cards.render import avatar_disc, font, smooth_mask
 from nani_pix_bot.services.cosmetics import card_style
@@ -31,10 +31,11 @@ _NAME_WIDTH = 360
 _SMALL_NAME_WIDTH = 300
 _FADED_ALPHA = 0.6
 _FADED_COLOUR = 0.4  # ImageEnhance.Color factor: 60% desaturated
-_SNAP_GAP = 44  # how far the two halves of a spent hex are pushed apart
-_SNAP_TURNS = (-14, 16)  # degrees each half is turned
-_SNAP_DROP = 12  # the second half has fallen this much lower
-_SPARKLE = (255, 215, 90)
+_X_SPAN = 0.8  # the X's strokes run across this share of the art box
+_X_THICKNESS = 22
+_X_COLOUR = (235, 60, 75)
+_X_GLOW_ALPHA = 128
+_X_GLOW_BLUR = 10
 _CHARM_ART_BOX = (360, 420)
 _CHARM_ART_X = 790
 _CHARM_CLEAR_X = 480 + 170 + _HALO_PAD + 24  # the avatar disc's halo, plus a gap
@@ -229,91 +230,31 @@ def _spirit_trail(
     _paint(canvas, box, (*colour, 255), dots)
 
 
-Point = tuple[float, float]
+def _cross_out(canvas: Image.Image, centre: tuple[int, int]) -> None:
+    """A bold X over `centre`, with a soft glow of the same strokes under it."""
+    reach = round(_ATTACK_ART_BOX[0] * _X_SPAN / 2)
+    pad = reach + _X_THICKNESS + 3 * _X_GLOW_BLUR
+    box = (centre[0] - pad, centre[1] - pad, centre[0] + pad, centre[1] + pad)
+
+    def strokes(draw: ImageDraw.ImageDraw, k: int) -> None:
+        mid, r, half = pad * k, reach * k, _X_THICKNESS * k // 2
+        for sign in (1, -1):
+            start, end = (mid - r, mid - sign * r), (mid + r, mid + sign * r)
+            draw.line((start, end), fill=255, width=_X_THICKNESS * k)
+            for x, y in (start, end):
+                draw.ellipse((x - half, y - half, x + half, y + half), fill=255)
+
+    _paint(canvas, box, (*_X_COLOUR, _X_GLOW_ALPHA), strokes, blur=_X_GLOW_BLUR)
+    _paint(canvas, box, (*_X_COLOUR, 255), strokes)
 
 
-def _break_line(width: int, height: int) -> list[Point]:
-    """A zigzag from the top-left to the bottom-right of a `width` x `height` picture."""
-    start, end = (width * 0.15, -4.0), (width * 0.85, height + 4.0)
-    direction = (end[0] - start[0], end[1] - start[1])
-    length = math.hypot(*direction)
-    normal = (-direction[1] / length, direction[0] / length)
-    points = []
-    for t, wobble in zip((0.0, 0.25, 0.5, 0.75, 1.0), (0, 1, 0, -1, 0), strict=True):
-        offset = wobble * width * 0.14
-        points.append(
-            (
-                start[0] + direction[0] * t + normal[0] * offset,
-                start[1] + direction[1] * t + normal[1] * offset,
-            )
-        )
-    return points
-
-
-def _half(picture: Image.Image, line: list[Point], first: bool) -> Image.Image:
-    """One side of `picture` cut along `line`: the left/lower side if `first`, else the
-    other. The two masks are exact complements, so together they cover the picture."""
-    width, height = picture.size
-    if first:
-        polygon = [*line, (-10, height + 10), (-10, -10)]
-    else:
-        polygon = [*line, (width + 10, height + 10), (width + 10, -10)]
-
-    def side(draw: ImageDraw.ImageDraw, k: int) -> None:
-        draw.polygon([(x * k, y * k) for x, y in polygon], fill=255)
-
-    mask = smooth_mask(picture.size, side)
-    half = picture.copy()
-    half.putalpha(ImageChops.multiply(picture.getchannel("A"), mask))
-    return half
-
-
-def _sparkle(canvas: Image.Image, centre: Point, radius: int) -> None:
-    """A small golden four-point star."""
-    x, y = round(centre[0]), round(centre[1])
-    reach = radius + 2
-    box = (x - reach, y - reach, x + reach, y + reach)
-
-    def star(draw: ImageDraw.ImageDraw, k: int) -> None:
-        mid, r, inner = reach * k, radius * k, radius * k * 0.28
-        points = []
-        for i in range(8):
-            angle = math.pi / 4 * i - math.pi / 2
-            d = r if i % 2 == 0 else inner
-            points.append((mid + d * math.cos(angle), mid + d * math.sin(angle)))
-        draw.polygon(points, fill=255)
-
-    _paint(canvas, box, (*_SPARKLE, 255), star)
-
-
-def _broken_art(canvas: Image.Image, art: Image.Image, centre: tuple[int, int]) -> None:
-    """The attacking item snapped in two along a zigzag: the halves pushed apart and
-    turned, drained of colour and faded, with golden sparkles in the gap."""
+def _spent_art(canvas: Image.Image, art: Image.Image, centre: tuple[int, int]) -> None:
+    """The attacking item whole but drained and faded, crossed out by a red X."""
     picture = _art(art, _ATTACK_ART_BOX)
     drained = ImageEnhance.Color(picture.convert("RGB")).enhance(_FADED_COLOUR).convert("RGBA")
     drained.putalpha(picture.getchannel("A").point(lambda a: round(a * _FADED_ALPHA)))
-    line = _break_line(*drained.size)
-    direction = (line[-1][0] - line[0][0], line[-1][1] - line[0][1])
-    length = math.hypot(*direction)
-    normal = (-direction[1] / length, direction[0] / length)  # towards the first half
-    origin = (centre[0] - drained.width / 2, centre[1] - drained.height / 2)
-    for first, turn, sign in ((True, _SNAP_TURNS[0], 1), (False, _SNAP_TURNS[1], -1)):
-        half = _half(drained, line, first)
-        bounds = half.getchannel("A").getbbox()
-        if bounds is None:
-            continue
-        piece = half.crop(bounds).rotate(turn, expand=True, resample=Image.Resampling.BICUBIC)
-        middle = (
-            origin[0] + (bounds[0] + bounds[2]) / 2 + normal[0] * sign * _SNAP_GAP / 2,
-            origin[1]
-            + (bounds[1] + bounds[3]) / 2
-            + normal[1] * sign * _SNAP_GAP / 2
-            + (0 if first else _SNAP_DROP),
-        )
-        _paste(canvas, piece, (round(middle[0]), round(middle[1])))
-    for t, radius in ((0.2, 14), (0.4, 11), (0.62, 12), (0.82, 15)):
-        spot = (line[0][0] + direction[0] * t, line[0][1] + direction[1] * t)
-        _sparkle(canvas, (origin[0] + spot[0], origin[1] + spot[1]), radius)
+    _paste(canvas, drained, centre)
+    _cross_out(canvas, centre)
 
 
 @dataclass(frozen=True)
@@ -326,10 +267,10 @@ def blocked_duel_card(
     mood: Mood, duel: Duel, attack: Image.Image, defence: Image.Image, title: str
 ) -> bytes:
     """A hex blocked: the target in the middle beside their `defence` art, while the
-    `attack` art lies snapped in two and faded next to the small caster's name."""
+    `attack` art lies faded and crossed out with a red X next to the small caster's name."""
     canvas = _background(mood).copy()
     _title(canvas, title)
-    _broken_art(canvas, attack, (230, 300))
+    _spent_art(canvas, attack, (230, 300))
     _pill(canvas, duel.actor.name, _SMALL_PILL, (230, 470), _SMALL_NAME_WIDTH)
     _glow_disc(canvas, duel.target, 320, (560, 420), RING[mood])
     _paste(canvas, _art(defence, _DEFENCE_ART_BOX), (860, 470))
