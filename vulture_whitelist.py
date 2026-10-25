@@ -13,6 +13,7 @@ Anything else vulture reports is dead code: remove it or wire it up.
 from typing import TYPE_CHECKING
 
 from nani_pix_bot.models.enums import (
+    CurrencyReason,
     EventType,
     HexOutcome,
     ItemSource,
@@ -28,6 +29,7 @@ from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services.cards import moments
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
+from nani_pix_bot.services.seasons import hex_marks, hexes
 
 if TYPE_CHECKING:
     from loguru import Record
@@ -62,6 +64,13 @@ _kept = (
     moments.duel_card,
     GoalKind.HEXES_BLOCKED,
     EventType.HEX_CAST,
+    CurrencyReason.HEX_KAPPA,
+    CurrencyReason.HEX_KITSUNE,
+    hex_marks.SKULL,
+    hex_marks.FACELESS,
+    hex_marks.CHOCHIN_REACTION,
+    hexes.CastResult.hex,
+    hexes.set_opt_out,
     EventType.HEX_BLOCKED,
     EventType.HEX_TRIGGERED,
     Hex.caster_id,
