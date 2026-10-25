@@ -959,5 +959,7 @@
   "haunt.started": "👻 This round is haunted — {twist}: {hint}. Season Coins ×{multiplier}!",
   "haunt.changed": "👻 A new haunting for this stage — {twist}: {hint}.",
   "haunt.lifted": "✨ The {twist} lifts — a clear picture for the last stage!",
-  "ofuda.used": "📜 {name}'s Ofuda burned away — that miss didn't count!"
+  "ofuda.used": "📜 {name}'s Ofuda burned away — that miss didn't count!",
+  "ofuda.card_title": "That miss didn't count!",
+  "shop.token_card_title": "Paid with a clue token"
 }

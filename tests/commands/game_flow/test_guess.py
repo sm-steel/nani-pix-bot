@@ -542,7 +542,7 @@ async def test_guess_command_wrong_feedback_shows_remaining_over_the_stage_limit
     assert "2/3" in text
 
 
-async def test_forgiven_guess_replies_with_remaining_and_the_ofuda_line(session_factory) -> None:
+def _arm_ofuda(session_factory) -> int:
     game_id = _active_game(session_factory)
     _seed_stage_limit(session_factory, PixelStage.STAGE_1, wrong_guess_limit=2)
     with session_factory() as session:
@@ -551,6 +551,14 @@ async def test_forgiven_guess_replies_with_remaining_and_the_ofuda_line(session_
         consumables.add(session, 2, ConsumableKind.OFUDA, "test")
         session.add(ArmedOfuda(player_id=2, game_id=game_id, armed_at=datetime.now(UTC)))
         session.commit()
+    return game_id
+
+
+async def test_forgiven_guess_replies_with_remaining_and_posts_the_ofuda_card(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("nani_pix_bot.jobs.moments.fetch_avatar", AsyncMock(return_value=None))
+    _arm_ofuda(session_factory)
     update = _make_update(user_id=2, args=["attack", "on", "titan"])
     context = _make_context(session_factory, args=["attack", "on", "titan"])
 
@@ -560,8 +568,33 @@ async def test_forgiven_guess_replies_with_remaining_and_the_ofuda_line(session_
 
     text = update.message.reply_text.await_args.args[0]
     assert "2/2" in text  # the stage budget is untouched (wording varies, the count doesn't)
-    assert "Ofuda" in text
-    assert "didn't count" in text
+    assert "Ofuda" not in text  # the line rides on the card instead
+    card = context.bot.send_photo.await_args.kwargs
+    assert card["chat_id"] == 555
+    assert card["message_thread_id"] == 7
+    assert "Ofuda" in card["caption"]
+    assert "didn't count" in card["caption"]
+
+
+async def test_forgiven_guess_posts_the_line_as_text_when_the_card_fails(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*_args, **_kwargs):
+        raise OSError("no font")
+
+    monkeypatch.setattr("nani_pix_bot.jobs.moments.fetch_avatar", AsyncMock(return_value=None))
+    monkeypatch.setattr("nani_pix_bot.jobs.moments.moment_cards.charm_card", broken)
+    _arm_ofuda(session_factory)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+    context.bot.send_message = AsyncMock()
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert context.bot.send_message.await_args is not None
+    assert "didn't count" in context.bot.send_message.await_args.kwargs["text"]
     context.bot.send_photo.assert_not_awaited()
 
 

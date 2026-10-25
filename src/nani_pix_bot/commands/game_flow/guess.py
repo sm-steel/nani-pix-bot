@@ -1,7 +1,7 @@
 """The /guess command — see MECHANICS.md's "Guess matching" and
 "Pixelation stages" sections."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from loguru import logger
 from telegram import Message, Update, User
@@ -20,9 +20,10 @@ from nani_pix_bot.commands.game_flow.stage_post import (
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
+from nani_pix_bot.jobs.moments import CharmMoment, post_charm_moment
 from nani_pix_bot.jobs.reveal import RevealWinner
 from nani_pix_bot.jobs.timers.current_image import RevealTarget
-from nani_pix_bot.models.enums import CosmeticSlot, GameStatus
+from nani_pix_bot.models.enums import ConsumableKind, CosmeticSlot, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
@@ -265,6 +266,18 @@ class _GuessResult:
     announcement: Announcement | None
     needs_cleanup_after_send: bool
     reaction: str | None = None  # the winner's equipped reaction, for a WON guess only
+    moment: CharmMoment | None = None  # the card that follows the reply (a forgiven miss)
+
+
+def _ofuda_moment(user: User, name: str, lang: str) -> CharmMoment:
+    """The card for a miss an Ofuda forgave: the old reply line is its caption."""
+    return CharmMoment(
+        kind=ConsumableKind.OFUDA,
+        user_id=user.id,
+        display_name=user.full_name,
+        title=i18n.t("ofuda.card_title", lang),
+        caption=i18n.t("ofuda.used", lang, name=name),
+    )
 
 
 async def _react_to_win(message: Message, reaction: str) -> None:
@@ -286,6 +299,8 @@ async def _send_guess_result(
 ) -> None:
     if result.reply_text is not None:
         await message.reply_text(result.reply_text)
+    if result.moment is not None:
+        await post_charm_moment(context, result.moment, game_id=result.game_id)
     if result.announcement is not None:
         if result.needs_cleanup_after_send:
             sent = await send_reveal_announcement(context, session_factory, result.announcement)
@@ -337,20 +352,18 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         earnings = earning.award_guess(
             session, game, guesser_id=user.id, won=outcome is game_service.GuessOutcome.WON
         )
-        suffix = earnings_suffix(
-            session, game, earnings, lang, player_name=flair.named(session, user.id, user.full_name)
-        )
+        name = flair.named(session, user.id, user.full_name)
+        suffix = earnings_suffix(session, game, earnings, lang, player_name=name)
         if outcome not in _NO_PARTIAL_REVEAL:
             suffix = _partial_reveal_line(session, game, lang) + suffix
-        if outcome is game_service.GuessOutcome.FORGIVEN:
-            name = flair.named(session, user.id, user.full_name)
-            suffix = "\n" + i18n.t("ofuda.used", lang, name=name) + suffix
         if outcome is game_service.GuessOutcome.WON:
             announcement = _prepare_won_announcement_dispatch(session, context, game, lang, user)
             reaction = inventory.look(session, user.id, CosmeticSlot.GUESS_REACTION)
             result = _GuessResult(game.id, None, with_suffix(announcement, suffix), True, reaction)
         else:
             result = _non_won_result(session, context, game, outcome, suffix)
+            if outcome is game_service.GuessOutcome.FORGIVEN:
+                result = replace(result, moment=_ofuda_moment(user, name, lang))
     # Block closed and committed above — the outcome (and the currency it
     # paid) is durable now regardless of whether the reply/announcement
     # below actually reaches the group (see post_current_image's docstring).

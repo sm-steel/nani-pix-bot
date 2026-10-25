@@ -12,10 +12,12 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.commands.shop import images, ofuda_button, parsing, share, tile_grid
 from nani_pix_bot.commands.shop.deliver import (
+    bought_notice,
     deliver_image_clue,
     deliver_text_clue,
     post_bought_notice,
     text_clue_message,
+    token_moment,
 )
 from nani_pix_bot.commands.shop.keyboards import (
     SHOP_BUY_PREFIX,
@@ -239,7 +241,9 @@ async def _announce(
 ) -> None:
     """Post the topic notice, then answer the tap — in that order, so a
     callback that timed out (BadRequest on the answer) skips nothing."""
-    await post_bought_notice(context, tap.game_id, bought.buyer, tap.kind, bought.lang)
+    notice = bought_notice(bought.buyer, tap.kind, bought.lang)
+    moment = None if bought.amount else token_moment(tap.user, notice, bought.lang)  # no 💠 paid
+    await post_bought_notice(context, tap.game_id, notice, tap.kind, moment)
     try:
         await tap.query.answer()
     except BadRequest:

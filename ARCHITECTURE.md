@@ -579,6 +579,11 @@ src/nani_pix_bot/
                    #                      not the guarantee
     post.py       # Post: one announcement as it will be sent (text, card,
                    # and dm_to for a player's DM instead of the topic)
+    moments.py    # posts a moment card (CharmMoment: whose art, who, title,
+                   # caption) to the game topic with the plain line as the
+                   # caption; a failed avatar/render/send falls back to the
+                   # caption as text. Used by /guess (a forgiven miss) and
+                   # the clue shop (a token-paid clue)
     season_posts.py  # turns the season pass rows (SEASON_TIER DMs,
                    # SEASON_COMPLETE topic line) into Posts
     announcements.py  # the announcement outbox drain: a repeating 20s
@@ -881,7 +886,11 @@ src/nani_pix_bot/
                    # backgrounds), profile_card.py (the /profile card:
                    # stamps, achievement chips, stats chips), glass.py (its
                    # default gradient and adaptive glass-pixel grid),
-                   # season_card.py (the season teaser/start/end card)
+                   # season_card.py (the season teaser/start/end card),
+                   # moments.py (Halloween moment cards for the game topic:
+                   # charm_card, duel_card/blocked_duel_card; avatar in a
+                   # glowing ring, item art, title and name pills on a
+                   # generated background; JPEG out, no Telegram)
     economy/      # the currency economy (shown as 💠 pixels) — see MECHANICS.md's "Pixels".
                    # __init__.py deliberately re-exports nothing (import
                    # submodules directly): players.py imports
@@ -1154,6 +1163,8 @@ assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's k
                    # (the consumable preview card's background) and
                    # icons/{ofuda,omamori}.png (512 px RGBA art of the two
                    # Halloween charms, drawn on the consumable preview card)
+                   # and moments/{charm,curse}_background.jpg (1200x800
+                   # backgrounds of the moment cards)
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
                    # (EN/RU page parity, every command in its command table)

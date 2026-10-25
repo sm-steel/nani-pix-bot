@@ -25,6 +25,7 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import GoalKind, Reward
 from nani_pix_bot.seasons.mechanics import OmikujiKind
+from nani_pix_bot.services.cards import moments
 from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
@@ -56,6 +57,7 @@ _kept = (
     OmikujiKind.SHOKICHI,
     Reward.omamori,
     # Halloween: wired by P5 (#470)
+    moments.duel_card,
     GoalKind.HEXES_BLOCKED,
     EventType.HEX_CAST,
     EventType.HEX_BLOCKED,
