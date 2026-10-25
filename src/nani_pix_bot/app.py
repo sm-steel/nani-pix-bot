@@ -34,6 +34,7 @@ from nani_pix_bot.commands import (
     game_flow,
     gamesenabled,
     grant_item,
+    grant_item_picker,
     hexes,
     history,
     inventory,
@@ -45,6 +46,7 @@ from nani_pix_bot.commands import (
     profile,
     quiet_hours,
     refund,
+    refund_picker,
     season,
     season_pass,
     season_shop,
@@ -61,6 +63,7 @@ from nani_pix_bot.commands import (
     version,
 )
 from nani_pix_bot.commands.achievements import browser as achievements_browser
+from nani_pix_bot.commands.achievements import someone_else_picker as achievements_someone_else
 from nani_pix_bot.commands.dm_start.keyboards import (
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
     SEARCH_RETRY_CALLBACK_DATA,
@@ -69,6 +72,8 @@ from nani_pix_bot.commands.helpers import log_scope, paging, player_tracking
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
+from nani_pix_bot.commands.profile import browse as profile_browse
+from nani_pix_bot.commands.profile import someone_else_picker as profile_someone_else
 from nani_pix_bot.commands.profile.data import PREFIX as PROFILE_PREFIX
 from nani_pix_bot.commands.quiet_hours import SET_TIMEZONE_PREFIX
 from nani_pix_bot.config import Config, load_config
@@ -384,8 +389,23 @@ def build_application(config: Config) -> Application:
         )
     )
     application.add_handler(
-        CallbackQueryHandler(profile.browse.profile_callback, pattern=rf"^{PROFILE_PREFIX}")
+        CallbackQueryHandler(profile_browse.profile_callback, pattern=rf"^{PROFILE_PREFIX}")
     )
+    for picker_callback, prefix in (
+        (refund_picker.refund_picker_callback, refund_picker.PREFIX),
+        (grant_item_picker.grant_item_callback, grant_item_picker.PREFIX),
+        (
+            profile_someone_else.profile_someone_else_callback,
+            profile_someone_else.SOMEONE_ELSE.spec.prefix,
+        ),
+        (
+            achievements_someone_else.achievements_someone_else_callback,
+            achievements_someone_else.SOMEONE_ELSE.spec.prefix,
+        ),
+    ):
+        application.add_handler(
+            CallbackQueryHandler(picker_callback, pattern=rf"^{re.escape(prefix)}")
+        )
     application.add_handler(CallbackQueryHandler(standings_dm.standings_callback, pattern=r"^std:"))
     application.add_handler(CallbackQueryHandler(leaderboard.leaderboard_callback, pattern=r"^lb:"))
     application.add_handler(CallbackQueryHandler(history.history_callback, pattern=r"^hist:"))

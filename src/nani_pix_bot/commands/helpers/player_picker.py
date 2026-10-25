@@ -19,6 +19,7 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.ids import MAX_ID
+from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.paging import clamp_page
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, players, settings
@@ -197,6 +198,19 @@ async def refuse_stale(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE)
     """A tap on a picker that already acted, or that is out of date (the
     caller logs why)."""
     await query.answer(i18n.t("player_picker.stale", language(context)), show_alert=True)
+
+
+async def still_admin(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, spec: PickerSpec
+) -> bool:
+    """Whether an admin command's picker was tapped by someone who is still a
+    group admin; otherwise the tap is refused with an alert. A Telegram call,
+    so made before any transaction opens."""
+    if await is_group_admin(context.bot, context.bot_data["group_chat_id"], query.from_user.id):
+        return True
+    logger.warning("refused a {command} tap: no longer an admin", command=spec.command)
+    await query.answer(i18n.t("commands.admins_only", language(context)), show_alert=True)
+    return False
 
 
 async def edit(query: CallbackQuery, view: View) -> None:

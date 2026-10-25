@@ -12,6 +12,7 @@ from nani_pix_bot.services import i18n, players, settings
 
 DEEP_LINK_PREFIX = "ach_"
 PREFIX = "ach:"  # callback-data prefix of every achievements button
+SOMEONE_ELSE_PREFIX = "acs:"  # 👥 Someone else's picker (someone_else_picker.py)
 
 
 def resolve_owner(session: Session, viewer_id: int, args: list[str]) -> int | None:

@@ -124,7 +124,8 @@ def test_card_keyboard_players_button_opens_the_page_the_player_is_on() -> None:
 
 def test_a_lone_player_gets_no_prev_next() -> None:
     assert _data(browse.card_keyboard([ME], browse.Viewing(ME, ME, private=False), "EN")) == [
-        [cb.list_data(ME, 0)]
+        [cb.list_data(ME, 0)],
+        [f"prs:{ME}:o"],
     ]
 
 

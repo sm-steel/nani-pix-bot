@@ -93,7 +93,7 @@ async def test_profile_in_the_topic_sends_a_card_photo_with_a_caption(session_fa
     update.message.reply_text.assert_not_awaited()
 
 
-async def test_the_card_has_prev_next_and_players_buttons(session_factory) -> None:
+async def test_the_card_has_prev_next_players_and_someone_else_buttons(session_factory) -> None:
     update = _update()
     await _run(session_factory, update)
 
@@ -103,6 +103,7 @@ async def test_the_card_has_prev_next_and_players_buttons(session_factory) -> No
     assert data == [
         [cb.card_data(1, 7, "p"), cb.card_data(1, 7, "n")],
         [cb.list_data(1, 0)],
+        ["prs:1:o"],
     ]
 
 

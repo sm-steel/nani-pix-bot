@@ -42,6 +42,7 @@ from nani_pix_bot.models.halloween import OmikujiDraw as OmikujiDraw
 from nani_pix_bot.models.mal_link import MalCredentials as MalCredentials
 from nani_pix_bot.models.mal_link import PendingMalLink as PendingMalLink
 from nani_pix_bot.models.pass_vote import PassVote as PassVote
+from nani_pix_bot.models.pending_pick import PendingPick as PendingPick
 from nani_pix_bot.models.period import PeriodResult as PeriodResult
 from nani_pix_bot.models.period import PeriodState as PeriodState
 from nani_pix_bot.models.player import Player as Player

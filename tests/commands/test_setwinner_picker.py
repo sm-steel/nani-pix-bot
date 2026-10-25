@@ -11,6 +11,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import setwinner as setwinner_module
 from nani_pix_bot.commands import setwinner_picker
+from nani_pix_bot.commands.helpers import player_picker
 from nani_pix_bot.models import Player
 from nani_pix_bot.models.enums import GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
@@ -82,7 +83,7 @@ async def _command(monkeypatch, session_factory, args: list[str]) -> MagicMock:
 async def _tap(
     monkeypatch, session_factory, data: str, *, user_id: int = ADMIN, admin: bool = True
 ) -> tuple[MagicMock, MagicMock]:
-    monkeypatch.setattr(setwinner_picker, "is_group_admin", AsyncMock(return_value=admin))
+    monkeypatch.setattr(player_picker, "is_group_admin", AsyncMock(return_value=admin))
     update = MagicMock()
     query = update.callback_query
     query.data = data

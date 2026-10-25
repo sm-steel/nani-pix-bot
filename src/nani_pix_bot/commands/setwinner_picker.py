@@ -16,7 +16,6 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import setwinner_apply
 from nani_pix_bot.commands.helpers import player_picker
-from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.player_picker import Picker, PickerSpec, Tap, View
 from nani_pix_bot.commands.setwinner_apply import Outcome, Winner
 from nani_pix_bot.db import session_scope
@@ -96,10 +95,7 @@ def _name_winner(
 async def _pick(
     query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, update: Update, tap: Tap
 ) -> None:
-    if not await is_group_admin(context.bot, context.bot_data["group_chat_id"], query.from_user.id):
-        logger.warning("refused a /setwinner pick: no longer an admin")
-        lang = player_picker.language(context)
-        await query.answer(i18n.t("commands.admins_only", lang), show_alert=True)
+    if not await player_picker.still_admin(query, context, SPEC):
         return
     result = _name_winner(query, context, tap)
     if result is None:
