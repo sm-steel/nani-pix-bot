@@ -434,13 +434,8 @@ def blocked_duel_card(
     return _jpeg(canvas)
 
 
-def duel_card(
-    mood: Mood, duel: Duel, art: Image.Image, caption: Caption, blocked: bool = False
-) -> bytes:
-    """Caster, art, target in a row (a hex being cast). With `blocked`, the blocked
-    layout using `art` for both sides; `blocked_duel_card` takes one art each."""
-    if blocked:
-        return blocked_duel_card(mood, duel, art, art, caption)
+def duel_card(mood: Mood, duel: Duel, art: Image.Image, caption: Caption) -> bytes:
+    """Caster, art, target in a row (a hex being cast)."""
     canvas = _background(mood).copy()
     colour = RING[mood]
     _caption(canvas, caption)

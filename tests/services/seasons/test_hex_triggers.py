@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -104,6 +105,20 @@ def test_kappa_moves_its_share_of_the_win_coins_to_the_caster(session, hex_seaso
     assert (event.actor_id, event.subject_id) == (2, 1)
     assert event.data == {"season_id": sid, "kind": "kappa", "hex_id": row.id, "amount": share}
     assert _outbox(session) == [("hex_notice", {"hex_id": row.id, "notice": "triggered"})]
+
+
+def test_a_kappa_share_that_rounds_to_zero_still_resolves(session, hex_season, monkeypatch):
+    run = _run()
+    rules = tuple(
+        replace(rule, amount=1) if rule.kind == HexKind.KAPPA else rule for rule in run.hexes
+    )
+    small = replace(run, hexes=rules)
+    monkeypatch.setattr(registry, "get", lambda run_id: small if run_id == "demo_3" else None)
+    _cast(session, 1, 2, HexKind.KAPPA)
+    _win(session, 2)
+    assert _only_hex(session).outcome == HexOutcome.TRIGGERED.value
+    assert not _transfers(session, CurrencyReason.HEX_KAPPA)
+    assert _events(session, EventType.HEX_TRIGGERED)[0].data["amount"] == 0
 
 
 def test_kappa_waits_for_a_win_that_pays_coins(session, hex_season):

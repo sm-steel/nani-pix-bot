@@ -9,9 +9,9 @@ else's tap is refused with an alert.
 from dataclasses import dataclass
 
 from loguru import logger
-from telegram import CallbackQuery, Update
+from telegram import CallbackQuery, InlineKeyboardMarkup, Update
 from telegram.constants import ChatType
-from telegram.error import TelegramError
+from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import MAX_ID
@@ -58,10 +58,20 @@ def _private(query: CallbackQuery) -> bool:
     return message is not None and message.chat.type == ChatType.PRIVATE
 
 
+async def _edit(
+    query: CallbackQuery, text: str, keyboard: InlineKeyboardMarkup | None = None
+) -> None:
+    """Edit the picker; a double tap (not modified) or a vanished message isn't an error."""
+    try:
+        await query.edit_message_text(text, reply_markup=keyboard)
+    except BadRequest as error:
+        logger.warning("couldn't edit the hex picker: {error}", error=str(error))
+
+
 async def _cancel(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, _tap: _Tap) -> None:
     logger.info("cancelled the hex picker")
     await query.answer()
-    await query.edit_message_text(i18n.t("hex.cancelled", language(context)))
+    await _edit(query, i18n.t("hex.cancelled", language(context)))
 
 
 async def _page(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, tap: _Tap) -> None:
@@ -70,7 +80,7 @@ async def _page(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, tap: _
         text, keyboard = views.start_view(session, tap.caster_id, tap.number, lang)
     logger.info("turned the hex picker to page {page}", page=tap.number)
     await query.answer()
-    await query.edit_message_text(text, reply_markup=keyboard)
+    await _edit(query, text, keyboard)
 
 
 async def _target(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, tap: _Tap) -> None:
@@ -80,7 +90,7 @@ async def _target(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, tap:
         target = players.describe_player_id(session, tap.number)
     logger.info("picked {target} to hex", target=target, target_id=tap.number)
     await query.answer()
-    await query.edit_message_text(text, reply_markup=keyboard)
+    await _edit(query, text, keyboard)
 
 
 async def _close_picker(query: CallbackQuery, text: str) -> None:

@@ -3,7 +3,7 @@ Models and sqlalchemy only, so the render paths can import it cheaply."""
 
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import SeasonStatus
@@ -26,21 +26,23 @@ def naive_utc(at: datetime) -> datetime:
     return at.astimezone(UTC).replace(tzinfo=None)
 
 
-def active_hex_for(session: Session, player_id: int, now: datetime) -> Hex | None:
-    """The unresolved, unexpired hex on a player in an ACTIVE or CLOSING season."""
-    stamp = naive_utc(now)
-    stmt = (
+def live_hexes(now: datetime) -> Select[tuple[Hex]]:
+    """Every unresolved, unexpired hex in an ACTIVE or CLOSING season: the one
+    rule behind `active_hex_for`, the cast checks and the /hex picker."""
+    return (
         select(Hex)
         .join(SeasonSchedule, SeasonSchedule.id == Hex.season_id)
         .where(
-            Hex.target_id == player_id,
             Hex.resolved_at.is_(None),
             SeasonSchedule.status.in_(LIVE_STATUSES),
-            or_(Hex.expires_at.is_(None), Hex.expires_at > stamp),
+            or_(Hex.expires_at.is_(None), Hex.expires_at > naive_utc(now)),
         )
-        .order_by(Hex.id.desc())
-        .limit(1)
     )
+
+
+def active_hex_for(session: Session, player_id: int, now: datetime) -> Hex | None:
+    """The live hex on a player."""
+    stmt = live_hexes(now).where(Hex.target_id == player_id).order_by(Hex.id.desc()).limit(1)
     return session.scalars(stmt).first()
 
 

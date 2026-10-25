@@ -184,9 +184,9 @@ def _spy_cards(monkeypatch: pytest.MonkeyPatch) -> list:
     cards = moments.moment_cards
     real_duel, real_blocked = cards.duel_card, cards.blocked_duel_card
 
-    def duel(mood, duel_, art, caption, blocked=False):
+    def duel(mood, duel_, art, caption):
         captions.append(caption)
-        return real_duel(mood, duel_, art, caption, blocked)
+        return real_duel(mood, duel_, art, caption)
 
     def blocked(mood, duel_, attack, defence, caption):
         captions.append(caption)
@@ -218,9 +218,9 @@ def _spy_duels(monkeypatch: pytest.MonkeyPatch) -> list:
     cards = moments.moment_cards
     real = cards.duel_card
 
-    def duel(mood, duel_, art, caption, blocked=False):
+    def duel(mood, duel_, art, caption):
         drawn.append((duel_, caption))
-        return real(mood, duel_, art, caption, blocked)
+        return real(mood, duel_, art, caption)
 
     monkeypatch.setattr(cards, "duel_card", duel)
     return drawn
@@ -535,7 +535,9 @@ async def test_cancel_edits_the_picker(session_factory) -> None:
 
     query, _ = await _tap(session_factory, "hex:1:x")
 
-    query.edit_message_text.assert_awaited_once_with(i18n.t("hex.cancelled", "EN"))
+    query.edit_message_text.assert_awaited_once_with(
+        i18n.t("hex.cancelled", "EN"), reply_markup=None
+    )
 
 
 @pytest.mark.parametrize("data", ["hex:x:x", "hex:1", "hex:1:q:2", "hex:1:2:dragon", "hex:1:p:a"])

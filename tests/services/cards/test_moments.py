@@ -40,8 +40,6 @@ def _whites(image: Image.Image, box: tuple[int, int, int, int]) -> int:
 def test_every_card_is_1200_by_800(mood: Mood) -> None:
     assert _open(moments.charm_card(mood, ALICE, ART, CAP)).size == (1200, 800)
     assert _open(moments.duel_card(mood, DUEL, ART, CAP)).size == (1200, 800)
-    blocked = moments.duel_card(mood, DUEL, ART, CAP, blocked=True)
-    assert _open(blocked).size == (1200, 800)
 
 
 @pytest.mark.parametrize("mood", list(Mood))
@@ -87,15 +85,6 @@ def test_a_very_long_name_and_title_still_fit() -> None:
     card = moments.charm_card(Mood.CHARM, long_face, ART, Caption("word " * 60, "word " * 90))
 
     assert _open(card).size == (1200, 800)
-
-
-def test_the_blocked_duel_is_laid_out_differently() -> None:
-    plain = _open(moments.duel_card(Mood.CHARM, DUEL, ART, CAP))
-    blocked = _open(moments.duel_card(Mood.CHARM, DUEL, ART, CAP, blocked=True))
-
-    # the target disc moves to the middle in the blocked layout
-    assert _px(plain, (560, 420)) != _px(blocked, (560, 420))
-    assert _near(_px(blocked, (560, 420)), (20, 120, 20), 10)
 
 
 def test_the_duel_target_is_on_the_right() -> None:

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 
 from loguru import logger
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, select, union
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import (
@@ -94,19 +94,24 @@ def rule_for(run: SeasonRun, kind: HexKind) -> HexRule | None:
     return next((rule for rule in run.hexes if rule.kind == kind), None)
 
 
-def played_in_season(session: Session, season_id: int, player_id: int) -> bool:
-    guessed = exists().where(
-        GameGuess.player_id == player_id,
-        GameGuess.game_id == Game.id,
-        Game.season_id == season_id,
+def played_ids(season_id: int):
+    """Everyone who played in the season: guessed in one of its games, or hosted one."""
+    guessed = (
+        select(GameGuess.player_id.label("player_id"))
+        .join(Game, Game.id == GameGuess.game_id)
+        .where(Game.season_id == season_id)
     )
-    hosted = exists().where(
+    hosted = select(Game.starter_id.label("player_id")).where(
         Game.season_id == season_id,
-        Game.starter_id == player_id,
         Game.activated_at.is_not(None),
         Game.hard_mode.is_(False),
     )
-    return bool(session.scalar(select(guessed)) or session.scalar(select(hosted)))
+    return union(guessed, hosted).subquery()
+
+
+def played_in_season(session: Session, season_id: int, player_id: int) -> bool:
+    played = played_ids(season_id)
+    return bool(session.scalar(select(exists().where(played.c.player_id == player_id))))
 
 
 def cooldown_left(session: Session, caster_id: int, rule: HexRule, now: datetime) -> timedelta:

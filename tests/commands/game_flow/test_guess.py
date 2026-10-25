@@ -17,11 +17,13 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.halloween import ArmedOfuda
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
+from nani_pix_bot.seasons.mechanics import HexKind
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.cards import moments as moment_cards
 from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
+from tests.hex_fixtures import add_hex
 
 
 def _make_update(
@@ -586,6 +588,26 @@ async def test_forgiven_guess_replies_with_remaining_and_posts_the_ofuda_card(
     assert card["message_thread_id"] == 7
     assert "Ofuda" in card["caption"]
     assert "didn't count" in card["caption"]
+
+
+async def test_chochin_reacts_to_an_ofuda_forgiven_miss(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("nani_pix_bot.jobs.moments.fetch_avatar", AsyncMock(return_value=None))
+    _arm_ofuda(session_factory)
+    with session_factory() as session:
+        add_hex(session, 2, HexKind.CHOCHIN, hours=1)
+        session.commit()
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    update.message.set_reaction = AsyncMock()
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert "2/2" in update.message.reply_text.await_args.args[0]  # forgiven: budget untouched
+    update.message.set_reaction.assert_awaited_once_with(reaction="🤪")
 
 
 async def test_forgiven_guess_posts_the_line_as_text_when_the_card_fails(

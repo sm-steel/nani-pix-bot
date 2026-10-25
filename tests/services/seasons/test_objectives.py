@@ -216,6 +216,24 @@ def test_a_broken_objective_keeps_the_games_xp_and_coins(
     )
 
 
+def test_a_broken_hex_trigger_keeps_the_games_xp_and_coins(
+    session, tagged_game, emit_win, monkeypatch, log_records
+) -> None:
+    def boom(*_args):
+        raise RuntimeError("broken hex trigger")
+
+    monkeypatch.setattr(consumer.hexes, "on_season_event", boom)
+
+    emit_win(winner=WINNER, stage=1)
+
+    assert wallet.balance(session, WINNER, season_id=tagged_game.season_id) >= 25
+    xp_rows = session.scalars(select(SeasonXp).where(SeasonXp.player_id == WINNER)).all()
+    assert (50, XpSource.WIN) in [(r.amount, r.source) for r in xp_rows]
+    assert any(
+        r.level == "ERROR" and r.message.startswith("hex triggers failed") for r in log_records
+    )
+
+
 def test_a_block_completes_an_exorcist_objective(session, monkeypatch) -> None:
     demo = registry.get("demo_3")
     assert demo is not None
