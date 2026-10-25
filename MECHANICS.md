@@ -2189,7 +2189,8 @@ the first wrong guess its holder makes in that round.
 only a count, shown in `/inventory`. Nothing in the current build spends
 it. It is held for the hexes of Phase 5, which take it with
 `consumables.take(session, player_id, ConsumableKind.OMAMORI)` to block the
-next hex cast on its holder (see the hex section once it exists).
+next hex cast on its holder (see "Hexes" below); it does not stop an omikuji
+self-prank.
 
 **Previews.** A consumable's preview is a 640x640 PNG
 (`services/cosmetics/consumable_card.py`): the item's art over
@@ -2232,11 +2233,11 @@ the **caption is sent as a plain topic message instead**, and if that fails
 too it is only logged. Plain-text notices (a clue paid with 💠) are
 unchanged.
 
-Also built, not posted yet: `duel_card` (caster, art, a spirit trail of chevrons pointing from caster to target, target)
-and `blocked_duel_card` (the target beside their defence art, the attacking
-art faded and torn along a see-through cross into four pieces that sit slightly
-apart, with a few golden sparkles over it), for Phase 5's hexes; each takes
-a `Duel(actor, target)` of `Face`s.
+`duel_card` (caster, art, a spirit trail of chevrons pointing from caster to
+target, target) and `blocked_duel_card` (the target beside their defence art,
+the attacking art faded and torn along a see-through cross into four pieces
+that sit slightly apart, with a few golden sparkles over it) take a
+`Duel(actor, target)` of `Face`s. Hex casts and blocks post them (see "Hexes").
 
 ### `/inventory`
 
@@ -2561,33 +2562,123 @@ who holds it; it is left out of everyone else's list and summary total
 
 ### Hexes
 
-A hex is a prank or a tax one player casts on another (`/hex`). Four kinds:
-Nopperabō and Chōchin-obake last `duration_hours`; Kappa's dish and the Kitsune
-trick last until they trigger.
+A hex is a prank or a tax one player casts on another with season 🪙. A run
+switches them on with `hexes` (see "Optional mechanics per run"); without it
+`open_hexes()` is `None` and `/hex` answers "closed". Four kinds: Nopperabō
+and Chōchin-obake last `duration_hours`; Kappa's dish and the Kitsune trick
+last until they trigger. Code: `services/seasons/hexes.py` (rules),
+`hex_marks.py` (what is on a player now), `hex_targets.py` (the picker's
+list), `commands/hexes/` (`/hex`, `/hexes`).
 
-**Nopperabō.** While it is on a player, Nani Pix hides them everywhere, text
-and images, except the cast notice itself; logs keep the real name.
-- **Text.** Every mention in a Telegram message shows 👤 instead of the name
-  (guess replies, hex notices, standings, leaderboard, achievements, profile
-  captions, reveal posts, tips, ballots). `services/players.py::display_name`
-  and `services/cosmetics/flair.py::named` are the seams; `display_name(...,
-  unmasked=True)` skips the mask and is used only for the cast notice, the
-  self-prank notice, the `/hex` target picker and internal ordering.
-- **Images.** Pillow has no emoji font, so a name drawn on a card (name pills,
-  card titles and effect lines, the profile card, podium and unlock cards, the
-  reveal badge) is the localized `faceless.label` ("Faceless" / «Без лица»),
-  via `players.image_name`. The profile photo is replaced by
-  `assets/icons/hex/nopperabo_avatar.jpg`. Every image fetches the photo through
-  `jobs/avatars.py::fetch_avatar`, which checks `hex_marks.is_faceless` and
-  hands back the art without asking Telegram. A missing art file logs one ERROR
-  and falls back to the real photo.
-- **The exception.** The Nopperabō cast notice and its card name the target by
-  their real @username, so the group learns who was hexed (the card's photo is
-  already the faceless art). It is the single `unmask_target` line in
-  `commands/hexes/casting.py`.
-- **Logs.** `describe_player_id` and every loguru line keep the real id and
-  @username: admins need them.
-- The mask lifts when the hex expires or is resolved (`is_faceless`).
+**Commands.** Both work in a DM or the game topic, and are ignored elsewhere.
+- `/hex` with no arguments shows the season's hexes (price, cooldown, effect)
+  and the caster's opt-out status, with a paginated player picker (8 per
+  page) under them. It lists only players who played this season, are not
+  opted out and are not already hexed, never the caster, ordered by activity
+  since the season started (guesses plus 3 per hosted game, ties by most
+  recent activity). Tapping a player opens the kind picker (price on each
+  button, ◀ Back, ✖). Every button names the caster, so **only the caster's
+  taps count** (anyone else gets an alert).
+- `/hex @user` opens that player's kind picker; `/hex @user <kind>` casts at
+  once (`nopperabo`, `chochin`, `kappa`, `kitsune`).
+- `/hexes` shows the caller's status: opted in or out, the hex on them and
+  its time left, their cooldowns. `/hexes off` / `/hexes on` switch the
+  opt-out.
+
+**Who may cast.** Both caster and target must have played this season (a
+guess in a season game, or an activated non-HARD MODE game hosted). Not
+yourself. Neither may be opted out (`players.hex_opt_out`, which stops you
+casting and being hexed). **Opting out is locked for 24 h after the player
+last hexed someone else** (self-pranks don't count); opting back in never is.
+
+**Price and limits.** The cast debits `price` 🪙 from the caster
+(`HEX_CAST`); too little 🪙 refuses the cast. A cooldown runs per caster and
+kind, from their last cast of that kind on someone else. A target carries at
+most one active hex at a time (any kind): a second cast is refused until it
+resolves or expires. Refusals are logged at `WARNING` and answered with the
+reason (an alert on a button tap, a reply on the command; nothing is posted
+to the topic).
+
+**Blocked by an Omamori.** If the target holds an Omamori (`consumables.take`)
+the cast still succeeds and **is still paid**, but the hex lands already
+resolved with outcome `BLOCKED`, the Omamori is spent, and nothing takes
+effect. It emits `HEX_CAST` (with `outcome="blocked"`) and `HEX_BLOCKED`
+(actor = the Omamori's holder), which feeds `GoalKind.HEXES_BLOCKED`. It does
+**not** stop an omikuji self-prank (see below).
+
+**The effects**, each tied to the target while the hex is open:
+
+| Hex | Lasts | Effect |
+|---|---|---|
+| Nopperabō | `duration_hours` | hides the player everywhere (below) |
+| Chōchin-obake | `duration_hours` | 🤪 reaction on every guess they make |
+| Kappa | until it triggers | on the target's next win that pays any 🪙, takes `amount` percent (rounded down) of that win's 🪙 and gives it to the caster |
+| Kitsune | until it triggers | on the target's next wrong guess, takes up to `amount` 🪙 and gives it to the caster |
+
+- **Kappa and Kitsune** resolve from the season event consumer
+  (`on_season_event`) with outcome `TRIGGERED`, the game id and a
+  `HEX_TRIGGERED` event. They only move 🪙 the target has: a target with less
+  than the amount loses what they have, and **a target with 0 🪙 (or a Kappa
+  share that rounds to 0) loses nothing, but the hex still resolves**. A win
+  that pays no 🪙 does not trigger Kappa. An Ofuda doesn't stop a Kitsune: a
+  forgiven miss is still a wrong guess.
+- **Chōchin** replaces the guess reaction (`hex_marks.guess_reaction`) on
+  every guess, right or wrong, including an Ofuda-forgiven miss; the
+  equipped reaction otherwise shows on wins only.
+- **Nopperabō** hides the player everywhere while it lasts, in text and
+  images, logs excepted.
+  - *Text.* Every mention in a Telegram message shows 👤
+    (`services/players.py::display_name`); a name drawn with flair
+    (`services/cosmetics/flair.py::named`) shows as `👤 💀`, with no flair or
+    title. Guess replies, notices, standings, leaderboard, achievements,
+    profile captions, reveal posts, tips and ballots all go through those.
+  - *Images.* A name drawn on a card (name pills, card titles and effect
+    lines, profile card, podium and unlock cards, reveal badge) is the
+    localized `faceless.label` ("Faceless" / «Без лица»,
+    `players.image_name`), and the profile photo is replaced by
+    `assets/icons/hex/nopperabo_avatar.jpg`: every image gets its photo from
+    `jobs/avatars.py::fetch_avatar`, which hands back that art without asking
+    Telegram. A missing art file logs one `ERROR` and the real photo is used.
+  - *Not masked.* The cast notice and its card name the victim by @username
+    (the card's photo is already the faceless art), so the group learns who
+    was hexed; the `/hex` player and kind pickers and the omikuji self-prank
+    notice also name them unmasked. **Logs always keep real ids and
+    @usernames** (`describe_player_id`).
+- **💀** marks a hexed name in group-facing text drawn through `flair.named`
+  (`hex_marks.marked_name`). It is text only: cards and the reveal badge use
+  the plain name, with no mark. A hex marks while it is unresolved and
+  unexpired in an `ACTIVE` or `CLOSING` season.
+- A hex on the winner when a game ends is `win_facts["hexed"]`.
+
+**Notices.** Both go to the game topic; a notice that fails never undoes
+the hex.
+- **Cast and block** are posted right after the cast commits, as a moment
+  card (see "Moment cards" above): the duel card with chevrons pointing from
+  caster to target, the hex art, a title, and an effect detail line naming the
+  target by @username. A block uses the blocked variant (the target beside the
+  Omamori, the hex art torn apart). The notice line is the caption, and a
+  failed render falls back to it as plain text. From a DM the caster also gets
+  a short confirmation; from the topic the notice speaks for itself.
+- **Triggered (Kappa, Kitsune) and self-prank** are queued in the
+  announcement outbox (`HEX_NOTICE`) and posted as plain text by the
+  announcements job, in id order. **Nothing is posted during quiet hours**:
+  the rows wait and go out after.
+
+**Expiry and the season end.** Nopperabō and Chōchin expire at `expires_at`
+(outcome `EXPIRED`). An expired hex stops marking at once (`active_hex_for`
+ignores it) and is closed in the database at the next cast or self-prank. When
+a season is finalized, every still-open hex of it is cancelled (`cancel_open`,
+outcome `CANCELLED`, no refund); a `CLOSING` season still runs its tagged
+games, so its hexes stay on until then.
+
+**Omikuji self-prank.** A drawn `kyō` that carries a prank hexes the drawer
+with `hexes.apply_self_prank`: a random prank hex (Nopperabō or Chōchin) from
+the run's `hexes`, free, with no cooldown and **ignoring the Omamori**. It is
+refused for an opted-out player, and a player already under a hex keeps that
+one unchanged. It emits `HEX_CAST` with `self_prank=True` (so `hex_master`
+skips it) and queues the self-prank notice, which names the player unmasked.
+A normal cast's `HEX_CAST` carries `outcome` (`"blocked"` or `None`) and
+`self_prank=False`.
 
 ### Optional mechanics per run
 
