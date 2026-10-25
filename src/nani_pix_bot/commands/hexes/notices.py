@@ -36,6 +36,7 @@ def _detail(sides: tuple[Person, Person], rule: HexRule, blocked: bool, lang: st
         f"hex.card_detail.{kind}",
         lang,
         caster=sides[0].display_name,
+        target=sides[1].display_name,
         hours=rule.duration_hours,
         amount=rule.amount,
     )

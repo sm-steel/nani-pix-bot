@@ -122,14 +122,14 @@ def bought_notice(buyer_name: str, kind: ClueKind, lang: str) -> str:
     )
 
 
-def token_moment(user: User, notice: str, lang: str) -> CharmMoment:
+def token_moment(user: User, handle: str, notice: str, lang: str) -> CharmMoment:
     """The card for a clue paid with a token: the notice is its caption."""
     return CharmMoment(
         kind=ConsumableKind.CLUE_TICKET,
         user_id=user.id,
         display_name=user.full_name,
         title=i18n.t("shop.token_card_title", lang),
-        detail=i18n.t("shop.token_card_detail", lang, name=user.full_name),
+        detail=i18n.t("shop.token_card_detail", lang, name=handle),
         caption=notice,
     )
 

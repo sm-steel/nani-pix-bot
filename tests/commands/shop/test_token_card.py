@@ -68,7 +68,7 @@ async def test_a_token_paid_clue_posts_the_card_with_the_notice_as_caption(
     assert "first letter" in sent["caption"]
     assert _topic_texts(context) == []
     [caption] = captions
-    assert "Buyer Name" in caption.detail  # the card says who paid, not only the caption
+    assert "@user2" in caption.detail  # the @username, not the full name
 
 
 async def test_a_paid_clue_keeps_the_plain_notice(session_factory) -> None:

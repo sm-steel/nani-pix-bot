@@ -270,14 +270,14 @@ class _GuessResult:
     moment: CharmMoment | None = None  # the card that follows the reply (a forgiven miss)
 
 
-def _ofuda_moment(user: User, name: str, lang: str) -> CharmMoment:
+def _ofuda_moment(user: User, name: str, handle: str, lang: str) -> CharmMoment:
     """The card for a miss an Ofuda forgave: the old reply line is its caption."""
     return CharmMoment(
         kind=ConsumableKind.OFUDA,
         user_id=user.id,
         display_name=user.full_name,
         title=i18n.t("ofuda.card_title", lang),
-        detail=i18n.t("ofuda.card_detail", lang, name=name),
+        detail=i18n.t("ofuda.card_detail", lang, name=handle),
         caption=i18n.t("ofuda.used", lang, name=name),
     )
 
@@ -373,7 +373,10 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         else:
             result = _non_won_result(session, context, game, outcome, suffix)
             if outcome is game_service.GuessOutcome.FORGIVEN:
-                result = replace(result, moment=_ofuda_moment(user, name, lang))
+                result = replace(
+                    result,
+                    moment=_ofuda_moment(user, name, players.display_name(session, user.id), lang),
+                )
         result = replace(result, reaction=_reaction_for(session, user.id, outcome))
     # Block closed and committed above — the outcome (and the currency it
     # paid) is durable now regardless of whether the reply/announcement

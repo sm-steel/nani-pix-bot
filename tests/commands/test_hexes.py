@@ -209,6 +209,7 @@ async def test_every_cast_card_carries_an_effect_line(
     [caption] = captions
     assert caption.detail.strip()
     assert "{" not in caption.detail
+    assert "@bob" in caption.detail  # the target by @username, never "their"
 
 
 async def test_a_blocked_card_names_the_caster_and_the_hex_in_its_effect_line(

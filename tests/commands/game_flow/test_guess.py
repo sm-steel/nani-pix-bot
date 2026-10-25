@@ -577,7 +577,7 @@ async def test_forgiven_guess_replies_with_remaining_and_posts_the_ofuda_card(
 
     [caption] = captions
     assert caption.title
-    assert caption.detail.strip()  # the effect line rides on the card too
+    assert "@guesser" in caption.detail  # the effect line names the player by @username
     text = update.message.reply_text.await_args.args[0]
     assert "2/2" in text  # the stage budget is untouched (wording varies, the count doesn't)
     assert "Ofuda" not in text  # the line rides on the card instead
