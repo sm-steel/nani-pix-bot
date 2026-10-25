@@ -245,7 +245,13 @@ async def _announce(
     """Post the topic notice, then answer the tap — in that order, so a
     callback that timed out (BadRequest on the answer) skips nothing."""
     notice = bought_notice(bought.buyer, tap.kind, bought.lang)
-    moment = token_moment(tap.user, notice, bought.lang) if bought.token_used else None
+    moment = None
+    if bought.token_used:
+        with session_scope(context.bot_data["session_factory"]) as session:
+            lang = bought.lang
+            handle = players.image_name(session, tap.user.id, lang)
+            pill = players.image_name(session, tap.user.id, lang, tap.user.full_name)
+        moment = token_moment(tap.user, handle, pill, notice, bought.lang)
     await post_bought_notice(context, tap.game_id, notice, tap.kind, moment)
     try:
         await tap.query.answer()

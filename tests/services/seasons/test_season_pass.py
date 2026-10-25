@@ -142,7 +142,11 @@ def test_describe_names_each_kind_of_reward(demo) -> None:
 
 
 def _table(text: str) -> list[str]:
-    return [line for line in text.splitlines() if line.startswith("|")]
+    """The tier table: the first run of table lines (objectives have their own)."""
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("|"))
+    end = next((i for i in range(start, len(lines)) if not lines[i].startswith("|")), len(lines))
+    return lines[start:end]
 
 
 def test_view_shows_progress_and_every_tier_as_a_table(session, season, demo) -> None:

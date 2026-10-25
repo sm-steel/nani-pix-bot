@@ -8,9 +8,11 @@ from nani_pix_bot.commands.achievements import compare, render
 from nani_pix_bot.commands.helpers.rich import md_escape
 from nani_pix_bot.models.enums import Rarity
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.seasons.mechanics import HexKind
 from nani_pix_bot.services.achievements import catalogue, engine, names, status
 from nani_pix_bot.services.achievements.definitions import Definition, Kind
 from nani_pix_bot.services.achievements.status import State, Status
+from tests.hex_fixtures import add_hex
 
 pytestmark = pytest.mark.achievements
 
@@ -35,6 +37,18 @@ def test_the_top_table_shows_an_escaped_title_next_to_the_name(session: Session)
     text = render.top_table(session, status.top(session, limit=10), "en", 0)
 
     assert chr(92).join(["a", "_b «Champion of October 2026»"]) in text
+
+
+def test_a_faceless_player_shows_no_title_in_the_summary_or_the_top(session: Session) -> None:
+    _titled(session)
+    add_hex(session, 1, HexKind.NOPPERABO, hours=1)
+
+    summary = render.summary(session, 1, "en", datetime.now(UTC))
+    table = render.top_table(session, status.top(session, limit=10), "en", 0)
+
+    assert "Title:" not in summary
+    assert "Champion of October" not in table
+    assert "👤" in summary
 
 
 def test_an_earned_champion_row_shows_the_current_race_rank() -> None:

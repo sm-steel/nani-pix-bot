@@ -1,7 +1,7 @@
 """The Season Pass as rich-message markdown, for /seasonpass (pure; no
 Telegram): a heading, the tiers as a table (free and premium in their own
 columns, so neither wraps under the other), then the objectives under their
-own heading."""
+own heading, as a table too."""
 
 from zoneinfo import ZoneInfo
 
@@ -46,33 +46,37 @@ def _reward(run: SeasonRun, reward: Reward | None, lang: str) -> str:
     return md_escape(describe(run, reward, lang)) if reward else "—"
 
 
-def _objective_line(row: ObjectiveStatus, tz: ZoneInfo, lang: str) -> str:
+def _objective_row(row: ObjectiveStatus, tz: ZoneInfo, lang: str) -> str:
+    """The mark, name, goal, progress (the completion day once done) and reward."""
     o = row.objective
-    paid = {"name": o.name(lang), "reward": objectives.reward_text(o, lang)}
     if row.completed_at is not None:
-        day = row.completed_at.astimezone(tz).strftime("%d.%m")
-        return i18n.t("season_pass.view.objective_done", lang, date=day, **paid)
-    return i18n.t(
-        "season_pass.view.objective",
-        lang,
-        mark="🎯",
-        goal=goals.describe(o.goal, lang),
-        progress=row.progress,
-        target=o.goal.target,
-        **paid,
-    )
+        mark, progress = REACHED, row.completed_at.astimezone(tz).strftime("%d.%m")
+    else:
+        mark, progress = "🎯", f"{row.progress}/{o.goal.target}"
+    cells = [o.name(lang), goals.describe(o.goal, lang), progress, objectives.reward_text(o, lang)]
+    return _row([mark, *(md_escape(cell) for cell in cells)])
 
 
 def _objective_lines(
     session: Session, season: SeasonSchedule, run: SeasonRun, player_id: int, lang: str
 ) -> list[str]:
-    """The objectives section (seasons spec §5): empty when the run has none."""
+    """The objectives section (seasons spec §5): a heading and a table, or
+    nothing when the run has no objectives."""
     if not run.objectives:
         return []
     tz = settings.get_group_timezone(session)
     rows = objectives.status(session, season, run, player_id)
-    header = ["", "## " + md_escape(i18n.t("season_pass.view.objectives", lang))]
-    return header + [md_escape(_objective_line(row, tz, lang)) for row in rows]
+    head = [""] + [
+        md_escape(i18n.t(f"season_pass.view.col_{col}", lang))
+        for col in ("objective", "goal", "progress", "reward")
+    ]
+    return [
+        "",
+        "## " + md_escape(i18n.t("season_pass.view.objectives", lang)),
+        _row(head),
+        "|" + "---|" * len(head),
+        *(_objective_row(row, tz, lang) for row in rows),
+    ]
 
 
 def view_markdown(

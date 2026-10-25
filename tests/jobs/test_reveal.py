@@ -531,7 +531,7 @@ async def test_concurrent_broken_pools_replace_the_executor_once(
 async def test_avatar_timeout_warns_with_the_winner(
     session_factory, monkeypatch, log_records
 ) -> None:
-    async def _slow_avatar(bot, user_id):
+    async def _slow_avatar(bot, user_id, session_factory):
         await asyncio.sleep(1)
 
     monkeypatch.setattr(reveal, "AVATAR_TIMEOUT", 0.05)
@@ -586,7 +586,7 @@ async def test_the_avatar_fetch_overlaps_the_pre_render_wait(session_factory, mo
     would deadlock (and time the test out) instead of passing."""
     avatar_started, pregen_started = asyncio.Event(), asyncio.Event()
 
-    async def _avatar(bot, user_id):
+    async def _avatar(bot, user_id, session_factory):
         avatar_started.set()
         await pregen_started.wait()
         return b"avatar"

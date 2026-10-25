@@ -83,7 +83,7 @@ def roster(session: Session, *, viewer_id: int, bot_id: int) -> list[int]:
     played.pop(bot_id, None)
 
     def key(player_id: int) -> tuple[int, str, int]:
-        name = players.display_name(session, player_id).lstrip("@").casefold()
+        name = players.display_name(session, player_id, unmasked=True).lstrip("@").casefold()
         return -played[player_id], name, player_id
 
     order = sorted(played, key=key)
@@ -162,7 +162,7 @@ def build(session: Session, player_id: int, lang: str) -> ProfileView:
     )
     return ProfileView(
         player_id=player_id,
-        name=players.display_name(session, player_id),
+        name=players.image_name(session, player_id, lang),
         title=titles.text(player.title_key if player else None, lang),
         banner=_banner(session, player_id, played),
         stamps=stamps,

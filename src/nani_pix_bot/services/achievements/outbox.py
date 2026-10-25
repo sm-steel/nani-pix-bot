@@ -59,6 +59,12 @@ def enqueue_objective(
     return _add(session, AnnouncementOutbox(kind=OutboxKind.SEASON_OBJECTIVE, payload=payload))
 
 
+def enqueue_hex_notice(session: Session, hex_id: int, notice: str) -> AnnouncementOutbox:
+    """The topic post for a hex going off: notice is "triggered" or "self_prank"."""
+    payload = {"hex_id": hex_id, "notice": notice}
+    return _add(session, AnnouncementOutbox(kind=OutboxKind.HEX_NOTICE, payload=payload))
+
+
 def pending(session: Session, limit: int) -> list[AnnouncementOutbox]:
     stmt = (
         select(AnnouncementOutbox)

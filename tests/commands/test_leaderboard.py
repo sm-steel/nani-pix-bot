@@ -12,7 +12,9 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.enums import Rarity
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.seasons.mechanics import HexKind
 from nani_pix_bot.services import i18n
+from tests.hex_fixtures import add_hex
 
 
 def _make_update(*, thread_id: int | None = 7, chat_type: str = "supergroup") -> MagicMock:
@@ -171,3 +173,16 @@ async def test_an_item_title_shows_next_to_the_name(session_factory, equip_title
     sent = await _run(_make_update(), _make_context(session_factory))
 
     assert md_escape("@alice «Demo Star»") in sent.await_args_list[0].args[2]
+
+
+async def test_leaderboard_hides_a_faceless_players_title(session_factory) -> None:
+    with session_scope(session_factory) as session:
+        session.add(Player(telegram_user_id=1, username="alice", wins=3, title_key="pioneer:1:"))
+        session.flush()
+        add_hex(session, 1, HexKind.NOPPERABO, hours=1)
+
+    sent = await _run(_make_update(), _make_context(session_factory))
+
+    text = sent.await_args_list[0].args[2]
+    assert "«" not in text
+    assert "👤 💀" in text

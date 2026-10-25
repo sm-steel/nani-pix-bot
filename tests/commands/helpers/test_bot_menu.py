@@ -35,6 +35,8 @@ async def test_refresh_command_menu_sets_private_and_group_scopes() -> None:
         "title",
         "cosmetics",
         "tip",
+        "hex",
+        "hexes",
         "language",
         "stop",
         "stageconfig",
@@ -73,6 +75,8 @@ async def test_refresh_command_menu_sets_private_and_group_scopes() -> None:
         "inventory",
         "profile",
         "tip",
+        "hex",
+        "hexes",
         "help",
         "version",
     }

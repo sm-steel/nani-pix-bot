@@ -3,19 +3,25 @@ case-insensitive username lookup, and the /leaderboard query. Win
 increments themselves live in services/game/state.py's _win() (the
 only place that mutates a Game/Player pair together)."""
 
+from collections.abc import Collection
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from loguru import logger
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select, union_all
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.enums import CurrencyReason
+from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import USERNAME_LENGTH, Player
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.economy import config as economy_config
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.quiet_hours import parse_timezone
+from nani_pix_bot.services.seasons import hex_marks
 
 
 def describe_person(user_id: int, *, username: str | None = None, name: str | None = None) -> str:
@@ -164,12 +170,70 @@ def badge_handle(username: str | None, full_name: str) -> str:
     return f"@{username}" if username else full_name
 
 
-def display_name(session: Session, telegram_user_id: int) -> str:
+def display_name(session: Session, telegram_user_id: int, *, unmasked: bool = False) -> str:
     """How a person is named in group-facing text: @username, else their
-    first name, else their id."""
+    first name, else their id. A player under Nopperabo shows as 👤 instead
+    (`unmasked=True` skips that: the cast notice and internal ordering only).
+    Logs never use this: they name people through `describe_player_id`."""
+    if not unmasked and _faceless(session, telegram_user_id):
+        return hex_marks.FACELESS
     player = session.get(Player, telegram_user_id)
     if player is None:
         return str(telegram_user_id)
     if player.username:
         return f"@{player.username}"
     return player.first_name or str(telegram_user_id)
+
+
+def _faceless(session: Session, telegram_user_id: int) -> bool:
+    return hex_marks.is_faceless(session, telegram_user_id, datetime.now(UTC))
+
+
+def image_name(
+    session: Session,
+    telegram_user_id: int,
+    lang: str,
+    name: str | None = None,
+) -> str:
+    """A name to draw on an image (no emoji font there): `name`, else the
+    @username, but the localized "Faceless" label for a player under Nopperabo."""
+    if _faceless(session, telegram_user_id):
+        return i18n.t("faceless.label", lang)
+    return name if name is not None else display_name(session, telegram_user_id, unmasked=True)
+
+
+HOSTED_WEIGHT = 3  # an activated game someone started counts as this many guesses
+
+
+def _activity_rows(player_ids: Collection[int], since: datetime | None):
+    guesses = select(
+        GameGuess.player_id.label("player_id"),
+        literal(1).label("points"),
+        GameGuess.created_at.label("at"),
+    ).where(GameGuess.player_id.in_(player_ids))
+    hosted = select(
+        Game.starter_id.label("player_id"),
+        literal(HOSTED_WEIGHT).label("points"),
+        Game.activated_at.label("at"),
+    ).where(
+        Game.starter_id.in_(player_ids),
+        Game.activated_at.is_not(None),
+        Game.hard_mode.is_(False),
+    )
+    if since is not None:
+        guesses = guesses.where(GameGuess.created_at >= since)
+        hosted = hosted.where(Game.activated_at >= since)
+    return union_all(guesses, hosted).subquery()
+
+
+def by_activity(session: Session, player_ids: Collection[int], since: datetime | None) -> list[int]:
+    """`player_ids`, most active first: guesses plus HOSTED_WEIGHT per activated,
+    non-hard game started (since `since`, when given); ties go to the most recent
+    activity, then the lower id. Players with no activity come last, by id."""
+    rows = _activity_rows(player_ids, since)
+    stmt = select(rows.c.player_id, func.sum(rows.c.points), func.max(rows.c.at)).group_by(
+        rows.c.player_id
+    )
+    scored = {pid: (int(points), at) for pid, points, at in session.execute(stmt)}
+    active = sorted(scored, key=lambda pid: (-scored[pid][0], -scored[pid][1].timestamp(), pid))
+    return active + sorted(pid for pid in set(player_ids) if pid not in scored)

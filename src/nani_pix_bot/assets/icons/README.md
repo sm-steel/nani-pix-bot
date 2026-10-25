@@ -18,3 +18,8 @@ Source: [Noto Emoji](https://github.com/googlefonts/noto-emoji), tag
 `ofuda.png` and `omamori.png` are different: 512x512 RGBA art of the two Halloween
 charms (Ofuda, Omamori), generated for Nani Pix (MIT, like the rest of her art), drawn
 on the consumable preview card (`services/cosmetics/consumable_card.py`).
+
+`hex/` holds the four hexes' art (`nopperabo.png`, `chochin.png`, `kappa.png`,
+`kitsune.png`), 512x512 RGBA, generated for Nani Pix (MIT) and drawn on the hex
+moment cards (`services/seasons/hex_art.py`). `hex/nopperabo_avatar.jpg` (640x640) is the faceless
+profile photo `jobs/avatars.py` draws while a Nopperabō is on a player.

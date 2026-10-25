@@ -370,6 +370,10 @@ class CurrencyReason(enum.StrEnum):
     SEASON_SHOP = "season_shop"
     # 🪙 paid for completing a season objective
     SEASON_OBJECTIVE = "season_objective"
+    # 🪙 spent casting a hex; paid to the caster when a kappa hex triggers; lost to a kitsune
+    HEX_CAST = "hex_cast"
+    HEX_KAPPA = "hex_kappa"
+    HEX_KITSUNE = "hex_kitsune"
 
 
 class Currency(enum.StrEnum):
@@ -465,6 +469,8 @@ class OutboxKind(enum.StrEnum):
     GOAL_REACHED = "goal_reached"
     EVENT_DAY_START = "event_day_start"
     EVENT_DAY_END = "event_day_end"
+    # Halloween: a Kappa/Kitsune going off, or an omikuji self-prank
+    HEX_NOTICE = "hex_notice"
 
 
 class PeriodType(enum.StrEnum):

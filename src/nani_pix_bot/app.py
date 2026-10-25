@@ -34,6 +34,7 @@ from nani_pix_bot.commands import (
     game_flow,
     gamesenabled,
     grant_item,
+    hexes,
     history,
     inventory,
     language,
@@ -360,6 +361,9 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
     )
     application.add_handler(
+        CallbackQueryHandler(hexes.hex_callback, pattern=rf"^{re.escape(hexes.PREFIX)}")
+    )
+    application.add_handler(
         CallbackQueryHandler(profile.browse.profile_callback, pattern=rf"^{PROFILE_PREFIX}")
     )
     application.add_handler(CallbackQueryHandler(standings_dm.standings_callback, pattern=r"^std:"))
@@ -388,6 +392,8 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("seasonpass", season_pass.season_pass_command))
     application.add_handler(CommandHandler("seasonshop", season_shop.season_shop_command))
     application.add_handler(CommandHandler("tip", tip.tip_command))
+    application.add_handler(CommandHandler("hex", hexes.hex_command))
+    application.add_handler(CommandHandler("hexes", hexes.hexes_command))
     application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))
     application.add_handler(CommandHandler("partialmatch", partialmatch.partialmatch_command))
     application.add_handler(CommandHandler("refund", refund.refund_command))

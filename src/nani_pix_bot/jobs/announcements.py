@@ -22,7 +22,7 @@ from telegram.error import Forbidden, TelegramError
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs import season_posts
+from nani_pix_bot.jobs import hex_posts, season_posts
 from nani_pix_bot.jobs.avatars import fetch_avatar
 from nani_pix_bot.jobs.post import Post
 from nani_pix_bot.jobs.timers._shared import job_log_scope
@@ -67,7 +67,7 @@ def _unlock_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post |
     if granted is None:
         return None
     defn = catalogue.get(granted.key)
-    who = players.display_name(session, granted.player_id)
+    who = players.display_name(session, granted.player_id, unmasked=True)
     name = names.title(defn, granted.tier, granted.period_key, lang)
     desc = names.description(defn, granted.tier, lang)
     rarity = i18n.t(f"achievement.rarity.{granted.rarity}", lang)
@@ -85,7 +85,7 @@ def _unlock_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post |
         headline=i18n.t("card.unlocked", lang),
         name=name,
         description=_card_text(desc),
-        handle=who,
+        handle=players.image_name(session, granted.player_id, lang, who),
         reward=granted.reward,
         points_label=i18n.t("card.points", lang, points=granted.points),
         rarity_label=rarity,
@@ -124,6 +124,7 @@ RENDERERS: dict[OutboxKind, Callable[[Session, AnnouncementOutbox, str], Post | 
     OutboxKind.UNLOCK: _unlock_post,
     OutboxKind.PERIOD_SUMMARY: _period_post,
     **season_posts.RENDERERS,
+    **hex_posts.RENDERERS,
 }
 
 
@@ -213,7 +214,9 @@ async def _faces(
     """The post's avatars; each player is fetched once per drain, not once per card."""
     for user_id in post.avatar_ids:
         if user_id not in cache:
-            cache[user_id] = await fetch_avatar(context.bot, user_id)
+            cache[user_id] = await fetch_avatar(
+                context.bot, user_id, context.bot_data["session_factory"]
+            )
     return [cache[user_id] for user_id in post.avatar_ids]
 
 

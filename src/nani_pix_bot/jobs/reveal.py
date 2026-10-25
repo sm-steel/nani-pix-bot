@@ -87,7 +87,10 @@ async def _avatar(
 ) -> bytes | None:
     """The winner's avatar, or None (initials) when it takes over AVATAR_TIMEOUT."""
     try:
-        return await asyncio.wait_for(fetch_avatar(application.bot, winner_id), AVATAR_TIMEOUT)
+        return await asyncio.wait_for(
+            fetch_avatar(application.bot, winner_id, application.bot_data["session_factory"]),
+            AVATAR_TIMEOUT,
+        )
     except TimeoutError:
         label = handle or ""
         logger.warning(

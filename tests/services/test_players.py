@@ -1,10 +1,13 @@
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.currency_transfer import CurrencyTransfer
-from nani_pix_bot.models.enums import Rarity
+from nani_pix_bot.models.enums import GameStatus, Rarity
+from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import players
 
@@ -163,3 +166,45 @@ def test_remember_first_name_never_blanks_a_known_name() -> None:
     player = Player(telegram_user_id=4, first_name="Kari")
     players.remember_first_name(player, None)
     assert player.first_name == "Kari"
+
+
+def _naive(month: int, day: int, hour: int = 0) -> datetime:
+    """A 2026 time, naive UTC like the DATETIME columns."""
+    return datetime(2026, month, day, hour, tzinfo=UTC).replace(tzinfo=None)
+
+
+def _game(session: Session, starter: int, at: datetime, *, hard: bool = False) -> Game:
+    game = Game(starter_id=starter, status=GameStatus.WON, activated_at=at, hard_mode=hard)
+    session.add(game)
+    session.flush()
+    return game
+
+
+def _guess(session: Session, game: Game, player: int, at: datetime) -> None:
+    session.add(GameGuess(game_id=game.id, player_id=player, text="x", stage=1, created_at=at))
+    session.flush()
+
+
+def test_by_activity_weighs_hosting_three_guesses_and_breaks_ties_by_recency(
+    session: Session,
+) -> None:
+    session.add_all([Player(telegram_user_id=u) for u in (1, 2, 3, 4, 5)])
+    early, late = _naive(10, 1, 12), _naive(10, 2, 12)
+    hosted = _game(session, 1, early)  # 1: 3 points, early
+    for _ in range(3):
+        _guess(session, hosted, 2, late)  # 2: 3 points, late
+    _guess(session, hosted, 3, early)  # 3: 1 point
+    _game(session, 4, late, hard=True)  # 4: a hard game doesn't count
+
+    assert players.by_activity(session, [1, 2, 3, 4, 5], None) == [2, 1, 3, 4, 5]
+
+
+def test_by_activity_counts_only_since_and_only_the_given_players(session: Session) -> None:
+    session.add_all([Player(telegram_user_id=u) for u in (1, 2, 3)])
+    old, new = _naive(9, 1), _naive(10, 2)
+    game = _game(session, 3, old)
+    _guess(session, game, 1, old)
+    _guess(session, game, 1, old)
+    _guess(session, game, 2, new)
+
+    assert players.by_activity(session, [1, 2], _naive(10, 1)) == [2, 1]
