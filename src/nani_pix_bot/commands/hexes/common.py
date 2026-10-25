@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.player_picker import Picker
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.seasons.mechanics import HexKind
@@ -54,17 +55,13 @@ def language(context: ContextTypes.DEFAULT_TYPE) -> str:
 # --- callback data: every tap names the caster, so only they can use it ---
 
 
+def picker(caster_id: int) -> Picker:
+    return Picker(PREFIX, caster_id)
+
+
 def page_data(caster_id: int, page: int) -> str:
-    return f"{PREFIX}{caster_id}:p:{page}"
-
-
-def target_data(caster_id: int, target_id: int) -> str:
-    return f"{PREFIX}{caster_id}:t:{target_id}"
+    return picker(caster_id).page(page)
 
 
 def cast_data(caster_id: int, target_id: int, kind: HexKind) -> str:
     return f"{PREFIX}{caster_id}:{target_id}:{kind.value}"
-
-
-def cancel_data(caster_id: int) -> str:
-    return f"{PREFIX}{caster_id}:x"

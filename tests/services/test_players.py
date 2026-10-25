@@ -208,3 +208,10 @@ def test_by_activity_counts_only_since_and_only_the_given_players(session: Sessi
     _guess(session, game, 2, new)
 
     assert players.by_activity(session, [1, 2], _naive(10, 1)) == [2, 1]
+
+
+def test_known_ids_lists_every_player(session: Session) -> None:
+    session.add_all([Player(telegram_user_id=u) for u in (3, 1, 2)])
+    session.flush()
+
+    assert sorted(players.known_ids(session)) == [1, 2, 3]

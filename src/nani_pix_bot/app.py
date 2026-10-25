@@ -364,6 +364,14 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(hexes.hex_callback, pattern=rf"^{re.escape(hexes.PREFIX)}")
     )
     application.add_handler(
+        CallbackQueryHandler(tip.tip_callback, pattern=rf"^{re.escape(tip.PREFIX)}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            game_flow.correct_callback, pattern=rf"^{re.escape(game_flow.CORRECT_PREFIX)}"
+        )
+    )
+    application.add_handler(
         CallbackQueryHandler(profile.browse.profile_callback, pattern=rf"^{PROFILE_PREFIX}")
     )
     application.add_handler(CallbackQueryHandler(standings_dm.standings_callback, pattern=r"^std:"))

@@ -125,7 +125,9 @@ async def test_correct_command_ignores_outside_the_game_topic(session_factory) -
     context.bot.send_photo.assert_not_awaited()
 
 
-async def test_correct_command_requires_a_username_argument(session_factory) -> None:
+async def test_correct_command_without_a_username_checks_the_game_first(session_factory) -> None:
+    """/correct alone opens the guesser picker (test_correct_picker.py), but
+    only once the game passes the same checks as /correct @username."""
     _active_game(session_factory)
     update = _make_update(args=[])
     context = _make_context(session_factory, args=[])
@@ -135,7 +137,9 @@ async def test_correct_command_requires_a_username_argument(session_factory) -> 
     )
 
     update.message.reply_text.assert_awaited_once()
-    assert "usage" in update.message.reply_text.await_args.args[0].lower()
+    assert update.message.reply_text.await_args.args[0] == correct_command_module.i18n.t(
+        "correct.no_guesses_yet", "en"
+    )
 
 
 async def test_correct_command_rejects_non_starters(session_factory) -> None:
@@ -301,9 +305,7 @@ async def test_correct_command_cancels_the_timeout_job(session_factory) -> None:
         cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
     )
 
-    context.job_queue.get_jobs_by_name.assert_any_call(
-        correct_command_module.timeout_module.timeout_job_name(game_id)
-    )
+    context.job_queue.get_jobs_by_name.assert_any_call(timers_package.timeout_job_name(game_id))
 
 
 async def test_correct_command_cancels_the_inactivity_timers(session_factory) -> None:
@@ -320,10 +322,10 @@ async def test_correct_command_cancels_the_inactivity_timers(session_factory) ->
     )
 
     context.job_queue.get_jobs_by_name.assert_any_call(
-        correct_command_module.timeout_module.inactivity_nudge_job_name(game_id)
+        timers_package.inactivity_nudge_job_name(game_id)
     )
     context.job_queue.get_jobs_by_name.assert_any_call(
-        correct_command_module.timeout_module.inactivity_advance_job_name(game_id)
+        timers_package.inactivity_advance_job_name(game_id)
     )
 
 
@@ -345,8 +347,8 @@ async def test_correct_command_caption_names_the_winner_and_schedules_turn_timer
     _, kwargs = context.bot.send_photo.await_args
     assert "winner" in kwargs["caption"]
     names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
-    assert correct_command_module.timeout_module.TURN_REMINDER_JOB_NAME in names
-    assert correct_command_module.timeout_module.TURN_EXPIRY_JOB_NAME in names
+    assert timers_package.TURN_REMINDER_JOB_NAME in names
+    assert timers_package.TURN_EXPIRY_JOB_NAME in names
 
 
 async def test_correct_command_rejects_before_any_guess_was_made(session_factory) -> None:
@@ -476,7 +478,7 @@ async def test_correct_command_hard_mode_reveals_both_stored_screenshots(session
     assert second.kwargs["photo"] == b"image-b-bytes"
     caption = first.kwargs["caption"]
     expected_caption = correct_command_module.i18n.t(
-        "correct.hard_mode_caption", "en", winner="winner", title="Frieren: Beyond Journey's End"
+        "correct.hard_mode_caption", "en", winner="@winner", title="Frieren: Beyond Journey's End"
     )
     assert caption.startswith(expected_caption)  # plus the currency-earnings lines
     assert "+80" in caption  # turn-1 win 40 x 2 (HARD MODE)

@@ -14,7 +14,7 @@ interface Props {
 const GROUPS: Record<Group, [string, string][]> = {
   topic: [
     ['guess', '/guess <title>'],
-    ['correct', '/correct @username'],
+    ['correct', '/correct [@username]'],
     ['skip', '/skip [@username]'],
     ['pass', '/pass'],
     ['status', '/status'],
@@ -38,7 +38,7 @@ const GROUPS: Record<Group, [string, string][]> = {
     ['balance', '/balance'],
     ['inventory', '/inventory'],
     ['profile', '/profile [@username]'],
-    ['tip', '/tip @username <amount>'],
+    ['tip', '/tip [@username] [amount]'],
     ['hex', '/hex [@username [kind]]'],
     ['hexes', '/hexes [on | off]'],
     ['achievements', '/achievements [@username | top]'],

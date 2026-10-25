@@ -237,3 +237,8 @@ def by_activity(session: Session, player_ids: Collection[int], since: datetime |
     scored = {pid: (int(points), at) for pid, points, at in session.execute(stmt)}
     active = sorted(scored, key=lambda pid: (-scored[pid][0], -scored[pid][1].timestamp(), pid))
     return active + sorted(pid for pid in set(player_ids) if pid not in scored)
+
+
+def known_ids(session: Session) -> list[int]:
+    """Every player's id, in no particular order (`by_activity` sorts them)."""
+    return list(session.scalars(select(Player.telegram_user_id)))

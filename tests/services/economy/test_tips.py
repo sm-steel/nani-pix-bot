@@ -72,3 +72,32 @@ def test_tipping_yourself_is_refused(session: Session) -> None:
     assert refused.value.refusal is tips.TipRefusal.SELF
     assert alice.currency == 50
     assert _tip_rows(session) == []
+
+
+@pytest.mark.parametrize(
+    ("balance", "expected"),
+    [
+        (0, []),
+        (9, []),
+        (10, [10]),
+        (49, [10, 25]),
+        (100, [10, 25, 50, 100]),
+        (500, [10, 25, 50, 100]),
+    ],
+)
+def test_affordable_amounts(balance: int, expected: list[int]) -> None:
+    assert tips.affordable_amounts(balance) == expected
+
+
+@pytest.mark.parametrize(
+    ("amount", "balance", "expected"),
+    [
+        (0, 50, tips.TipRefusal.BELOW_MIN),
+        (-3, 50, tips.TipRefusal.BELOW_MIN),
+        (51, 50, tips.TipRefusal.INSUFFICIENT),
+        (50, 50, None),
+        (1, 50, None),
+    ],
+)
+def test_amount_refusal(amount: int, balance: int, expected: tips.TipRefusal | None) -> None:
+    assert tips.amount_refusal(amount, balance) is expected

@@ -7,6 +7,8 @@ This __init__ re-exports the PTB handler entrypoints app.py registers."""
 
 from nani_pix_bot.commands.game_flow.bounty import bounty_command
 from nani_pix_bot.commands.game_flow.correct import correct_command
+from nani_pix_bot.commands.game_flow.correct_picker import PREFIX as CORRECT_PREFIX
+from nani_pix_bot.commands.game_flow.correct_picker import correct_callback
 from nani_pix_bot.commands.game_flow.guess import guess_command
 from nani_pix_bot.commands.game_flow.pass_vote import pass_command
 from nani_pix_bot.commands.game_flow.sharpen import sharpen_callback_handler, sharpen_command
@@ -15,7 +17,9 @@ from nani_pix_bot.commands.game_flow.stop import stop_callback_handler, stop_com
 from nani_pix_bot.commands.game_flow.vote import vote_callback_handler
 
 __all__ = [
+    "CORRECT_PREFIX",
     "bounty_command",
+    "correct_callback",
     "correct_command",
     "guess_command",
     "pass_command",
