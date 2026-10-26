@@ -19,7 +19,6 @@ from nani_pix_bot.seasons.definition import Reward
 from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
-from nani_pix_bot.services.seasons import group_goal
 
 if TYPE_CHECKING:
     from loguru import Record
@@ -46,8 +45,6 @@ _kept = (
     # Vulture only skips Reward.ofuda today because the `ofuda` module name matches;
     # it is listed so the entry survives a rename.
     Reward.ofuda,
-    # Halloween: wired by P6 (#471)
-    group_goal.candles_for,
 )
 
 if TYPE_CHECKING:

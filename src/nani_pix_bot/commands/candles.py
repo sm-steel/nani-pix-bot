@@ -53,17 +53,21 @@ def _boss_line(session: Session, boss: Game | None, lang: str) -> str:
     """The Gashadokuro's state once the goal is reached."""
     if boss is None:
         return i18n.t("candles.boss_pending", lang)
-    if boss.status == GameStatus.WON and boss.winner_id is not None:
+    if boss.status == GameStatus.WON:
+        if boss.winner_id is None:
+            return i18n.t("candles.boss_won_nobody", lang, game_id=boss.id)
         winner = players.display_name(session, boss.winner_id)
         return i18n.t("candles.boss_won", lang, game_id=boss.id, winner=winner)
-    if boss.status in (GameStatus.WON, GameStatus.UNSOLVED):
+    if boss.status == GameStatus.UNSOLVED:
         return i18n.t("candles.boss_unsolved", lang, game_id=boss.id)
     return i18n.t("candles.boss_running", lang, game_id=boss.id)
 
 
-def candles_text(session: Session, found: Found, viewer_id: int, lang: str) -> str:
+def candles_text(session: Session, found: Found, counted: tuple[int, int], lang: str) -> str:
+    """The caption lines; `counted` is (candles snuffed, viewer id), so the count is
+    read once per call."""
     season, run, goal = found
-    snuffed = group_goal.candles(session, season.id, goal)
+    snuffed, viewer_id = counted
     settled = group_goal.is_settled(session, season.id)
     lines = [
         i18n.t("candles.title", lang, season=run.name(lang)),
@@ -129,7 +133,7 @@ async def candles_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         else:
             _, run, goal = found
             snuffed = group_goal.candles(session, found[0].id, goal)
-            text = candles_text(session, found, user.id, lang)
+            text = candles_text(session, found, (snuffed, user.id), lang)
             run_id, target = run.run_id, goal.target
     logger.info("viewed /candles", snuffed=snuffed, target=target)
     if run_id is None:

@@ -44,12 +44,6 @@ def _weight(event_day: bool, haunted: bool, boss: bool, goal: GroupGoal) -> int:
     return goal.per_game
 
 
-def candles_for(game: Game, goal: GroupGoal) -> int:
-    if game.status not in SNUFFING:
-        return 0
-    return _weight(game.event_day, game.haunt_twist is not None, game.boss_game, goal)
-
-
 def _read(stmt: Select, lock: bool) -> Select:
     """`lock` makes it a locking read: InnoDB serves those from the latest committed
     rows, not the REPEATABLE READ snapshot, so a waiter sees the winner's writes

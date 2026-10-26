@@ -10,9 +10,10 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands import candles
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import GameStatus, SeasonStatus
+from nani_pix_bot.models.halloween import Hex
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule
-from nani_pix_bot.seasons.mechanics import GroupGoal
+from nani_pix_bot.seasons.mechanics import GroupGoal, HexKind
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.seasons import group_goal
 
@@ -32,7 +33,9 @@ def _found(session, season):
 
 
 def _text(session, season, viewer: int = VIEWER, lang: str = "EN") -> str:
-    return candles.candles_text(session, _found(session, season), viewer, lang)
+    found = _found(session, season)
+    snuffed = group_goal.candles(session, season.id, found[2])
+    return candles.candles_text(session, found, (snuffed, viewer), lang)
 
 
 def _settle(session, season) -> None:
@@ -209,3 +212,40 @@ async def test_candles_ignored_outside_topic_and_dm(session_factory):
     await _run(update, session_factory)
     update.message.reply_photo.assert_not_awaited()
     update.message.reply_text.assert_not_awaited()
+
+
+def _settled_boss(session, season, finished_game, **boss_fields):
+    for _ in range(4):
+        finished_game(GameStatus.WON, haunt_twist=HAUNT, event_day=True)
+    _settle(session, season)
+    return finished_game(GameStatus.WON, boss_game=True, **boss_fields)
+
+
+def test_candles_text_boss_won_without_a_winner_does_not_say_survived(
+    session, yokai_season, finished_game
+):
+    boss = _settled_boss(session, yokai_season, finished_game)
+    text = _text(session, yokai_season)
+    assert f"Game #{boss.id} defeated the Gashadokuro!" in text
+    assert "survived" not in text
+
+
+def test_candles_text_boss_winner_under_nopperabo_is_masked(session, yokai_season, finished_game):
+    boss = _settled_boss(session, yokai_season, finished_game, winner_id=7)
+    player = session.get(Player, 7)
+    assert player is not None
+    player.username = "kurogane"
+    session.add(
+        Hex(
+            season_id=yokai_season.id,
+            kind=HexKind.NOPPERABO.value,
+            caster_id=1,
+            target_id=7,
+            cast_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=1),
+            expires_at=datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1),
+        )
+    )
+    session.flush()
+    text = _text(session, yokai_season)
+    assert f"Game #{boss.id} defeated the Gashadokuro: 👤 landed the final blow." in text
+    assert "kurogane" not in text

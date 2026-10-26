@@ -1119,5 +1119,6 @@
   "candles.you_not_yet": "Guess in or host a season game to help.",
   "candles.bones": "🦴 Your bones: {bones}/{target}",
   "candles.none": "No candle goal this season.",
-  "commands.candles": "The season's 100 Candles goal and your bones"
+  "commands.candles": "The season's 100 Candles goal and your bones",
+  "candles.boss_won_nobody": "Game #{game_id} defeated the Gashadokuro!"
 }

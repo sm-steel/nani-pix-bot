@@ -1,12 +1,10 @@
 import pytest
 
 from nani_pix_bot.models.enums import GameStatus
-from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons.mechanics import GroupGoal
 from nani_pix_bot.services.seasons.group_goal import (
     candles,
-    candles_for,
     contributors,
     due_milestone,
     goal_of,
@@ -14,18 +12,6 @@ from nani_pix_bot.services.seasons.group_goal import (
 )
 
 GOAL = GroupGoal(target=100)
-
-
-def _g(*, status=GameStatus.WON, haunt=None, event_day=False, boss=False) -> Game:
-    return Game(status=status, haunt_twist=haunt, event_day=event_day, boss_game=boss)
-
-
-def test_candles_for_weights():
-    assert candles_for(_g(), GOAL) == 1
-    assert candles_for(_g(haunt="kitsune_mirror"), GOAL) == 2
-    assert candles_for(_g(haunt="kitsune_mirror", event_day=True), GOAL) == 3
-    assert candles_for(_g(boss=True, haunt="kitsune_mirror"), GOAL) == 0
-    assert candles_for(_g(status=GameStatus.ACTIVE), GOAL) == 0
 
 
 def test_candles_sums_only_finished_games_of_this_season(session, yokai_season, finished_game):
