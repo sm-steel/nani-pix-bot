@@ -76,6 +76,7 @@ def test_bone_border_ends_all_four_corners_the_same_way() -> None:
     bottom = out.crop((0, h - size[1], size[0], h))
     # a bone end sits in the corner: every channel reaches ivory
     assert min(hi for _, hi in ImageStat.Stat(top).extrema) > 200
+    assert min(hi for _, hi in ImageStat.Stat(bottom).extrema) > 200
     pairs = [
         (top, out.crop((w - size[0], 0, w, size[1])).transpose(Image.Transpose.FLIP_LEFT_RIGHT)),
         (
@@ -96,3 +97,60 @@ def test_bone_border_is_deterministic() -> None:
 def test_bone_border_handles_portrait_and_tiny_images() -> None:
     assert night_frames.bone_border(Image.new("RGB", (120, 300), GREEN)).size == (120, 300)
     assert night_frames.bone_border(Image.new("RGB", (20, 12), GREEN)).size == (20, 12)
+
+
+def test_cobweb_is_registered() -> None:
+    assert frames.FRAMES["cobweb"] is night_frames.cobweb
+
+
+def test_cobweb_leaves_the_middle_and_nanis_corner() -> None:
+    image = Image.new("RGB", (400, 240), (20, 24, 30))
+    out = night_frames.cobweb(image)
+    assert out.size == image.size
+    assert _rgb(out, (200, 120)) == _rgb(image, (200, 120))
+    box = (round(400 * 0.85), round(240 * 0.85), 400, 240)
+    assert out.crop(box).tobytes() == image.crop(box).tobytes()
+
+
+def test_cobweb_threads_in_three_corners() -> None:
+    w, h = 400, 240
+    image = Image.new("RGB", (w, h), (20, 24, 30))
+    out = night_frames.cobweb(image)
+    reach = round(min(w, h) * night_frames.WEB_RATIO)
+    for x, y in ((0, 0), (w - reach, 0), (0, h - reach)):
+        box = (x, y, x + reach, y + reach)
+        a, b = image.crop(box).convert("L"), out.crop(box).convert("L")
+        lighter = ImageChops.subtract(b, a).point(lambda v: 255 if v > 25 else 0)
+        assert lighter.histogram()[255] > 20
+
+
+def test_cobweb_is_deterministic() -> None:
+    image = Image.new("RGB", (300, 180), GREEN)
+    assert night_frames.cobweb(image).tobytes() == night_frames.cobweb(image).tobytes()
+
+
+def test_cobweb_handles_portrait_and_tiny_images() -> None:
+    assert night_frames.cobweb(Image.new("RGB", (120, 300), GREEN)).size == (120, 300)
+    assert night_frames.cobweb(Image.new("RGB", (20, 12), GREEN)).size == (20, 12)
+
+
+def test_cobweb_fades_out_towards_the_corner() -> None:
+    image = Image.new("RGB", (400, 240), (20, 24, 30))
+    out = night_frames.cobweb(image)
+    reach = round(240 * night_frames.WEB_RATIO)
+    diff = ImageChops.subtract(out, image).convert("L")
+    near = diff.crop((0, 0, reach // 5, reach // 5))
+    far = diff.crop((reach // 2, 0, reach, reach // 2))
+    assert ImageStat.Stat(near).mean[0] * 3 < ImageStat.Stat(far).mean[0]
+    assert ImageStat.Stat(diff).extrema[0][1] < 130  # translucent, never solid thread
+
+
+def test_cobweb_corners_are_not_mirror_images() -> None:
+    w, h = 400, 240
+    out = night_frames.cobweb(Image.new("RGB", (w, h), (20, 24, 30)))
+    r = round(min(w, h) * night_frames.WEB_RATIO)
+    tl = out.crop((0, 0, r, r))
+    tr = out.crop((w - r, 0, w, r)).transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    bl = out.crop((0, h - r, r, h)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+    for a, b in ((tl, tr), (tl, bl), (tr, bl)):
+        assert ImageStat.Stat(ImageChops.difference(a, b).convert("L")).mean[0] > 3

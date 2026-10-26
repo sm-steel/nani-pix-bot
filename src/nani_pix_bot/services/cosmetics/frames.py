@@ -33,6 +33,7 @@ FRAMES: Mapping[str, Callable[[Image.Image], Image.Image]] = MappingProxyType(
         "washi": paper_frames.washi,
         "ofuda_strip": night_frames.ofuda_strip,
         "bone_border": night_frames.bone_border,
+        "cobweb": night_frames.cobweb,
     }
 )
 

@@ -1121,6 +1121,9 @@ src/nani_pix_bot/
                    #                   to end; deckled edge, seeded
                    #                   "bone_border": ivory bones end to end on a
                    #                   night band, a bone end in each corner
+                   #                   "cobweb": faint, corner-faded webs in three
+                   #                   corners (Nani's stays clear), each from
+                   #                   its own seed; a spider on one
                    #   stage.py        stage_png: a stage image with the
                    #                   starter's frame
                    #   reveal_choice.py  effect_for: the starter's
