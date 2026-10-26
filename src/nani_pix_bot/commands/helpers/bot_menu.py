@@ -31,6 +31,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("tip", i18n.t("commands.tip", lang)),
         BotCommand("hex", i18n.t("commands.hex", lang)),
         BotCommand("hexes", i18n.t("commands.hexes", lang)),
+        BotCommand("omikuji", i18n.t("commands.omikuji", lang)),
         BotCommand("language", i18n.t("commands.language", lang)),
         # Listed unconditionally, like every other command here: this menu
         # is set once at startup (and on a /language change) for all
@@ -73,6 +74,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("tip", i18n.t("commands.tip", lang)),
         BotCommand("hex", i18n.t("commands.hex", lang)),
         BotCommand("hexes", i18n.t("commands.hexes", lang)),
+        BotCommand("omikuji", i18n.t("commands.omikuji", lang)),
         BotCommand("help", i18n.t("commands.help", lang)),
         BotCommand("version", i18n.t("commands.version", lang)),
     ]

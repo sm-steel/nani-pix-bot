@@ -487,6 +487,9 @@ src/nani_pix_bot/
     hexes/        # /hex and /hexes (Halloween): casting (casting.py),
                    # pickers and taps (views.py, callback.py), public
                    # notices (notices.py), opt-out (opt_out.py)
+    omikuji.py    # /omikuji (Halloween): today's fortune slip as the
+                   # omikuji moment card (text without the art); a kyō
+                   # prank drawn in a DM also posts the card to the topic
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
                    # `/start ach_<id>`, the achievements one, and
                    # `/start rules`/`/start recent` for standings_dm.py), /help
@@ -610,7 +613,9 @@ src/nani_pix_bot/
                    # caption) to the game topic with the plain line as the
                    # caption; a failed avatar/render/send falls back to the
                    # caption as text. Used by /guess (a forgiven miss) and
-                   # the clue shop (a token-paid clue)
+                   # the clue shop (a token-paid clue); DuelMoment for a hex
+                   # cast or block; OmikujiMoment for the /omikuji card
+                   # (drawn once: draw_omikuji_card, post_omikuji_card)
     season_posts.py  # turns the season pass rows (SEASON_TIER DMs,
                    # SEASON_COMPLETE topic line) into Posts
     announcements.py  # the announcement outbox drain: a repeating 20s
@@ -1028,6 +1033,18 @@ src/nani_pix_bot/
                    #   goals.py      progress toward and wording of a Goal
                    #   objectives.py check (complete + pay + DM), status
                    #   pass_view.py  the /seasonpass text and its tier lines
+                   #   omikuji.py    the daily draw: one slip per group-local
+                   #                 day (omikuji_draws), weighted pick,
+                   #                 🪙 + charm payout, a kyō's self-prank
+                   #                 (or spared), slip_png
+                   #   hexes.py      hexes: cast (🪙, cooldown, Omamori
+                   #                 block), triggers (Kappa/Kitsune),
+                   #                 expiry, the omikuji self-prank
+                   #   hex_marks.py  which hex is on a player now, and the
+                   #                 marks prank hexes draw (💀, faceless)
+                   #   hex_targets.py  who a player may hex now, most
+                   #                 active first (the /hex picker)
+                   #   hex_art.py    the hex moment cards' art per kind
                    #   conversion.py leftover 🪙 -> 💠 at the season's end
                    #                 (called from lifecycle._finalize)
                    #   consumer.py   hooks the above into services/
@@ -1195,8 +1212,8 @@ assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's k
                    # (the consumable preview card's background) and
                    # icons/{ofuda,omamori}.png (512 px RGBA art of the two
                    # Halloween charms, drawn on the consumable preview card)
-                   # and moments/{charm,curse}_background.jpg (1200x800
-                   # backgrounds of the moment cards)
+                   # and moments/{charm,curse,omikuji}_background.jpg
+                   # (1200x800 backgrounds of the moment cards)
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
                    # (EN/RU page parity, every command in its command table)
@@ -1505,7 +1522,7 @@ erDiagram
 | `pass_votes` | #428 | One player's `/pass` vote in one round: `game_id` (FK, `ON DELETE CASCADE`), `player_id`, `stage` (the PixelStage number or hard-mode turn), unique per (game, player, stage), so a stage advance resets the tally without deleting rows. |
 | `hexes` | Halloween P1 | One hex a player cast on another in a season: `season_id` (FK), `kind` (a `HexKind` as a plain string), `caster_id` and `target_id` (FKs to `players`), `cast_at`, `expires_at` (pranks only), `resolved_at`/`outcome` (set when it is spent or blocked) and `game_id` (FK, the game a kappa/kitsune triggered on). Indexed on (`target_id`, `resolved_at`) and (`caster_id`, `kind`, `cast_at`) for the target's open hexes and the caster's cooldown. Written by `commands/hexes/`. |
 | `armed_ofuda` | Halloween P1 | An ofuda a player armed for one game: primary key (`player_id`, `game_id`), so at most one per player per game, and `armed_at`. Written by `services/cosmetics/ofuda.py::arm` (the shop's Arm button) and deleted when the Ofuda forgives a miss. |
-| `omikuji_draws` | Halloween P1 | A player's omikuji draw: `season_id`, `player_id`, `local_date`, `outcome` (an `OmikujiKind` as a plain string) and `drawn_at`; unique on (`season_id`, `player_id`, `local_date`) so a day has one draw. Nothing writes it until Phase 4. |
+| `omikuji_draws` | Halloween P1 | A player's omikuji draw: `season_id`, `player_id`, `local_date`, `outcome` (an `OmikujiKind` as a plain string) and `drawn_at`; unique on (`season_id`, `player_id`, `local_date`) so a day has one draw. Written only by `services/seasons/omikuji.py::draw`. |
 | `games` Halloween columns | Halloween P1 | `haunt_twist` (nullable string, a `HauntTwist`: set when the game is haunted), `boss_game` and `event_day` (booleans, default false). All three are written from Phase 3 and Phase 6. |
 | `players.hex_opt_out` | Halloween P1 | Boolean, default false: the player refuses hexes cast on them. Read by `commands/hexes/`. |
 

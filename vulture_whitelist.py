@@ -18,14 +18,12 @@ from nani_pix_bot.models.enums import (
     OutboxKind,
 )
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.models.halloween import OmikujiDraw
 from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import Reward
 from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
-from nani_pix_bot.services.seasons import hexes
 
 if TYPE_CHECKING:
     from loguru import Record
@@ -44,20 +42,14 @@ _kept = (
     TurnState.turn_opened_at,
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
-    # Halloween: wired by P4 (#469)
-    EventType.OMIKUJI_DRAWN,
-    OmikujiDraw.local_date,
-    OmikujiDraw.drawn_at,
+    # Halloween: wired by P8 (#473)
     OmikujiKind.DAIKICHI,
     OmikujiKind.KICHI,
     OmikujiKind.SHOKICHI,
-    # Halloween: wired by P8 (#473)
     Reward.omamori,
     # Vulture only skips Reward.ofuda today because the `ofuda` module name matches;
     # it is listed so the entry survives a rename.
     Reward.ofuda,
-    # Halloween: wired by P5 (#470)
-    hexes.apply_self_prank,  # P4b's omikuji kyō hook
     # Halloween: wired by P6 (#471)
     ItemSource.BONES,
     EventType.GOAL_REACHED,

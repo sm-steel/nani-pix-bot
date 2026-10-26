@@ -7,10 +7,11 @@ from nani_pix_bot.models.enums import OutboxKind
 from nani_pix_bot.models.halloween import Hex
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons.mechanics import HexKind
+from nani_pix_bot.services import i18n
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.seasons import hexes
 from tests.services.seasons.conftest import NOW, make_hex_season
-from tests.services.seasons.test_hex_triggers import _guess, _rule, _run, _win
+from tests.services.seasons.test_hex_triggers import _drain, _guess, _rule, _run, _win
 
 
 @pytest.fixture(autouse=True)
@@ -63,12 +64,19 @@ def test_kitsune_notice(session, hex_season):
     assert str(_rule(HexKind.KITSUNE).amount) in text
 
 
-def test_self_prank_notice_names_the_prank(session, hex_season):
+def test_kitsune_on_an_empty_purse_laughs_instead(session, hex_season):
     _name(session)
-    row = hexes.apply_self_prank(session, _run(), 2, NOW)
-    text = _render(session, _last(session))
-    assert "@bob" in text
-    assert str(_rule(HexKind(row.kind)).duration_hours) in text
+    hexes.cast(session, session.get(Player, 1), session.get(Player, 2), HexKind.KITSUNE, NOW)
+    _drain(session, 2, hex_season.id, keep=0)
+    _guess(session, 2, correct=False)
+    for lang in ("en", "ru"):
+        text = _render(session, _last(session), lang)
+        assert text == i18n.t("hex.notice.triggered.kitsune_empty", lang, target="@bob")
+
+
+def test_a_self_prank_queues_no_notice(session, hex_season):
+    hexes.apply_self_prank(session, _run(), 2, NOW)
+    assert _last(session) is None
 
 
 def test_notice_for_a_missing_hex_row_renders_nothing(session, hex_season):

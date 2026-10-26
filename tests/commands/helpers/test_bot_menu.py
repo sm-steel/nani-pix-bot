@@ -37,6 +37,7 @@ async def test_refresh_command_menu_sets_private_and_group_scopes() -> None:
         "tip",
         "hex",
         "hexes",
+        "omikuji",
         "language",
         "stop",
         "stageconfig",
@@ -77,6 +78,7 @@ async def test_refresh_command_menu_sets_private_and_group_scopes() -> None:
         "tip",
         "hex",
         "hexes",
+        "omikuji",
         "help",
         "version",
     }
