@@ -1119,6 +1119,8 @@ src/nani_pix_bot/
                    #   night_frames.py "ofuda_strip": talisman strips with
                    #                   red seals and ink strokes, laid end
                    #                   to end; deckled edge, seeded
+                   #                   "bone_border": ivory bones end to end on a
+                   #                   night band, a bone end in each corner
                    #   stage.py        stage_png: a stage image with the
                    #                   starter's frame
                    #   reveal_choice.py  effect_for: the starter's
