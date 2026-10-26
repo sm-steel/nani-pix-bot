@@ -66,6 +66,12 @@ def enqueue_hex_notice(session: Session, hex_id: int, notice: str) -> Announceme
     return _add(session, AnnouncementOutbox(kind=OutboxKind.HEX_NOTICE, payload=payload))
 
 
+def enqueue_goal(session: Session, kind: OutboxKind, payload: dict) -> AnnouncementOutbox:
+    """A group-goal post: GOAL_MILESTONE {season_id, milestone} or GOAL_REACHED
+    {season_id, players, candles}."""
+    return _add(session, AnnouncementOutbox(kind=kind, payload=payload))
+
+
 def pending(session: Session, limit: int) -> list[AnnouncementOutbox]:
     stmt = (
         select(AnnouncementOutbox)

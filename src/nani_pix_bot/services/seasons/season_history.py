@@ -22,7 +22,12 @@ def _naive(at: datetime) -> datetime:
     return as_utc(at).replace(tzinfo=None)
 
 
-SEASON_OWNED = (EventType.ITEM_GAINED, EventType.TRACK_COMPLETED, EventType.SEASON_ENDED)
+SEASON_OWNED = (
+    EventType.ITEM_GAINED,
+    EventType.TRACK_COMPLETED,
+    EventType.SEASON_ENDED,
+    EventType.GOAL_REACHED,
+)
 
 
 def scope(season: SeasonSchedule) -> ColumnElement[bool]:

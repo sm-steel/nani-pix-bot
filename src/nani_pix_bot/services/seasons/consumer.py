@@ -6,7 +6,15 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.enums import XpSource
 from nani_pix_bot.services import players
 from nani_pix_bot.services.events import LoggedEvent
-from nani_pix_bot.services.seasons import coins, hexes, lifecycle, objectives, season_pass, xp
+from nani_pix_bot.services.seasons import (
+    coins,
+    group_goal,
+    hexes,
+    lifecycle,
+    objectives,
+    season_pass,
+    xp,
+)
 
 
 def on_event(session: Session, event: LoggedEvent) -> None:
@@ -22,6 +30,7 @@ def on_event(session: Session, event: LoggedEvent) -> None:
             season_pass.sync(session, found.season, found.run, player_id)
     # Objectives before the season can finalize on its last game's end.
     _check_objectives(session, event)
+    _season_mechanics(session, event)
     lifecycle.on_game_ended(session, event)
 
 
@@ -81,6 +90,21 @@ def _trigger_hexes(
     except Exception:
         logger.opt(exception=True).error(
             "hex triggers failed on event {event_type} (row {event_id}); XP and coins kept",
+            event_type=event.event_type.value,
+            event_id=event.id,
+        )
+
+
+def _season_mechanics(session: Session, event: LoggedEvent) -> None:
+    """The run's group goal in its own savepoint: a broken payout never costs
+    the game its XP, coins or objectives, and never blocks the season's
+    lifecycle step after it."""
+    try:
+        with session.begin_nested():
+            group_goal.on_game_ended(session, event)
+    except Exception:
+        logger.opt(exception=True).error(
+            "season mechanics failed on event {event_type} (row {event_id}); XP and coins kept",
             event_type=event.event_type.value,
             event_id=event.id,
         )

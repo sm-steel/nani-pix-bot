@@ -13,8 +13,6 @@ Anything else vulture reports is dead code: remove it or wire it up.
 from typing import TYPE_CHECKING
 
 from nani_pix_bot.models.enums import (
-    CurrencyReason,
-    EventType,
     ItemSource,
     OutboxKind,
 )
@@ -54,18 +52,10 @@ _kept = (
     Reward.ofuda,
     # Halloween: wired by P6 (#471)
     ItemSource.BONES,
-    EventType.GOAL_REACHED,
-    OutboxKind.GOAL_MILESTONE,
-    OutboxKind.GOAL_REACHED,
-    ItemSource.GOAL,
-    CurrencyReason.SEASON_GOAL,
     OutboxKind.GOAL_BOSS,
     OutboxKind.BONE_FOUND,
-    group_goal.candles,
     group_goal.candles_for,
     group_goal.is_contributor,
-    group_goal.goal_of,
-    group_goal.due_milestone,
 )
 
 if TYPE_CHECKING:

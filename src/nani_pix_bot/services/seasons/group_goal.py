@@ -1,17 +1,33 @@
 """The 100 Candles group goal (Halloween spec): which finished season games
-light a candle, who contributed, and which milestone is due. Pure reads; must
-not import services.game."""
+light a candle, who contributed, which milestone is due, and the one-time
+payout when the target is reached. Must not import services.game."""
 
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import GameStatus
+from nani_pix_bot.models.announcement import AnnouncementOutbox
+from nani_pix_bot.models.enums import (
+    CurrencyReason,
+    EventType,
+    GameStatus,
+    ItemSource,
+    OutboxKind,
+    SeasonStatus,
+)
+from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.game_guess import GameGuess
+from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.seasons.mechanics import GroupGoal
+from nani_pix_bot.services import events, players
+from nani_pix_bot.services.achievements import outbox
+from nani_pix_bot.services.cosmetics import inventory
+from nani_pix_bot.services.economy import wallet
+from nani_pix_bot.services.events import LoggedEvent
 
 SNUFFING: tuple[GameStatus, ...] = (GameStatus.WON, GameStatus.UNSOLVED)
 
@@ -83,3 +99,117 @@ def goal_of(
     if run is None or run.group_goal is None:
         return None
     return season, run, run.group_goal
+
+
+def _last_queued(session: Session, season_id: int) -> int:
+    """The highest milestone queued for the season, posted or not."""
+    rows = session.scalars(
+        select(AnnouncementOutbox).where(AnnouncementOutbox.kind == OutboxKind.GOAL_MILESTONE)
+    )
+    return max(
+        (r.payload["milestone"] for r in rows if r.payload.get("season_id") == season_id), default=0
+    )
+
+
+def is_settled(session: Session, season_id: int) -> bool:
+    stmt = select(EventLog.data).where(EventLog.event_type == EventType.GOAL_REACHED)
+    return any(data.get("season_id") == season_id for data in session.scalars(stmt))
+
+
+def _pay(session: Session, season: SeasonSchedule, run: SeasonRun, player_id: int) -> None:
+    goal = run.group_goal
+    player = session.get(Player, player_id)
+    if goal is None or player is None:
+        logger.error("no player {recipient_id} to pay the goal reward", recipient_id=player_id)
+        return
+    if goal.contributor_coins:
+        entry = wallet.LedgerEntry(CurrencyReason.SEASON_GOAL, season_id=season.id, coins=True)
+        wallet.credit(session, player, goal.contributor_coins, entry)
+    if goal.contributor_item_key is not None:
+        item_id = f"{run.run_id}/{goal.contributor_item_key}"
+        grant = inventory.ItemGrant(item_id, ItemSource.GOAL, season.id)
+        inventory.grant(session, player_id, grant)
+
+
+def settle(
+    session: Session, season: SeasonSchedule, run: SeasonRun, crossing_game_id: int | None
+) -> bool:
+    """Pays every contributor once and queues the one post. False when the
+    season was already settled."""
+    goal = run.group_goal
+    if goal is None or is_settled(session, season.id):
+        return False
+    snuffed = candles(session, season.id, goal)
+    paid = sorted(contributors(session, season.id))
+    data = {
+        "season_id": season.id,
+        "run_id": run.run_id,
+        "crossing_game_id": crossing_game_id,
+        "candles": snuffed,
+        "coins": goal.contributor_coins,
+    }
+    for player_id in paid:
+        _pay(session, season, run, player_id)
+        events.emit(session, EventType.GOAL_REACHED, events.Involved(actor_id=player_id), **data)
+    if not paid:
+        logger.warning(
+            "goal reached with no contributors — nothing to pay",
+            season_id=season.id,
+            run_id=run.run_id,
+        )
+        events.emit(session, EventType.GOAL_REACHED, events.Involved(actor_id=None), **data)
+    queued = {"season_id": season.id, "players": len(paid), "candles": snuffed}
+    outbox.enqueue_goal(session, OutboxKind.GOAL_REACHED, queued)
+    logger.info(
+        "goal reached: {candles} candles — {players} contributors get {coins} 🪙 and {item}",
+        candles=snuffed,
+        players=len(paid),
+        coins=goal.contributor_coins,
+        item=goal.contributor_item_key,
+        season_id=season.id,
+        run_id=run.run_id,
+        recipients=[players.describe_player_id(session, p) for p in paid],
+    )
+    return True
+
+
+def _queue_milestone(
+    session: Session, season: SeasonSchedule, goal: GroupGoal, snuffed: int
+) -> None:
+    due = due_milestone(snuffed, goal, _last_queued(session, season.id))
+    if due is None:
+        return
+    queued = {"season_id": season.id, "milestone": due}
+    outbox.enqueue_goal(session, OutboxKind.GOAL_MILESTONE, queued)
+    logger.info(
+        "milestone {milestone} reached — {candles}/{target} candles",
+        milestone=due,
+        candles=snuffed,
+        target=goal.target,
+        season_id=season.id,
+    )
+
+
+def on_game_ended(session: Session, event: LoggedEvent) -> None:
+    if event.event_type not in (EventType.GAME_WON, EventType.GAME_UNSOLVED):
+        return
+    game = session.get(Game, event.game_id) if event.game_id is not None else None
+    found = goal_of(session, game.season_id if game is not None else None)
+    if found is None:
+        return
+    season, run, goal = found
+    if season.status not in (SeasonStatus.ACTIVE, SeasonStatus.CLOSING):
+        return
+    # Serialize concurrent game ends on the season row; everything below is
+    # read after the lock is held (the lock is a no-op on SQLite).
+    session.execute(
+        select(SeasonSchedule)
+        .where(SeasonSchedule.id == season.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    snuffed = candles(session, season.id, goal)
+    if snuffed < goal.target:
+        _queue_milestone(session, season, goal, snuffed)
+    else:
+        settle(session, season, run, event.game_id)
