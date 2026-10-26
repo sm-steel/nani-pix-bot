@@ -88,7 +88,8 @@ def on_activation(session: Session, game: Game, now: datetime, rng: _Rng | None 
             event_day_name=run.event_day.names["EN"],
             game_id=game.id,
         )
-    if run.haunt is None:
+    if run.haunt is None or game.boss_game:
+        # A boss is haunted by BOSS_ORDER, not by a roll.
         return
     drawn = _Recording(rng or _rng())
     twist = roll(run, event_day=game.event_day, rng=drawn)
@@ -147,6 +148,14 @@ def fades(game: Game, twist: HauntTwist) -> bool:
     return not game.boss_game and twist in FADES_AT_LAST
 
 
+def hint_key(twist: HauntTwist, *, boss: bool) -> str:
+    """The i18n key of the twist's hint: a fading twist's normal hint says it
+    lasts until the last stage, which a boss (nothing fades) must not claim."""
+    if boss and twist in FADES_AT_LAST:
+        return f"haunt.kept_hint.{twist.value}"
+    return f"haunt.hint.{twist.value}"
+
+
 def _tanuki(image: Image.Image) -> Image.Image:
     hue, sat, val = image.convert("HSV").split()
     hue = hue.point(lambda h: (h + TANUKI_HUE_STEPS) % 256)
@@ -198,7 +207,7 @@ def announcement(session: Session, game: Game, lang: str, number: int, total: in
         return None
     twist = twists[-1]
     name = i18n.t(f"haunt.twist.{twist.value}", lang)
-    hint = i18n.t(f"haunt.hint.{twist.value}", lang)
+    hint = i18n.t(hint_key(twist, boss=game.boss_game), lang)
     if number == 1:
         # Local import: multipliers imports this module.
         from nani_pix_bot.services.seasons import multipliers

@@ -368,6 +368,27 @@ def test_the_caption_names_a_haunted_twist_its_hint_and_the_multiplier() -> None
     )
 
 
+def test_a_boss_caption_never_says_a_twist_lifts() -> None:
+    live = status.LiveStatus(
+        game_id=7,
+        hard_mode=False,
+        number=5,
+        total=5,
+        remaining=3,
+        limit=3,
+        pot=0,
+        time_left=None,
+        twists=(HauntTwist.KITSUNE_MIRROR, HauntTwist.KYOKOTSU_XRAY),
+        multiplier=6,
+        boss=True,
+    )
+
+    line = status.caption(live, "en").splitlines()[1]
+
+    assert i18n.t("haunt.kept_hint.kyokotsu_xray", "en") in line
+    assert i18n.t("haunt.hint.kyokotsu_xray", "en") not in line
+
+
 def _live_after_repost(session_factory, **fields) -> status.LiveStatus:
     with session_scope(session_factory) as session:
         _players(session)
@@ -416,6 +437,7 @@ def test_a_boss_games_status_names_every_active_twist(session_factory, fake_runs
     live = _live_after_repost(session_factory, current_stage=PixelStage.STAGE_2, boss_game=True)
 
     assert live.twists == (HauntTwist.KITSUNE_MIRROR, HauntTwist.TANUKI_LEAF)
+    assert live.boss is True
 
 
 def test_a_boss_keeps_all_four_twists_in_the_status_on_the_last_stage(

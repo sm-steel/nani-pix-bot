@@ -28,7 +28,7 @@ from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.mascot import Pose
-from nani_pix_bot.services.seasons import modifiers, multipliers
+from nani_pix_bot.services.seasons import haunting, modifiers, multipliers
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -46,6 +46,7 @@ class LiveStatus:
     time_left: timedelta | None
     twists: tuple[HauntTwist, ...] = ()  # the twists on the current image, if any
     multiplier: int = 1  # the Season Coins multiplier of a haunted game
+    boss: bool = False  # the Gashadokuro: its twists never fade
 
 
 @dataclass(frozen=True)
@@ -82,7 +83,9 @@ def caption(live: LiveStatus, lang: str) -> str:
                 "status.haunted",
                 lang,
                 twist=", ".join(i18n.t(f"haunt.twist.{t.value}", lang) for t in live.twists),
-                hint="; ".join(i18n.t(f"haunt.hint.{t.value}", lang) for t in live.twists),
+                hint="; ".join(
+                    i18n.t(haunting.hint_key(t, boss=live.boss), lang) for t in live.twists
+                ),
                 multiplier=live.multiplier,
             )
         )
@@ -123,6 +126,7 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
         time_left=_time_left(game, now),
         twists=() if haunt is None else haunt.twists,
         multiplier=_multiplier(session, game),
+        boss=game.boss_game,
     )
     return _Repost(
         live,

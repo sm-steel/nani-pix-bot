@@ -340,11 +340,19 @@ def test_tile_clue_on_a_boss_stage_applies_every_twist(
 ) -> None:
     game = _haunted_tile_game(session, haunted_game, "tanuki_leaf", PixelStage.STAGE_5)
     game.boss_game = True
+    game.pixel_algorithm = PixelAlgorithm.BOX
     assert game.original_image is not None
+    pixelated = pixelate_service.pixelate(
+        game.original_image, images.stage_width(session, game), PixelAlgorithm.BOX
+    )
+    # The whole clue, not just the open tile: both the original and the
+    # pixelated picture around it wear all four twists.
+    expected = render.reveal_tiles(
+        haunting.apply_twists(game.original_image, haunting.BOSS_ORDER),
+        haunting.apply_twists(pixelated, haunting.BOSS_ORDER),
+        [0],
+        shop.TILE_GRID,
+    )
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, _pose, _costume=None: png)
 
-    clue = _tile_clue(session, game, monkeypatch)
-
-    twisted = haunting.apply_twists(game.original_image, haunting.BOSS_ORDER)
-    expected = Image.open(BytesIO(twisted)).convert("RGB")
-    box = render.tile_box(expected.size, 0, shop.TILE_GRID)
-    assert clue.crop(box).tobytes() == expected.crop(box).tobytes()
+    assert images.render_tile_clue(session, game, 0) == expected

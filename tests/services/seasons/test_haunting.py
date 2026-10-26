@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 
 from nani_pix_bot.models.game import Game
@@ -185,3 +187,26 @@ def test_caption_suffix_is_a_newline_line_or_nothing(session, haunted_game) -> N
     suffix = haunting.caption_suffix(session, haunted_game, "en", number=1, total=5)
     assert suffix.startswith("\n")
     assert "Kitsune illusion" in suffix
+
+
+def test_boss_hints_never_promise_a_clean_last_stage(session, boss_game) -> None:
+    for number in (2, 3, 4):
+        line = haunting.announcement(session, boss_game, "en", number=number, total=5)
+        assert line is not None
+        assert "until the last stage" not in line
+        assert "to the very end" in line
+
+
+def test_hint_key_keeps_the_normal_hint_off_a_boss() -> None:
+    leaf = HauntTwist.TANUKI_LEAF
+    assert haunting.hint_key(leaf, boss=False) == "haunt.hint.tanuki_leaf"
+    assert haunting.hint_key(leaf, boss=True) == "haunt.kept_hint.tanuki_leaf"
+    # The mirror never fades, so its one hint fits both.
+    assert haunting.hint_key(HauntTwist.KITSUNE_MIRROR, boss=True) == "haunt.hint.kitsune_mirror"
+
+
+def test_a_boss_is_not_rolled_at_activation(session, boss_game, log_records) -> None:
+    boss_game.haunt_twist = None
+    haunting.on_activation(session, boss_game, datetime(2026, 10, 27, tzinfo=UTC), FixedRng())
+    assert boss_game.haunt_twist is None
+    assert not any("haunted" in r.message for r in log_records)

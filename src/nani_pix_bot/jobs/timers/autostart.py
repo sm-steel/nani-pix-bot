@@ -1,11 +1,11 @@
-"""Bot-initiated game starting: the 24h idle-autostart timer, and the
+"""Bot-initiated game starting: the 24h idle-autostart timer, the
 probabilistic "overthrow" trigger fired right after a game concludes —
-see the design behind issue #159. Builds on
+see the design behind issue #159 — and the season's Gashadokuro boss game
+once the 100 Candles goal is reached (#471). Builds on
 services/game/autostart.py's pure picking logic; this module owns the
-DB write, JobQueue scheduling, and Telegram posting around it."""
+DB write, JobQueue scheduling, and Telegram posting around it (the claim
+itself is bot_claim.py's, the boss start boss.py's)."""
 
-import enum
-from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from loguru import logger
@@ -14,66 +14,33 @@ from sqlalchemy.orm import Session
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs import reveal
 from nani_pix_bot.jobs.timers._shared import job_log_scope, seconds_until
-from nani_pix_bot.jobs.timers.current_image import post_stage_images
-from nani_pix_bot.jobs.timers.game_timeout import schedule_timeout
-from nani_pix_bot.jobs.timers.inactivity import schedule_inactivity_timers
+from nani_pix_bot.jobs.timers.boss import maybe_start_boss, schedule_boss_start
+from nani_pix_bot.jobs.timers.bot_claim import (
+    IDLE_AUTOSTART_JOB_NAME,
+    AutostartClaim,
+    AutostartTrigger,
+    cancel_idle_autostart,
+    describe_holder,
+    run_bot_autostart,
+)
 from nani_pix_bot.jobs.timers.quiet import quiet_hours_deferred
 from nani_pix_bot.jobs.timers.retry import retry_on_failure
-from nani_pix_bot.jobs.timers.turn_timers import cancel_turn_timers
 from nani_pix_bot.models.enums import EventType
-from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.turn_state import TurnState
-from nani_pix_bot.services import events, i18n, players, quiet_hours, settings
+from nani_pix_bot.services import events, quiet_hours, settings
 from nani_pix_bot.services import game as game_service
-from nani_pix_bot.services.cosmetics import flair
-from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.game import autostart as autostart_service
-from nani_pix_bot.services.reveal import store as reveal_store
-from nani_pix_bot.services.search import tags as anime_tags
-from nani_pix_bot.services.seasons import gate as gate_service
-from nani_pix_bot.services.seasons import haunting
-
-IDLE_AUTOSTART_JOB_NAME = "idle-autostart"
 
 
-class AutostartTrigger(enum.Enum):
-    OVERTHROW = "overthrow"
-    IDLE = "idle"
-
-
-@dataclass(frozen=True)
-class _FirstTurnPost:
-    """What the group announcement needs, captured while the staging
-    game's session was still open — post_stage_images runs after that
-    session (and its commit) has already closed, same pattern as
-    commands/dm_start/preview.py's _FirstStagePost. Every autostart game
-    is hard mode now, so this carries the screenshot pair's two
-    pixelated photos rather than one."""
-
-    photo_a: bytes
-    photo_b: bytes
-    caption: str
-
-
-@dataclass(frozen=True)
-class _AutostartClaim:
-    """Everything run_bot_autostart and _build_first_turn_post need
-    beyond a live pick, bundled into one parameter so neither function's
-    own signature grows past qlty's too-many-parameters threshold.
-
-    `expected_next_starter_id` is turn_state.next_starter_id as the
-    caller last observed it before deciding to attempt this autostart —
-    see run_bot_autostart's docstring for why that (not "must be None")
-    is the actual race-safety invariant."""
-
-    trigger: AutostartTrigger
-    dethroned_winner_name: str | None
-    expected_next_starter_id: int | None = None
-
-
-def schedule_idle_autostart(job_queue: JobQueue | None, turn_state: TurnState) -> None:
+def schedule_idle_autostart(
+    job_queue: JobQueue | None, turn_state: TurnState, *, check_boss: bool = True
+) -> None:
+    """Arms the 24h idle-autostart backstop when the turn is open — and,
+    unless `check_boss` is off, a boss check right away: an open turn with
+    no game running is when a due Gashadokuro starts (a /stop'd boss, a
+    bare /skip, an expired turn). The check job itself decides whether a
+    boss is due, so this stays session-free for its many callers."""
     if job_queue is None:
         return
     cancel_idle_autostart(job_queue)
@@ -82,14 +49,8 @@ def schedule_idle_autostart(job_queue: JobQueue | None, turn_state: TurnState) -
     delay = seconds_until(turn_state.autostart_deadline_at)
     logger.debug("scheduling idle-autostart in {delay:.0f}s", delay=delay)
     job_queue.run_once(idle_autostart_job_callback, when=delay, name=IDLE_AUTOSTART_JOB_NAME)
-
-
-def cancel_idle_autostart(job_queue: JobQueue | None) -> None:
-    if job_queue is None:
-        return
-    logger.debug("canceling idle-autostart timer")
-    for job in job_queue.get_jobs_by_name(IDLE_AUTOSTART_JOB_NAME):
-        job.schedule_removal()
+    if check_boss:
+        schedule_boss_start(job_queue)
 
 
 def _autostart_gate_reason(session: Session) -> str | None:
@@ -125,7 +86,7 @@ async def idle_autostart_job_callback(context: ContextTypes.DEFAULT_TYPE) -> Non
             logger.info("idle-autostart fired but {reason} — not starting", reason=gate_reason)
             return
 
-    claim = _AutostartClaim(trigger=AutostartTrigger.IDLE, dethroned_winner_name=None)
+    claim = AutostartClaim(trigger=AutostartTrigger.IDLE, dethroned_winner_name=None)
     started = await run_bot_autostart(context, session_factory, claim)
     if started:
         return
@@ -141,7 +102,7 @@ async def idle_autostart_job_callback(context: ContextTypes.DEFAULT_TYPE) -> Non
             "idle-autostart pick failed — retrying in {delay}",
             delay=game_service.AUTOSTART_RETRY_DELAY,
         )
-        schedule_idle_autostart(context.job_queue, turn_state)
+        schedule_idle_autostart(context.job_queue, turn_state, check_boss=False)
 
 
 async def maybe_overthrow(
@@ -153,29 +114,44 @@ async def maybe_overthrow(
 ) -> None:
     """Called right after a game concludes — a win (`winner_id` set) or
     an unsolved/timeout ending (`winner_id` None) — from every one of
-    this feature's game-ending call sites. Rolls OVERTHROW_PROBABILITY
-    once; on a hit, attempts to claim the next game itself, dethroning
-    `winner_id` if one was given (they keep their win credit regardless
-    — only the next-turn privilege moves). On a miss, a disabled gate,
-    or a failed pick, falls through to (re)arming the 24h idle-autostart
-    backstop from whatever the normal outcome already committed."""
-    claimed = False
-    if _roll_overthrow(session_factory, winner_id):
-        claim = _AutostartClaim(
-            trigger=AutostartTrigger.OVERTHROW,
-            dethroned_winner_name=winner_name,
-            expected_next_starter_id=winner_id,
-        )
-        claimed = await run_bot_autostart(context, session_factory, claim)
-    if claimed:
-        if winner_id is not None:
-            _record_overthrow(session_factory, winner_id)
+    this feature's game-ending call sites. A due Gashadokuro boss comes
+    first (maybe_start_boss); when it starts or is scheduled, there is no
+    overthrow roll. Otherwise rolls OVERTHROW_PROBABILITY once; on a hit,
+    attempts to claim the next game itself, dethroning `winner_id` if one
+    was given (they keep their win credit regardless — only the next-turn
+    privilege moves). On a miss, a disabled gate, or a failed pick, falls
+    through to (re)arming the 24h idle-autostart backstop from whatever
+    the normal outcome already committed."""
+    boss = await maybe_start_boss(context, session_factory)
+    if not boss and await _try_overthrow(context, session_factory, winner_id, winner_name):
         return
 
     with session_scope(session_factory) as session:
         turn_state = game_service.get_turn_state(session)
         if turn_state is not None:
-            schedule_idle_autostart(context.job_queue, turn_state)
+            # The boss was just tried: only the backstop is left to arm.
+            schedule_idle_autostart(context.job_queue, turn_state, check_boss=False)
+
+
+async def _try_overthrow(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory,
+    winner_id: int | None,
+    winner_name: str | None,
+) -> bool:
+    """The overthrow roll and, on a hit, the claim. True when it claimed."""
+    if not _roll_overthrow(session_factory, winner_id):
+        return False
+    claim = AutostartClaim(
+        trigger=AutostartTrigger.OVERTHROW,
+        dethroned_winner_name=winner_name,
+        expected_next_starter_id=winner_id,
+    )
+    if not await run_bot_autostart(context, session_factory, claim):
+        return False
+    if winner_id is not None:
+        _record_overthrow(session_factory, winner_id)
+    return True
 
 
 def _record_overthrow(session_factory, winner_id: int) -> None:
@@ -192,13 +168,6 @@ def _record_overthrow(session_factory, winner_id: int) -> None:
         )
 
 
-def _describe_holder(session: Session, next_starter_id: int | None) -> str:
-    """Who holds the turn, for a log line — `nobody (turn open)` for None."""
-    if next_starter_id is None:
-        return "nobody (turn open)"
-    return players.describe_player_id(session, next_starter_id)
-
-
 def _roll_overthrow(session_factory, winner_id: int | None) -> bool:
     """maybe_overthrow's gate checks plus the roll itself, logging the
     outcome either way — a skipped or missed roll is as much a part of
@@ -209,7 +178,7 @@ def _roll_overthrow(session_factory, winner_id: int | None) -> bool:
             settings.get_quiet_hours(session), datetime.now(UTC)
         ):
             gate_reason = "quiet hours"
-        holder = _describe_holder(session, winner_id)
+        holder = describe_holder(session, winner_id)
     if gate_reason is not None:
         logger.info("overthrow roll skipped after a game ended — {reason}", reason=gate_reason)
         return False
@@ -223,185 +192,15 @@ def _roll_overthrow(session_factory, winner_id: int | None) -> bool:
     return hit
 
 
-def _dethroned_label(session: Session, claim: _AutostartClaim) -> str:
-    """The overthrown winner's name for the group caption, with their flair."""
-    name = claim.dethroned_winner_name or ""
-    if claim.expected_next_starter_id is None:
-        return name
-    return flair.named(session, claim.expected_next_starter_id, name)
-
-
-def _build_first_turn_post(
-    session: Session,
-    context: ContextTypes.DEFAULT_TYPE,
-    game: Game,
-    lang: str,
-    claim: _AutostartClaim,
-) -> _FirstTurnPost:
-    """Every autostart game is hard mode now — activate_game() must run
-    first (it's what sets game.hard_mode_turn = 1), since
-    hard_mode_turn_width()/hard_mode_turn_progress() below both read
-    that field. Contrast the old stage-based version of this function,
-    where the equivalent pixelation-width lookup (stage_config, keyed by
-    STAGE_ORDER[0]) didn't depend on activate_game() having run yet."""
-    game_service.activate_game(session, game)
-    if game.hard_mode_image_a is None or game.hard_mode_image_b is None:
-        raise RuntimeError("game.hard_mode_image_a/_b is None in _build_first_turn_post")
-    width = game_service.hard_mode_turn_width(game)
-    overthrow = claim.trigger is AutostartTrigger.OVERTHROW
-    pixelated_a = stage_cosmetics.stage_png(
-        session, game, game.hard_mode_image_a, width, overthrow=overthrow
-    )
-    pixelated_b = stage_cosmetics.stage_png(
-        session, game, game.hard_mode_image_b, width, overthrow=overthrow
-    )
-    progress = game_service.hard_mode_turn_progress(game)
-    caption_kwargs = {
-        "turn": progress.number,
-        "total": progress.total,
-        "remaining": progress.remaining,
-        "limit": progress.limit,
-    }
-    if claim.trigger is AutostartTrigger.IDLE:
-        caption = i18n.t("dm_start.hard_mode_game_started_caption_idle", lang, **caption_kwargs)
-    elif claim.dethroned_winner_name is not None:
-        caption = i18n.t(
-            "dm_start.hard_mode_game_started_caption_overthrow_winner",
-            lang,
-            winner=_dethroned_label(session, claim),
-            **caption_kwargs,
-        )
-    else:
-        caption = i18n.t(
-            "dm_start.hard_mode_game_started_caption_overthrow_open", lang, **caption_kwargs
-        )
-    if game.hard_mode_clue_discount:
-        caption += "\n" + i18n.t(
-            "hard_mode.discount_line", lang, percent=game.hard_mode_clue_discount
-        )
-    caption += haunting.caption_suffix(
-        session, game, lang, number=progress.number, total=progress.total
-    )
-    caption += game_service.game_id_line(game.id, lang)
-    schedule_timeout(context.job_queue, game)
-    schedule_inactivity_timers(context.job_queue, game)
-    return _FirstTurnPost(photo_a=pixelated_a, photo_b=pixelated_b, caption=caption)
-
-
-async def run_bot_autostart(
-    context: ContextTypes.DEFAULT_TYPE, session_factory, claim: _AutostartClaim
-) -> bool:
-    """The shared "bot claims a game" routine both triggers delegate to
-    once a valid pick is in hand. Returns whether a game was actually
-    started. Deliberately doesn't reuse commands/dm_start/preview.py's
-    private _activate_and_stage_first_post(): that function lives inside
-    a DM-flow module jobs/ shouldn't import from, and a bot-started game
-    never passes through SETUP/setup-abandon the way a human one does
-    (no cancel_setup_abandon call here — none was ever scheduled).
-
-    `claim.expected_next_starter_id` is what the caller already knew
-    `turn_state.next_starter_id` to be when it decided to attempt this
-    autostart — None for idle_autostart_job_callback (it only fires when
-    the turn is open), or the about-to-be-dethroned winner_id for
-    maybe_overthrow (None too, for an unsolved/timeout ending that left
-    the turn open). It is deliberately *not* "must be None": overthrowing
-    a winner who still legitimately holds the turn is this feature's
-    whole point, so the real invariant to guard is "nothing changed the
-    turn's ownership while gather_pick()'s several real HTTP round-trips
-    were in flight" — e.g. a human's /skip @user landing mid-flight and
-    designating someone gather_pick() never knew about. activate_game()
-    unconditionally clears next_starter_id, so proceeding on a mismatch
-    would silently steal a turn nobody agreed to give up."""
-    search_client = context.bot_data["search_client"]
-    tmdb_client = context.bot_data["tmdb_client"]
-    tenrai_client = context.bot_data["tenrai_client"]
-    with session_scope(session_factory) as session:
-        gate = gate_service.active_gate(session)
-    pick = await autostart_service.gather_pick(search_client, tmdb_client, tenrai_client, gate=gate)
-    if pick is None:
-        logger.warning(
-            "bot autostart ({trigger}) found no usable pick after {attempts} attempt(s) — "
-            "skipping this firing",
-            trigger=claim.trigger.value,
-            attempts=autostart_service.AUTOSTART_ATTEMPT_LIMIT,
-            gated=gate is not None,
-        )
-        return False
-
-    bot_id = context.bot.id
-    with session_scope(session_factory) as session:
-        if game_service.active_or_setup_game(session) is not None:
-            logger.warning(
-                "bot autostart ({trigger}) aborted — a game was started in the meantime",
-                trigger=claim.trigger.value,
-            )
-            return False
-        turn_state = game_service.get_turn_state(session)
-        actual_next_starter_id = turn_state.next_starter_id if turn_state is not None else None
-        if actual_next_starter_id != claim.expected_next_starter_id:
-            logger.warning(
-                "bot autostart ({trigger}) aborted — turn ownership changed in the meantime "
-                "(expected the turn held by {expected_holder}, now {holder})",
-                trigger=claim.trigger.value,
-                expected_holder=_describe_holder(session, claim.expected_next_starter_id),
-                holder=_describe_holder(session, actual_next_starter_id),
-            )
-            return False
-        lang = settings.get_language(session)
-        players.get_or_create_player(
-            session, bot_id, username=context.bot_data.get("bot_username"), grant=False
-        )
-        game = game_service.create_setup_game(
-            session, starter_id=bot_id, entry=f"bot autostart ({claim.trigger.value})"
-        )
-        game_service.stage_result(game, pick.anime.result, source=pick.anime.source)
-        if pick.anime.tags:
-            game.anime_tags = anime_tags.to_json(list(pick.anime.tags))
-            logger.info(
-                "season gate: stored tags for {pick!r}",
-                pick=pick.anime.result,
-                tags=[t.name for t in pick.anime.tags],
-                game_id=game.id,
-            )
-        # Every autostart pick is hard mode now — no `if` needed.
-        # original_image stays None; the screenshot pair lives in
-        # hard_mode_image_a/_b instead.
-        game.hard_mode = True
-        game.hard_mode_clue_discount = game_service.next_clue_discount(session)
-        logger.info(
-            "HARD MODE clue discount frozen at {percent}%",
-            percent=game.hard_mode_clue_discount,
-            game_id=game.id,
-        )
-        game.hard_mode_image_a = pick.screenshot.image_bytes_a
-        game.hard_mode_image_b = pick.screenshot.image_bytes_b
-        game.shown_screenshot_urls = [pick.screenshot.url_a, pick.screenshot.url_b]
-        game.screenshot_source = pick.screenshot.provider
-        setattr(game, pick.screenshot.provider.id_attr_name, pick.screenshot.provider_id)
-        game_service.clear_turn_timers(session)
-        first_turn_post = _build_first_turn_post(session, context, game, lang, claim)
-        reveal_store.reserve(
-            session, game.id, reveal_store.pick_effect(), reveal_store.pick_image()
-        )
-        game_service.clear_autostart(session)
-        game_id = game.id
-
-    cancel_turn_timers(context.job_queue)
-    cancel_idle_autostart(context.job_queue)
-    logger.info(
-        "claimed by bot autostart ({trigger}) — anime source={source}, "
-        "screenshot provider={provider}",
-        trigger=claim.trigger.value,
-        source=pick.anime.source,
-        provider=pick.screenshot.provider,
-        gated=gate is not None,
-        game_id=game_id,
-    )
-    reveal.start_pregeneration(context.application, game_id)
-    await post_stage_images(
-        context,
-        session_factory,
-        photos=(first_turn_post.photo_a, first_turn_post.photo_b),
-        caption=first_turn_post.caption,
-    )
-    return True
+__all__ = [
+    "IDLE_AUTOSTART_JOB_NAME",
+    "AutostartClaim",
+    "AutostartTrigger",
+    "cancel_idle_autostart",
+    "idle_autostart_job_callback",
+    "maybe_overthrow",
+    "maybe_start_boss",
+    "run_bot_autostart",
+    "schedule_boss_start",
+    "schedule_idle_autostart",
+]

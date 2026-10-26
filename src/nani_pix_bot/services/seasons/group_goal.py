@@ -253,6 +253,10 @@ def _due_season(session: Session, *, lock: bool = False) -> SeasonSchedule | Non
 
 
 def boss_due(session: Session) -> bool:
+    """Whether the Gashadokuro should start: a season is ACTIVE, its run has a
+    group goal that is settled (reached), and it has no boss game in any
+    status. A /stop'd boss is deleted, so it is due again; a finished one is
+    not. A plain read: mark_boss re-checks under the season lock."""
     return _due_season(session) is not None
 
 

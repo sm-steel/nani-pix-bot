@@ -590,7 +590,17 @@ src/nani_pix_bot/
                    #                      around services/game/autostart.py's
                    #                      pure picking logic; see
                    #                      MECHANICS.md's "Bot-initiated
-                   #                      games" section
+                   #                      games" section; every ending
+                   #                      tries boss.py first
+                   #   bot_claim.py       the shared "Nani Pix claims a
+                   #                      game" routine (gathered pick ->
+                   #                      ACTIVE game + first post):
+                   #                      HARD MODE for idle/overthrow, a
+                   #                      normal 5-stage game for the boss
+                   #   boss.py            the Gashadokuro boss start
+                   #                      (maybe_start_boss) and its
+                   #                      boss-start check job; see
+                   #                      MECHANICS.md's "Haunted rounds"
                    #   mal_link_expiry.py the 10min pending-/linkmal-
                    #                      attempt expiry timer — mirrors
                    #                      setup_abandon.py's shape (a

@@ -1198,6 +1198,8 @@ While the window is active:
   toward any of their durations. A `/guess` at 03:00 with quiet hours
   23:00–08:00 puts the next 6h auto-advance at 14:00, not 09:00; a
   2-day timeout spanning two nights runs two nights longer.
+- **No Gashadokuro boss start** (see "Haunted rounds") — it waits for the
+  window's end.
 - **No overthrow roll** after a win (see "Bot-initiated games" above) —
   the winner simply gets the turn, and the idle auto-start backstop
   (itself frozen and held back) remains.
@@ -2372,7 +2374,9 @@ pays and gates exactly as before.
   group goal's `group_goal.mark_boss` before activation) makes every stage
   haunted and **stacks** the twists: stage N wears the first N of
   `haunting.BOSS_ORDER` (mirror, leaf, ghost double, X-ray), so stages 4 and 5
-  wear all four, and nothing fades. `games.haunt_twist` is ignored.
+  wear all four, and nothing fades. A boss is never rolled at activation
+  (`haunting.on_activation` skips the roll and its log), so
+  `games.haunt_twist` stays empty.
   `haunting.twists_for_stage` returns that tuple (one stored twist for a
   haunted game, none otherwise). `haunting.is_haunted(game)` is true for a
   stored twist or a boss game and is what the multipliers and the `haunted`
@@ -2386,12 +2390,32 @@ pays and gates exactly as before.
   `{season_id, game_id}` and logs INFO "the Gashadokuro rises — boss game";
   when no boss is due it only logs a WARNING. Activation logs and records
   `boss_game` (the `ACTIVE` line and the `GAME_ACTIVATED` event data).
+- **Who starts the boss.** Nani Pix, through `jobs/timers/boss.py`'s
+  `maybe_start_boss` (trigger `boss`). Every game ending goes through
+  `maybe_overthrow`, which tries the boss first and skips the overthrow roll
+  when the boss starts or is scheduled. An open turn also tries it:
+  `schedule_idle_autostart` arms a `boss-start` check job right away (a
+  `/stop`'d boss, a bare `/skip`, an expired turn), and startup arms one while
+  a boss is due. The boss takes the turn the way an overthrow does (the game's
+  winner keeps full credit, with no `overthrown` event), picks from the season
+  gate, and starts a **normal** 5-stage game (`hard_mode=False`, the pair's
+  first screenshot as `original_image`), calling `mark_boss` before
+  `activate_game`. Stage 1 goes up through the normal stage-post path with
+  `dm_start.boss_game_started_caption` (×XP and ×🪙 from `multipliers`) plus
+  the haunt line. It ignores `autostart_enabled` and honours `games_enabled`;
+  a game already running holds it until that game ends (INFO); quiet hours
+  hold it until the window ends (INFO, the check job re-armed for then); a
+  failed pick retries in `AUTOSTART_RETRY_DELAY` (INFO); a game started, or
+  the turn reassigned, while the pick was gathered aborts it (WARNING).
 - **Captions.** `haunting.caption_suffix` appends a line (a newline and the
   text) to the stage caption: `haunt.started` on stage 1 (twist name, hint and
   the coin multiplier), `haunt.changed` on a boss stage that adds a twist
   (naming the one it adds), `haunt.lifted` on a haunted game's last stage when
   its fading twist clears (never on a boss). Twist names and hints are i18n
-  keys `haunt.twist.*` and `haunt.hint.*`. Other stages get no line.
+  keys `haunt.twist.*` and `haunt.hint.*`; on a boss, the fading twists'
+  hints (which say "until the last stage") are swapped for
+  `haunt.kept_hint.*` (`haunting.hint_key`), in captions and `/status`
+  alike. Other stages get no line.
   `/status` names every twist on the current image in its `status.haunted`
   line (names joined with commas, hints with semicolons).
 - **Unknown stored twist.** A `haunt_twist` this release does not know logs a
