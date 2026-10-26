@@ -22,7 +22,7 @@ NIGHT_TINT = 0.5
 EDGE_COLOR = (8, 8, 24)
 EDGE_DARK = 0.25
 # Moonlight: screened in from the moon (fractions of w and h), strongest at the rim.
-MOON = (0.05, 0.07)
+MOON = (0.07, 0.11)
 BEAM = (190, 210, 255)
 BEAM_RADIUS = 0.75
 BEAM_STRENGTH = 0.18 * 2.2
@@ -32,6 +32,10 @@ GRID = (64, 36)
 CORNER_WIDTH = 0.325
 MIN_CORNER_PX = 4
 CORNERS = (("moonlit/top_left.png", False), ("moonlit/top_right.png", True))
+# The moon's corner sits this fraction of the short side in from the top and left:
+# just past a stage frame's border (3% of the short side), and the sprite's own
+# margin around the moon clears an ofuda strip's overhang too.
+MOON_INSET = 0.035
 # Per-size layers kept: stage images come in a handful of widths at most.
 LAYER_CACHE_SIZE = 4
 
@@ -105,10 +109,11 @@ def _corner(name: str, width: int) -> Image.Image | None:
 
 def moonlit(image: Image.Image) -> Image.Image:
     graded = _grade(image.convert("RGB"))
-    w, _ = graded.size
+    w, h = graded.size
+    inset = round(min(w, h) * MOON_INSET)
     base = graded.convert("RGBA")
     for name, right in CORNERS:
         art = _corner(name, round(w * CORNER_WIDTH))
         if art is not None:
-            base.alpha_composite(art, (w - art.width if right else 0, 0))
+            base.alpha_composite(art, (w - art.width, 0) if right else (inset, inset))
     return base.convert("RGB")

@@ -86,6 +86,17 @@ def test_the_top_corners_have_art_and_the_bottom_ones_do_not() -> None:
     assert not _differs(graded, out, (1280 - size, 720 - size // 2, 1280, 720))
 
 
+def test_the_moon_sits_clear_of_a_frame_border() -> None:
+    # a stage frame covers about 3% of the short side (an ofuda strip a bit more)
+    grey = Image.new("RGB", (1280, 720), (128, 128, 128))
+    out = moonlit.moonlit(grey)
+    graded = moonlit._grade(grey)
+    inset = round(720 * moonlit.MOON_INSET)
+    assert inset >= 720 * 0.03
+    assert not _differs(graded, out, (0, 0, inset, 720))
+    assert not _differs(graded, out, (0, 0, 1280 - int(1280 * moonlit.CORNER_WIDTH), inset))
+
+
 def test_a_missing_sprite_is_logged_once_and_the_stage_still_renders(
     monkeypatch: pytest.MonkeyPatch, log_records
 ) -> None:
