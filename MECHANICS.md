@@ -2312,12 +2312,18 @@ season discount.
 
 ### Season style
 
-A run may name a `style` (`plain` or `watercolor`). For a game tagged to that
+A run may name a `style` (`plain`, `watercolor` or `moonlit`). For a game tagged to that
 season it is drawn on the **pixelated** stage image and under the host's
 frame, so the order is **pixelate -> style -> frame**
 (`services/cosmetics/stage.py`). It applies to stage posts and the `/status`
 repost. It does not apply to the reveal video, the host's DM preview or clue
 images.
+
+`moonlit` is a night grade: an indigo tint and a darkened rim, moonlight
+streaming in from the moon at the top left, and art in the two top corners
+(the moon with a tiny witch on a broom; bats and a spider). The centre of the
+image is left untouched, and the bottom corners get no art. A missing art file
+is logged and the stage posts without the corners.
 
 ### Objectives
 

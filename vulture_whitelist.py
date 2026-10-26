@@ -20,7 +20,6 @@ from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 from nani_pix_bot.services.shapes import bone_outline
-from nani_pix_bot.services.sprites import sprite_height
 
 if TYPE_CHECKING:
     from loguru import Record
@@ -49,7 +48,6 @@ _kept = (
     Reward.ofuda,
     # Halloween: wired by P7 (#472)
     bone_outline,
-    sprite_height,
 )
 
 if TYPE_CHECKING:

@@ -7,7 +7,10 @@ from PIL import Image
 from nani_pix_bot.services import sprites
 
 MAX_SPRITE_BYTES = 400 * 1024
-COMMITTED: tuple[str, ...] = ()  # every task that commits art adds its file names here
+COMMITTED: tuple[str, ...] = (
+    "moonlit/top_left.png",
+    "moonlit/top_right.png",
+)  # every task that commits art adds its file names here
 
 
 @pytest.fixture

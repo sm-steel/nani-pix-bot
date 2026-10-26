@@ -1055,7 +1055,9 @@ src/nani_pix_bot/
                    #                 BONE_FOUND DM); ACTIVE/CLOSING only
                    #   styles.py     season visual styles on a stage image
                    #                 (style_for, apply_style); watercolor.py
-                   #                 is the watercolor drawing
+                   #                 is the watercolor drawing; moonlit.py
+                   #                 the moonlit grade plus its top-corner
+                   #                 art (assets/sprites/moonlit/)
                    #   season_history.py  the History one season's objectives
                    #                 and season achievements read (its games
                    #                 + tips in its dates); season-owned events

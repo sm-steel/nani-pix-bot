@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.seasons.definition import SeasonRun
-from nani_pix_bot.services.seasons import modifiers, watercolor
+from nani_pix_bot.services.seasons import modifiers, moonlit, watercolor
 
 
 def _plain(image: Image.Image) -> Image.Image:
@@ -20,7 +20,7 @@ def _plain(image: Image.Image) -> Image.Image:
 
 
 STYLES: Mapping[str, Callable[[Image.Image], Image.Image]] = MappingProxyType(
-    {"plain": _plain, "watercolor": watercolor.watercolor}
+    {"plain": _plain, "watercolor": watercolor.watercolor, "moonlit": moonlit.moonlit}
 )
 
 
