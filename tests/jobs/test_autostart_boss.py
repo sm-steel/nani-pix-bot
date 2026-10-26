@@ -1,16 +1,21 @@
 """The Gashadokuro boss game: Nani Pix starts it herself once the season's
-100 Candles goal is reached (jobs/timers/autostart.py's maybe_start_boss)."""
+100 Candles goal is reached (jobs/timers/boss.py's maybe_start_boss)."""
 
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import undefer
+from telegram import Update
+from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands import gamesenabled
+from nani_pix_bot.commands.game_flow import stop as stop_module
+from nani_pix_bot.commands.helpers.keyboards import STOP_CONFIRM_CALLBACK_DATA
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers import autostart as autostart_timers
 from nani_pix_bot.jobs.timers import boss as boss_timers
@@ -25,6 +30,7 @@ from nani_pix_bot.services import events, i18n, settings
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.game import autostart as autostart_service
 from nani_pix_bot.services.quiet_hours import QuietHours
+from nani_pix_bot.services.settings import stage_config
 from tests.frames import frame_bytes
 from tests.jobs.test_autostart import _fake_pick, _make_context
 from tests.seasons_fixtures import STARTER, WINNER
@@ -88,6 +94,26 @@ def _settle(session_factory, season_id: int) -> None:
         )
 
 
+def _light_last_candle(session_factory, season_id: int) -> int:
+    """Nine finished season games, then a tenth won for real (force_win: the
+    wins counter, the turn handed to the winner, GAME_WON reaching the goal
+    of 10). Returns that game's id."""
+    with session_scope(session_factory) as session:
+        for status in [GameStatus.WON] * 9 + [GameStatus.ACTIVE]:
+            game = Game(
+                starter_id=STARTER,
+                status=status,
+                winner_id=WINNER if status is GameStatus.WON else None,
+                current_stage=PixelStage.STAGE_1,
+                title_english="Clannad",
+                season_id=season_id,
+            )
+            session.add(game)
+            session.flush()
+        game_service.force_win(session, game, winner_id=WINNER)
+        return game.id
+
+
 def _boss(session_factory) -> Game | None:
     with session_factory() as session:
         stmt = select(Game).where(Game.boss_game.is_(True)).options(undefer(Game.original_image))
@@ -124,26 +150,7 @@ def _sent(context: ContextTypes.DEFAULT_TYPE) -> AsyncMock:
 async def test_boss_starts_after_the_game_that_lit_the_last_candle(
     session_factory, gather, log_records
 ) -> None:
-    season_id = _world(session_factory)
-    with session_scope(session_factory) as session:
-        for _ in range(10):
-            game = Game(
-                starter_id=STARTER,
-                status=GameStatus.WON,
-                winner_id=WINNER,
-                current_stage=PixelStage.STAGE_1,
-                title_english="Clannad",
-                season_id=season_id,
-            )
-            session.add(game)
-            session.flush()
-        events.emit(
-            session,
-            EventType.GAME_WON,
-            events.Involved(actor_id=WINNER, subject_id=STARTER, game_id=game.id),
-            stage=1,
-            hard_mode=False,
-        )
+    _light_last_candle(session_factory, _world(session_factory))
     context = _context(session_factory)
 
     await _game_ended(context, session_factory)
@@ -153,11 +160,24 @@ async def test_boss_starts_after_the_game_that_lit_the_last_candle(
     assert boss.status == GameStatus.ACTIVE
     assert boss.hard_mode is False
     assert boss.current_stage == game_service.STAGE_ORDER[0]
-    assert len(game_service.STAGE_ORDER) == 5
     assert boss.starter_id == BOT_ID
     assert boss.original_image == frame_bytes(3)
     caption = _sent(context).call_args.kwargs["caption"]
-    assert caption.startswith(i18n.t("dm_start.boss_game_started_caption", "en", xp=2, coins=6))
+    with session_factory() as session:
+        limit = stage_config.get_stage_config(session, boss.current_stage).wrong_guess_limit
+    expected = i18n.t(
+        "dm_start.boss_game_started_caption",
+        "en",
+        xp=2,
+        coins=6,
+        stage=1,
+        total=len(game_service.STAGE_ORDER),
+        remaining=limit,
+        limit=limit,
+    )
+    # The brief's text, then the stage line every first post carries.
+    assert caption.startswith(expected)
+    assert "📸 Stage 1/" in expected
     started = [r for r in log_records if "claimed by bot autostart (boss)" in r.message]
     assert started[0].level == "INFO"
 
@@ -180,7 +200,7 @@ async def test_boss_starts_with_autostart_disabled(session_factory, gather) -> N
         assert settings.get_autostart_enabled(session) is False
     context = _context(session_factory)
 
-    started = await autostart_timers.maybe_start_boss(context, session_factory)
+    started = await boss_timers.maybe_start_boss(context, session_factory)
 
     assert started is True
     assert _boss(session_factory) is not None
@@ -191,7 +211,7 @@ async def test_no_boss_when_games_are_disabled(session_factory, gather, log_reco
     _settle(session_factory, _world(session_factory, games_enabled=False))
     context = _context(session_factory)
 
-    assert await autostart_timers.maybe_start_boss(context, session_factory) is False
+    assert await boss_timers.maybe_start_boss(context, session_factory) is False
 
     assert _boss(session_factory) is None
     line = next(r for r in log_records if "boss game due but" in r.message)
@@ -207,7 +227,7 @@ async def test_boss_held_until_quiet_hours_end(
         settings.set_quiet_hours(session, quiet_now)
     context = _context(session_factory)
 
-    assert await autostart_timers.maybe_start_boss(context, session_factory) is True
+    assert await boss_timers.maybe_start_boss(context, session_factory) is True
 
     assert _boss(session_factory) is None
     (job,) = _boss_jobs(context)
@@ -220,7 +240,7 @@ async def test_failed_boss_pick_retries_in_an_hour(session_factory, gather, log_
     gather.append(None)
     context = _context(session_factory)
 
-    assert await autostart_timers.maybe_start_boss(context, session_factory) is True
+    assert await boss_timers.maybe_start_boss(context, session_factory) is True
 
     assert _boss(session_factory) is None
     (job,) = _boss_jobs(context)
@@ -243,7 +263,7 @@ async def test_boss_start_aborts_when_a_human_game_started(
     monkeypatch.setattr(autostart_service, "gather_pick", slow_gather_pick)
     context = _context(session_factory)
 
-    assert await autostart_timers.maybe_start_boss(context, session_factory) is False
+    assert await boss_timers.maybe_start_boss(context, session_factory) is False
 
     assert _boss(session_factory) is None
     _sent(context).assert_not_awaited()
@@ -256,9 +276,7 @@ async def test_a_human_game_holds_the_boss(session_factory, gather, log_records)
     with session_scope(session_factory) as session:
         game_service.create_setup_game(session, starter_id=WINNER)
 
-    assert await autostart_timers.maybe_start_boss(_context(session_factory), session_factory) is (
-        False
-    )
+    assert await boss_timers.maybe_start_boss(_context(session_factory), session_factory) is (False)
 
     assert _boss(session_factory) is None
     line = next(r for r in log_records if "boss game due but" in r.message)
@@ -268,17 +286,30 @@ async def test_a_human_game_holds_the_boss(session_factory, gather, log_records)
 async def test_a_stopped_boss_starts_again(session_factory, gather) -> None:
     _settle(session_factory, _world(session_factory, holder=None))
     context = _context(session_factory)
-    await autostart_timers.maybe_start_boss(context, session_factory)
-    first = _boss(session_factory)
-    assert first is not None
-    with session_scope(session_factory) as session:  # as /stop does
-        session.delete(session.get(Game, first.id))
-        turn_state = game_service.set_next_starter(session, None, reason="boss stopped")
+    await boss_timers.maybe_start_boss(context, session_factory)
+    assert _boss(session_factory) is not None
+    raw = cast(MagicMock, context)
+    raw.bot.send_message = AsyncMock()
+    raw.bot.get_chat_member = AsyncMock(
+        return_value=MagicMock(status=ChatMemberStatus.ADMINISTRATOR)
+    )
+    armed_after_announce: list[bool] = []
+    raw.job_queue.run_once.side_effect = lambda *a, **kw: armed_after_announce.append(
+        kw.get("name") != boss_timers.BOSS_START_JOB_NAME or raw.bot.send_message.await_count > 0
+    )
+    update = MagicMock()
+    update.callback_query.data = STOP_CONFIRM_CALLBACK_DATA
+    update.callback_query.from_user.id = WINNER  # a group admin
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
 
-    autostart_timers.schedule_idle_autostart(context.job_queue, turn_state)
+    await stop_module.stop_callback_handler(cast(Update, update), context)
+
+    assert _boss(session_factory) is None
     (job,) = _boss_jobs(context)
     assert job.kwargs["when"] == 0
-    context.job = None
+    assert all(armed_after_announce)  # the check went in after "stopped"
+    raw.job = None
     await boss_timers.boss_start_job_callback(context)
 
     second = _boss(session_factory)
@@ -289,41 +320,64 @@ async def test_a_stopped_boss_starts_again(session_factory, gather) -> None:
 
 
 async def test_winner_keeps_credit_when_the_boss_takes_the_turn(session_factory, gather) -> None:
-    season_id = _world(session_factory)
-    with session_scope(session_factory) as session:
-        won = Game(
-            starter_id=STARTER,
-            status=GameStatus.WON,
-            winner_id=WINNER,
-            current_stage=PixelStage.STAGE_1,
-            title_english="Clannad",
-            season_id=season_id,
-        )
-        session.add(won)
-        session.flush()
-        won_id = won.id
-        wins_before = session.get_one(Player, WINNER).wins
-    _settle(session_factory, season_id)
+    won_id = _light_last_candle(session_factory, _world(session_factory, holder=None))
+    with session_factory() as session:
+        assert session.get_one(Player, WINNER).wins == 1
+        turn_state = game_service.get_turn_state(session)
+        assert turn_state is not None
+        assert turn_state.next_starter_id == WINNER  # the win handed them the turn
 
     await _game_ended(_context(session_factory), session_factory)
 
     with session_factory() as session:
-        game = session.get(Game, won_id)
+        game = session.get_one(Game, won_id)
         assert game.status == GameStatus.WON
         assert game.winner_id == WINNER
-        assert session.get_one(Player, WINNER).wins == wins_before
+        assert session.get_one(Player, WINNER).wins == 1
         overthrown = select(EventLog).where(EventLog.event_type == EventType.OVERTHROWN)
         assert list(session.scalars(overthrown)) == []
         turn_state = game_service.get_turn_state(session)
         assert turn_state is not None
-        assert turn_state.next_starter_id is None
+        assert turn_state.next_starter_id is None  # the boss took the turn
     assert _boss(session_factory) is not None
 
 
 async def test_no_boss_due_leaves_the_overthrow_alone(session_factory, gather) -> None:
     _world(session_factory)
 
-    assert await autostart_timers.maybe_start_boss(_context(session_factory), session_factory) is (
-        False
-    )
+    assert await boss_timers.maybe_start_boss(_context(session_factory), session_factory) is (False)
     assert _boss(session_factory) is None
+
+
+async def test_switching_games_back_on_arms_the_boss_check(session_factory) -> None:
+    _world(session_factory, games_enabled=False)
+    context = _context(session_factory)
+    raw = cast(MagicMock, context)
+    raw.args = ["on"]
+    raw.bot.get_chat_member = AsyncMock(
+        return_value=MagicMock(status=ChatMemberStatus.ADMINISTRATOR)
+    )
+    update = MagicMock()
+    update.effective_user.id = WINNER
+    update.effective_chat.type = "private"
+    update.message.reply_text = AsyncMock()
+
+    await gamesenabled.setgamesenabled_command(cast(Update, update), context)
+
+    (job,) = _boss_jobs(context)
+    assert job.kwargs["when"] == 0
+
+
+async def test_the_idle_backstop_starts_a_due_boss_not_hard_mode(session_factory, gather) -> None:
+    _settle(session_factory, _world(session_factory, holder=None))
+    with session_scope(session_factory) as session:
+        settings.set_autostart_enabled(session, True)
+    context = _context(session_factory)
+    cast(MagicMock, context).job = None
+
+    await autostart_timers.idle_autostart_job_callback(context)
+
+    boss = _boss(session_factory)
+    assert boss is not None
+    assert boss.hard_mode is False
+    cast(MagicMock, context).bot.send_media_group.assert_not_awaited()

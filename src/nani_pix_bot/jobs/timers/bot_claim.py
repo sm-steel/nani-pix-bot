@@ -166,14 +166,18 @@ def _build_boss_post(
     if game.original_image is None:
         raise RuntimeError("game.original_image is None in _build_boss_post")
     total = len(game_service.STAGE_ORDER)
-    width = stage_config.get_stage_config(session, game_service.STAGE_ORDER[0]).target_width
-    photo = stage_cosmetics.stage_png(session, game, game.original_image, width)
+    first = stage_config.get_stage_config(session, game_service.STAGE_ORDER[0])
+    photo = stage_cosmetics.stage_png(session, game, game.original_image, first.target_width)
     run = modifiers.season_of(session, game)
     caption = i18n.t(
         "dm_start.boss_game_started_caption",
         lang,
         xp=1 if run is None else multipliers.xp_multiplier(run, game),
         coins=1 if run is None else multipliers.coin_multiplier(run, game),
+        stage=1,
+        total=total,
+        remaining=first.wrong_guess_limit,
+        limit=first.wrong_guess_limit,
     )
     caption += haunting.caption_suffix(session, game, lang, number=1, total=total)
     caption += game_service.game_id_line(game.id, lang)
@@ -273,8 +277,9 @@ def _stage_hard_mode(session: Session, game: Game, pick: GatheredPick) -> None:
 
 def _stage_boss(session: Session, game: Game, pick: GatheredPick) -> bool:
     """The boss is a normal game on the pair's first screenshot, marked the
-    season's boss before activation. False when another boss got there
-    first (mark_boss re-checks under the season lock)."""
+    season's boss before activation. False when no boss is due any more (the
+    season ended, or another boss got there first; mark_boss re-checks under
+    the season lock)."""
     game.hard_mode = False
     game.original_image = pick.screenshot.image_bytes_a
     game.shown_screenshot_urls = [pick.screenshot.url_a]
@@ -320,7 +325,10 @@ async def claim_game(
             session, starter_id=context.bot.id, entry=f"bot autostart ({claim.trigger.value})"
         )
         if not _stage_pick(session, game, claim, pick):
-            logger.warning("boss game start aborted — another boss got there first")
+            logger.warning(
+                "boss no longer due — not starting (the season is over or changed, "
+                "or another boss got there first)"
+            )
             session.delete(game)
             return False
         game_service.clear_turn_timers(session)

@@ -90,6 +90,9 @@ async def maybe_start_boss(context: ContextTypes.DEFAULT_TYPE, session_factory) 
     if gathered is None:
         _retry_boss(context, session_factory)
         return True
+    # A turn handed to someone while the pick was gathered aborts the claim
+    # (claim_game's race check) with nothing re-armed: the boss waits for
+    # that player's game to end, or their turn to expire and open.
     claim = AutostartClaim(AutostartTrigger.BOSS, None, expected_next_starter_id=holder_id)
     return await claim_game(context, session_factory, claim, gathered)
 

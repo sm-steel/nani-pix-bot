@@ -74,8 +74,12 @@ async def idle_autostart_job_callback(context: ContextTypes.DEFAULT_TYPE) -> Non
     claim — a job firing after a human already started a game (or the
     turn was reassigned) must no-op rather than double-post. On a failed
     pick, reschedules AUTOSTART_RETRY_DELAY later rather than going
-    silent until the next natural turn-open event."""
+    silent until the next natural turn-open event. A due Gashadokuro
+    boss goes first: this backstop never starts a HARD MODE game ahead of
+    it (e.g. after games were switched back on)."""
     session_factory = context.bot_data["session_factory"]
+    if await maybe_start_boss(context, session_factory):
+        return
     with session_scope(session_factory) as session:
         turn_state = game_service.get_turn_state(session)
         if turn_state is None or turn_state.next_starter_id is not None:
@@ -190,17 +194,3 @@ def _roll_overthrow(session_factory, winner_id: int | None) -> bool:
         holder=holder,
     )
     return hit
-
-
-__all__ = [
-    "IDLE_AUTOSTART_JOB_NAME",
-    "AutostartClaim",
-    "AutostartTrigger",
-    "cancel_idle_autostart",
-    "idle_autostart_job_callback",
-    "maybe_overthrow",
-    "maybe_start_boss",
-    "run_bot_autostart",
-    "schedule_boss_start",
-    "schedule_idle_autostart",
-]

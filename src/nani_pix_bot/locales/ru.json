@@ -70,7 +70,7 @@
   "dm_start.hard_mode_game_started_caption_overthrow_winner": "😈 Хорошая победа, {winner}! Но я забираю твою очередь ради хардмода — два скриншота, никакой пощады.\n📸 Ход {turn}/{total} — попыток: {remaining}/{limit}",
   "dm_start.hard_mode_game_started_caption_overthrow_open": "😏 Раз больше никто не начал... начну сама — хардмод, два скриншота, никакой пощады.\n📸 Ход {turn}/{total} — попыток: {remaining}/{limit}",
   "dm_start.hard_mode_game_started_caption_idle": "⏰ Давно никто не начинал новый раунд, так что вот вам хардмод от меня — два скриншота, два хода, никакой пощады.\n📸 Ход {turn}/{total} — попыток: {remaining}/{limit}",
-  "dm_start.boss_game_started_caption": "☠️ Гасадокуро восстал! Nani Pix сама выбрала эту картинку — призраки копятся с каждым этапом и до конца никуда не уходят. Угадывающие получают ×{xp} опыта и ×{coins} 🪙.",
+  "dm_start.boss_game_started_caption": "☠️ Гасадокуро восстал! Nani Pix сама выбрала эту картинку — призраки копятся с каждым этапом и до конца никуда не уходят. Угадывающие получают ×{xp} опыта и ×{coins} 🪙.\n📸 Этап {stage}/{total} — попыток: {remaining}/{limit}",
   "dm_start.setup_started_group_notice": "🎬 {starter} готовит новую игру — подождите немного!",
   "dm_start.setup_already_open": "Вы уже готовите игру — отправьте /stop, если хотите отменить её и начать заново.",
   "dm_start.setup_gone": "Этот раунд уже не готовится — если сейчас ваша очередь, пришлите скриншот или отправьте /newgame.",

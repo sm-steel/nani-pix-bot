@@ -5,7 +5,7 @@ Design notes:
 - Winner XP uses the `stage` from the `game_won` event (`win_facts.stage_number`:
   1-5, or the HARD MODE turn 1-2), clamped to 1-5; 0 (unknown) gives no win XP.
 - Host XP goes to the starter (`subject_id`) — except on HARD MODE games, which
-  only the bot starts (`jobs/timers/autostart.py` is the only place that sets
+  only the bot starts (`jobs/timers/bot_claim.py` is the only place that sets
   `hard_mode = True`).
 - "First guess" = the player's first `game_guesses` row in that game (existing
   domain state; `log_guess` adds the row before it emits `GUESS`).

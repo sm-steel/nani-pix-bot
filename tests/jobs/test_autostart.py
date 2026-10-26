@@ -89,7 +89,7 @@ def test_schedule_idle_autostart_calls_run_once_from_the_stored_deadline() -> No
 
     job_queue.run_once.assert_called_once()
     _, kwargs = job_queue.run_once.call_args
-    assert kwargs["name"] == autostart_timers.IDLE_AUTOSTART_JOB_NAME
+    assert kwargs["name"] == bot_claim.IDLE_AUTOSTART_JOB_NAME
     assert kwargs["when"] > 23 * 60 * 60
 
 
@@ -101,7 +101,7 @@ def test_an_open_turn_also_arms_the_boss_check_right_away() -> None:
     autostart_timers.schedule_idle_autostart(job_queue, turn_state)
 
     names = [c.kwargs["name"] for c in job_queue.run_once.call_args_list]
-    assert names == [autostart_timers.IDLE_AUTOSTART_JOB_NAME, boss_timers.BOSS_START_JOB_NAME]
+    assert names == [bot_claim.IDLE_AUTOSTART_JOB_NAME, boss_timers.BOSS_START_JOB_NAME]
     assert job_queue.run_once.call_args.kwargs["when"] == 0
 
 
@@ -120,9 +120,9 @@ def test_cancel_idle_autostart_removes_the_named_job() -> None:
     job_queue = MagicMock()
     job_queue.get_jobs_by_name.return_value = [job]
 
-    autostart_timers.cancel_idle_autostart(job_queue)
+    bot_claim.cancel_idle_autostart(job_queue)
 
-    job_queue.get_jobs_by_name.assert_called_once_with(autostart_timers.IDLE_AUTOSTART_JOB_NAME)
+    job_queue.get_jobs_by_name.assert_called_once_with(bot_claim.IDLE_AUTOSTART_JOB_NAME)
     job.schedule_removal.assert_called_once()
 
 
@@ -402,10 +402,10 @@ async def test_run_bot_autostart_cancels_the_idle_autostart_timer_on_success(
         bot_claim, "cancel_idle_autostart", lambda job_queue: cancel_calls.append(job_queue)
     )
 
-    claim = autostart_timers.AutostartClaim(
-        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    claim = bot_claim.AutostartClaim(
+        trigger=bot_claim.AutostartTrigger.IDLE, dethroned_winner_name=None
     )
-    started = await autostart_timers.run_bot_autostart(
+    started = await bot_claim.run_bot_autostart(
         cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
     )
 
@@ -432,10 +432,10 @@ async def test_run_bot_autostart_aborts_when_a_game_appeared_in_the_meantime(
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
 
-    claim = autostart_timers.AutostartClaim(
-        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    claim = bot_claim.AutostartClaim(
+        trigger=bot_claim.AutostartTrigger.IDLE, dethroned_winner_name=None
     )
-    started = await autostart_timers.run_bot_autostart(
+    started = await bot_claim.run_bot_autostart(
         cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
     )
 
@@ -460,10 +460,10 @@ async def test_run_bot_autostart_aborts_when_the_turn_was_claimed_in_the_meantim
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
 
-    claim = autostart_timers.AutostartClaim(
-        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    claim = bot_claim.AutostartClaim(
+        trigger=bot_claim.AutostartTrigger.IDLE, dethroned_winner_name=None
     )
-    started = await autostart_timers.run_bot_autostart(
+    started = await bot_claim.run_bot_autostart(
         cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
     )
 
@@ -503,10 +503,10 @@ async def test_run_bot_autostart_creates_a_hard_mode_game_and_posts_both_images(
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
 
-    claim = autostart_timers.AutostartClaim(
-        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    claim = bot_claim.AutostartClaim(
+        trigger=bot_claim.AutostartTrigger.IDLE, dethroned_winner_name=None
     )
-    started = await autostart_timers.run_bot_autostart(
+    started = await bot_claim.run_bot_autostart(
         cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
     )
 
@@ -542,8 +542,8 @@ async def test_run_bot_autostart_creates_a_hard_mode_game_and_posts_both_images(
 @pytest.mark.parametrize(
     ("trigger", "pose"),
     [
-        (autostart_timers.AutostartTrigger.IDLE, Pose.CAST),
-        (autostart_timers.AutostartTrigger.OVERTHROW, Pose.SLY),
+        (bot_claim.AutostartTrigger.IDLE, Pose.CAST),
+        (bot_claim.AutostartTrigger.OVERTHROW, Pose.SLY),
     ],
 )
 async def test_a_bot_started_game_opens_with_nani_casting_or_sly_after_an_overthrow(
@@ -567,8 +567,8 @@ async def test_a_bot_started_game_opens_with_nani_casting_or_sly_after_an_overth
     poses: list[Pose] = []
     monkeypatch.setattr(mascot, "add_to_png", lambda png, p, costume=None: poses.append(p) or png)
 
-    claim = autostart_timers.AutostartClaim(trigger=trigger, dethroned_winner_name=None)
-    await autostart_timers.run_bot_autostart(
+    claim = bot_claim.AutostartClaim(trigger=trigger, dethroned_winner_name=None)
+    await bot_claim.run_bot_autostart(
         cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
     )
 
@@ -602,10 +602,10 @@ async def test_run_bot_autostart_reserves_the_reveal_slot_and_starts_the_pre_ren
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
 
-    claim = autostart_timers.AutostartClaim(
-        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    claim = bot_claim.AutostartClaim(
+        trigger=bot_claim.AutostartTrigger.IDLE, dethroned_winner_name=None
     )
-    started = await autostart_timers.run_bot_autostart(
+    started = await bot_claim.run_bot_autostart(
         cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
     )
 
@@ -639,11 +639,11 @@ async def test_run_bot_autostart_replaces_an_older_reveal_slot(
         return _fake_pick()
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
-    claim = autostart_timers.AutostartClaim(
-        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    claim = bot_claim.AutostartClaim(
+        trigger=bot_claim.AutostartTrigger.IDLE, dethroned_winner_name=None
     )
 
-    await autostart_timers.run_bot_autostart(
+    await bot_claim.run_bot_autostart(
         cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
     )
 
@@ -678,10 +678,10 @@ async def test_run_bot_autostart_uses_the_overthrow_open_caption_when_no_winner_
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
 
-    claim = autostart_timers.AutostartClaim(
-        trigger=autostart_timers.AutostartTrigger.OVERTHROW, dethroned_winner_name=None
+    claim = bot_claim.AutostartClaim(
+        trigger=bot_claim.AutostartTrigger.OVERTHROW, dethroned_winner_name=None
     )
-    started = await autostart_timers.run_bot_autostart(
+    started = await bot_claim.run_bot_autostart(
         cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
     )
 
@@ -816,11 +816,11 @@ async def test_run_bot_autostart_passes_the_active_seasons_gate_to_the_pick(
         seen["gate"] = gate
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
-    claim = autostart_timers.AutostartClaim(
-        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    claim = bot_claim.AutostartClaim(
+        trigger=bot_claim.AutostartTrigger.IDLE, dethroned_winner_name=None
     )
 
-    started = await autostart_timers.run_bot_autostart(
+    started = await bot_claim.run_bot_autostart(
         cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory)), session_factory, claim
     )
 
@@ -853,11 +853,11 @@ async def test_run_bot_autostart_gated_lines_carry_the_season(
         return None
 
     monkeypatch.setattr(autostart_service, "gather_pick", no_pick)
-    claim = autostart_timers.AutostartClaim(
-        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    claim = bot_claim.AutostartClaim(
+        trigger=bot_claim.AutostartTrigger.IDLE, dethroned_winner_name=None
     )
 
-    await autostart_timers.run_bot_autostart(
+    await bot_claim.run_bot_autostart(
         cast(ContextTypes.DEFAULT_TYPE, _make_context(session_factory)), session_factory, claim
     )
 
@@ -914,10 +914,10 @@ async def _run_autostart_with(session_factory, monkeypatch: pytest.MonkeyPatch, 
         return pick
 
     monkeypatch.setattr(autostart_service, "gather_pick", fake_gather_pick)
-    claim = autostart_timers.AutostartClaim(
-        trigger=autostart_timers.AutostartTrigger.IDLE, dethroned_winner_name=None
+    claim = bot_claim.AutostartClaim(
+        trigger=bot_claim.AutostartTrigger.IDLE, dethroned_winner_name=None
     )
-    assert await autostart_timers.run_bot_autostart(
+    assert await bot_claim.run_bot_autostart(
         cast(ContextTypes.DEFAULT_TYPE, context), session_factory, claim
     )
 

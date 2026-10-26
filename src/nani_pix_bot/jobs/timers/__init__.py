@@ -30,14 +30,16 @@ from telegram.ext import JobQueue
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import seconds_until, seconds_until_timeout
 from nani_pix_bot.jobs.timers.autostart import (
+    idle_autostart_job_callback,
+    maybe_overthrow,
+    schedule_idle_autostart,
+)
+from nani_pix_bot.jobs.timers.boss import schedule_boss_start
+from nani_pix_bot.jobs.timers.bot_claim import (
     IDLE_AUTOSTART_JOB_NAME,
     AutostartTrigger,
     cancel_idle_autostart,
-    idle_autostart_job_callback,
-    maybe_overthrow,
     run_bot_autostart,
-    schedule_boss_start,
-    schedule_idle_autostart,
 )
 from nani_pix_bot.jobs.timers.current_image import (
     clear_image_if_sent,
@@ -134,6 +136,7 @@ __all__ = [
     "rearm_pending_timeouts",
     "rearm_vote",
     "run_bot_autostart",
+    "schedule_boss_start",
     "schedule_idle_autostart",
     "schedule_inactivity_timers",
     "schedule_setup_abandon",

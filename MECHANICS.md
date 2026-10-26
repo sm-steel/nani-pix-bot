@@ -2394,14 +2394,19 @@ pays and gates exactly as before.
   `maybe_start_boss` (trigger `boss`). Every game ending goes through
   `maybe_overthrow`, which tries the boss first and skips the overthrow roll
   when the boss starts or is scheduled. An open turn also tries it:
-  `schedule_idle_autostart` arms a `boss-start` check job right away (a
-  `/stop`'d boss, a bare `/skip`, an expired turn), and startup arms one while
-  a boss is due. The boss takes the turn the way an overthrow does (the game's
+  `schedule_idle_autostart` arms a `boss-start` check job right away (a bare
+  `/skip`, an expired turn; `/stop` arms it only after its "stopped" post, so
+  a fresh boss never posts first), the idle-autostart job tries the boss
+  before any HARD MODE game, `/setgamesenabled on` arms the check, and
+  startup arms one while a boss is due. A turn handed to someone while the
+  pick was gathered aborts the claim; the boss then waits for that player's
+  game to end or their turn to expire. The boss takes the turn the way an overthrow does (the game's
   winner keeps full credit, with no `overthrown` event), picks from the season
   gate, and starts a **normal** 5-stage game (`hard_mode=False`, the pair's
   first screenshot as `original_image`), calling `mark_boss` before
   `activate_game`. Stage 1 goes up through the normal stage-post path with
-  `dm_start.boss_game_started_caption` (×XP and ×🪙 from `multipliers`) plus
+  `dm_start.boss_game_started_caption` (×XP and ×🪙 from `multipliers`, then the
+  usual "📸 Stage 1/5 — guesses" line) plus
   the haunt line. It ignores `autostart_enabled` and honours `games_enabled`;
   a game already running holds it until that game ends (INFO); quiet hours
   hold it until the window ends (INFO, the check job re-armed for then); a
