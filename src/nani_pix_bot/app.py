@@ -28,6 +28,7 @@ from nani_pix_bot import db, heartbeat
 from nani_pix_bot.commands import (
     achievements,
     balance,
+    candles,
     cosmetics,
     currency_config,
     dm_start,
@@ -459,6 +460,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("version", version.version_command))
     application.add_handler(CommandHandler("achievements", achievements.achievements_command))
     application.add_handler(CommandHandler("standings", standings.standings_command))
+    application.add_handler(CommandHandler("candles", candles.candles_command))
     application.add_handler(CommandHandler("history", history.history_command))
     application.add_error_handler(_error_handler)
 

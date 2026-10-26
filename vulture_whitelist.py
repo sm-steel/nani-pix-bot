@@ -48,7 +48,6 @@ _kept = (
     Reward.ofuda,
     # Halloween: wired by P6 (#471)
     group_goal.candles_for,
-    group_goal.is_contributor,
 )
 
 if TYPE_CHECKING:
