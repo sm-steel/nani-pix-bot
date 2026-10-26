@@ -48,6 +48,21 @@ def test_the_corners_turn_indigo_and_darker() -> None:
     assert r + g + b < 384
 
 
+def test_the_rim_is_at_full_strength_at_the_edge_midpoints() -> None:
+    out = moonlit.moonlit(Image.new("RGB", (1280, 720), (128, 128, 128)))
+    # far from the moon, so no moonlight: just the night tint and the darkened rim
+    expected = tuple(
+        round(
+            (128 * n / 255 * moonlit.NIGHT_TINT + 128 * (1 - moonlit.NIGHT_TINT))
+            * (1 - moonlit.EDGE_DARK)
+            + e * moonlit.EDGE_DARK
+        )
+        for n, e in zip(moonlit.NIGHT, moonlit.EDGE_COLOR, strict=True)
+    )
+    for got, want in zip(_pixel(out, 640, 719), expected, strict=True):
+        assert abs(got - want) <= 3
+
+
 def test_the_moon_corner_is_lighter_than_the_opposite_one() -> None:
     out = moonlit.moonlit(Image.new("RGB", (1280, 720), (128, 128, 128)))
     # beside the sprites: just inside the left edge, near the moon vs near the bottom

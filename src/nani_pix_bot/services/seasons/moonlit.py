@@ -13,8 +13,8 @@ from PIL import Image, ImageChops
 
 from nani_pix_bot.services import sprites
 
-# The radius is 0 at the centre and 1 at the corners; the rim mask is 0 inside
-# CLEAR_RADIUS and full at FULL_RADIUS.
+# The radius is 0 at the centre, 1 at the middle of each edge and about 1.41 at the
+# corners; the rim mask is 0 inside CLEAR_RADIUS and full at FULL_RADIUS.
 CLEAR_RADIUS = 0.42
 FULL_RADIUS = 0.97
 NIGHT = (60, 64, 150)
@@ -54,7 +54,7 @@ def _grid(value: Callable[[float, float], float]) -> Image.Image:
 
 
 def _rim(fx: float, fy: float) -> float:
-    radius = math.hypot(fx - 0.5, fy - 0.5) * math.sqrt(2)
+    radius = math.hypot(fx - 0.5, fy - 0.5) * 2
     return _smoothstep((radius - CLEAR_RADIUS) / (FULL_RADIUS - CLEAR_RADIUS))
 
 
