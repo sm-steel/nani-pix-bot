@@ -7,10 +7,18 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.announcement import AnnouncementOutbox
-from nani_pix_bot.models.enums import EventType, GameStatus, ItemSource, OutboxKind
+from nani_pix_bot.models.enums import (
+    EventType,
+    GameStatus,
+    ItemSource,
+    OutboxKind,
+    SeasonStatus,
+)
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.definition import SeasonRun
+from nani_pix_bot.seasons.mechanics import BoneSet
 from nani_pix_bot.services import players
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.cosmetics import inventory
@@ -39,20 +47,34 @@ def _already_queued(session: Session, season_id: int, player_id: int, bones: int
     )
 
 
-def on_game_won(session: Session, event: LoggedEvent) -> None:
+def _bone_season(
+    session: Session, event: LoggedEvent
+) -> tuple[SeasonSchedule, SeasonRun, BoneSet] | None:
+    """The running season, its run and bone set, when the event is a win of one
+    of its haunted games."""
     if event.event_type != EventType.GAME_WON or event.actor_id is None or event.game_id is None:
-        return
+        return None
     game = session.get(Game, event.game_id)
     if game is None or game.season_id is None or not haunting.is_haunted(game):
-        return
+        return None
     season = session.get(SeasonSchedule, game.season_id)
     run = registry.get(season.run_id) if season is not None else None
     if season is None or run is None or run.bone_set is None:
+        return None
+    if season.status not in (SeasonStatus.ACTIVE, SeasonStatus.CLOSING):
+        return None
+    return season, run, run.bone_set
+
+
+def on_game_won(session: Session, event: LoggedEvent) -> None:
+    found = _bone_season(session, event)
+    if found is None or event.actor_id is None:
         return
-    target = run.bone_set.bones
+    season, run, bone_set = found
+    target = bone_set.bones
     player_id = event.actor_id
     bones = count(session, season.id, player_id)
-    item_id = f"{run.run_id}/{run.bone_set.item_key}"
+    item_id = f"{run.run_id}/{bone_set.item_key}"
     granted = bones >= target and inventory.grant(
         session, player_id, inventory.ItemGrant(item_id, ItemSource.BONES, season.id)
     )

@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 
 from nani_pix_bot.models.announcement import AnnouncementOutbox
 from nani_pix_bot.models.cosmetics import OwnedItem
-from nani_pix_bot.models.enums import EventType, GameStatus, OutboxKind
+from nani_pix_bot.models.enums import EventType, GameStatus, OutboxKind, SeasonStatus
 from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.services import events
 from nani_pix_bot.services.cosmetics import inventory
@@ -92,4 +92,11 @@ def test_a_run_without_bone_set_does_nothing(session, active_season, emit_win, t
     tagged_game.winner_id = 1
     session.flush()
     emit_win(winner=1, stage=1)
+    assert _outbox(session) == []
+
+
+def test_an_ended_season_grants_no_bone(session, win, yokai_season):
+    yokai_season.status = SeasonStatus.ENDED
+    session.flush()
+    win(1)
     assert _outbox(session) == []

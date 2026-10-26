@@ -101,13 +101,18 @@ def _season_mechanics(session: Session, event: LoggedEvent) -> None:
     payout never costs the game its XP, coins or objectives, never costs the
     other mechanic its turn, and never blocks the season's lifecycle step
     after it."""
-    for mechanic in (group_goal.on_game_ended, bones.on_game_won):
+    for name, mechanic in (
+        ("group_goal", group_goal.on_game_ended),
+        ("bones", bones.on_game_won),
+    ):
         try:
             with session.begin_nested():
                 mechanic(session, event)
         except Exception:
             logger.opt(exception=True).error(
-                "season mechanics failed on event {event_type} (row {event_id}); XP and coins kept",
+                "season mechanics failed ({mechanic}) on event {event_type} (row {event_id}); "
+                "XP and coins kept",
+                mechanic=name,
                 event_type=event.event_type.value,
                 event_id=event.id,
             )
