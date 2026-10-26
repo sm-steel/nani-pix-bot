@@ -2,14 +2,14 @@
 
 from dataclasses import dataclass
 
-from nani_pix_bot.services.cards import PodiumCard, SeasonBanner, UnlockCard
+from nani_pix_bot.services.cards import GoalCard, PodiumCard, SeasonBanner, UnlockCard
 
 
 @dataclass(frozen=True)
 class Post:
     row_ids: tuple[int, ...]
     text: str
-    card: UnlockCard | PodiumCard | SeasonBanner | None = None
+    card: UnlockCard | PodiumCard | SeasonBanner | GoalCard | None = None
     avatar_ids: tuple[int, ...] = ()
     batch_id: int | None = None
     background_slot: str | None = None

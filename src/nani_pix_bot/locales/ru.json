@@ -1094,5 +1094,15 @@
   "omikuji.card_gift.omamori": "омамори",
   "omikuji.already": "Вы уже тянули омикудзи сегодня — приходите завтра!",
   "omikuji.closed": "Святилище закрыто — омикудзи бывают только в сезоны, где они есть.",
-  "hex.notice.triggered.kitsune_empty": "🦊 Кицунэ смеётся над пустым кошельком {target} — на этот раз брать нечего."
+  "hex.notice.triggered.kitsune_empty": "🦊 Кицунэ смеётся над пустым кошельком {target} — на этот раз брать нечего.",
+  "goal.post.milestone": "🕯 Погашено свечей: {snuffed} из {target}. Под святилищем ворочается что-то огромное…",
+  "goal.post.reached.one": "💀 Погасла последняя из {target} свечей! Их гасил {players} игрок, и он получает {reward}. Следующая игра разбудит Гашадокуро…",
+  "goal.post.reached.few": "💀 Погасла последняя из {target} свечей! Их гасили {players} игрока, и каждый получает {reward}. Следующая игра разбудит Гашадокуро…",
+  "goal.post.reached.many": "💀 Погасла последняя из {target} свечей! Их гасили {players} игроков, и каждый получает {reward}. Следующая игра разбудит Гашадокуро…",
+  "goal.reward.both": "{coins} 🪙 и {item}",
+  "goal.reward.coins": "{coins} 🪙",
+  "goal.reward.item": "{item}",
+  "goal.post.boss": "☠️ Гашадокуро восстаёт! Игра №{game_id} — боссовая: каждая стадия с привидениями, а за угадывание дают ×{xp} XP и ×{coins} 🪙.",
+  "goal.bone.found": "🦴 Косточка из игры с привидениями! {bones}/{target} для набора «Костяной коллекционер».",
+  "goal.bone.complete": "☠️ {target}/{target} косточек: Nani Pix собрала для вас предмет «{item}»! Наденьте его в /cosmetics."
 }

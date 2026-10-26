@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from itertools import groupby
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from loguru import logger
 from sqlalchemy.orm import Session, sessionmaker
@@ -22,7 +22,7 @@ from telegram.error import Forbidden, TelegramError
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs import hex_posts, season_posts
+from nani_pix_bot.jobs import goal_posts, hex_posts, season_posts
 from nani_pix_bot.jobs.avatars import fetch_avatar
 from nani_pix_bot.jobs.post import Post
 from nani_pix_bot.jobs.timers._shared import job_log_scope
@@ -32,11 +32,13 @@ from nani_pix_bot.models.enums import OutboxKind, Rarity
 from nani_pix_bot.services import i18n, players, quiet_hours, settings
 from nani_pix_bot.services.achievements import catalogue, names, outbox, podium
 from nani_pix_bot.services.cards import (
+    GoalCard,
     PodiumCard,
     SeasonBanner,
     UnlockCard,
     load_background,
     podium_slot,
+    render_goal_card,
     render_podium_card,
     render_season_banner,
     render_unlock_card,
@@ -125,6 +127,7 @@ RENDERERS: dict[OutboxKind, Callable[[Session, AnnouncementOutbox, str], Post | 
     OutboxKind.PERIOD_SUMMARY: _period_post,
     **season_posts.RENDERERS,
     **hex_posts.RENDERERS,
+    **goal_posts.RENDERERS,
 }
 
 
@@ -187,6 +190,13 @@ def _batches(posts: list[Post]) -> list[list[Post]]:
     return [piece for _, group in groupby(posts, _event_key) for piece in _albums(list(group))]
 
 
+# Cards drawn from the card alone (the banner also gets its background).
+_PLAIN_CARDS: dict[type, Callable[[Any, bytes | None], bytes]] = {
+    SeasonBanner: render_season_banner,
+    GoalCard: lambda card, _background: render_goal_card(card),
+}
+
+
 def _draw(post: Post, faces: list[bytes | None]) -> bytes:
     """Render the post's card on a worker thread: background lookup included."""
     slot = post.background_slot
@@ -197,8 +207,9 @@ def _draw(post: Post, faces: list[bytes | None]) -> bytes:
     card = post.card
     if isinstance(card, UnlockCard):
         return render_unlock_card(card, faces[0] if faces else None, background)
-    if isinstance(card, SeasonBanner):
-        return render_season_banner(card, background)
+    plain = _PLAIN_CARDS.get(type(card))
+    if plain is not None:
+        return plain(card, background)
     if isinstance(card, PodiumCard):
         entries = tuple(replace(e, avatar=a) for e, a in zip(card.entries, faces, strict=False))
         return render_podium_card(replace(card, entries=entries), background)

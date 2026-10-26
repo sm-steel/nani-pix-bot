@@ -1094,5 +1094,15 @@
   "omikuji.card_gift.omamori": "an Omamori",
   "omikuji.already": "You've already drawn today's omikuji — come back tomorrow!",
   "omikuji.closed": "The shrine is closed — omikuji only appear during seasons that have them.",
-  "hex.notice.triggered.kitsune_empty": "🦊 The kitsune laughs at {target}'s empty purse — nothing to take this time."
+  "hex.notice.triggered.kitsune_empty": "🦊 The kitsune laughs at {target}'s empty purse — nothing to take this time.",
+  "goal.post.milestone": "🕯 {snuffed} of {target} candles are out. Something huge is stirring under the shrine…",
+  "goal.post.reached.one": "💀 The last of {target} candles went out! {players} player snuffed them, and gets {reward}. The next game wakes the Gashadokuro…",
+  "goal.post.reached.few": "💀 The last of {target} candles went out! {players} players snuffed them, and each gets {reward}. The next game wakes the Gashadokuro…",
+  "goal.post.reached.many": "💀 The last of {target} candles went out! {players} players snuffed them, and each gets {reward}. The next game wakes the Gashadokuro…",
+  "goal.reward.both": "{coins} 🪙 and {item}",
+  "goal.reward.coins": "{coins} 🪙",
+  "goal.reward.item": "{item}",
+  "goal.post.boss": "☠️ The Gashadokuro rises! Game #{game_id} is the boss game: every stage is haunted, and guessers earn ×{xp} XP and ×{coins} 🪙.",
+  "goal.bone.found": "🦴 A bone from a haunted round! {bones}/{target} for the Bone Collector set.",
+  "goal.bone.complete": "☠️ {target}/{target} bones: Nani Pix assembled your {item}! Equip it in /cosmetics."
 }

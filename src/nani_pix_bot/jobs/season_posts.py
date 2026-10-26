@@ -54,7 +54,7 @@ def _season_lines(
     return lines
 
 
-def _open_season(
+def open_season(
     session: Session, row: AnnouncementOutbox, kind: OutboxKind
 ) -> tuple[SeasonSchedule, SeasonRun] | None:
     """The row's season and run, or None (logged) when it's gone, its run
@@ -78,7 +78,7 @@ def _season_post(
     kind: OutboxKind,
 ) -> Callable[[Session, AnnouncementOutbox, str], Post | None]:
     def render(session: Session, row: AnnouncementOutbox, lang: str) -> Post | None:
-        found = _open_season(session, row, kind)
+        found = open_season(session, row, kind)
         if found is None:
             return None
         season, run = found
@@ -122,7 +122,7 @@ def _event_day_post(
     kind: OutboxKind,
 ) -> Callable[[Session, AnnouncementOutbox, str], Post | None]:
     def render(session: Session, row: AnnouncementOutbox, lang: str) -> Post | None:
-        found = _open_season(session, row, kind)
+        found = open_season(session, row, kind)
         if found is None:
             return None
         event = found[1].event_day

@@ -116,5 +116,6 @@
   "omikuji.slip.daikichi": ["⛩ The shrine smiles on {name}: 大吉 Daikichi, the best slip there is!", "⛩ {name} unfolds 大吉 Daikichi — fortune is smiling wide!"],
   "omikuji.slip.kichi": ["⛩ {name} unfolds 吉 Kichi — a good day ahead.", "⛩ 吉 Kichi for {name}: the spirits nod kindly."],
   "omikuji.slip.shokichi": ["⛩ {name} unfolds 小吉 Shōkichi — a little luck goes a long way.", "⛩ 小吉 Shōkichi for {name}: modest, but it's luck."],
-  "omikuji.slip.kyo": ["⛩ Uh-oh. {name} unfolds 凶 Kyō — the spirits giggle. 💀", "⛩ 凶 Kyō for {name}! Better tie that slip to the shrine tree. 💀"]
+  "omikuji.slip.kyo": ["⛩ Uh-oh. {name} unfolds 凶 Kyō — the spirits giggle. 💀", "⛩ 凶 Kyō for {name}! Better tie that slip to the shrine tree. 💀"],
+  "goal.bone.found": ["🦴 Another bone rattles into your pocket! {bones}/{target} toward the Bone Collector set.", "🦴 You pried a bone out of a haunted round. {bones}/{target} for the Bone Collector set."]
 }
