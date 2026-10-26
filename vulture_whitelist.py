@@ -13,6 +13,7 @@ Anything else vulture reports is dead code: remove it or wire it up.
 from typing import TYPE_CHECKING
 
 from nani_pix_bot.models.enums import (
+    CurrencyReason,
     EventType,
     ItemSource,
     OutboxKind,
@@ -24,6 +25,7 @@ from nani_pix_bot.seasons.definition import Reward
 from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
+from nani_pix_bot.services.seasons import group_goal
 
 if TYPE_CHECKING:
     from loguru import Record
@@ -56,6 +58,14 @@ _kept = (
     OutboxKind.GOAL_MILESTONE,
     OutboxKind.GOAL_REACHED,
     ItemSource.GOAL,
+    CurrencyReason.SEASON_GOAL,
+    OutboxKind.GOAL_BOSS,
+    OutboxKind.BONE_FOUND,
+    group_goal.candles,
+    group_goal.candles_for,
+    group_goal.is_contributor,
+    group_goal.goal_of,
+    group_goal.due_milestone,
 )
 
 if TYPE_CHECKING:

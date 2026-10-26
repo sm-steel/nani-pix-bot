@@ -376,6 +376,8 @@ class CurrencyReason(enum.StrEnum):
     HEX_CAST = "hex_cast"
     HEX_KAPPA = "hex_kappa"
     HEX_KITSUNE = "hex_kitsune"
+    # 🪙 paid to a contributor when the group goal is reached
+    SEASON_GOAL = "season_goal"
 
 
 class Currency(enum.StrEnum):
@@ -473,6 +475,9 @@ class OutboxKind(enum.StrEnum):
     EVENT_DAY_END = "event_day_end"
     # Halloween: a Kappa/Kitsune going off, or an omikuji self-prank
     HEX_NOTICE = "hex_notice"
+    # Halloween: the boss game announcement, a Bone Collector find
+    GOAL_BOSS = "goal_boss"
+    BONE_FOUND = "bone_found"
 
 
 class PeriodType(enum.StrEnum):
