@@ -1116,6 +1116,9 @@ src/nani_pix_bot/
                    #                   seeded
                    #   gold_frame.py   "gold_washi": metallic gold leaf,
                    #                   seigaiha emboss, sakura corners
+                   #   night_frames.py "ofuda_strip": talisman strips with
+                   #                   red seals and ink strokes, laid end
+                   #                   to end; deckled edge, seeded
                    #   stage.py        stage_png: a stage image with the
                    #                   starter's frame
                    #   reveal_choice.py  effect_for: the starter's
