@@ -601,6 +601,8 @@ src/nani_pix_bot/
                    #                      ACTIVE game + first post):
                    #                      HARD MODE for idle/overthrow, a
                    #                      normal 5-stage game for the boss
+                   #                      (which drains the outbox first,
+                   #                      announcements.drain)
                    #   boss.py            the Gashadokuro boss start
                    #                      (maybe_start_boss) and its
                    #                      boss-start check job; see
@@ -639,7 +641,8 @@ src/nani_pix_bot/
                    # job, id order, nothing during quiet hours (rows wait),
                    # cards with the text as caption, albums for 3-10 rows
                    # of one event (chunked at 10, rendered bytes reused),
-                   # avatars cached per drain, a drain stops at the first
+                   # avatars cached per drain, one drain at a time (the
+                   # boss start awaits `drain` too), a drain stops at the first
                    # failed send, a row is given up after 3 attempts
                    # (season_teaser/start/end render a banner card; a
                    # cancelled season's rows are dropped unsent). A Post
@@ -1039,7 +1042,8 @@ src/nani_pix_bot/
                    #                 posts (due_posts/enqueue_due, called from
                    #                 lifecycle.advance) and next_boundary
                    #   multipliers.py  haunted/event-day/boss factors on 🪙
-                   #                 and XP awards (the boss host is exempt)
+                   #                 and XP awards (guessers only: a boss
+                   #                 has no host, see Game.bot_hosted)
                    #   group_goal.py the 100 Candles goal: candles (finished
                    #                 games by weight), contributors,
                    #                 milestones, settle (the one-time
@@ -1527,7 +1531,7 @@ erDiagram
 | `event_log` | v10 | Append-only domain events, the data source for achievements and deliberately not achievement-specific. `event_type` is an `EventType` stored as a plain string (a new type needs no migration), `actor_id`/`subject_id` are plain bigints (no FK) and `game_id` a plain int with **no** FK like `currency_transfers.game_id`, so rows outlive a `/stop`ped game. `data` is type-specific JSON. Indexed on `(event_type, actor_id)`, `(event_type, subject_id)`, `game_id` and `occurred_at`. It starts empty on deploy, which is the no-backfill rule. Written only through `services/events.py::emit`. Season Phase 5 adds three types: `item_gained` (a cosmetic granted, any source), `pass_completed` (a pass track finished; `premium`, and `first` for the first free completion in a season) and `season_ended` (one per ranked player when a season finalizes). `game_won` facts also carry `gate_tags`. The three season-owned types have no season game, so the season history scope admits them by type and readers filter on `data.season_id`. |
 | `achievement_grants` | v10 | One achievement tier a player unlocked: `key`, `tier`, `rarity`, `reward`, `points`, the ledger `transfer_id` and `granted_at`. Unique on (`player_id`, `key`, `tier`, `period_key`). `period_key` is `NOT NULL DEFAULT ''` (`''` = not a period grant) because MariaDB treats NULLs as distinct in a unique index, which would let a champion tier be granted twice. |
 | `achievement_claims` | v10 | The single holder of a group-unique tier (Pioneer, Milestone Keeper N). The primary key (`key`, `tier`) is what makes a second holder impossible. There is no timestamp: the grant row has it. |
-| `announcement_outbox` | v10 | A group post owed but not yet sent (`kind` `unlock`/`period_summary`, JSON `payload`), written in the same transaction as what it announces. `batch_id` (the causing event) groups unlocks into one album, `attempts` counts failed sends (given up at 3), `posted_at` is NULL until delivered. Posted in id order by `jobs/announcements.py`. |
+| `announcement_outbox` | v10 | A post owed but not yet sent, to the group topic or (for a few kinds) a player's DM, written in the same transaction as what it announces. `kind` is an `OutboxKind` as a plain string: `unlock` and `period_summary` (achievements and champions); `season_teaser`, `season_start`, `season_end`, `season_tier`, `season_pass_done` and `season_objective` (seasons); `event_day_start`/`event_day_end` (the Halloween event day); `hex_notice` (a hex going off, or an omikuji self-prank); `goal_milestone`, `goal_reached` and `goal_boss` (the 100 Candles goal and its boss game); and `bone_found` (a Bone Collector find). `payload` is JSON. `batch_id` (the causing event) groups unlocks into one album, `attempts` counts failed sends (given up at 3), `posted_at` is NULL until delivered. Posted in id order by `jobs/announcements.py`. |
 | `period_results` | v10 | One player's place on a closed period's podium (`period_type`, `period_key`, `rank`, `player_id`, `score`, `wins`), frozen when the period closed. `rank` is the competition rank, so tied players share it. Unique on (`period_type`, `period_key`, `player_id`). |
 | `period_state` | v10 | One row per period type (`period_type` PK): `next_end`, the UTC end of the next period to close. Created at the first start with the running period, so nothing before the deploy is scored; a late start catches up from it. |
 | `players` additions | v10 | `title_key` (the title chosen with `/title`) and `first_name` (kept current by `remember_user`, shown when there is no @username). |
@@ -1547,7 +1551,7 @@ erDiagram
 | `clue_author_screenshots` | #450 | One screenshot of a game's author's clue list, built on the setup preview's clue panel: `game_id` (FK, `ON DELETE CASCADE`, indexed), `source` (a `Provider` as a plain string, Shikimori/TMDB, or `NULL` for an upload), `url` (`NULL` for an upload), `image` (the full-quality original, deferred, set to `NULL` after the reveal; the source of the clue's pixelation and of its handout row's copy), `fingerprint` (64-bit perceptual hash, signed) and `created_at`. At most 10 per game and no two of the same frame, enforced by `services/clues/author_list.py::add`, not by the DB. The shop sells from it by `games.clue_screenshot_mode`; an entry's handout key, written as `screenshot_url` on its `clue_purchases` and `clue_screenshot_handouts` rows, is its `url`, or `author:<id>` for an upload. Emptied by a re-identification during setup, deleted with the game. Written only via `services/clues/author_list.py`. |
 | `games.clue_screenshot_mode` | #450 | `random` (default, also the server default, so older rows read as Random) / `author` / `both`: where the *Extra screenshot* clue gets its pictures (a `ClueScreenshotMode` as a plain string). Chosen on the preview's clue panel, frozen at Confirm; always `random` for autostart and HARD MODE games. `setup_step` also gains `AWAITING_CLUE_PHOTO`, the wait for the author's clue upload. |
 | `clue_purchases` token columns | v12 | `token_used` (the clue was paid with a clue token) and `transfer_id` now nullable: a token purchase has no ledger charge. A failed token delivery gives the token back. |
-| `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string: `admin`, `pass` for a pass reward, or `shop` for a Season Shop purchase), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
+| `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string: `admin`, `pass` for a pass reward, `shop` for a Season Shop purchase, `goal` for the 100 Candles reward every contributor gets, or `bones` for a completed bone set), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
 | `equipped_items` | v12 | The item equipped per slot: primary key (`player_id`, `slot`; `slot` a `CosmeticSlot` as a plain string), `item_id`. One item per slot, so equipping replaces. |
 | `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so a preview is uploaded once per language. `item_id` holds `previews.cache_key`: the item id, or `<item id>@<player id>` for a win effect (drawn on its viewer); a banner (drawn on the viewer's live card) is never stored. Emptied by `d7a3f1c9b5e2` when the sample picture changed. |
 | `players.title_key` item encoding | v12 | Besides an achievement title key, `title_key` may be `item:<item id>`, a season title item (`services/achievements/titles.py`). Title item ids are at most 56 bytes (`looks.problems`) so they fit `/title`'s callback data. |

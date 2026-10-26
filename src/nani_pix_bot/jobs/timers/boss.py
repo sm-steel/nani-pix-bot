@@ -57,11 +57,19 @@ def _quiet_end(session: Session) -> datetime | None:
     return quiet_hours.window_end_after(qh, now)
 
 
-async def maybe_start_boss(context: ContextTypes.DEFAULT_TYPE, session_factory) -> bool:
+async def maybe_start_boss(
+    context: ContextTypes.DEFAULT_TYPE,
+    session_factory,
+    *,
+    winner_id: int | None = None,
+    winner_name: str | None = None,
+) -> bool:
     """Starts the season's Gashadokuro boss game when one is due (see
     group_goal.boss_due): Nani Pix takes the next turn the way an
     overthrow does — whoever holds it keeps any win credit — and starts a
-    normal 5-stage game from a gated pick. Ignores `autostart_enabled`
+    normal 5-stage game from a gated pick. A game's end passes its winner
+    (`winner_id`/`winner_name`, as to maybe_overthrow): when the boss takes
+    that winner's turn, its caption names them. Ignores `autostart_enabled`
     (a season event, not autostart) but honours `games_enabled`.
 
     True when it started the boss or scheduled it: held until quiet hours
@@ -93,7 +101,8 @@ async def maybe_start_boss(context: ContextTypes.DEFAULT_TYPE, session_factory) 
     # A turn handed to someone while the pick was gathered aborts the claim
     # (claim_game's race check) with nothing re-armed: the boss waits for
     # that player's game to end, or their turn to expire and open.
-    claim = AutostartClaim(AutostartTrigger.BOSS, None, expected_next_starter_id=holder_id)
+    dethroned = winner_name if winner_id is not None and winner_id == holder_id else None
+    claim = AutostartClaim(AutostartTrigger.BOSS, dethroned, expected_next_starter_id=holder_id)
     return await claim_game(context, session_factory, claim, gathered)
 
 

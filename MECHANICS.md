@@ -756,7 +756,7 @@ or stale pin (its caption's guess count is frozen at post time).
   - the bounty, if any
   - how long until the game ends on its own
   - for a haunted game, the twists on the current image (every one a boss
-    stage has stacked), their hints and the Season Coins multiplier
+    stage has stacked), each twist's hint and the Season Coins multiplier
     (`status.haunted`); none when a fading twist has cleared on the last stage
   - the 🎲 game number
 - **Otherwise** it says what is happening instead: who is setting up the
@@ -1464,8 +1464,8 @@ else (equal on every tie-breaker) reads `shared 1st place`. Russian reads
 
 A period the game's `ended_at` falls outside (an admin `/setwinner`
 re-finish long after it closed) is left out; with none left there is no
-line. A normal (non-HARD MODE) win adds `🌟 Host @name: +1 point` for the
-host. The same lines close a vote win, an admin-named win, `/correct` and a
+line. A win with a human host (not HARD MODE, not the boss) adds
+`🌟 Host @name: +1 point` for the host. The same lines close a vote win, an admin-named win, `/correct` and a
 re-finish.
 
 ### Since launch
@@ -1613,7 +1613,8 @@ item, or "none").
   in the group timezone (the quiet-hours timezone, UTC if none). The first
   partial periods after launch count normally.
 - **Score.** A win at stage 1–5 is worth 5/4/3/2/1; a HARD MODE win at
-  turn 1/2 is worth 6/4; hosting a game someone solved is +1. A **clean
+  turn 1/2 is worth 6/4; hosting a game someone solved is +1 (not a HARD
+  MODE or boss game: Nani Pix started those, so they have no host). A **clean
   solve** (a normal-mode win with no wrong guess of the winner's own in
   that game) is worth +1 more. A win the matcher didn't catch
   (`/correct`, a HARD MODE vote, `/setwinner`) doesn't count the winning
@@ -1746,7 +1747,9 @@ one-time backfill is run.
   from wrong guesses in that game.
 - The win reward depends on the stage the game was won at.
 - A HARD MODE win on turn N pays the stage-N reward x 2, with no setter
-  and no prompt bonus (the starter is the bot itself).
+  and no prompt bonus (the starter is the bot itself). The season's boss
+  game is started by Nani Pix too, so it pays no setter or prompt bonus
+  either (`Game.bot_hosted`).
 - The setter is paid only for a win at stages 2-4 (stage 1 is too easy,
   stage 5 barely solvable), and never for an unsolved game. A starter who
   wins their own game is not paid the setter bonus.
@@ -2065,7 +2068,7 @@ add their own rows (source `objective`, see "Objectives" below).
 | Event | Who gets it |
 |---|---|
 | Win | the winner, by the stage (or HARD MODE turn, clamped to 1-5) they won at |
-| Host | the starter, when the game is won or ends unsolved — **not on HARD MODE games**, which only the bot starts |
+| Host | the starter, when the game is won or ends unsolved — **not on HARD MODE or boss games**, which only the bot starts (`Game.bot_hosted`) |
 | First guess | each player's first guess in a game, once per player per game |
 | Objective | the player who completes a season objective, once (see "Objectives") |
 
@@ -2085,7 +2088,7 @@ own award is the usual one.
 from the 💠 balance. Every credit and debit still writes a `currency_transfers`
 row, tagged `currency = season` and the `season_id`. They are paid for the
 same events and by the same rules as Season XP (tagged games only; no hosting
-on HARD MODE games; the first guess is the player's first `game_guesses` row in that game),
+on HARD MODE or boss games; the first guess is the player's first `game_guesses` row in that game),
 priced by the run's `CoinTable`: a win pays the same at every stage,
 `host_solved`, `host_unsolved`, `first_guess`. Pass rewards can pay 🪙 too.
 
@@ -2319,7 +2322,7 @@ images.
 ### Objectives
 
 A run may list `objectives`: one-time goals with a key, a `Goal`, Season XP and
-optionally 🪙. A goal's kind is one of: hosted games (not HARD MODE), wins
+optionally 🪙. A goal's kind is one of: hosted games (not HARD MODE or boss), wins
 (optionally `max_stage`: a win at that stage or earlier, HARD MODE wins
 excluded), games guessed in (distinct games), clues shared, tips, and days
 played (days with a guess or a hosted game).
@@ -2407,21 +2410,28 @@ pays and gates exactly as before.
   before any HARD MODE game, `/setgamesenabled on` arms the check, and
   startup arms one while a boss is due. A turn handed to someone while the
   pick was gathered aborts the claim; the boss then waits for that player's
-  game to end or their turn to expire. The boss takes the turn the way an overthrow does (the game's
-  winner keeps full credit, with no `overthrown` event), picks from the season
+  game to end or the player's turn to expire. The boss takes the turn the
+  way an overthrow does (the game's winner keeps full credit, with no
+  `overthrown` event), picks from the season
   gate, and starts a **normal** 5-stage game (`hard_mode=False`, the pair's
   first screenshot as `original_image`), calling `mark_boss` before
-  `activate_game`. Stage 1 goes up through the normal stage-post path with
-  `dm_start.boss_game_started_caption` (×XP and ×🪙 from `multipliers`, then the
-  usual "📸 Stage 1/5 — guesses" line) plus
-  the haunt line. It ignores `autostart_enabled` and honours `games_enabled`;
+  `activate_game`. Before stage 1, the boss start drains the announcement
+  outbox once (the same `drain` the 20 s job runs), so "goal reached" and
+  "the Gashadokuro rises" land first; a failed drain logs an ERROR and the
+  boss goes ahead, its rows left for the job. Stage 1 then goes up through
+  the normal stage-post path with `dm_start.boss_game_started_caption` (×XP
+  and ×🪙 from `multipliers`, then the usual "📸 Stage 1/5 — guesses" line),
+  and no `haunt.started` line: the boss caption already explains the twists
+  and the multipliers. When the boss took the turn from the game's winner,
+  the caption starts with `dm_start.boss_took_winner_turn`, naming the
+  winner (with flair) the way an overthrow does. It ignores `autostart_enabled` and honours `games_enabled`;
   a game already running holds it until that game ends (INFO); quiet hours
   hold it until the window ends (INFO, the check job re-armed for then); a
   failed pick retries in `AUTOSTART_RETRY_DELAY` (INFO); a game started, or
   the turn reassigned, while the pick was gathered aborts it (WARNING).
 - **Captions.** `haunting.caption_suffix` appends a line (a newline and the
   text) to the stage caption: `haunt.started` on stage 1 (twist name, hint and
-  the coin multiplier), `haunt.changed` on a boss stage that adds a twist
+  the coin multiplier; never on a boss, whose own caption covers it), `haunt.changed` on a boss stage that adds a twist
   (naming the one it adds), `haunt.lifted` on a haunted game's last stage when
   its fading twist clears (never on a boss). Twist names and hints are i18n
   keys `haunt.twist.*` and `haunt.hint.*`; on a boss, the fading twists'
@@ -2522,7 +2532,7 @@ it) is under "Haunted rounds"; this section is the goal that calls it.
   nobody won it) or unsolved (the Gashadokuro survived). Then a line for the
   viewer: "You helped put out the candles" for a contributor, or, before the
   goal is settled only, an invitation to guess or host (a non-contributor
-  gets no line after it), and their bones when the run has a bone set. With
+  gets no line after it), and the viewer's bones when the run has a bone set. With
   no season, or a run without a goal, it says there is no candle goal. Each
   use is logged at INFO.
 
@@ -2731,7 +2741,7 @@ in the group's time zone. `/achievements` shows the grant count as ×N.
 
 | Key | Earned when | Rarity |
 |---|---|---|
-| `season_debut` | a guess in a season game, or hosting a non-HARD MODE one | B |
+| `season_debut` | a guess in a season game, or hosting one Nani Pix didn't start (not HARD MODE or boss) | B |
 | `season_opening_act` | played on the season's first local day | S |
 | `season_curtain_call` | played on its last local day | S |
 | `season_pass_complete` | finished the free track (`pass_completed`, not premium) | G |
@@ -2810,7 +2820,8 @@ list), `commands/hexes/` (`/hex`, `/hexes`).
   opt-out.
 
 **Who may cast.** Both caster and target must have played this season (a
-guess in a season game, or an activated non-HARD MODE game hosted). Not
+guess in a season game, or an activated game hosted that Nani Pix didn't
+start: not HARD MODE or the boss). Not
 yourself. Neither may be opted out (`players.hex_opt_out`, which stops you
 casting and being hexed). **Opting out is locked for 24 h after the player
 last hexed someone else** (self-pranks don't count); opting back in never is.

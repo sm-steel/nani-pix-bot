@@ -79,8 +79,20 @@ def on_game_won(session: Session, event: LoggedEvent) -> None:
         session, player_id, inventory.ItemGrant(item_id, ItemSource.BONES, season.id)
     )
     if bones > target and not granted:
+        logger.debug(
+            "bone {bones} is past the set of {target} and grants nothing — no DM",
+            bones=bones,
+            target=target,
+            season_id=season.id,
+        )
         return
     if _already_queued(session, season.id, player_id, bones):
+        logger.debug(
+            "bone {bones}/{target} DM already queued — not queuing it again",
+            bones=bones,
+            target=target,
+            season_id=season.id,
+        )
         return
     payload = {"season_id": season.id, "player_id": player_id, "bones": bones, "granted": granted}
     outbox.enqueue_goal(session, OutboxKind.BONE_FOUND, payload)

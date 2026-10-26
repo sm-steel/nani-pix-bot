@@ -69,11 +69,21 @@ def test_third_bone_grants_the_item_once(session, win):
     assert _owned_rows(session, 1, ITEM) == 1
 
 
-def test_refinished_haunted_win_is_not_counted_twice(session, win):
+def test_refinished_haunted_win_is_not_counted_twice(session, win, log_records):
     _game, event = win(1)
     consumer.on_event(session, event)  # a refinish re-emits the same win
     assert [r.payload["bones"] for r in _outbox(session)] == [1]
     assert bones.count(session, _game.season_id, 1) == 1
+    again = [r for r in log_records if "DM already queued" in r.message]
+    assert again[0].level == "DEBUG"
+
+
+def test_a_bone_past_the_set_is_logged_not_queued(session, win, log_records):
+    for _ in range(4):
+        win(1)
+    past = [r for r in log_records if "past the set" in r.message]
+    assert past[0].level == "DEBUG"
+    assert past[0].extra["bones"] == 4
 
 
 def test_a_plain_win_gives_no_bone(session, win):

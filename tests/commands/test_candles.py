@@ -3,6 +3,7 @@ from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from PIL import UnidentifiedImageError
 from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes
@@ -180,10 +181,14 @@ async def test_candles_replies_photo_in_topic(session_factory, log_records):
     assert (line.level, line.extra["snuffed"], line.extra["target"]) == ("INFO", 0, 10)
 
 
-async def test_candles_without_art_replies_text(session_factory):
+@pytest.mark.parametrize(
+    "error",
+    [FileNotFoundError("art"), ValueError("bad layer"), UnidentifiedImageError("not a png")],
+)
+async def test_candles_without_art_replies_text(session_factory, error):
     _season(session_factory, "demo_3")
     update = _update()
-    with patch.object(candles, "render_goal_card", side_effect=FileNotFoundError("art")):
+    with patch.object(candles, "render_goal_card", side_effect=error):
         await _run(update, session_factory)
     update.message.reply_photo.assert_not_awaited()
     update.message.reply_text.assert_awaited_once()

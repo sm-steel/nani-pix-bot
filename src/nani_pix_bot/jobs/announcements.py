@@ -345,8 +345,27 @@ async def _send(
     return posted, failed
 
 
+# One drain at a time: the repeating job and the boss start (drain()) must
+# never both send the same pending row.
+_DRAIN_LOCK = asyncio.Lock()
+
+
 @job_log_scope()
 async def drain_outbox(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """The repeating OUTBOX_POLL_SECONDS job."""
+    await drain(context)
+
+
+async def drain(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Posts what is pending now, in id order. The repeating job calls it,
+    and so does the boss start (jobs/timers/bot_claim.py), so "goal
+    reached" and "the Gashadokuro rises" land before the boss's stage 1.
+    No log scope of its own: a caller's context stays as it is."""
+    async with _DRAIN_LOCK:
+        await _drain_pending(context)
+
+
+async def _drain_pending(context: ContextTypes.DEFAULT_TYPE) -> None:
     session_factory = context.bot_data["session_factory"]
     cache: AvatarCache = {}
     for group in _batches(_collect(session_factory)):

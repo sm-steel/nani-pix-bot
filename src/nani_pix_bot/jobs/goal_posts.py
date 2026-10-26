@@ -27,9 +27,28 @@ def _goal(
     session: Session, row: AnnouncementOutbox, kind: OutboxKind
 ) -> tuple[SeasonRun, GroupGoal] | None:
     found = season_posts.open_season(session, row, kind)
-    if found is None or found[1].group_goal is None:
+    if found is None:
         return None
-    return found[1], found[1].group_goal
+    goal = found[1].group_goal
+    if goal is None:
+        _skip_no_mechanic(row, kind, "group goal", found[1].run_id)
+        return None
+    return found[1], goal
+
+
+def _skip_no_mechanic(
+    row: AnnouncementOutbox, kind: OutboxKind, mechanic: str, run_id: str
+) -> None:
+    """open_season logs a missing or cancelled season; this is the other skip:
+    the run no longer defines the mechanic the row is about."""
+    logger.info(
+        "skipped the {kind} post: run {run_id} no longer has a {mechanic}",
+        kind=kind.value,
+        run_id=run_id,
+        mechanic=mechanic,
+        outbox_id=row.id,
+        season_id=row.payload.get("season_id"),
+    )
 
 
 def _reward(goal: GroupGoal, run: SeasonRun, lang: str) -> str:
@@ -94,10 +113,13 @@ def _boss_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post | N
 
 def _bone_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post | None:
     found = season_posts.open_season(session, row, OutboxKind.BONE_FOUND)
-    bones: BoneSet | None = found[1].bone_set if found is not None else None
-    if found is None or bones is None:
+    if found is None:
         return None
     run = found[1]
+    bones: BoneSet | None = run.bone_set
+    if bones is None:
+        _skip_no_mechanic(row, OutboxKind.BONE_FOUND, "bone set", run.run_id)
+        return None
     if row.payload["granted"]:
         item = _item_name(run, bones.item_key, lang)
         text = i18n.t("goal.bone.complete", lang, target=bones.bones, item=item)

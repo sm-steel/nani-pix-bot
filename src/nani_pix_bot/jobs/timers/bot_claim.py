@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs import reveal
+from nani_pix_bot.jobs import announcements, reveal
 from nani_pix_bot.jobs.timers.current_image import post_stage_image, post_stage_images
 from nani_pix_bot.jobs.timers.game_timeout import schedule_timeout
 from nani_pix_bot.jobs.timers.inactivity import schedule_inactivity_timers
@@ -62,7 +62,7 @@ class _Gathered:
 
 @dataclass(frozen=True)
 class AutostartClaim:
-    """Everything run_bot_autostart and _build_first_turn_post need
+    """Everything run_bot_autostart, _build_first_turn_post and _build_boss_post need
     beyond a live pick, bundled into one parameter so neither function's
     own signature grows past qlty's too-many-parameters threshold.
 
@@ -106,8 +106,9 @@ def _build_first_turn_post(
     lang: str,
     claim: AutostartClaim,
 ) -> _FirstTurnPost:
-    """Every autostart game is hard mode now — activate_game() must run
-    first (it's what sets game.hard_mode_turn = 1), since
+    """The HARD MODE first post, for the idle and overthrow triggers (the
+    boss trigger builds a normal game's post in _build_boss_post instead).
+    activate_game() must run first (it's what sets game.hard_mode_turn = 1), since
     hard_mode_turn_width()/hard_mode_turn_progress() below both read
     that field. Contrast the old stage-based version of this function,
     where the equivalent pixelation-width lookup (stage_config, keyed by
@@ -157,11 +158,18 @@ def _build_first_turn_post(
 
 
 def _build_boss_post(
-    session: Session, context: ContextTypes.DEFAULT_TYPE, game: Game, lang: str
+    session: Session,
+    context: ContextTypes.DEFAULT_TYPE,
+    game: Game,
+    lang: str,
+    claim: AutostartClaim,
 ) -> _FirstTurnPost:
     """The boss game's stage 1, posted the way a human game's is (see
     preview.py's _activate_and_stage_first_post): rendered only after
-    activation, which tags the season its twists and style depend on."""
+    activation, which tags the season its twists and style depend on.
+    When the boss takes a winner's turn, the caption names them first, as
+    an overthrow does. No haunt.started line: the boss caption already
+    says the twists pile up and states the multipliers."""
     game_service.activate_game(session, game)
     if game.original_image is None:
         raise RuntimeError("game.original_image is None in _build_boss_post")
@@ -179,7 +187,11 @@ def _build_boss_post(
         remaining=first.wrong_guess_limit,
         limit=first.wrong_guess_limit,
     )
-    caption += haunting.caption_suffix(session, game, lang, number=1, total=total)
+    if claim.dethroned_winner_name is not None:
+        took = i18n.t(
+            "dm_start.boss_took_winner_turn", lang, winner=_dethroned_label(session, claim)
+        )
+        caption = took + "\n" + caption
     caption += game_service.game_id_line(game.id, lang)
     schedule_timeout(context.job_queue, game)
     schedule_inactivity_timers(context.job_queue, game)
@@ -189,11 +201,13 @@ def _build_boss_post(
 async def run_bot_autostart(
     context: ContextTypes.DEFAULT_TYPE, session_factory, claim: AutostartClaim
 ) -> bool:
-    """The shared "bot claims a game" routine both triggers delegate to
-    once a valid pick is in hand. Returns whether a game was actually
-    started. Deliberately doesn't reuse commands/dm_start/preview.py's
-    private _activate_and_stage_first_post(): that function lives inside
-    a DM-flow module jobs/ shouldn't import from, and a bot-started game
+    """The shared "bot claims a game" routine the idle and overthrow
+    triggers delegate to once a valid pick is in hand (the boss start,
+    jobs/timers/boss.py, gathers its own pick and calls claim_game).
+    Returns whether a game was actually started. Deliberately doesn't
+    reuse commands/dm_start/preview.py's private
+    _activate_and_stage_first_post(): that function lives inside a
+    DM-flow module jobs/ shouldn't import from, and a bot-started game
     never passes through SETUP/setup-abandon the way a human one does
     (no cancel_setup_abandon call here — none was ever scheduled).
 
@@ -202,10 +216,13 @@ async def run_bot_autostart(
     autostart — None for idle_autostart_job_callback (it only fires when
     the turn is open), or the about-to-be-dethroned winner_id for
     maybe_overthrow (None too, for an unsolved/timeout ending that left
-    the turn open). It is deliberately *not* "must be None": overthrowing
-    a winner who still legitimately holds the turn is this feature's
-    whole point, so the real invariant to guard is "nothing changed the
-    turn's ownership while gather_pick()'s several real HTTP round-trips
+    the turn open). maybe_start_boss passes the same thing for the boss:
+    whoever held the turn before its pick was gathered.
+
+    It is deliberately *not* "must be None": overthrowing a winner who
+    still legitimately holds the turn is this feature's whole point, so
+    the real invariant to guard is "nothing changed the turn's ownership
+    while gather_pick()'s several real HTTP round-trips
     were in flight" — e.g. a human's /skip @user landing mid-flight and
     designating someone gather_pick() never knew about. activate_game()
     unconditionally clears next_starter_id, so proceeding on a mismatch
@@ -333,7 +350,7 @@ async def claim_game(
             return False
         game_service.clear_turn_timers(session)
         if claim.trigger is AutostartTrigger.BOSS:
-            first_turn_post = _build_boss_post(session, context, game, lang)
+            first_turn_post = _build_boss_post(session, context, game, lang, claim)
             image_choice = None
         else:
             first_turn_post = _build_first_turn_post(session, context, game, lang, claim)
@@ -354,8 +371,25 @@ async def claim_game(
         game_id=game_id,
     )
     reveal.start_pregeneration(context.application, game_id)
+    if claim.trigger is AutostartTrigger.BOSS:
+        await _drain_goal_posts(context)
     await _post_first_turn(context, session_factory, first_turn_post)
     return True
+
+
+async def _drain_goal_posts(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Posts the pending announcements first — "goal reached" and "the
+    Gashadokuro rises" (queued by mark_boss) — so the boss's stage 1
+    never beats them to the topic. A failed drain never stops the boss:
+    the rows stay pending for the repeating job."""
+    logger.debug("draining the announcement outbox before the boss's first stage")
+    try:
+        await announcements.drain(context)
+    except Exception as exc:
+        logger.opt(exception=True).error(
+            "announcement drain before the boss failed: {error!r} — posting the boss anyway",
+            error=exc,
+        )
 
 
 async def _post_first_turn(

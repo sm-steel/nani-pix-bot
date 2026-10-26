@@ -125,9 +125,24 @@ def test_a_cancelled_season_posts_nothing(session, yokai_season, kind):
     assert _render(session, _row(session, kind, yokai_season, **payload)) is None
 
 
-def test_a_run_without_a_goal_posts_nothing(session):
+@pytest.mark.parametrize(
+    ("kind", "mechanic"),
+    [
+        (OutboxKind.GOAL_MILESTONE, "group goal"),
+        (OutboxKind.GOAL_REACHED, "group goal"),
+        (OutboxKind.GOAL_BOSS, "group goal"),
+        (OutboxKind.BONE_FOUND, "bone set"),
+    ],
+)
+def test_a_run_without_the_mechanic_posts_nothing(session, log_records, kind, mechanic):
     season = _season(session, "demo_1")
-    assert _render(session, _row(session, OutboxKind.GOAL_MILESTONE, season, milestone=5)) is None
+    payload = {"milestone": 5, "players": 1, "game_id": 1, "player_id": 7, "bones": 1}
+    row = _row(session, kind, season, granted=False, **payload)
+    assert _render(session, row) is None
+    skipped = [r for r in log_records if r.message.startswith(f"skipped the {kind.value} post")]
+    assert skipped[0].level == "INFO"
+    assert mechanic in skipped[0].message
+    assert skipped[0].extra["outbox_id"] == row.id
 
 
 async def test_goal_posts_fall_back_to_text_without_art(session_factory, monkeypatch, tmp_path):

@@ -126,7 +126,9 @@ async def maybe_overthrow(
     privilege moves). On a miss, a disabled gate, or a failed pick, falls
     through to (re)arming the 24h idle-autostart backstop from whatever
     the normal outcome already committed."""
-    boss = await maybe_start_boss(context, session_factory)
+    boss = await maybe_start_boss(
+        context, session_factory, winner_id=winner_id, winner_name=winner_name
+    )
     if not boss and await _try_overthrow(context, session_factory, winner_id, winner_name):
         return
 

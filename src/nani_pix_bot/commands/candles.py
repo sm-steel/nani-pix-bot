@@ -7,6 +7,7 @@ game topic and in a DM (group members only); anywhere else it is ignored."""
 import asyncio
 
 from loguru import logger
+from PIL import UnidentifiedImageError
 from sqlalchemy.orm import Session
 from telegram import Message, Update
 from telegram.error import TelegramError
@@ -97,8 +98,14 @@ def candles_text(session: Session, found: Found, counted: tuple[int, int], lang:
 async def _send(message: Message, run_id: str, snuffed: int, target: int, text: str) -> None:
     try:
         card = await asyncio.to_thread(render_goal_card, GoalCard(run_id, snuffed, target))
-    except OSError:
-        logger.warning("no candle-counter art for {run_id} — sending text", run_id=run_id)
+    except (OSError, ValueError, UnidentifiedImageError) as error:
+        # Missing art (OSError), an unreadable file (UnidentifiedImageError)
+        # or a malformed layer (ValueError): the text still answers.
+        logger.warning(
+            "couldn't draw the candle card for {run_id} — sending text: {error!r}",
+            run_id=run_id,
+            error=error,
+        )
     else:
         try:
             await message.reply_photo(photo=card, caption=text)
