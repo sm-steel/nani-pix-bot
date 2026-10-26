@@ -86,6 +86,13 @@ class _JsonData(Mapping[str, Any]):
         return repr(self._decoded())
 
 
+def bot_hosted(data: Mapping[str, Any]) -> bool:
+    """A game event's `Game.bot_hosted`: Nani Pix started the game (HARD MODE
+    or the boss), so its starter is no human host. Events logged before
+    `boss_game` was recorded on them carry `hard_mode` only."""
+    return bool(data.get("hard_mode") or data.get("boss_game"))
+
+
 def _data(raw: Mapping[str, Any] | str | None) -> Mapping[str, Any]:
     return _JsonData(raw) if isinstance(raw, str) else dict(raw or {})
 

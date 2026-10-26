@@ -225,3 +225,17 @@ class Game(Base):
 
     starter: Mapped[Player] = relationship(foreign_keys=[starter_id])
     winner: Mapped[Player | None] = relationship(foreign_keys=[winner_id])
+
+    @property
+    def bot_hosted(self) -> bool:
+        """Nani Pix started this game, so it has no human host: a HARD MODE
+        game or the season's boss. No host rewards (setter 💠, host XP and 🪙,
+        period host points) and no hosting credit. `bot_hosted_clause()` is
+        the same test in SQL; `services.events.bot_hosted` reads it from a
+        game event's data."""
+        return bool(self.hard_mode or self.boss_game)
+
+
+def bot_hosted_clause() -> sa.ColumnElement[bool]:
+    """`Game.bot_hosted` as a SQL condition."""
+    return sa.or_(Game.hard_mode.is_(True), Game.boss_game.is_(True))

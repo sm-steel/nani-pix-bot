@@ -800,6 +800,7 @@ def force_unsolved(game: Game, *, cause: str) -> None:
         events.Involved(subject_id=game.starter_id, game_id=game.id),
         cause=cause,
         hard_mode=game.hard_mode,
+        boss_game=bool(game.boss_game),
         distinct_guessers=guessed,
     )
 

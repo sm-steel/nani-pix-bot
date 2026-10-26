@@ -1,6 +1,7 @@
 """Season award multipliers (Halloween spec): haunted, event-day and boss games
-pay more. Integers that multiply together; the host of a boss game is paid
-normally (the boss boost is for guessers only)."""
+pay more. Integers that multiply together. The boss boost is for guessers
+only: a boss game has no human host (`Game.bot_hosted`), so no host award is
+paid on it at all, and the HOST exemption below only keeps it that way."""
 
 from nani_pix_bot.models.enums import XpSource
 from nani_pix_bot.models.game import Game

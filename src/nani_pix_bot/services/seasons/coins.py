@@ -24,7 +24,7 @@ _REASONS = {
 def pay(session: Session, event: LoggedEvent, found: xp.Tagged) -> list[xp.Award]:
     table = xp.payable(found.run.coins.as_xp_table(), found)
     base = xp.awards(
-        table, event, bot_game=found.game.hard_mode, first_guess_of_player=found.first_guess
+        table, event, bot_game=found.game.bot_hosted, first_guess_of_player=found.first_guess
     )
     factors = {a.source: coin_multiplier(found.run, found.game, a.source) for a in base}
     paid = [replace(a, amount=a.amount * factors[a.source]) for a in base]

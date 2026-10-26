@@ -49,7 +49,7 @@ def test_multipliers_stack(demo3, haunted_game) -> None:
     assert coin_multiplier(run, haunted_game) == demo3.haunt.coin_multiplier * 3
 
 
-def test_boss_host_is_paid_normally(demo3, haunted_game) -> None:
+def test_boss_multiplier_never_applies_to_a_host_award(demo3, haunted_game) -> None:
     haunted_game.boss_game = True
     goal = demo3.group_goal
     haunt = demo3.haunt.coin_multiplier

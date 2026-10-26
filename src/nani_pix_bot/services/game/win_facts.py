@@ -59,6 +59,7 @@ def win_facts(session: Session, game: Game, winner_id: int, how: WinMethod) -> d
     return {
         "stage": stage_number(game),
         "hard_mode": game.hard_mode,
+        "boss_game": bool(game.boss_game),
         "how": how.value,
         "pot": bounty.pot_balance(session, game.id),
         "seconds": _seconds_live(game, ended),
