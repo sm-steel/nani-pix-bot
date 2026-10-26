@@ -1007,9 +1007,10 @@ src/nani_pix_bot/
                    #   modifiers.py  season_of / for_game: a game's season run
                    #                 and its rule modifiers (clue discount)
                    #   haunting.py   haunted rounds: the roll at activation
-                   #                 (on_activation), the stored twist, the
+                   #                 (on_activation), the stored twist, a
+                   #                 boss's stacked twists (BOSS_ORDER), the
                    #                 twist ops on a stage PNG (pipeline:
-                   #                 pixelate -> twist -> style -> frame ->
+                   #                 pixelate -> twists -> style -> frame ->
                    #                 Nani; the reveal is never twisted) and
                    #                 the caption lines
                    #   event_day.py  the Night Parade window in the group's

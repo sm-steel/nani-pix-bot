@@ -20,6 +20,7 @@ from nani_pix_bot.services.clues import shop
 from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.pixelate import fingerprint, render
 from nani_pix_bot.services.search import shikimori
+from nani_pix_bot.services.seasons import haunting
 from tests.commands.shop.helpers import (
     RICH,
     make_context,
@@ -332,3 +333,18 @@ def test_a_fading_twist_on_the_last_stage_gives_a_clean_tile_clue(
     monkeypatch.setattr(mascot, "add_to_png", lambda png, _pose, _costume=None: png)
 
     assert images.render_tile_clue(session, game, 0) == expected
+
+
+def test_tile_clue_on_a_boss_stage_applies_every_twist(
+    session, fake_runs, haunted_game, monkeypatch
+) -> None:
+    game = _haunted_tile_game(session, haunted_game, "tanuki_leaf", PixelStage.STAGE_5)
+    game.boss_game = True
+    assert game.original_image is not None
+
+    clue = _tile_clue(session, game, monkeypatch)
+
+    twisted = haunting.apply_twists(game.original_image, haunting.BOSS_ORDER)
+    expected = Image.open(BytesIO(twisted)).convert("RGB")
+    box = render.tile_box(expected.size, 0, shop.TILE_GRID)
+    assert clue.crop(box).tobytes() == expected.crop(box).tobytes()

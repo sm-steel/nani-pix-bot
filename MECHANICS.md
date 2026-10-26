@@ -755,9 +755,9 @@ or stale pin (its caption's guess count is frozen at post time).
   - stage (or turn) and guesses left at it
   - the bounty, if any
   - how long until the game ends on its own
-  - for a haunted game, the twist on the current image, its hint and the
-    Season Coins multiplier (`status.haunted`); none when a fading twist
-    has cleared on the last stage
+  - for a haunted game, the twists on the current image (every one a boss
+    stage has stacked), their hints and the Season Coins multiplier
+    (`status.haunted`); none when a fading twist has cleared on the last stage
   - the 🎲 game number
 - **Otherwise** it says what is happening instead: who is setting up the
   next game, that a vote is open, or whose turn it is to start one.
@@ -2352,33 +2352,48 @@ pays and gates exactly as before.
 | `yurei_double` | offset ghost copy blended at 35% (6% of the width, 4% of the height) | clears |
 | `kyokotsu_xray` | inverted greyscale negative, dark blue to pale cyan | clears |
 
-  `FADES_AT_LAST` holds the three that clear on the final stage (the Yurei
-  ghost was added after a visual preview); only the mirror stays to the last
-  stage.
+  `FADES_AT_LAST` holds the three that clear on a haunted game's final stage
+  (the Yurei ghost was added after a visual preview); only the mirror stays to
+  the last stage. `haunting.fades(game, twist)` is the one check: it is false
+  for every twist of a boss game, which keeps all of them to the end.
 - **The reveal is always clean.** The twist is part of the stage image only
-  (`stage_png_with` with a `SeasonLook` carrying a `Haunt(twist, last)`); the
+  (`stage_png_with` with a `SeasonLook` carrying a `Haunt(twists)`: the
+  stage's twists in order, the faded ones already left out); the
   reveal video, its pregen and the stills are rendered without it. The pipeline
-  order is **pixelate -> twist -> season style -> frame -> Nani**
-  (`services/cosmetics/stage.py`; `stage_twist` logs each twist applied).
-- **Tile clue.** The *Reveal a tile* picture wears the current stage's twist
-  too: the original and the pixelated image are both twisted (same twist and
-  same last-stage fade as the stage image) before the tile is revealed, so the
-  tapped grid cell lines up with what the buyer sees, mirror included.
-  `stage.haunt_at`/`current_haunt` is the one place that says which twist stage
-  N wears and whether it is the last; stage posts, `/status` and the tile clue
-  all read it.
-- **Boss game.** `games.boss_game` (set after the roll by the 100 Candles group goal, which a later phase adds)
-  makes every stage haunted, with the twist `haunt.twists[(stage - 1) %
-  len(twists)]` and `games.haunt_twist` ignored. `haunting.is_haunted(game)` is
-  true for a stored twist or a boss game and is what the multipliers and the
-  `haunted` win fact read.
+  order is **pixelate -> twists (in order) -> season style -> frame -> Nani**
+  (`services/cosmetics/stage.py`; `stage_twists` logs the twists applied).
+- **Tile clue.** The *Reveal a tile* picture wears the current stage's twists
+  too: the original and the pixelated image both get every twist, in order
+  (with the same last-stage fade as the stage image), before the tile is
+  revealed, so the tapped grid cell lines up with what the buyer sees, mirror
+  included. `stage.haunt_at`/`current_haunt` is the one place that says which
+  twists stage N wears; stage posts, `/status` and the tile clue all read it.
+- **Boss game.** `games.boss_game` (the Gashadokuro, set by the 100 Candles
+  group goal's `group_goal.mark_boss` before activation) makes every stage
+  haunted and **stacks** the twists: stage N wears the first N of
+  `haunting.BOSS_ORDER` (mirror, leaf, ghost double, X-ray), so stages 4 and 5
+  wear all four, and nothing fades. `games.haunt_twist` is ignored.
+  `haunting.twists_for_stage` returns that tuple (one stored twist for a
+  haunted game, none otherwise). `haunting.is_haunted(game)` is true for a
+  stored twist or a boss game and is what the multipliers and the `haunted`
+  win fact read.
+- **When the boss is due.** `group_goal.boss_due` is true while a season is
+  `ACTIVE`, its run has a `group_goal`, the goal is settled (`GOAL_REACHED`
+  logged for the season) and the season has no boss game row in any status.
+  A boss stopped with `/stop` is deleted, so another is due; a finished one is
+  not. `mark_boss` locks the season row, re-checks `boss_due`, then sets
+  `boss_game` (and the game's `season_id`), queues a `GOAL_BOSS` outbox post
+  `{season_id, game_id}` and logs INFO "the Gashadokuro rises — boss game";
+  when no boss is due it only logs a WARNING. Activation logs and records
+  `boss_game` (the `ACTIVE` line and the `GAME_ACTIVATED` event data).
 - **Captions.** `haunting.caption_suffix` appends a line (a newline and the
   text) to the stage caption: `haunt.started` on stage 1 (twist name, hint and
-  the coin multiplier), `haunt.changed` when a boss game moves to a different
-  twist, `haunt.lifted` on the last stage when a fading twist clears (the same twist as
-  the stage before; a boss game switching twist on the last stage says `haunt.changed`). Twist
-  names and hints are i18n keys `haunt.twist.*` and `haunt.hint.*`. Other
-  stages get no line.
+  the coin multiplier), `haunt.changed` on a boss stage that adds a twist
+  (naming the one it adds), `haunt.lifted` on a haunted game's last stage when
+  its fading twist clears (never on a boss). Twist names and hints are i18n
+  keys `haunt.twist.*` and `haunt.hint.*`. Other stages get no line.
+  `/status` names every twist on the current image in its `status.haunted`
+  line (names joined with commas, hints with semicolons).
 - **Unknown stored twist.** A `haunt_twist` this release does not know logs a
   WARNING and the game renders untwisted instead of failing.
 - **Objective.** `GoalKind.HAUNTED_WINS` counts the player's `GAME_WON` events

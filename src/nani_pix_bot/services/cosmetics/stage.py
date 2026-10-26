@@ -23,16 +23,11 @@ from nani_pix_bot.services.seasons import haunting, modifiers, styles
 
 
 class Haunt(NamedTuple):
-    """The haunted twist a stage render wears; `last` is the final stage, where
-    the fading twists clear up."""
+    """The haunted twists a stage render wears, in the order they go on (a boss
+    stacks several). Twists that faded on the last stage are already left out,
+    so an empty tuple is a haunted game's clean last stage."""
 
-    twist: HauntTwist
-    last: bool
-
-    @property
-    def faded(self) -> bool:
-        """A fading twist on the last stage: the image is clean."""
-        return self.last and self.twist in haunting.FADES_AT_LAST
+    twists: tuple[HauntTwist, ...]
 
 
 class SeasonLook(NamedTuple):
@@ -61,7 +56,7 @@ def stage_png_with(
     passed in). Callers add Nani on top of the result (`mascot.add_to_png`)."""
     png = pixelate_service.pixelate(image_bytes, width, algorithm)
     if look is not None and look.haunt is not None:
-        png = haunting.apply_twist(png, look.haunt.twist, last=look.haunt.last)
+        png = haunting.apply_twists(png, look.haunt.twists)
     if look is not None and look.style is not None:
         logger.debug("styling the stage image with {style!r}", style=look.style)
         png = styles.apply_style(png, look.style)
@@ -96,25 +91,35 @@ def season_style(session: Session, game: Game) -> str | None:
     return style
 
 
-def stage_twist(session: Session, game: Game, number: int) -> HauntTwist | None:
-    """The haunted twist stage `number` wears, logged at INFO when there is one,
-    like `season_style`."""
-    twist = haunting.twist_for_stage(modifiers.season_of(session, game), game, number)
-    if twist is not None:
+def stage_twists(session: Session, game: Game, number: int) -> tuple[HauntTwist, ...]:
+    """The haunted twists stage `number` wears, logged at INFO when there are
+    any, like `season_style`."""
+    twists = haunting.twists_for_stage(modifiers.season_of(session, game), game, number)
+    if twists:
         logger.info(
-            "stage image haunted with {twist}", twist=twist.value, stage=number, game_id=game.id
+            "stage image haunted with {twists}",
+            twists=", ".join(t.value for t in twists),
+            stage=number,
+            game_id=game.id,
         )
-    return twist
+    return twists
 
 
 def haunt_at(
     session: Session, game: Game, progress: StageProgress | HardModeTurnProgress
 ) -> Haunt | None:
-    """The twist the game's stage (or HARD MODE turn) `progress` wears and
-    whether it is the last one, logged like `stage_twist`. Every site that
-    renders or describes the current stage's twist reads it through here."""
-    twist = stage_twist(session, game, progress.number)
-    return None if twist is None else Haunt(twist, progress.number == progress.total)
+    """The twists the game's stage (or HARD MODE turn) `progress` wears, with
+    the ones that fade on the last stage left out, logged like `stage_twists`.
+    Every site that renders or describes the current stage's twists reads it
+    through here. None for a game that is not haunted."""
+    twists = stage_twists(session, game, progress.number)
+    if not twists:
+        return None
+    last = progress.number == progress.total
+    faded = [t for t in twists if last and haunting.fades(game, t)]
+    for twist in faded:
+        logger.debug("{twist} faded on the last stage", twist=twist.value, game_id=game.id)
+    return Haunt(tuple(t for t in twists if t not in faded))
 
 
 def current_haunt(session: Session, game: Game) -> Haunt | None:

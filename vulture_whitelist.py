@@ -52,10 +52,11 @@ _kept = (
     Reward.ofuda,
     # Halloween: wired by P6 (#471)
     ItemSource.BONES,
-    OutboxKind.GOAL_BOSS,
     OutboxKind.BONE_FOUND,
+    group_goal.boss_due,
     group_goal.candles_for,
     group_goal.is_contributor,
+    group_goal.mark_boss,
 )
 
 if TYPE_CHECKING:

@@ -128,9 +128,10 @@ def test_activation_names_starter_and_answer(session: Session, log_records) -> N
     line = _info(
         log_records,
         "ACTIVE — started by 1 (@setter), source=shikimori, answer 'Sousou no Frieren', "
-        "hard_mode=False",
+        "hard_mode=False, boss_game=False",
     )
     assert line.extra["answer"] == "Sousou no Frieren"
+    assert line.extra["boss_game"] is False
 
 
 def test_lines_pick_up_the_update_context(session: Session, log_records) -> None:

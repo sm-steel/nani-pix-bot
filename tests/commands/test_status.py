@@ -315,12 +315,12 @@ def _haunted_season(session: Session) -> int:
 async def test_status_repost_of_a_haunted_game_is_twisted(
     session_factory, monkeypatch: pytest.MonkeyPatch, fake_runs
 ) -> None:
-    seen: list[tuple[HauntTwist | None, bool]] = []
+    seen: list[tuple[HauntTwist, ...]] = []
 
     def fake_stage_png_with(image, _w, _a, _f, look=None) -> bytes:
         assert look is not None
         assert look.haunt is not None
-        seen.append((look.haunt.twist, look.haunt.last))
+        seen.append(look.haunt.twists)
         return image
 
     monkeypatch.setattr(stage_cosmetics, "stage_png_with", fake_stage_png_with)
@@ -331,7 +331,7 @@ async def test_status_repost_of_a_haunted_game_is_twisted(
             Game(
                 starter_id=HOST,
                 status=GameStatus.ACTIVE,
-                current_stage=PixelStage.STAGE_5,
+                current_stage=PixelStage.STAGE_2,
                 original_image=b"img",
                 season_id=_haunted_season(session),
                 haunt_twist="tanuki_leaf",
@@ -340,7 +340,7 @@ async def test_status_repost_of_a_haunted_game_is_twisted(
 
     await _run(_update(), _context(session_factory))
 
-    assert seen == [(HauntTwist.TANUKI_LEAF, True)]
+    assert seen == [(HauntTwist.TANUKI_LEAF,)]
 
 
 def test_the_caption_names_a_haunted_twist_its_hint_and_the_multiplier() -> None:
@@ -353,7 +353,7 @@ def test_the_caption_names_a_haunted_twist_its_hint_and_the_multiplier() -> None
         limit=2,
         pot=0,
         time_left=None,
-        twist=HauntTwist.KITSUNE_MIRROR,
+        twists=(HauntTwist.KITSUNE_MIRROR,),
         multiplier=3,
     )
 
@@ -392,7 +392,7 @@ def test_the_live_status_of_a_haunted_game_carries_the_twist_and_multiplier(
         session_factory, current_stage=PixelStage.STAGE_2, haunt_twist="kyokotsu_xray"
     )
 
-    assert live.twist is HauntTwist.KYOKOTSU_XRAY
+    assert live.twists == (HauntTwist.KYOKOTSU_XRAY,)
     assert live.multiplier == fake_runs["demo_3"].haunt.coin_multiplier
 
 
@@ -401,7 +401,7 @@ def test_a_faded_twist_on_the_last_stage_gives_no_status_line(session_factory, f
         session_factory, current_stage=PixelStage.STAGE_5, haunt_twist="kyokotsu_xray"
     )
 
-    assert live.twist is None
+    assert live.twists == ()
 
 
 def test_the_mirror_stays_in_the_status_on_the_last_stage(session_factory, fake_runs) -> None:
@@ -409,17 +409,45 @@ def test_the_mirror_stays_in_the_status_on_the_last_stage(session_factory, fake_
         session_factory, current_stage=PixelStage.STAGE_5, haunt_twist="kitsune_mirror"
     )
 
-    assert live.twist is HauntTwist.KITSUNE_MIRROR
+    assert live.twists == (HauntTwist.KITSUNE_MIRROR,)
 
 
-def test_a_boss_games_status_names_its_current_stage_twist(session_factory, fake_runs) -> None:
+def test_a_boss_games_status_names_every_active_twist(session_factory, fake_runs) -> None:
     live = _live_after_repost(session_factory, current_stage=PixelStage.STAGE_2, boss_game=True)
 
-    assert live.twist is list(HauntTwist)[1]
+    assert live.twists == (HauntTwist.KITSUNE_MIRROR, HauntTwist.TANUKI_LEAF)
+
+
+def test_a_boss_keeps_all_four_twists_in_the_status_on_the_last_stage(
+    session_factory, fake_runs
+) -> None:
+    live = _live_after_repost(session_factory, current_stage=PixelStage.STAGE_5, boss_game=True)
+
+    assert live.twists == tuple(HauntTwist)
+
+
+def test_the_caption_names_every_boss_twist() -> None:
+    live = status.LiveStatus(
+        game_id=7,
+        hard_mode=False,
+        number=2,
+        total=5,
+        remaining=1,
+        limit=2,
+        pot=0,
+        time_left=None,
+        twists=(HauntTwist.KITSUNE_MIRROR, HauntTwist.TANUKI_LEAF),
+        multiplier=3,
+    )
+
+    line = status.caption(live, "en").splitlines()[1]
+
+    assert i18n.t("haunt.twist.kitsune_mirror", "en") in line
+    assert i18n.t("haunt.twist.tanuki_leaf", "en") in line
 
 
 def test_an_unhaunted_game_has_no_status_twist(session_factory, fake_runs) -> None:
     live = _live_after_repost(session_factory, current_stage=PixelStage.STAGE_2)
 
-    assert live.twist is None
+    assert live.twists == ()
     assert live.multiplier == 1

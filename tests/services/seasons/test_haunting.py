@@ -1,5 +1,6 @@
 import pytest
 
+from nani_pix_bot.models.game import Game
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.seasons.mechanics import HauntTwist
@@ -43,23 +44,72 @@ def test_a_run_without_haunt_never_rolls(demo1) -> None:
     assert haunting.roll(demo1, event_day=True, rng=FixedRng(randrange=0)) is None
 
 
-def test_twist_for_stage_uses_the_stored_twist(demo3, haunted_game) -> None:
-    haunted_game.haunt_twist = "tanuki_leaf"
-    got = [haunting.twist_for_stage(demo3, haunted_game, s) for s in (1, 5)]
-    assert got == [HauntTwist.TANUKI_LEAF] * 2
-
-
-def test_boss_game_cycles_the_run_twists_by_stage(demo3, haunted_game) -> None:
+@pytest.fixture
+def boss_game(haunted_game) -> Game:
     haunted_game.boss_game = True
+    haunted_game.haunt_twist = "tanuki_leaf"  # ignored on a boss
+    return haunted_game
+
+
+def test_twists_for_stage_uses_the_stored_twist(demo3, haunted_game) -> None:
     haunted_game.haunt_twist = "tanuki_leaf"
-    got = [haunting.twist_for_stage(demo3, haunted_game, s) for s in range(1, 6)]
-    assert got == [*demo3.haunt.twists, demo3.haunt.twists[0]]
+    got = [haunting.twists_for_stage(demo3, haunted_game, s) for s in (1, 5)]
+    assert got == [(HauntTwist.TANUKI_LEAF,)] * 2
+
+
+def test_an_unhaunted_game_has_no_twists(demo3, haunted_game) -> None:
+    assert haunting.twists_for_stage(demo3, haunted_game, 1) == ()
+
+
+def test_boss_order_is_mirror_leaf_double_xray() -> None:
+    assert haunting.BOSS_ORDER == (
+        HauntTwist.KITSUNE_MIRROR,
+        HauntTwist.TANUKI_LEAF,
+        HauntTwist.YUREI_DOUBLE,
+        HauntTwist.KYOKOTSU_XRAY,
+    )
+
+
+def test_boss_twists_stack_by_stage(demo3, boss_game) -> None:
+    stages = [haunting.twists_for_stage(demo3, boss_game, s) for s in range(1, 6)]
+    assert stages[0] == (HauntTwist.KITSUNE_MIRROR,)
+    assert stages[1] == (HauntTwist.KITSUNE_MIRROR, HauntTwist.TANUKI_LEAF)
+    assert stages[2] == haunting.BOSS_ORDER[:3]
+    assert stages[3] == stages[4] == haunting.BOSS_ORDER
 
 
 def test_no_run_or_no_haunt_means_no_twist(demo1, haunted_game) -> None:
     haunted_game.haunt_twist = "kitsune_mirror"
-    assert haunting.twist_for_stage(None, haunted_game, 1) is None
-    assert haunting.twist_for_stage(demo1, haunted_game, 1) is None
+    assert haunting.twists_for_stage(None, haunted_game, 1) == ()
+    assert haunting.twists_for_stage(demo1, haunted_game, 1) == ()
+    haunted_game.boss_game = True
+    assert haunting.twists_for_stage(demo1, haunted_game, 1) == ()
+
+
+def test_boss_xray_stays_on_the_last_stage(boss_game) -> None:
+    assert not any(haunting.fades(boss_game, t) for t in HauntTwist)
+
+
+def test_haunted_xray_still_fades_on_the_last_stage(haunted_game) -> None:
+    assert haunting.fades(haunted_game, HauntTwist.KYOKOTSU_XRAY)
+    assert not haunting.fades(haunted_game, HauntTwist.KITSUNE_MIRROR)
+
+
+def test_boss_stage_announces_the_twist_it_adds(session, boss_game) -> None:
+    for number, twist in ((2, "Tanuki leaf"), (3, "Yūrei double"), (4, "Kyōkotsu X-ray")):
+        line = haunting.announcement(session, boss_game, "en", number=number, total=5)
+        assert line is not None
+        assert twist in line
+
+
+def test_boss_first_stage_announces_the_mirror(session, boss_game) -> None:
+    line = haunting.announcement(session, boss_game, "en", number=1, total=5)
+    assert line is not None
+    assert "Kitsune illusion" in line
+
+
+def test_no_lifted_post_for_a_boss(session, boss_game) -> None:
+    assert haunting.announcement(session, boss_game, "en", number=5, total=5) is None
 
 
 def test_unknown_stored_twist_is_ignored(haunted_game, log_records) -> None:

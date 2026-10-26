@@ -1,6 +1,7 @@
 """The 100 Candles group goal (Halloween spec): which finished season games
-light a candle, who contributed, which milestone is due, and the one-time
-payout when the target is reached. Must not import services.game."""
+light a candle, who contributed, which milestone is due, the one-time
+payout when the target is reached, and when the Gashadokuro boss game is due.
+Must not import services.game."""
 
 from loguru import logger
 from sqlalchemy import Select, select
@@ -28,6 +29,7 @@ from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.cosmetics import inventory
 from nani_pix_bot.services.economy import wallet
 from nani_pix_bot.services.events import LoggedEvent
+from nani_pix_bot.services.seasons import schedule
 
 SNUFFING: tuple[GameStatus, ...] = (GameStatus.WON, GameStatus.UNSOLVED)
 
@@ -113,6 +115,17 @@ def _last_queued(session: Session, season_id: int) -> int:
     rows = session.scalars(_read(stmt, True))
     return max(
         (r.payload["milestone"] for r in rows if r.payload.get("season_id") == season_id), default=0
+    )
+
+
+def _lock_season(session: Session, season_id: int) -> None:
+    """Lock the season row (a no-op on SQLite) and refresh it, so concurrent
+    goal writers for one season run one after another."""
+    session.execute(
+        select(SeasonSchedule)
+        .where(SeasonSchedule.id == season_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
 
 
@@ -211,15 +224,56 @@ def on_game_ended(session: Session, event: LoggedEvent) -> None:
     if season.status not in (SeasonStatus.ACTIVE, SeasonStatus.CLOSING):
         return
     # Serialize concurrent game ends on the season row; everything below is
-    # read after the lock is held (the lock is a no-op on SQLite).
-    session.execute(
-        select(SeasonSchedule)
-        .where(SeasonSchedule.id == season.id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    )
+    # read after the lock is held.
+    _lock_season(session, season.id)
     snuffed = candles(session, season.id, goal, lock=True)
     if snuffed < goal.target:
         _queue_milestone(session, season, goal, snuffed)
     else:
         settle(session, season, run, event.game_id)
+
+
+def boss_game(session: Session, season_id: int, *, lock: bool = False) -> Game | None:
+    """The season's boss game in any status, if one exists (a stopped boss is
+    deleted, so it no longer counts)."""
+    stmt = select(Game).where(Game.season_id == season_id, Game.boss_game.is_(True)).limit(1)
+    return session.scalars(_read(stmt, lock)).first()
+
+
+def _due_season(session: Session, *, lock: bool = False) -> SeasonSchedule | None:
+    """The active season whose goal is settled and that has no boss game yet."""
+    season = schedule.active(session)
+    if season is None or goal_of(session, season.id) is None:
+        return None
+    if not is_settled(session, season.id, lock=lock):
+        return None
+    if boss_game(session, season.id, lock=lock) is not None:
+        return None
+    return season
+
+
+def boss_due(session: Session) -> bool:
+    return _due_season(session) is not None
+
+
+def mark_boss(session: Session, game: Game) -> None:
+    """Make `game` the season's boss game, once per season (call it before
+    activate_game). A no-op, logged, when no boss is due any more."""
+    season = schedule.active(session)
+    if season is not None:
+        # Serialize concurrent boss starts; the re-check below reads after the lock.
+        _lock_season(session, season.id)
+    season = _due_season(session, lock=True)
+    if season is None:
+        logger.warning("no boss game due — not marking this game the boss", game_id=game.id)
+        return
+    game.boss_game = True
+    game.season_id = season.id
+    session.flush()
+    outbox.enqueue_goal(session, OutboxKind.GOAL_BOSS, {"season_id": season.id, "game_id": game.id})
+    logger.info(
+        "the Gashadokuro rises — boss game",
+        season_id=season.id,
+        run_id=season.run_id,
+        game_id=game.id,
+    )

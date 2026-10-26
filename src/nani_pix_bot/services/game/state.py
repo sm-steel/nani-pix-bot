@@ -471,12 +471,14 @@ def activate_game(session: Session, game: Game) -> None:
     turn_state = turns.get_or_create_turn_state(session)
     turn_state.next_starter_id = None
     logger.info(
-        "ACTIVE — started by {starter}, source={source}, answer {answer!r}, hard_mode={hard_mode}",
+        "ACTIVE — started by {starter}, source={source}, answer {answer!r}, "
+        "hard_mode={hard_mode}, boss_game={boss_game}",
         starter=players.describe_player_id(session, game.starter_id),
         starter_id=game.starter_id,
         source=game.source,
         answer=display_title(game, "EN"),
         hard_mode=game.hard_mode,
+        boss_game=bool(game.boss_game),
         season_id=game.season_id,
         game_id=game.id,
     )
@@ -486,6 +488,7 @@ def activate_game(session: Session, game: Game) -> None:
         events.Involved(actor_id=game.starter_id, game_id=game.id),
         source=str(game.source),
         hard_mode=game.hard_mode,
+        boss_game=bool(game.boss_game),
         own_screenshot=game.screenshot_source is None,
     )
 
