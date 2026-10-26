@@ -46,7 +46,22 @@ def test_activation_logs_source_and_mode(session: Session) -> None:
 
     (row,) = _events(session, EventType.GAME_ACTIVATED)
     assert row.actor_id == STARTER
-    assert row.data == {"source": "tmdb", "hard_mode": False, "own_screenshot": True}
+    assert row.data == {
+        "source": "tmdb",
+        "hard_mode": False,
+        "boss_game": False,
+        "own_screenshot": True,
+    }
+
+
+def test_activation_records_a_boss_game(session: Session) -> None:
+    game = _game(session, status=GameStatus.SETUP, source="tmdb")
+    game.boss_game = True
+
+    game_service.activate_game(session, game)
+
+    (row,) = _events(session, EventType.GAME_ACTIVATED)
+    assert row.data["boss_game"] is True
 
 
 def test_a_wrong_guess_logs_its_score_and_first_of_game(session: Session) -> None:

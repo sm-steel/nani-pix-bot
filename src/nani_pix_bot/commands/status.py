@@ -28,7 +28,7 @@ from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.mascot import Pose
-from nani_pix_bot.services.seasons import modifiers, multipliers
+from nani_pix_bot.services.seasons import haunting, modifiers, multipliers
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -44,8 +44,9 @@ class LiveStatus:
     limit: int
     pot: int
     time_left: timedelta | None
-    twist: HauntTwist | None = None  # the twist on the current image, if any
+    twists: tuple[HauntTwist, ...] = ()  # the twists on the current image, if any
     multiplier: int = 1  # the Season Coins multiplier of a haunted game
+    boss: bool = False  # the Gashadokuro: its twists never fade
 
 
 @dataclass(frozen=True)
@@ -76,13 +77,15 @@ def caption(live: LiveStatus, lang: str) -> str:
         lines.append(i18n.t("bounty.caption_line", lang, amount=live.pot))
     if live.time_left is not None and live.time_left > timedelta(0):
         lines.append(i18n.t("status.ends", lang, duration=duration(live.time_left, lang)))
-    if live.twist is not None:
+    if live.twists:
         lines.append(
             i18n.t(
                 "status.haunted",
                 lang,
-                twist=i18n.t(f"haunt.twist.{live.twist.value}", lang),
-                hint=i18n.t(f"haunt.hint.{live.twist.value}", lang),
+                twist=", ".join(i18n.t(f"haunt.twist.{t.value}", lang) for t in live.twists),
+                hint="; ".join(
+                    i18n.t(haunting.hint_key(t, boss=live.boss), lang) for t in live.twists
+                ),
                 multiplier=live.multiplier,
             )
         )
@@ -121,8 +124,9 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
         limit=progress.limit,
         pot=bounty.pot_balance(session, game.id),
         time_left=_time_left(game, now),
-        twist=None if haunt is None or haunt.faded else haunt.twist,
+        twists=() if haunt is None else haunt.twists,
         multiplier=_multiplier(session, game),
+        boss=game.boss_game,
     )
     return _Repost(
         live,

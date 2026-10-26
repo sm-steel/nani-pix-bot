@@ -35,6 +35,8 @@ class AdminToggleConfig:
     enabled_key: str
     disabled_key: str
     setter: Callable[[Session, bool], None]
+    # Runs after the setting is switched on (not off), once it is committed.
+    on_enabled: Callable[[ContextTypes.DEFAULT_TYPE], None] | None = None
 
 
 def make_admin_toggle_command(
@@ -73,6 +75,8 @@ def make_admin_toggle_command(
         with session_scope(session_factory) as session:
             config.setter(session, enabled)
         logger.info("ran /{command} {state}", command=config.command_name, state=args[0].lower())
+        if enabled and config.on_enabled is not None:
+            config.on_enabled(context)
 
         await message.reply_text(
             i18n.t(config.enabled_key, lang) if enabled else i18n.t(config.disabled_key, lang)

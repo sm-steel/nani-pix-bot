@@ -30,13 +30,16 @@ from telegram.ext import JobQueue
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs.timers._shared import seconds_until, seconds_until_timeout
 from nani_pix_bot.jobs.timers.autostart import (
+    idle_autostart_job_callback,
+    maybe_overthrow,
+    schedule_idle_autostart,
+)
+from nani_pix_bot.jobs.timers.boss import schedule_boss_start
+from nani_pix_bot.jobs.timers.bot_claim import (
     IDLE_AUTOSTART_JOB_NAME,
     AutostartTrigger,
     cancel_idle_autostart,
-    idle_autostart_job_callback,
-    maybe_overthrow,
     run_bot_autostart,
-    schedule_idle_autostart,
 )
 from nani_pix_bot.jobs.timers.current_image import (
     clear_image_if_sent,
@@ -94,6 +97,7 @@ from nani_pix_bot.jobs.timers.vote import (
     vote_close_job_name,
 )
 from nani_pix_bot.services import game as game_service
+from nani_pix_bot.services.seasons import group_goal
 
 __all__ = [
     "IDLE_AUTOSTART_JOB_NAME",
@@ -132,6 +136,7 @@ __all__ = [
     "rearm_pending_timeouts",
     "rearm_vote",
     "run_bot_autostart",
+    "schedule_boss_start",
     "schedule_idle_autostart",
     "schedule_inactivity_timers",
     "schedule_setup_abandon",
@@ -169,15 +174,22 @@ async def rearm_pending_timeouts(job_queue: JobQueue | None, session_factory) ->
         idle_autostart = False
         if turn_state is not None:
             schedule_turn_timers(job_queue, turn_state)
-            schedule_idle_autostart(job_queue, turn_state)
+            schedule_idle_autostart(job_queue, turn_state, check_boss=False)
             turn_timers = (turn_state.reminder_at is not None) + (turn_state.expiry_at is not None)
             idle_autostart = turn_state.autostart_deadline_at is not None
+        # A held or retried boss start lives only in memory: check again.
+        boss_due = group_goal.boss_due(session)
+        if boss_due:
+            schedule_boss_start(job_queue)
     logger.info(
         "re-armed on startup: {timeouts} game timeout(s), {setups} setup-abandon timer(s), "
-        "{votes} vote close timer(s), {turn_timers} turn timer(s), idle-autostart {idle_autostart}",
+        "{votes} vote close timer(s), {turn_timers} turn timer(s), "
+        "idle-autostart {idle_autostart}, "
+        "boss check {boss_check}",
         timeouts=len(active),
         setups=len(setups),
         votes=len(voting),
         turn_timers=turn_timers,
         idle_autostart="armed" if idle_autostart else "not armed",
+        boss_check="armed" if boss_due else "not armed",
     )

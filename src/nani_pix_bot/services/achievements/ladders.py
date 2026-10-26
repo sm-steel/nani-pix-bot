@@ -7,7 +7,7 @@ from datetime import date, timedelta
 
 from nani_pix_bot.models.enums import Currency, CurrencyReason, EventType
 from nani_pix_bot.services.achievements.definitions import History
-from nani_pix_bot.services.events import LoggedEvent
+from nani_pix_bot.services.events import LoggedEvent, bot_hosted
 
 E = EventType
 _SPENDS = frozenset({CurrencyReason.CLUE_PURCHASE.value, CurrencyReason.SHARPEN.value})
@@ -43,7 +43,7 @@ def wins(history: History) -> int:
 
 
 def hosted_solved(history: History) -> int:
-    return _games(e for e in history.about_me(E.GAME_WON) if not e.data["hard_mode"])
+    return _games(e for e in history.about_me(E.GAME_WON) if not bot_hosted(e.data))
 
 
 def games_guessed(history: History) -> int:
@@ -105,7 +105,7 @@ def stage_one_wins(history: History) -> int:
 
 
 def _stumping(event: LoggedEvent) -> bool:
-    return not event.data["hard_mode"] and event.data["distinct_guessers"] >= _STUMP_GUESSERS
+    return not bot_hosted(event.data) and event.data["distinct_guessers"] >= _STUMP_GUESSERS
 
 
 def stumped(history: History) -> int:

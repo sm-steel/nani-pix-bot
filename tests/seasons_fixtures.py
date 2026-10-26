@@ -171,6 +171,40 @@ def haunted_season(session) -> SeasonSchedule:
 
 
 @pytest.fixture
+def yokai_season(haunted_season) -> SeasonSchedule:
+    """The demo_3 season again, named for the group-goal tests (goal 10, bone set of 3)."""
+    return haunted_season
+
+
+@pytest.fixture
+def finished_game(session, yokai_season):
+    """Adds a game of the yokai season with its guesses and players."""
+
+    def _add(status, *, guessers=(), **game_fields) -> Game:
+        """game_fields are Game columns (haunt_twist, event_day, boss_game, hard_mode,
+        winner_id, starter_id, season_id...), defaulting to a game of the yokai season."""
+        fields = {"starter_id": STARTER, "season_id": yokai_season.id} | game_fields
+        winner = fields.get("winner_id")
+        for uid in {fields["starter_id"], *guessers, *([winner] if winner else [])}:
+            if session.get(Player, uid) is None:
+                session.add(Player(telegram_user_id=uid))
+        session.flush()
+        game = Game(
+            status=status, current_stage=PixelStage.STAGE_1, title_english="Clannad", **fields
+        )
+        session.add(game)
+        session.flush()
+        session.add_all(
+            GameGuess(game_id=game.id, player_id=u, text="x", stage=1, correct=u == winner)
+            for u in guessers
+        )
+        session.flush()
+        return game
+
+    return _add
+
+
+@pytest.fixture
 def haunted_game(session, haunted_season) -> Game:
     return _make_game(session, season_id=haunted_season.id)
 

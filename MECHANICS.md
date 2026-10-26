@@ -755,9 +755,9 @@ or stale pin (its caption's guess count is frozen at post time).
   - stage (or turn) and guesses left at it
   - the bounty, if any
   - how long until the game ends on its own
-  - for a haunted game, the twist on the current image, its hint and the
-    Season Coins multiplier (`status.haunted`); none when a fading twist
-    has cleared on the last stage
+  - for a haunted game, the twists on the current image (every one a boss
+    stage has stacked), each twist's hint and the Season Coins multiplier
+    (`status.haunted`); none when a fading twist has cleared on the last stage
   - the 🎲 game number
 - **Otherwise** it says what is happening instead: who is setting up the
   next game, that a vote is open, or whose turn it is to start one.
@@ -1117,6 +1117,13 @@ and both no-ops while a game is already `SETUP`/`ACTIVE`/`VOTING`.
   (turn already open to anyone), the bot simply claims that already-open
   turn instead of leaving it for a human.
 
+A third kind of bot-started game is the season's Gashadokuro boss (see
+"100 Candles and the boss game" and "Haunted rounds"): a normal 5-stage game,
+not HARD MODE, that ignores `autostart_enabled` (it is still gated by
+`games_enabled`). It shares the pick and the claim with the two above
+(`jobs/timers/bot_claim.py`), and every game ending tries it before the
+overthrow roll.
+
 **Picking a random anime + screenshot pair** (`services/game/autostart.py`,
 framework-agnostic, no DB writes until a full pick is in hand): a random
 Shikimori anime (`order: random`, `censored: true` — excludes hentai/
@@ -1198,6 +1205,8 @@ While the window is active:
   toward any of their durations. A `/guess` at 03:00 with quiet hours
   23:00–08:00 puts the next 6h auto-advance at 14:00, not 09:00; a
   2-day timeout spanning two nights runs two nights longer.
+- **No Gashadokuro boss start** (see "Haunted rounds") — it waits for the
+  window's end.
 - **No overthrow roll** after a win (see "Bot-initiated games" above) —
   the winner simply gets the turn, and the idle auto-start backstop
   (itself frozen and held back) remains.
@@ -1455,8 +1464,8 @@ else (equal on every tie-breaker) reads `shared 1st place`. Russian reads
 
 A period the game's `ended_at` falls outside (an admin `/setwinner`
 re-finish long after it closed) is left out; with none left there is no
-line. A normal (non-HARD MODE) win adds `🌟 Host @name: +1 point` for the
-host. The same lines close a vote win, an admin-named win, `/correct` and a
+line. A win with a human host (not HARD MODE, not the boss) adds
+`🌟 Host @name: +1 point` for the host. The same lines close a vote win, an admin-named win, `/correct` and a
 re-finish.
 
 ### Since launch
@@ -1604,7 +1613,8 @@ item, or "none").
   in the group timezone (the quiet-hours timezone, UTC if none). The first
   partial periods after launch count normally.
 - **Score.** A win at stage 1–5 is worth 5/4/3/2/1; a HARD MODE win at
-  turn 1/2 is worth 6/4; hosting a game someone solved is +1. A **clean
+  turn 1/2 is worth 6/4; hosting a game someone solved is +1 (not a HARD
+  MODE or boss game: Nani Pix started those, so they have no host). A **clean
   solve** (a normal-mode win with no wrong guess of the winner's own in
   that game) is worth +1 more. A win the matcher didn't catch
   (`/correct`, a HARD MODE vote, `/setwinner`) doesn't count the winning
@@ -1737,7 +1747,9 @@ one-time backfill is run.
   from wrong guesses in that game.
 - The win reward depends on the stage the game was won at.
 - A HARD MODE win on turn N pays the stage-N reward x 2, with no setter
-  and no prompt bonus (the starter is the bot itself).
+  and no prompt bonus (the starter is the bot itself). The season's boss
+  game is started by Nani Pix too, so it pays no setter or prompt bonus
+  either (`Game.bot_hosted`).
 - The setter is paid only for a win at stages 2-4 (stage 1 is too easy,
   stage 5 barely solvable), and never for an unsolved game. A starter who
   wins their own game is not paid the setter bonus.
@@ -2056,7 +2068,7 @@ add their own rows (source `objective`, see "Objectives" below).
 | Event | Who gets it |
 |---|---|
 | Win | the winner, by the stage (or HARD MODE turn, clamped to 1-5) they won at |
-| Host | the starter, when the game is won or ends unsolved — **not on HARD MODE games**, which only the bot starts |
+| Host | the starter, when the game is won or ends unsolved — **not on HARD MODE or boss games**, which only the bot starts (`Game.bot_hosted`) |
 | First guess | each player's first guess in a game, once per player per game |
 | Objective | the player who completes a season objective, once (see "Objectives") |
 
@@ -2076,7 +2088,7 @@ own award is the usual one.
 from the 💠 balance. Every credit and debit still writes a `currency_transfers`
 row, tagged `currency = season` and the `season_id`. They are paid for the
 same events and by the same rules as Season XP (tagged games only; no hosting
-on HARD MODE games; the first guess is the player's first `game_guesses` row in that game),
+on HARD MODE or boss games; the first guess is the player's first `game_guesses` row in that game),
 priced by the run's `CoinTable`: a win pays the same at every stage,
 `host_solved`, `host_unsolved`, `first_guess`. Pass rewards can pay 🪙 too.
 
@@ -2310,7 +2322,7 @@ images.
 ### Objectives
 
 A run may list `objectives`: one-time goals with a key, a `Goal`, Season XP and
-optionally 🪙. A goal's kind is one of: hosted games (not HARD MODE), wins
+optionally 🪙. A goal's kind is one of: hosted games (not HARD MODE or boss), wins
 (optionally `max_stage`: a win at that stage or earlier, HARD MODE wins
 excluded), games guessed in (distinct games), clues shared, tips, and days
 played (days with a guess or a hosted game).
@@ -2352,38 +2364,203 @@ pays and gates exactly as before.
 | `yurei_double` | offset ghost copy blended at 35% (6% of the width, 4% of the height) | clears |
 | `kyokotsu_xray` | inverted greyscale negative, dark blue to pale cyan | clears |
 
-  `FADES_AT_LAST` holds the three that clear on the final stage (the Yurei
-  ghost was added after a visual preview); only the mirror stays to the last
-  stage.
+  `FADES_AT_LAST` holds the three that clear on a haunted game's final stage
+  (the Yurei ghost was added after a visual preview); only the mirror stays to
+  the last stage. `haunting.fades(game, twist)` is the one check: it is false
+  for every twist of a boss game, which keeps all of them to the end.
 - **The reveal is always clean.** The twist is part of the stage image only
-  (`stage_png_with` with a `SeasonLook` carrying a `Haunt(twist, last)`); the
+  (`stage_png_with` with a `SeasonLook` carrying a `Haunt(twists)`: the
+  stage's twists in order, the faded ones already left out); the
   reveal video, its pregen and the stills are rendered without it. The pipeline
-  order is **pixelate -> twist -> season style -> frame -> Nani**
-  (`services/cosmetics/stage.py`; `stage_twist` logs each twist applied).
-- **Tile clue.** The *Reveal a tile* picture wears the current stage's twist
-  too: the original and the pixelated image are both twisted (same twist and
-  same last-stage fade as the stage image) before the tile is revealed, so the
-  tapped grid cell lines up with what the buyer sees, mirror included.
-  `stage.haunt_at`/`current_haunt` is the one place that says which twist stage
-  N wears and whether it is the last; stage posts, `/status` and the tile clue
-  all read it.
-- **Boss game.** `games.boss_game` (set after the roll by the 100 Candles group goal, which a later phase adds)
-  makes every stage haunted, with the twist `haunt.twists[(stage - 1) %
-  len(twists)]` and `games.haunt_twist` ignored. `haunting.is_haunted(game)` is
-  true for a stored twist or a boss game and is what the multipliers and the
-  `haunted` win fact read.
+  order is **pixelate -> twists (in order) -> season style -> frame -> Nani**
+  (`services/cosmetics/stage.py`; `stage_twists` logs the twists applied).
+- **Tile clue.** The *Reveal a tile* picture wears the current stage's twists
+  too: the original and the pixelated image both get every twist, in order
+  (with the same last-stage fade as the stage image), before the tile is
+  revealed, so the tapped grid cell lines up with what the buyer sees, mirror
+  included. `stage.haunt_at`/`current_haunt` is the one place that says which
+  twists stage N wears; stage posts, `/status` and the tile clue all read it.
+- **Boss game.** `games.boss_game` (the Gashadokuro, set by the 100 Candles
+  group goal's `group_goal.mark_boss` before activation) makes every stage
+  haunted and **stacks** the twists: stage N wears the first N of
+  `haunting.BOSS_ORDER` (mirror, leaf, ghost double, X-ray), so stages 4 and 5
+  wear all four, and nothing fades. A boss is never rolled at activation
+  (`haunting.on_activation` skips the roll and its log), so
+  `games.haunt_twist` stays empty.
+  `haunting.twists_for_stage` returns that tuple (one stored twist for a
+  haunted game, none otherwise). `haunting.is_haunted(game)` is true for a
+  stored twist or a boss game and is what the multipliers and the `haunted`
+  win fact read.
+- **When the boss is due.** `group_goal.boss_due` is true while a season is
+  `ACTIVE`, its run has a `group_goal`, the goal is settled (`GOAL_REACHED`
+  logged for the season) and the season has no boss game row in any status.
+  A boss stopped with `/stop` is deleted, so another is due; a finished one is
+  not. `mark_boss` locks the season row, re-checks `boss_due`, then sets
+  `boss_game` (and the game's `season_id`), queues a `GOAL_BOSS` outbox post
+  `{season_id, game_id}` and logs INFO "the Gashadokuro rises — boss game";
+  when no boss is due it only logs a WARNING. Activation logs and records
+  `boss_game` (the `ACTIVE` line and the `GAME_ACTIVATED` event data).
+- **Who starts the boss.** Nani Pix, through `jobs/timers/boss.py`'s
+  `maybe_start_boss` (trigger `boss`). Every game ending goes through
+  `maybe_overthrow`, which tries the boss first and skips the overthrow roll
+  when the boss starts or is scheduled. An open turn also tries it:
+  `schedule_idle_autostart` arms a `boss-start` check job right away (a bare
+  `/skip`, an expired turn; `/stop` arms it only after its "stopped" post, so
+  a fresh boss never posts first), the idle-autostart job tries the boss
+  before any HARD MODE game, `/setgamesenabled on` arms the check, and
+  startup arms one while a boss is due. A turn handed to someone while the
+  pick was gathered aborts the claim; the boss then waits for that player's
+  game to end or the player's turn to expire. The boss takes the turn the
+  way an overthrow does (the game's winner keeps full credit, with no
+  `overthrown` event), picks from the season
+  gate, and starts a **normal** 5-stage game (`hard_mode=False`, the pair's
+  first screenshot as `original_image`), calling `mark_boss` before
+  `activate_game`. Before stage 1, the boss start drains the announcement
+  outbox once (the same `drain` the 20 s job runs), so "goal reached" and
+  "the Gashadokuro rises" land first; a failed drain logs an ERROR and the
+  boss goes ahead, its rows left for the job. Stage 1 then goes up through
+  the normal stage-post path with `dm_start.boss_game_started_caption` (×XP
+  and ×🪙 from `multipliers`, then the usual "📸 Stage 1/5 — guesses" line),
+  then `haunt.started_boss`: stage 1's twist (the first of `BOSS_ORDER`) and
+  its boss hint, without the coin multiplier the boss caption already
+  states. When the boss took the turn from the game's winner,
+  the caption starts with `dm_start.boss_took_winner_turn`, naming the
+  winner (with flair) the way an overthrow does. It ignores `autostart_enabled` and honours `games_enabled`;
+  a game already running holds it until that game ends (INFO); quiet hours
+  hold it until the window ends (INFO, the check job re-armed for then); a
+  failed pick retries in `AUTOSTART_RETRY_DELAY` (INFO); a game started, or
+  the turn reassigned, while the pick was gathered aborts it (WARNING).
 - **Captions.** `haunting.caption_suffix` appends a line (a newline and the
   text) to the stage caption: `haunt.started` on stage 1 (twist name, hint and
-  the coin multiplier), `haunt.changed` when a boss game moves to a different
-  twist, `haunt.lifted` on the last stage when a fading twist clears (the same twist as
-  the stage before; a boss game switching twist on the last stage says `haunt.changed`). Twist
-  names and hints are i18n keys `haunt.twist.*` and `haunt.hint.*`. Other
-  stages get no line.
+  the coin multiplier; on a boss, `haunt.started_boss` instead: the twist and
+  its hint, no multiplier), `haunt.changed` on a boss stage that adds a twist
+  (naming the one it adds), `haunt.lifted` on a haunted game's last stage when
+  its fading twist clears (never on a boss). Twist names and hints are i18n
+  keys `haunt.twist.*` and `haunt.hint.*`; on a boss, the fading twists'
+  hints (which say "until the last stage") are swapped for
+  `haunt.kept_hint.*` (`haunting.hint_key`), in captions and `/status`
+  alike. Other stages get no line.
+  `/status` names every twist on the current image in its `status.haunted`
+  line (names joined with commas, hints with semicolons).
 - **Unknown stored twist.** A `haunt_twist` this release does not know logs a
   WARNING and the game renders untwisted instead of failing.
 - **Objective.** `GoalKind.HAUNTED_WINS` counts the player's `GAME_WON` events
   whose `haunted` fact is set (`services/game/win_facts.py`); wins recorded
   before the fact existed count as not haunted.
+
+### 100 Candles and the boss game
+
+A run with `group_goal` (`GroupGoal`: `target`, the three weights,
+`milestone_every`, the boss multipliers, `contributor_coins`,
+`contributor_item_key`) sets the whole group a shared goal: put out `target`
+candles. The code is `services/seasons/group_goal.py`. No shipped run sets it
+yet (`yokai_1` does in a later phase), and a run without it, like `demo_1`,
+sees none of this. The boss itself (how its twists stack, how Nani Pix starts
+it) is under "Haunted rounds"; this section is the goal that calls it.
+
+- **The count.** `group_goal.candles` adds up the season's **finished**
+  games, those `WON` or `UNSOLVED` (`SNUFFING`); a game still running, a
+  stopped one (deleted) and a vote in progress add nothing. Each game weighs
+  the first that applies: **0** for a boss game, `per_event_day` for an
+  event-day game, `per_haunted` for a haunted one (a stored twist), else
+  `per_game`. So the boss never adds candles, and an event-day game counts
+  once at the event-day weight, not at both. The count is read from the games
+  on demand; nothing stores it.
+- **Milestones.** After each finished game, while the season is `ACTIVE` or
+  `CLOSING`, and while the count is **below** the target, the largest
+  multiple of `milestone_every` that is below the target and not yet queued
+  is queued as a `GOAL_MILESTONE` post (INFO). The target is never a
+  milestone (its post is the reached one), a jump over two milestones posts
+  only the later one, and `milestone_every = 0` posts none. "Not yet queued"
+  reads the season's `GOAL_MILESTONE` rows, posted or not, so a restart or a
+  re-finished game never repeats one.
+- **Reaching the goal** (`group_goal.settle`). The first time a game ending
+  takes the count to the target or past it, the goal is **settled**: every
+  **contributor** is paid `contributor_coins` 🪙 (season coins,
+  `CurrencyReason.SEASON_GOAL`) and the run item `contributor_item_key`, each
+  contributor gets a `GOAL_REACHED` event (`actor_id` the contributor; data
+  `season_id`, `run_id`, `crossing_game_id` the game that put out the last
+  candle, `candles`, `coins`), and one `GOAL_REACHED` post is queued with the
+  contributor count. It is logged at INFO. With no contributors, nothing is
+  paid, a WARNING is logged and a single `GOAL_REACHED` event with no actor is
+  written, as the marker that the goal is settled (`is_settled` reads these).
+- **Who contributed.** A player who, in a finished (`WON`/`UNSOLVED`),
+  **non-boss** game of the season, made at least one guess (any `/guess`, right
+  or wrong), or hosted it (the starter, but not of a HARD MODE game, which has
+  no human host), or won it (a `/correct` or `/setwinner` winner counts even
+  without a guess row). The boss game contributes nobody.
+- **Paid once.** The payout happens only while the season is `ACTIVE` or
+  `CLOSING` (a finished game of an `ENDED` or cancelled season does nothing),
+  once per season (`is_settled`), and **before** the lifecycle's conversion of
+  🪙 into 💠 in the same game ending (`consumer._season_mechanics` runs ahead of
+  `lifecycle.on_game_ended`), so the last game of a closing season still pays
+  and the coins convert. **Late players are not paid**: someone whose first
+  qualifying game is after the settling game gets nothing, and a re-finished
+  game (`/setwinner` on an old one) pays nobody again once settled. The whole
+  step runs on the locked season row, with locking reads for the count, the
+  contributors and the settled check, so two games ending at once settle once.
+  A failure is logged at ERROR and rolls back only this step (its savepoint);
+  the game's own result, bones and the lifecycle are unaffected.
+- **The boss.** Once settled, a boss is due while the season is `ACTIVE` (not
+  `CLOSING`) and has no boss game. Nani Pix starts it herself, as a normal
+  5-stage game (see "Haunted rounds" for the start rules and the stacking
+  twists); a human game that starts first holds it until that game ends. A
+  boss stopped with
+  `/stop` is deleted, so it is due again. A finished boss, won or unsolved,
+  is not repeated.
+- **The card.** `services/cards/goal_card.py` draws the 1200x630 counter card
+  from the run's art in `assets/seasons/<run_id>/goal/`, layered bottom to
+  top: `background.png`; the Gashadokuro (`gashadokuro.png`, standing on a
+  horizon line at y=470 with nothing drawn below it; it grows and climbs out
+  of the ground as the count rises); the skull pile (`skulls_0.png` to
+  `skulls_4.png`, one of five picked by the share of the target reached); ten
+  candle slots (`candle_lit.png` / `candle_out.png`, lit ones first and the
+  rest out, `ceil(10 x left / target)` staying lit; each has a shadow and a
+  body shaded to the scene, and a lit one a faint blue glow and floor pool);
+  and the "snuffed / target" counter in the top-left corner. The boss post is
+  the run's `boss.png` alone, cover-fitted. A missing art file is not fatal:
+  the announcement poster and `/candles` log a WARNING and send the same text
+  without a picture.
+- **`/candles`** works in the game topic and in a DM (a DM only for group
+  members, like `/standings`); anywhere else it is ignored. It shows the
+  counter card (never the boss picture) with this text as the caption, or as
+  a plain message when there is no art or the photo fails to send: the title
+  with the season name; the count against the target; the weights line (only
+  when the run has an event day); the next milestone (only before the goal is
+  settled, and only if one is left); then, once settled, **every boss state**:
+  pending (no boss game yet, so Nani Pix is about to start it or is holding
+  it), running (the game's number), won (the number and the winner, shown by
+  `players.display_name` so a Nopperabo hex masks them; no winner named when
+  nobody won it) or unsolved (the Gashadokuro survived). Then a line for the
+  viewer: "You helped put out the candles" for a contributor, or, before the
+  goal is settled only, an invitation to guess or host (a non-contributor
+  gets no line after it), and the viewer's bones when the run has a bone set. With
+  no season, or a run without a goal, it says there is no candle goal. Each
+  use is logged at INFO.
+
+### Bone Collector
+
+A run with `bone_set` (`BoneSet(bones, item_key)`, code
+`services/seasons/bones.py`) gives a set reward for winning haunted rounds.
+
+- **A bone** is a **win** (`GameStatus.WON`, the player as `winner_id`) of a
+  game of the season that is haunted **or** the boss game. Bones are not
+  stored: `bones.count` counts those games for the player, so a re-set winner
+  changes the count with the data.
+- **Granted at the set size.** When a win takes the player to `bones`
+  (`bone_set.bones`) or more, `bone_set.item_key` is granted
+  (`ItemSource.BONES`, once; an owned item is not granted again). The item is
+  **never revoked**: a later `/setwinner` that takes a win away leaves it.
+- **Only in a running season.** A bone is counted and granted only while the
+  season is `ACTIVE` or `CLOSING`; a win after it has ended does nothing. The
+  step has its own savepoint after the goal's, so an error in one (logged at
+  ERROR, naming it) does not stop the other.
+- **The DM.** Each bone queues one `BONE_FOUND` DM (see "Announcements"): the
+  count over the set size, or, on the win that grants the item, the "assembled"
+  text naming it. Once the item is owned, a count past the set size queues
+  nothing, and the same count is never queued twice for a player.
+- **The objective** `HAUNTED_WINS` (see "Haunted rounds") counts the same
+  kind of win from the event log; the two are independent.
 
 ### Event day (Night Parade)
 
@@ -2426,6 +2603,24 @@ any other): a **teaser** when a season is scheduled (or its dates change),
 a **start** post (with the gate's rule when there is one) and an **end**
 post with the frozen podium. There is no reminder. A cancelled season posts
 nothing: its queued posts are dropped unsent.
+
+A run with `group_goal` or `bone_set` adds four more (renderers in
+`jobs/goal_posts.py`, queued by `services/achievements/outbox.py`'s
+`enqueue_goal`). Each is skipped, with an INFO line, when the season is
+cancelled or its run no longer has the mechanic:
+
+- **`GOAL_MILESTONE`** (topic): the counter card at the milestone, with a line
+  saying how many of the target are out.
+- **`GOAL_REACHED`** (topic): the full counter card (all candles out) with
+  the contributor count and the reward (🪙, the item, or both), singular or
+  plural by the count.
+- **`GOAL_BOSS`** (topic): the boss picture with the game number and the XP and
+  🪙 multipliers, queued by `mark_boss` when the boss is marked, so it posts
+  in id order after the reached post. Skipped when the game is gone (a
+  `/stop`ped boss) or no longer a boss.
+- **`BONE_FOUND`** (a DM to the player): the bone count, or the finished set
+  and the item's name. A player Nani Pix cannot DM follows the usual DM
+  failure rules.
 
 ### The anime gate
 
@@ -2548,7 +2743,7 @@ in the group's time zone. `/achievements` shows the grant count as ×N.
 
 | Key | Earned when | Rarity |
 |---|---|---|
-| `season_debut` | a guess in a season game, or hosting a non-HARD MODE one | B |
+| `season_debut` | a guess in a season game, or hosting one Nani Pix didn't start (not HARD MODE or boss) | B |
 | `season_opening_act` | played on the season's first local day | S |
 | `season_curtain_call` | played on its last local day | S |
 | `season_pass_complete` | finished the free track (`pass_completed`, not premium) | G |
@@ -2627,7 +2822,8 @@ list), `commands/hexes/` (`/hex`, `/hexes`).
   opt-out.
 
 **Who may cast.** Both caster and target must have played this season (a
-guess in a season game, or an activated non-HARD MODE game hosted). Not
+guess in a season game, or an activated game hosted that Nani Pix didn't
+start: not HARD MODE or the boss). Not
 yourself. Neither may be opted out (`players.hex_opt_out`, which stops you
 casting and being hexed). **Opting out is locked for 24 h after the player
 last hexed someone else** (self-pranks don't count); opting back in never is.

@@ -113,7 +113,7 @@ def clear_autostart(session: Session) -> None:
     (human- or bot-started) actually starts, so "nobody started a game
     for 24h" stays literally true regardless of who starts one. See
     commands/dm_start/_shared.py's _start_new_game() and
-    jobs/timers/autostart.py's run_bot_autostart()."""
+    jobs/timers/bot_claim.py's run_bot_autostart()."""
     turn_state = get_or_create_turn_state(session)
     turn_state.turn_opened_at = None
     turn_state.autostart_deadline_at = None

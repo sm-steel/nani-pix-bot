@@ -2,7 +2,7 @@ import colorsys
 from io import BytesIO
 
 import pytest
-from PIL import Image, ImageOps
+from PIL import Image
 
 from nani_pix_bot.seasons.mechanics import HauntTwist
 from nani_pix_bot.services.seasons import haunting
@@ -30,32 +30,21 @@ def _hue(pixel: tuple[int, int, int]) -> int:
 
 
 def test_kitsune_mirror_swaps_left_and_right() -> None:
-    out = haunting.twist_image(_image(), HauntTwist.KITSUNE_MIRROR, last=False)
+    out = haunting.twist_image(_image(), HauntTwist.KITSUNE_MIRROR)
     assert out.getpixel((0, 0)) == BLUE
     assert out.getpixel((39, 0)) == RED
 
 
-def test_kitsune_stays_on_the_last_stage() -> None:
-    out = haunting.twist_image(_image(), HauntTwist.KITSUNE_MIRROR, last=True)
-    assert out.getpixel((0, 0)) == BLUE
-
-
 def test_tanuki_shifts_the_hue() -> None:
-    out = haunting.twist_image(_image(), HauntTwist.TANUKI_LEAF, last=False)
+    out = haunting.twist_image(_image(), HauntTwist.TANUKI_LEAF)
     expected = (_hue(RED) + haunting.TANUKI_HUE_STEPS) % 256
     assert abs(_hue(_px(out, (0, 0))) - expected) <= 2
-
-
-@pytest.mark.parametrize("twist", sorted(haunting.FADES_AT_LAST))
-def test_fading_twists_are_clean_on_the_last_stage(twist) -> None:
-    img = _image()
-    assert haunting.twist_image(img, twist, last=True).tobytes() == img.tobytes()
 
 
 def test_yurei_blends_a_shifted_copy() -> None:
     img = _image()
     dx = round(img.width * haunting.YUREI_OFFSET[0])
-    out = haunting.twist_image(img, HauntTwist.YUREI_DOUBLE, last=False)
+    out = haunting.twist_image(img, HauntTwist.YUREI_DOUBLE)
     # just right of the edge, within the offset: the shifted copy still shows red there
     x = 20 + dx - 1
     alpha = haunting.YUREI_ALPHA
@@ -64,19 +53,13 @@ def test_yurei_blends_a_shifted_copy() -> None:
     assert all(abs(g - e) <= 1 for g, e in zip(got, expected, strict=True))
 
 
-def test_the_mirror_stays_on_the_last_stage() -> None:
-    img = _image()
-    out = haunting.twist_image(img, HauntTwist.KITSUNE_MIRROR, last=True)
-    assert out.tobytes() == ImageOps.mirror(img).tobytes()
-
-
 def test_xray_is_an_inverted_negative() -> None:
     black = Image.new("RGB", (4, 4), (0, 0, 0))
     white = Image.new("RGB", (4, 4), (255, 255, 255))
-    assert haunting.twist_image(black, HauntTwist.KYOKOTSU_XRAY, last=False).getpixel((0, 0)) == (
+    assert haunting.twist_image(black, HauntTwist.KYOKOTSU_XRAY).getpixel((0, 0)) == (
         haunting.XRAY_LIGHT
     )
-    assert haunting.twist_image(white, HauntTwist.KYOKOTSU_XRAY, last=False).getpixel((0, 0)) == (
+    assert haunting.twist_image(white, HauntTwist.KYOKOTSU_XRAY).getpixel((0, 0)) == (
         haunting.XRAY_DARK
     )
 
@@ -84,20 +67,28 @@ def test_xray_is_an_inverted_negative() -> None:
 @pytest.mark.parametrize("twist", list(HauntTwist))
 def test_ops_keep_the_size(twist) -> None:
     img = _image()
-    assert haunting.twist_image(img, twist, last=False).size == img.size
+    assert haunting.twist_image(img, twist).size == img.size
 
 
-def test_apply_twist_round_trips_png_bytes() -> None:
+def _png(image: Image.Image) -> bytes:
     buf = BytesIO()
-    _image().save(buf, "PNG")
-    out = Image.open(
-        BytesIO(haunting.apply_twist(buf.getvalue(), HauntTwist.KITSUNE_MIRROR, last=False))
-    )
+    image.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_apply_twists_round_trips_png_bytes() -> None:
+    out = Image.open(BytesIO(haunting.apply_twists(_png(_image()), (HauntTwist.KITSUNE_MIRROR,))))
     assert out.convert("RGB").getpixel((0, 0)) == BLUE
 
 
-def test_apply_twist_logs_a_skip_on_the_last_stage(log_records) -> None:
-    buf = BytesIO()
-    _image().save(buf, "PNG")
-    haunting.apply_twist(buf.getvalue(), HauntTwist.TANUKI_LEAF, last=True)
-    assert any(r.level == "DEBUG" and "skipped on the last stage" in r.message for r in log_records)
+def test_no_twists_leave_the_png_alone() -> None:
+    png = _png(_image())
+    assert haunting.apply_twists(png, ()) is png
+
+
+def test_boss_stage_image_applies_every_twist_in_order() -> None:
+    expected = _image()
+    for twist in haunting.BOSS_ORDER:
+        expected = haunting.twist_image(expected, twist)
+    out = Image.open(BytesIO(haunting.apply_twists(_png(_image()), haunting.BOSS_ORDER)))
+    assert out.convert("RGB").tobytes() == expected.tobytes()

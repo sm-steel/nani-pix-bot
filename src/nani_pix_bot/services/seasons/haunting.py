@@ -1,5 +1,5 @@
 """Haunted rounds (Halloween spec, "Yōkai Night"): the roll at activation,
-the stored twist, and which twist a stage wears. Must not import
+the stored twist, and which twists a stage wears (a boss game stacks them). Must not import
 services.game (activate_game calls in here)."""
 
 import random
@@ -18,9 +18,18 @@ from nani_pix_bot.seasons.mechanics import HauntTwist
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.seasons import event_day, modifiers
 
-# Twists that clear up at the last stage; the mirror stays until the reveal.
+# Twists that clear up at a haunted game's last stage; the mirror stays until
+# the reveal. A boss game keeps every twist (see `fades`).
 FADES_AT_LAST: frozenset[HauntTwist] = frozenset(
     {HauntTwist.TANUKI_LEAF, HauntTwist.YUREI_DOUBLE, HauntTwist.KYOKOTSU_XRAY}
+)
+# The Gashadokuro boss game's twists: stage N wears the first N (all four from
+# stage 4 on), applied in this order.
+BOSS_ORDER: tuple[HauntTwist, ...] = (
+    HauntTwist.KITSUNE_MIRROR,
+    HauntTwist.TANUKI_LEAF,
+    HauntTwist.YUREI_DOUBLE,
+    HauntTwist.KYOKOTSU_XRAY,
 )
 
 TANUKI_HUE_STEPS = 85  # of 256, about +120 degrees
@@ -79,7 +88,8 @@ def on_activation(session: Session, game: Game, now: datetime, rng: _Rng | None 
             event_day_name=run.event_day.names["EN"],
             game_id=game.id,
         )
-    if run.haunt is None:
+    if run.haunt is None or game.boss_game:
+        # A boss is haunted by BOSS_ORDER, not by a roll.
         return
     drawn = _Recording(rng or _rng())
     twist = roll(run, event_day=game.event_day, rng=drawn)
@@ -121,13 +131,29 @@ def is_haunted(game: Game) -> bool:
     return game.boss_game or stored_twist(game) is not None
 
 
-def twist_for_stage(run: SeasonRun | None, game: Game, stage: int) -> HauntTwist | None:
-    """The twist a stage (1-based) wears; a boss game cycles the run's twists."""
+def twists_for_stage(run: SeasonRun | None, game: Game, stage: int) -> tuple[HauntTwist, ...]:
+    """The twists a stage (1-based) wears, in the order they go on: a boss game
+    stacks `BOSS_ORDER` one more per stage, a haunted game has its one stored
+    twist, anything else none."""
     if run is None or run.haunt is None:
-        return None
+        return ()
     if game.boss_game:
-        return run.haunt.twists[(stage - 1) % len(run.haunt.twists)]
-    return stored_twist(game)
+        return BOSS_ORDER[: min(stage, len(BOSS_ORDER))]
+    twist = stored_twist(game)
+    return () if twist is None else (twist,)
+
+
+def fades(game: Game, twist: HauntTwist) -> bool:
+    """Whether `twist` clears up on the game's last stage; nothing fades on a boss."""
+    return not game.boss_game and twist in FADES_AT_LAST
+
+
+def hint_key(twist: HauntTwist, *, boss: bool) -> str:
+    """The i18n key of the twist's hint: a fading twist's normal hint says it
+    lasts until the last stage, which a boss (nothing fades) must not claim."""
+    if boss and twist in FADES_AT_LAST:
+        return f"haunt.kept_hint.{twist.value}"
+    return f"haunt.hint.{twist.value}"
 
 
 def _tanuki(image: Image.Image) -> Image.Image:
@@ -155,46 +181,51 @@ _OPS = {
 }
 
 
-def twist_image(image: Image.Image, twist: HauntTwist, *, last: bool) -> Image.Image:
-    """`image` with the twist on; the fading twists leave the last stage clean."""
-    rgb = image.convert("RGB")
-    if last and twist in FADES_AT_LAST:
-        return rgb
-    return _OPS[twist](rgb)
+def twist_image(image: Image.Image, twist: HauntTwist) -> Image.Image:
+    """`image` with the twist on (the last-stage fade is decided by `fades`)."""
+    return _OPS[twist](image.convert("RGB"))
 
 
-def apply_twist(png: bytes, twist: HauntTwist, *, last: bool) -> bytes:
-    if last and twist in FADES_AT_LAST:
-        logger.debug("{twist} skipped on the last stage", twist=twist.value)
+def apply_twists(png: bytes, twists: Sequence[HauntTwist]) -> bytes:
+    """`png` with every twist applied in order; unchanged when there are none."""
+    if not twists:
         return png
+    image = Image.open(BytesIO(png))
+    for twist in twists:
+        image = twist_image(image, twist)
     out = BytesIO()
-    twist_image(Image.open(BytesIO(png)), twist, last=last).save(out, format="PNG")
+    image.save(out, format="PNG")
     return out.getvalue()
 
 
-def announcement(session: Session, game: Game, lang: str, number: int, total: int) -> str | None:
-    """The haunted-round line for stage `number` of `total`: the start, a boss
-    game's new twist, or a fading twist lifting on the last stage."""
-    run = modifiers.season_of(session, game)
-    twist = twist_for_stage(run, game, number)
-    if run is None or twist is None:
-        return None
-    name = i18n.t(f"haunt.twist.{twist.value}", lang)
-    hint = i18n.t(f"haunt.hint.{twist.value}", lang)
-    if number == 1:
-        # Local import: multipliers imports this module.
-        from nani_pix_bot.services.seasons import multipliers
+def _started(run: SeasonRun, game: Game, lang: str, twist: str, hint: str) -> str:
+    """Stage 1's line. A boss caption already states the multipliers, so a
+    boss names the twist and its hint only."""
+    if game.boss_game:
+        return i18n.t("haunt.started_boss", lang, twist=twist, hint=hint)
+    # Local import: multipliers imports this module.
+    from nani_pix_bot.services.seasons import multipliers
 
-        return i18n.t(
-            "haunt.started",
-            lang,
-            twist=name,
-            hint=hint,
-            multiplier=multipliers.coin_multiplier(run, game),
-        )
-    if twist is not twist_for_stage(run, game, number - 1):
+    multiplier = multipliers.coin_multiplier(run, game)
+    return i18n.t("haunt.started", lang, twist=twist, hint=hint, multiplier=multiplier)
+
+
+def announcement(session: Session, game: Game, lang: str, number: int, total: int) -> str | None:
+    """The haunted-round line for stage `number` of `total`: the start (on a
+    boss, without the coin multiplier its own caption states), the twist a
+    boss stage adds, or a fading twist lifting on the last stage."""
+    run = modifiers.season_of(session, game)
+    twists = twists_for_stage(run, game, number)
+    if run is None or not twists:
+        return None
+    twist = twists[-1]
+    name = i18n.t(f"haunt.twist.{twist.value}", lang)
+    hint = i18n.t(hint_key(twist, boss=game.boss_game), lang)
+    if number == 1:
+        return _started(run, game, lang, name, hint)
+    if twists != twists_for_stage(run, game, number - 1):
         return i18n.t("haunt.changed", lang, twist=name, hint=hint)
-    if number == total and twist in FADES_AT_LAST:
+    if number == total and fades(game, twist):
         return i18n.t("haunt.lifted", lang, twist=name)
     return None
 

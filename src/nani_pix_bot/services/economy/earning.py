@@ -65,8 +65,8 @@ def _stage_number(game: Game) -> int:
 
 
 def _setter_eligible(game: Game, *, winner_id: int, stage: int) -> bool:
-    # HARD MODE games are bot-started — no human setter to reward.
-    return not game.hard_mode and rewards.setter_rewarded(stage) and game.starter_id != winner_id
+    # Nani Pix started it (HARD MODE or the boss): no human setter to reward.
+    return not game.bot_hosted and rewards.setter_rewarded(stage) and game.starter_id != winner_id
 
 
 def award_win(session: Session, game: Game, *, winner_id: int) -> Earnings:
@@ -141,7 +141,7 @@ def award_guess(session: Session, game: Game, *, guesser_id: int, won: bool) -> 
 
 
 def award_prompt_start(session: Session, game: Game) -> int:
-    if game.hard_mode or game.turn_received_at is None:
+    if game.bot_hosted or game.turn_received_at is None:
         return 0
     if not rewards.is_prompt_start(
         created_at=game.created_at, turn_received_at=game.turn_received_at

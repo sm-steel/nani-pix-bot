@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import EventType
 from nani_pix_bot.models.event_log import EventLog
-from nani_pix_bot.services.events import LoggedEvent, as_utc, to_event
+from nani_pix_bot.services.events import LoggedEvent, as_utc, bot_hosted, to_event
 
 _Types = tuple[EventType, ...]
 _HOSTED = EventLog.event_type == EventType.GAME_ACTIVATED
@@ -104,12 +104,10 @@ class DbHistory:
         return datetime.combine(day, time(), tzinfo=self.tz).astimezone(UTC).replace(tzinfo=None)
 
     def _hosted_days(self, stmt: Select[tuple[datetime, Any]]) -> set[date]:
-        """A bot-started (HARD MODE) hosting is no one's activity. This
+        """A bot-started (HARD MODE or boss) hosting is no one's activity. This
         check stays in Python: JSON paths in SQL differ between SQLite and
         MariaDB, and hostings are a small share of the log."""
-        return {
-            self._local(at) for at, data in self._session.execute(stmt) if not data.get("hard_mode")
-        }
+        return {self._local(at) for at, data in self._session.execute(stmt) if not bot_hosted(data)}
 
     def _my_days(self, types: _Types) -> set[date]:
         mine = EventLog.actor_id == self.player_id

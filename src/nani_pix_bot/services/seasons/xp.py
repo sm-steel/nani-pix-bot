@@ -4,9 +4,9 @@ season_xp rows for games tagged to a season.
 Design notes:
 - Winner XP uses the `stage` from the `game_won` event (`win_facts.stage_number`:
   1-5, or the HARD MODE turn 1-2), clamped to 1-5; 0 (unknown) gives no win XP.
-- Host XP goes to the starter (`subject_id`) — except on HARD MODE games, which
-  only the bot starts (`jobs/timers/autostart.py` is the only place that sets
-  `hard_mode = True`).
+- Host XP goes to the starter (`subject_id`) — except on a game Nani Pix
+  started (`Game.bot_hosted`: HARD MODE or the season's boss), which has no
+  human host.
 - "First guess" = the player's first `game_guesses` row in that game (existing
   domain state; `log_guess` adds the row before it emits `GUESS`).
 - A `/setwinner` on a game that already ended unsolved (an earlier
@@ -161,7 +161,7 @@ def pay(session: Session, event: LoggedEvent, found: Tagged) -> list[Award]:
     base = awards(
         payable(found.run.xp, found),
         event,
-        bot_game=found.game.hard_mode,
+        bot_game=found.game.bot_hosted,
         first_guess_of_player=found.first_guess,
     )
     factors = {a.source: xp_multiplier(found.run, found.game, a.source) for a in base}

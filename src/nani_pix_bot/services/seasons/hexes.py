@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 
 from loguru import logger
-from sqlalchemy import exists, func, select, union
+from sqlalchemy import exists, func, not_, select, union
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.enums import (
@@ -17,7 +17,7 @@ from nani_pix_bot.models.enums import (
     HexOutcome,
     XpSource,
 )
-from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.game import Game, bot_hosted_clause
 from nani_pix_bot.models.game_guess import GameGuess
 from nani_pix_bot.models.halloween import Hex
 from nani_pix_bot.models.player import Player
@@ -104,7 +104,7 @@ def played_ids(season_id: int):
     hosted = select(Game.starter_id.label("player_id")).where(
         Game.season_id == season_id,
         Game.activated_at.is_not(None),
-        Game.hard_mode.is_(False),
+        not_(bot_hosted_clause()),
     )
     return union(guessed, hosted).subquery()
 

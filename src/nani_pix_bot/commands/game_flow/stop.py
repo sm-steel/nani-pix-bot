@@ -200,7 +200,9 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
     # Block closed and committed above — the row deletion and turn-open
     # are durable now regardless of whether the announcement below
     # actually reaches the group (see post_current_image's docstring).
-    timeout_module.schedule_idle_autostart(context.job_queue, turn_state)
+    # The boss check waits for the stop announcement (below), so a fresh
+    # Gashadokuro never posts ahead of "stopped".
+    timeout_module.schedule_idle_autostart(context.job_queue, turn_state, check_boss=False)
     stopped_game = _StoppedGame(
         game_id=game_id,
         title=title,
@@ -210,6 +212,7 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
         costume=costume,
     )
     revealed = await _announce_stop(context, session_factory, stopped_game, lang, reveal)
+    timeout_module.schedule_boss_start(context.job_queue)
     logger.info(
         "stopped (was {was}, answer {answer})",
         was=was,

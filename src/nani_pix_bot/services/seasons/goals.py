@@ -6,7 +6,7 @@ from types import MappingProxyType
 
 from nani_pix_bot.models.enums import CurrencyReason, EventType
 from nani_pix_bot.seasons.definition import Goal, GoalKind
-from nani_pix_bot.services import i18n
+from nani_pix_bot.services import events, i18n
 from nani_pix_bot.services.achievements.definitions import History
 
 E = EventType
@@ -26,8 +26,8 @@ TRIGGERS: Mapping[GoalKind, tuple[EventType, ...]] = MappingProxyType(
 
 
 def _hosted(history: History) -> int:
-    # A bot-started (HARD MODE) game is no one's hosting.
-    return sum(1 for e in history.mine(E.GAME_ACTIVATED) if not e.data.get("hard_mode"))
+    # A bot-started (HARD MODE or boss) game is no one's hosting.
+    return sum(1 for e in history.mine(E.GAME_ACTIVATED) if not events.bot_hosted(e.data))
 
 
 def _wins(max_stage: int | None, history: History) -> int:

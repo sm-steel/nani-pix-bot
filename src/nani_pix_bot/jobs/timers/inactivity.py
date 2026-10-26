@@ -249,7 +249,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
     turn-based analogue instead — see _hard_mode_inactivity_outcome.
 
     Imports maybe_overthrow lazily (function-local, not at module level):
-    autostart.py already imports schedule_inactivity_timers from this
+    bot_claim.py (under autostart.py) imports schedule_inactivity_timers from this
     module, so a module-level import the other way round would be a real
     circular import, not just the theoretical shape the sibling-import
     convention is meant to dodge — Python's import system can't resolve
