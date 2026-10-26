@@ -42,6 +42,13 @@ def apply_frame(png: bytes, frame_key: str) -> bytes:
             "unknown frame {frame_key!r} — posting the stage unframed", frame_key=frame_key
         )
         return png
-    out = BytesIO()
-    draw(Image.open(BytesIO(png))).save(out, format="PNG")
-    return out.getvalue()
+    try:
+        out = BytesIO()
+        draw(Image.open(BytesIO(png))).save(out, format="PNG")
+        return out.getvalue()
+    except Exception as exc:  # a broken drawing must never block the stage post
+        logger.opt(exception=exc).error(
+            "frame {frame_key!r} failed to draw — posting the stage unframed",
+            frame_key=frame_key,
+        )
+        return png

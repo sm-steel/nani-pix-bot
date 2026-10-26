@@ -3,7 +3,7 @@ from typing import cast
 import pytest
 from PIL import Image
 
-from nani_pix_bot.services.reveal import overlays, petals
+from nani_pix_bot.services.reveal import overlay_canvas, overlays, petals
 
 from .ffprobe_helpers import decode_clean, probe_stream
 
@@ -36,7 +36,7 @@ def _peak_alpha(channel: Image.Image) -> int:
 
 @pytest.fixture(scope="module")
 def drift() -> tuple[bytes, tuple[int, int]]:
-    return petals.drift_frames(HEIGHT), petals.clip_size(HEIGHT)
+    return petals.drift_frames(HEIGHT), overlay_canvas.clip_size(HEIGHT)
 
 
 def test_drift_has_every_frame_at_the_declared_size(drift) -> None:
@@ -75,7 +75,7 @@ def test_drift_is_a_registered_win_overlay() -> None:
 
 @pytest.fixture(scope="module")
 def storm() -> tuple[bytes, tuple[int, int]]:
-    return petals.storm_frames(HEIGHT), petals.clip_size(HEIGHT)
+    return petals.storm_frames(HEIGHT), overlay_canvas.clip_size(HEIGHT)
 
 
 def test_storm_has_every_frame_at_the_declared_size(storm) -> None:
@@ -111,18 +111,18 @@ def test_storm_is_a_registered_win_overlay() -> None:
 
 
 def test_edge_fade_is_clear_inside_and_gone_at_the_edges() -> None:
-    size = petals.clip_size(HEIGHT)
+    size = overlay_canvas.clip_size(HEIGHT)
     w, h = size
-    fade = petals.edge_fade(size, HEIGHT)
+    fade = overlay_canvas.edge_fade(size, HEIGHT)
     assert fade.getpixel((w // 2, h // 2)) == 255
     for edge in ((0, h // 2), (w - 1, h // 2), (w // 2, 0), (w // 2, h - 1)):
         assert fade.getpixel(edge) == 0
 
 
 def test_edge_fade_is_shorter_at_the_bottom() -> None:
-    size = petals.clip_size(HEIGHT)
+    size = overlay_canvas.clip_size(HEIGHT)
     w, h = size
-    fade = petals.edge_fade(size, HEIGHT)
+    fade = overlay_canvas.edge_fade(size, HEIGHT)
     depth = round(0.3 * HEIGHT)
     assert cast(int, fade.getpixel((w // 2, h - 1 - depth))) > cast(
         int, fade.getpixel((w // 2, depth))
