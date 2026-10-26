@@ -32,6 +32,7 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.game import autostart as autostart_service
 from nani_pix_bot.services.quiet_hours import QuietHours
+from nani_pix_bot.services.seasons import haunting
 from nani_pix_bot.services.settings import stage_config
 from tests.frames import frame_bytes
 from tests.jobs.test_autostart import _fake_pick, _make_context
@@ -182,8 +183,19 @@ async def test_boss_starts_after_the_game_that_lit_the_last_candle(
     # Then the brief's text, with the stage line every first post carries.
     assert caption.startswith(took + "\n" + expected)
     assert "📸 Stage 1/" in expected
-    # The boss caption already explains the twists: no haunt.started line.
+    # Stage 1's twist is named with its boss hint, but the coin multiplier
+    # the boss caption states isn't repeated (no haunt.started line).
+    first = haunting.BOSS_ORDER[0]
+    first_line = i18n.t(
+        "haunt.started_boss",
+        "en",
+        twist=i18n.t(f"haunt.twist.{first.value}", "en"),
+        hint=i18n.t(haunting.hint_key(first, boss=True), "en"),
+    )
+    assert "\n" + first_line + "\n" in caption
     assert "This round is haunted" not in caption
+    assert "Season Coins" not in caption
+    assert caption.count("\N{MULTIPLICATION SIGN}6") == 1
     started = [r for r in log_records if "claimed by bot autostart (boss)" in r.message]
     assert started[0].level == "INFO"
 

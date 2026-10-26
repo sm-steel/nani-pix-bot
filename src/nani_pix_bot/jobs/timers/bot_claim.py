@@ -168,8 +168,8 @@ def _build_boss_post(
     preview.py's _activate_and_stage_first_post): rendered only after
     activation, which tags the season its twists and style depend on.
     When the boss takes a winner's turn, the caption names them first, as
-    an overthrow does. No haunt.started line: the boss caption already
-    says the twists pile up and states the multipliers."""
+    an overthrow does. The haunt line names stage 1's twist and hint only
+    (haunt.started_boss): the boss caption already states the multipliers."""
     game_service.activate_game(session, game)
     if game.original_image is None:
         raise RuntimeError("game.original_image is None in _build_boss_post")
@@ -192,6 +192,7 @@ def _build_boss_post(
             "dm_start.boss_took_winner_turn", lang, winner=_dethroned_label(session, claim)
         )
         caption = took + "\n" + caption
+    caption += haunting.caption_suffix(session, game, lang, number=1, total=total)
     caption += game_service.game_id_line(game.id, lang)
     schedule_timeout(context.job_queue, game)
     schedule_inactivity_timers(context.job_queue, game)

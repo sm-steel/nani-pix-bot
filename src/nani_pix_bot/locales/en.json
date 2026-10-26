@@ -975,6 +975,7 @@
   "haunt.kept_hint.yurei_double": "a ghostly double drifts over the picture to the very end",
   "haunt.kept_hint.kyokotsu_xray": "you see it as an X-ray to the very end",
   "haunt.started": "👻 This round is haunted — {twist}: {hint}. Season Coins ×{multiplier}!",
+  "haunt.started_boss": "👻 The first haunting — {twist}: {hint}.",
   "haunt.changed": "👻 A new haunting for this stage — {twist}: {hint}.",
   "haunt.lifted": "✨ The {twist} lifts — a clear picture for the last stage!",
   "ofuda.used": "📜 {name}'s Ofuda burned away — that miss didn't count!",

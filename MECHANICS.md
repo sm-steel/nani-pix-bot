@@ -2421,8 +2421,9 @@ pays and gates exactly as before.
   boss goes ahead, its rows left for the job. Stage 1 then goes up through
   the normal stage-post path with `dm_start.boss_game_started_caption` (×XP
   and ×🪙 from `multipliers`, then the usual "📸 Stage 1/5 — guesses" line),
-  and no `haunt.started` line: the boss caption already explains the twists
-  and the multipliers. When the boss took the turn from the game's winner,
+  then `haunt.started_boss`: stage 1's twist (the first of `BOSS_ORDER`) and
+  its boss hint, without the coin multiplier the boss caption already
+  states. When the boss took the turn from the game's winner,
   the caption starts with `dm_start.boss_took_winner_turn`, naming the
   winner (with flair) the way an overthrow does. It ignores `autostart_enabled` and honours `games_enabled`;
   a game already running holds it until that game ends (INFO); quiet hours
@@ -2431,7 +2432,8 @@ pays and gates exactly as before.
   the turn reassigned, while the pick was gathered aborts it (WARNING).
 - **Captions.** `haunting.caption_suffix` appends a line (a newline and the
   text) to the stage caption: `haunt.started` on stage 1 (twist name, hint and
-  the coin multiplier; never on a boss, whose own caption covers it), `haunt.changed` on a boss stage that adds a twist
+  the coin multiplier; on a boss, `haunt.started_boss` instead: the twist and
+  its hint, no multiplier), `haunt.changed` on a boss stage that adds a twist
   (naming the one it adds), `haunt.lifted` on a haunted game's last stage when
   its fading twist clears (never on a boss). Twist names and hints are i18n
   keys `haunt.twist.*` and `haunt.hint.*`; on a boss, the fading twists'

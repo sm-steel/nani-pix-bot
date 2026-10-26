@@ -108,6 +108,8 @@ def test_boss_first_stage_announces_the_mirror(session, boss_game) -> None:
     line = haunting.announcement(session, boss_game, "en", number=1, total=5)
     assert line is not None
     assert "Kitsune illusion" in line
+    assert line.startswith("👻 The first haunting")
+    assert "\N{MULTIPLICATION SIGN}" not in line  # the boss caption states the multipliers
 
 
 def test_no_lifted_post_for_a_boss(session, boss_game) -> None:

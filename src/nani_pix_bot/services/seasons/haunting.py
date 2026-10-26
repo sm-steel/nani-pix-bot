@@ -198,9 +198,22 @@ def apply_twists(png: bytes, twists: Sequence[HauntTwist]) -> bytes:
     return out.getvalue()
 
 
+def _started(run: SeasonRun, game: Game, lang: str, twist: str, hint: str) -> str:
+    """Stage 1's line. A boss caption already states the multipliers, so a
+    boss names the twist and its hint only."""
+    if game.boss_game:
+        return i18n.t("haunt.started_boss", lang, twist=twist, hint=hint)
+    # Local import: multipliers imports this module.
+    from nani_pix_bot.services.seasons import multipliers
+
+    multiplier = multipliers.coin_multiplier(run, game)
+    return i18n.t("haunt.started", lang, twist=twist, hint=hint, multiplier=multiplier)
+
+
 def announcement(session: Session, game: Game, lang: str, number: int, total: int) -> str | None:
-    """The haunted-round line for stage `number` of `total`: the start, the
-    twist a boss stage adds, or a fading twist lifting on the last stage."""
+    """The haunted-round line for stage `number` of `total`: the start (on a
+    boss, without the coin multiplier its own caption states), the twist a
+    boss stage adds, or a fading twist lifting on the last stage."""
     run = modifiers.season_of(session, game)
     twists = twists_for_stage(run, game, number)
     if run is None or not twists:
@@ -209,16 +222,7 @@ def announcement(session: Session, game: Game, lang: str, number: int, total: in
     name = i18n.t(f"haunt.twist.{twist.value}", lang)
     hint = i18n.t(hint_key(twist, boss=game.boss_game), lang)
     if number == 1:
-        # Local import: multipliers imports this module.
-        from nani_pix_bot.services.seasons import multipliers
-
-        return i18n.t(
-            "haunt.started",
-            lang,
-            twist=name,
-            hint=hint,
-            multiplier=multipliers.coin_multiplier(run, game),
-        )
+        return _started(run, game, lang, name, hint)
     if twists != twists_for_stage(run, game, number - 1):
         return i18n.t("haunt.changed", lang, twist=name, hint=hint)
     if number == total and fades(game, twist):
