@@ -1117,6 +1117,13 @@ and both no-ops while a game is already `SETUP`/`ACTIVE`/`VOTING`.
   (turn already open to anyone), the bot simply claims that already-open
   turn instead of leaving it for a human.
 
+A third kind of bot-started game is the season's Gashadokuro boss (see
+"100 Candles and the boss game" and "Haunted rounds"): a normal 5-stage game,
+not HARD MODE, that ignores `autostart_enabled` (it is still gated by
+`games_enabled`). It shares the pick and the claim with the two above
+(`jobs/timers/bot_claim.py`), and every game ending tries it before the
+overthrow roll.
+
 **Picking a random anime + screenshot pair** (`services/game/autostart.py`,
 framework-agnostic, no DB writes until a full pick is in hand): a random
 Shikimori anime (`order: random`, `censored: true` — excludes hentai/
@@ -2429,6 +2436,120 @@ pays and gates exactly as before.
   whose `haunted` fact is set (`services/game/win_facts.py`); wins recorded
   before the fact existed count as not haunted.
 
+### 100 Candles and the boss game
+
+A run with `group_goal` (`GroupGoal`: `target`, the three weights,
+`milestone_every`, the boss multipliers, `contributor_coins`,
+`contributor_item_key`) sets the whole group a shared goal: put out `target`
+candles. The code is `services/seasons/group_goal.py`. No shipped run sets it
+yet (`yokai_1` does in a later phase), and a run without it, like `demo_1`,
+sees none of this. The boss itself (how its twists stack, how Nani Pix starts
+it) is under "Haunted rounds"; this section is the goal that calls it.
+
+- **The count.** `group_goal.candles` adds up the season's **finished**
+  games, those `WON` or `UNSOLVED` (`SNUFFING`); a game still running, a
+  stopped one (deleted) and a vote in progress add nothing. Each game weighs
+  the first that applies: **0** for a boss game, `per_event_day` for an
+  event-day game, `per_haunted` for a haunted one (a stored twist), else
+  `per_game`. So the boss never adds candles, and an event-day game counts
+  once at the event-day weight, not at both. The count is read from the games
+  on demand; nothing stores it.
+- **Milestones.** After each finished game, while the season is `ACTIVE` or
+  `CLOSING`, and while the count is **below** the target, the largest
+  multiple of `milestone_every` that is below the target and not yet queued
+  is queued as a `GOAL_MILESTONE` post (INFO). The target is never a
+  milestone (its post is the reached one), a jump over two milestones posts
+  only the later one, and `milestone_every = 0` posts none. "Not yet queued"
+  reads the season's `GOAL_MILESTONE` rows, posted or not, so a restart or a
+  re-finished game never repeats one.
+- **Reaching the goal** (`group_goal.settle`). The first time a game ending
+  takes the count to the target or past it, the goal is **settled**: every
+  **contributor** is paid `contributor_coins` 🪙 (season coins,
+  `CurrencyReason.SEASON_GOAL`) and the run item `contributor_item_key`, each
+  contributor gets a `GOAL_REACHED` event (`actor_id` the contributor; data
+  `season_id`, `run_id`, `crossing_game_id` the game that put out the last
+  candle, `candles`, `coins`), and one `GOAL_REACHED` post is queued with the
+  contributor count. It is logged at INFO. With no contributors, nothing is
+  paid, a WARNING is logged and a single `GOAL_REACHED` event with no actor is
+  written, as the marker that the goal is settled (`is_settled` reads these).
+- **Who contributed.** A player who, in a finished (`WON`/`UNSOLVED`),
+  **non-boss** game of the season, made at least one guess (any `/guess`, right
+  or wrong), or hosted it (the starter, but not of a HARD MODE game, which has
+  no human host), or won it (a `/correct` or `/setwinner` winner counts even
+  without a guess row). The boss game contributes nobody.
+- **Paid once.** The payout happens only while the season is `ACTIVE` or
+  `CLOSING` (a finished game of an `ENDED` or cancelled season does nothing),
+  once per season (`is_settled`), and **before** the lifecycle's conversion of
+  🪙 into 💠 in the same game ending (`consumer._season_mechanics` runs ahead of
+  `lifecycle.on_game_ended`), so the last game of a closing season still pays
+  and the coins convert. **Late players are not paid**: someone whose first
+  qualifying game is after the settling game gets nothing, and a re-finished
+  game (`/setwinner` on an old one) pays nobody again once settled. The whole
+  step runs on the locked season row, with locking reads for the count, the
+  contributors and the settled check, so two games ending at once settle once.
+  A failure is logged at ERROR and rolls back only this step (its savepoint);
+  the game's own result, bones and the lifecycle are unaffected.
+- **The boss.** Once settled, a boss is due while the season is `ACTIVE` (not
+  `CLOSING`) and has no boss game. Nani Pix starts it herself, as a normal
+  5-stage game (see "Haunted rounds" for the start rules and the stacking
+  twists); a human game that starts first holds it until that game ends. A
+  boss stopped with
+  `/stop` is deleted, so it is due again. A finished boss, won or unsolved,
+  is not repeated.
+- **The card.** `services/cards/goal_card.py` draws the 1200x630 counter card
+  from the run's art in `assets/seasons/<run_id>/goal/`, layered bottom to
+  top: `background.png`; the Gashadokuro (`gashadokuro.png`, standing on a
+  horizon line at y=470 with nothing drawn below it; it grows and climbs out
+  of the ground as the count rises); the skull pile (`skulls_0.png` to
+  `skulls_4.png`, one of five picked by the share of the target reached); ten
+  candle slots (`candle_lit.png` / `candle_out.png`, lit ones first and the
+  rest out, `ceil(10 x left / target)` staying lit; each has a shadow and a
+  body shaded to the scene, and a lit one a faint blue glow and floor pool);
+  and the "snuffed / target" counter in the top-left corner. The boss post is
+  the run's `boss.png` alone, cover-fitted. A missing art file is not fatal:
+  the announcement poster and `/candles` log a WARNING and send the same text
+  without a picture.
+- **`/candles`** works in the game topic and in a DM (a DM only for group
+  members, like `/standings`); anywhere else it is ignored. It shows the
+  counter card (never the boss picture) with this text as the caption, or as
+  a plain message when there is no art or the photo fails to send: the title
+  with the season name; the count against the target; the weights line (only
+  when the run has an event day); the next milestone (only before the goal is
+  settled, and only if one is left); then, once settled, **every boss state**:
+  pending (no boss game yet, so Nani Pix is about to start it or is holding
+  it), running (the game's number), won (the number and the winner, shown by
+  `players.display_name` so a Nopperabo hex masks them; no winner named when
+  nobody won it) or unsolved (the Gashadokuro survived). Then a line for the
+  viewer: "You helped put out the candles" for a contributor, or, before the
+  goal is settled only, an invitation to guess or host (a non-contributor
+  gets no line after it), and their bones when the run has a bone set. With
+  no season, or a run without a goal, it says there is no candle goal. Each
+  use is logged at INFO.
+
+### Bone Collector
+
+A run with `bone_set` (`BoneSet(bones, item_key)`, code
+`services/seasons/bones.py`) gives a set reward for winning haunted rounds.
+
+- **A bone** is a **win** (`GameStatus.WON`, the player as `winner_id`) of a
+  game of the season that is haunted **or** the boss game. Bones are not
+  stored: `bones.count` counts those games for the player, so a re-set winner
+  changes the count with the data.
+- **Granted at the set size.** When a win takes the player to `bones`
+  (`bone_set.bones`) or more, `bone_set.item_key` is granted
+  (`ItemSource.BONES`, once; an owned item is not granted again). The item is
+  **never revoked**: a later `/setwinner` that takes a win away leaves it.
+- **Only in a running season.** A bone is counted and granted only while the
+  season is `ACTIVE` or `CLOSING`; a win after it has ended does nothing. The
+  step has its own savepoint after the goal's, so an error in one (logged at
+  ERROR, naming it) does not stop the other.
+- **The DM.** Each bone queues one `BONE_FOUND` DM (see "Announcements"): the
+  count over the set size, or, on the win that grants the item, the "assembled"
+  text naming it. Once the item is owned, a count past the set size queues
+  nothing, and the same count is never queued twice for a player.
+- **The objective** `HAUNTED_WINS` (see "Haunted rounds") counts the same
+  kind of win from the event log; the two are independent.
+
 ### Event day (Night Parade)
 
 A run's `event_day` (`EventDay(month, day, names, gate, coin_multiplier,
@@ -2470,6 +2591,24 @@ any other): a **teaser** when a season is scheduled (or its dates change),
 a **start** post (with the gate's rule when there is one) and an **end**
 post with the frozen podium. There is no reminder. A cancelled season posts
 nothing: its queued posts are dropped unsent.
+
+A run with `group_goal` or `bone_set` adds four more (renderers in
+`jobs/goal_posts.py`, queued by `services/achievements/outbox.py`'s
+`enqueue_goal`). Each is skipped, with an INFO line, when the season is
+cancelled or its run no longer has the mechanic:
+
+- **`GOAL_MILESTONE`** (topic): the counter card at the milestone, with a line
+  saying how many of the target are out.
+- **`GOAL_REACHED`** (topic): the full counter card (all candles out) with
+  the contributor count and the reward (🪙, the item, or both), singular or
+  plural by the count.
+- **`GOAL_BOSS`** (topic): the boss picture with the game number and the XP and
+  🪙 multipliers, queued by `mark_boss` when the boss is marked, so it posts
+  in id order after the reached post. Skipped when the game is gone (a
+  `/stop`ped boss) or no longer a boss.
+- **`BONE_FOUND`** (a DM to the player): the bone count, or the finished set
+  and the item's name. A player Nani Pix cannot DM follows the usual DM
+  failure rules.
 
 ### The anime gate
 

@@ -490,6 +490,10 @@ src/nani_pix_bot/
     omikuji.py    # /omikuji (Halloween): today's fortune slip as the
                    # omikuji moment card (text without the art); a kyō
                    # prank drawn in a DM also posts the card to the topic
+    candles.py    # /candles (Halloween): the season's 100 Candles counter
+                   # card with the progress, next milestone, every boss
+                   # state and the viewer's bones as its caption (text
+                   # without the art); in the topic and in a DM
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
                    # `/start ach_<id>`, the achievements one, and
                    # `/start rules`/`/start recent` for standings_dm.py), /help
@@ -628,6 +632,9 @@ src/nani_pix_bot/
                    # (drawn once: draw_omikuji_card, post_omikuji_card)
     season_posts.py  # turns the season pass rows (SEASON_TIER DMs,
                    # SEASON_COMPLETE topic line) into Posts
+    goal_posts.py  # the four 100 Candles posts (RENDERERS: GOAL_MILESTONE,
+                   # GOAL_REACHED, GOAL_BOSS as counter card/boss picture
+                   # in the topic, BONE_FOUND as a DM) into Posts
     announcements.py  # the announcement outbox drain: a repeating 20s
                    # job, id order, nothing during quiet hours (rows wait),
                    # cards with the text as caption, albums for 3-10 rows
@@ -932,7 +939,11 @@ src/nani_pix_bot/
                    # moments.py (Halloween moment cards for the game topic:
                    # charm_card, duel_card/blocked_duel_card; avatar in a
                    # glowing ring, item art, title and name pills on a
-                   # generated background; JPEG out, no Telegram)
+                   # generated background; JPEG out, no Telegram),
+                   # goal_card.py (the 100 Candles counter card: the run's
+                   # layered goal art, a rising Gashadokuro, a skull pile
+                   # and ten candles, or boss.png alone; a missing file
+                   # raises FileNotFoundError and callers fall back to text)
     economy/      # the currency economy (shown as 💠 pixels) — see MECHANICS.md's "Pixels".
                    # __init__.py deliberately re-exports nothing (import
                    # submodules directly): players.py imports
@@ -1029,6 +1040,15 @@ src/nani_pix_bot/
                    #                 lifecycle.advance) and next_boundary
                    #   multipliers.py  haunted/event-day/boss factors on 🪙
                    #                 and XP awards (the boss host is exempt)
+                   #   group_goal.py the 100 Candles goal: candles (finished
+                   #                 games by weight), contributors,
+                   #                 milestones, settle (the one-time
+                   #                 payout, called from
+                   #                 consumer._season_mechanics) and the
+                   #                 boss: boss_due, mark_boss
+                   #   bones.py      the Bone Collector set: count, and
+                   #                 on_game_won (grant at the set size, the
+                   #                 BONE_FOUND DM); ACTIVE/CLOSING only
                    #   styles.py     season visual styles on a stage image
                    #                 (style_for, apply_style); watercolor.py
                    #                 is the watercolor drawing
@@ -1224,7 +1244,10 @@ assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's k
                    # icons/{ofuda,omamori}.png (512 px RGBA art of the two
                    # Halloween charms, drawn on the consumable preview card)
                    # and moments/{charm,curse,omikuji}_background.jpg
-                   # (1200x800 backgrounds of the moment cards)
+                   # (1200x800 backgrounds of the moment cards); under
+                   # seasons/yokai_1/goal/ the 100 Candles art
+                   # (background, skulls_0-4, gashadokuro, candle_lit,
+                   # candle_out and boss.png) drawn by goal_card.py
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
                    # (EN/RU page parity, every command in its command table)
