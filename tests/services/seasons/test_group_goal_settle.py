@@ -19,7 +19,7 @@ from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import events
 from nani_pix_bot.services.cosmetics import inventory
 from nani_pix_bot.services.economy import wallet
-from nani_pix_bot.services.seasons import consumer, season_history
+from nani_pix_bot.services.seasons import consumer, group_goal, season_history
 from nani_pix_bot.services.seasons.group_goal import contributors, is_settled, settle
 from tests.seasons.fake_runs import demo_3
 
@@ -151,7 +151,7 @@ def test_payout_on_the_last_game_of_a_closing_season_is_converted(session, yokai
         CurrencyTransfer.reason == CurrencyReason.SEASON_CONVERSION,
         CurrencyTransfer.currency == Currency.SEASON,
     )
-    assert session.scalar(stmt) >= 20 * len(contributors(session, yokai_season.id))
+    assert session.scalar(stmt) == 20 * len(contributors(session, yokai_season.id))
 
 
 def test_reached_with_no_contributors_still_marks_settled(
@@ -184,10 +184,29 @@ def test_untagged_or_goalless_run_is_a_no_op(session, active_season, tagged_game
     assert _milestones(session) == []
 
 
-def test_a_broken_goal_does_not_break_the_event(session, yokai_season, finish, monkeypatch):
+def test_a_broken_goal_does_not_break_the_event(
+    session, yokai_season, finished_game, monkeypatch, log_records
+):
     def boom(*_args):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(consumer.group_goal, "on_game_ended", boom)
-    finish(n=1)
+    yokai_season.status = SeasonStatus.CLOSING
+    game = finished_game(GameStatus.WON, guessers=(3,), winner_id=3)
+    who = events.Involved(actor_id=3, game_id=game.id, subject_id=2)
+    events.emit(session, EventType.GAME_WON, who, stage=1, hard_mode=False)
     assert _reached(session) == []
+    assert any(r.level == "ERROR" and "season mechanics failed" in r.message for r in log_records)
+    won = select(func.count(CurrencyTransfer.id)).where(
+        CurrencyTransfer.reason == CurrencyReason.SEASON_WIN
+    )
+    assert session.scalar(won) == 1  # XP and coins kept (then converted at the end)
+    assert yokai_season.status == SeasonStatus.ENDED  # lifecycle still ran
+
+
+def test_missing_player_is_not_paid_nor_counted(session, yokai_season, finish, monkeypatch):
+    finish(n=9)
+    monkeypatch.setattr(group_goal, "contributors", lambda *_a, **_k: {2, 999})
+    finish(n=1)
+    assert {e.actor_id for e in _reached(session)} == {2}
+    assert _outbox(session, OutboxKind.GOAL_REACHED)[0].payload["players"] == 1

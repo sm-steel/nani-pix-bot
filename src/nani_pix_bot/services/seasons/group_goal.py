@@ -3,7 +3,7 @@ light a candle, who contributed, which milestone is due, and the one-time
 payout when the target is reached. Must not import services.game."""
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from nani_pix_bot.models.announcement import AnnouncementOutbox
@@ -48,16 +48,22 @@ def candles_for(game: Game, goal: GroupGoal) -> int:
     return _weight(game.event_day, game.haunt_twist is not None, game.boss_game, goal)
 
 
-def candles(session: Session, season_id: int, goal: GroupGoal) -> int:
-    rows = session.execute(
-        select(Game.event_day, Game.haunt_twist, Game.boss_game).where(
-            Game.season_id == season_id, Game.status.in_(SNUFFING)
-        )
+def _read(stmt: Select, lock: bool) -> Select:
+    """`lock` makes it a locking read: InnoDB serves those from the latest committed
+    rows, not the REPEATABLE READ snapshot, so a waiter sees the winner's writes
+    (a no-op on SQLite)."""
+    return stmt.with_for_update() if lock else stmt
+
+
+def candles(session: Session, season_id: int, goal: GroupGoal, *, lock: bool = False) -> int:
+    stmt = select(Game.event_day, Game.haunt_twist, Game.boss_game).where(
+        Game.season_id == season_id, Game.status.in_(SNUFFING)
     )
+    rows = session.execute(_read(stmt, lock))
     return sum(_weight(day, twist is not None, boss, goal) for day, twist, boss in rows)
 
 
-def contributors(session: Session, season_id: int) -> set[int]:
+def contributors(session: Session, season_id: int, *, lock: bool = False) -> set[int]:
     """Guessers, non-hard-mode hosts and winners of the season's finished, non-boss games."""
     finished = (
         Game.season_id == season_id,
@@ -69,7 +75,7 @@ def contributors(session: Session, season_id: int) -> set[int]:
     winners = select(Game.winner_id).where(*finished, Game.winner_id.is_not(None))
     ids = set()
     for query in (guessers, hosts, winners):
-        ids.update(session.scalars(query))
+        ids.update(session.scalars(_read(query, lock)))
     return ids
 
 
@@ -102,26 +108,25 @@ def goal_of(
 
 
 def _last_queued(session: Session, season_id: int) -> int:
-    """The highest milestone queued for the season, posted or not."""
-    rows = session.scalars(
-        select(AnnouncementOutbox).where(AnnouncementOutbox.kind == OutboxKind.GOAL_MILESTONE)
-    )
+    """The highest milestone queued for the season, posted or not (a locking read)."""
+    stmt = select(AnnouncementOutbox).where(AnnouncementOutbox.kind == OutboxKind.GOAL_MILESTONE)
+    rows = session.scalars(_read(stmt, True))
     return max(
         (r.payload["milestone"] for r in rows if r.payload.get("season_id") == season_id), default=0
     )
 
 
-def is_settled(session: Session, season_id: int) -> bool:
+def is_settled(session: Session, season_id: int, *, lock: bool = False) -> bool:
     stmt = select(EventLog.data).where(EventLog.event_type == EventType.GOAL_REACHED)
-    return any(data.get("season_id") == season_id for data in session.scalars(stmt))
+    return any(data.get("season_id") == season_id for data in session.scalars(_read(stmt, lock)))
 
 
-def _pay(session: Session, season: SeasonSchedule, run: SeasonRun, player_id: int) -> None:
+def _pay(session: Session, season: SeasonSchedule, run: SeasonRun, player_id: int) -> bool:
     goal = run.group_goal
     player = session.get(Player, player_id)
     if goal is None or player is None:
         logger.error("no player {recipient_id} to pay the goal reward", recipient_id=player_id)
-        return
+        return False
     if goal.contributor_coins:
         entry = wallet.LedgerEntry(CurrencyReason.SEASON_GOAL, season_id=season.id, coins=True)
         wallet.credit(session, player, goal.contributor_coins, entry)
@@ -129,6 +134,7 @@ def _pay(session: Session, season: SeasonSchedule, run: SeasonRun, player_id: in
         item_id = f"{run.run_id}/{goal.contributor_item_key}"
         grant = inventory.ItemGrant(item_id, ItemSource.GOAL, season.id)
         inventory.grant(session, player_id, grant)
+    return True
 
 
 def settle(
@@ -137,10 +143,14 @@ def settle(
     """Pays every contributor once and queues the one post. False when the
     season was already settled."""
     goal = run.group_goal
-    if goal is None or is_settled(session, season.id):
+    if goal is None or is_settled(session, season.id, lock=True):
         return False
-    snuffed = candles(session, season.id, goal)
-    paid = sorted(contributors(session, season.id))
+    snuffed = candles(session, season.id, goal, lock=True)
+    paid = [
+        p
+        for p in sorted(contributors(session, season.id, lock=True))
+        if _pay(session, season, run, p)
+    ]
     data = {
         "season_id": season.id,
         "run_id": run.run_id,
@@ -149,7 +159,6 @@ def settle(
         "coins": goal.contributor_coins,
     }
     for player_id in paid:
-        _pay(session, season, run, player_id)
         events.emit(session, EventType.GOAL_REACHED, events.Involved(actor_id=player_id), **data)
     if not paid:
         logger.warning(
@@ -161,11 +170,12 @@ def settle(
     queued = {"season_id": season.id, "players": len(paid), "candles": snuffed}
     outbox.enqueue_goal(session, OutboxKind.GOAL_REACHED, queued)
     logger.info(
-        "goal reached: {candles} candles — {players} contributors get {coins} 🪙 and {item}",
+        "goal reached: {candles} candles — {players} contributors get {coins} 🪙{item_note}",
         candles=snuffed,
         players=len(paid),
         coins=goal.contributor_coins,
         item=goal.contributor_item_key,
+        item_note=f" and {goal.contributor_item_key}" if goal.contributor_item_key else "",
         season_id=season.id,
         run_id=run.run_id,
         recipients=[players.describe_player_id(session, p) for p in paid],
@@ -208,7 +218,7 @@ def on_game_ended(session: Session, event: LoggedEvent) -> None:
         .with_for_update()
         .execution_options(populate_existing=True)
     )
-    snuffed = candles(session, season.id, goal)
+    snuffed = candles(session, season.id, goal, lock=True)
     if snuffed < goal.target:
         _queue_milestone(session, season, goal, snuffed)
     else:
