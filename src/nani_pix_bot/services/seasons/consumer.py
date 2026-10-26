@@ -7,6 +7,7 @@ from nani_pix_bot.models.enums import XpSource
 from nani_pix_bot.services import players
 from nani_pix_bot.services.events import LoggedEvent
 from nani_pix_bot.services.seasons import (
+    bones,
     coins,
     group_goal,
     hexes,
@@ -96,15 +97,17 @@ def _trigger_hexes(
 
 
 def _season_mechanics(session: Session, event: LoggedEvent) -> None:
-    """The run's group goal in its own savepoint: a broken payout never costs
-    the game its XP, coins or objectives, and never blocks the season's
-    lifecycle step after it."""
-    try:
-        with session.begin_nested():
-            group_goal.on_game_ended(session, event)
-    except Exception:
-        logger.opt(exception=True).error(
-            "season mechanics failed on event {event_type} (row {event_id}); XP and coins kept",
-            event_type=event.event_type.value,
-            event_id=event.id,
-        )
+    """The run's group goal and bone set, each in its own savepoint: a broken
+    payout never costs the game its XP, coins or objectives, never costs the
+    other mechanic its turn, and never blocks the season's lifecycle step
+    after it."""
+    for mechanic in (group_goal.on_game_ended, bones.on_game_won):
+        try:
+            with session.begin_nested():
+                mechanic(session, event)
+        except Exception:
+            logger.opt(exception=True).error(
+                "season mechanics failed on event {event_type} (row {event_id}); XP and coins kept",
+                event_type=event.event_type.value,
+                event_id=event.id,
+            )

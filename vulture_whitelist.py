@@ -12,10 +12,6 @@ Anything else vulture reports is dead code: remove it or wire it up.
 
 from typing import TYPE_CHECKING
 
-from nani_pix_bot.models.enums import (
-    ItemSource,
-    OutboxKind,
-)
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.turn_state import TurnState
@@ -51,8 +47,6 @@ _kept = (
     # it is listed so the entry survives a rename.
     Reward.ofuda,
     # Halloween: wired by P6 (#471)
-    ItemSource.BONES,
-    OutboxKind.BONE_FOUND,
     group_goal.candles_for,
     group_goal.is_contributor,
 )
