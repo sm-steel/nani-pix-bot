@@ -40,8 +40,8 @@ def test_pile_and_candles(s, t, pile, lit):
 
 def test_rise_grows_with_progress():
     assert rise(0, 100) == (0.45, 0.5)
-    assert rise(100, 100) == (1.0, 0.0)
-    assert rise(200, 100) == (1.0, 0.0)
+    assert rise(100, 100) == (0.56, 0.0)
+    assert rise(200, 100) == (0.56, 0.0)
 
 
 def _save(path, size, colour):
@@ -56,8 +56,8 @@ def tmp_art(tmp_path, monkeypatch):
         _save(folder / name, (1200, 630), CLEAR)
     _save(folder / "background.png", (1200, 630), (*BG, 255))
     _save(folder / "gashadokuro.png", (800, 826), (*BONE, 255))
-    _save(folder / "candle_lit.png", (35, 160), (*RED, 255))
-    _save(folder / "candle_out.png", (35, 160), (*GREY, 255))
+    _save(folder / "candle_lit.png", (35, CANDLE_HEIGHT), (*RED, 255))
+    _save(folder / "candle_out.png", (35, CANDLE_HEIGHT), (*GREY, 255))
     _save(folder / "boss.png", (600, 315), (90, 0, 90, 255))
     monkeypatch.setattr(backgrounds, "SEASON_ART_DIR", tmp_path)
     return folder
@@ -67,9 +67,21 @@ def _near(pixel, colour):
     return all(abs(a - b) <= 3 for a, b in zip(pixel[:3], colour, strict=True))
 
 
-def _probe(slot: int) -> tuple[int, int]:
+CANDLE_HEIGHT = 160
+
+
+def _probe(slot: int, share: float = 0.5) -> tuple[int, int]:
+    """A pixel `share` of the way down the slot's candle (0 = top, 1 = base)."""
     x, y = CANDLE_SLOTS[slot]
-    return x, y - round(160 * CANDLE_SCALE / 2)
+    return x, y - round(CANDLE_HEIGHT * CANDLE_SCALE * (1 - share))
+
+
+def _redness(pixel) -> int:
+    return pixel[0] - (pixel[1] + pixel[2]) // 2
+
+
+def _brightness(pixel) -> int:
+    return pixel[0] + pixel[1] + pixel[2]
 
 
 def _draw(card: GoalCard) -> Image.Image:
@@ -79,8 +91,16 @@ def _draw(card: GoalCard) -> Image.Image:
 def test_render_draws_lit_and_snuffed_candles(tmp_art):
     img = _draw(GoalCard("demo_3", 50, 100))
     assert img.size == (1200, 630)
-    assert _near(img.getpixel(_probe(0)), RED)
-    assert _near(img.getpixel(_probe(9)), GREY)
+    # the lighting tints both toward the scene, but the lit one stays far redder
+    assert _redness(img.getpixel(_probe(0))) > _redness(img.getpixel(_probe(9))) + 40
+
+
+def test_a_candle_fades_darker_toward_its_base(tmp_art):
+    img = _draw(GoalCard("demo_3", 50, 100))
+    for slot in (0, 9):
+        assert _brightness(img.getpixel(_probe(slot, 0.95))) < _brightness(
+            img.getpixel(_probe(slot, 0.4))
+        )
 
 
 def test_the_skeleton_is_clipped_at_the_horizon(tmp_art):
