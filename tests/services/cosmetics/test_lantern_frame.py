@@ -6,6 +6,7 @@ from PIL import Image
 from nani_pix_bot.services import mascot, sprites
 from nani_pix_bot.services.cosmetics import frames, lantern_frame
 from nani_pix_bot.services.mascot import Pose
+from tests.conftest import LogLine
 
 GREEN = (10, 200, 30)
 
@@ -74,7 +75,9 @@ def test_lantern_string_handles_portrait_and_tiny_images(size: tuple[int, int]) 
     assert lantern_frame.lantern_string(Image.new("RGB", size, GREEN)).size == size
 
 
-def test_a_missing_sprite_still_returns_the_stage(monkeypatch) -> None:
+def test_a_missing_sprite_still_returns_the_stage_and_logs_once(
+    monkeypatch, log_records: list[LogLine]
+) -> None:
     def gone(*_a, **_k):
         raise FileNotFoundError("chochin.png")
 
@@ -82,7 +85,28 @@ def test_a_missing_sprite_still_returns_the_stage(monkeypatch) -> None:
     monkeypatch.setattr(lantern_frame, "_missing_logged", False)
     lantern_frame._hung.cache_clear()
     src = Image.new("RGB", (640, 360), GREEN)
-    out = lantern_frame.lantern_string(src)
-    assert out.size == src.size
-    assert _red_count(out) == 0
-    lantern_frame._hung.cache_clear()
+    try:
+        first = lantern_frame.lantern_string(src)
+        lantern_frame.lantern_string(src)
+    finally:
+        lantern_frame._hung.cache_clear()
+    assert first.size == src.size
+    assert _red_count(first) == 0
+    errors = [r for r in log_records if r.level == "ERROR"]
+    assert len(errors) == 1
+    assert errors[0].extra["name"] == lantern_frame.SPRITE
+
+
+def test_the_cord_runs_dark_along_the_top() -> None:
+    out = lantern_frame.lantern_string(Image.new("RGB", (960, 720), (220, 220, 220)))
+    # x=320 lies between two lanterns, so only the cord can be dark there
+    assert any(max(_rgb(out, (320, y))) < 90 for y in range(40))
+
+
+def test_each_lantern_casts_a_warm_glow_below_it() -> None:
+    grey = (120, 120, 120)
+    out = lantern_frame.lantern_string(Image.new("RGB", (960, 720), grey))
+    r, g, b = _rgb(out, (160, 88))  # just under the first lantern
+    assert r > grey[0] + 8  # lit, not just left alone
+    assert r > g
+    assert g > b  # and warm: red over green over blue
