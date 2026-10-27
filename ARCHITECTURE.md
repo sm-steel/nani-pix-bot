@@ -826,8 +826,13 @@ src/nani_pix_bot/
                    #                   (DEFAULT_OVERLAY = confetti)
                    #   petals.py       the Sakura win overlays: sakura
                    #                   petals over the badge (petal_drift,
-                   #                   sakura_storm), fading out at the
-                   #                   edges of their area (edge_fade)
+                   #                   sakura_storm)
+                   #   overlay_canvas.py the canvas every non-confetti
+                   #                   overlay is drawn on: the clip area,
+                   #                   fade in/out, edge_fade (a shape
+                   #                   leaving the area dissolves) and the
+                   #                   supersampled frame loop
+                   #                   (render_layers/render)
                    #   spirits.py      the Halloween win overlays: bats
                    #                   bursting out of the badge (bat_burst),
                    #                   spirit flames orbiting above it, pasted
@@ -909,7 +914,22 @@ src/nani_pix_bot/
     text.py       # cut_at_line: cut text to a length at a line break,
                    # with a marker (release notes, rich.py's fit)
     shapes.py     # pure vector shapes shared by the stage frames and the
-                   # reveal overlays (the sakura petal outline)
+                   # reveal overlays (the sakura petal outline, and
+                   # bone_outline for bone_border and the skeleton art)
+    easing.py     # smoothstep: the one clamped S-curve the reveal effects,
+                   # overlays and season styles share
+    stage_image.py # redraw_or_keep: runs the stage PNG through a frame or
+                   # season style and, if the drawing raises, logs it and
+                   # posts the stage as it was (frames.apply_frame and
+                   # seasons/styles.apply_style both use it)
+    sprites.py    # the committed RGBA sprite loader (assets/sprites/):
+                   # sprite, sprite_height (cached, scaled to a height),
+                   # silhouette, and sprite_or_none/log_missing, the one
+                   # "missing art is logged once per sprite" path (stdlib
+                   # logging, since the reveal worker has no loguru setup);
+                   # used by the Halloween stage styles, frames and reveal
+                   # effects/overlays, which all render without art that is
+                   # missing
     players.py    # Player lookup/creation, win-count bookkeeping,
                    # leaderboard query — everything that touches only
                    # the Player table (win increments themselves happen
@@ -1267,6 +1287,14 @@ assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's k
                    # same doc), example1/2 (/stageconfig's examples) and
                    # mascot/<pose>.png (Nani Pix's six poses, 384 px wide;
                    # the full-size art lives in the repo-root assets/mascot/)
+                   # and sprites/ (Halloween art for the stage styles,
+                   # frames and reveal effects, loaded by
+                   # services/sprites.py: moonlit/ the two corners of the
+                   # moonlit style, chochin.png the lantern frame's
+                   # lantern, candle.png the candle_snuff candle, parade/
+                   # the night_parade walkers, gashadokuro/hand.png the
+                   # giant skeleton hand, skeleton/ the bone_rattle parts
+                   # and hitodama/f0-f5.png the spirit flame frames)
                    # and mascot/costumes/<key>/<pose>.png (the same six
                    # poses per costume, 384 wide and at most 480 tall) and
                    # costume_sheet_background.jpg (the costume preview
