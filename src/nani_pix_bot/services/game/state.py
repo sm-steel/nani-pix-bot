@@ -801,6 +801,8 @@ def force_unsolved(game: Game, *, cause: str) -> None:
         cause=cause,
         hard_mode=game.hard_mode,
         boss_game=bool(game.boss_game),
+        event_day=bool(game.event_day),
+        haunted=haunting.is_haunted(game),
         distinct_guessers=guessed,
     )
 

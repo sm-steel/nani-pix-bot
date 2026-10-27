@@ -169,3 +169,38 @@ def test_a_refinish_measures_seconds_to_the_original_ending(session: Session) ->
 
     (won,) = _events(session, EventType.GAME_WON)
     assert won.data["seconds"] == 30
+
+
+def _end_flags(row: EventLog) -> tuple[bool, bool, bool]:
+    return row.data["boss_game"], row.data["event_day"], row.data["haunted"]
+
+
+def test_end_events_carry_the_season_mechanics_facts(session: Session) -> None:
+    """boss_game, event_day and haunted ride on both end events, read off the
+    game row (Yōkai Night's candle and boss achievements read them)."""
+    plain = _game(session)
+    game_service.force_unsolved(plain, cause="test")
+    special = Game(
+        starter_id=STARTER,
+        status=GameStatus.ACTIVE,
+        current_stage=PixelStage.STAGE_1,
+        title_english="Frieren",
+        boss_game=True,
+        event_day=True,
+    )
+    session.add(special)
+    session.flush()
+    game_service.force_unsolved(special, cause="test")
+    assert [_end_flags(r) for r in _events(session, EventType.GAME_UNSOLVED)] == [
+        (False, False, False),
+        (True, True, True),  # a boss game is haunted
+    ]
+
+
+def test_a_win_carries_event_day_and_boss_game(session: Session) -> None:
+    game = _game(session, event_day=True, haunt_twist="tanuki_leaf")
+
+    game_service.record_guess(session, game, guesser_id=ALICE, guess_text="frieren")
+
+    (won,) = _events(session, EventType.GAME_WON)
+    assert _end_flags(won) == (False, True, True)
