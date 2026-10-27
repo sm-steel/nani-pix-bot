@@ -918,10 +918,10 @@ src/nani_pix_bot/
                    # bone_outline for bone_border and the skeleton art)
     easing.py     # smoothstep: the one clamped S-curve the reveal effects,
                    # overlays and season styles share
-    stage_image.py # redraw_or_keep: runs the stage PNG through a frame or
-                   # season style and, if the drawing raises, logs it and
-                   # posts the stage as it was (frames.apply_frame and
-                   # seasons/styles.apply_style both use it)
+    stage_image.py # redraw_or_keep: runs the stage PNG through a frame,
+                   # season style or haunted twist and, if the drawing raises,
+                   # logs it and posts the stage as it was (frames.apply_frame,
+                   # seasons/styles.apply_style and haunting.apply_twists use it)
     sprites.py    # the committed RGBA sprite loader (assets/sprites/):
                    # sprite, sprite_height (cached, scaled to a height),
                    # silhouette, and sprite_or_none/log_missing, the one

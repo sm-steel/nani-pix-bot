@@ -5,7 +5,6 @@ services.game (activate_game calls in here)."""
 import random
 from collections.abc import Sequence
 from datetime import datetime
-from io import BytesIO
 from typing import Protocol
 
 from loguru import logger
@@ -15,7 +14,7 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.seasons.mechanics import HauntTwist
-from nani_pix_bot.services import i18n
+from nani_pix_bot.services import i18n, stage_image
 from nani_pix_bot.services.seasons import event_day, modifiers
 
 # Twists that clear up at a haunted game's last stage; the mirror stays until
@@ -187,15 +186,19 @@ def twist_image(image: Image.Image, twist: HauntTwist) -> Image.Image:
 
 
 def apply_twists(png: bytes, twists: Sequence[HauntTwist]) -> bytes:
-    """`png` with every twist applied in order; unchanged when there are none."""
+    """`png` with every twist applied in order; unchanged when there are none.
+    Drawn like a frame or a style (`stage_image.redraw_or_keep`): if any twist
+    raises, the error is logged and `png` comes back untwisted, so a broken
+    twist never blocks the stage post."""
     if not twists:
         return png
-    image = Image.open(BytesIO(png))
-    for twist in twists:
-        image = twist_image(image, twist)
-    out = BytesIO()
-    image.save(out, format="PNG")
-    return out.getvalue()
+
+    def draw(image: Image.Image) -> Image.Image:
+        for twist in twists:
+            image = twist_image(image, twist)
+        return image
+
+    return stage_image.redraw_or_keep(png, draw, "twist", "+".join(t.value for t in twists))
 
 
 def _started(run: SeasonRun, game: Game, lang: str, twist: str, hint: str) -> str:
