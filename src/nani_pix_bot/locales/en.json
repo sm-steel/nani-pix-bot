@@ -291,7 +291,7 @@
   "inventory.line.ofuda": "📜 Ofuda: {count}",
   "inventory.line.omamori": "🧿 Omamori: {count}",
   "inventory.ofuda_armed": " — one armed for this round",
-  "inventory.ofuda_hint": "Arm an Ofuda from /shop during a round.",
+  "inventory.ofuda_hint": "Arm an Ofuda from /shop during a round of a season that has them.",
   "inventory.empty": "Your inventory is empty — clue tokens and charms come from the Season Pass, the Season Shop and /omikuji.",
   "commands.pixelconfig": "View/tune pixel rewards and prices (admins)",
   "commands.partialmatch": "Tune partial title reveals (admins)",
