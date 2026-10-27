@@ -67,10 +67,6 @@ class Reward:
         return cls(RewardKind.CLUE_TICKET)
 
     @classmethod
-    def ofuda(cls) -> "Reward":
-        return cls(RewardKind.OFUDA)
-
-    @classmethod
     def omamori(cls) -> "Reward":
         return cls(RewardKind.OMAMORI)
 

@@ -179,5 +179,5 @@ def test_shop_sells_ofuda_and_omamori_with_a_limit() -> None:
 
 def test_the_pass_counts_every_consumable_reward() -> None:
     run = _demo3()
-    extra = Tier(300, Reward.ofuda(), None)
+    extra = Tier(300, Reward(RewardKind.OFUDA), None)
     assert any("consumable" in p for p in run_problems(replace(run, tiers=(*run.tiers, extra))))
