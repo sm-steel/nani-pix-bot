@@ -2898,7 +2898,8 @@ effect. It emits `HEX_CAST` (with `outcome="blocked"`) and `HEX_BLOCKED`
     title. Guess replies, notices, standings, leaderboard, achievements,
     profile captions, reveal posts, tips and ballots all go through those.
   - *Images.* A name drawn on a card (name pills, card titles and effect
-    lines, profile card, podium and unlock cards, reveal badge) is the
+    lines, profile card, which drops the title too (`profile.build`), podium
+    and unlock cards, reveal badge) is the
     localized `faceless.label` ("Faceless" / «Без лица»,
     `players.image_name`), and the profile photo is replaced by
     `assets/icons/hex/nopperabo_avatar.jpg`: every image gets its photo from
