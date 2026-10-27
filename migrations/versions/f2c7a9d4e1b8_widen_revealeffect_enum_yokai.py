@@ -18,7 +18,7 @@ depends_on: str | Sequence[str] | None = None
 
 _BASE = ("IRIS", "TILE_FLIP", "RIPPLE", "GLITCH", "SHATTER")
 _SAKURA = ("SPRING_BREEZE", "BLOSSOM_BRANCH")
-_YOKAI = ("CANDLE_SNUFF", "NIGHT_PARADE")
+_YOKAI = ("CANDLE_SNUFF", "NIGHT_PARADE", "GASHADOKURO_RISE")
 
 
 def upgrade() -> None:

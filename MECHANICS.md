@@ -833,11 +833,13 @@ way to play it once.
 The effect is picked **at game start**: the starter's equipped reveal
 transition (see "Cosmetics"), else uniformly at random from `iris`,
 `tile_flip`, `ripple`, `glitch` and `shatter`. The season transitions
-(`spring_breeze`, `blossom_branch`, `candle_snuff`, `night_parade`) are cosmetics and never come up at random. `candle_snuff` (Yokai Night): the front
+(`spring_breeze`, `blossom_branch`, `candle_snuff`, `night_parade`, `gashadokuro_rise`) are cosmetics and never come up at random. `candle_snuff` (Yokai Night): the front
 sits in darkness lit by a candle's flame, the flame is snuffed, and the darkness
 lifts upward with the smoke off the clear image. `night_parade` (Yokai Night): six yokai silhouettes march left to right along
 the lower half of the front, which is dimmed ahead of the leader; the clear image follows behind the
-last walker through a band of mist, and the parade walks off the right edge. For HARD MODE the animated
+last walker through a band of mist, and the parade walks off the right edge. `gashadokuro_rise` (Yokai Night): a giant skeleton hand rises from below the
+bottom edge and sweeps left to right, pivoting far below the image; each block its centre line passes is cleared and
+flung off along the sweep as a tumbling, fading square in its own colour, and the hand then sinks away. For HARD MODE the animated
 screenshot (`a` or `b`) is picked then too. The effect part is rendered in
 the background right after the game goes live, so the reveal itself only
 renders the ending and never delays a game's start.

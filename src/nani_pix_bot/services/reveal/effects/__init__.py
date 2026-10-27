@@ -10,6 +10,7 @@ from nani_pix_bot.services.reveal import encode
 from nani_pix_bot.services.reveal.effects import (
     blossom_branch,
     candle_snuff,
+    gashadokuro_rise,
     glitch,
     iris,
     night_parade,
@@ -32,5 +33,6 @@ EFFECTS: Mapping[
         RevealEffect.BLOSSOM_BRANCH: blossom_branch.render_part1,
         RevealEffect.CANDLE_SNUFF: candle_snuff.render_part1,
         RevealEffect.NIGHT_PARADE: night_parade.render_part1,
+        RevealEffect.GASHADOKURO_RISE: gashadokuro_rise.render_part1,
     }
 )
