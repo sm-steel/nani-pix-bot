@@ -2020,10 +2020,12 @@ round's bounty, tip a player, or pay to sharpen the image.
 **Status: Implemented (phase 1: the framework, Season XP and the anime
 gate; phase 2: inventory and cosmetics; phase 3: Season Coins, the
 Season Pass, Premium and clue tokens; phase 4: the Season Shop, rule
-modifiers, the visual style and objectives; phase 5: season achievements).** Seasons are occasional,
-time-boxed events that run alongside the normal game. One run ships,
-`seasons/runs/sakura_1.py` (Sakura Season); `/season` schedules it and any
-run module added later.
+modifiers, the visual style and objectives; phase 5: season achievements;
+phases 6-8: the 100 Candles goal, hexes and the Yōkai Night run).** Seasons
+are occasional, time-boxed events that run alongside the normal game. Two
+runs ship: `seasons/runs/sakura_1.py` (Sakura Season) and
+`seasons/runs/yokai_1.py` (Yōkai Night, see below); `/season` schedules
+either and any run module added later.
 
 ### Runs and the schedule
 
@@ -2465,9 +2467,9 @@ pays and gates exactly as before.
 A run with `group_goal` (`GroupGoal`: `target`, the three weights,
 `milestone_every`, the boss multipliers, `contributor_coins`,
 `contributor_item_key`) sets the whole group a shared goal: put out `target`
-candles. The code is `services/seasons/group_goal.py`. No shipped run sets it
-yet (`yokai_1` does in a later phase), and a run without it, like `demo_1`,
-sees none of this. The boss itself (how its twists stack, how Nani Pix starts
+candles. The code is `services/seasons/group_goal.py`. `yokai_1` sets it
+(see "Yōkai Night"); a run without it, like `sakura_1` or `demo_1`, sees
+none of this. The boss itself (how its twists stack, how Nani Pix starts
 it) is under "Haunted rounds"; this section is the goal that calls it.
 
 - **The count.** `group_goal.candles` adds up the season's **finished**
@@ -2809,7 +2811,8 @@ numeral, medal and progress to the next tier. A run lists at most 16
 only while its season is the open one (`active`/`closing`), or for a player
 who holds it; it is left out of everyone else's list and summary total
 (`status.build`). A comparison lists it when either player would see it.
-`sakura_1` ships none; a later run (Phase 8) is the first to.
+`sakura_1` ships none; `yokai_1` is the first to (13 of them, at most 16 per
+run, several of them tiered).
 
 ### Hexes
 
@@ -2966,7 +2969,7 @@ the last column.
 | `hexes` | A tuple of `HexRule(kind, price, cooldown_minutes, duration_hours, amount)`, at most one per kind. Pranks (`nopperabo`, `chochin`) last `duration_hours` (at least 1) and have `amount` 0; `kappa` (percent 1..100 of the target's next win) and `kitsune` (🪙 lost on the next wrong guess, at least 1) last until triggered (`duration_hours` 0). Price at least 1, cooldown 1..1440 minutes. Players can refuse hexes with `players.hex_opt_out`. | Phase 5 |
 | `group_goal` | `GroupGoal(target, per_game, per_haunted, per_event_day, milestone_every, boss_*_multiplier, contributor_coins, contributor_item_key)`: a shared candle count that fills as season games finish, with a boss game (`games.boss_game`) when it is reached. Amounts are not negative; the prize is one of the run's items. | Phase 6 |
 | `bone_set` | `BoneSet(bones, item_key)`: an item earned after `bones` haunted wins. The item is one of the run's items. | Phase 6 |
-| `GoalKind.HEXES_BLOCKED` | Objective kind counting hexes a player's ofuda blocked. | Phase 5 |
+| `GoalKind.HEXES_BLOCKED` | Objective kind counting hexes a player's Omamori blocked. | Phase 5 |
 | `GoalKind.HAUNTED_WINS` | Objective kind counting haunted-game wins. | Phase 3 |
 
 **One source per item.** An item comes from exactly one place: a pass tier,
@@ -2976,3 +2979,38 @@ rejects a key in two of them.
 **Storage.** Hexes, armed ofuda and omikuji draws live in their own tables
 (see `ARCHITECTURE.md`); boss state, candle progress and bones are derived
 from `games` rows, so they have none.
+
+### Yōkai Night (`yokai_1`)
+
+The second run, `seasons/runs/yokai_1.py` (frozen once shipped, like Sakura).
+It is the first run to switch on every optional mechanic above. The
+admin's example window is `/season schedule yokai_1 2026-10-28 06:00
+2026-11-12 06:00`. The values below are the module's; the linked sections
+hold the rules.
+
+| What | Value | Rules in |
+|---|---|---|
+| Gate | Horror, Supernatural, Mythology or Vampire anime (Shikimori genre 14 and 37, theme 6 and 32) | "The anime gate" |
+| XP | win by stage 50 / 40 / 30 / 20 / 10, host solved 15, host unsolved 5, first guess 5 | "Season XP" |
+| 🪙 | win 30, host solved 20, host unsolved 10, first guess 10; 2 🪙 per 💠 on conversion | "Season Coins, Pass and Premium" |
+| Pass | 12 tiers at 20 / 50 / 90 / 140 / 190 / 240 / 300 / 360 / 420 / 490 / 570 / 650 XP; Premium costs 300 🪙; rewards include an Omamori (tier 7), a clue ticket and stamps | "Season Coins, Pass and Premium" |
+| Shop | 14 cosmetics (25-95 🪙), a clue ticket (30 🪙, limit 2) and an Ofuda (20 🪙, limit 2) | "Season Shop", "Ofuda and Omamori" |
+| Objectives | 7: Kimodameshi (win by stage 2), Lantern Keeper (host 2), Spirit Chaser (win 3), Night Walker (5 days), Hundred Tales (guess 8), Bone Collector (2 haunted wins), Exorcist (block 1 hex) | "Objectives" |
+| Style | `moonlit` | "Season style" |
+| Mascot costume | `pumpkin` while the season is open | "Cosmetics" |
+| Haunting | 25% of games, all four twists, 🪙 x2 | "Haunted rounds" |
+| Night Parade | 31 October in the group's time zone: every game haunted (x2), 🪙 x2 on top (x4 in all), gate narrowed to Mythology or Supernatural | "Event day (Night Parade)" |
+| 100 Candles | 100 candles; a game puts out 1, a haunted one 2, a Night Parade one 3, a boss game 0; a post at 25 / 50 / 75; each contributor gets 50 🪙 and the Gashadokuro Slayer title | "100 Candles and the boss game" |
+| Boss game | XP x2 and 🪙 x3 for guessers, on top of the haunting's x2 (x6 🪙 in all); a host award is never multiplied | "Haunted rounds", `services/seasons/multipliers.py` |
+| Hexes | Nopperabo 20 🪙 (30 min cooldown, 24 h), Chochin 20 🪙 (30 min, 24 h), Kappa 40 🪙 (60 min, 50% of the target's next win), Kitsune 30 🪙 (60 min, 15 🪙 off the next wrong guess) | "Hexes" |
+| Omikuji | Daikichi 10% (20 🪙 and an Omamori), Kichi 30% (10 🪙), Shokichi 40% (5 🪙), Kyo 20% (a prank hex on the drawer) | "Omikuji" |
+| Bone set | 7 haunted wins give the Mini Skeleton name flair | "Bone Collector" |
+| Achievements | 13 run achievements, five of them hidden (Gashadokuro Bane, Daikichi, Cursed Luck, Hexed and Happy, Hyakki Yagyo) | "Season achievements" |
+| Cosmetics | 33 items: 5 mascot costumes, 4 host frames, 3 host transitions, 3 win effects, 3 banners, 8 name flairs, 3 reactions and 4 titles | "Cosmetics" |
+
+**Multipliers stack.** `multipliers.coin_multiplier` multiplies the haunt's
+factor (when the game is haunted), the event day's (when the game was
+started on it) and the boss's (for a guesser, never for a host award). So a
+Night Parade game pays x4 🪙, a boss game x6, and the posts that announce
+them (the Night Parade start post and the boss topic post and caption) state
+the same product, not one factor.

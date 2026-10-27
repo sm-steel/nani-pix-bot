@@ -1218,6 +1218,21 @@ src/nani_pix_bot/
                    # gate and watercolor style. Its art (key visual,
                    # stamp.png, stamp_plus.png, banners/) is in
                    # assets/seasons/sakura_1/
+                   # runs/yokai_1.py is the second (Yōkai Night, Halloween):
+                   # the first run to use every optional mechanic (haunt,
+                   # event day, group goal, hexes, omikuji, bone set), a
+                   # moonlit style, a pumpkin costume, 12 tiers, 14 shop
+                   # cosmetics and 13 run achievements. Its art is in
+                   # assets/seasons/yokai_1/. A run's gate tags (and its
+                   # event day's) must appear in
+                   # tests/seasons/gate_snapshot.json, a frozen copy of the
+                   # genre/theme ids and names, so a wrong id fails the
+                   # run's tests before it is locked (yokai_1 added Horror
+                   # 14, Supernatural 37, Mythology 6, Vampire 32).
+                   # A RunAchievement may be tiered (`tiers` thresholds,
+                   # one `rarities` entry per tier, climbing like a ladder
+                   # inside its season); a run lists at most
+                   # MAX_RUN_ACHIEVEMENTS (16).
                    # mechanics.py: the optional per-run mechanics (Palette
                    # and emoji, Haunt, EventDay, GroupGoal, HexRule,
                    # OmikujiOutcome, BoneSet) as pure data, plus problems(),
@@ -1312,7 +1327,11 @@ tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
                    # (EN/RU page parity, every command in its command table)
 scripts/          # one-off / operational scripts: qlty_smells_gate.py (pre-commit),
                    # gen_docs_stages.py and gen_docs_cards.py (the guide's
-                   # pixelation-stage images and example achievement cards)
+                   # pixelation-stage images and example achievement cards;
+                   # gen_docs_cards.py draws each season run's cards from a
+                   # `DocsRun` entry in DOCS_RUNS: registry id, file slug,
+                   # profile title, run achievement and made-up dates, so a
+                   # new run adds one entry, not new code)
 docs/site/        # the user's guide (Astro Starlight, EN + RU), published to
                    # GitHub Pages by docs.yml together with mal-callback.html
 Dockerfile, docker-compose.yml   # bot + mariadb, see "Infrastructure" above
