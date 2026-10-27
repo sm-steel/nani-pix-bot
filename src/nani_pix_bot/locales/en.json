@@ -370,6 +370,7 @@
   "shop.ofuda_refused.hard_mode": "Ofuda don't work in HARD MODE rounds.",
   "shop.ofuda_refused.none_held": "You don't have an Ofuda.",
   "shop.ofuda_refused.already_armed": "Your Ofuda is already armed for this round.",
+  "shop.ofuda_refused.no_season": "Ofuda only work during a season that has them. Yours are safe in /inventory until then.",
   "shop.refusal.setter": "You set this round — no clues for you.",
   "shop.refusal.already_owned": "You already have this clue.",
   "shop.refusal.unavailable": "This clue isn't available in this round.",

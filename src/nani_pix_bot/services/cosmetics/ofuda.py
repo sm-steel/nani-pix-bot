@@ -1,5 +1,7 @@
 """Ofuda (Halloween season charm): armed for one round, forgives one wrong
-guess there. Arming takes nothing; the Ofuda is spent only when it forgives."""
+guess there. Arming takes nothing; the Ofuda is spent only when it forgives.
+It can be armed only while an ACTIVE season's run offers Ofuda; one armed
+before that season ends is still honored in its round."""
 
 import enum
 from datetime import datetime
@@ -10,14 +12,18 @@ from sqlalchemy.orm import Session
 from nani_pix_bot.models.enums import ConsumableKind, EventType, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.halloween import ArmedOfuda
+from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.definition import RewardKind, SeasonRun
 from nani_pix_bot.services import events
 from nani_pix_bot.services.cosmetics import consumables
+from nani_pix_bot.services.seasons import schedule
 
 
 class ArmRefusal(enum.StrEnum):
     NO_GAME = "no_game"  # not the ACTIVE game any more (stale button)
     OWN_GAME = "own_game"  # the starter can't guess, so can't arm
     HARD_MODE = "hard_mode"  # no per-stage limit to protect
+    NO_SEASON = "no_season"  # no ACTIVE season whose run offers Ofuda
     NONE_HELD = "none_held"
     ALREADY_ARMED = "already_armed"
 
@@ -30,6 +36,25 @@ class ArmRefusedError(Exception):
 
 def is_armed(session: Session, game_id: int, player_id: int) -> bool:
     return session.get(ArmedOfuda, (player_id, game_id)) is not None
+
+
+def offers_ofuda(run: SeasonRun) -> bool:
+    """The run sells Ofuda in its shop, or grants them on a pass tier or an omikuji draw."""
+    rewards = (reward for tier in run.tiers for reward in (tier.free, tier.premium))
+    return (
+        any(offer.kind is RewardKind.OFUDA for offer in run.shop)
+        or any(reward is not None and reward.kind is RewardKind.OFUDA for reward in rewards)
+        or any(outcome.consumable is ConsumableKind.OFUDA for outcome in run.omikuji)
+    )
+
+
+def in_season(session: Session) -> bool:
+    """An ACTIVE season is on and its run offers Ofuda."""
+    season = schedule.active(session)
+    if season is None:
+        return False
+    run = registry.get(season.run_id)
+    return run is not None and offers_ofuda(run)
 
 
 def _game_refusal(game: Game | None, player_id: int) -> ArmRefusal | None:
@@ -46,6 +71,8 @@ def refusal(session: Session, game: Game | None, player_id: int) -> ArmRefusal |
     game_reason = _game_refusal(game, player_id)
     if game is None or game_reason is not None:
         return game_reason
+    if not in_season(session):
+        return ArmRefusal.NO_SEASON
     if consumables.count(session, player_id, ConsumableKind.OFUDA) <= 0:
         return ArmRefusal.NONE_HELD
     if is_armed(session, game.id, player_id):

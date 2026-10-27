@@ -2176,7 +2176,8 @@ Season Shop and can be pass rewards; the shop and pass name them (`season_shop.o
 
 **Consumables outlive the season.** A count is never converted, expired or
 reset when a season finalizes (only 🪙 is converted): an unused Ofuda or
-Omamori stays in `/inventory` for the next run.
+Omamori stays in `/inventory` for the next run that has it. An Ofuda can be
+armed only while such a run is on (below); outside one it just waits there.
 
 **Ofuda (📜) forgives one miss.** It is armed for one round, then spent by
 the first wrong guess its holder makes in that round.
@@ -2190,11 +2191,19 @@ the first wrong guess its holder makes in that round.
   **arming takes nothing**: the count is unchanged until the Ofuda forgives.
 - **Refused** (`ArmRefusal`, an alert, logged at `WARNING`): the round is not
   the `ACTIVE` game any more (stale button, or a button from an older round);
-  the tapper is the round's starter (they cannot guess); the round is HARD
+  the tapper is the round's starter (they cannot guess); no Ofuda season
+  (`NO_SEASON`: no `ACTIVE` season, or its run doesn't offer Ofuda, per
+  `ofuda.offers_ofuda`: the run's shop sells one, or a pass tier or an omikuji
+  outcome grants one; a Sakura re-run or no season at all refuses, and the
+  menu doesn't draw the button); the round is HARD
   MODE (it has no per-stage limit to protect, and `record_guess` hands those
   rounds to the hard-mode path before the Ofuda is looked at); none held;
   already armed in this round. One armed at a time: a player holding two can
   arm again once the first has forgiven.
+- **The season ending doesn't disarm it.** The gate is on arming only:
+  `forgive` checks just the `armed_ofuda` row, so an Ofuda armed before the
+  season left `ACTIVE` still forgives one miss in that round. The row dies
+  with the round anyway, so this is at most one miss per player, in one round.
 - **When it is taken.** `state._count_wrong`, on a wrong guess by a player
   with an `armed_ofuda` row for that game: the row is deleted, one Ofuda is
   taken (`consumables.take`) and an `OFUDA_USED` event is emitted. A correct

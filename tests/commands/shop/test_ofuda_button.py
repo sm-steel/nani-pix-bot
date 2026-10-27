@@ -1,17 +1,43 @@
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
-from sqlalchemy import select
+import pytest
+from sqlalchemy import select, update
 
 from nani_pix_bot.commands.shop import menu as shop_menu
 from nani_pix_bot.commands.shop.keyboards import SHOP_OFUDA_PREFIX
-from nani_pix_bot.models.enums import ConsumableKind, GameStatus
+from nani_pix_bot.models.enums import ConsumableKind, GameStatus, SeasonStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.halloween import ArmedOfuda
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.clues import shop
 from nani_pix_bot.services.cosmetics import consumables
 from tests.commands.shop.helpers import make_context, make_query, seed_game, set_currency, tap
+
+
+@pytest.fixture(autouse=True)
+def ofuda_season(fake_runs, session_factory) -> None:
+    """An active demo_3 season, whose shop sells Ofuda."""
+    now = datetime.now(UTC).replace(tzinfo=None)
+    with session_factory() as session:
+        session.add(
+            SeasonSchedule(
+                run_id="demo_3",
+                start_at=now - timedelta(days=1),
+                end_at=now + timedelta(days=9),
+                status=SeasonStatus.ACTIVE,
+                created_by=9,
+            )
+        )
+        session.commit()
+
+
+def _end_the_season(session_factory) -> None:
+    with session_factory() as session:
+        session.execute(update(SeasonSchedule).values(status=SeasonStatus.ENDED))
+        session.commit()
 
 
 def _hold(session_factory, n: int, user_id: int = 2) -> None:
@@ -130,3 +156,25 @@ async def test_malformed_ofuda_data_is_ignored(session_factory) -> None:
     query = make_query(f"{SHOP_OFUDA_PREFIX}abc")
     await tap(make_context(session_factory), query)
     query.answer.assert_awaited_once_with()
+
+
+async def test_menu_hides_the_button_outside_an_ofuda_season(session_factory) -> None:
+    game_id = seed_game(session_factory)
+    _hold(session_factory, 1)
+    _end_the_season(session_factory)
+    _, markup = _render(session_factory, game_id)
+    assert f"{SHOP_OFUDA_PREFIX}{game_id}" not in _rows(markup)
+
+
+async def test_stale_tap_after_the_season_is_refused(session_factory, log_records) -> None:
+    game_id = seed_game(session_factory)
+    _hold(session_factory, 1)
+    _end_the_season(session_factory)
+    query = _ofuda_query(game_id)
+    await tap(make_context(session_factory), query)
+    assert _armed(session_factory) == []
+    query.answer.assert_awaited_once_with(
+        i18n.t("shop.ofuda_refused.no_season", "en"), show_alert=True
+    )
+    query.edit_message_text.assert_not_awaited()
+    assert any(r.level == "WARNING" and "no_season" in r.message for r in log_records)
