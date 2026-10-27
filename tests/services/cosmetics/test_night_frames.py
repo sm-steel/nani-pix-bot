@@ -126,7 +126,9 @@ def test_cobweb_threads_in_three_corners() -> None:
 
 def test_cobweb_is_deterministic() -> None:
     image = Image.new("RGB", (300, 180), GREEN)
-    assert night_frames.cobweb(image).tobytes() == night_frames.cobweb(image).tobytes()
+    first = night_frames.cobweb(image).tobytes()
+    night_frames._web.cache_clear()  # the tiles really get redrawn
+    assert night_frames.cobweb(image).tobytes() == first
 
 
 def test_cobweb_handles_portrait_and_tiny_images() -> None:
@@ -142,7 +144,9 @@ def test_cobweb_fades_out_towards_the_corner() -> None:
     near = diff.crop((0, 0, reach // 5, reach // 5))
     far = diff.crop((reach // 2, 0, reach, reach // 2))
     assert ImageStat.Stat(near).mean[0] * 3 < ImageStat.Stat(far).mean[0]
-    assert ImageStat.Stat(diff).extrema[0][1] < 130  # translucent, never solid thread
+    # translucent, never solid thread: measured away from the spider and its thread
+    for box in ((0, 0, reach, reach), (0, 240 - reach, reach, 240)):
+        assert ImageStat.Stat(diff.crop(box)).extrema[0][1] < 100
 
 
 def test_cobweb_corners_are_not_mirror_images() -> None:
@@ -154,3 +158,10 @@ def test_cobweb_corners_are_not_mirror_images() -> None:
     bl = out.crop((0, h - r, r, h)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     for a, b in ((tl, tr), (tl, bl), (tr, bl)):
         assert ImageStat.Stat(ImageChops.difference(a, b).convert("L")).mean[0] > 3
+
+
+def test_cobweb_draws_on_a_small_image() -> None:
+    image = Image.new("RGB", (40, 30), (20, 24, 30))  # a web reach of 7 px
+    out = night_frames.cobweb(image)
+    assert out.size == image.size
+    assert ImageChops.difference(out, image).getbbox() is not None
