@@ -11,6 +11,7 @@ COMMITTED: tuple[str, ...] = (
     "moonlit/top_left.png",
     "moonlit/top_right.png",
     "chochin.png",
+    "candle.png",
 )  # every task that commits art adds its file names here
 
 

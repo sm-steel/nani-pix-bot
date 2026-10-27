@@ -70,4 +70,4 @@ def test_picks_cover_every_base_effect_and_both_images() -> None:
 def test_a_season_transition_is_never_picked_at_random() -> None:
     rng = random.Random(2)  # noqa: S311 - deterministic test rng, not crypto
     picked = {store.pick_effect(rng) for _ in range(500)}
-    assert not picked & {RevealEffect.SPRING_BREEZE, RevealEffect.BLOSSOM_BRANCH}
+    assert not picked & (set(RevealEffect) - set(store.RANDOM_EFFECTS))

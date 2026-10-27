@@ -805,7 +805,8 @@ src/nani_pix_bot/
                    #   effects/        one module per effect (iris,
                    #                   tile_flip, ripple, glitch, shatter;
                    #                   the Sakura spring_breeze and
-                   #                   blossom_branch, never
+                   #                   blossom_branch and the Yokai
+                   #                   candle_snuff, never
                    #                   random: store.RANDOM_EFFECTS;
                    #                   sakura_sprites.py draws the
                    #                   branch, blossom and leaf once)
