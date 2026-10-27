@@ -132,7 +132,7 @@ DOCS_RUNS = (
         "yokai",
         "title.onmyoji",
         ("gashadokuro", Rarity.SILVER),
-        "28.10 06:00 \u2013 12.11 06:00 (Europe/Moscow)",
+        "29.10 06:00 \u2013 13.11 06:00 (Europe/Moscow)",
     ),
 )
 # Sakura's file names predate the slug scheme and stay as they are (the published pages

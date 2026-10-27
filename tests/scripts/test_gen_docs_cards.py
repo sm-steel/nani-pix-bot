@@ -132,7 +132,7 @@ def test_docs_runs_are_the_two_runs() -> None:
             "yokai",
             "title.onmyoji",
             ("gashadokuro", Rarity.SILVER),
-            "28.10 06:00 \u2013 12.11 06:00 (Europe/Moscow)",
+            "29.10 06:00 \u2013 13.11 06:00 (Europe/Moscow)",
         ),
     ]
 

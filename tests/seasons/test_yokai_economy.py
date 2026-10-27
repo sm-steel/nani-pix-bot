@@ -89,7 +89,7 @@ def _goal():
 
 def test_candles_reach_the_target_without_any_haunt() -> None:
     goal = _goal()
-    days = 15  # 2026-10-28 06:00 → 2026-11-12 06:00, the Night Parade inside it
+    days = 15  # 2026-10-29 06:00 → 2026-11-13 06:00, the Night Parade inside it
     floor = (days - 1) * PACE * goal.per_game + PACE * goal.per_event_day
     assert floor >= goal.target * 110 // 100
 
@@ -113,5 +113,7 @@ def test_candles_at_the_haunt_rate_have_margin() -> None:
 
 def test_the_boss_cannot_come_on_or_before_night_parade() -> None:
     goal = _goal()
-    before = 3 * PACE * goal.per_haunted  # Oct 28-30, every game haunted (worst case)
+    # Oct 29-30 is 2 days before the Night Parade; 3 is kept as the stricter
+    # bound. Every game haunted (worst case).
+    before = 3 * PACE * goal.per_haunted
     assert before + PACE * goal.per_event_day < goal.target

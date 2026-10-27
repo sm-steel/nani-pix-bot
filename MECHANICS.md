@@ -2994,8 +2994,8 @@ from `games` rows, so they have none.
 
 The second run, `seasons/runs/yokai_1.py` (frozen once shipped, like Sakura).
 It is the first run to switch on every optional mechanic above. The
-admin's example window is `/season schedule yokai_1 2026-10-28 06:00
-2026-11-12 06:00`. The values below are the module's; the linked sections
+admin's example window is `/season schedule yokai_1 2026-10-29 06:00
+2026-11-13 06:00`. The values below are the module's; the linked sections
 hold the rules.
 
 | What | Value | Rules in |
