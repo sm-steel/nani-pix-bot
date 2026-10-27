@@ -83,3 +83,18 @@ def test_notice_for_a_missing_hex_row_renders_nothing(session, hex_season):
     row = outbox.enqueue_hex_notice(session, 9999, "triggered")
     assert hex_posts.RENDERERS[OutboxKind.HEX_NOTICE](session, row, "en") is None
     assert session.get(Hex, 9999) is None
+
+
+def test_kitsune_notice_keeps_the_amount_after_the_round_is_stopped(session, hex_season):
+    """/stop deletes the game: hexes.game_id goes NULL (ON DELETE SET NULL), while
+    event_log.game_id keeps the old id. The notice still reports what was taken."""
+    _name(session)
+    hexes.cast(session, session.get(Player, 1), session.get(Player, 2), HexKind.KITSUNE, NOW)
+    _guess(session, 2, correct=False)
+    hexed = session.scalars(select(Hex)).one()
+    assert hexed.game_id is not None
+    hexed.game_id = None  # what ON DELETE SET NULL does when /stop deletes the game
+    session.flush()
+    text = _render(session, _last(session))
+    assert text != i18n.t("hex.notice.triggered.kitsune_empty", "en", target="@bob")
+    assert str(_rule(HexKind.KITSUNE).amount) in text
