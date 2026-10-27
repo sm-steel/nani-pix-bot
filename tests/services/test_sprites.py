@@ -19,6 +19,7 @@ COMMITTED: tuple[str, ...] = (
     "parade/bakeneko.png",
     "parade/nopperabo.png",
     "skeleton_hand.png",
+    *(f"hitodama/f{i}.png" for i in range(6)),
 )  # every task that commits art adds its file names here
 
 

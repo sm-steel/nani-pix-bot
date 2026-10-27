@@ -6,10 +6,11 @@ import math
 import random
 from dataclasses import dataclass
 
-from PIL import ImageDraw
+from PIL import Image, ImageDraw
 
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.overlay_canvas import SS, clip_size, render
+from nani_pix_bot.services.reveal.effects._common import sprite_or_none
+from nani_pix_bot.services.reveal.overlay_canvas import SS, clip_size, render, render_layers
 
 BAT_FRAMES = 56  # the ending is 60 frames; the bats fade out just before it ends
 BATS = 16
@@ -58,7 +59,7 @@ def _bats(height: int, count: int, span: tuple[float, float], seed: int) -> list
     return out
 
 
-def _pose(b: _Bat, f: int) -> tuple[float, float]:
+def _bat_pose(b: _Bat, f: int) -> tuple[float, float]:
     """Where the bat is in frame `f`, in clip pixels."""
     burst = 1 - math.exp(-f / BAT_BURST_TAU)  # the puff slows as it spreads
     return (
@@ -67,7 +68,7 @@ def _pose(b: _Bat, f: int) -> tuple[float, float]:
     )
 
 
-def _flap(phase: float, f: int) -> float:
+def _bat_flap(phase: float, f: int) -> float:
     """1 with the wings fully up, 0 at the turn."""
     return abs(math.sin(phase + BAT_FLAP * f))
 
@@ -120,7 +121,7 @@ def bat_frames(height: int) -> bytes:
 
     def draw_frame(draw: ImageDraw.ImageDraw, f: int, alpha: int) -> None:
         for b in bats:
-            draw_bat(draw, _pose(b, f), b.span, _flap(b.phase, f), alpha)
+            draw_bat(draw, _bat_pose(b, f), b.span, _bat_flap(b.phase, f), alpha)
 
     return render(size, height, BAT_FRAMES, draw_frame)
 
@@ -129,3 +130,79 @@ def bat_burst_clip(height: int) -> tuple[bytes, tuple[int, int]]:
     """Bats burst out of the badge, then flutter up and away in loose zig-zags."""
     size = clip_size(height)
     return encode.encode_rgba_clip(bat_frames(height), size), size
+
+
+HITODAMA_FRAMES = 56
+FLAMES = 5
+HITODAMA_SEED = 59
+HITODAMA_ART = tuple(f"hitodama/f{i}.png" for i in range(6))  # one flicker loop
+FLICKER_HOLD = 3  # clip frames per art frame, so the flicker isn't frantic
+FLAME_HEIGHT = 0.9  # in badge heights, for a flame on the near side of the orbit
+FAR_SCALE = 0.75  # how much smaller and dimmer a flame is on the far side
+DEPTH_LEVELS = 3  # sizes a flame is drawn at (each is one cached rescale of the art)
+ORBIT_CENTRE = (3.75, 1.4)  # in badge heights: x from the left, y above the badge top
+ORBIT_RADII = (2.6, 0.6)
+ORBIT_SPEED = 0.05  # radians per frame: slow, under half a turn over the ending
+
+
+@dataclass(frozen=True)
+class _Flame:
+    phase: float  # where on the ellipse it starts
+    bob_phase: float
+    bob_speed: float
+    flicker: int  # which art frame it starts on
+
+
+def _flames(count: int, seed: int) -> list[_Flame]:
+    rng = random.Random(seed)  # noqa: S311 - decoration, seeded for a reproducible look
+    return [
+        _Flame(
+            phase=math.tau * i / count + rng.uniform(-0.25, 0.25),
+            bob_phase=rng.uniform(0, math.tau),
+            bob_speed=rng.uniform(0.15, 0.25),
+            flicker=rng.randrange(len(HITODAMA_ART)),
+        )
+        for i in range(count)
+    ]
+
+
+def _orbit(fl: _Flame, f: int, height: int) -> tuple[float, float, float]:
+    """(x, y, nearness) of the flame in frame `f`: nearness is 1 at the front of the
+    ellipse and 0 at the back (the top of the clip)."""
+    _w, h = clip_size(height)
+    a = fl.phase + ORBIT_SPEED * f
+    x = ORBIT_CENTRE[0] * height + ORBIT_RADII[0] * height * math.cos(a)
+    y = h - height - ORBIT_CENTRE[1] * height + ORBIT_RADII[1] * height * math.sin(a)
+    y += 0.12 * height * math.sin(fl.bob_phase + fl.bob_speed * f)
+    return x, y, (1 + math.sin(a)) / 2
+
+
+def hitodama_frames(height: int) -> bytes:
+    flames = _flames(FLAMES, HITODAMA_SEED)
+
+    def paint_frame(big: Image.Image, f: int, alpha: int) -> None:
+        for fl in flames:
+            x, y, near = _orbit(fl, f, height)
+            level = round(near * (DEPTH_LEVELS - 1)) / (DEPTH_LEVELS - 1)
+            scale = FAR_SCALE + (1 - FAR_SCALE) * level
+            frame = (fl.flicker + f // FLICKER_HOLD) % len(HITODAMA_ART)
+            art = sprite_or_none(
+                HITODAMA_ART[frame],
+                round(FLAME_HEIGHT * height * SS * scale),
+                "the spirit flames don't show",
+            )
+            if art is None:
+                continue
+            art = art.copy()
+            dim = alpha * scale / 255  # the far flames are fainter too
+            art.putalpha(art.getchannel("A").point([round(v * dim) for v in range(256)]))
+            corner = (round(x * SS - art.width / 2), round(y * SS - art.height / 2))
+            big.alpha_composite(art, corner)
+
+    return render_layers(clip_size(height), height, HITODAMA_FRAMES, paint_frame)
+
+
+def hitodama_clip(height: int) -> tuple[bytes, tuple[int, int]]:
+    """Blue-white spirit flames orbit slowly above the badge, flickering as they go."""
+    size = clip_size(height)
+    return encode.encode_rgba_clip(hitodama_frames(height), size), size

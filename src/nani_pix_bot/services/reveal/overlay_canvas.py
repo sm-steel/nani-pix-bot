@@ -43,21 +43,33 @@ def edge_fade(size: tuple[int, int], height: int) -> Image.Image:
     return ImageChops.multiply(across.resize(size), down.resize(size))
 
 
-def render(
+def render_layers(
     size: tuple[int, int],
     height: int,
     frames: int,
-    draw_frame: Callable[[ImageDraw.ImageDraw, int, int], None],
+    paint_frame: Callable[[Image.Image, int, int], None],
 ) -> bytes:
-    """Raw RGBA frames, one after another; `draw_frame(draw, f, alpha)` paints
+    """Raw RGBA frames, one after another; `paint_frame(image, f, alpha)` paints
     frame `f` onto a SS-times larger canvas, which then fades out at its edges."""
     w, h = size
     fade = edge_fade(size, height)
     raw = bytearray()
     for f in range(frames):
         big = Image.new("RGBA", (w * SS, h * SS), (0, 0, 0, 0))
-        draw_frame(ImageDraw.Draw(big), f, alpha(f, frames))
+        paint_frame(big, f, alpha(f, frames))
         frame = big.resize(size, Image.Resampling.BOX)
         frame.putalpha(ImageChops.multiply(frame.getchannel("A"), fade))
         raw += frame.tobytes()
     return bytes(raw)
+
+
+def render(
+    size: tuple[int, int],
+    height: int,
+    frames: int,
+    draw_frame: Callable[[ImageDraw.ImageDraw, int, int], None],
+) -> bytes:
+    """`render_layers` for a frame that is drawn with an ImageDraw: `draw_frame(draw, f, alpha)`."""
+    return render_layers(
+        size, height, frames, lambda big, f, a: draw_frame(ImageDraw.Draw(big), f, a)
+    )

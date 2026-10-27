@@ -15,5 +15,6 @@ WIN_OVERLAYS: Mapping[str, Callable[[int], tuple[bytes, tuple[int, int]]]] = Map
         "petal_drift": petals.petal_drift_clip,
         "sakura_storm": petals.sakura_storm_clip,
         "bat_burst": spirits.bat_burst_clip,
+        "hitodama": spirits.hitodama_clip,
     }
 )

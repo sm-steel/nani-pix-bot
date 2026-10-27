@@ -829,7 +829,10 @@ src/nani_pix_bot/
                    #                   sakura_storm), fading out at the
                    #                   edges of their area (edge_fade)
                    #   spirits.py      the Halloween win overlays: bats
-                   #                   bursting out of the badge (bat_burst)
+                   #                   bursting out of the badge (bat_burst),
+                   #                   spirit flames orbiting above it, pasted
+                   #                   from the 6 hitodama/f*.png sprite
+                   #                   frames (hitodama)
                    #   store.py        the single reveal_video slot: reserve,
                    #                   mark_ready/mark_failed (guarded by
                    #                   game_id), load, clear
