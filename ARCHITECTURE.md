@@ -1124,6 +1124,10 @@ src/nani_pix_bot/
                    #                   "cobweb": faint, corner-faded webs in three
                    #                   corners (Nani's stays clear), each from
                    #                   its own seed; a spider on one
+                   #   lantern_frame.py "lantern_string": chochin lanterns (assets/
+                   #                   sprites/chochin.png) on a sagging cord
+                   #                   along the top, a faint warm glow each;
+                   #                   a missing sprite leaves cord and glow
                    #   stage.py        stage_png: a stage image with the
                    #                   starter's frame
                    #   reveal_choice.py  effect_for: the starter's

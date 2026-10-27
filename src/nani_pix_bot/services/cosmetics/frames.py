@@ -10,7 +10,7 @@ from types import MappingProxyType
 from loguru import logger
 from PIL import Image, ImageDraw
 
-from nani_pix_bot.services.cosmetics import gold_frame, night_frames, paper_frames
+from nani_pix_bot.services.cosmetics import gold_frame, lantern_frame, night_frames, paper_frames
 
 _SIMPLE_WIDTH_RATIO = 0.03
 _SIMPLE_COLOR = (245, 245, 245)
@@ -34,6 +34,7 @@ FRAMES: Mapping[str, Callable[[Image.Image], Image.Image]] = MappingProxyType(
         "ofuda_strip": night_frames.ofuda_strip,
         "bone_border": night_frames.bone_border,
         "cobweb": night_frames.cobweb,
+        "lantern_string": lantern_frame.lantern_string,
     }
 )
 

@@ -10,6 +10,7 @@ MAX_SPRITE_BYTES = 400 * 1024
 COMMITTED: tuple[str, ...] = (
     "moonlit/top_left.png",
     "moonlit/top_right.png",
+    "chochin.png",
 )  # every task that commits art adds its file names here
 
 
