@@ -1,30 +1,12 @@
-"""f2c7a9d4e1b8 widens reveal_video.effect with the Yokai Night transitions. Same harness
+"""f2c7a9d4e1b8 widens reveal_video.effect with the Yōkai Night transitions. Same harness
 as test_d7a3f1c9b5e2_clear_item_previews.py."""
-
-import importlib.util
-from pathlib import Path
 
 import sqlalchemy as sa
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 
 from nani_pix_bot.models.enums import RevealEffect
-
-_MIGRATION_PATH = (
-    Path(__file__).parents[2]
-    / "migrations"
-    / "versions"
-    / "f2c7a9d4e1b8_widen_revealeffect_enum_yokai.py"
-)
-
-
-def _migration():
-    spec = importlib.util.spec_from_file_location("f2c7a9d4e1b8_under_test", _MIGRATION_PATH)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+from tests.revealeffect_migration import yokai_migration as _migration
 
 
 def test_the_revealeffect_migration_lists_every_member() -> None:

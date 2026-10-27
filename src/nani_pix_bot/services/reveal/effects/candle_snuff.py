@@ -1,10 +1,10 @@
-"""Candle snuff reveal, part 1 (Yokai Night, seasons spec): the pixelated front sits in
+"""Candle snuff reveal, part 1 (Yōkai Night, seasons spec): the pixelated front sits in
 darkness, lit only by a small warm circle around a candle's flame. The flame is snuffed out
 and a wisp of smoke rises; the darkness lifts upward with the smoke, as a soft-edged mask
 rising from the bottom, and the clear image shows below it, fully lit.
 
 The darkness and light masks are drawn at quarter size and stretched (BILINEAR); the flame
-is a teardrop gradient drawn once and scaled per frame; the smoke is three blurred blobs
+is a teardrop gradient drawn once and scaled per frame; the smoke is seven small blurred puffs
 drawn once and moved. Seeded, so the same image always flickers the same way. A missing
 candle sprite never breaks a reveal: the flame (and its light) is drawn on its own, and the
 gap is logged once per process (stdlib logging: the reveal worker has no bot-side log setup)."""

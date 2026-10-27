@@ -47,7 +47,8 @@ def test_the_darkness_lifts_from_the_bottom() -> None:
     w, h = size
     bottom = ImageStat.Stat(middle.crop((w // 2, h - h // 8, w, h))).mean
     top = ImageStat.Stat(middle.crop((0, 0, w, h // 8))).mean
-    assert bottom[0] > bottom[2]  # mostly clear (red)
+    assert bottom[0] > 180  # fully clear (red), not a half-blended band
+    assert bottom[2] < 80
     assert sum(top) < 200  # still dark
 
 

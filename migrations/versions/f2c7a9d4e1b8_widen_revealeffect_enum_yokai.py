@@ -1,4 +1,4 @@
-"""widen revealeffect enum with the Yokai Night transitions
+"""widen revealeffect enum with the Yōkai Night transitions
 
 Revision ID: f2c7a9d4e1b8
 Revises: b3e8f1a6c4d7
@@ -22,7 +22,7 @@ _YOKAI = ("CANDLE_SNUFF",)
 
 
 def upgrade() -> None:
-    """Add the Yokai Night transitions to reveal_video.effect's native ENUM.
+    """Add the Yōkai Night transitions to reveal_video.effect's native ENUM.
     MariaDB has no "add one literal" DDL for an existing ENUM column, so the
     whole allowed-value list is restated."""
     op.alter_column(
@@ -36,7 +36,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Back to the Sakura list. The single reveal slot is rewritten every game;
-    one holding a Yokai transition is pointed at IRIS first so the narrower
+    one holding a Yōkai transition is pointed at IRIS first so the narrower
     ENUM accepts it."""
     reveal_video = sa.table("reveal_video", sa.column("effect", sa.String()))
     op.execute(reveal_video.update().where(reveal_video.c.effect.in_(_YOKAI)).values(effect="IRIS"))
