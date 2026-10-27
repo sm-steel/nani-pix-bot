@@ -66,15 +66,26 @@ def test_every_objective_shows_its_name_and_target(lang: str) -> None:
     assert missing == []
 
 
+# Each number in the sentence that states it, so an unrelated "100" or "7" can't pass.
+CANDLE_GOAL = {"EN": "snuffs {target} candles", "RU": "гасит {target} свечей"}
+BONE_SET = {"EN": "win {bones} haunted rounds", "RU": "выиграйте {bones} раундов"}
+
+
 @LANGS
-def test_the_page_states_the_haunt_chance_the_candles_and_the_bones(lang: str) -> None:
+def test_the_page_states_the_haunt_chance(lang: str) -> None:
     assert RUN.haunt is not None
+    assert f"**{RUN.haunt.chance_pct}%**" in _page(lang)
+
+
+@LANGS
+def test_the_page_states_the_candle_goal(lang: str) -> None:
     assert RUN.group_goal is not None
+    assert CANDLE_GOAL[lang].format(target=RUN.group_goal.target) in _page(lang)
+
+
+@LANGS
+def test_the_bone_set_row_states_its_size(lang: str) -> None:
     assert RUN.bone_set is not None
-    page = _page(lang)
-    for number in (
-        f"{RUN.haunt.chance_pct}%",
-        str(RUN.group_goal.target),
-        str(RUN.bone_set.bones),
-    ):
-        assert number in page
+    item = next(i for i in RUN.items if i.key == RUN.bone_set.item_key)
+    phrase = BONE_SET[lang].format(bones=RUN.bone_set.bones)
+    assert any(item.names[lang] in row and phrase in row for row in _rows(lang))
