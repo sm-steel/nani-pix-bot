@@ -106,6 +106,8 @@ async def test_an_unknown_filter_and_huge_page_fall_back_to_all_on_the_last_page
     assert "Sharpshooter" not in args[2]  # first page is not shown
     assert "| Achievement | You | @bob |" in args[2]
     buttons = [b.callback_data for row in args[3].inline_keyboard for b in row]
-    last = -(-len(catalogue.definitions()) // compare.COMPARE_PAGE_SIZE) - 1
+    # No season is open, so no run's own achievement is listed.
+    listed = [d for d in catalogue.definitions() if d.run_id is None]
+    last = -(-len(listed) // compare.COMPARE_PAGE_SIZE) - 1
     assert compare.compare_data(2, CompareFilter.ALL, last - 1) in buttons  # prev of the last page
     assert compare.compare_data(2, CompareFilter.ALL, last) not in buttons

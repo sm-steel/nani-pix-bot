@@ -16,7 +16,6 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.mal_link import MalCredentials
 from nani_pix_bot.models.turn_state import TurnState
 from nani_pix_bot.seasons.definition import Reward
-from nani_pix_bot.seasons.mechanics import OmikujiKind
 from nani_pix_bot.services.game.state import TitleVariants
 from nani_pix_bot.services.search.mal_user import MalAnimeListEntry
 
@@ -38,10 +37,6 @@ _kept = (
     # Parsed from MAL's list response; kept for showing cover art later.
     MalAnimeListEntry.image_url,
     # Halloween: wired by P8 (#473)
-    OmikujiKind.DAIKICHI,
-    OmikujiKind.KICHI,
-    OmikujiKind.SHOKICHI,
-    Reward.omamori,
     # Vulture only skips Reward.ofuda today because the `ofuda` module name matches;
     # it is listed so the entry survives a rename.
     Reward.ofuda,
