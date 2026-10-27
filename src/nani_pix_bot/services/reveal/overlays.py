@@ -6,7 +6,7 @@ reveal worker, so every renderer is a plain module-level function.
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
 
-from nani_pix_bot.services.reveal import celebration, petals, spirits
+from nani_pix_bot.services.reveal import bone_rattle, celebration, petals, spirits
 
 DEFAULT_OVERLAY = "confetti"
 WIN_OVERLAYS: Mapping[str, Callable[[int], tuple[bytes, tuple[int, int]]]] = MappingProxyType(
@@ -16,5 +16,6 @@ WIN_OVERLAYS: Mapping[str, Callable[[int], tuple[bytes, tuple[int, int]]]] = Map
         "sakura_storm": petals.sakura_storm_clip,
         "bat_burst": spirits.bat_burst_clip,
         "hitodama": spirits.hitodama_clip,
+        "bone_rattle": bone_rattle.bone_rattle_clip,
     }
 )

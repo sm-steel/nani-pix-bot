@@ -833,6 +833,12 @@ src/nani_pix_bot/
                    #                   spirit flames orbiting above it, pasted
                    #                   from the 6 hitodama/f*.png sprite
                    #                   frames (hitodama)
+                   #   bone_rattle.py  the Halloween bone_rattle win overlay:
+                   #                   a skeleton dancing on the badge, jaw
+                   #                   clacking, built from the skeleton/*.png
+                   #                   sprites (skull, jaw, ribcage, pelvis,
+                   #                   bone, hand, foot), bones rotated per
+                   #                   segment from a seeded dance cycle
                    #   store.py        the single reveal_video slot: reserve,
                    #                   mark_ready/mark_failed (guarded by
                    #                   game_id), load, clear

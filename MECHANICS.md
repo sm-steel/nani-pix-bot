@@ -2708,7 +2708,7 @@ button under your own. A season title is picked with `/title`, not in
 | `guess_reaction` | one of the Telegram-allowed reaction emoji | the reaction the bot puts on your winning `/guess` |
 | `host_frame` | a frame key | a border on **every** stage image of games **you** start |
 | `host_transition` | a `RevealEffect` name | the transition of the reveal video of games **you** start |
-| `win_effect` | an overlay key (`confetti`, `petal_drift`, `sakura_storm`, `bat_burst`, `hitodama`) | the overlay in the 2 s ending of the reveal video, when you win with `/guess` or the starter's `/correct`; no equipped overlay, or a failure, falls back to the confetti |
+| `win_effect` | an overlay key (`confetti`, `petal_drift`, `sakura_storm`, `bat_burst`, `hitodama`, `bone_rattle`) | the overlay in the 2 s ending of the reveal video, when you win with `/guess` or the starter's `/correct`; no equipped overlay, or a failure, falls back to the confetti |
 | `profile_banner` | a banner file in the run's art directory | the background of your `/profile` card |
 | `title` | none (the title text is the item's localized names) | next to your name, like an achievement title; chosen with `/title`, stored in `players.title_key` as `item:<item id>` |
 
