@@ -144,3 +144,13 @@ def test_washi_is_deterministic() -> None:
 def test_unknown_frame_returns_the_image_unchanged() -> None:
     png = _png()
     assert frames.apply_frame(png, "nope") == png
+
+
+def test_a_frame_that_raises_posts_the_stage_unframed_and_logs(monkeypatch, log_records) -> None:
+    def boom(image: Image.Image) -> Image.Image:
+        raise ValueError("bad art")
+
+    monkeypatch.setattr(frames, "FRAMES", {"boom": boom})
+    png = _png()
+    assert frames.apply_frame(png, "boom") == png
+    assert any(r.level == "ERROR" and r.extra["key"] == "boom" for r in log_records)

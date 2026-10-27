@@ -279,6 +279,11 @@ class RevealEffect(enum.Enum):
     # (services/reveal/store.py's RANDOM_EFFECTS).
     SPRING_BREEZE = "spring_breeze"
     BLOSSOM_BRANCH = "blossom_branch"
+    # Yōkai Night transitions: only ever an equipped cosmetic, never a random pick
+    # (excluded from RANDOM_EFFECTS in services/reveal/store.py).
+    CANDLE_SNUFF = "candle_snuff"
+    NIGHT_PARADE = "night_parade"
+    GASHADOKURO_RISE = "gashadokuro_rise"
 
 
 class RevealStatus(enum.Enum):

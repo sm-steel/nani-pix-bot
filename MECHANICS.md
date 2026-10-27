@@ -833,7 +833,13 @@ way to play it once.
 The effect is picked **at game start**: the starter's equipped reveal
 transition (see "Cosmetics"), else uniformly at random from `iris`,
 `tile_flip`, `ripple`, `glitch` and `shatter`. The season transitions
-(`spring_breeze`, `blossom_branch`) are cosmetics and never come up at random. For HARD MODE the animated
+(`spring_breeze`, `blossom_branch`, `candle_snuff`, `night_parade`, `gashadokuro_rise`) are cosmetics and never come up at random. `candle_snuff` (Yokai Night): the front
+sits in darkness lit by a candle's flame, the flame is snuffed, and the darkness
+lifts upward with the smoke off the clear image. `night_parade` (Yokai Night): six yokai silhouettes march left to right along
+the lower half of the front, which is dimmed ahead of the leader; the clear image follows behind the
+last walker through a band of mist, and the parade walks off the right edge. `gashadokuro_rise` (Yokai Night): a giant skeleton hand rises from below the
+bottom edge and sweeps left to right, pivoting far below the image; each block its centre line passes is cleared and
+flung off along the sweep as a tumbling, fading square in its own colour, and the hand then sinks away. For HARD MODE the animated
 screenshot (`a` or `b`) is picked then too. The effect part is rendered in
 the background right after the game goes live, so the reveal itself only
 renders the ending and never delays a game's start.
@@ -2312,12 +2318,18 @@ season discount.
 
 ### Season style
 
-A run may name a `style` (`plain` or `watercolor`). For a game tagged to that
+A run may name a `style` (`plain`, `watercolor` or `moonlit`). For a game tagged to that
 season it is drawn on the **pixelated** stage image and under the host's
 frame, so the order is **pixelate -> style -> frame**
 (`services/cosmetics/stage.py`). It applies to stage posts and the `/status`
 repost. It does not apply to the reveal video, the host's DM preview or clue
 images.
+
+`moonlit` is a night grade: an indigo tint and a darkened rim, moonlight
+streaming in from the moon at the top left, and art in the two top corners
+(the moon with a tiny witch on a broom; bats and a spider). The centre of the
+image is left untouched, and the bottom corners get no art. A missing art file
+is logged and the stage posts without the corners.
 
 ### Objectives
 
@@ -2696,7 +2708,7 @@ button under your own. A season title is picked with `/title`, not in
 | `guess_reaction` | one of the Telegram-allowed reaction emoji | the reaction the bot puts on your winning `/guess` |
 | `host_frame` | a frame key | a border on **every** stage image of games **you** start |
 | `host_transition` | a `RevealEffect` name | the transition of the reveal video of games **you** start |
-| `win_effect` | an overlay key | the overlay in the 2 s ending of the reveal video, when you win with `/guess` or the starter's `/correct`; no equipped overlay, or a failure, falls back to the confetti |
+| `win_effect` | an overlay key (`confetti`, `petal_drift`, `sakura_storm`, `bat_burst`, `hitodama`, `bone_rattle`) | the overlay in the 2 s ending of the reveal video, when you win with `/guess` or the starter's `/correct`; no equipped overlay, or a failure, falls back to the confetti |
 | `profile_banner` | a banner file in the run's art directory | the background of your `/profile` card |
 | `title` | none (the title text is the item's localized names) | next to your name, like an achievement title; chosen with `/title`, stored in `players.title_key` as `item:<item id>` |
 

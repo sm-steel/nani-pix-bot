@@ -20,8 +20,8 @@ from typing import Any, NamedTuple
 
 from PIL import Image, ImageDraw, ImageEnhance
 
+from nani_pix_bot.services.easing import smoothstep
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.effects._common import ease_in_out
 
 CRF = 21
 COLS = 16
@@ -95,7 +95,7 @@ def _geometry(tw: int, th: int, flip_n: int) -> _Geometry:
     tile. cover = antialiased trapezoid, shade = cover * (1 - brightness)."""
     steps: _Geometry = {}
     for k in range(1, flip_n):
-        angle = math.pi * ease_in_out(k / flip_n)
+        angle = math.pi * smoothstep(k / flip_n)
         c = abs(math.cos(angle))
         sw = round(tw * c)
         if sw < 2:
