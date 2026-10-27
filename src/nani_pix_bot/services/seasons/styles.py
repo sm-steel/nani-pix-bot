@@ -35,9 +35,15 @@ def apply_style(png: bytes, key: str) -> bytes:
     if draw is None:
         logger.warning("unknown season style {style!r} — posting the stage unstyled", style=key)
         return png
-    out = BytesIO()
-    draw(Image.open(BytesIO(png))).save(out, format="PNG")
-    return out.getvalue()
+    try:
+        out = BytesIO()
+        draw(Image.open(BytesIO(png))).save(out, format="PNG")
+        return out.getvalue()
+    except Exception as exc:  # a broken style must never block the stage post
+        logger.opt(exception=exc).error(
+            "style {style!r} failed to draw — posting the stage unstyled", style=key
+        )
+        return png
 
 
 def problems(run: SeasonRun) -> list[str]:

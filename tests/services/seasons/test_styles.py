@@ -40,6 +40,16 @@ def test_an_unknown_style_leaves_the_image_and_warns(log_records) -> None:
     assert any(r.level == "WARNING" for r in log_records)
 
 
+def test_a_style_that_raises_posts_the_stage_unstyled_and_logs(monkeypatch, log_records) -> None:
+    def boom(image: Image.Image) -> Image.Image:
+        raise ValueError("bad art")
+
+    monkeypatch.setattr(styles, "STYLES", {"boom": boom})
+    png = _png()
+    assert styles.apply_style(png, "boom") == png
+    assert any(r.level == "ERROR" and r.extra["style"] == "boom" for r in log_records)
+
+
 def test_every_run_names_a_known_style() -> None:
     for runs in (registry.all_runs(), registry.discover("tests.seasons.fake_runs")):
         for run in runs.values():
