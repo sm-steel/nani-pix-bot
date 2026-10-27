@@ -45,7 +45,7 @@ def _still(pose: bone_rattle._Pose) -> Image.Image:
     unit = bone_rattle.SKELETON_HEIGHT * HEIGHT * bone_rattle.SS
     layer = Image.new("RGBA", (round(1.3 * unit), round(1.15 * unit)), (0, 0, 0, 0))
     bone_rattle._paint_skeleton(
-        bone_rattle._Skeleton(layer, unit, layer.width / 2, 1.05 * unit), pose
+        bone_rattle._Skeleton(layer, unit, layer.width / 2, bone_rattle.LAYER_GROUND * unit), pose
     )
     return layer
 
@@ -103,7 +103,8 @@ def test_the_jaw_clacks_open_beneath_the_skull() -> None:
     wide = dataclasses.replace(shut, jaw=bone_rattle.JAW_OPEN)
     shut_img, wide_img = _still(shut), _still(wide)
     unit = bone_rattle.SKELETON_HEIGHT * HEIGHT * bone_rattle.SS
-    skull_bottom = 1.05 * unit - (0.455 + 0.24 + 0.02) * unit  # layer y, at zero sway
+    neck = bone_rattle.RIBS_PIVOT[1] + bone_rattle.NECK + bone_rattle.SKULL_LIFT
+    skull_bottom = (bone_rattle.LAYER_GROUND - neck) * unit  # layer y, at zero sway
     # the band the open jaw drops into: right under the shut jaw, by the full drop
     top = round(skull_bottom + 0.06 * unit)
     band = (0, top, shut_img.width, top + round(0.05 * unit))
@@ -111,6 +112,20 @@ def test_the_jaw_clacks_open_beneath_the_skull() -> None:
     # the skull hides the top of the jaw, so above its teeth nothing changes
     above = (0, 0, shut_img.width, round(skull_bottom - 0.05 * unit))
     assert _ivory(shut_img, above) == _ivory(wide_img, above)
+
+
+def test_the_limb_angles_reach_the_pixels() -> None:
+    pose = bone_rattle._pose(3)
+    swung = dataclasses.replace(
+        pose,
+        arms=tuple((a + 40, b + 40) for a, b in pose.arms),
+        legs=tuple((a + 15, b + 15) for a, b in pose.legs),
+    )
+    assert _still(pose).tobytes() != _still(swung).tobytes()
+    arms_only = dataclasses.replace(pose, arms=swung.arms)
+    legs_only = dataclasses.replace(pose, legs=swung.legs)
+    assert _still(pose).tobytes() != _still(arms_only).tobytes()
+    assert _still(pose).tobytes() != _still(legs_only).tobytes()
 
 
 def test_the_rendered_frames_use_the_jaw(rattle, monkeypatch) -> None:

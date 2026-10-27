@@ -12,6 +12,7 @@ from typing import NamedTuple
 
 from PIL import Image, ImageOps
 
+from nani_pix_bot.services import sprites
 from nani_pix_bot.services.reveal import encode
 from nani_pix_bot.services.reveal.effects._common import sprite_or_none
 from nani_pix_bot.services.reveal.overlay_canvas import SS, clip_size, render_layers
@@ -29,7 +30,6 @@ JITTER = 1  # clip pixels each part shakes by: the rattle
 SKULL, JAW, RIBS, PELVIS, BONE, HAND, FOOT = (
     f"skeleton/{n}.png" for n in ("skull", "jaw", "ribcage", "pelvis", "bone", "hand", "foot")
 )
-BONE_ASPECT = 99 / 256  # height over width of the long-bone sprite
 BONE_REACH = 0.82  # joint-to-joint share of the sprite's width: the knobs stick out
 MISSING = "the skeleton loses that part"
 
@@ -44,7 +44,7 @@ RIBS_BASE = 0.9  # the share of the ribcage art that is above its pivot
 SHOULDER = (0.085, 0.215)  # from the ribcage pivot
 NECK = 0.24  # from the ribcage pivot
 SKULL_H, SKULL_LIFT = 0.2, 0.02
-JAW_H = SKULL_H * 96 / 244  # the jaw art at the skull's scale
+LAYER_GROUND = 1.05  # the ground's height above the bottom of the skeleton's layer
 JAW_HOOK = 0.3  # the share of the jaw art that tucks under the skull when shut
 UPPER_ARM, FOREARM, HAND_H = 0.15, 0.14, 0.11
 HAND_WRIST = (0.5, 0.95)
@@ -64,7 +64,6 @@ class _Part(NamedTuple):
 
 
 PART_SKULL = _Part(SKULL, SKULL_H, (0.5, 1.0))
-PART_JAW = _Part(JAW, JAW_H, (0.5, JAW_HOOK))
 PART_RIBS = _Part(RIBS, RIBS_H, (0.5, RIBS_BASE))
 PART_PELVIS = _Part(PELVIS, PELVIS_H, (0.5, 0.5))
 PART_HAND = _Part(HAND, HAND_H, HAND_WRIST)
@@ -132,6 +131,27 @@ def _pose(f: int) -> _Pose:
     )
 
 
+def _size(name: str) -> tuple[int, int]:
+    """The committed art's size; a missing file gives a square, since nothing is drawn then
+    (`_rotated` logs the gap)."""
+    try:
+        return sprites.sprite(name).size
+    except OSError:
+        return 1, 1
+
+
+@cache
+def _aspect(name: str) -> float:
+    """Height over width of the sprite."""
+    w, h = _size(name)
+    return h / w
+
+
+def _jaw_height() -> float:
+    """The jaw art's height at the skull's scale, in skeleton heights."""
+    return SKULL_H * _size(JAW)[1] / _size(SKULL)[1]
+
+
 @lru_cache(maxsize=512)
 def _rotated(
     name: str, height: int, degrees: int, flip: bool
@@ -190,7 +210,7 @@ class _Skeleton:
         length = math.hypot(b[0] - a[0], b[1] - a[1]) / BONE_REACH
         degrees = math.degrees(math.atan2(a[1] - b[1], b[0] - a[0]))
         mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-        self.put(_Part(BONE, length * BONE_ASPECT / self.unit, (0.5, 0.5)), mid, degrees)
+        self.put(_Part(BONE, length * _aspect(BONE) / self.unit, (0.5, 0.5)), mid, degrees)
 
     def limb(self, start: Point, lengths: Point, side: int, angles: Point) -> Point:
         """Two bones from `start`; returns the end joint, in layer pixels."""
@@ -236,7 +256,7 @@ def _paint_skeleton(sk: _Skeleton, pose: _Pose) -> None:
         skull[1] - shake["skull"][1] + pose.jaw * SKULL_H * sk.unit,
     )
     own = shake["jaw"]
-    sk.put(PART_JAW, (hang[0] + own[0], hang[1] + own[1]))
+    sk.put(_Part(JAW, _jaw_height(), (0.5, JAW_HOOK)), (hang[0] + own[0], hang[1] + own[1]))
     sk.put(PART_SKULL, skull)
 
 
@@ -245,15 +265,15 @@ def rattle_frames(height: int) -> bytes:
     unit = SKELETON_HEIGHT * height * SS
     span = (round(1.3 * unit), round(1.15 * unit))
     ground = (size[1] - height) * SS
-    origin = (round(STAND_X * height * SS - span[0] / 2), round(ground - 1.05 * unit))
+    origin = (round(STAND_X * height * SS - span[0] / 2), round(ground - LAYER_GROUND * unit))
 
     def paint_frame(big: Image.Image, f: int, alpha: int) -> None:
         if alpha == 255:  # no fade to apply: paint straight onto the frame
-            sk = _Skeleton(big, unit, origin[0] + span[0] / 2, origin[1] + 1.05 * unit)
+            sk = _Skeleton(big, unit, origin[0] + span[0] / 2, origin[1] + LAYER_GROUND * unit)
             _paint_skeleton(sk, _pose(f))
             return
         layer = Image.new("RGBA", span, (0, 0, 0, 0))
-        _paint_skeleton(_Skeleton(layer, unit, span[0] / 2, 1.05 * unit), _pose(f))
+        _paint_skeleton(_Skeleton(layer, unit, span[0] / 2, LAYER_GROUND * unit), _pose(f))
         layer.putalpha(layer.getchannel("A").point([round(v * alpha / 255) for v in range(256)]))
         big.alpha_composite(layer, origin)
 
