@@ -2993,7 +2993,7 @@ hold the rules.
 | Gate | Horror, Supernatural, Mythology or Vampire anime (Shikimori genre 14 and 37, theme 6 and 32) | "The anime gate" |
 | XP | win by stage 50 / 40 / 30 / 20 / 10, host solved 15, host unsolved 5, first guess 5 | "Season XP" |
 | 🪙 | win 30, host solved 20, host unsolved 10, first guess 10; 2 🪙 per 💠 on conversion | "Season Coins, Pass and Premium" |
-| Pass | 12 tiers at 20 / 50 / 90 / 140 / 190 / 240 / 300 / 360 / 420 / 490 / 570 / 650 XP; Premium costs 300 🪙; rewards include an Omamori (tier 7), a clue ticket and stamps | "Season Coins, Pass and Premium" |
+| Pass | 12 tiers at 20 / 50 / 90 / 140 / 190 / 240 / 300 / 360 / 420 / 490 / 570 / 650 XP; Premium costs 300 💠; rewards include an Omamori (tier 7), a clue ticket and stamps | "Season Coins, Pass and Premium" |
 | Shop | 14 cosmetics (25-95 🪙), a clue ticket (30 🪙, limit 2) and an Ofuda (20 🪙, limit 2) | "Season Shop", "Ofuda and Omamori" |
 | Objectives | 7: Kimodameshi (win by stage 2), Lantern Keeper (host 2), Spirit Chaser (win 3), Night Walker (5 days), Hundred Tales (guess 8), Bone Collector (2 haunted wins), Exorcist (block 1 hex) | "Objectives" |
 | Style | `moonlit` | "Season style" |
