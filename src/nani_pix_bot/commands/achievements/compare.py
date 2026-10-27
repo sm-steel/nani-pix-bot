@@ -15,7 +15,7 @@ from nani_pix_bot.commands.helpers.keyboards import tab_button
 from nani_pix_bot.commands.helpers.rich import md_escape
 from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import names, status
-from nani_pix_bot.services.achievements.definitions import Kind
+from nani_pix_bot.services.achievements.definitions import counts_times
 from nani_pix_bot.services.achievements.status import CompareFilter, State, Status
 
 COMPARE_PAGE_SIZE = 10
@@ -28,7 +28,7 @@ def compare_data(other_id: int, filt: CompareFilter, page: int) -> str:
 def _cell(item: Status) -> str:
     if item.state is not State.EARNED:
         return "⬜"
-    if item.defn.kind in (Kind.PERIOD, Kind.SEASON):
+    if counts_times(item.defn):
         return f"✅ \N{MULTIPLICATION SIGN}{item.tier}"
     laddered = len(item.defn.tiers) > 1 or item.defn.endless_step
     return f"✅ {names.roman(item.tier)}" if laddered else "✅"

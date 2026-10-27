@@ -12,7 +12,12 @@ from nani_pix_bot.models.enums import Rarity
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n, players
 from nani_pix_bot.services.achievements import names, status, titles
-from nani_pix_bot.services.achievements.definitions import Kind, rarity_of, reached
+from nani_pix_bot.services.achievements.definitions import (
+    Kind,
+    counts_times,
+    rarity_of,
+    reached,
+)
 from nani_pix_bot.services.achievements.status import State, Status
 from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.seasons import hex_marks
@@ -45,7 +50,7 @@ def _latest(item: Status, lang: str) -> str:
 def _earned_row(item: Status, lang: str, _holder: str | None) -> str:
     defn = item.defn
     medal = MEDALS[rarity_of(defn, max(item.tier, 1))]
-    if defn.kind in (Kind.PERIOD, Kind.SEASON):
+    if counts_times(defn):
         latest = md_escape(_latest(item, lang))
         times = _t("achievements.times", lang, count=item.tier)
         if item.rank is not None:

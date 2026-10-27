@@ -2801,7 +2801,11 @@ matched in `games.anime_tags`, so its wins count too.
 **Run-specific achievements.** A run module may list `RunAchievement`s (key,
 names and descriptions in EN and RU, rarity, trigger events, a `progress`
 function over the season's history). They are merged into the catalogue as
-`<run_id>.<key>` and earned once in that season. `/achievements` lists one
+`<run_id>.<key>` and earned once in that season. One with several `tiers`
+(and a `rarities` entry per tier) climbs like a ladder inside its season:
+one grant per tier reached, and `/achievements` shows it with its tier
+numeral, medal and progress to the next tier. A run lists at most 16
+(`MAX_RUN_ACHIEVEMENTS`). `/achievements` lists one
 only while its season is the open one (`active`/`closing`), or for a player
 who holds it; it is left out of everyone else's list and summary total
 (`status.build`). A comparison lists it when either player would see it.
