@@ -304,12 +304,18 @@ def _candle_weight(data: dict) -> int:
     return GROUP_GOAL.per_game
 
 
+def _guessed_or_won_ends(history) -> list:
+    """The end events of every game you guessed in or won (a /setwinner or
+    vote winner may not have guessed)."""
+    guessed = {e.game_id for e in history.mine(EventType.GUESS)}
+    ends = [e for e in history.group(*_ENDS) if e.game_id in guessed]
+    return ends + history.mine(EventType.GAME_WON)
+
+
 def _my_ended_games(history) -> dict[int | None, dict]:
     """Each finished game you guessed in, won or hosted (not HARD MODE's
     bot host) — the 100 Candles contributors' rule — by game id."""
-    guessed = {e.game_id for e in history.mine(EventType.GUESS)}
-    ends = [e for e in history.group(*_ENDS) if e.game_id in guessed]
-    ends += history.mine(EventType.GAME_WON)
+    ends = _guessed_or_won_ends(history)
     ends += [e for e in history.about_me(*_ENDS) if not e.data.get("hard_mode")]
     return {e.game_id: e.data for e in ends}
 
@@ -324,10 +330,7 @@ def _event_day_wins(history) -> int:
 
 def _boss_game(history) -> int:
     """A Gashadokuro boss game you guessed in or won has ended."""
-    guessed = {e.game_id for e in history.mine(EventType.GUESS)}
-    ends = [e for e in history.group(*_ENDS) if e.game_id in guessed]
-    ends += history.mine(EventType.GAME_WON)
-    return 1 if any(e.data.get("boss_game") for e in ends) else 0
+    return 1 if any(e.data.get("boss_game") for e in _guessed_or_won_ends(history)) else 0
 
 
 def _boss_won(history) -> int:

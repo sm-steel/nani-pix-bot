@@ -85,6 +85,20 @@ def test_its_top_tier_has_no_next_target(session, tagged_game, emit_win) -> None
     assert "🥇" in render.row(held, "en", None)
 
 
+def test_it_reads_like_a_ladder_after_its_season_closed(
+    session, tagged_game, emit_win, end_season
+) -> None:
+    emit_win(winner=WINNER, stage=1)
+    emit_win(winner=WINNER, stage=2)
+    end_season()
+    held = _status(session)
+    assert (held.state, held.tier, held.value, held.target) == (status.State.EARNED, 2, 0, None)
+    line = render.row(held, "en", None)
+    assert "🥈" in line
+    assert "Triple Win II" in line
+    assert "/3" not in line
+
+
 def test_sakura_builds_exactly_as_before() -> None:
     sakura = registry.discover(registry.RUNS_PACKAGE)["sakura_1"]
     built = catalogue._build_run_definitions({"sakura_1": sakura})

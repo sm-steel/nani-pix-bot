@@ -105,6 +105,7 @@ def _sampled_season(rng: random.Random, days: int) -> int:
 
 
 def test_candles_at_the_haunt_rate_have_margin() -> None:
+    # 14 days, one fewer than the 15-day window: stricter on purpose.
     rng = random.Random(1031)  # noqa: S311 - deterministic test rng, not crypto
     totals = sorted(_sampled_season(rng, days=14) for _ in range(2000))
     assert totals[len(totals) // 20] >= _goal().target * 110 // 100  # 5th percentile
