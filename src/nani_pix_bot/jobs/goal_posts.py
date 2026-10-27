@@ -15,6 +15,7 @@ from nani_pix_bot.seasons.definition import SeasonRun
 from nani_pix_bot.seasons.mechanics import BoneSet, GroupGoal
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.cards import GoalCard
+from nani_pix_bot.services.seasons import multipliers
 
 Renderer = Callable[[Session, AnnouncementOutbox, str], Post | None]
 
@@ -106,7 +107,7 @@ def _boss_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post | N
         lang,
         game_id=game_id,
         xp=goal.boss_xp_multiplier,
-        coins=goal.boss_coin_multiplier,
+        coins=multipliers.coin_multiplier(run, game),
     )
     return Post((row.id,), text, GoalCard(run.run_id, goal.target, goal.target, boss=True))
 

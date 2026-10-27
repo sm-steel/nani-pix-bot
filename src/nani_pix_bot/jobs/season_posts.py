@@ -114,7 +114,10 @@ def _event_day_lines(
         rule = event.gate.description.get(lang) or event.gate.description["EN"]
         lines.append(i18n.t("event_day.post.gate", lang, rule=rule))
     if event.coin_multiplier > 1:
-        lines.append(i18n.t("event_day.post.coins", lang, multiplier=event.coin_multiplier))
+        total = event.coin_multiplier
+        if event.all_haunted and run.haunt is not None:
+            total *= run.haunt.coin_multiplier  # stacks, as in multipliers.coin_multiplier
+        lines.append(i18n.t("event_day.post.coins", lang, multiplier=total))
     return lines
 
 

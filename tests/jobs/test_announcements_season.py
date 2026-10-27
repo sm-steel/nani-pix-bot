@@ -5,7 +5,14 @@ import pytest
 
 from nani_pix_bot.jobs import announcements
 from nani_pix_bot.models.announcement import AnnouncementOutbox
-from nani_pix_bot.models.enums import CurrencyReason, OutboxKind, SeasonStatus
+from nani_pix_bot.models.enums import (
+    CurrencyReason,
+    GameStatus,
+    OutboxKind,
+    SeasonStatus,
+    XpSource,
+)
+from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
 from nani_pix_bot.seasons import registry
@@ -13,7 +20,7 @@ from nani_pix_bot.seasons.mechanics import Palette
 from nani_pix_bot.services.achievements import engine, outbox
 from nani_pix_bot.services.cards import SeasonBanner, UnlockCard, backgrounds
 from nani_pix_bot.services.economy import wallet
-from nani_pix_bot.services.seasons import conversion, schedule
+from nani_pix_bot.services.seasons import conversion, multipliers, schedule
 
 
 @pytest.fixture(autouse=True)
@@ -219,13 +226,26 @@ def test_start_post_lists_haunted_gate_and_coins(session, monkeypatch) -> None:
         "🏮 Halloween has begun! Special rules until midnight (UTC).",
         "👻 Every round started today is haunted.",
         "Today only horror anime can be played.",
-        "🪙 Season Coins pay \u00d73 all day.",
+        "🪙 Season Coins pay \u00d76 all day, haunting included.",
     ]
     assert post.card is None
     ru = _render_parade(session, row, "RU").text.split("\n")
     assert ru[0] == "🏮 Начинается праздник «Хэллоуин»! До полуночи (UTC) действуют особые правила."
     assert ru[2] == "Сегодня можно играть только в ужасы."
-    assert ru[3] == "🪙 Весь день сезонные монеты \u00d73."
+    assert ru[3] == "🪙 Весь день сезонные монеты \u00d76 — привидения уже учтены."
+
+
+def test_start_post_coin_total_equals_what_a_haunted_win_pays(session, monkeypatch) -> None:
+    demo3 = registry.get("demo_3")
+    assert demo3 is not None
+    assert demo3.event_day is not None
+    run = replace(demo3, group_goal=None, event_day=replace(demo3.event_day, coin_multiplier=2))
+    monkeypatch.setattr(registry, "get", lambda run_id: run if run_id == "demo_3" else None)
+    day_game = Game(starter_id=2, status=GameStatus.ACTIVE, event_day=True, boss_game=True)
+    paid = multipliers.coin_multiplier(run, day_game, XpSource.WIN)
+    assert paid == 4
+    post = _render_parade(session, _parade_row(session, OutboxKind.EVENT_DAY_START))
+    assert "\u00d74 all day" in post.text
 
 
 def test_start_post_skips_lines_the_day_does_not_have(session) -> None:

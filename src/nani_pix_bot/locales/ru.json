@@ -811,7 +811,7 @@
   "event_day.post.start": "🏮 Начинается праздник «{name}»! До полуночи ({tz}) действуют особые правила.",
   "event_day.post.haunted": "👻 Сегодня в каждом начатом раунде водятся призраки.",
   "event_day.post.gate": "Сегодня можно играть только в {rule}.",
-  "event_day.post.coins": "🪙 Весь день сезонные монеты ×{multiplier}.",
+  "event_day.post.coins": "🪙 Весь день сезонные монеты ×{multiplier} — привидения уже учтены.",
   "event_day.post.end": "🌅 Рассвет — праздник «{name}» завершён. Раунды снова обычные.",
   "season_pass.notice.header": "🎫 {season} — сезонный пропуск",
   "season_pass.notice.line": "Уровень {tier}: {reward}",
