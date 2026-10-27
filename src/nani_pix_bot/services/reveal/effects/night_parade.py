@@ -7,7 +7,7 @@ clear.
 Everything but the walkers only varies by column, so the wipe and the dimming are blended in
 narrow vertical bands (the mist) and plain pastes elsewhere. The sprites are scaled and
 recoloured once per render and rotated per frame. A missing sprite never breaks a reveal: that
-walker is skipped (the gap is logged once per sprite, see `_common.sprite_or_none`)."""
+walker is skipped (the gap is logged once per sprite, see `sprites.sprite_or_none`)."""
 
 import math
 import random
@@ -17,8 +17,9 @@ from typing import NamedTuple
 from PIL import Image, ImageChops
 
 from nani_pix_bot.services import sprites
+from nani_pix_bot.services.easing import smoothstep
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.effects._common import ease_in_out, sprite_or_none
+from nani_pix_bot.services.sprites import sprite_or_none
 
 MARCH_S = 2.0
 SILHOUETTE = (24, 16, 40)
@@ -110,7 +111,7 @@ def _walkers(size: tuple[int, int]) -> list[_Walker]:
 
 def _ramp(mist: int) -> Image.Image:
     ramp = Image.new("L", (mist, 1))
-    ramp.putdata([round(255 * ease_in_out((i + 0.5) / mist)) for i in range(mist)])
+    ramp.putdata([round(255 * smoothstep((i + 0.5) / mist)) for i in range(mist)])
     return ramp
 
 

@@ -17,8 +17,9 @@ from collections.abc import Iterator
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageMath
 
+from nani_pix_bot.services.easing import smoothstep
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.effects._common import ease_in_out, ease_out_back, to_yuv420
+from nani_pix_bot.services.reveal.effects._common import ease_out_back, to_yuv420
 
 OPEN_S, PAUSE_S, BURST_S = 0.45, 0.6, 0.7
 CRF = 23  # the CRF the approved iris was rendered with; only CRF may differ from the x264 contract
@@ -221,7 +222,7 @@ def _radii(size: tuple[int, int], focus: tuple[int, int]) -> tuple[list[float], 
     open_r = [peek * ease_out_back(i / open_n) for i in range(1, open_n + 1)]
     # the last burst step is replaced by the exact clear image (part 1 ends on it)
     burst_r = [
-        peek + (far * 1.05 - peek) * ease_in_out(i / burst_n) ** 1.3 for i in range(1, burst_n)
+        peek + (far * 1.05 - peek) * smoothstep(i / burst_n) ** 1.3 for i in range(1, burst_n)
     ]
     return open_r, pause_n, burst_r
 

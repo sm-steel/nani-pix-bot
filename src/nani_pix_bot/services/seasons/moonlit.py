@@ -8,10 +8,10 @@ import math
 from collections.abc import Callable
 from functools import lru_cache
 
-from loguru import logger
 from PIL import Image, ImageChops
 
 from nani_pix_bot.services import sprites
+from nani_pix_bot.services.easing import smoothstep
 
 # The radius is 0 at the centre, 1 at the middle of each edge and about 1.41 at the
 # corners; the rim mask is 0 inside CLEAR_RADIUS and full at FULL_RADIUS.
@@ -39,13 +39,6 @@ MOON_INSET = 0.035
 # Per-size layers kept: stage images come in a handful of widths at most.
 LAYER_CACHE_SIZE = 4
 
-_missing_logged: set[str] = set()
-
-
-def _smoothstep(x: float) -> float:
-    x = min(1.0, max(0.0, x))
-    return x * x * (3 - 2 * x)
-
 
 def _grid(value: Callable[[float, float], float]) -> Image.Image:
     """An "L" image on GRID with value(fx, fy) in 0..1 at each cell centre."""
@@ -59,7 +52,7 @@ def _grid(value: Callable[[float, float], float]) -> Image.Image:
 
 def _rim(fx: float, fy: float) -> float:
     radius = math.hypot(fx - 0.5, fy - 0.5) * 2
-    return _smoothstep((radius - CLEAR_RADIUS) / (FULL_RADIUS - CLEAR_RADIUS))
+    return smoothstep((radius - CLEAR_RADIUS) / (FULL_RADIUS - CLEAR_RADIUS))
 
 
 def _beam(fx: float, fy: float) -> float:
@@ -96,15 +89,13 @@ def _corner(name: str, width: int) -> Image.Image | None:
         return None
     try:
         art = sprites.sprite(name)
-        height = round(width * art.height / art.width)
-        if height < MIN_CORNER_PX:
-            return None
-        return sprites.sprite_height(name, height)
     except OSError:
-        if name not in _missing_logged:
-            _missing_logged.add(name)
-            logger.error("moonlit corner art {name} is missing — posting without it", name=name)
+        sprites.log_missing(name, "posting without it")
         return None
+    height = round(width * art.height / art.width)
+    if height < MIN_CORNER_PX:
+        return None
+    return sprites.sprite_height(name, height)
 
 
 def moonlit(image: Image.Image) -> Image.Image:

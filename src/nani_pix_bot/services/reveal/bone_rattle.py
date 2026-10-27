@@ -2,7 +2,8 @@
 skeleton dances on the winner's badge, jaw clacking, as a qtrle/argb .mov like
 spirits.bat_burst_clip. Every part is committed art (assets/sprites/skeleton/): the
 limbs are the long-bone sprite rotated per segment, plus a hand or a foot at the end.
-Runs in the reveal worker: module-level functions, seeded, no logging."""
+Runs in the reveal worker: module-level functions, seeded; a missing sprite is
+logged once with stdlib logging (`sprites.sprite_or_none`)."""
 
 import math
 import random
@@ -14,8 +15,8 @@ from PIL import Image, ImageOps
 
 from nani_pix_bot.services import sprites
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.effects._common import sprite_or_none
 from nani_pix_bot.services.reveal.overlay_canvas import SS, clip_size, render_layers
+from nani_pix_bot.services.sprites import sprite_or_none
 
 RATTLE_FRAMES = 56  # the ending is 60 frames; the skeleton fades out just before it ends
 RATTLE_SEED = 61

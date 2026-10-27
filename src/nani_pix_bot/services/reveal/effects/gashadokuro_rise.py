@@ -7,7 +7,7 @@ tumbling and fading. Then the hand sinks back out of sight.
 The clearing is a block-grid mask (built at grid size, stretched NEAREST), the hand a sprite
 rotated once per whole degree at quarter scale and stretched back up when pasted. A missing
 hand sprite never breaks a reveal: the blocks clear along the sweep line without it (the gap
-is logged once, see `_common.sprite_or_none`). Seeded, so the same image always crumbles the
+is logged once, see `sprites.sprite_or_none`). Seeded, so the same image always crumbles the
 same way."""
 
 import math
@@ -18,13 +18,10 @@ from dataclasses import dataclass
 
 from PIL import Image, ImageDraw
 
+from nani_pix_bot.services.easing import smoothstep
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.effects._common import (
-    block_grid,
-    ease_in_out,
-    rgb_at,
-    sprite_or_none,
-)
+from nani_pix_bot.services.reveal.effects._common import block_grid, rgb_at
+from nani_pix_bot.services.sprites import sprite_or_none
 
 RISE_S = 0.4
 SWEEP_S = 1.1
@@ -32,7 +29,7 @@ SINK_S = 0.35
 FLING_S = 0.5
 FADE_STEPS = 8  # a square fades through this many colours
 FLING_SHARE = 0.5  # of the blocks, this many get a visible flying square
-HAND = "skeleton_hand.png"
+HAND = "gashadokuro/hand.png"
 HAND_HEIGHT = 1.1  # of the image's height
 PIVOT = (0.5, 1.35)  # of the width / height: well below the bottom edge
 SWEEP_DEG = 62.0  # the hand turns from -SWEEP_DEG to +SWEEP_DEG about the pivot
@@ -177,12 +174,12 @@ def _load_hand(size: tuple[int, int]) -> _Hand | None:
 def _pose(seconds: float, length: float) -> tuple[float, float]:
     """(degrees, how far the hand is pulled back along its length, in px)."""
     if seconds < RISE_S:
-        return -SWEEP_DEG, HIDDEN * length * (1 - ease_in_out(seconds / RISE_S))
+        return -SWEEP_DEG, HIDDEN * length * (1 - smoothstep(seconds / RISE_S))
     if seconds < RISE_S + SWEEP_S:
         turn = (seconds - RISE_S) / SWEEP_S
         return -SWEEP_DEG + 2 * SWEEP_DEG * turn, 0.0
     sink = min(1.0, (seconds - RISE_S - SWEEP_S) / SINK_S)
-    return SWEEP_DEG, HIDDEN * length * ease_in_out(sink)
+    return SWEEP_DEG, HIDDEN * length * smoothstep(sink)
 
 
 def _turned(hand: _Hand, degrees: int) -> tuple[Image.Image, Image.Image]:

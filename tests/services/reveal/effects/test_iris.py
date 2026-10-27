@@ -2,6 +2,7 @@ import pytest
 from PIL import Image
 
 from nani_pix_bot.models.enums import RevealEffect
+from nani_pix_bot.services.easing import smoothstep
 from nani_pix_bot.services.reveal import encode
 from nani_pix_bot.services.reveal.effects import EFFECTS, _common, iris
 from tests.services.reveal.effects.conftest import last_frame, mean_abs_diff
@@ -23,8 +24,8 @@ def test_iris_is_registered() -> None:
 
 
 def test_easings_hit_their_endpoints() -> None:
-    assert _common.ease_in_out(0) == 0
-    assert _common.ease_in_out(1) == 1
+    assert smoothstep(0) == 0
+    assert smoothstep(1) == 1
     assert _common.ease_out_back(0) == pytest.approx(0)
     assert _common.ease_out_back(1) == pytest.approx(1)
     assert max(_common.ease_out_back(i / 20) for i in range(21)) > 1  # the overshoot pop

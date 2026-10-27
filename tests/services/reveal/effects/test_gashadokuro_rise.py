@@ -4,7 +4,7 @@ from PIL import Image, ImageChops, ImageStat
 from nani_pix_bot.models.enums import RevealEffect
 from nani_pix_bot.services import sprites
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.effects import EFFECTS, _common, gashadokuro_rise
+from nani_pix_bot.services.reveal.effects import EFFECTS, gashadokuro_rise
 from tests.services.reveal.effects.conftest import last_frame, mean_abs_diff
 from tests.services.reveal.ffprobe_helpers import decode_clean, probe_frames
 
@@ -110,7 +110,6 @@ def test_a_missing_hand_still_clears_the_blocks_and_logs_once(monkeypatch, caplo
         raise FileNotFoundError(name)
 
     monkeypatch.setattr(sprites, "sprite_height", gone)
-    monkeypatch.setattr(_common, "_logged_missing", set())
     frames = _red_blue()
     _red_blue()
     assert frames[-1].tobytes() == Image.new("RGB", SIZE, RED).tobytes()
@@ -121,7 +120,7 @@ def test_a_missing_hand_still_clears_the_blocks_and_logs_once(monkeypatch, caplo
     assert left[0] > 150  # the left is cleared even with no hand
     errors = [r for r in caplog.records if r.levelname == "ERROR"]
     assert len(errors) == 1
-    assert "skeleton_hand.png" in errors[0].getMessage()
+    assert "gashadokuro/hand.png" in errors[0].getMessage()
 
 
 @pytest.mark.ffmpeg

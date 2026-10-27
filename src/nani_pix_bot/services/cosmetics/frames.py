@@ -4,12 +4,12 @@ frames are registered here; "simple_border" is the neutral built-in, the Sakura
 paper frames live in paper_frames.py."""
 
 from collections.abc import Callable, Mapping
-from io import BytesIO
 from types import MappingProxyType
 
 from loguru import logger
 from PIL import Image, ImageDraw
 
+from nani_pix_bot.services import stage_image
 from nani_pix_bot.services.cosmetics import gold_frame, lantern_frame, night_frames, paper_frames
 
 _SIMPLE_WIDTH_RATIO = 0.03
@@ -46,13 +46,4 @@ def apply_frame(png: bytes, frame_key: str) -> bytes:
             "unknown frame {frame_key!r} — posting the stage unframed", frame_key=frame_key
         )
         return png
-    try:
-        out = BytesIO()
-        draw(Image.open(BytesIO(png))).save(out, format="PNG")
-        return out.getvalue()
-    except Exception as exc:  # a broken drawing must never block the stage post
-        logger.opt(exception=exc).error(
-            "frame {frame_key!r} failed to draw — posting the stage unframed",
-            frame_key=frame_key,
-        )
-        return png
+    return stage_image.redraw_or_keep(png, draw, "frame", frame_key)

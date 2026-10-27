@@ -6,7 +6,6 @@ from PIL import Image
 from nani_pix_bot.services import mascot, sprites
 from nani_pix_bot.services.cosmetics import frames, lantern_frame
 from nani_pix_bot.services.mascot import Pose
-from tests.conftest import LogLine
 
 GREEN = (10, 200, 30)
 
@@ -75,14 +74,11 @@ def test_lantern_string_handles_portrait_and_tiny_images(size: tuple[int, int]) 
     assert lantern_frame.lantern_string(Image.new("RGB", size, GREEN)).size == size
 
 
-def test_a_missing_sprite_still_returns_the_stage_and_logs_once(
-    monkeypatch, log_records: list[LogLine]
-) -> None:
+def test_a_missing_sprite_still_returns_the_stage_and_logs_once(monkeypatch, caplog) -> None:
     def gone(*_a, **_k):
         raise FileNotFoundError("chochin.png")
 
     monkeypatch.setattr(sprites, "sprite_height", gone)
-    monkeypatch.setattr(lantern_frame, "_missing_logged", False)
     lantern_frame._hung.cache_clear()
     src = Image.new("RGB", (640, 360), GREEN)
     try:
@@ -92,9 +88,9 @@ def test_a_missing_sprite_still_returns_the_stage_and_logs_once(
         lantern_frame._hung.cache_clear()
     assert first.size == src.size
     assert _red_count(first) == 0
-    errors = [r for r in log_records if r.level == "ERROR"]
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
     assert len(errors) == 1
-    assert errors[0].extra["name"] == lantern_frame.SPRITE
+    assert lantern_frame.SPRITE in errors[0].getMessage()
 
 
 def test_the_cord_runs_dark_along_the_top() -> None:

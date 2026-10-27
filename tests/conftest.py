@@ -12,9 +12,16 @@ from sqlalchemy.orm import Session, sessionmaker
 from nani_pix_bot import log_context
 from nani_pix_bot.db import make_session_factory
 from nani_pix_bot.models.base import Base
+from nani_pix_bot.services import sprites
 from nani_pix_bot.services.quiet_hours import QuietHours
 
 pytest_plugins = ["tests.seasons_fixtures", "tests.costume_fixtures"]
+
+
+@pytest.fixture(autouse=True)
+def _missing_art_logged_afresh() -> None:
+    """`sprites.log_missing` reports each sprite once per process; every test starts over."""
+    sprites._logged_missing.clear()
 
 
 @pytest.fixture

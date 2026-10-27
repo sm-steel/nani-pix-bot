@@ -47,7 +47,7 @@ def test_a_style_that_raises_posts_the_stage_unstyled_and_logs(monkeypatch, log_
     monkeypatch.setattr(styles, "STYLES", {"boom": boom})
     png = _png()
     assert styles.apply_style(png, "boom") == png
-    assert any(r.level == "ERROR" and r.extra["style"] == "boom" for r in log_records)
+    assert any(r.level == "ERROR" and r.extra["key"] == "boom" for r in log_records)
 
 
 def test_every_run_names_a_known_style() -> None:

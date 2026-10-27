@@ -1,6 +1,8 @@
 """Halloween spirit win overlays for the reveal ending (seasons spec §7): bats
-bursting out of the winner's badge, as a qtrle/argb .mov like petals.sakura_storm_clip.
-Runs in the reveal worker: module-level functions, seeded, no logging."""
+bursting out of the winner's badge (bat_burst) and blue spirit flames orbiting it
+(hitodama), as qtrle/argb .mov clips like petals.sakura_storm_clip.
+Runs in the reveal worker: module-level functions, seeded; a missing
+hitodama sprite is logged once with stdlib logging (`sprites.sprite_or_none`)."""
 
 import math
 import random
@@ -9,8 +11,8 @@ from dataclasses import dataclass
 from PIL import Image, ImageDraw
 
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.effects._common import sprite_or_none
 from nani_pix_bot.services.reveal.overlay_canvas import SS, clip_size, render, render_layers
+from nani_pix_bot.services.sprites import sprite_or_none
 
 BAT_FRAMES = 56  # the ending is 60 frames; the bats fade out just before it ends
 BATS = 16

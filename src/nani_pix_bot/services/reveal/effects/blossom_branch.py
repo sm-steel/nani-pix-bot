@@ -21,9 +21,10 @@ from dataclasses import dataclass
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
+from nani_pix_bot.services.easing import smoothstep
 from nani_pix_bot.services.reveal import encode
 from nani_pix_bot.services.reveal.effects import sakura_sprites
-from nani_pix_bot.services.reveal.effects._common import ease_in_out, ease_out_back
+from nani_pix_bot.services.reveal.effects._common import ease_out_back
 
 GROW_S = 1.1  # the pen draws the main branch from end to end
 ERASE_DELAY = GROW_S * 0.5  # the eraser starts when the main branch is half drawn
@@ -210,7 +211,7 @@ def _reveal_mask(blossoms: list[_Blossom], t: float, size: tuple[int, int]) -> I
         k = (t - b.opens) / SPREAD_S
         if k <= 0:
             continue
-        r = reach * ease_in_out(min(1.0, k))
+        r = reach * smoothstep(min(1.0, k))
         x, y = b.x / MASK_SCALE, b.y / MASK_SCALE
         draw.ellipse((x - r, y - r, x + r, y + r), fill=255)
     soft = mask.filter(ImageFilter.GaussianBlur(max(1, small[1] // 30)))
@@ -224,7 +225,7 @@ def _scale(t: float, appears: float, at: float, grow_s: float, opening) -> float
     if k_in <= 0:
         return 0.0
     k_out = (t - at - ERASE_DELAY) / grow_s
-    return opening(min(1.0, k_in)) * (1 - ease_in_out(max(0.0, min(1.0, k_out))))
+    return opening(min(1.0, k_in)) * (1 - smoothstep(max(0.0, min(1.0, k_out))))
 
 
 def _total_s(paths: list[_Path]) -> float:
@@ -252,14 +253,14 @@ def frames(original: Image.Image, stages: list[Image.Image]) -> Iterator[bytes]:
     for i in range(math.ceil(total * encode.FPS) + 1):
         t = min(total, i / encode.FPS)
         reveal = _reveal_mask(blossoms, t, size)
-        clearing = ease_in_out(max(0.0, (t - (total - CLEAR_S)) / CLEAR_S))
+        clearing = smoothstep(max(0.0, (t - (total - CLEAR_S)) / CLEAR_S))
         if clearing > 0:  # whatever is still pixelated clears at the very end
             reveal = ImageChops.lighter(reveal, Image.new("L", size, round(255 * clearing)))
         frame = Image.composite(clear, front, reveal).convert("RGBA")
         layer = Image.new("RGBA", size, (0, 0, 0, 0))
         layer.paste(branch, (0, 0), _bark_mask(paths, t, size))
         for leaf in leaves:  # under the blossoms
-            scale = _scale(t, leaf.unfurls, leaf.at, UNFURL_S, ease_in_out)
+            scale = _scale(t, leaf.unfurls, leaf.at, UNFURL_S, smoothstep)
             if scale > 0:
                 _grow_onto(layer, leaf_sprites[leaf], (leaf.x, leaf.y), scale)
         for b in blossoms:

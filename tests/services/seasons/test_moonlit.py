@@ -98,18 +98,17 @@ def test_the_moon_sits_clear_of_a_frame_border() -> None:
 
 
 def test_a_missing_sprite_is_logged_once_and_the_stage_still_renders(
-    monkeypatch: pytest.MonkeyPatch, log_records
+    monkeypatch: pytest.MonkeyPatch, caplog
 ) -> None:
     def gone(name: str) -> Image.Image:
         raise FileNotFoundError(name)
 
     monkeypatch.setattr(moonlit.sprites, "sprite", gone)
-    monkeypatch.setattr(moonlit, "_missing_logged", set())
     grey = Image.new("RGB", (640, 360), (128, 128, 128))
     first = moonlit.moonlit(grey)
     moonlit.moonlit(grey)
     assert first.tobytes() == moonlit._grade(grey).tobytes()
-    errors = [r for r in log_records if r.level == "ERROR"]
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
     assert len(errors) == 2  # one per missing sprite, not per render
 
 

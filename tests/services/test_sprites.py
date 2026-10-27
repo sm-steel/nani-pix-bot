@@ -18,7 +18,7 @@ COMMITTED: tuple[str, ...] = (
     "parade/oni.png",
     "parade/bakeneko.png",
     "parade/nopperabo.png",
-    "skeleton_hand.png",
+    "gashadokuro/hand.png",
     *(f"skeleton/{n}.png" for n in ("skull", "jaw", "ribcage", "pelvis", "bone", "hand", "foot")),
     *(f"hitodama/f{i}.png" for i in range(6)),
 )  # every task that commits art adds its file names here
@@ -51,6 +51,22 @@ def test_sprite_height_keeps_the_aspect(sprite_dir) -> None:
 def test_a_missing_sprite_raises_file_not_found(sprite_dir) -> None:
     with pytest.raises(FileNotFoundError):
         sprites.sprite("nope.png")
+
+
+def test_sprite_or_none_scales_a_present_sprite(sprite_dir) -> None:
+    Image.new("RGBA", (100, 200)).save(sprite_dir / "x.png")
+    art = sprites.sprite_or_none("x.png", 50, "without it")
+    assert art is not None
+    assert art.size == (25, 50)
+
+
+def test_a_missing_sprite_is_none_and_logged_once(sprite_dir, caplog) -> None:
+    assert sprites.sprite_or_none("nope.png", 50, "without it") is None
+    assert sprites.sprite_or_none("nope.png", 80, "without it") is None
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert len(errors) == 1
+    assert "nope.png" in errors[0].getMessage()
+    assert "without it" in errors[0].getMessage()
 
 
 def test_silhouette_keeps_alpha_and_flattens_colour() -> None:

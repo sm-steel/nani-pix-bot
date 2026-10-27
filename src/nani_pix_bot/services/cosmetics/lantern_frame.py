@@ -8,7 +8,6 @@ import functools
 import math
 import random
 
-from loguru import logger
 from PIL import Image, ImageChops, ImageDraw
 
 from nani_pix_bot.services import mascot, sprites
@@ -32,8 +31,6 @@ _BODY = 0.6  # of a lantern's height, down to where its light sits
 _MIN_LANTERN = 6  # px: smaller is just noise
 _CORD_SS = 3
 _CATENARY = 2.0  # how deep the swag hangs: larger sags harder in the middle
-
-_missing_logged = False
 
 
 def _swag(u: float) -> float:
@@ -125,10 +122,7 @@ def lantern_string(image: Image.Image) -> Image.Image:
     try:
         lanterns = [(x, y, _hung(lantern_h, tilt)) for x, y, tilt in spots]
     except OSError:  # a missing file: the cord and glow stay, a stage post never breaks
-        global _missing_logged
-        if not _missing_logged:
-            _missing_logged = True
-            logger.error("lantern art {name} is missing — posting without lanterns", name=SPRITE)
+        sprites.log_missing(SPRITE, "posting without lanterns")
         return out
     canvas = out.convert("RGBA")
     for x, y, art in lanterns:

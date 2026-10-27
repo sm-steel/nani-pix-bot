@@ -16,8 +16,9 @@ from typing import NamedTuple
 
 from PIL import Image, ImageChops, ImageFilter
 
+from nani_pix_bot.services.easing import smoothstep
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.effects._common import ease_in_out, sprite_or_none
+from nani_pix_bot.services.sprites import sprite_or_none
 
 FLICKER_S = 0.7  # the front, by candlelight
 SNUFF_S = 0.25  # the flame shrinks to nothing, the smoke starts
@@ -144,7 +145,7 @@ def _grid(size: tuple[int, int]) -> tuple[int, int]:
 def _radial() -> Image.Image:
     """A 255-at-centre, 0-at-rim falloff disc (256 px, eased)."""
     base = Image.radial_gradient("L")  # 0 at the centre .. 255 at the rim
-    return base.point(lambda v: round(255 * (1 - ease_in_out(v / 255)) ** 1.2))
+    return base.point(lambda v: round(255 * (1 - smoothstep(v / 255)) ** 1.2))
 
 
 def _light_mask(scene: _Scene, radius: float, strength: float, radial: Image.Image) -> Image.Image:
@@ -167,10 +168,7 @@ def _lift_strip(size: tuple[int, int]) -> _Strip:
     edge = max(2, round(gh * EDGE))
     strip = Image.new("L", (1, 2 * gh + edge), 0)
     strip.putdata(
-        [
-            round(255 * ease_in_out(min(1.0, max(0.0, (i - gh) / edge))))
-            for i in range(2 * gh + edge)
-        ]
+        [round(255 * smoothstep(min(1.0, max(0.0, (i - gh) / edge)))) for i in range(2 * gh + edge)]
     )
     return strip, gh, gh + edge
 
@@ -223,7 +221,7 @@ def _paste_smoke(frame: Image.Image, look: _Look, k: float) -> None:
         life = (k - blob.delay) / (1 - blob.delay)
         if life <= 0 or life >= 1:
             continue
-        rise = ease_in_out(life) * (fy + h * 0.1)
+        rise = smoothstep(life) * (fy + h * 0.1)
         alpha = blob.strength * math.sin(life * math.pi) ** 0.8
         mask = blob.mask.point(lambda v, a=alpha: round(v * a))
         x = fx + blob.dx * life + math.sin(life * 6 + blob.delay * 9) * w * 0.02 * (0.3 + life)
@@ -269,7 +267,7 @@ def _vigil(look: _Look, count: int, snuff_from: int) -> Iterator[bytes]:
     total = SNUFF_S + LIFT_S
     for i in range(count):
         snuff = max(0.0, (i - snuff_from + 1) / (count - snuff_from))
-        eased = ease_in_out(snuff)
+        eased = smoothstep(snuff)
         radius = LIGHT * diagonal * (1 + FLICKER * noise[i]) * (1 - 0.45 * eased)
         light = _light_mask(look.scene, radius, 1 - 0.8 * eased, look.radial)
         frame = Image.composite(look.lit, look.dark, light)
@@ -285,7 +283,7 @@ def _lift(look: _Look, count: int) -> Iterator[bytes]:
     fade = max(1, round(FADE_S * encode.FPS))
     for j in range(count):
         k = (j + 1) / count
-        frame = _lifted(look, ease_in_out(k))
+        frame = _lifted(look, smoothstep(k))
         _paste_candle(frame, look, min(1.0, (count - 1 - j) / fade))
         _paste_smoke(frame, look, (SNUFF_S + k * LIFT_S) / (SNUFF_S + LIFT_S))
         yield frame.tobytes()

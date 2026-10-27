@@ -6,6 +6,8 @@ from collections.abc import Callable
 
 from PIL import Image, ImageChops, ImageDraw
 
+from nani_pix_bot.services.easing import smoothstep
+
 SS = 2  # supersampling of each frame
 FADE_IN = 6
 FADE_OUT = 14
@@ -23,11 +25,6 @@ def alpha(f: int, frames: int) -> int:
     return round(255 * max(0.0, fade))
 
 
-def _smooth(t: float) -> float:
-    t = max(0.0, min(1.0, t))
-    return t * t * (3 - 2 * t)
-
-
 def edge_fade(size: tuple[int, int], height: int) -> Image.Image:
     """An L mask over the overlay area: 255 inside, easing to 0 at its edges, so
     a shape leaving the area dissolves instead of being cut off on a straight line.
@@ -36,10 +33,12 @@ def edge_fade(size: tuple[int, int], height: int) -> Image.Image:
     side, bottom = EDGE_FADE * height, EDGE_FADE_BOTTOM * height
     across = Image.new("L", (w, 1))
     for x in range(w):
-        across.putpixel((x, 0), round(255 * _smooth(min(x, w - 1 - x) / side)))
+        across.putpixel((x, 0), round(255 * smoothstep(min(x, w - 1 - x) / side)))
     down = Image.new("L", (1, h))
     for y in range(h):
-        down.putpixel((0, y), round(255 * min(_smooth(y / side), _smooth((h - 1 - y) / bottom))))
+        down.putpixel(
+            (0, y), round(255 * min(smoothstep(y / side), smoothstep((h - 1 - y) / bottom)))
+        )
     return ImageChops.multiply(across.resize(size), down.resize(size))
 
 
