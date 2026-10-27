@@ -806,7 +806,7 @@ src/nani_pix_bot/
                    #                   tile_flip, ripple, glitch, shatter;
                    #                   the Sakura spring_breeze and
                    #                   blossom_branch and the Yokai
-                   #                   candle_snuff, never
+                   #                   candle_snuff and night_parade, never
                    #                   random: store.RANDOM_EFFECTS;
                    #                   sakura_sprites.py draws the
                    #                   branch, blossom and leaf once)

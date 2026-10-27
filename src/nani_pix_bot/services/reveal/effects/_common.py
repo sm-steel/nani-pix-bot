@@ -1,11 +1,31 @@
 """Helpers shared by the reveal effects."""
 
+import logging
+
 from PIL import Image
+
+from nani_pix_bot.services import sprites
 
 # BT.601 limited range, RGB 0..255 -> Y 16..235, Cb/Cr 16..240 (swscale's default for yuv420p)
 _MY = (0.256788, 0.504129, 0.097906, 16.0)
 _MU = (-0.148223, -0.290993, 0.439216, 128.0)
 _MV = (0.439216, -0.367788, -0.071427, 128.0)
+
+
+_logged_missing: set[str] = set()
+
+
+def sprite_or_none(name: str, height: int, fallback: str) -> Image.Image | None:
+    """The committed sprite `name` scaled to `height`, or None when its file is missing: a
+    reveal renders without it (`fallback` says how) and the gap is logged once per process
+    and sprite, with stdlib logging (the reveal worker has no bot-side log setup)."""
+    try:
+        return sprites.sprite_height(name, height)
+    except OSError:
+        if name not in _logged_missing:
+            _logged_missing.add(name)
+            logging.getLogger(__name__).error("art %s is missing — %s", name, fallback)
+        return None
 
 
 def ease_in_out(t: float) -> float:

@@ -4,7 +4,7 @@ from PIL import Image, ImageStat
 from nani_pix_bot.models.enums import RevealEffect
 from nani_pix_bot.services import sprites
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.effects import EFFECTS, candle_snuff
+from nani_pix_bot.services.reveal.effects import EFFECTS, _common, candle_snuff
 from tests.services.reveal.effects.conftest import last_frame, mean_abs_diff
 from tests.services.reveal.ffprobe_helpers import decode_clean, probe_frames
 
@@ -70,7 +70,7 @@ def test_a_missing_candle_sprite_still_renders_and_logs_once(monkeypatch, caplog
         raise FileNotFoundError(name)
 
     monkeypatch.setattr(sprites, "sprite_height", gone)
-    monkeypatch.setattr(candle_snuff, "_missing_logged", False)
+    monkeypatch.setattr(_common, "_logged_missing", set())
     size = (160, 90)
     clear, front = Image.new("RGB", size, (200, 120, 40)), Image.new("RGB", size, (90, 90, 90))
     assert _frames(clear, [front])[-1].tobytes() == clear.tobytes()

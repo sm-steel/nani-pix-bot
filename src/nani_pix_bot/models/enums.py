@@ -282,6 +282,7 @@ class RevealEffect(enum.Enum):
     # Yōkai Night transitions: only ever an equipped cosmetic, never a random pick
     # (excluded from RANDOM_EFFECTS in services/reveal/store.py).
     CANDLE_SNUFF = "candle_snuff"
+    NIGHT_PARADE = "night_parade"
 
 
 class RevealStatus(enum.Enum):

@@ -12,6 +12,7 @@ from nani_pix_bot.services.reveal.effects import (
     candle_snuff,
     glitch,
     iris,
+    night_parade,
     ripple,
     shatter,
     spring_breeze,
@@ -30,5 +31,6 @@ EFFECTS: Mapping[
         RevealEffect.SPRING_BREEZE: spring_breeze.render_part1,
         RevealEffect.BLOSSOM_BRANCH: blossom_branch.render_part1,
         RevealEffect.CANDLE_SNUFF: candle_snuff.render_part1,
+        RevealEffect.NIGHT_PARADE: night_parade.render_part1,
     }
 )

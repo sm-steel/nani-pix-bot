@@ -9,7 +9,6 @@ drawn once and moved. Seeded, so the same image always flickers the same way. A 
 candle sprite never breaks a reveal: the flame (and its light) is drawn on its own, and the
 gap is logged once per process (stdlib logging: the reveal worker has no bot-side log setup)."""
 
-import logging
 import math
 import random
 from collections.abc import Iterator
@@ -17,9 +16,8 @@ from typing import NamedTuple
 
 from PIL import Image, ImageChops, ImageFilter
 
-from nani_pix_bot.services import sprites
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.effects._common import ease_in_out
+from nani_pix_bot.services.reveal.effects._common import ease_in_out, sprite_or_none
 
 FLICKER_S = 0.7  # the front, by candlelight
 SNUFF_S = 0.25  # the flame shrinks to nothing, the smoke starts
@@ -44,7 +42,6 @@ CRF = 23
 CANDLE = "candle.png"
 MIN_CANDLE_PX = 8
 
-_missing_logged = False
 _Strip = tuple[Image.Image, int, int]  # (1px-wide strip, window height, travel)
 
 
@@ -76,19 +73,12 @@ class _Look(NamedTuple):
 def _candle(size: tuple[int, int]) -> tuple[Image.Image | None, tuple[int, int]]:
     """The candle sprite scaled to its height, dimmed, and where its top-left goes; None when
     it is too small to show or its file is missing."""
-    global _missing_logged
     w, h = size
     height = round(h * CANDLE_H)
     if height < MIN_CANDLE_PX:
         return None, (0, 0)
-    try:
-        art = sprites.sprite_height(CANDLE, height)
-    except OSError:
-        if not _missing_logged:
-            _missing_logged = True
-            logging.getLogger(__name__).error(
-                "candle art %s is missing — snuffing a bare flame", CANDLE
-            )
+    art = sprite_or_none(CANDLE, height, "snuffing a bare flame")
+    if art is None:
         return None, (0, 0)
     dim = art.convert("RGB").point(lambda v: round(v * CANDLE_DIM))
     dim.putalpha(art.getchannel("A"))
