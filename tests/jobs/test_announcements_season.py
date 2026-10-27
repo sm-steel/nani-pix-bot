@@ -239,13 +239,27 @@ def test_start_post_coin_total_equals_what_a_haunted_win_pays(session, monkeypat
     demo3 = registry.get("demo_3")
     assert demo3 is not None
     assert demo3.event_day is not None
-    run = replace(demo3, group_goal=None, event_day=replace(demo3.event_day, coin_multiplier=2))
+    run = replace(demo3, event_day=replace(demo3.event_day, coin_multiplier=2))
     monkeypatch.setattr(registry, "get", lambda run_id: run if run_id == "demo_3" else None)
-    day_game = Game(starter_id=2, status=GameStatus.ACTIVE, event_day=True, boss_game=True)
+    day_game = Game(
+        starter_id=2, status=GameStatus.ACTIVE, event_day=True, haunt_twist="kitsune_mirror"
+    )
     paid = multipliers.coin_multiplier(run, day_game, XpSource.WIN)
     assert paid == 4
     post = _render_parade(session, _parade_row(session, OutboxKind.EVENT_DAY_START))
     assert "\u00d74 all day" in post.text
+
+
+def test_start_post_coins_use_plain_wording_when_the_haunt_is_not_folded_in(
+    session, monkeypatch
+) -> None:
+    demo3 = registry.get("demo_3")
+    assert demo3 is not None
+    assert demo3.event_day is not None
+    calm = replace(demo3, event_day=replace(demo3.event_day, coin_multiplier=3, all_haunted=False))
+    monkeypatch.setattr(registry, "get", lambda run_id: calm if run_id == "demo_3" else None)
+    post = _render_parade(session, _parade_row(session, OutboxKind.EVENT_DAY_START))
+    assert post.text.endswith("Season Coins pay \u00d73 all day.")
 
 
 def test_start_post_skips_lines_the_day_does_not_have(session) -> None:
