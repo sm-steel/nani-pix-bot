@@ -6,6 +6,7 @@ While a Nopperabo hex is on the player the photo is never fetched: the
 faceless art stands in for it. Every image that draws a profile photo goes
 through `fetch_avatar`, so that is the one place the curse is applied."""
 
+import asyncio
 from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
@@ -44,7 +45,9 @@ def _is_faceless(session_factory: sessionmaker[Session], user_id: int) -> bool:
 async def fetch_avatar(
     bot: Bot, user_id: int, session_factory: sessionmaker[Session]
 ) -> bytes | None:
-    if _is_faceless(session_factory, user_id):
+    # a sync DB session: in a worker thread, so it can't block the event loop
+    # (and a caller's AVATAR_TIMEOUT still cuts it off)
+    if await asyncio.to_thread(_is_faceless, session_factory, user_id):
         art = _faceless_art()
         if art is not None:
             logger.debug("nopperabo: faceless art for {player_id}", player_id=user_id)

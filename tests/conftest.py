@@ -6,8 +6,9 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from loguru import logger
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from nani_pix_bot import log_context
 from nani_pix_bot.db import make_session_factory
@@ -24,10 +25,22 @@ def _missing_art_logged_afresh() -> None:
     sprites._logged_missing.clear()
 
 
+def memory_engine() -> Engine:
+    """A fresh in-memory SQLite database, one connection shared by every thread,
+    so code that reads it from a worker thread (`asyncio.to_thread`) sees the
+    same tables and rows as the test. The default pool gives each thread its
+    own, empty, in-memory database."""
+    return create_engine(
+        "sqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+
+
 @pytest.fixture
 def session() -> Iterator[Session]:
     """An in-memory SQLite session with every model table created fresh."""
-    engine = create_engine("sqlite:///:memory:")
+    engine = memory_engine()
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         yield session
@@ -37,7 +50,7 @@ def session() -> Iterator[Session]:
 def session_factory() -> sessionmaker[Session]:
     """A session factory (rather than one open session) for code under test
     that opens its own sessions via session_scope(), e.g. command handlers."""
-    engine = create_engine("sqlite:///:memory:")
+    engine = memory_engine()
     Base.metadata.create_all(engine)
     return make_session_factory(engine)
 
