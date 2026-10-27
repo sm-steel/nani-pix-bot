@@ -32,7 +32,8 @@ WALKERS = (
     "parade/nopperabo.png",
 )
 HEIGHT = 0.42  # of the image's height
-SPACING = 0.32  # of the width, between walkers
+SPACING = 0.32  # of the width, between walkers (at least the widest walker and a gap)
+GAP = 0.02  # of the width, the least clear space between two walkers
 BASE = 0.97  # the walkers' feet, of the height
 BOB = 0.03  # of the height
 STRIDE_S = 0.35
@@ -61,9 +62,16 @@ class _Look(NamedTuple):
     mist: int
 
     @property
+    def spacing(self) -> float:
+        """Between walkers' left edges: SPACING of the width, but never so tight (a portrait
+        image, where the sprites are wider than that) that the silhouettes merge."""
+        widest = max((walker.art.width for walker in self.walkers), default=0)
+        return max(self.clear.width * SPACING, widest + self.clear.width * GAP)
+
+    @property
     def tail_offset(self) -> float:
         """How far the last walker's left edge trails the leader's."""
-        return max(0, len(self.walkers) - 1) * self.clear.width * SPACING
+        return max(0, len(self.walkers) - 1) * self.spacing
 
     @property
     def lead_width(self) -> int:
@@ -178,7 +186,7 @@ def _tilted(walker: _Walker, degrees: int) -> tuple[Image.Image, Image.Image]:
 def _paste_walkers(frame: Image.Image, look: _Look, lead_left: float, seconds: float) -> None:
     w, h = look.clear.size
     for i, walker in enumerate(look.walkers):
-        x = lead_left - i * w * SPACING
+        x = lead_left - i * look.spacing
         if x >= w or x + walker.art.width <= 0:
             continue
         stride = seconds / STRIDE_S + walker.phase

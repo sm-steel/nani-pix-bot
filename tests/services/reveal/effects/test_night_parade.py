@@ -106,3 +106,26 @@ def test_night_parade_part1_is_valid_and_ends_clear(scene) -> None:
     assert decode_clean(mp4)
     assert probe_frames(mp4) > round(encode.HOLD_START * encode.FPS)
     assert mean_abs_diff(last_frame(mp4, original.size), original) < 6
+
+
+def test_the_front_ahead_of_the_leader_is_dimmed_after_the_moonlight_fades_in() -> None:
+    size = (320, 180)
+    blue = Image.new("RGB", size, (30, 30, 220))
+    frames = _frames(Image.new("RGB", size, (220, 30, 30)), [blue])
+    w, h = size
+
+    def blue_ahead(frame: Image.Image) -> float:
+        return ImageStat.Stat(frame.crop((w - w // 8, 0, w, h // 4))).mean[2]
+
+    assert blue_ahead(frames[0]) == pytest.approx(220, abs=1)  # the held front, not yet dimmed
+    seconds = night_parade.MOON_IN_S + 1 / encode.FPS
+    assert blue_ahead(_at(frames, seconds)) == pytest.approx(176, abs=3)  # 0.8 of 220
+
+
+@pytest.mark.parametrize(("size", "tight"), [((1280, 720), False), ((360, 640), True)])
+def test_walkers_never_overlap_and_landscape_spacing_is_unchanged(size, tight) -> None:
+    image = Image.new("RGB", size)
+    look = night_parade._look(image, [image])
+    widest = max(walker.art.width for walker in look.walkers)
+    assert look.spacing >= widest  # side by side, never merged into one blob
+    assert (look.spacing > size[0] * night_parade.SPACING) is tight
