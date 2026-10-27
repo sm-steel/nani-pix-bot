@@ -19,8 +19,12 @@ from dataclasses import dataclass
 from PIL import Image, ImageDraw
 
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.effects._common import ease_in_out, sprite_or_none
-from nani_pix_bot.services.reveal.effects.spring_breeze import _grid, _rgb_at
+from nani_pix_bot.services.reveal.effects._common import (
+    block_grid,
+    ease_in_out,
+    rgb_at,
+    sprite_or_none,
+)
 
 RISE_S = 0.4
 SWEEP_S = 1.1
@@ -52,7 +56,7 @@ class _Flyer:
     size: float
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True)  # frozen, but `turned` is a mutable cache filled as angles come up
 class _Hand:
     """The sprite at 1/SMALL scale (wrist at the bottom centre), `length` its full-size
     height; `turned` caches its rotations by whole degree as (colour, alpha)."""
@@ -118,8 +122,8 @@ def _flyers(
                     y=y,
                     leaves=leaves[gy][gx],
                     fades=_fades(
-                        _rgb_at(colours, (gy * gw + gx) * 3),
-                        _rgb_at(clear_colours, (gy * gw + gx) * 3),
+                        rgb_at(colours, (gy * gw + gx) * 3),
+                        rgb_at(clear_colours, (gy * gw + gx) * 3),
                     ),
                     vx=math.cos(heading) * speed,
                     vy=math.sin(heading) * speed,
@@ -160,7 +164,7 @@ def _draw_flyer(draw: ImageDraw.ImageDraw, p: _Flyer, age: float) -> None:
     draw.polygon(corners, fill=p.fades[int(k * FADE_STEPS)])
 
 
-def _hand(size: tuple[int, int]) -> _Hand | None:
+def _load_hand(size: tuple[int, int]) -> _Hand | None:
     length = round(size[1] * HAND_HEIGHT)
     if length < MIN_HAND_PX:
         return None
@@ -228,20 +232,22 @@ def frames(original: Image.Image, stages: list[Image.Image]) -> Iterator[bytes]:
     front = stages[0].convert("RGB")
     size = clear.size
     rng = random.Random(SEED)  # noqa: S311 - visual randomness, seeded for a reproducible look
-    grid = _grid(size)
+    grid = block_grid(size)
     leaves = _departures(size, grid)
     flyers = _flyers(clear, front, grid, leaves, rng)
-    hand = _hand(size)
+    hand = _load_hand(size)
     flyers.sort(key=lambda p: p.leaves)
     leave_times = [p.leaves for p in flyers]
     xs, ys = _edges(grid[0], size[0]), _edges(grid[1], size[1])
     pending = sorted((leaves[gy][gx], gx, gy) for gy in range(grid[1]) for gx in range(grid[0]))
+    next_block = 0  # how many of `pending` have been cleared
     base = front.copy()  # the blocks the hand has passed so far, clear
     count = math.ceil(_total() * encode.FPS) + 1
     for i in range(count):
         t = min(_total(), i / encode.FPS)
-        while pending and pending[0][0] <= t:
-            _, gx, gy = pending.pop(0)
+        while next_block < len(pending) and pending[next_block][0] <= t:
+            _, gx, gy = pending[next_block]
+            next_block += 1
             box = (xs[gx], ys[gy], xs[gx + 1], ys[gy + 1])
             base.paste(clear.crop(box), box[:2])
         frame = base.copy()

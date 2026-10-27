@@ -12,6 +12,7 @@ _MU = (-0.148223, -0.290993, 0.439216, 128.0)
 _MV = (0.439216, -0.367788, -0.071427, 128.0)
 
 
+BLOCK_PX = 22  # target block size of the grids the transitions blow away or sweep clear
 _logged_missing: set[str] = set()
 
 
@@ -26,6 +27,16 @@ def sprite_or_none(name: str, height: int, fallback: str) -> Image.Image | None:
             _logged_missing.add(name)
             logging.getLogger(__name__).error("art %s is missing — %s", name, fallback)
         return None
+
+
+def block_grid(size: tuple[int, int]) -> tuple[int, int]:
+    """(columns, rows) of BLOCK_PX-sized blocks over an image of `size`."""
+    w, h = size
+    return max(1, round(w / BLOCK_PX)), max(1, round(h / BLOCK_PX))
+
+
+def rgb_at(data: bytes, offset: int) -> tuple[int, int, int]:
+    return data[offset], data[offset + 1], data[offset + 2]
 
 
 def ease_in_out(t: float) -> float:

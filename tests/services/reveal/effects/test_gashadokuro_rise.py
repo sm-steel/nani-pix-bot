@@ -97,7 +97,12 @@ def test_gashadokuro_rise_is_deterministic(scene) -> None:
 @pytest.mark.parametrize("size", [(180, 320), (64, 36)])
 def test_gashadokuro_rise_handles_portrait_and_tiny_images(size) -> None:
     clear, front = Image.new("RGB", size, (200, 120, 40)), Image.new("RGB", size, (90, 90, 90))
-    assert _frames(clear, [front])[-1].tobytes() == clear.tobytes()
+    raw = list(gashadokuro_rise.frames(clear, [front]))
+    assert len(raw) > round(gashadokuro_rise.SWEEP_S * encode.FPS)
+    assert {len(frame) for frame in raw} == {size[0] * size[1] * 3}
+    assert raw[0] == front.tobytes()  # the held front, hand still out of sight
+    assert raw[-1] == clear.tobytes()
+    assert raw[len(raw) // 2] not in (raw[0], raw[-1])  # mid-sweep is neither
 
 
 def test_a_missing_hand_still_clears_the_blocks_and_logs_once(monkeypatch, caplog) -> None:
