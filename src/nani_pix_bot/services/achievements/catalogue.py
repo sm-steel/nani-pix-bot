@@ -136,8 +136,8 @@ def _build_run_definitions(runs: Mapping[str, SeasonRun]) -> tuple[Definition, .
         Definition(
             f"{run.run_id}.{a.key}",
             Kind.SEASON,
-            (1,),
-            (a.rarity,),
+            a.tiers,
+            a.tier_rarities,
             a.triggers,
             a.progress,
             hidden=a.hidden,

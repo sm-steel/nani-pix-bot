@@ -3,6 +3,7 @@ import random
 from nani_pix_bot.models.enums import RevealEffect, RevealStatus
 from nani_pix_bot.models.reveal_video import RevealVideo
 from nani_pix_bot.services.reveal import store
+from tests.revealeffect_migration import yokai_migration
 
 
 def test_reserve_creates_the_single_pending_slot(session) -> None:
@@ -67,7 +68,23 @@ def test_picks_cover_every_base_effect_and_both_images() -> None:
     assert {store.pick_image(rng) for _ in range(50)} == {"a", "b"}
 
 
+def test_random_effects_are_exactly_the_five_base_ones() -> None:
+    """Independent of any migration: a future season's transition must not slip in."""
+    assert set(store.RANDOM_EFFECTS) == {
+        RevealEffect.IRIS,
+        RevealEffect.TILE_FLIP,
+        RevealEffect.RIPPLE,
+        RevealEffect.GLITCH,
+        RevealEffect.SHATTER,
+    }
+
+
 def test_a_season_transition_is_never_picked_at_random() -> None:
+    """Every transition the migration lists as a season's (Sakura, Yōkai Night) is a cosmetic
+    only: none may ever join RANDOM_EFFECTS."""
+    mod = yokai_migration()
+    seasonal = {RevealEffect[name] for name in mod._SAKURA + mod._YOKAI}
+    assert seasonal
+    assert not seasonal & set(store.RANDOM_EFFECTS)
     rng = random.Random(2)  # noqa: S311 - deterministic test rng, not crypto
-    picked = {store.pick_effect(rng) for _ in range(500)}
-    assert not picked & {RevealEffect.SPRING_BREEZE, RevealEffect.BLOSSOM_BRANCH}
+    assert not {store.pick_effect(rng) for _ in range(500)} & seasonal

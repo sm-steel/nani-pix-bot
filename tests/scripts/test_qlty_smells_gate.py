@@ -41,7 +41,7 @@ def test_qlty_execution_failure_fails_and_prints_stderr(
         args=["qlty"],
         returncode=1,
         stdout="",
-        stderr="qlty not found on PATH — see CLAUDE.md's Tooling section.",
+        stderr="qlty not found on PATH — run `mise install` (see CLAUDE.md's Tooling section).",
     )
 
     assert qlty_smells_gate.main() == 1

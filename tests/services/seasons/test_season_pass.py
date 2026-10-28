@@ -14,7 +14,7 @@ from nani_pix_bot.models.enums import (
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonXp
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.seasons.definition import Reward
+from nani_pix_bot.seasons.definition import Reward, RewardKind
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.cosmetics import consumables, inventory
 from nani_pix_bot.services.cosmetics.inventory import ItemGrant
@@ -142,7 +142,11 @@ def test_describe_names_each_kind_of_reward(demo) -> None:
 
 
 def _table(text: str) -> list[str]:
-    return [line for line in text.splitlines() if line.startswith("|")]
+    """The tier table: the first run of table lines (objectives have their own)."""
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("|"))
+    end = next((i for i in range(start, len(lines)) if not lines[i].startswith("|")), len(lines))
+    return lines[start:end]
 
 
 def test_view_shows_progress_and_every_tier_as_a_table(session, season, demo) -> None:
@@ -254,3 +258,15 @@ def test_a_run_without_a_premium_track_sells_none(session, season, demo, rich) -
 def test_the_purchase_is_logged(session, season, demo, rich, log_records) -> None:
     season_pass.buy_premium(session, season, demo, rich)
     assert any(r.level == "INFO" and "bought Premium" in r.message for r in log_records)
+
+
+def test_ofuda_and_omamori_rewards_grant_their_consumables(session, season) -> None:
+    run = registry.discover("tests.seasons.fake_runs")["demo_3"]
+    for reward in (Reward(RewardKind.OFUDA), Reward.omamori()):
+        player = session.get(Player, 1)
+        assert season_pass._give(session, season, run, player, reward) is True
+    assert consumables.count(session, 1, ConsumableKind.OFUDA) == 1
+    assert consumables.count(session, 1, ConsumableKind.OMAMORI) == 1
+    assert season_pass.describe(run, Reward(RewardKind.OFUDA), "EN") == "📜 Ofuda"
+    assert season_pass.describe(run, Reward.omamori(), "RU") == "🧿 Омамори"
+    assert season_pass.describe(run, Reward.omamori(), "EN") == "🧿 Omamori"

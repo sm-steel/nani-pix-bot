@@ -7,7 +7,7 @@ profile_card.py."""
 import hashlib
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from functools import lru_cache
 from io import BytesIO
@@ -200,12 +200,23 @@ def _initials_face(name: str, seed: int, size: int) -> Image.Image:
     return face
 
 
+def smooth_mask(
+    size: tuple[int, int], shape: Callable[[ImageDraw.ImageDraw, int], None]
+) -> Image.Image:
+    """An L mask of `size`, `shape` drawn at SUPERSAMPLE times the size (it gets the draw
+    and the factor, and paints 255) and shrunk with LANCZOS, so curved edges are antialiased."""
+    big = Image.new("L", (size[0] * SUPERSAMPLE, size[1] * SUPERSAMPLE), 0)
+    shape(ImageDraw.Draw(big), SUPERSAMPLE)
+    return big.resize(size, Image.Resampling.LANCZOS)
+
+
 def avatar_disc(avatar: bytes | None, name: str, seed: int, size: int) -> Image.Image:
+    """The face cut to a circle with a hard mask. Callers draw it large and shrink it
+    (the shrink antialiases the edge); one that shows it as is does the supersampling."""
     mask = Image.new("L", (size, size), 0)
     ImageDraw.Draw(mask).ellipse((0, 0, size - 1, size - 1), fill=255)
-    face = _photo(avatar, size) or _initials_face(name, seed, size)
-    disc = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    disc.paste(face, (0, 0), mask)
+    disc = (_photo(avatar, size) or _initials_face(name, seed, size)).convert("RGBA")
+    disc.putalpha(mask)
     return disc
 
 

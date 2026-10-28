@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from nani_pix_bot.models.enums import ClueKind, CurrencyReason, EventType, WinMethod
 from nani_pix_bot.services.achievements.definitions import History
-from nani_pix_bot.services.events import LoggedEvent
+from nani_pix_bot.services.events import LoggedEvent, bot_hosted
 from nani_pix_bot.services.matching import MATCH_THRESHOLD
 
 E = EventType
@@ -51,7 +51,7 @@ def comeback(history: History) -> int:
 
 
 def _crowded(event: LoggedEvent) -> bool:
-    return not event.data["hard_mode"] and event.data["distinct_guessers"] >= CROWD_GUESSERS
+    return not bot_hosted(event.data) and event.data["distinct_guessers"] >= CROWD_GUESSERS
 
 
 def crowd_pleaser(history: History) -> int:
@@ -71,7 +71,7 @@ def shopaholic(history: History) -> int:
 
 def explorer(history: History) -> int:
     hosted = history.mine(E.GAME_ACTIVATED)
-    return len({e.data["source"] for e in hosted if not e.data["hard_mode"]})
+    return len({e.data["source"] for e in hosted if not bot_hosted(e.data)})
 
 
 def dethroned(history: History) -> int:

@@ -59,6 +59,19 @@ def enqueue_objective(
     return _add(session, AnnouncementOutbox(kind=OutboxKind.SEASON_OBJECTIVE, payload=payload))
 
 
+def enqueue_hex_notice(session: Session, hex_id: int, notice: str) -> AnnouncementOutbox:
+    """The topic post for a hex going off: notice is "triggered" (the only one; an
+    omikuji self-prank is shown by the omikuji card from /omikuji)."""
+    payload = {"hex_id": hex_id, "notice": notice}
+    return _add(session, AnnouncementOutbox(kind=OutboxKind.HEX_NOTICE, payload=payload))
+
+
+def enqueue_goal(session: Session, kind: OutboxKind, payload: dict) -> AnnouncementOutbox:
+    """A group-goal post: GOAL_MILESTONE {season_id, milestone}, GOAL_REACHED
+    {season_id, players, candles} or GOAL_BOSS {season_id, game_id}."""
+    return _add(session, AnnouncementOutbox(kind=kind, payload=payload))
+
+
 def pending(session: Session, limit: int) -> list[AnnouncementOutbox]:
     stmt = (
         select(AnnouncementOutbox)

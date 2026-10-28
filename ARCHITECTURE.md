@@ -324,7 +324,13 @@ src/nani_pix_bot/
                    # none of these four is individually large:
                    #   guess.py    /guess — the only handler most
                    #               wrong-guess traffic hits
-                   #   correct.py  /correct @user — author override
+                   #   correct.py  /correct [@user] — author override
+                   #   correct_picker.py  /correct's player menu: this
+                   #               round's guessers (#479)
+                   #   correct_award.py  what /correct does once its
+                   #               target is known, typed or picked
+                   #   skip_picker.py  /skip's menu: open the turn or hand
+                   #               it to a player (#479)
                    #   skip.py     /skip [@user] — turn handoff when no
                    #               game is running
                    #   stop.py     /stop — DM-only; starter or a group
@@ -341,7 +347,9 @@ src/nani_pix_bot/
                    #   stage_post.py  the stage-advance announcement,
                    #               shared by /guess and /sharpen (the timers
                    #               can't import commands/)
-    tip.py        # /tip @user <amount> — topic or DM
+    tip/          # /tip [@user] [amount] — topic or DM: command.py,
+                   # the pickers (views.py), taps (callback.py), the send
+                   # and reply (sending.py) (#479)
     leaderboard.py  # /leaderboard — all-time rich table (👑 wins, 💠, 🏆
                    # points, the chosen title in «» after the name) from
                    # players.leaderboard, paged with lb:<page>; topic or DM
@@ -383,15 +391,19 @@ src/nani_pix_bot/
                    # bot_settings.partial_match_min_letters, how many
                    # matched letters a wrong guess needs before part of
                    # the title is revealed (#250)
-    refund.py     # /refund @user — DM-only, admin-gated: a paginated
+    refund.py     # /refund [@user] — DM-only, admin-gated: a paginated
                    # picker of the player's clue purchases, a confirm
                    # step, then services/clues/shop.py's refund() and a
                    # DM to the player (#249)
-    setwinner.py  # /setwinner <game id> @user — DM-only, admin-gated:
+    refund_picker.py  # /refund's menu of players with refundable
+                   # purchases (#479); refund_views.py the purchase list
+    setwinner.py  # /setwinner <game id> [@user] — DM-only, admin-gated:
                    # re-finishes an UNSOLVED game through
                    # services/game/refinish.py, or closes a VOTING game's
                    # vote with that winner through jobs/timers/vote.py's
                    # finalize_vote (#253)
+    setwinner_picker.py  # /setwinner's menu of the game's guessers (#479);
+                   # setwinner_apply.py the shared re-finish/vote close
     shop/         # the private clue shop (#209) — see MECHANICS.md's "Clue
                    # shop". /shop and `/start shop` open it in DM; the 🛒
                    # on stage posts deep-links there
@@ -418,6 +430,9 @@ src/nani_pix_bot/
                    #                 callback prefixes
                    #   share.py      the free once-per-clue "share with the
                    #                 group" action
+                   #   ofuda_button.py  the menu's "Arm an Ofuda" button
+                   #                 (`shop:ofuda:`): arms and redraws the
+                   #                 tapper's menu, privately
     mal_link.py   # /linkmal, /unlinkmal — DM-only, self-service (no
                    # admin gate, unlike language.py below), standalone
                    # entry points for personal MyAnimeList account
@@ -440,6 +455,8 @@ src/nani_pix_bot/
                    # the admin's own IANA timezone (Player.timezone) and
                    # the bot-wide quiet-hours window entered in it — see
                    # MECHANICS.md's "Quiet hours"
+    inventory.py  # /inventory — DM and the game topic: the caller's clue
+                   # tokens and charms (see MECHANICS.md's "/inventory")
     season_shop.py  # /seasonshop — DM-only, group members: the offers,
                    # a preview per offer, then Buy/Back (see MECHANICS.md's
                    # "Season Shop")
@@ -460,15 +477,32 @@ src/nani_pix_bot/
                    # wrapping) and 👥 Players list, edited in place,
                    # tappable only by whoever sent /profile; edit.py the
                    # ✏️ editor (own card, DM only) for what the card
-                   # shows; data.py the prof:… callback data
+                   # shows; data.py the prof:… callback data;
+                   # someone_else_picker.py the 👥 Someone else picker
+                   # (#479); achievements/ has the same for its list
     grant_item.py # /grantitem — admin-gated: give a player an item
                    # (ItemSource.ADMIN)
+    grant_item_picker.py  # /grantitem <item id>'s menu of players (#479);
+                   # grant_item_apply.py the shared grant
+    hexes/        # /hex and /hexes (Halloween): casting (casting.py),
+                   # pickers and taps (views.py, callback.py), public
+                   # notices (notices.py), opt-out (opt_out.py)
+    omikuji.py    # /omikuji (Halloween): today's fortune slip as the
+                   # omikuji moment card (text without the art); a kyō
+                   # prank drawn in a DM also posts the card to the topic
+    candles.py    # /candles (Halloween): the season's 100 Candles counter
+                   # card with the progress, next milestone, every boss
+                   # state and the viewer's bones as its caption (text
+                   # without the art); in the topic and in a DM
     onboarding.py # /start (and `/start shop`, the clue-shop deep link,
                    # `/start ach_<id>`, the achievements one, and
                    # `/start rules`/`/start recent` for standings_dm.py), /help
     helpers/      # shared Telegram-aware plumbing — topic/DM scoping
                    # checks (scoping.py), group-membership + admin checks
-                   # (membership.py), Telegram rich messages (headings,
+                   # (membership.py), the shared player picker (paged
+                   # buttons, opener-only taps: player_picker.py) and the
+                   # 👥 Someone else button logic (someone_else.py) (#479),
+                   # Telegram rich messages (headings,
                    # checklists, tables) sent or edited from markdown,
                    # with md_escape and a plain-text fallback, for the
                    # achievements views and /standings (rich.py), the
@@ -560,7 +594,19 @@ src/nani_pix_bot/
                    #                      around services/game/autostart.py's
                    #                      pure picking logic; see
                    #                      MECHANICS.md's "Bot-initiated
-                   #                      games" section
+                   #                      games" section; every ending
+                   #                      tries boss.py first
+                   #   bot_claim.py       the shared "Nani Pix claims a
+                   #                      game" routine (gathered pick ->
+                   #                      ACTIVE game + first post):
+                   #                      HARD MODE for idle/overthrow, a
+                   #                      normal 5-stage game for the boss
+                   #                      (which drains the outbox first,
+                   #                      announcements.drain)
+                   #   boss.py            the Gashadokuro boss start
+                   #                      (maybe_start_boss) and its
+                   #                      boss-start check job; see
+                   #                      MECHANICS.md's "Haunted rounds"
                    #   mal_link_expiry.py the 10min pending-/linkmal-
                    #                      attempt expiry timer — mirrors
                    #                      setup_abandon.py's shape (a
@@ -578,16 +624,30 @@ src/nani_pix_bot/
                    #                      expired). This job is cleanup,
                    #                      not the guarantee
     post.py       # Post: one announcement as it will be sent (text, card,
-                   # and dm_to for a player's DM instead of the topic)
+                   # dm_to for a player's DM instead of the topic, rich for
+                   # a rich message right after it), and send_one: the card
+                   # or text, then the rich message via send_rich
+    moments.py    # posts a moment card (CharmMoment: whose art, who, title,
+                   # caption) to the game topic with the plain line as the
+                   # caption; a failed avatar/render/send falls back to the
+                   # caption as text. Used by /guess (a forgiven miss) and
+                   # the clue shop (a token-paid clue); DuelMoment for a hex
+                   # cast or block; OmikujiMoment for the /omikuji card
+                   # (drawn once: draw_omikuji_card, post_omikuji_card)
     season_posts.py  # turns the season pass rows (SEASON_TIER DMs,
                    # SEASON_COMPLETE topic line) into Posts
+    goal_posts.py  # the four 100 Candles posts (RENDERERS: GOAL_MILESTONE,
+                   # GOAL_REACHED, GOAL_BOSS as counter card/boss picture
+                   # in the topic, BONE_FOUND as a DM) into Posts
     announcements.py  # the announcement outbox drain: a repeating 20s
                    # job, id order, nothing during quiet hours (rows wait),
                    # cards with the text as caption, albums for 3-10 rows
                    # of one event (chunked at 10, rendered bytes reused),
-                   # avatars cached per drain, a drain stops at the first
+                   # avatars cached per drain, one drain at a time (the
+                   # boss start awaits `drain` too), a drain stops at the first
                    # failed send, a row is given up after 3 attempts
-                   # (season_teaser/start/end render a banner card; a
+                   # (season_teaser/start/end render a banner card, and
+                   # teaser/start add the season guide as Post.rich; a
                    # cancelled season's rows are dropped unsent). A Post
                    # may be a DM (`dm_to`, the season pass notices): a DM
                    # the bot can't send (the player never started it, or
@@ -716,7 +776,10 @@ src/nani_pix_bot/
                    # goes (box: bottom-right, 16% wide), compositing her
                    # last (compose / add_to_png / add_to_jpeg; a failure
                    # leaves the image without her) and the still the reveal
-                   # video overlays (still_png); poses from assets/mascot/
+                   # video overlays (still_png); poses from assets/mascot/;
+                   # every drawing function takes an optional costume key
+                   # (art from assets/mascot/costumes/<key>/<pose>.png; a
+                   # missing file is logged once at ERROR, she is drawn plain)
     pixelate/     # Pillow downscale/upscale pipeline — given raw bytes,
                    # a target width and a PixelAlgorithm, no DB or
                    # PixelStage dependency; callers resolve the width via
@@ -745,7 +808,9 @@ src/nani_pix_bot/
                    #   effects/        one module per effect (iris,
                    #                   tile_flip, ripple, glitch, shatter;
                    #                   the Sakura spring_breeze and
-                   #                   blossom_branch, never
+                   #                   blossom_branch and the Yokai
+                   #                   candle_snuff, night_parade and
+                   #                   gashadokuro_rise, never
                    #                   random: store.RANDOM_EFFECTS;
                    #                   sakura_sprites.py draws the
                    #                   branch, blossom and leaf once)
@@ -764,8 +829,24 @@ src/nani_pix_bot/
                    #                   (DEFAULT_OVERLAY = confetti)
                    #   petals.py       the Sakura win overlays: sakura
                    #                   petals over the badge (petal_drift,
-                   #                   sakura_storm), fading out at the
-                   #                   edges of their area (edge_fade)
+                   #                   sakura_storm)
+                   #   overlay_canvas.py the canvas every non-confetti
+                   #                   overlay is drawn on: the clip area,
+                   #                   fade in/out, edge_fade (a shape
+                   #                   leaving the area dissolves) and the
+                   #                   supersampled frame loop
+                   #                   (render_layers/render)
+                   #   spirits.py      the Halloween win overlays: bats
+                   #                   bursting out of the badge (bat_burst),
+                   #                   spirit flames orbiting above it, pasted
+                   #                   from the 6 hitodama/f*.png sprite
+                   #                   frames (hitodama)
+                   #   bone_rattle.py  the Halloween bone_rattle win overlay:
+                   #                   a skeleton dancing on the badge, jaw
+                   #                   clacking, built from the skeleton/*.png
+                   #                   sprites (skull, jaw, ribcage, pelvis,
+                   #                   bone, hand, foot), bones rotated per
+                   #                   segment from a seeded dance cycle
                    #   store.py        the single reveal_video slot: reserve,
                    #                   mark_ready/mark_failed (guarded by
                    #                   game_id), load, clear
@@ -827,7 +908,7 @@ src/nani_pix_bot/
                    #                random pick, Tenrai fallback), capped
                    #                retry loop, zero DB writes until a
                    #                full pick is in hand — see
-                   #                jobs/timers/autostart.py, the
+                   #                jobs/timers/bot_claim.py, the
                    #                Telegram/DB-aware orchestration layer
                    #                on top of this
     quiet_hours.py  # pure quiet-window math (QuietHours, is_quiet,
@@ -836,7 +917,22 @@ src/nani_pix_bot/
     text.py       # cut_at_line: cut text to a length at a line break,
                    # with a marker (release notes, rich.py's fit)
     shapes.py     # pure vector shapes shared by the stage frames and the
-                   # reveal overlays (the sakura petal outline)
+                   # reveal overlays (the sakura petal outline, and
+                   # bone_outline for bone_border and the skeleton art)
+    easing.py     # smoothstep: the one clamped S-curve the reveal effects,
+                   # overlays and season styles share
+    stage_image.py # redraw_or_keep: runs the stage PNG through a frame,
+                   # season style or haunted twist and, if the drawing raises,
+                   # logs it and posts the stage as it was (frames.apply_frame,
+                   # seasons/styles.apply_style and haunting.apply_twists use it)
+    sprites.py    # the committed RGBA sprite loader (assets/sprites/):
+                   # sprite, sprite_height (cached, scaled to a height),
+                   # silhouette, and sprite_or_none/log_missing, the one
+                   # "missing art is logged once per sprite" path (stdlib
+                   # logging, since the reveal worker has no loguru setup);
+                   # used by the Halloween stage styles, frames and reveal
+                   # effects/overlays, which all render without art that is
+                   # missing
     players.py    # Player lookup/creation, win-count bookkeeping,
                    # leaderboard query — everything that touches only
                    # the Player table (win increments themselves happen
@@ -878,7 +974,15 @@ src/nani_pix_bot/
                    # backgrounds), profile_card.py (the /profile card:
                    # stamps, achievement chips, stats chips), glass.py (its
                    # default gradient and adaptive glass-pixel grid),
-                   # season_card.py (the season teaser/start/end card)
+                   # season_card.py (the season teaser/start/end card),
+                   # moments.py (Halloween moment cards for the game topic:
+                   # charm_card, duel_card/blocked_duel_card; avatar in a
+                   # glowing ring, item art, title and name pills on a
+                   # generated background; JPEG out, no Telegram),
+                   # goal_card.py (the 100 Candles counter card: the run's
+                   # layered goal art, a rising Gashadokuro, a skull pile
+                   # and ten candles, or boss.png alone; a missing file
+                   # raises FileNotFoundError and callers fall back to text)
     economy/      # the currency economy (shown as 💠 pixels) — see MECHANICS.md's "Pixels".
                    # __init__.py deliberately re-exports nothing (import
                    # submodules directly): players.py imports
@@ -962,9 +1066,34 @@ src/nani_pix_bot/
                    #                 SeasonShopPurchase), ShopRefusedError
                    #   modifiers.py  season_of / for_game: a game's season run
                    #                 and its rule modifiers (clue discount)
+                   #   haunting.py   haunted rounds: the roll at activation
+                   #                 (on_activation), the stored twist, a
+                   #                 boss's stacked twists (BOSS_ORDER), the
+                   #                 twist ops on a stage PNG (pipeline:
+                   #                 pixelate -> twists -> style -> frame ->
+                   #                 Nani; the reveal is never twisted) and
+                   #                 the caption lines
+                   #   event_day.py  the Night Parade window in the group's
+                   #                 timezone, is_event_day, the start/sunrise
+                   #                 posts (due_posts/enqueue_due, called from
+                   #                 lifecycle.advance) and next_boundary
+                   #   multipliers.py  haunted/event-day/boss factors on 🪙
+                   #                 and XP awards (guessers only: a boss
+                   #                 has no host, see Game.bot_hosted)
+                   #   group_goal.py the 100 Candles goal: candles (finished
+                   #                 games by weight), contributors,
+                   #                 milestones, settle (the one-time
+                   #                 payout, called from
+                   #                 consumer._season_mechanics) and the
+                   #                 boss: boss_due, mark_boss
+                   #   bones.py      the Bone Collector set: count, and
+                   #                 on_game_won (grant at the set size, the
+                   #                 BONE_FOUND DM); ACTIVE/CLOSING only
                    #   styles.py     season visual styles on a stage image
                    #                 (style_for, apply_style); watercolor.py
-                   #                 is the watercolor drawing
+                   #                 is the watercolor drawing; moonlit.py
+                   #                 the moonlit grade plus its top-corner
+                   #                 art (assets/sprites/moonlit/)
                    #   season_history.py  the History one season's objectives
                    #                 and season achievements read (its games
                    #                 + tips in its dates); season-owned events
@@ -977,6 +1106,22 @@ src/nani_pix_bot/
                    #   goals.py      progress toward and wording of a Goal
                    #   objectives.py check (complete + pay + DM), status
                    #   pass_view.py  the /seasonpass text and its tier lines
+                   #   season_guide.py  the rich-message season guide under
+                   #                 the teaser/start banners: every mechanic
+                   #                 of the run, numbers from the run, links
+                   #                 into the user's guide (GUIDE_URL)
+                   #   omikuji.py    the daily draw: one slip per group-local
+                   #                 day (omikuji_draws), weighted pick,
+                   #                 🪙 + charm payout, a kyō's self-prank
+                   #                 (or spared), slip_png
+                   #   hexes.py      hexes: cast (🪙, cooldown, Omamori
+                   #                 block), triggers (Kappa/Kitsune),
+                   #                 expiry, the omikuji self-prank
+                   #   hex_marks.py  which hex is on a player now, and the
+                   #                 marks prank hexes draw (💀, faceless)
+                   #   hex_targets.py  who a player may hex now, most
+                   #                 active first (the /hex picker)
+                   #   hex_art.py    the hex moment cards' art per kind
                    #   conversion.py leftover 🪙 -> 💠 at the season's end
                    #                 (called from lifecycle._finalize)
                    #   consumer.py   hooks the above into services/
@@ -997,6 +1142,12 @@ src/nani_pix_bot/
                    #                   MAX_TITLE_ID_BYTES
                    #   inventory.py    owns/grant/equip/unequip/equipped and
                    #                   look(session, player, slot)
+                   #   costume.py      Nani Pix's costume on a game's pictures
+                   #                   (for_player, the core resolver; for_game,
+                   #                   for_game_id, for_viewer,
+                   #                   active_run, problems): the starter's
+                   #                   equipped one, else the season's
+                   #                   default, else plain; read live
                    #   flair.py        named(): a name plus its flair emoji
                    #   frames.py       FRAMES and apply_frame
                    #   paper_frames.py the Sakura paper frames, "paper" and
@@ -1005,6 +1156,18 @@ src/nani_pix_bot/
                    #                   seeded
                    #   gold_frame.py   "gold_washi": metallic gold leaf,
                    #                   seigaiha emboss, sakura corners
+                   #   night_frames.py "ofuda_strip": talisman strips with
+                   #                   red seals and ink strokes, laid end
+                   #                   to end; deckled edge, seeded
+                   #                   "bone_border": ivory bones end to end on a
+                   #                   night band, a bone end in each corner
+                   #                   "cobweb": faint, corner-faded webs in three
+                   #                   corners (Nani's stays clear), each from
+                   #                   its own seed; a spider on one
+                   #   lantern_frame.py "lantern_string": chochin lanterns (assets/
+                   #                   sprites/chochin.png) on a sagging cord
+                   #                   along the top, a faint warm glow each;
+                   #                   a missing sprite leaves cord and glow
                    #   stage.py        stage_png: a stage image with the
                    #                   starter's frame
                    #   reveal_choice.py  effect_for: the starter's
@@ -1012,12 +1175,20 @@ src/nani_pix_bot/
                    #   profile.py      build(): banner, title, stamps, counts;
                    #                   roster()/neighbour() for ◀ ▶
                    #   consumables.py  counts of consumables a player holds
-                   #                   (clue tokens): count/add/take
+                   #                   (clue tokens, Ofuda, Omamori):
+                   #                   count/add/take/holdings
+                   #   ofuda.py        arming an Ofuda for a round and spending
+                   #                   it to forgive a miss (arm/forgive,
+                   #                   ArmRefusal); see MECHANICS.md's "Ofuda
+                   #                   and Omamori"
                    #   showcase.py     what the card shows: picks (≤6 stamps,
                    #                   ≤4 achievements, tick order), else the
                    #                   newest seasons / rarest achievements
                    #   previews.py     render + the item_previews cache
                    #   clue_token_icon.py  the clue token's golden-ticket picture
+                   #   card_style.py   the translucent card and name pill the
+                   #                   costume sheet and consumable card share
+                   #   consumable_card.py  a consumable's preview card (art, name)
     settings/     # bot-wide configuration, two persistence shapes:
                    #   bot_settings.py  singleton row — language,
                    #                    games-enabled flag, autostart-
@@ -1054,6 +1225,27 @@ src/nani_pix_bot/
                    # gate and watercolor style. Its art (key visual,
                    # stamp.png, stamp_plus.png, banners/) is in
                    # assets/seasons/sakura_1/
+                   # runs/yokai_1.py is the second (Yōkai Night, Halloween):
+                   # the first run to use every optional mechanic (haunt,
+                   # event day, group goal, hexes, omikuji, bone set), a
+                   # moonlit style, a pumpkin costume, 12 tiers, 14 shop
+                   # cosmetics and 13 run achievements. Its art is in
+                   # assets/seasons/yokai_1/. A run's gate tags (and its
+                   # event day's) must appear in
+                   # tests/seasons/gate_snapshot.json, a frozen copy of the
+                   # genre/theme ids and names, so a wrong id fails the
+                   # run's tests before it is locked (yokai_1 added Horror
+                   # 14, Supernatural 37, Mythology 6, Vampire 32).
+                   # A RunAchievement may be tiered (`tiers` thresholds,
+                   # one `rarities` entry per tier, climbing like a ladder
+                   # inside its season); a run lists at most
+                   # MAX_RUN_ACHIEVEMENTS (16).
+                   # mechanics.py: the optional per-run mechanics (Palette
+                   # and emoji, Haunt, EventDay, GroupGoal, HexRule,
+                   # OmikujiOutcome, BoneSet) as pure data, plus problems(),
+                   # their validation (see MECHANICS.md's "Optional
+                   # mechanics per run"); models/halloween.py holds their
+                   # tables
   release_notes/  # player-facing release notes per language, shown by
                    # /version: release-notes-<lang>.md (the release being
                    # built) and previous-releases-<lang>.md (up to four
@@ -1117,12 +1309,36 @@ assets/          # fonts/ (bundled Noto Sans, OFL), seasons/<run_id>/ (a run's k
                    # same doc), example1/2 (/stageconfig's examples) and
                    # mascot/<pose>.png (Nani Pix's six poses, 384 px wide;
                    # the full-size art lives in the repo-root assets/mascot/)
+                   # and sprites/ (Halloween art for the stage styles,
+                   # frames and reveal effects, loaded by
+                   # services/sprites.py: moonlit/ the two corners of the
+                   # moonlit style, chochin.png the lantern frame's
+                   # lantern, candle.png the candle_snuff candle, parade/
+                   # the night_parade walkers, gashadokuro/hand.png the
+                   # giant skeleton hand, skeleton/ the bone_rattle parts
+                   # and hitodama/f0-f5.png the spirit flame frames)
+                   # and mascot/costumes/<key>/<pose>.png (the same six
+                   # poses per costume, 384 wide and at most 480 tall) and
+                   # costume_sheet_background.jpg (the costume preview
+                   # sheet's night background), item_card_background.jpg
+                   # (the consumable preview card's background) and
+                   # icons/{ofuda,omamori}.png (512 px RGBA art of the two
+                   # Halloween charms, drawn on the consumable preview card)
+                   # and moments/{charm,curse,omikuji}_background.jpg
+                   # (1200x800 backgrounds of the moment cards); under
+                   # seasons/yokai_1/goal/ the 100 Candles art
+                   # (background, skulls_0-4, gashadokuro, candle_lit,
+                   # candle_out and boss.png) drawn by goal_card.py
 migrations/       # Alembic migrations
 tests/            # mirrors src/ layout; tests/docs/ guards the user's guide
                    # (EN/RU page parity, every command in its command table)
 scripts/          # one-off / operational scripts: qlty_smells_gate.py (pre-commit),
                    # gen_docs_stages.py and gen_docs_cards.py (the guide's
-                   # pixelation-stage images and example achievement cards)
+                   # pixelation-stage images and example achievement cards;
+                   # gen_docs_cards.py draws each season run's cards from a
+                   # `DocsRun` entry in DOCS_RUNS: registry id, file slug,
+                   # profile title, run achievement and made-up dates, so a
+                   # new run adds one entry, not new code)
 docs/site/        # the user's guide (Astro Starlight, EN + RU), published to
                    # GitHub Pages by docs.yml together with mal-callback.html
 Dockerfile, docker-compose.yml   # bot + mariadb, see "Infrastructure" above
@@ -1382,7 +1598,7 @@ erDiagram
 | Table | Status | Purpose |
 |---|---|---|
 | `players` | v1 | Telegram user id, opportunistically-captured `username`, `wins` counter (feeds `/leaderboard`), `currency` (v7: the 💠 pixel balance, `NOT NULL` with `server_default="0"` because the table already had live rows; only `services/economy/wallet.py` changes it, always together with a `currency_transfers` row), and an optional IANA `timezone` (set via `/timezone`, used to interpret that admin's `/quiethours` times). |
-| `games` | v1 | One row per round. `status` is `SETUP` (starter is picking/confirming the anime in DM) → `ACTIVE` (posted to the group, guessing open) → optionally `VOTING` (hard mode only: the round ran out with no correct guess but at least one guess, and the group is voting — see `MECHANICS.md`'s "HARD MODE vote") → `WON`/`UNSOLVED` (terminal). `vote_deadline_at` (nullable) is when the vote closes, the absolute deadline `jobs/timers/vote.py` re-arms from on every restart; `vote_message_id` (nullable) is the ballot message whose buttons are removed on close. `source` (`"anilist"`/`"shikimori"`/`"tenrai"`/`"tmdb"`/`"manual"`) records which identification method was used; `anilist_id`/`shikimori_id`/`tenrai_id`/`tmdb_id` are one nullable column per provider — at most one is ever set from identification, but a screenshot cross-search (see below) can also populate one of these even when that provider wasn't the identification source. `setup_step` (`PICKING_METHOD`/`PICKING_SCREENSHOT`/`AWAITING_PHOTO_CHANGE`/`AWAITING_SYNONYM`/`ASKING_NUMBERS`/`PICKING_ALIASES`/`CONFIRMING`) tracks exactly where in the multi-step DM setup flow the starter is — only meaningful while `status` is `SETUP`, and (like everything else in that flow) derived from the DB rather than in-memory state, so a restart mid-edit resolves correctly. `pixel_algorithm` (`NEAREST`/`BOX`/`MEDIAN`/`MODE`/`LANCZOS`, defaulting to `MEDIAN`) is how each pixelation block's colour is chosen — picked by the starter from the confirmation preview, and stored per game rather than read from a shared setting because stages 2-5 are rendered much later and from elsewhere, so a mid-round change to a shared setting would make a round's later stages look unlike the ones already posted. `setup_deadline` (`created_at + 1h`) is when the setup-abandon timer fires if the row is still `SETUP` — see `MECHANICS.md`'s "Starting a game". `current_stage` tracks which pixelation level is currently shown (`STAGE_1`→`STAGE_2`→`STAGE_3`→`STAGE_4`→`STAGE_5`); `wrong_guess_count` resets to 0 each time the stage advances, while `total_guess_count` never resets (gates `/correct` on at least one real attempt). `inactivity_nudge_at`/`inactivity_advance_at` are the absolute deadlines for the 3h-nudge/6h-auto-advance inactivity clock, reset on every `/guess` — see `MECHANICS.md`'s "Inactivity" section. `original_image` holds the current game's screenshot as raw bytes directly, rather than a Telegram file_id — deferred-loaded (SQLAlchemy `deferred()`) so routine queries (status checks, the `/guess` hot path) don't pull a multi-hundred-KB blob every time; cleared once the reveal message (win or unsolved) is confirmed sent — see `MECHANICS.md`'s "Cleanup" note; nothing after a game ends needs to re-fetch the screenshot. `hard_mode`/`hard_mode_turn`/`hard_mode_image_a`/`hard_mode_image_b` are populated only for bot-autostarted games (see `MECHANICS.md`'s "HARD MODE" section) — `hard_mode` flags the row as one, `hard_mode_turn` is the 1-or-2 turn it's currently on (a plain nullable int, not a new enum: no admin config, no third value), and `hard_mode_image_a`/`_b` (both deferred-loaded like `original_image`) hold the one screenshot pair played across both turns. `hard_mode_clue_discount` (v9, `NOT NULL`, default 0) is the HARD MODE clue-shop discount in percent, fixed by `jobs/timers/autostart.py` from `hard_mode.next_clue_discount` (the streak of unsolved HARD MODE rounds) when the bot starts the round, so the number its first post announces never shifts; `0` for a normal game, and `services/clues/shop.py`'s `price` ignores it there. For these rows, `current_stage` and `original_image` stay `NULL` instead — a HARD MODE game never enters `state.py`'s normal PixelStage progression, so those columns have nothing to hold. `screenshot_source` and `screenshot_picker_provider` (both nullable, both `"shikimori"`/`"tenrai"`/`"tmdb"`) are two separate meanings that used to share one column, which is what let a genuine upload delete an identification provider id and let text typed at a same-provider gallery be read as a search query: `screenshot_source` is **image provenance** — which provider's `*_id` column is currently backing `original_image`, `null` for a genuine upload or no image yet, written only where the bytes themselves are (`commands/dm_start/screenshot_gallery.py`'s pick) — while `screenshot_picker_provider` is **picker state** — which provider the screenshot picker is currently *resolving* an anime for, i.e. which provider a typed DM message would be searched against, written by whichever screen the starter lands on, since only that screen knows whether anything is left to resolve: the screen a source-button *tap* lands on (the tap handler itself deliberately writes nothing — it does not yet know whether it will end on a gallery or a failure), any failure screen, and any gallery page that carries "Wrong anime? Search again" (every page past the first, and every cross-provider one) all set it, while a same-provider gallery and a finished pick clear it. A screen that draws that button without setting it is a bug — the button itself re-arms the column when *tapped*, but a typed correction has only the column to route on. Re-entering the picker from a later step (the "Search again" prompt reached from a stale gallery message after the preview went up) has to re-assert `setup_step` alongside it, or `search_text_handler` never reaches the branch that reads the column at all. `search_text_handler` routes on the picker column; the preview's "Change image" reads the provenance one. `turn_received_at` (v7, nullable) is the starter's `turn_state.turn_received_at` as of game creation — `null` if the turn was open to anyone; a game created within 1h of a non-null value earns the prompt-turn bonus (`services/economy/earning.py`). `shown_screenshot_urls` (v8, nullable JSON list) holds the screenshot URL(s) currently in play — the one a gallery pick or a bot autostart used, or both URLs of a HARD MODE pair; `null` for an uploaded photo — so the clue shop's extra-screenshot clue never offers one the group is already looking at. `numbers_matter` (nullable bool) is the creator's "numbers count" answer — `null` until asked or switched, read as false; when true, guess matching and the text clues keep this game's numbers (see `MECHANICS.md`'s "Guess matching"). `alias_suggestions` (nullable JSON, `[{"text", "selected"}]`) holds the extra names the background search (`commands/dm_start/aliases.py`) found on the other providers for the creator's checkbox step — `null` while it hasn't reported, `[]` once it found nothing or the creator is done; both are reset by `clear_identification`. Only one row may be `SETUP`/`ACTIVE`/`VOTING` at a time, enforced in `services/game/state.py`, not a DB constraint. |
+| `games` | v1 | One row per round. `status` is `SETUP` (starter is picking/confirming the anime in DM) → `ACTIVE` (posted to the group, guessing open) → optionally `VOTING` (hard mode only: the round ran out with no correct guess but at least one guess, and the group is voting — see `MECHANICS.md`'s "HARD MODE vote") → `WON`/`UNSOLVED` (terminal). `vote_deadline_at` (nullable) is when the vote closes, the absolute deadline `jobs/timers/vote.py` re-arms from on every restart; `vote_message_id` (nullable) is the ballot message whose buttons are removed on close. `source` (`"anilist"`/`"shikimori"`/`"tenrai"`/`"tmdb"`/`"manual"`) records which identification method was used; `anilist_id`/`shikimori_id`/`tenrai_id`/`tmdb_id` are one nullable column per provider — at most one is ever set from identification, but a screenshot cross-search (see below) can also populate one of these even when that provider wasn't the identification source. `setup_step` (`PICKING_METHOD`/`PICKING_SCREENSHOT`/`AWAITING_PHOTO_CHANGE`/`AWAITING_SYNONYM`/`ASKING_NUMBERS`/`PICKING_ALIASES`/`CONFIRMING`) tracks exactly where in the multi-step DM setup flow the starter is — only meaningful while `status` is `SETUP`, and (like everything else in that flow) derived from the DB rather than in-memory state, so a restart mid-edit resolves correctly. `pixel_algorithm` (`NEAREST`/`BOX`/`MEDIAN`/`MODE`/`LANCZOS`, defaulting to `MEDIAN`) is how each pixelation block's colour is chosen — picked by the starter from the confirmation preview, and stored per game rather than read from a shared setting because stages 2-5 are rendered much later and from elsewhere, so a mid-round change to a shared setting would make a round's later stages look unlike the ones already posted. `setup_deadline` (`created_at + 1h`) is when the setup-abandon timer fires if the row is still `SETUP` — see `MECHANICS.md`'s "Starting a game". `current_stage` tracks which pixelation level is currently shown (`STAGE_1`→`STAGE_2`→`STAGE_3`→`STAGE_4`→`STAGE_5`); `wrong_guess_count` resets to 0 each time the stage advances, while `total_guess_count` never resets (gates `/correct` on at least one real attempt). `inactivity_nudge_at`/`inactivity_advance_at` are the absolute deadlines for the 3h-nudge/6h-auto-advance inactivity clock, reset on every `/guess` — see `MECHANICS.md`'s "Inactivity" section. `original_image` holds the current game's screenshot as raw bytes directly, rather than a Telegram file_id — deferred-loaded (SQLAlchemy `deferred()`) so routine queries (status checks, the `/guess` hot path) don't pull a multi-hundred-KB blob every time; cleared once the reveal message (win or unsolved) is confirmed sent — see `MECHANICS.md`'s "Cleanup" note; nothing after a game ends needs to re-fetch the screenshot. `hard_mode`/`hard_mode_turn`/`hard_mode_image_a`/`hard_mode_image_b` are populated only for bot-autostarted games (see `MECHANICS.md`'s "HARD MODE" section) — `hard_mode` flags the row as one, `hard_mode_turn` is the 1-or-2 turn it's currently on (a plain nullable int, not a new enum: no admin config, no third value), and `hard_mode_image_a`/`_b` (both deferred-loaded like `original_image`) hold the one screenshot pair played across both turns. `hard_mode_clue_discount` (v9, `NOT NULL`, default 0) is the HARD MODE clue-shop discount in percent, fixed by `jobs/timers/bot_claim.py` from `hard_mode.next_clue_discount` (the streak of unsolved HARD MODE rounds) when the bot starts the round, so the number its first post announces never shifts; `0` for a normal game, and `services/clues/shop.py`'s `price` ignores it there. For these rows, `current_stage` and `original_image` stay `NULL` instead — a HARD MODE game never enters `state.py`'s normal PixelStage progression, so those columns have nothing to hold. `screenshot_source` and `screenshot_picker_provider` (both nullable, both `"shikimori"`/`"tenrai"`/`"tmdb"`) are two separate meanings that used to share one column, which is what let a genuine upload delete an identification provider id and let text typed at a same-provider gallery be read as a search query: `screenshot_source` is **image provenance** — which provider's `*_id` column is currently backing `original_image`, `null` for a genuine upload or no image yet, written only where the bytes themselves are (`commands/dm_start/screenshot_gallery.py`'s pick) — while `screenshot_picker_provider` is **picker state** — which provider the screenshot picker is currently *resolving* an anime for, i.e. which provider a typed DM message would be searched against, written by whichever screen the starter lands on, since only that screen knows whether anything is left to resolve: the screen a source-button *tap* lands on (the tap handler itself deliberately writes nothing — it does not yet know whether it will end on a gallery or a failure), any failure screen, and any gallery page that carries "Wrong anime? Search again" (every page past the first, and every cross-provider one) all set it, while a same-provider gallery and a finished pick clear it. A screen that draws that button without setting it is a bug — the button itself re-arms the column when *tapped*, but a typed correction has only the column to route on. Re-entering the picker from a later step (the "Search again" prompt reached from a stale gallery message after the preview went up) has to re-assert `setup_step` alongside it, or `search_text_handler` never reaches the branch that reads the column at all. `search_text_handler` routes on the picker column; the preview's "Change image" reads the provenance one. `turn_received_at` (v7, nullable) is the starter's `turn_state.turn_received_at` as of game creation — `null` if the turn was open to anyone; a game created within 1h of a non-null value earns the prompt-turn bonus (`services/economy/earning.py`). `shown_screenshot_urls` (v8, nullable JSON list) holds the screenshot URL(s) currently in play — the one a gallery pick or a bot autostart used, or both URLs of a HARD MODE pair; `null` for an uploaded photo — so the clue shop's extra-screenshot clue never offers one the group is already looking at. `numbers_matter` (nullable bool) is the creator's "numbers count" answer — `null` until asked or switched, read as false; when true, guess matching and the text clues keep this game's numbers (see `MECHANICS.md`'s "Guess matching"). `alias_suggestions` (nullable JSON, `[{"text", "selected"}]`) holds the extra names the background search (`commands/dm_start/aliases.py`) found on the other providers for the creator's checkbox step — `null` while it hasn't reported, `[]` once it found nothing or the creator is done; both are reset by `clear_identification`. Only one row may be `SETUP`/`ACTIVE`/`VOTING` at a time, enforced in `services/game/state.py`, not a DB constraint. |
 | `turn_state` | v1 | Single row (`id=1`). `turn_received_at` (v7, nullable) is set when the turn is handed to a *different* specific player (a win, or `/skip @user`; re-designating the same player keeps the old value) and cleared (`null`) when the turn is opened to anyone, so an open turn earns no prompt bonus; unlike `turn_opened_at` it is not cleared at game start, because `create_setup_game` copies it onto `games.turn_received_at` for the prompt-turn currency bonus. `next_starter_id` is who's designated to start the next game; `null` means anyone can. Set to the winner on a `WON` game, changed by `/skip`, otherwise left alone (an `UNSOLVED` game doesn't force a turn on anyone). `reminder_at`/`expiry_at` are the win-turn 15min-reminder/12h-expiry absolute deadlines — set alongside `next_starter_id` whenever it becomes a real user, nulled when it's opened back up (see `MECHANICS.md`'s "Turn handoff"). `turn_opened_at`/`autostart_deadline_at` track the 24h idle-autostart backstop: `turn_opened_at` is when the turn most recently became open to anyone with no game running, `autostart_deadline_at` is `turn_opened_at + 24h`, the absolute deadline `jobs/timers/autostart.py`'s `schedule_idle_autostart()` re-arms from on every restart; both are `null` whenever a specific player is designated or a game is running — see `MECHANICS.md`'s "Bot-initiated games" section. |
 | `bot_settings` | v2 | Single row (`id=1`). `language` (`"EN"`/`"RU"`) is the bot's current reply language, changed only via `/language` by a group admin/owner — see CLAUDE.md's "Language / i18n". `games_enabled` gates whether a new game may be *started*, changed via `/setgamesenabled` — see `MECHANICS.md`'s "Pixelation stages" section. `pinned_message_id` is the Telegram `message_id` of whatever "current image" is currently pinned in the game topic — a singleton pointer rather than a per-`games` column since the pin is meant to persist across games (the next game's first post naturally supersedes it); see `MECHANICS.md`'s "Pixelation stages" section. `autostart_enabled` (default `false`, opt-in) gates whether the bot may start a game itself — idle auto-start or "overthrow" — changed via `/setautostart`, checked in addition to (not instead of) `games_enabled`; see `MECHANICS.md`'s "Bot-initiated games" section. `quiet_start`/`quiet_end`/`quiet_timezone` (all `null` = off, the default) hold the quiet-hours window as local wall-clock times plus the IANA zone they were entered in, set via `/quiethours`; see `MECHANICS.md`'s "Quiet hours" section. `partial_match_min_letters` (v9, default 4) is how many letters a wrong guess's matched words must add up to before part of the title is revealed (`0` turns partial reveals off), changed via `/partialmatch`; see `MECHANICS.md`'s "Partial matches". |
 | `stage_config` | v5 | One row per `PixelStage` (5 total, `stage` is the primary key). `target_width`/`wrong_guess_limit` are the admin-configurable pixelation width and wrong-guess allowance for that stage, seeded with defaults by migration and changed live via `/setstageconfig`/`/setstage` — see `services/settings/stage_config.py` and `MECHANICS.md`'s "Pixelation stages" section. |
@@ -1396,7 +1612,7 @@ erDiagram
 | `event_log` | v10 | Append-only domain events, the data source for achievements and deliberately not achievement-specific. `event_type` is an `EventType` stored as a plain string (a new type needs no migration), `actor_id`/`subject_id` are plain bigints (no FK) and `game_id` a plain int with **no** FK like `currency_transfers.game_id`, so rows outlive a `/stop`ped game. `data` is type-specific JSON. Indexed on `(event_type, actor_id)`, `(event_type, subject_id)`, `game_id` and `occurred_at`. It starts empty on deploy, which is the no-backfill rule. Written only through `services/events.py::emit`. Season Phase 5 adds three types: `item_gained` (a cosmetic granted, any source), `pass_completed` (a pass track finished; `premium`, and `first` for the first free completion in a season) and `season_ended` (one per ranked player when a season finalizes). `game_won` facts also carry `gate_tags`. The three season-owned types have no season game, so the season history scope admits them by type and readers filter on `data.season_id`. |
 | `achievement_grants` | v10 | One achievement tier a player unlocked: `key`, `tier`, `rarity`, `reward`, `points`, the ledger `transfer_id` and `granted_at`. Unique on (`player_id`, `key`, `tier`, `period_key`). `period_key` is `NOT NULL DEFAULT ''` (`''` = not a period grant) because MariaDB treats NULLs as distinct in a unique index, which would let a champion tier be granted twice. |
 | `achievement_claims` | v10 | The single holder of a group-unique tier (Pioneer, Milestone Keeper N). The primary key (`key`, `tier`) is what makes a second holder impossible. There is no timestamp: the grant row has it. |
-| `announcement_outbox` | v10 | A group post owed but not yet sent (`kind` `unlock`/`period_summary`, JSON `payload`), written in the same transaction as what it announces. `batch_id` (the causing event) groups unlocks into one album, `attempts` counts failed sends (given up at 3), `posted_at` is NULL until delivered. Posted in id order by `jobs/announcements.py`. |
+| `announcement_outbox` | v10 | A post owed but not yet sent, to the group topic or (for a few kinds) a player's DM, written in the same transaction as what it announces. `kind` is an `OutboxKind` as a plain string: `unlock` and `period_summary` (achievements and champions); `season_teaser`, `season_start`, `season_end`, `season_tier`, `season_pass_done` and `season_objective` (seasons); `event_day_start`/`event_day_end` (the Halloween event day); `hex_notice` (a hex going off, or an omikuji self-prank); `goal_milestone`, `goal_reached` and `goal_boss` (the 100 Candles goal and its boss game); and `bone_found` (a Bone Collector find). `payload` is JSON. `batch_id` (the causing event) groups unlocks into one album, `attempts` counts failed sends (given up at 3), `posted_at` is NULL until delivered. Posted in id order by `jobs/announcements.py`. |
 | `period_results` | v10 | One player's place on a closed period's podium (`period_type`, `period_key`, `rank`, `player_id`, `score`, `wins`), frozen when the period closed. `rank` is the competition rank, so tied players share it. Unique on (`period_type`, `period_key`, `player_id`). |
 | `period_state` | v10 | One row per period type (`period_type` PK): `next_end`, the UTC end of the next period to close. Created at the first start with the running period, so nothing before the deploy is scored; a late start catches up from it. |
 | `players` additions | v10 | `title_key` (the title chosen with `/title`) and `first_name` (kept current by `remember_user`, shown when there is no @username). |
@@ -1416,11 +1632,18 @@ erDiagram
 | `clue_author_screenshots` | #450 | One screenshot of a game's author's clue list, built on the setup preview's clue panel: `game_id` (FK, `ON DELETE CASCADE`, indexed), `source` (a `Provider` as a plain string, Shikimori/TMDB, or `NULL` for an upload), `url` (`NULL` for an upload), `image` (the full-quality original, deferred, set to `NULL` after the reveal; the source of the clue's pixelation and of its handout row's copy), `fingerprint` (64-bit perceptual hash, signed) and `created_at`. At most 10 per game and no two of the same frame, enforced by `services/clues/author_list.py::add`, not by the DB. The shop sells from it by `games.clue_screenshot_mode`; an entry's handout key, written as `screenshot_url` on its `clue_purchases` and `clue_screenshot_handouts` rows, is its `url`, or `author:<id>` for an upload. Emptied by a re-identification during setup, deleted with the game. Written only via `services/clues/author_list.py`. |
 | `games.clue_screenshot_mode` | #450 | `random` (default, also the server default, so older rows read as Random) / `author` / `both`: where the *Extra screenshot* clue gets its pictures (a `ClueScreenshotMode` as a plain string). Chosen on the preview's clue panel, frozen at Confirm; always `random` for autostart and HARD MODE games. `setup_step` also gains `AWAITING_CLUE_PHOTO`, the wait for the author's clue upload. |
 | `clue_purchases` token columns | v12 | `token_used` (the clue was paid with a clue token) and `transfer_id` now nullable: a token purchase has no ledger charge. A failed token delivery gives the token back. |
-| `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string: `admin`, `pass` for a pass reward, or `shop` for a Season Shop purchase), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
+| `owned_items` | v12 | A season cosmetic a player owns: `player_id` (FK), `item_id` (`<run_id>/<slot>.<name>`, resolved through `seasons/registry.py`), `source` (an `ItemSource` as a plain string: `admin`, `pass` for a pass reward, `shop` for a Season Shop purchase, `goal` for the 100 Candles reward every contributor gets, or `bones` for a completed bone set), `season_id` (nullable FK), `acquired_at`. Unique on (`player_id`, `item_id`). Written only by `services/cosmetics/inventory.py::grant`. |
 | `equipped_items` | v12 | The item equipped per slot: primary key (`player_id`, `slot`; `slot` a `CosmeticSlot` as a plain string), `item_id`. One item per slot, so equipping replaces. |
 | `item_previews` | v12 | The Telegram `file_id` of an item's rendered preview (`item_id` + `lang` PK, `kind` a `PreviewKind`, `photo` or `video` since text previews are never stored, `created_at`), so a preview is uploaded once per language. `item_id` holds `previews.cache_key`: the item id, or `<item id>@<player id>` for a win effect (drawn on its viewer); a banner (drawn on the viewer's live card) is never stored. Emptied by `d7a3f1c9b5e2` when the sample picture changed. |
 | `players.title_key` item encoding | v12 | Besides an achievement title key, `title_key` may be `item:<item id>`, a season title item (`services/achievements/titles.py`). Title item ids are at most 56 bytes (`looks.problems`) so they fit `/title`'s callback data. |
 | `profile_showcase` | v12 | What a player picked to show on their `/profile` card (#413): `player_id` + `kind` (`ShowcaseKind`: `stamp` or `achievement`) + `ref` PK (a season run id, or an `achievement_grants.id` as text) and `position` (tick order). At most 6 stamps and 4 achievements (`services/cosmetics/showcase.py`). A pick that no longer resolves is skipped. With no pick resolving, the card shows the newest seasons and rarest achievements. |
+| `used_menus` | #479 | A menu message whose one action already ran: (`chat_id`, `message_id`) PK. `services/used_menus.py::claim` inserts it in the same transaction as the picker's action, so a second tap finds it claimed and does nothing, and a rolled-back action releases it. Never pruned. |
+| `pass_votes` | #428 | One player's `/pass` vote in one round: `game_id` (FK, `ON DELETE CASCADE`), `player_id`, `stage` (the PixelStage number or hard-mode turn), unique per (game, player, stage), so a stage advance resets the tally without deleting rows. |
+| `hexes` | Halloween P1 | One hex a player cast on another in a season: `season_id` (FK), `kind` (a `HexKind` as a plain string), `caster_id` and `target_id` (FKs to `players`), `cast_at`, `expires_at` (pranks only), `resolved_at`/`outcome` (set when it is spent or blocked) and `game_id` (FK, the game a kappa/kitsune triggered on). Indexed on (`target_id`, `resolved_at`) and (`caster_id`, `kind`, `cast_at`) for the target's open hexes and the caster's cooldown. Written by `commands/hexes/`. |
+| `armed_ofuda` | Halloween P1 | An ofuda a player armed for one game: primary key (`player_id`, `game_id`), so at most one per player per game, and `armed_at`. Written by `services/cosmetics/ofuda.py::arm` (the shop's Arm button) and deleted when the Ofuda forgives a miss. |
+| `omikuji_draws` | Halloween P1 | A player's omikuji draw: `season_id`, `player_id`, `local_date`, `outcome` (an `OmikujiKind` as a plain string) and `drawn_at`; unique on (`season_id`, `player_id`, `local_date`) so a day has one draw. Written only by `services/seasons/omikuji.py::draw`. |
+| `games` Halloween columns | Halloween P1 | `haunt_twist` (nullable string, a `HauntTwist`: set when the game is haunted), `boss_game` and `event_day` (booleans, default false). All three are written from Phase 3 and Phase 6. |
+| `players.hex_opt_out` | Halloween P1 | Boolean, default false: the player refuses hexes cast on them. Read by `commands/hexes/`. |
 
 ### Achievements
 

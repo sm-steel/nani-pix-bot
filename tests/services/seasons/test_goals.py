@@ -34,6 +34,28 @@ def test_wins_with_a_stage_limit() -> None:
     assert goals.progress(Goal(GoalKind.WINS, 3), history) == 4
 
 
+def test_haunted_wins_count_only_haunted_wins() -> None:
+    history = _history(
+        ev(E.GAME_WON, 1, haunted=True),
+        ev(E.GAME_WON, 1, haunted=False),
+        ev(E.GAME_WON, 1, haunted=True, hard_mode=True),
+    )
+    assert goals.progress(Goal(GoalKind.HAUNTED_WINS, 3), history) == 2
+
+
+def test_haunted_wins_trigger_on_a_win() -> None:
+    assert goals.TRIGGERS[GoalKind.HAUNTED_WINS] == (E.GAME_WON,)
+
+
+def test_old_win_events_without_the_fact_are_not_haunted() -> None:
+    history = _history(ev(E.GAME_WON, 1, stage=1, hard_mode=False))
+    assert goals.progress(Goal(GoalKind.HAUNTED_WINS, 1), history) == 0
+
+
+def test_describe_haunted_wins() -> None:
+    assert goals.describe(Goal(GoalKind.HAUNTED_WINS, 3), "EN") == "Win 3 haunted rounds"
+
+
 def test_guessed_in_counts_games_not_guesses() -> None:
     history = _history(ev(E.GUESS, 1, game=1), ev(E.GUESS, 1, game=1), ev(E.GUESS, 1, game=2))
     assert goals.progress(Goal(GoalKind.GUESSED_IN, 5), history) == 2
@@ -55,8 +77,25 @@ def test_shared_clues_and_days() -> None:
     assert goals.progress(Goal(GoalKind.DAYS_PLAYED, 4), history) == 2
 
 
+def test_hexes_blocked_counts_my_blocks() -> None:
+    history = _history(
+        ev(E.HEX_BLOCKED, 1, 2),
+        ev(E.HEX_BLOCKED, 1, 3),
+        ev(E.HEX_BLOCKED, 2, 1),
+    )
+    assert goals.progress(Goal(GoalKind.HEXES_BLOCKED, 3), history) == 2
+
+
+def test_hexes_blocked_trigger_on_a_block() -> None:
+    assert goals.TRIGGERS[GoalKind.HEXES_BLOCKED] == (E.HEX_BLOCKED,)
+
+
+def test_describe_hexes_blocked() -> None:
+    assert goals.describe(Goal(GoalKind.HEXES_BLOCKED, 1), "EN") == "Block 1 hex"
+
+
 def test_every_kind_has_triggers_and_a_description() -> None:
-    for kind in GoalKind:
+    for kind in set(GoalKind):
         assert goals.TRIGGERS[kind]
         for lang in ("EN", "RU"):
             stage = 2 if kind is GoalKind.WINS else None
@@ -106,6 +145,16 @@ _RU_PLURALS: dict[tuple[GoalKind, int | None], tuple[str, ...]] = {
         "Поделитесь подсказкой 5 раз",
     ),
     (GoalKind.TIPS, None): ("Дайте чаевые 1 раз", "Дайте чаевые 2 раза", "Дайте чаевые 5 раз"),
+    (GoalKind.HAUNTED_WINS, None): (
+        "Победите в 1 раунде \u0441 призраками",
+        "Победите в 2 раундах \u0441 призраками",
+        "Победите в 5 раундах \u0441 призраками",
+    ),
+    (GoalKind.HEXES_BLOCKED, None): (
+        "Отразите 1 порчу",
+        "Отразите 2 порчи",
+        "Отразите 5 порчей",
+    ),
     (GoalKind.DAYS_PLAYED, None): (
         "Играйте 1 день",
         "Играйте 2 разных дня",

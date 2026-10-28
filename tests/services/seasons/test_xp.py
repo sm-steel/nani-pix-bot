@@ -337,3 +337,20 @@ def test_a_hard_mode_setwinner_pays_no_host_and_logs_no_top_up(
     host = bot_tagged_game.starter_id
     assert _game_award(session, bot_tagged_game.id, host, XpSource.HOST) == (0, 0)
     assert _top_up_lines(log_records) == []
+
+
+def test_a_boss_win_multiplies_guesser_xp_and_pays_no_host(
+    session, haunted_game, emit_win, log_records
+) -> None:
+    demo3 = registry.get("demo_3")
+    assert demo3 is not None
+    assert demo3.group_goal is not None
+    haunted_game.boss_game = True
+    emit_win(winner=1, stage=3)
+    totals = {p.player_id: p.xp for p in xp.standings(session, haunted_game.season_id)}
+    # Nani Pix started the boss: no human host, so no host XP.
+    assert totals == {1: demo3.xp.win_by_stage[2] * demo3.group_goal.boss_xp_multiplier}
+    lines = [r for r in log_records if r.level == "INFO" and "season XP" in r.message]
+    assert {r.extra["recipient_id"]: r.extra["multiplier"] for r in lines} == {
+        1: demo3.group_goal.boss_xp_multiplier,
+    }

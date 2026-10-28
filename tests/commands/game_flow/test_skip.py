@@ -6,6 +6,7 @@ from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import skip as skip_command_module
+from nani_pix_bot.jobs import timers
 from nani_pix_bot.models.enums import GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
@@ -87,7 +88,9 @@ async def test_skip_command_rejects_when_it_is_not_their_turn(session_factory) -
     assert "turn" in update.message.reply_text.await_args.args[0].lower()
 
 
-async def test_skip_command_bare_opens_the_turn(session_factory) -> None:
+async def test_skip_command_bare_shows_the_menu_and_changes_nothing(session_factory) -> None:
+    """/skip alone now shows a menu; its Open to everyone row does what it
+    used to do (see test_skip_picker.py)."""
     with session_factory() as session:
         session.add(Player(telegram_user_id=1))
         session.add(TurnState(id=1, next_starter_id=1))
@@ -103,69 +106,10 @@ async def test_skip_command_bare_opens_the_turn(session_factory) -> None:
     with session_factory() as session:
         turn_state = session.get(TurnState, 1)
         assert turn_state is not None
-        assert turn_state.next_starter_id is None
+        assert turn_state.next_starter_id == 1
     update.message.reply_text.assert_awaited_once()
-
-
-async def test_skip_opens_the_turn_even_when_the_confirmation_reply_times_out(
-    session_factory,
-) -> None:
-    with session_factory() as session:
-        session.add(Player(telegram_user_id=1))
-        session.add(TurnState(id=1, next_starter_id=1))
-        session.commit()
-
-    update = _make_update(user_id=1, args=[])
-    update.message.reply_text = AsyncMock(side_effect=TimedOut())
-    context = _make_context(session_factory, args=[])
-
-    await skip_command_module.skip_command(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )  # should not raise
-
-    with session_factory() as session:
-        turn_state = session.get(TurnState, 1)
-        assert turn_state is not None
-        assert turn_state.next_starter_id is None
-
-
-async def test_skip_command_bare_cancels_the_turn_timers(session_factory) -> None:
-    with session_factory() as session:
-        session.add(Player(telegram_user_id=1))
-        session.add(TurnState(id=1, next_starter_id=1))
-        session.commit()
-
-    update = _make_update(user_id=1, args=[])
-    context = _make_context(session_factory, args=[])
-
-    await skip_command_module.skip_command(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )
-
-    # cancel_turn_timers looks up both turn-timer job names; a third
-    # lookup (idle-autostart) also happens now via schedule_idle_autostart's
-    # own cancel-then-reschedule, so this checks the specific names rather
-    # than a raw call count.
-    names = [call.args[0] for call in context.job_queue.get_jobs_by_name.call_args_list]
-    assert names.count(skip_command_module.timeout_module.TURN_REMINDER_JOB_NAME) == 1
-    assert names.count(skip_command_module.timeout_module.TURN_EXPIRY_JOB_NAME) == 1
-
-
-async def test_skip_command_bare_schedules_idle_autostart(session_factory) -> None:
-    with session_factory() as session:
-        session.add(Player(telegram_user_id=1))
-        session.add(TurnState(id=1, next_starter_id=1))
-        session.commit()
-
-    update = _make_update(user_id=1, args=[])
-    context = _make_context(session_factory, args=[])
-
-    await skip_command_module.skip_command(
-        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
-    )
-
-    names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
-    assert skip_command_module.timeout_module.IDLE_AUTOSTART_JOB_NAME in names
+    assert update.message.reply_text.await_args.kwargs["reply_markup"] is not None
+    context.job_queue.run_once.assert_not_called()
 
 
 async def test_skip_command_rejects_when_the_turn_is_open(session_factory, log_records) -> None:
@@ -267,8 +211,8 @@ async def test_skip_command_with_username_schedules_the_turn_timers(session_fact
     )
 
     names = [call.kwargs["name"] for call in context.job_queue.run_once.call_args_list]
-    assert skip_command_module.timeout_module.TURN_REMINDER_JOB_NAME in names
-    assert skip_command_module.timeout_module.TURN_EXPIRY_JOB_NAME in names
+    assert timers.TURN_REMINDER_JOB_NAME in names
+    assert timers.TURN_EXPIRY_JOB_NAME in names
 
 
 async def test_skip_command_with_username_cancels_any_pending_idle_autostart(
@@ -288,7 +232,7 @@ async def test_skip_command_with_username_cancels_any_pending_idle_autostart(
     )
 
     names = [call.args[0] for call in context.job_queue.get_jobs_by_name.call_args_list]
-    assert skip_command_module.timeout_module.IDLE_AUTOSTART_JOB_NAME in names
+    assert timers.IDLE_AUTOSTART_JOB_NAME in names
 
 
 async def test_skip_passes_the_turn_even_when_the_confirmation_reply_times_out(

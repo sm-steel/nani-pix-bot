@@ -43,3 +43,8 @@ def take(session: Session, player_id: int, kind: ConsumableKind) -> bool:
     session.flush()
     logger.info("used a {kind}: {count} left", kind=kind.value, count=row.count)
     return True
+
+
+def holdings(session: Session, player_id: int) -> dict[ConsumableKind, int]:
+    """Every kind in enum order, zeros included."""
+    return {kind: count(session, player_id, kind) for kind in ConsumableKind}

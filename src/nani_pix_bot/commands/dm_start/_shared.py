@@ -29,7 +29,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, mascot, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
-from nani_pix_bot.services.cosmetics import flair
+from nani_pix_bot.services.cosmetics import costume, flair
 from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.settings import stage_config
 
@@ -483,6 +483,7 @@ async def _start_new_game(
             game_id=new_game.id,
             width=stage_config.get_stage_config(session, game_service.STAGE_ORDER[0]).target_width,
             algorithm=new_game.pixel_algorithm,
+            costume=costume.for_game(session, new_game),
         )
         starter_name = flair.named(session, user.id, user.full_name)
 
@@ -518,6 +519,7 @@ class _FirstStagePreview:
     game_id: int
     width: int
     algorithm: PixelAlgorithm
+    costume: str | None
 
 
 async def _send_first_stage_preview(
@@ -537,7 +539,9 @@ async def _send_first_stage_preview(
     and the method selection is sent regardless."""
     try:
         pixelated = mascot.add_to_png(
-            pixelate_service.pixelate(image_bytes, preview.width, preview.algorithm), Pose.CAST
+            pixelate_service.pixelate(image_bytes, preview.width, preview.algorithm),
+            Pose.CAST,
+            preview.costume,
         )
     except OSError:
         logger.opt(exception=True).warning(
@@ -580,6 +584,7 @@ class _PreviewAlbum:
     algorithm: PixelAlgorithm
     numbers_matter: bool | None  # see numbers_toggle
     clue_mode: ClueScreenshotMode | None = None  # see clue_panel_mode
+    costume: str | None = None  # Nani's, read in the DB phase
 
 
 @dataclass(frozen=True)
@@ -642,6 +647,7 @@ def _render_preview(album: _PreviewAlbum) -> list[InputMediaPhoto]:
             media=mascot.add_to_png(
                 pixelate_service.pixelate(album.image, width, album.algorithm),
                 mascot.stage_pose(index + 1, total),
+                album.costume,
             ),
             caption=album.caption if index == 0 else None,
         )
@@ -707,6 +713,7 @@ def _stage_preview(session, game: Game, lang: str) -> _PreviewAlbum | _SetupQues
         algorithm=game.pixel_algorithm,
         numbers_matter=numbers_toggle(game),
         clue_mode=clue_panel_mode(game),
+        costume=costume.for_game(session, game),
     )
 
 

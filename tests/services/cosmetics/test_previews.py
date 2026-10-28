@@ -1,4 +1,5 @@
 import pickle
+from collections.abc import Iterator
 from dataclasses import replace
 from io import BytesIO
 from types import MappingProxyType
@@ -16,6 +17,7 @@ from nani_pix_bot.services.cosmetics import looks, previews, stage
 from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.reveal import pipeline
 from nani_pix_bot.services.settings.stage_config import DEFAULT_STAGE_CONFIG
+from tests.costume_fixtures import ORANGE
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 AMY = previews.Viewer(7, handle="@amy", full_name="Amy Lee", avatar=b"avatar-bytes")
@@ -121,7 +123,7 @@ def test_a_frame_previews_on_a_stage_like_a_real_game_posts() -> None:
         previews.FRAME_STAGE_WIDTH,
         PixelAlgorithm.MEDIAN,
         resolved.item.look,
-        resolved.run.style,
+        stage.SeasonLook(resolved.run.style),
     )
     expected = mascot.add_to_png(framed, Pose.NOPE)
     assert preview.image == expected
@@ -151,20 +153,20 @@ def test_transition_previews_as_a_clip_with_that_effect_and_no_badge(clip_calls)
     preview = previews.render(_resolved("host_transition.iris"), "EN", AMY)
     assert preview.kind is PreviewKind.VIDEO
     assert preview.video == b"mp4"
-    [(image, algorithm, widths, effect, badge)] = clip_calls
+    [(image, algorithm, widths, effect, ending)] = clip_calls
     assert image == previews.sample_stage()
     assert algorithm is PixelAlgorithm.MEDIAN
     assert widths == tuple(s.target_width for s in DEFAULT_STAGE_CONFIG.values())
     assert effect is RevealEffect.IRIS
-    assert badge is None
+    assert ending == pipeline.Ending(None, pipeline.Nani(Pose.WIN))
 
 
 def test_win_effect_previews_as_an_iris_clip_with_the_overlay_badge(clip_calls) -> None:
     preview = previews.render(_resolved("win_effect.confetti"), "EN", AMY)
     assert preview.kind is PreviewKind.VIDEO
-    [(_image, _algorithm, _widths, effect, badge)] = clip_calls
+    [(_image, _algorithm, _widths, effect, ending)] = clip_calls
     assert effect is RevealEffect.IRIS
-    assert badge == pipeline.Badge(b"avatar-bytes", "@amy", overlay="confetti")
+    assert ending.badge == pipeline.Badge(b"avatar-bytes", "@amy", overlay="confetti")
 
 
 @pytest.mark.parametrize(
@@ -250,4 +252,137 @@ def test_every_per_viewer_cache_key_fits_the_column() -> None:
         for item_id, resolved in registry.all_items().items()
         if resolved.item.slot is CosmeticSlot.WIN_EFFECT
     )
-    assert longest + len("@") + 20 + len(previews.WITH_NANI) <= ITEM_ID_LENGTH
+    costume = "a" * 16  # looks.COSTUME_KEY's longest key
+    key = previews.cache_key(_resolved("win_effect.confetti"), -(10**19), costume)
+    assert key is not None
+    assert longest + len("@") + 20 + len(previews.WITH_NANI) + len("@") + len(costume) <= (
+        ITEM_ID_LENGTH
+    )
+    assert len(key) <= ITEM_ID_LENGTH
+
+
+@pytest.mark.parametrize(("costume", "suffix"), [(None, "#nani"), ("kitsune", "#nani@kitsune")])
+def test_cache_key_of_a_nani_slot_carries_the_costume(costume, suffix) -> None:
+    assert previews.cache_key(_resolved("host_frame.border"), 7, costume) == (
+        "demo_1/host_frame.border" + suffix
+    )
+
+
+def test_a_costume_change_gives_a_new_key() -> None:
+    frame = _resolved("host_frame.border")
+    assert previews.cache_key(frame, 1, "kitsune") != previews.cache_key(frame, 1, "skeleton")
+    assert previews.cache_key(frame, 1, "kitsune") != previews.cache_key(frame, 1)
+
+
+def test_a_text_slot_key_ignores_the_costume() -> None:
+    flair = _resolved("name_flair.blossom")
+    assert previews.cache_key(flair, 1, "kitsune") == previews.cache_key(flair, 1)
+
+
+@pytest.fixture
+def costume_item(costume_art, monkeypatch) -> Iterator[registry.ResolvedItem]:
+    hat = Item(
+        "mascot_costume.hat",
+        CosmeticSlot.MASCOT_COSTUME,
+        costume_art,
+        MappingProxyType({"EN": "Hat", "RU": "Hat"}),
+    )
+    demo = registry.all_runs()["demo_1"]
+    runs = {"demo_1": replace(demo, items=(*demo.items, hat))}
+    monkeypatch.setattr(registry, "all_runs", lambda: runs)
+    registry.all_items.cache_clear()
+    yield _resolved("mascot_costume.hat")
+    registry.all_items.cache_clear()
+
+
+def test_a_costume_item_is_kept_per_language(costume_item) -> None:
+    key_en = previews.cache_key(costume_item, 7, "kitsune", "EN")
+    assert key_en == "demo_1/mascot_costume.hat#en"
+    assert key_en != previews.cache_key(costume_item, 7, "kitsune", "RU")
+
+
+def test_other_slot_keys_ignore_the_language() -> None:
+    for key in ("host_frame.border", "win_effect.confetti", "name_flair.blossom"):
+        assert previews.cache_key(_resolved(key), 7, None, "RU") == previews.cache_key(
+            _resolved(key), 7
+        )
+
+
+def test_the_longest_costume_key_fits_the_column(costume_item) -> None:
+    key = previews.cache_key(costume_item, 7, None, "RU")
+    assert key is not None
+    assert len(key) <= ITEM_ID_LENGTH
+
+
+def _sheet(costume_item, lang: str = "EN") -> Image.Image:
+    preview = previews.render(costume_item, lang, AMY)
+    assert preview.kind is PreviewKind.PHOTO
+    assert preview.image is not None
+    return Image.open(BytesIO(preview.image)).convert("RGB")
+
+
+def _cell_origin(index: int) -> tuple[int, int]:
+    col, row = index % previews.SHEET_COLUMNS, index // previews.SHEET_COLUMNS
+    cell_w, cell_h = previews.SHEET_CELL
+    return (
+        previews.SHEET_MARGIN + col * (cell_w + previews.SHEET_GAP),
+        previews.SHEET_MARGIN + row * (cell_h + previews.SHEET_GAP),
+    )
+
+
+def test_the_sheet_has_the_designed_size(costume_item) -> None:
+    assert _sheet(costume_item).size == (812, 634)
+
+
+def test_each_cell_shows_its_pose(costume_item) -> None:
+    sheet = _sheet(costume_item)
+    cell_w, cell_h = previews.SHEET_CELL
+    for index in range(len(Pose)):
+        x, y = _cell_origin(index)
+        bottom = y + cell_h - previews.SHEET_LABEL_HEIGHT - 4
+        assert sheet.getpixel((x + cell_w // 2, bottom - 20)) == ORANGE[:3]
+
+
+def test_each_cell_has_a_pill_with_white_text(costume_item) -> None:
+    sheet = _sheet(costume_item)
+    cell_w, cell_h = previews.SHEET_CELL
+    for index in range(len(Pose)):
+        x, y = _cell_origin(index)
+        top = y + cell_h - previews.SHEET_LABEL_HEIGHT + 4
+        box = sheet.crop((x, top, x + cell_w, top + 32))
+        assert box.convert("L").point(lambda v: 255 if v > 240 else 0).getbbox() is not None
+
+
+def test_the_sheet_names_the_poses_in_the_viewers_language(costume_item) -> None:
+    en, ru = _sheet(costume_item, "EN"), _sheet(costume_item, "RU")
+    assert en.size == ru.size
+    assert en.tobytes() != ru.tobytes()
+
+
+def test_the_sheet_background_is_the_night_image(costume_item) -> None:
+    sheet = _sheet(costume_item)
+    with Image.open(previews.SHEET_BACKGROUND) as source:
+        fitted = ImageOps.fit(source.convert("RGB"), sheet.size, Image.Resampling.LANCZOS)
+    assert sheet.getpixel((3, 3)) == fitted.getpixel((3, 3))
+
+
+def test_a_frame_preview_wears_the_viewers_costume(costume_art) -> None:
+    plain = previews.render(_resolved("host_frame.border"), "EN", AMY).image
+    worn = previews.render(
+        _resolved("host_frame.border"), "EN", replace(AMY, costume=costume_art)
+    ).image
+    assert plain is not None
+    assert worn is not None
+    with Image.open(BytesIO(worn)) as image:
+        corner = image.convert("RGB").getpixel((image.width - 40, image.height - 40))
+    assert corner == ORANGE[:3]
+    assert plain != worn
+
+
+def test_clip_job_carries_the_viewers_costume() -> None:
+    job = previews.clip_job(_resolved("host_transition.iris"), replace(AMY, costume="test_hat"))
+    assert job is not None
+    assert job.args()[4].nani.costume == "test_hat"
+    plain = previews.clip_job(_resolved("win_effect.confetti"), AMY)
+    assert plain is not None
+    assert plain.args()[4].nani.costume is None

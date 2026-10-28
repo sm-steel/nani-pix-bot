@@ -26,6 +26,7 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import settlement
+from nani_pix_bot.services.seasons import haunting
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -158,6 +159,9 @@ def _hard_mode_turn_advance(
         stage=progress.number,
         total=progress.total,
     )
+    caption += haunting.caption_suffix(
+        session, game, lang, number=progress.number, total=progress.total
+    )
     game_service.reset_inactivity_clock(session, game)
     schedule_inactivity_timers(context.job_queue, game)
     return _HardModeAnnouncement(photos=(pixelated_a, pixelated_b), caption=caption)
@@ -245,7 +249,7 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
     turn-based analogue instead — see _hard_mode_inactivity_outcome.
 
     Imports maybe_overthrow lazily (function-local, not at module level):
-    autostart.py already imports schedule_inactivity_timers from this
+    bot_claim.py (under autostart.py) imports schedule_inactivity_timers from this
     module, so a module-level import the other way round would be a real
     circular import, not just the theoretical shape the sibling-import
     convention is meant to dodge — Python's import system can't resolve
@@ -324,6 +328,9 @@ async def inactivity_advance_job_callback(context: ContextTypes.DEFAULT_TYPE) ->
                     lang,
                     stage=progress.number,
                     total=progress.total,
+                )
+                advanced_caption += haunting.caption_suffix(
+                    session, game, lang, number=progress.number, total=progress.total
                 )
                 game_service.reset_inactivity_clock(session, game)
                 schedule_inactivity_timers(context.job_queue, game)

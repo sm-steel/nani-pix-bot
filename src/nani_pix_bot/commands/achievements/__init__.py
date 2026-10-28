@@ -11,10 +11,12 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.achievements import browser, compare, picker, render
 from nani_pix_bot.commands.achievements.common import (
     DEEP_LINK_PREFIX,
+    SOMEONE_ELSE_PREFIX,
     dm_link,
     outsider_refusal,
     resolve_owner,
 )
+from nani_pix_bot.commands.helpers import someone_else
 from nani_pix_bot.commands.helpers.rich import RichTarget, send_rich
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
 from nani_pix_bot.db import session_scope
@@ -28,12 +30,18 @@ def _target(message: Message) -> RichTarget:
     return RichTarget(message.chat_id, thread_id=message.message_thread_id)
 
 
-def _dm_button(context: ContextTypes.DEFAULT_TYPE, owner_id: int, lang: str):
+def _summary_markup(
+    context: ContextTypes.DEFAULT_TYPE, viewer_id: int, owner_id: int, lang: str
+) -> InlineKeyboardMarkup | None:
+    """Browse in DM (once the bot's username is known) and, under your own
+    summary, 🔍 Someone else."""
+    rows = []
     url = dm_link(context, f"{DEEP_LINK_PREFIX}{owner_id}")
-    if url is None:
-        return None
-    button = InlineKeyboardButton(i18n.t("achievements.browse_dm", lang), url=url)
-    return InlineKeyboardMarkup([[button]])
+    if url is not None:
+        rows.append([InlineKeyboardButton(i18n.t("achievements.browse_dm", lang), url=url)])
+    if viewer_id == owner_id:
+        rows.append([someone_else.button(SOMEONE_ELSE_PREFIX, "achievements", viewer_id, lang)])
+    return InlineKeyboardMarkup(rows) if rows else None
 
 
 async def _post_top(message: Message, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -75,14 +83,23 @@ async def _post_summary(
     with session_scope(context.bot_data["session_factory"]) as session:
         lang = settings.get_language(session)
         owner_id = resolve_owner(session, viewer_id, args)
-        if owner_id is not None:
-            markdown = render.summary(session, owner_id, lang, datetime.now(UTC))
-            target_name = players.describe_player_id(session, owner_id)
     if owner_id is None:
         await _reply_unknown(message, lang, args[0])
         return
+    await post_summary(message, context, viewer_id, owner_id)
+
+
+async def post_summary(
+    message: Message, context: ContextTypes.DEFAULT_TYPE, viewer_id: int, owner_id: int
+) -> None:
+    """`owner_id`'s summary as a new message in `message`'s chat and topic."""
+    with session_scope(context.bot_data["session_factory"]) as session:
+        lang = settings.get_language(session)
+        markdown = render.summary(session, owner_id, lang, datetime.now(UTC))
+        target_name = players.describe_player_id(session, owner_id)
     logger.info("showed the achievements of {target}", target=target_name, target_id=owner_id)
-    await send_rich(context.bot, _target(message), markdown, _dm_button(context, owner_id, lang))
+    markup = _summary_markup(context, viewer_id, owner_id, lang)
+    await send_rich(context.bot, _target(message), markdown, markup)
 
 
 async def achievements_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

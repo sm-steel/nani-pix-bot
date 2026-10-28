@@ -621,6 +621,48 @@ her corner, cutting a long name with "…" earlier.
 A failure to load or add her never blocks a post: the image goes out
 without her and the failure is logged at `ERROR`.
 
+#### Costumes
+
+Nani Pix can wear a costume on every picture she is on
+(`services/cosmetics/costume.py`). The costume is resolved in this order:
+
+1. the game starter's equipped costume item (slot `mascot_costume`);
+2. else the active season run's default costume (`SeasonRun.mascot_costume`;
+   the Halloween run's is `pumpkin`);
+3. else plain Nani.
+
+It is read **live at each render**, like the host frame, so equipping a
+costume changes the next picture of a running game. Which run counts
+depends on the game: a game in SETUP has no season yet and uses the
+currently active run; a started game uses the run it was tagged with
+(`modifiers.season_of`), and an untagged game gets no run default, only the
+starter's equipped costume.
+
+The six costumes are `pumpkin`, `kitsune`, `bakeneko`, `chochin`,
+`pastel_witch` and `skeleton`. Each has all six poses under
+`src/nani_pix_bot/assets/mascot/costumes/<key>/<pose>.png`, an RGBA image
+exactly 384 px wide and at most 480 px tall (`tests/services/test_mascot.py`
+checks it, and that all six poses exist). Nani is placed by her own
+costume's aspect.
+
+In the reveal, the effect part is rendered at pregen time, so it carries the
+costume she had when the game started. The ending, the photo fallback and
+the clue album read the costume again at reveal time. `/stop` reads it
+before it deletes the game row, when the reveal can run now.
+
+A failed costume lookup never blocks a reveal or a preview, and a missing
+or unreadable costume file never blocks a post: she is drawn plain, and
+the failure is logged at `ERROR`.
+
+Cosmetic previews show Nani in the viewer's own costume. Only host
+frames, transitions and win effects show her, so only their cache keys
+carry `#nani`, with `@<costume>` after it when the viewer wears one
+(`<item_id>#nani`, `<item_id>#nani@<costume>`). A win effect's key also has
+the viewer (their badge), so it reads `<item_id>@<viewer>#nani[@<costume>]`.
+Banners aren't cached. A costume item's own preview is a sheet of all six
+poses (`previews.costume_sheet`) on a night background, each pose named in the
+viewer's language, so it is kept per language under `<item_id>#<lang>`.
+
 ### Which algorithm colours the blocks
 
 The stage width decides *how wide* the mosaic is; a separate, orthogonal
@@ -713,6 +755,9 @@ or stale pin (its caption's guess count is frozen at post time).
   - stage (or turn) and guesses left at it
   - the bounty, if any
   - how long until the game ends on its own
+  - for a haunted game, the twists on the current image (every one a boss
+    stage has stacked), each twist's hint and the Season Coins multiplier
+    (`status.haunted`); none when a fading twist has cleared on the last stage
   - the 🎲 game number
 - **Otherwise** it says what is happening instead: who is setting up the
   next game, that a vote is open, or whose turn it is to start one.
@@ -735,8 +780,10 @@ A game ends in a win one of two ways:
   a win for a specific player at any time while the game is `ACTIVE`, for
   the case where the fuzzy matcher fails to recognize a guess that was
   actually correct (an alternate title/spelling AniList doesn't list as a
-  synonym, for example). Only the starter may run this command; it's a
-  fixed `@username` argument, not a reply-based selection.
+  synonym, for example). Only the starter may run this command. The player
+  is a typed `@username` or, with no argument, a pick from a menu of the
+  game's guessers (latest guess first, minus the starter and the bot), not a
+  reply-based selection.
 
   The `@username` is resolved against the `players` table, which the bot
   fills in from **any** update it sees — a DM, a command, or plain chat
@@ -786,7 +833,13 @@ way to play it once.
 The effect is picked **at game start**: the starter's equipped reveal
 transition (see "Cosmetics"), else uniformly at random from `iris`,
 `tile_flip`, `ripple`, `glitch` and `shatter`. The season transitions
-(`spring_breeze`, `blossom_branch`) are cosmetics and never come up at random. For HARD MODE the animated
+(`spring_breeze`, `blossom_branch`, `candle_snuff`, `night_parade`, `gashadokuro_rise`) are cosmetics and never come up at random. `candle_snuff` (Yokai Night): the front
+sits in darkness lit by a candle's flame, the flame is snuffed, and the darkness
+lifts upward with the smoke off the clear image. `night_parade` (Yokai Night): six yokai silhouettes march left to right along
+the lower half of the front, which is dimmed ahead of the leader; the clear image follows behind the
+last walker through a band of mist, and the parade walks off the right edge. `gashadokuro_rise` (Yokai Night): a giant skeleton hand rises from below the
+bottom edge and sweeps left to right, pivoting far below the image; each block its centre line passes is cleared and
+flung off along the sweep as a tumbling, fading square in its own colour, and the hand then sinks away. For HARD MODE the animated
 screenshot (`a` or `b`) is picked then too. The effect part is rendered in
 the background right after the game goes live, so the reveal itself only
 renders the ending and never delays a game's start.
@@ -1009,6 +1062,9 @@ for everyone: there's no turn to hand off.
 - `/skip` (no argument) sets `next_starter_id` to `null` — the turn opens
   up, and anyone can DM the bot a screenshot to start the next game.
   Cancels the reminder/expiry timers below.
+- Bare `/skip` shows a player menu whose first row, **Open to everyone**,
+  does exactly what this bullet describes; the other rows hand the turn to
+  that player, like the next bullet.
 - `/skip @username` hands the designation directly to that person instead
   — (re)schedules the timers below for the new designee. Same `players`
   lookup and same "I don't know them yet" reply as `/correct` above.
@@ -1067,6 +1123,13 @@ and both no-ops while a game is already `SETUP`/`ACTIVE`/`VOTING`.
   (turn already open to anyone), the bot simply claims that already-open
   turn instead of leaving it for a human.
 
+A third kind of bot-started game is the season's Gashadokuro boss (see
+"100 Candles and the boss game" and "Haunted rounds"): a normal 5-stage game,
+not HARD MODE, that ignores `autostart_enabled` (it is still gated by
+`games_enabled`). It shares the pick and the claim with the two above
+(`jobs/timers/bot_claim.py`), and every game ending tries it before the
+overthrow roll.
+
 **Picking a random anime + screenshot pair** (`services/game/autostart.py`,
 framework-agnostic, no DB writes until a full pick is in hand): a random
 Shikimori anime (`order: random`, `censored: true` — excludes hentai/
@@ -1102,7 +1165,8 @@ either way: **`/correct` has no direct use on a bot-started game.**
 (`user.id == game.starter_id`), and for a bot-started game the starter
 *is* the bot — no human can ever satisfy that check. A game that ended
 wrongly has two remedies instead: the HARD MODE vote (see below), and an
-admin's `/setwinner <game id> @user` (DM only). `/setwinner` re-finishes
+admin's `/setwinner <game id> [@user]` (DM only; without the `@user`, a menu
+of that game's guessers). `/setwinner` re-finishes
 an `UNSOLVED` game as a normal win — the usual win reward and a text
 announcement in the game topic, but no change to whose turn it is and no
 bounty (the pot was already refunded when the game ended). On a game
@@ -1147,6 +1211,8 @@ While the window is active:
   toward any of their durations. A `/guess` at 03:00 with quiet hours
   23:00–08:00 puts the next 6h auto-advance at 14:00, not 09:00; a
   2-day timeout spanning two nights runs two nights longer.
+- **No Gashadokuro boss start** (see "Haunted rounds") — it waits for the
+  window's end.
 - **No overthrow roll** after a win (see "Bot-initiated games" above) —
   the winner simply gets the turn, and the idle auto-start backstop
   (itself frozen and held back) remains.
@@ -1404,8 +1470,8 @@ else (equal on every tie-breaker) reads `shared 1st place`. Russian reads
 
 A period the game's `ended_at` falls outside (an admin `/setwinner`
 re-finish long after it closed) is left out; with none left there is no
-line. A normal (non-HARD MODE) win adds `🌟 Host @name: +1 point` for the
-host. The same lines close a vote win, an admin-named win, `/correct` and a
+line. A win with a human host (not HARD MODE, not the boss) adds
+`🌟 Host @name: +1 point` for the host. The same lines close a vote win, an admin-named win, `/correct` and a
 re-finish.
 
 ### Since launch
@@ -1553,7 +1619,8 @@ item, or "none").
   in the group timezone (the quiet-hours timezone, UTC if none). The first
   partial periods after launch count normally.
 - **Score.** A win at stage 1–5 is worth 5/4/3/2/1; a HARD MODE win at
-  turn 1/2 is worth 6/4; hosting a game someone solved is +1. A **clean
+  turn 1/2 is worth 6/4; hosting a game someone solved is +1 (not a HARD
+  MODE or boss game: Nani Pix started those, so they have no host). A **clean
   solve** (a normal-mode win with no wrong guess of the winner's own in
   that game) is worth +1 more. A win the matcher didn't catch
   (`/correct`, a HARD MODE vote, `/setwinner`) doesn't count the winning
@@ -1639,7 +1706,8 @@ holds; one that can't be drawn goes out as plain text.
 - `/achievements` in the game topic: a rich summary (count, points, rank,
   title, latest unlocks) with a **Browse in DM** button; `/achievements top`
   for the top 10 by points.
-- The DM browser (`/achievements [@username]` or the button): one message
+- The DM browser (`/achievements [@username]` or the button; a **Someone else** button under
+  your own list or summary opens a player menu): one message
   edited in place, tabs All / Earned / Not yet, 8 rows per page, a ladder
   as one row with progress to its next tier.
 - **Compare** with another player (All / Only they have / Only you have)
@@ -1685,7 +1753,9 @@ one-time backfill is run.
   from wrong guesses in that game.
 - The win reward depends on the stage the game was won at.
 - A HARD MODE win on turn N pays the stage-N reward x 2, with no setter
-  and no prompt bonus (the starter is the bot itself).
+  and no prompt bonus (the starter is the bot itself). The season's boss
+  game is started by Nani Pix too, so it pays no setter or prompt bonus
+  either (`Game.bot_hosted`).
 - The setter is paid only for a win at stages 2-4 (stage 1 is too easy,
   stage 5 barely solvable), and never for an unsolved game. A starter who
   wins their own game is not paid the setter bonus.
@@ -1891,7 +1961,8 @@ share is recorded in the event log (`clue_shared`) with what was shared.
   price by accident.
 - If a round is stopped (`/stop`) its clue purchases are refunded in
   full, since they die with the round.
-- An admin can refund any single clue purchase with `/refund @user` (DM): a
+- An admin can refund any single clue purchase with `/refund [@user]` (DM; without the `@user`, a menu of the players
+  who have a refundable purchase): a
   paginated list of the player's purchases, newest first; the refund is the
   same reversal as a failed delivery, and the player gets a DM saying so
   (issue #249). If the round already paid that player HARD MODE cashback,
@@ -1924,7 +1995,10 @@ round's bounty, tip a player, or pay to sharpen the image.
 - The pot is derived from the `currency_transfers` ledger (contributions into
   the pot minus what has left it); there is no `games.bounty` column.
 
-**`/tip @username <amount>`.** Sends 💠 from you to another player.
+**`/tip [@username] [amount]`.** Sends 💠 from you to another player.
+- Without the `@username`, a player menu opens (everyone but you). Without an
+  amount, amount buttons follow the pick (10, 25, 50, 100, only the
+  affordable ones). Each menu tips at most once.
 - Works in the game topic or in a DM, with a minimum of 1.
 - You cannot tip yourself or the bot, the recipient must be a player the bot
   knows by username, and you need the balance.
@@ -1946,10 +2020,12 @@ round's bounty, tip a player, or pay to sharpen the image.
 **Status: Implemented (phase 1: the framework, Season XP and the anime
 gate; phase 2: inventory and cosmetics; phase 3: Season Coins, the
 Season Pass, Premium and clue tokens; phase 4: the Season Shop, rule
-modifiers, the visual style and objectives; phase 5: season achievements).** Seasons are occasional,
-time-boxed events that run alongside the normal game. No playable season
-ships yet: `seasons/runs/` is empty, so `/season` has nothing to schedule
-until a run module is added.
+modifiers, the visual style and objectives; phase 5: season achievements;
+phases 6-8: the 100 Candles goal, hexes and the Yōkai Night run).** Seasons
+are occasional, time-boxed events that run alongside the normal game. Two
+runs ship: `seasons/runs/sakura_1.py` (Sakura Season) and
+`seasons/runs/yokai_1.py` (Yōkai Night, see below); `/season` schedules
+either and any run module added later.
 
 ### Runs and the schedule
 
@@ -2000,7 +2076,7 @@ add their own rows (source `objective`, see "Objectives" below).
 | Event | Who gets it |
 |---|---|
 | Win | the winner, by the stage (or HARD MODE turn, clamped to 1-5) they won at |
-| Host | the starter, when the game is won or ends unsolved — **not on HARD MODE games**, which only the bot starts |
+| Host | the starter, when the game is won or ends unsolved — **not on HARD MODE or boss games**, which only the bot starts (`Game.bot_hosted`) |
 | First guess | each player's first guess in a game, once per player per game |
 | Objective | the player who completes a season objective, once (see "Objectives") |
 
@@ -2020,7 +2096,7 @@ own award is the usual one.
 from the 💠 balance. Every credit and debit still writes a `currency_transfers`
 row, tagged `currency = season` and the `season_id`. They are paid for the
 same events and by the same rules as Season XP (tagged games only; no hosting
-on HARD MODE games; the first guess is the player's first `game_guesses` row in that game),
+on HARD MODE or boss games; the first guess is the player's first `game_guesses` row in that game),
 priced by the run's `CoinTable`: a win pays the same at every stage,
 `host_solved`, `host_unsolved`, `first_guess`. Pass rewards can pay 🪙 too.
 
@@ -2061,19 +2137,185 @@ emptied and paid out as `coins // run.coins_per_currency` 💠 (default 2 🪙 =
 1 💠; the remainder is dropped). The end post states how many players'
 coins became how much 💠, and the rate.
 
+**Multipliers (Halloween).** `services/seasons/multipliers.py` scales the
+base amounts before they are paid (`coins.py` and `xp.py` apply it per award
+and log the factor at INFO). All factors are integers and multiply together:
+
+| | Factor | When |
+|---|---|---|
+| 🪙 coins | `haunt.coin_multiplier` | the game is haunted (stored twist **or** boss) |
+| | `event_day.coin_multiplier` | `game.event_day` |
+| | `group_goal.boss_coin_multiplier` | `game.boss_game` and the award is not `HOST` |
+| XP | `group_goal.boss_xp_multiplier` | `game.boss_game` and the award is not `HOST`, else 1 |
+
+So an event-day haunted game pays 🪙 x (haunt x event-day); the **host** of a
+boss game is paid normally, apart from the haunt/event-day factors (the boss
+boost is for guessers only). A run with no `haunt`, `event_day` or
+`group_goal` always gets 1.
+
 ### Season Shop
 
 `/seasonshop` (DM, group members only) lists the run's `shop` offers, bought
 with 🪙 and only while the season is `active`. Tapping an offer shows its
-preview (an item's usual preview; the clue token's is a golden-ticket icon),
-then **Buy** or **Back**. An offer is an item or a clue token with a
-per-season `limit`; an item is also refused when the player already owns it
+preview (an item's usual preview; a consumable's is its 640x640 card, see
+"Ofuda and Omamori"), then **Buy** or **Back**. An offer is an item or a
+consumable (clue token, Ofuda, Omamori) with a per-season `limit`; an item is also refused when the player already owns it
 (no refunds). The purchase is one `season_shop_purchases` row tied to its 🪙
 `currency_transfers` row, and the limit is the count of a player's rows for
 that offer in that season. Refusals: closed, unknown offer, owned, sold out,
 insufficient 🪙. Items are put on in `/cosmetics`. An item sold in the shop
 is never also a pass reward (free or premium); the run loader rejects a run
 that does both.
+
+### Ofuda and Omamori
+
+Two Halloween charms, consumables like the clue token (`consumables`: a count
+per player and kind). Both are `ShopOffer.consumable(...)` offers in the
+Season Shop and can be pass rewards; the shop and pass name them (`season_shop.offer_note.*`,
+`season_pass.reward.*`), only the shop shows their picture.
+
+**Consumables outlive the season.** A count is never converted, expired or
+reset when a season finalizes (only 🪙 is converted): an unused Ofuda or
+Omamori stays in `/inventory` for the next run that has it. An Ofuda can be
+armed only while such a run is on (below); outside one it just waits there.
+
+**Ofuda (📜) forgives one miss.** It is armed for one round, then spent by
+the first wrong guess its holder makes in that round.
+
+- **Arming** is private: the DM `/shop` menu (group members only) gets a
+  "Arm an Ofuda (N held)" button (`shop:ofuda:<game_id>`) under the clue
+  offers, drawn only when arming would be accepted, so it is also shown on a
+  menu with nothing else left to buy. Tapping it writes one `armed_ofuda` row
+  (`services/cosmetics/ofuda.py::arm`), answers the tapper with an alert and
+  redraws their menu without the button. Nothing is posted to the topic and
+  **arming takes nothing**: the count is unchanged until the Ofuda forgives.
+- **Refused** (`ArmRefusal`, an alert, logged at `WARNING`): the round is not
+  the `ACTIVE` game any more (stale button, or a button from an older round);
+  the tapper is the round's starter (they cannot guess); no Ofuda season
+  (`NO_SEASON`: no `ACTIVE` season, or its run doesn't offer Ofuda, per
+  `ofuda.offers_ofuda`: the run's shop sells one, or a pass tier or an omikuji
+  outcome grants one; a Sakura re-run or no season at all refuses, and the
+  menu doesn't draw the button); the round is HARD
+  MODE (it has no per-stage limit to protect, and `record_guess` hands those
+  rounds to the hard-mode path before the Ofuda is looked at); none held;
+  already armed in this round. One armed at a time: a player holding two can
+  arm again once the first has forgiven.
+- **The season ending doesn't disarm it.** The gate is on arming only:
+  `forgive` checks just the `armed_ofuda` row, so an Ofuda armed before the
+  season left `ACTIVE` still forgives one miss in that round. The row dies
+  with the round anyway, so this is at most one miss per player, in one round.
+- **When it is taken.** `state._count_wrong`, on a wrong guess by a player
+  with an `armed_ofuda` row for that game: the row is deleted, one Ofuda is
+  taken (`consumables.take`) and an `OFUDA_USED` event is emitted. A correct
+  guess never touches it. A round that ends with the Ofuda still armed (won,
+  unsolved, stopped) leaves the count alone, so the Ofuda stays held, since
+  arming never took it. A stopped round's `armed_ofuda` row is dropped with the
+  game (`ON DELETE CASCADE`); a hex's `game_id` is `ON DELETE SET NULL`, since a
+  hex outlives the round it was cast in. An armed
+  row whose Ofuda is gone (count 0 at that moment) is dropped, logged at
+  `WARNING`, and the miss counts normally.
+- **`GuessOutcome.FORGIVEN`.** The guess is still a guess and still a wrong
+  one: `total_guess_count` goes up, it is logged in `guesses`, and `earning`
+  pays the first-guess bonus and the wrong-guess 💠 as for any miss (the
+  Ofuda protects the stage budget, not the wallet). What it skips is
+  `wrong_guess_count`: the miss is not counted against the stage's limit, so
+  it can never advance the stage or end the round unsolved. The reply is the
+  normal remaining-guesses reply (same as `WRONG`).
+- **The moment card.** A forgiven miss then posts a moment card to the game
+  topic after that reply (see "Moment cards" below), captioned with the line
+  "Ofuda burned away".
+
+**Omamori (🧿) is held, not armed.** It has no round, button or command: it is
+only a count, shown in `/inventory`. Nothing in the current build spends
+it. It is held for the hexes of Phase 5, which take it with
+`consumables.take(session, player_id, ConsumableKind.OMAMORI)` to block the
+next hex cast on its holder (see "Hexes" below); it does not stop an omikuji
+self-prank.
+
+**Previews.** A consumable's preview is a 640x640 PNG
+(`services/cosmetics/consumable_card.py`): the item's art over
+`assets/item_card_background.jpg` in a translucent card
+(`card_style.draw_card`), its name in a pill under it (`card_style.draw_pill`,
+the same pieces the costume sheet uses). The art is `assets/icons/<kind>.png`
+(the clue token's is drawn by `clue_token_icon`). The picture is kept as a
+Telegram `file_id` in `item_previews` like other previews, per language since
+the name is the viewer's: key `consumable/<kind>#<lang>` (for example
+`consumable/ofuda#en`, `consumable/clue_token#ru`), and a costume sheet's is
+`<item_id>#<lang>`. A file_id Telegram rejects is dropped and the card is
+drawn again.
+
+#### Moment cards
+
+A **moment card** (`services/cards/moments.py`, posted by
+`jobs/moments.py::post_charm_moment`) is a 1200x800 JPEG sent to the game
+topic with the plain line as its caption: the player's profile photo in a
+glowing ring (`Face`), the item's art (tilted, fitted in a box, trimmed to
+its drawn shape), a title pill on top with a smaller, more transparent
+**effect pill** under it (`Caption(title, detail)`: one line saying what
+happens to the affected player, wrapped to at most two lines within 900 px
+and ellipsized), and the player's name in a pill below,
+over `assets/moments/<mood>_background.jpg` (`Mood.CHARM`, a warm shrine;
+`Mood.CURSE`, violet mist; `Mood.OMIKUJI`, a night shrine with a gold ring). Pill text is stripped of emoji (the font has
+none) and clipped with an ellipsis; the name pill is the plain name, no
+flair. The module is pure Pillow, with no Telegram. Posted today:
+
+| Moment | When | Art | Title / effect line / caption |
+|---|---|---|---|
+| Ofuda saves a miss | after the reply to a `FORGIVEN` `/guess` | Ofuda | "That miss didn't count!" / "{name}'s ofuda burned away: this miss doesn't count" / "Ofuda burned away" |
+| Token-paid clue | in place of the plain "bought a clue" topic notice, when the purchase used a clue token (`token_used`) | the golden ticket | "Paid with a clue token" / "{name} paid for this clue with a clue token" / the "bought" notice |
+| Omikuji draw | the `/omikuji` reply, in a DM or the topic (`Mood.OMIKUJI`); a kyō prank drawn in a DM also posts it to the topic | the drawn slip | `omikuji.card_title.<kind>` ("{name} drew Daikichi!") / what the slip did (`omikuji.card_detail.*`: coins, a charm, both or nothing; for a kyō, `hex.card_detail.<kind>` or the spared line) / the slip text, or in the topic `hex.notice.self_prank.<kind>` |
+
+Failure never blocks a game. The post runs after the guess or purchase is
+committed. The avatar is fetched with `jobs/avatars.py::fetch_avatar`; with
+none visible, or on a Telegram error (`WARNING`), the card draws the name's
+initials on a colour seeded by the player id. If drawing or sending the
+photo fails (`OSError`, `ValueError`, `TelegramError`, logged at `WARNING`),
+the **caption is sent as a plain topic message instead**, and if that fails
+too it is only logged. Plain-text notices (a clue paid with 💠) are
+unchanged.
+
+`duel_card` (caster, art, a spirit trail of chevrons pointing from caster to
+target, target) and `blocked_duel_card` (the target beside their defence art,
+the attacking art faded and torn along a see-through cross into four pieces
+that sit slightly apart, with a few golden sparkles over it) take a
+`Duel(actor, target)` of `Face`s. Hex casts and blocks post them (see "Hexes").
+
+### `/inventory`
+
+`/inventory` works in a DM or the game topic (elsewhere it is ignored) and
+replies in the same place with the caller's holdings: a header, then one
+line per kind they hold (clue tokens 🎟, Ofuda 📜, Omamori 🧿, in enum order;
+zero counts are left out). The Ofuda line is suffixed when one is armed for
+the current `ACTIVE` round; with Ofuda held and none armed it ends with a
+hint to arm one from `/shop`. Holding nothing shows a single "empty" line.
+Read-only; it takes nothing and logs the holdings at `INFO`.
+
+### Omikuji
+
+`/omikuji` works in a DM (group members only, like `/shop`) or the game
+topic. It draws one fortune slip per player per season per **group-local
+day** (the day turns at midnight in the group timezone); the
+`omikuji_draws` row's unique key enforces it, so a race on the same day is
+refused, not paid twice. Outside an `ACTIVE` season, or in a run whose
+`omikuji` is empty, the shrine is "closed".
+
+The service (`services/seasons/omikuji.py::draw`) resolves the season,
+checks today's row, picks an outcome from `run.omikuji` by weight, stores
+the row, and only then pays: so a refusal never pays anything.
+- Coins go in as season coins 🪙 (`CurrencyReason.SEASON_OMIKUJI`).
+- A `consumable` on the outcome (Ofuda or Omamori, typically on a
+  daikichi) is added to the player's holdings.
+- A **kyō** with `prank` puts a random prank hex (Nopperabō or
+  Chōchin-obake) on the drawer for free (see "Hexes": no cooldown, and an
+  Omamori does **not** block it). A drawer who opted out of hexes, or who
+  already carries an active hex, is **spared**: the slip says the spirits
+  passed them by and nothing is applied.
+
+The reply is the omikuji moment card (see "Moment cards" above) with the
+slip text as its caption; without the slip art it is the text alone. A kyō
+prank drawn in a DM also posts the same card to the game topic, since every
+hex is public. The draw logs at `INFO`; a refusal logs at `WARNING` (an
+`already` refusal carries when that day's slip was drawn).
 
 ### Rule modifiers
 
@@ -2087,17 +2329,23 @@ season discount.
 
 ### Season style
 
-A run may name a `style` (`plain` or `watercolor`). For a game tagged to that
+A run may name a `style` (`plain`, `watercolor` or `moonlit`). For a game tagged to that
 season it is drawn on the **pixelated** stage image and under the host's
 frame, so the order is **pixelate -> style -> frame**
 (`services/cosmetics/stage.py`). It applies to stage posts and the `/status`
 repost. It does not apply to the reveal video, the host's DM preview or clue
 images.
 
+`moonlit` is a night grade: an indigo tint and a darkened rim, moonlight
+streaming in from the moon at the top left, and art in the two top corners
+(the moon with a tiny witch on a broom; bats and a spider). The centre of the
+image is left untouched, and the bottom corners get no art. A missing art file
+is logged and the stage posts without the corners.
+
 ### Objectives
 
 A run may list `objectives`: one-time goals with a key, a `Goal`, Season XP and
-optionally 🪙. A goal's kind is one of: hosted games (not HARD MODE), wins
+optionally 🪙. A goal's kind is one of: hosted games (not HARD MODE or boss), wins
 (optionally `max_stage`: a win at that stage or earlier, HARD MODE wins
 excluded), games guessed in (distinct games), clues shared, tips, and days
 played (days with a guess or a hosted game).
@@ -2116,6 +2364,261 @@ played (days with a guess or a hosted game).
   is shown capped at the target; a finished objective shows its date.
 - `/seasonpass` lists each objective with `progress/target` and its reward.
 
+### Haunted rounds
+
+A run with `haunt` rolls each of its games **once, at activation**
+(`services/game/state.py` calls `haunting.on_activation`, which also sets the
+game's `event_day` flag). Only a game tagged to a season whose run has `haunt`
+is rolled; a run without it (`sakura_1`) never rolls and renders, captions,
+pays and gates exactly as before.
+
+- **The roll.** `rng.randrange(100) < haunt.chance_pct` makes the game
+  haunted, and `rng.choice(haunt.twists)` picks its twist, stored as the
+  `HauntTwist` value in `games.haunt_twist`. The 0-99 number is always drawn.
+  On an event day whose `all_haunted` is set the game is haunted regardless of
+  the number. Every roll, and every deliberate "not haunted", is logged at INFO
+  with the number and the chance.
+- **Twists** (`services/seasons/haunting.py`):
+
+| Twist | Effect | Last stage |
+|---|---|---|
+| `kitsune_mirror` | mirrored picture | stays until the reveal |
+| `tanuki_leaf` | hue shift (+85 of 256, about 120 degrees) | clears |
+| `yurei_double` | offset ghost copy blended at 35% (6% of the width, 4% of the height) | clears |
+| `kyokotsu_xray` | inverted greyscale negative, dark blue to pale cyan | clears |
+
+  `FADES_AT_LAST` holds the three that clear on a haunted game's final stage
+  (the Yurei ghost was added after a visual preview); only the mirror stays to
+  the last stage. `haunting.fades(game, twist)` is the one check: it is false
+  for every twist of a boss game, which keeps all of them to the end.
+- **The reveal is always clean.** The twist is part of the stage image only
+  (`stage_png_with` with a `SeasonLook` carrying a `Haunt(twists)`: the
+  stage's twists in order, the faded ones already left out); the
+  reveal video, its pregen and the stills are rendered without it. The pipeline
+  order is **pixelate -> twists (in order) -> season style -> frame -> Nani**
+  (`services/cosmetics/stage.py`; `stage_twists` logs the twists applied).
+- **Tile clue.** The *Reveal a tile* picture wears the current stage's twists
+  too: the original and the pixelated image both get every twist, in order
+  (with the same last-stage fade as the stage image), before the tile is
+  revealed, so the tapped grid cell lines up with what the buyer sees, mirror
+  included. `stage.haunt_at`/`current_haunt` is the one place that says which
+  twists stage N wears; stage posts, `/status` and the tile clue all read it.
+- **Boss game.** `games.boss_game` (the Gashadokuro, set by the 100 Candles
+  group goal's `group_goal.mark_boss` before activation) makes every stage
+  haunted and **stacks** the twists: stage N wears the first N of
+  `haunting.BOSS_ORDER` (mirror, leaf, ghost double, X-ray), so stages 4 and 5
+  wear all four, and nothing fades. A boss is never rolled at activation
+  (`haunting.on_activation` skips the roll and its log), so
+  `games.haunt_twist` stays empty.
+  `haunting.twists_for_stage` returns that tuple (one stored twist for a
+  haunted game, none otherwise). `haunting.is_haunted(game)` is true for a
+  stored twist or a boss game and is what the multipliers and the `haunted`
+  win fact read.
+- **When the boss is due.** `group_goal.boss_due` is true while a season is
+  `ACTIVE`, its run has a `group_goal`, the goal is settled (`GOAL_REACHED`
+  logged for the season) and the season has no boss game row in any status.
+  A boss stopped with `/stop` is deleted, so another is due; a finished one is
+  not. `mark_boss` locks the season row, re-checks `boss_due`, then sets
+  `boss_game` (and the game's `season_id`), queues a `GOAL_BOSS` outbox post
+  `{season_id, game_id}` and logs INFO "the Gashadokuro rises — boss game";
+  when no boss is due it only logs a WARNING. Activation logs and records
+  `boss_game` (the `ACTIVE` line and the `GAME_ACTIVATED` event data).
+- **Who starts the boss.** Nani Pix, through `jobs/timers/boss.py`'s
+  `maybe_start_boss` (trigger `boss`). Every game ending goes through
+  `maybe_overthrow`, which tries the boss first and skips the overthrow roll
+  when the boss starts or is scheduled. An open turn also tries it:
+  `schedule_idle_autostart` arms a `boss-start` check job right away (a bare
+  `/skip`, an expired turn; `/stop` arms it only after its "stopped" post, so
+  a fresh boss never posts first), the idle-autostart job tries the boss
+  before any HARD MODE game, `/setgamesenabled on` arms the check, and
+  startup arms one while a boss is due. A turn handed to someone while the
+  pick was gathered aborts the claim; the boss then waits for that player's
+  game to end or the player's turn to expire. The boss takes the turn the
+  way an overthrow does (the game's winner keeps full credit, with no
+  `overthrown` event), picks from the season
+  gate, and starts a **normal** 5-stage game (`hard_mode=False`, the pair's
+  first screenshot as `original_image`), calling `mark_boss` before
+  `activate_game`. Before stage 1, the boss start drains the announcement
+  outbox once (the same `drain` the 20 s job runs), so "goal reached" and
+  "the Gashadokuro rises" land first; a failed drain logs an ERROR and the
+  boss goes ahead, its rows left for the job. Stage 1 then goes up through
+  the normal stage-post path with `dm_start.boss_game_started_caption` (×XP
+  and ×🪙 from `multipliers`, then the usual "📸 Stage 1/5 — guesses" line),
+  then `haunt.started_boss`: stage 1's twist (the first of `BOSS_ORDER`) and
+  its boss hint, without the coin multiplier the boss caption already
+  states. When the boss took the turn from the game's winner,
+  the caption starts with `dm_start.boss_took_winner_turn`, naming the
+  winner (with flair) the way an overthrow does. It ignores `autostart_enabled` and honours `games_enabled`;
+  a game already running holds it until that game ends (INFO); quiet hours
+  hold it until the window ends (INFO, the check job re-armed for then); a
+  failed pick retries in `AUTOSTART_RETRY_DELAY` (INFO); a game started, or
+  the turn reassigned, while the pick was gathered aborts it (WARNING).
+- **Captions.** `haunting.caption_suffix` appends a line (a newline and the
+  text) to the stage caption: `haunt.started` on stage 1 (twist name, hint and
+  the coin multiplier; on a boss, `haunt.started_boss` instead: the twist and
+  its hint, no multiplier), `haunt.changed` on a boss stage that adds a twist
+  (naming the one it adds), `haunt.lifted` on a haunted game's last stage when
+  its fading twist clears (never on a boss). Twist names and hints are i18n
+  keys `haunt.twist.*` and `haunt.hint.*`; on a boss, the fading twists'
+  hints (which say "until the last stage") are swapped for
+  `haunt.kept_hint.*` (`haunting.hint_key`), in captions and `/status`
+  alike. Other stages get no line.
+  `/status` names every twist on the current image in its `status.haunted`
+  line (names joined with commas, hints with semicolons).
+- **Unknown stored twist.** A `haunt_twist` this release does not know logs a
+  WARNING and the game renders untwisted instead of failing.
+- **Objective.** `GoalKind.HAUNTED_WINS` counts the player's `GAME_WON` events
+  whose `haunted` fact is set (`services/game/win_facts.py`); wins recorded
+  before the fact existed count as not haunted.
+
+### 100 Candles and the boss game
+
+A run with `group_goal` (`GroupGoal`: `target`, the three weights,
+`milestone_every`, the boss multipliers, `contributor_coins`,
+`contributor_item_key`) sets the whole group a shared goal: put out `target`
+candles. The code is `services/seasons/group_goal.py`. `yokai_1` sets it
+(see "Yōkai Night"); a run without it, like `sakura_1` or `demo_1`, sees
+none of this. The boss itself (how its twists stack, how Nani Pix starts
+it) is under "Haunted rounds"; this section is the goal that calls it.
+
+- **The count.** `group_goal.candles` adds up the season's **finished**
+  games, those `WON` or `UNSOLVED` (`SNUFFING`); a game still running, a
+  stopped one (deleted) and a vote in progress add nothing. Each game weighs
+  the first that applies: **0** for a boss game, `per_event_day` for an
+  event-day game, `per_haunted` for a haunted one (a stored twist), else
+  `per_game`. So the boss never adds candles, and an event-day game counts
+  once at the event-day weight, not at both. The count is read from the games
+  on demand; nothing stores it.
+- **Milestones.** After each finished game, while the season is `ACTIVE` or
+  `CLOSING`, and while the count is **below** the target, the largest
+  multiple of `milestone_every` that is below the target and not yet queued
+  is queued as a `GOAL_MILESTONE` post (INFO). The target is never a
+  milestone (its post is the reached one), a jump over two milestones posts
+  only the later one, and `milestone_every = 0` posts none. "Not yet queued"
+  reads the season's `GOAL_MILESTONE` rows, posted or not, so a restart or a
+  re-finished game never repeats one.
+- **Reaching the goal** (`group_goal.settle`). The first time a game ending
+  takes the count to the target or past it, the goal is **settled**: every
+  **contributor** is paid `contributor_coins` 🪙 (season coins,
+  `CurrencyReason.SEASON_GOAL`) and the run item `contributor_item_key`, each
+  contributor gets a `GOAL_REACHED` event (`actor_id` the contributor; data
+  `season_id`, `run_id`, `crossing_game_id` the game that put out the last
+  candle, `candles`, `coins`), and one `GOAL_REACHED` post is queued with the
+  contributor count. It is logged at INFO. With no contributors, nothing is
+  paid, a WARNING is logged and a single `GOAL_REACHED` event with no actor is
+  written, as the marker that the goal is settled (`is_settled` reads these).
+- **Who contributed.** A player who, in a finished (`WON`/`UNSOLVED`),
+  **non-boss** game of the season, made at least one guess (any `/guess`, right
+  or wrong), or hosted it (the starter, but not of a HARD MODE game, which has
+  no human host), or won it (a `/correct` or `/setwinner` winner counts even
+  without a guess row). The boss game contributes nobody.
+- **Paid once.** The payout happens only while the season is `ACTIVE` or
+  `CLOSING` (a finished game of an `ENDED` or cancelled season does nothing),
+  once per season (`is_settled`), and **before** the lifecycle's conversion of
+  🪙 into 💠 in the same game ending (`consumer._season_mechanics` runs ahead of
+  `lifecycle.on_game_ended`), so the last game of a closing season still pays
+  and the coins convert. **Late players are not paid**: someone whose first
+  qualifying game is after the settling game gets nothing, and a re-finished
+  game (`/setwinner` on an old one) pays nobody again once settled. The whole
+  step runs on the locked season row, with locking reads for the count, the
+  contributors and the settled check, so two games ending at once settle once.
+  A failure is logged at ERROR and rolls back only this step (its savepoint);
+  the game's own result, bones and the lifecycle are unaffected.
+- **The boss.** Once settled, a boss is due while the season is `ACTIVE` (not
+  `CLOSING`) and has no boss game. Nani Pix starts it herself, as a normal
+  5-stage game (see "Haunted rounds" for the start rules and the stacking
+  twists); a human game that starts first holds it until that game ends. A
+  boss stopped with
+  `/stop` is deleted, so it is due again. A finished boss, won or unsolved,
+  is not repeated.
+- **The card.** `services/cards/goal_card.py` draws the 1200x630 counter card
+  from the run's art in `assets/seasons/<run_id>/goal/`, layered bottom to
+  top: `background.png`; the Gashadokuro (`gashadokuro.png`, standing on a
+  horizon line at y=470 with nothing drawn below it; it grows and climbs out
+  of the ground as the count rises); the skull pile (`skulls_0.png` to
+  `skulls_4.png`, one of five picked by the share of the target reached); ten
+  candle slots (`candle_lit.png` / `candle_out.png`, lit ones first and the
+  rest out, `ceil(10 x left / target)` staying lit; each has a shadow and a
+  body shaded to the scene, and a lit one a faint blue glow and floor pool);
+  and the "snuffed / target" counter in the top-left corner. The boss post is
+  the run's `boss.png` alone, cover-fitted. A missing art file is not fatal:
+  the announcement poster and `/candles` log a WARNING and send the same text
+  without a picture.
+- **`/candles`** works in the game topic and in a DM (a DM only for group
+  members, like `/standings`); anywhere else it is ignored. It shows the
+  counter card (never the boss picture) with this text as the caption, or as
+  a plain message when there is no art or the photo fails to send: the title
+  with the season name; the count against the target; the weights line (only
+  when the run has an event day); the next milestone (only before the goal is
+  settled, and only if one is left); then, once settled, **every boss state**:
+  pending (no boss game yet, so Nani Pix is about to start it or is holding
+  it), running (the game's number), won (the number and the winner, shown by
+  `players.display_name` so a Nopperabo hex masks them; no winner named when
+  nobody won it) or unsolved (the Gashadokuro survived). Then a line for the
+  viewer: "You helped put out the candles" for a contributor, or, before the
+  goal is settled only, an invitation to guess or host (a non-contributor
+  gets no line after it), and the viewer's bones when the run has a bone set. With
+  no season, or a run without a goal, it says there is no candle goal. Each
+  use is logged at INFO.
+
+### Bone Collector
+
+A run with `bone_set` (`BoneSet(bones, item_key)`, code
+`services/seasons/bones.py`) gives a set reward for winning haunted rounds.
+
+- **A bone** is a **win** (`GameStatus.WON`, the player as `winner_id`) of a
+  game of the season that is haunted **or** the boss game. Bones are not
+  stored: `bones.count` counts those games for the player, so a re-set winner
+  changes the count with the data.
+- **Granted at the set size.** When a win takes the player to `bones`
+  (`bone_set.bones`) or more, `bone_set.item_key` is granted
+  (`ItemSource.BONES`, once; an owned item is not granted again). The item is
+  **never revoked**: a later `/setwinner` that takes a win away leaves it.
+- **Only in a running season.** A bone is counted and granted only while the
+  season is `ACTIVE` or `CLOSING`; a win after it has ended does nothing. The
+  step has its own savepoint after the goal's, so an error in one (logged at
+  ERROR, naming it) does not stop the other.
+- **The DM.** Each bone queues one `BONE_FOUND` DM (see "Announcements"): the
+  count over the set size, or, on the win that grants the item, the "assembled"
+  text naming it. Once the item is owned, a count past the set size queues
+  nothing, and the same count is never queued twice for a player.
+- **The objective** `HAUNTED_WINS` (see "Haunted rounds") counts the same
+  kind of win from the event log; the two are independent.
+
+### Event day (Night Parade)
+
+A run's `event_day` (`EventDay(month, day, names, gate, coin_multiplier,
+all_haunted)`) is one local calendar day read in the **group's timezone**
+(`settings.get_group_timezone`), not UTC.
+
+- **Window** (`services/seasons/event_day.py::window`): local 00:00 up to the
+  next local 00:00, as a UTC `[start, end)`, in the year whose window overlaps
+  the season. A month-day that does not exist that year (Feb 29) gives no
+  window.
+- **Flag.** `games.event_day` is set at activation when `activated_at` is in the
+  window, and never changes afterwards: a game activated at 23:59 local stays an
+  event-day game past midnight, one activated at 00:00 the next day is not.
+- **Gate swap.** `gate.active_gate` returns `event_day.gate` while
+  `event_day.is_event_day(now)` and the event day has a gate (narrower than the
+  run's); otherwise `run.gate`. It binds `event_day=True` into the log context.
+- **Rewards.** `all_haunted` makes every game of the day haunted; its
+  `coin_multiplier` stacks with the haunt's (see the multipliers table under
+  "Season Coins, Pass and Premium").
+- **Posts.** Two group posts through the announcement outbox, held by quiet
+  hours like any other: `EVENT_DAY_START` (`event_day.post.start`, plus lines
+  for all-haunted, the gate rule and the coin multiplier when each applies)
+  and `EVENT_DAY_END`, the sunrise (`event_day.post.end`), both rendered in
+  `jobs/season_posts.py`. `lifecycle.advance` calls `event_day.enqueue_due`
+  while the season is active or closing, and `lifecycle.next_boundary` also
+  wakes at the window's edges while the season is active. Edge rules (`due_posts`):
+  - a start is owed only while the day is on, so downtime over the whole day
+    posts nothing stale; a season starting mid-day still gets its start post;
+  - a sunrise is owed only after a start was queued, at the window's end;
+  - a season ending mid-day (`finalizing`) queues the sunrise **before** its
+    own end post;
+  - each kind is queued once per season (checked against the outbox), so a
+    second `advance` never posts twice.
+
 ### Announcements
 
 Three group posts through the announcement outbox (held by quiet hours like
@@ -2123,6 +2626,37 @@ any other): a **teaser** when a season is scheduled (or its dates change),
 a **start** post (with the gate's rule when there is one) and an **end**
 post with the frozen podium. There is no reminder. A cancelled season posts
 nothing: its queued posts are dropped unsent.
+
+The teaser and the start post are each followed by the **season guide**, a
+rich message (`services/seasons/season_guide.py`, sent as `Post.rich` right
+after the banner) that walks through everything the run switches on: what a
+round earns (a table), the pass, objectives, shop and 💠 conversion, then one
+section per mechanic the run has (haunted rounds, the event day, the group
+goal and its boss, hexes as a table, omikuji odds as a table, the charms, the
+bone set) and the commands to try. Each section links to its page in the
+user's guide (`GUIDE_URL`, `/ru/` for Russian; the run's own page is
+`SeasonRun.guide_page`). Every number is read from the run. The teaser's
+guide also states the gate (the start caption already does). Both languages
+stay under 4096 characters, so a rejected rich message's plain-text fallback
+isn't cut.
+
+A run with `group_goal` or `bone_set` adds four more (renderers in
+`jobs/goal_posts.py`, queued by `services/achievements/outbox.py`'s
+`enqueue_goal`). Each is skipped, with an INFO line, when the season is
+cancelled or its run no longer has the mechanic:
+
+- **`GOAL_MILESTONE`** (topic): the counter card at the milestone, with a line
+  saying how many of the target are out.
+- **`GOAL_REACHED`** (topic): the full counter card (all candles out) with
+  the contributor count and the reward (🪙, the item, or both), singular or
+  plural by the count.
+- **`GOAL_BOSS`** (topic): the boss picture with the game number and the XP and
+  🪙 multipliers, queued by `mark_boss` when the boss is marked, so it posts
+  in id order after the reached post. Skipped when the game is gone (a
+  `/stop`ped boss) or no longer a boss.
+- **`BONE_FOUND`** (a DM to the player): the bone count, or the finished set
+  and the item's name. A player Nani Pix cannot DM follows the usual DM
+  failure rules.
 
 ### The anime gate
 
@@ -2188,7 +2722,8 @@ the profile card. Its ◀ ▶ and 👥 Players list walk only players who
 played a finished game (hosted, won or guessed in it, as in `/history`'s
 "I played"), most games first, then by name; the bot never appears, and
 the viewer is always included (last, before their first game).
-`/profile @someone` still opens anyone's card. A season title is picked with `/title`, not in
+`/profile @someone` still opens anyone's card, as does the **Someone else**
+button under your own. A season title is picked with `/title`, not in
 `/cosmetics`, which only shows a hint for that slot.
 
 | Slot | `look` | Where it shows |
@@ -2197,7 +2732,7 @@ the viewer is always included (last, before their first game).
 | `guess_reaction` | one of the Telegram-allowed reaction emoji | the reaction the bot puts on your winning `/guess` |
 | `host_frame` | a frame key | a border on **every** stage image of games **you** start |
 | `host_transition` | a `RevealEffect` name | the transition of the reveal video of games **you** start |
-| `win_effect` | an overlay key | the overlay in the 2 s ending of the reveal video, when you win with `/guess` or the starter's `/correct`; no equipped overlay, or a failure, falls back to the confetti |
+| `win_effect` | an overlay key (`confetti`, `petal_drift`, `sakura_storm`, `bat_burst`, `hitodama`, `bone_rattle`) | the overlay in the 2 s ending of the reveal video, when you win with `/guess` or the starter's `/correct`; no equipped overlay, or a failure, falls back to the confetti |
 | `profile_banner` | a banner file in the run's art directory | the background of your `/profile` card |
 | `title` | none (the title text is the item's localized names) | next to your name, like an achievement title; chosen with `/title`, stored in `players.title_key` as `item:<item id>` |
 
@@ -2244,7 +2779,7 @@ in the group's time zone. `/achievements` shows the grant count as ×N.
 
 | Key | Earned when | Rarity |
 |---|---|---|
-| `season_debut` | a guess in a season game, or hosting a non-HARD MODE one | B |
+| `season_debut` | a guess in a season game, or hosting one Nani Pix didn't start (not HARD MODE or boss) | B |
 | `season_opening_act` | played on the season's first local day | S |
 | `season_curtain_call` | played on its last local day | S |
 | `season_pass_complete` | finished the free track (`pass_completed`, not premium) | G |
@@ -2290,8 +2825,215 @@ matched in `games.anime_tags`, so its wins count too.
 **Run-specific achievements.** A run module may list `RunAchievement`s (key,
 names and descriptions in EN and RU, rarity, trigger events, a `progress`
 function over the season's history). They are merged into the catalogue as
-`<run_id>.<key>` and earned once in that season. `/achievements` lists one
+`<run_id>.<key>` and earned once in that season. One with several `tiers`
+(and a `rarities` entry per tier) climbs like a ladder inside its season:
+one grant per tier reached, and `/achievements` shows it with its tier
+numeral, medal and progress to the next tier. A run lists at most 16
+(`MAX_RUN_ACHIEVEMENTS`). `/achievements` lists one
 only while its season is the open one (`active`/`closing`), or for a player
 who holds it; it is left out of everyone else's list and summary total
 (`status.build`). A comparison lists it when either player would see it.
-No run ships one yet.
+`sakura_1` ships none; `yokai_1` is the first to (13 of them, at most 16 per
+run, several of them tiered).
+
+### Hexes
+
+A hex is a prank or a tax one player casts on another with season 🪙. A run
+switches them on with `hexes` (see "Optional mechanics per run"); without it
+`open_hexes()` is `None` and `/hex` answers "closed". Four kinds: Nopperabō
+and Chōchin-obake last `duration_hours`; Kappa's dish and the Kitsune trick
+last until they trigger. Code: `services/seasons/hexes.py` (rules),
+`hex_marks.py` (what is on a player now), `hex_targets.py` (the picker's
+list), `commands/hexes/` (`/hex`, `/hexes`).
+
+**Commands.** Both work in a DM or the game topic, and are ignored elsewhere.
+- `/hex` with no arguments shows the season's hexes (price, cooldown, effect)
+  and the caster's opt-out status, with a paginated player picker (8 per
+  page) under them. It lists only players who played this season, are not
+  opted out and are not already hexed, never the caster, ordered by activity
+  since the season started (guesses plus 3 per hosted game, ties by most
+  recent activity). Tapping a player opens the kind picker (price on each
+  button, ◀ Back, ✖). Every button names the caster, so **only the caster's
+  taps count** (anyone else gets an alert).
+- `/hex [@user]` opens that player's kind picker (without the `@user`, a
+  player menu comes first); `/hex @user <kind>` casts at
+  once (`nopperabo`, `chochin`, `kappa`, `kitsune`).
+- `/hexes` shows the caller's status: opted in or out, the hex on them and
+  its time left, their cooldowns. `/hexes off` / `/hexes on` switch the
+  opt-out.
+
+**Who may cast.** Both caster and target must have played this season (a
+guess in a season game, or an activated game hosted that Nani Pix didn't
+start: not HARD MODE or the boss). Not
+yourself. Neither may be opted out (`players.hex_opt_out`, which stops you
+casting and being hexed). **Opting out is locked for 24 h after the player
+last hexed someone else** (self-pranks don't count); opting back in never is.
+
+**Price and limits.** The cast debits `price` 🪙 from the caster
+(`HEX_CAST`); too little 🪙 refuses the cast. A cooldown runs per caster and
+kind, from their last cast of that kind on someone else. A target carries at
+most one active hex at a time (any kind): a second cast is refused until it
+resolves or expires. Refusals are logged at `WARNING` and answered with the
+reason (an alert on a button tap, a reply on the command; nothing is posted
+to the topic).
+
+**Blocked by an Omamori.** If the target holds an Omamori (`consumables.take`)
+the cast still succeeds and **is still paid**, but the hex lands already
+resolved with outcome `BLOCKED`, the Omamori is spent, and nothing takes
+effect. It emits `HEX_CAST` (with `outcome="blocked"`) and `HEX_BLOCKED`
+(actor = the Omamori's holder), which feeds `GoalKind.HEXES_BLOCKED`. It does
+**not** stop an omikuji self-prank (see below).
+
+**The effects**, each tied to the target while the hex is open:
+
+| Hex | Lasts | Effect |
+|---|---|---|
+| Nopperabō | `duration_hours` | hides the player everywhere (below) |
+| Chōchin-obake | `duration_hours` | 🤪 reaction on every guess they make |
+| Kappa | until it triggers | on the target's next win that pays any 🪙, takes `amount` percent (rounded down) of that win's 🪙 and gives it to the caster |
+| Kitsune | until it triggers | on the target's next wrong guess, takes up to `amount` 🪙 (gone to the house, the caster gets nothing) |
+
+- **Kappa and Kitsune** resolve from the season event consumer
+  (`on_season_event`) with outcome `TRIGGERED`, the game id and a
+  `HEX_TRIGGERED` event. They only move 🪙 the target has: a target with less
+  than the amount loses what they have, and **a target with 0 🪙 (or a Kappa
+  share that rounds to 0) loses nothing, but the hex still resolves**. A win
+  that pays no 🪙 does not trigger Kappa. An Ofuda doesn't stop a Kitsune: a
+  forgiven miss is still a wrong guess.
+- **Chōchin** replaces the guess reaction (`hex_marks.guess_reaction`) on
+  every guess, right or wrong, including an Ofuda-forgiven miss; the
+  equipped reaction otherwise shows on wins only.
+- **Nopperabō** hides the player everywhere while it lasts, in text and
+  images, logs excepted.
+  - *Text.* Every mention in a Telegram message shows 👤
+    (`services/players.py::display_name`); a name drawn with flair
+    (`services/cosmetics/flair.py::named`) shows as `👤 💀`, with no flair or
+    title. Guess replies, notices, standings, leaderboard, achievements,
+    profile captions, reveal posts, tips and ballots all go through those.
+  - *Images.* A name drawn on a card (name pills, card titles and effect
+    lines, profile card, which drops the title too (`profile.build`), podium
+    and unlock cards, reveal badge) is the
+    localized `faceless.label` ("Faceless" / «Без лица»,
+    `players.image_name`), and the profile photo is replaced by
+    `assets/icons/hex/nopperabo_avatar.jpg`: every image gets its photo from
+    `jobs/avatars.py::fetch_avatar`, which hands back that art without asking
+    Telegram. A missing art file logs one `ERROR` and the real photo is used.
+  - *Not masked.* The cast notice and its card name the victim by @username
+    (the card's photo is already the faceless art), so the group learns who
+    was hexed; the `/hex` player and kind pickers, and the omikuji card of
+    the draw whose kyō prank lands, also name them unmasked. **Logs always keep real ids and
+    @usernames** (`describe_player_id`).
+- **💀** marks a hexed name in group-facing text drawn through `flair.named`
+  (`hex_marks.marked_name`). It is text only: cards and the reveal badge use
+  the plain name, with no mark. A hex marks while it is unresolved and
+  unexpired in an `ACTIVE` or `CLOSING` season.
+- A hex on the winner when a game ends is `win_facts["hexed"]`.
+
+**Notices.** Both go to the game topic; a notice that fails never undoes
+the hex.
+- **Cast and block** are posted right after the cast commits, as a moment
+  card (see "Moment cards" above): the duel card with chevrons pointing from
+  caster to target, the hex art, a title, and an effect detail line naming the
+  target by @username. A block uses the blocked variant (the target beside the
+  Omamori, the hex art torn apart). The notice line is the caption, and a
+  failed render falls back to it as plain text. From a DM the caster also gets
+  a short confirmation; from the topic the notice speaks for itself.
+- **Triggered (Kappa, Kitsune)** are queued in the announcement outbox
+  (`HEX_NOTICE`) and posted as plain text by the announcements job, in id
+  order. **Nothing is posted during quiet hours**: the rows wait and go out
+  after. A Kitsune that finds an empty purse (it took 0 🪙) posts
+  `hex.notice.triggered.kitsune_empty`, a laugh at the empty purse, instead
+  of "cost … 0 🪙".
+- **Kyō** (an omikuji self-prank) is shown by the omikuji card itself (see
+  "Moment cards"): the kyō slip beside the drawer's avatar (the faceless art
+  under a Nopperabō, with the real @username in the pill) and the hex's effect
+  line. In the topic the `/omikuji` reply is that card, so nothing else is
+  posted. From a DM the same card (drawn once) also goes to the topic right
+  after the draw commits, captioned with `hex.notice.self_prank.<kind>`; with
+  no slip art, or a failed render, that line goes out as plain text. A spared
+  kyō posts nothing to the topic.
+
+**Expiry and the season end.** Nopperabō and Chōchin expire at `expires_at`
+(outcome `EXPIRED`). An expired hex stops marking at once (`active_hex_for`
+ignores it) and is closed in the database at the next cast or self-prank. When
+a season is finalized, every still-open hex of it is cancelled (`cancel_open`,
+outcome `CANCELLED`, no refund); a `CLOSING` season still runs its tagged
+games, so its hexes stay on until then.
+
+**Omikuji self-prank.** A drawn `kyō` that carries a prank hexes the drawer
+with `hexes.apply_self_prank`: a random prank hex (Nopperabō or Chōchin) from
+the run's `hexes`, free, with no cooldown and **ignoring the Omamori**. It is
+refused for an opted-out player, and a player already under a hex keeps that
+one unchanged. It emits `HEX_CAST` with `self_prank=True` (so `hex_master`
+skips it); the omikuji card shows it (see "Notices"), naming the player
+unmasked.
+A normal cast's `HEX_CAST` carries `outcome` (`"blocked"` or `None`) and
+`self_prank=False`.
+
+### Optional mechanics per run
+
+A `SeasonRun` may switch on extra mechanics. Every field is **optional and
+off by default** (`None`, an empty tuple or the Sakura look), so a run that
+sets none of them plays exactly as before. The fields are pure data in
+`seasons/mechanics.py`; `mechanics.problems(run)` validates them and
+`definition.run_problems` appends its result, so a bad run fails the run
+check, not a live game. Phase 1 (the foundation) adds the fields, the
+tables and the validation only; the behavior ships in the phase named in
+the last column.
+
+| Field | Meaning | Implemented by |
+|---|---|---|
+| `palette`, `emoji` | The season card's ribbon and title-gradient colours and the season emoji. Default: the Sakura pink/gold and the cherry blossom, so `sakura_1` renders unchanged. The card reads them from the run. | Phase 1 |
+| `mascot_costume` | A costume key for Nani Pix's picture while the season is open. Needs a season `emoji`. The key itself is validated where costumes live. | Phase 2 |
+| `haunt` | `Haunt(chance_pct, twists, coin_multiplier)`. At activation each season game is haunted with probability `chance_pct`, and a haunted game gets one of the `twists` (`kitsune_mirror`, `tanuki_leaf`, `yurei_double`, `kyokotsu_xray`) stored in `games.haunt_twist` (see "Haunted rounds"); every 🪙 award of it is multiplied by `coin_multiplier` (at least 1). Needs 1..100, at least one twist, no repeats. | Phase 3 |
+| `event_day` | `EventDay(month, day, names, gate, coin_multiplier, all_haunted)`: one real calendar day (checked against a leap year) with EN and RU names. On that local day `gate` replaces the run gate, 🪙 are multiplied, and with `all_haunted` every game is haunted (so `all_haunted` needs `haunt`). Games on it carry `games.event_day`. See "Event day (Night Parade)". | Phase 3 |
+| `ShopOffer.consumable`, `RewardKind.OFUDA` / `OMAMORI` | The ofuda and omamori are consumables that join the clue token as pass rewards and shop offers. The enum values exist from Phase 1; their behavior ships in Phase 4. An offer's `limit` caps purchases per player per season. | Phase 4 |
+| `omikuji` | A tuple of `OmikujiOutcome(kind, weight, coins, consumable, prank)` for a daily draw (`daikichi`, `kichi`, `shokichi`, `kyo`). Weights are at least 1, `coins` is not negative, and only `kyo` may carry `prank`, which needs a prank hex in `hexes`. One draw per player per season per local day (`omikuji_draws`). | Phase 4 |
+| `hexes` | A tuple of `HexRule(kind, price, cooldown_minutes, duration_hours, amount)`, at most one per kind. Pranks (`nopperabo`, `chochin`) last `duration_hours` (at least 1) and have `amount` 0; `kappa` (percent 1..100 of the target's next win) and `kitsune` (🪙 lost on the next wrong guess, at least 1) last until triggered (`duration_hours` 0). Price at least 1, cooldown 1..1440 minutes. Players can refuse hexes with `players.hex_opt_out`. | Phase 5 |
+| `group_goal` | `GroupGoal(target, per_game, per_haunted, per_event_day, milestone_every, boss_*_multiplier, contributor_coins, contributor_item_key)`: a shared candle count that fills as season games finish, with a boss game (`games.boss_game`) when it is reached. Amounts are not negative; the prize is one of the run's items. | Phase 6 |
+| `bone_set` | `BoneSet(bones, item_key)`: an item earned after `bones` haunted wins. The item is one of the run's items. | Phase 6 |
+| `GoalKind.HEXES_BLOCKED` | Objective kind counting hexes a player's Omamori blocked. | Phase 5 |
+| `GoalKind.HAUNTED_WINS` | Objective kind counting haunted-game wins. | Phase 3 |
+
+**One source per item.** An item comes from exactly one place: a pass tier,
+the shop, the group goal's contributor prize or the bone set. `problems`
+rejects a key in two of them.
+
+**Storage.** Hexes, armed ofuda and omikuji draws live in their own tables
+(see `ARCHITECTURE.md`); boss state, candle progress and bones are derived
+from `games` rows, so they have none.
+
+### Yōkai Night (`yokai_1`)
+
+The second run, `seasons/runs/yokai_1.py` (frozen once shipped, like Sakura).
+It is the first run to switch on every optional mechanic above. The
+admin's example window is `/season schedule yokai_1 2026-10-29 06:00
+2026-11-13 06:00`. The values below are the module's; the linked sections
+hold the rules.
+
+| What | Value | Rules in |
+|---|---|---|
+| Gate | Horror, Supernatural, Mythology or Vampire anime (Shikimori genre 14 and 37, theme 6 and 32) | "The anime gate" |
+| XP | win by stage 50 / 40 / 30 / 20 / 10, host solved 15, host unsolved 5, first guess 5 | "Season XP" |
+| 🪙 | win 40, host solved 25, host unsolved 15, first guess 15; 2 🪙 per 💠 on conversion | "Season Coins, Pass and Premium" |
+| Pass | 12 tiers at 20 / 50 / 90 / 140 / 190 / 240 / 300 / 360 / 420 / 490 / 570 / 650 XP; Premium costs 300 💠; rewards include an Omamori (tier 7), a clue ticket and stamps | "Season Coins, Pass and Premium" |
+| Shop | 14 cosmetics (25-95 🪙), a clue ticket (30 🪙, limit 2) and an Ofuda (20 🪙, limit 8) | "Season Shop", "Ofuda and Omamori" |
+| Objectives | 7: Kimodameshi (win by stage 2), Lantern Keeper (host 2), Spirit Chaser (win 3), Night Walker (5 days), Hundred Tales (guess 8), Bone Collector (2 haunted wins), Exorcist (block 1 hex) | "Objectives" |
+| Style | `moonlit` | "Season style" |
+| Mascot costume | `pumpkin` while the season is open | "Cosmetics" |
+| Haunting | 25% of games, all four twists, 🪙 x2 | "Haunted rounds" |
+| Night Parade | 31 October in the group's time zone: every game haunted (x2), 🪙 x2 on top (x4 in all), gate narrowed to Mythology or Supernatural | "Event day (Night Parade)" |
+| 100 Candles | 100 candles; a game puts out 1, a haunted one 2, a Night Parade one 3, a boss game 0; a post at 25 / 50 / 75; each contributor gets 80 🪙 and the Gashadokuro Slayer title | "100 Candles and the boss game" |
+| Boss game | XP x2 and 🪙 x3 for guessers, on top of the haunting's x2 (x6 🪙 in all); a host award is never multiplied | "Haunted rounds", `services/seasons/multipliers.py` |
+| Hexes | Nopperabo 20 🪙 (30 min cooldown, 24 h), Chochin 20 🪙 (30 min, 24 h), Kappa 40 🪙 (60 min, 50% of the target's next win), Kitsune 30 🪙 (60 min, 15 🪙 off the next wrong guess) | "Hexes" |
+| Omikuji | Daikichi 15% (30 🪙 and an Omamori), Kichi 30% (15 🪙), Shokichi 35% (5 🪙), Kyo 20% (a prank hex on the drawer) | "Omikuji" |
+| Bone set | 7 haunted wins give the Mini Skeleton name flair | "Bone Collector" |
+| Achievements | 13 run achievements, five of them hidden (Gashadokuro Bane, Daikichi, Cursed Luck, Hexed and Happy, Hyakki Yagyo) | "Season achievements" |
+| Cosmetics | 33 items: 5 mascot costumes, 4 host frames, 3 host transitions, 3 win effects, 3 banners, 8 name flairs, 3 reactions and 4 titles | "Cosmetics" |
+
+**Multipliers stack.** `multipliers.coin_multiplier` multiplies the haunt's
+factor (when the game is haunted), the event day's (when the game was
+started on it) and the boss's (for a guesser, never for a host award). So a
+Night Parade game pays x4 🪙, a boss game x6, and the posts that announce
+them (the Night Parade start post and the boss topic post and caption) state
+the same product, not one factor.

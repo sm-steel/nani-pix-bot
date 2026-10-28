@@ -20,6 +20,7 @@ from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import GameStatus, PixelAlgorithm
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.seasons.mechanics import HauntTwist
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, mascot, players, settings
 from nani_pix_bot.services.cosmetics import flair
@@ -27,6 +28,7 @@ from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
 from nani_pix_bot.services.game import turns
 from nani_pix_bot.services.mascot import Pose
+from nani_pix_bot.services.seasons import haunting, modifiers, multipliers
 from nani_pix_bot.services.settings import stage_config
 
 
@@ -42,6 +44,9 @@ class LiveStatus:
     limit: int
     pot: int
     time_left: timedelta | None
+    twists: tuple[HauntTwist, ...] = ()  # the twists on the current image, if any
+    multiplier: int = 1  # the Season Coins multiplier of a haunted game
+    boss: bool = False  # the Gashadokuro: its twists never fade
 
 
 @dataclass(frozen=True)
@@ -51,8 +56,9 @@ class _Repost:
     width: int
     algorithm: PixelAlgorithm
     frame: str | None
-    style: str | None
+    look: stage_cosmetics.SeasonLook
     pose: Pose  # the current stage's (an overthrow game's turn 1 shows the usual cast)
+    costume: str | None
 
 
 def caption(live: LiveStatus, lang: str) -> str:
@@ -71,6 +77,18 @@ def caption(live: LiveStatus, lang: str) -> str:
         lines.append(i18n.t("bounty.caption_line", lang, amount=live.pot))
     if live.time_left is not None and live.time_left > timedelta(0):
         lines.append(i18n.t("status.ends", lang, duration=duration(live.time_left, lang)))
+    if live.twists:
+        lines.append(
+            i18n.t(
+                "status.haunted",
+                lang,
+                twist=", ".join(i18n.t(f"haunt.twist.{t.value}", lang) for t in live.twists),
+                hint="; ".join(
+                    i18n.t(haunting.hint_key(t, boss=live.boss), lang) for t in live.twists
+                ),
+                multiplier=live.multiplier,
+            )
+        )
     lines.append(i18n.t("game.id_line", lang, id=live.game_id))
     return "\n".join(lines)
 
@@ -96,6 +114,7 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
         progress = game_service.stage_progress(session, game)
         images = (game.original_image,)
         width = stage_config.get_stage_config(session, game.current_stage).target_width
+    haunt = stage_cosmetics.haunt_at(session, game, progress)
     live = LiveStatus(
         game_id=game.id,
         hard_mode=game.hard_mode,
@@ -105,6 +124,9 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
         limit=progress.limit,
         pot=bounty.pot_balance(session, game.id),
         time_left=_time_left(game, now),
+        twists=() if haunt is None else haunt.twists,
+        multiplier=_multiplier(session, game),
+        boss=game.boss_game,
     )
     return _Repost(
         live,
@@ -112,9 +134,18 @@ def _repost(session: Session, game: Game, now: datetime) -> _Repost | None:
         width,
         game.pixel_algorithm,
         stage_cosmetics.frame_for(session, game),
-        stage_cosmetics.season_style(session, game),
+        stage_cosmetics.SeasonLook(
+            stage_cosmetics.season_style(session, game),
+            haunt,
+        ),
         mascot.stage_pose(progress.number, progress.total),
+        stage_cosmetics.costume_for(session, game),
     )
+
+
+def _multiplier(session: Session, game: Game) -> int:
+    run = modifiers.season_of(session, game)
+    return 1 if run is None else multipliers.coin_multiplier(run, game)
 
 
 def _idle_text(session: Session, game: Game | None, lang: str) -> str:
@@ -138,9 +169,14 @@ def _render(repost: _Repost) -> list[bytes]:
     return [
         mascot.add_to_png(
             stage_cosmetics.stage_png_with(
-                image, repost.width, repost.algorithm, repost.frame, repost.style
+                image,
+                repost.width,
+                repost.algorithm,
+                repost.frame,
+                repost.look,
             ),
             repost.pose,
+            repost.costume,
         )
         for image in repost.images
     ]

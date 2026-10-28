@@ -5,13 +5,14 @@ from loguru import logger
 from sqlalchemy.orm import Session
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands.helpers.ids import MAX_ID as MAX_ID
 from nani_pix_bot.commands.helpers.membership import is_group_member
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, players, settings
 
 DEEP_LINK_PREFIX = "ach_"
-MAX_ID = 2**63 - 1  # BigInteger ceiling: anything larger would overflow the DB
 PREFIX = "ach:"  # callback-data prefix of every achievements button
+SOMEONE_ELSE_PREFIX = "acs:"  # 🔍 Someone else's picker (someone_else_picker.py)
 
 
 def resolve_owner(session: Session, viewer_id: int, args: list[str]) -> int | None:

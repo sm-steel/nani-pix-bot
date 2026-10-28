@@ -17,6 +17,7 @@ from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import events, i18n, matching, players
 from nani_pix_bot.services.clues import author_list
 from nani_pix_bot.services.clues import text as clue_text
+from nani_pix_bot.services.cosmetics import ofuda
 from nani_pix_bot.services.game import guesses, turns
 from nani_pix_bot.services.game.clock import deadline_after
 from nani_pix_bot.services.game.win_facts import win_facts
@@ -25,6 +26,7 @@ from nani_pix_bot.services.search.anilist import AniListResult
 from nani_pix_bot.services.search.shikimori import ShikimoriResult
 from nani_pix_bot.services.search.tenrai import TenraiResult
 from nani_pix_bot.services.search.tmdb import TMDBResult
+from nani_pix_bot.services.seasons import haunting
 from nani_pix_bot.services.seasons import schedule as season_schedule
 from nani_pix_bot.services.settings import bot_settings, stage_config
 
@@ -79,6 +81,7 @@ class GuessOutcome(enum.Enum):
 
     WON = "won"
     WRONG = "wrong"
+    FORGIVEN = "forgiven"  # a wrong guess an armed Ofuda kept off the stage limit
     STAGE_ADVANCED = "stage_advanced"
     TURN_ADVANCED = "turn_advanced"
     UNSOLVED = "unsolved"
@@ -453,8 +456,10 @@ def activate_game(session: Session, game: Game) -> None:
     stage_result): move to the first stage and open the turn (the
     designated starter's turn is now consumed)."""
     game.status = GameStatus.ACTIVE
-    game.activated_at = datetime.now(UTC)
+    now = datetime.now(UTC)
+    game.activated_at = now
     game.season_id = season_schedule.active_id(session)
+    haunting.on_activation(session, game, now)
     if game.hard_mode:
         game.hard_mode_turn = 1
     else:
@@ -466,12 +471,14 @@ def activate_game(session: Session, game: Game) -> None:
     turn_state = turns.get_or_create_turn_state(session)
     turn_state.next_starter_id = None
     logger.info(
-        "ACTIVE — started by {starter}, source={source}, answer {answer!r}, hard_mode={hard_mode}",
+        "ACTIVE — started by {starter}, source={source}, answer {answer!r}, "
+        "hard_mode={hard_mode}, boss_game={boss_game}",
         starter=players.describe_player_id(session, game.starter_id),
         starter_id=game.starter_id,
         source=game.source,
         answer=display_title(game, "EN"),
         hard_mode=game.hard_mode,
+        boss_game=bool(game.boss_game),
         season_id=game.season_id,
         game_id=game.id,
     )
@@ -481,6 +488,7 @@ def activate_game(session: Session, game: Game) -> None:
         events.Involved(actor_id=game.starter_id, game_id=game.id),
         source=str(game.source),
         hard_mode=game.hard_mode,
+        boss_game=bool(game.boss_game),
         own_screenshot=game.screenshot_source is None,
     )
 
@@ -567,8 +575,27 @@ def record_guess(session: Session, game: Game, *, guesser_id: int, guess_text: s
         _win(session, game, winner_id=guesser_id)
         return GuessOutcome.WON
 
+    return _count_wrong(session, game, guesser_id, guess_text, game.current_stage)
+
+
+def _count_wrong(
+    session: Session, game: Game, guesser_id: int, guess_text: str, current_stage: PixelStage
+) -> GuessOutcome:
+    """The wrong-guess tail of record_guess: count the miss against the stage
+    limit (or let an armed Ofuda forgive it) and advance the stage at the limit."""
+    stage = stage_label(current_stage)
+    limit = stage_config.get_stage_config(session, current_stage).wrong_guess_limit
+    if ofuda.forgive(session, game, guesser_id):
+        logger.info(
+            "guessed {guess!r} — wrong at {stage}, forgiven by an Ofuda ({wrong}/{limit})",
+            guess=guess_text,
+            stage=stage,
+            wrong=game.wrong_guess_count,
+            limit=limit,
+            game_id=game.id,
+        )
+        return GuessOutcome.FORGIVEN
     game.wrong_guess_count += 1
-    limit = stage_config.get_stage_config(session, game.current_stage).wrong_guess_limit
     logger.info(
         "guessed {guess!r} — wrong at {stage} ({wrong}/{limit})",
         guess=guess_text,
@@ -773,6 +800,9 @@ def force_unsolved(game: Game, *, cause: str) -> None:
         events.Involved(subject_id=game.starter_id, game_id=game.id),
         cause=cause,
         hard_mode=game.hard_mode,
+        boss_game=bool(game.boss_game),
+        event_day=bool(game.event_day),
+        haunted=haunting.is_haunted(game),
         distinct_guessers=guessed,
     )
 

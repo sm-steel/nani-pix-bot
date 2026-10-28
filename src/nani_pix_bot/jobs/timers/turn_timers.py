@@ -134,7 +134,7 @@ async def turn_expiry_job_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     never started. Opens the turn to anyone and notifies the group.
 
     Imports schedule_idle_autostart lazily (function-local, not at module
-    level): autostart.py already imports cancel_turn_timers from this
+    level): bot_claim.py (imported by autostart.py) imports cancel_turn_timers from this
     module, so a module-level import the other way round would be a real
     circular import, not just the theoretical shape the sibling-import
     convention is meant to dodge — Python's import system can't resolve

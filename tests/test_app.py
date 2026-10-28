@@ -16,7 +16,19 @@ from telegram.error import Conflict, NetworkError
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, TypeHandler
 
 from nani_pix_bot import app, db
-from nani_pix_bot.commands import leaderboard, quiet_hours, standings_dm
+from nani_pix_bot.commands import (
+    game_flow,
+    grant_item_picker,
+    leaderboard,
+    quiet_hours,
+    refund_picker,
+    setwinner_picker,
+    standings_dm,
+    tip,
+)
+from nani_pix_bot.commands.achievements import (
+    someone_else_picker as achievements_someone_else_picker,
+)
 from nani_pix_bot.commands.dm_start import (
     pick_callback_handler,
     screenshot_gallery_callback_handler,
@@ -26,6 +38,7 @@ from nani_pix_bot.commands.dm_start import (
     screenshot_upload_instead_callback_handler,
 )
 from nani_pix_bot.commands.helpers import log_scope, paging, player_tracking
+from nani_pix_bot.commands.profile import someone_else_picker as profile_someone_else_picker
 from nani_pix_bot.config import Config
 from nani_pix_bot.jobs.reveal import RevealCache
 from nani_pix_bot.models.enums import Provider
@@ -103,11 +116,16 @@ def test_build_application_registers_every_command() -> None:
         "linkmal",
         "unlinkmal",
         "balance",
+        "inventory",
         "profile",
         "shop",
         "seasonpass",
         "seasonshop",
         "tip",
+        "hex",
+        "hexes",
+        "omikuji",
+        "candles",
         "pixelconfig",
         "partialmatch",
         "refund",
@@ -460,6 +478,25 @@ def test_paged_views_route_their_taps_to_their_own_handlers() -> None:
     assert _callback_for(application, standings_dm.feed_data(1)) is standings_dm.standings_callback
     assert _callback_for(application, leaderboard.page_data(1)) is leaderboard.leaderboard_callback
     assert _callback_for(application, paging.NOOP) is paging.noop_callback
+
+
+def test_player_pickers_route_their_taps_to_their_own_handlers() -> None:
+    application = app.build_application(_config())
+
+    assert _callback_for(application, "tip:1:0:t:2") is tip.tip_callback
+    assert _callback_for(application, "cor:1:5:t:2") is game_flow.correct_callback
+    assert _callback_for(application, "skp:1:o") is game_flow.skip_callback
+    assert _callback_for(application, "sw:1:5:t:2") is setwinner_picker.setwinner_callback
+    assert _callback_for(application, "rfp:1:t:2") is refund_picker.refund_picker_callback
+    assert _callback_for(application, "gi:1:#3:t:2") is grant_item_picker.grant_item_callback
+    assert (
+        _callback_for(application, "prs:1:o")
+        is profile_someone_else_picker.profile_someone_else_callback
+    )
+    assert (
+        _callback_for(application, "acs:1:t:2")
+        is achievements_someone_else_picker.achievements_someone_else_callback
+    )
 
 
 async def test_post_init_starts_the_reveal_worker_then_reloads_the_slot(

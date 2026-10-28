@@ -6,6 +6,7 @@ no provider answering → unavailable (try again), never off-theme."""
 import enum
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -16,7 +17,7 @@ from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import Gate, GateTag
 from nani_pix_bot.services.search import tags as anime_tags
 from nani_pix_bot.services.search.tags import AnimeTag
-from nani_pix_bot.services.seasons import schedule
+from nani_pix_bot.services.seasons import event_day, schedule
 from nani_pix_bot.services.seasons.tags import TagClients, TagsUnavailableError, fetch_tags
 
 
@@ -75,8 +76,9 @@ async def check(
     return GateResult(Verdict.PASSED if matches(gate, tags) else Verdict.OFF_THEME, tags)
 
 
-def active_gate(session: Session) -> Gate | None:
-    """The running season's gate. Also binds that season's `season_id` and
+def active_gate(session: Session, now: datetime | None = None) -> Gate | None:
+    """The running season's gate (on the run's event day, the event day's own
+    gate when it has one). Also binds that season's `season_id` and
     `run_id` into the log context, so every gate decision that follows in
     this unit of work (the verdict, a stale result, a gated bot pick) is
     traceable to the season (spec §6)."""
@@ -85,6 +87,13 @@ def active_gate(session: Session) -> Gate | None:
     if season is None or run is None:
         return None
     log_context.bind(season_id=season.id, run_id=season.run_id)
+    if (
+        run.event_day is not None
+        and run.event_day.gate is not None
+        and event_day.is_event_day(session, now or datetime.now(UTC))
+    ):
+        log_context.bind(event_day=True)
+        return run.event_day.gate
     return run.gate
 
 

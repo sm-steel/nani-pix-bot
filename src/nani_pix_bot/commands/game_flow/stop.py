@@ -26,6 +26,7 @@ from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
 from nani_pix_bot.services.clues import handouts
 from nani_pix_bot.services.clues import shop as shop_service
+from nani_pix_bot.services.cosmetics import costume as costumes
 from nani_pix_bot.services.economy import bounty
 
 
@@ -47,6 +48,11 @@ class _StoppedGame:
     original_bytes: bytes | None = None
     hard_mode_photos: tuple[bytes, bytes] | None = None
     clues: tuple[bytes, ...] = ()  # read before the game (and its handouts) is deleted
+    costume: str | None = None  # Nani's, resolved while the starter's game still exists
+
+    def reveal_target(self) -> RevealTarget:
+        """The reveal of a stopped game: no winner, and what the deleted row can't give."""
+        return RevealTarget(self.game_id, None, clues=self.clues, costume=self.costume)
 
 
 async def _may_stop(
@@ -184,6 +190,8 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
         # The CASCADE drops the handouts with the game: take the clue album's
         # images first, for the reveal to post.
         clues = tuple(handouts.revealed_images(session, game_id)) if can_reveal_now else ()
+        # The reveal can't resolve the costume once the row is gone: read it now.
+        costume = costumes.for_game(session, game) if can_reveal_now else None
         # The CASCADE would drop the game's clue purchases unrefunded.
         shop_service.refund_game(session, game_id)
         bounty.refund_pot(session, game_id)
@@ -192,15 +200,19 @@ async def _handle_confirm(query, context: ContextTypes.DEFAULT_TYPE, user, *, re
     # Block closed and committed above — the row deletion and turn-open
     # are durable now regardless of whether the announcement below
     # actually reaches the group (see post_current_image's docstring).
-    timeout_module.schedule_idle_autostart(context.job_queue, turn_state)
+    # The boss check waits for the stop announcement (below), so a fresh
+    # Gashadokuro never posts ahead of "stopped".
+    timeout_module.schedule_idle_autostart(context.job_queue, turn_state, check_boss=False)
     stopped_game = _StoppedGame(
         game_id=game_id,
         title=title,
         original_bytes=original_bytes,
         hard_mode_photos=hard_mode_photos,
         clues=clues,
+        costume=costume,
     )
     revealed = await _announce_stop(context, session_factory, stopped_game, lang, reveal)
+    timeout_module.schedule_boss_start(context.job_queue)
     logger.info(
         "stopped (was {was}, answer {answer})",
         was=was,
@@ -240,7 +252,7 @@ async def _announce_stop(
         sent = await timeout_module.post_reveal_pair(
             context,
             session_factory,
-            target=RevealTarget(stopped_game.game_id, None, clues=stopped_game.clues),
+            target=stopped_game.reveal_target(),
             photos=stopped_game.hard_mode_photos,
             caption=i18n.t("stop.hard_mode_stopped_reveal_caption", lang, title=stopped_game.title)
             + game_service.game_id_line(stopped_game.game_id, lang),
@@ -251,7 +263,7 @@ async def _announce_stop(
         sent = await timeout_module.post_reveal(
             context,
             session_factory,
-            target=RevealTarget(stopped_game.game_id, None, clues=stopped_game.clues),
+            target=stopped_game.reveal_target(),
             photo=stopped_game.original_bytes,
             caption=i18n.t("stop.stopped_reveal_caption", lang, title=stopped_game.title)
             + game_service.game_id_line(stopped_game.game_id, lang),

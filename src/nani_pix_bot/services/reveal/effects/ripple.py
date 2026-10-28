@@ -18,8 +18,8 @@ from typing import NamedTuple, cast
 
 from PIL import Image, ImageMath
 
+from nani_pix_bot.services.easing import smoothstep
 from nani_pix_bot.services.reveal import encode
-from nani_pix_bot.services.reveal.effects._common import ease_in_out
 
 CRF = 21
 BAND, GLOW, GLOW_BOOST = 0.16, 120, 40
@@ -73,7 +73,7 @@ def _timeline(n_stages: int, fps: int) -> list[_Step]:
     for k in range(n_stages):
         last = k == n_stages - 1
         n = round(fps * (LAST_RIPPLE_S if last else RIPPLE_S))
-        steps += [_Step("ripple", k, k + 1, ease_in_out(i / n), last) for i in range(1, n + 1)]
+        steps += [_Step("ripple", k, k + 1, smoothstep(i / n), last) for i in range(1, n + 1)]
         if not last:
             steps.append(_Step("still", k + 1, repeat=round(fps * STILL_S)))
     steps += [_Step("flash", i) for i in range(1, FLASH_FRAMES + 1)]

@@ -96,7 +96,7 @@ def test_compose_on_a_tiny_image_changes_nothing() -> None:
 
 
 def test_compose_failure_returns_the_image_and_logs_error(monkeypatch, log_records) -> None:
-    def broken(pose: Pose, width: int) -> Image.Image:
+    def broken(pose: Pose, width: int, costume: str | None = None) -> Image.Image:
         raise OSError("unreadable pose")
 
     monkeypatch.setattr(mascot, "sized", broken)
@@ -164,3 +164,77 @@ def test_still_png_is_the_sized_pose_and_its_margin() -> None:
     assert still.mode == "RGBA"
     assert still.size == (w, h)
     assert margin == round(1280 * mascot.MARGIN)
+
+
+def _near_orange(pixel: bytes) -> bool:
+    return all(abs(a - b) <= 3 for a, b in zip(pixel, (255, 120, 0), strict=True))
+
+
+def test_pose_path_of_a_costume() -> None:
+    assert mascot.pose_path(Pose.WIN, "kitsune") == mascot.COSTUME_DIR / "kitsune" / "win.png"
+
+
+def test_pose_path_plain_is_unchanged() -> None:
+    assert mascot.pose_path(Pose.WIN) == mascot.POSE_DIR / "win.png"
+
+
+def test_compose_draws_the_costume(costume_art: str) -> None:
+    base = Image.new("RGB", (640, 360), (0, 0, 0))
+    out = mascot.compose(base, Pose.CAST, costume_art)
+    x, y, w, h = mascot.box(base.size, Pose.CAST, costume_art)
+    cx, cy = x + w // 2, y + h // 2
+    assert _near_orange(out.crop((cx, cy, cx + 1, cy + 1)).tobytes())
+
+
+def test_box_uses_the_costumes_own_aspect(costume_art: str) -> None:
+    margin = round(1000 * mascot.MARGIN)
+    room = 150 - 2 * margin
+    _, _, w, h = mascot.box((1000, 150), Pose.CAST, costume_art)
+    assert h == room
+    assert w == room * 384 // 440
+
+
+def test_a_missing_costume_pose_falls_back_to_plain_and_logs_error_once(
+    costume_art: str, log_records
+) -> None:
+    (mascot.COSTUME_DIR / costume_art / "nope.png").unlink()
+    base = Image.new("RGB", (640, 360), (5, 6, 7))
+    first = mascot.compose(base, Pose.NOPE, costume_art)
+    second = mascot.compose(base, Pose.NOPE, costume_art)
+    assert first.tobytes() == second.tobytes() == mascot.compose(base, Pose.NOPE).tobytes()
+    errors = [r for r in log_records if r.level == "ERROR"]
+    assert len(errors) == 1
+    assert errors[0].extra["costume"] == costume_art
+    assert errors[0].extra["pose"] == "nope"
+
+
+def test_still_png_sizes_the_costume(costume_art: str) -> None:
+    png, _ = mascot.still_png(Pose.CAST, (1280, 720), costume_art)
+    still = Image.open(io.BytesIO(png))
+    assert still.height == round(440 * still.width / 384)
+
+
+def test_add_to_jpeg_with_a_costume_keeps_size(costume_art: str) -> None:
+    out = Image.open(
+        io.BytesIO(mascot.add_to_jpeg(_png(Image.new("RGB", (800, 450))), Pose.WIN, costume_art))
+    )
+    assert out.size == (800, 450)
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted(mascot.COSTUME_DIR.glob("*/*.png")) if mascot.COSTUME_DIR.exists() else [],
+)
+def test_every_costume_pose_asset_is_384_wide_and_short_enough(path: Path) -> None:
+    with Image.open(path) as img:
+        assert img.width == 384
+        assert img.height <= 480
+        assert img.mode == "RGBA"
+
+
+def test_every_costume_dir_has_all_six_poses() -> None:
+    if not mascot.COSTUME_DIR.exists():
+        return
+    for folder in mascot.COSTUME_DIR.iterdir():
+        if folder.is_dir():
+            assert {p.stem for p in folder.glob("*.png")} == {p.value for p in Pose}, folder

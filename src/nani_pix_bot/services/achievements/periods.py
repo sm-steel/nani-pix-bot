@@ -17,7 +17,7 @@ from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.period import PeriodResult, PeriodState
 from nani_pix_bot.services import players
 from nani_pix_bot.services.achievements import engine, outbox
-from nani_pix_bot.services.events import LoggedEvent, to_event
+from nani_pix_bot.services.events import LoggedEvent, bot_hosted, to_event
 
 CHAMPION_KEYS: Mapping[PeriodType, str] = MappingProxyType(
     {
@@ -126,11 +126,12 @@ class GainRole(StrEnum):
 
 
 def _shares(event: LoggedEvent) -> list[tuple[int, int, GainRole]]:
-    """Who one win pays and how much: the winner, and the host unless HARD MODE."""
+    """Who one win pays and how much: the winner, and the host unless Nani Pix
+    started the game (HARD MODE or the boss)."""
     shares = []
     if event.actor_id is not None:
         shares.append((event.actor_id, win_points(event), GainRole.WIN))
-    if not event.data["hard_mode"] and event.subject_id is not None:
+    if not bot_hosted(event.data) and event.subject_id is not None:
         shares.append((event.subject_id, HOST_POINTS, GainRole.HOST))
     return shares
 

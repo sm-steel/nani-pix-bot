@@ -1,11 +1,19 @@
 from datetime import UTC, datetime, timedelta
 
-from nani_pix_bot.models.enums import EventType, GameStatus, PixelStage, SeasonStatus, XpSource
+from nani_pix_bot.models.announcement import AnnouncementOutbox
+from nani_pix_bot.models.enums import (
+    EventType,
+    GameStatus,
+    OutboxKind,
+    PixelStage,
+    SeasonStatus,
+    XpSource,
+)
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule, SeasonXp
-from nani_pix_bot.services.events import LoggedEvent
-from nani_pix_bot.services.seasons import consumer, lifecycle
+from nani_pix_bot.services.events import LoggedEvent, as_utc
+from nani_pix_bot.services.seasons import consumer, event_day, lifecycle
 
 NOW = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
 
@@ -138,3 +146,111 @@ def test_finalize_logs_when_nobody_scored(session, log_records) -> None:
     assert line.extra["results"] == 0
     assert line.extra["winner_ids"] == []
     assert "nobody scored" in line.message
+
+
+# --- Night Parade posts (demo_3: event day Oct 31, group timezone UTC) ---
+
+DAY_START = datetime(2026, 10, 31, tzinfo=UTC)
+DAY_END = datetime(2026, 11, 1, tzinfo=UTC)
+PARADE = (OutboxKind.EVENT_DAY_START, OutboxKind.EVENT_DAY_END)
+
+
+def _queued(session) -> list[OutboxKind]:
+    rows = session.query(AnnouncementOutbox).order_by(AnnouncementOutbox.id)
+    return [r.kind for r in rows]
+
+
+def _parade(session) -> list[OutboxKind]:
+    return [k for k in _queued(session) if k in PARADE]
+
+
+def test_start_is_queued_when_the_day_begins(session, haunted_season, log_records) -> None:
+    lifecycle.advance(session, DAY_START)
+    assert _queued(session) == [OutboxKind.EVENT_DAY_START]
+    line = next(r for r in log_records if r.message.startswith("queued the"))
+    assert line.level == "INFO"
+    assert line.extra["kind"] == "event_day_start"
+    assert line.extra["event_day_name"] == "Halloween"
+
+
+def test_nothing_is_queued_before_the_day(session, haunted_season) -> None:
+    lifecycle.advance(session, DAY_START - timedelta(minutes=1))
+    assert _queued(session) == []
+
+
+def test_a_second_advance_never_posts_twice(session, haunted_season) -> None:
+    lifecycle.advance(session, DAY_START)
+    lifecycle.advance(session, DAY_START + timedelta(hours=3))
+    assert _queued(session) == [OutboxKind.EVENT_DAY_START]
+
+
+def test_sunrise_after_the_day(session, haunted_season) -> None:
+    lifecycle.advance(session, DAY_START)
+    lifecycle.advance(session, DAY_END)
+    lifecycle.advance(session, DAY_END + timedelta(hours=1))
+    assert _queued(session) == list(PARADE)
+
+
+def test_downtime_over_the_whole_day_posts_nothing(session, haunted_season) -> None:
+    lifecycle.advance(session, DAY_END + timedelta(hours=5))
+    assert _parade(session) == []
+
+
+def test_a_season_starting_mid_day_gets_its_start_post(session) -> None:
+    row = SeasonSchedule(
+        run_id="demo_3",
+        start_at=datetime(2026, 10, 31, 6, tzinfo=UTC),
+        end_at=datetime(2026, 11, 9, tzinfo=UTC),
+        status=SeasonStatus.SCHEDULED,
+        created_by=9,
+    )
+    session.add(row)
+    session.flush()
+    lifecycle.advance(session, datetime(2026, 10, 31, 6, 5, tzinfo=UTC))
+    assert _queued(session) == [OutboxKind.SEASON_START, OutboxKind.EVENT_DAY_START]
+
+
+def test_a_season_ending_mid_parade_posts_sunrise_before_the_end_post(session) -> None:
+    row = SeasonSchedule(
+        run_id="demo_3",
+        start_at=datetime(2026, 10, 26, tzinfo=UTC),
+        end_at=datetime(2026, 10, 31, 12, tzinfo=UTC),
+        status=SeasonStatus.ACTIVE,
+        created_by=9,
+    )
+    session.add(row)
+    session.flush()
+    lifecycle.advance(session, datetime(2026, 10, 31, 1, tzinfo=UTC))
+    lifecycle.advance(session, datetime(2026, 10, 31, 12, tzinfo=UTC))
+    assert row.status == SeasonStatus.ENDED
+    assert _queued(session) == [
+        OutboxKind.EVENT_DAY_START,
+        OutboxKind.EVENT_DAY_END,
+        OutboxKind.SEASON_END,
+    ]
+
+
+def test_a_run_without_event_day_queues_nothing(session, active_season) -> None:
+    lifecycle.advance(session, active_season.start_at + timedelta(hours=1))
+    assert _parade(session) == []
+    assert _queued(session) == []
+
+
+def test_next_boundary_is_the_next_window_edge(session, haunted_season) -> None:
+    assert lifecycle.next_boundary(session, datetime(2026, 10, 28, tzinfo=UTC)) == DAY_START
+    assert lifecycle.next_boundary(session, datetime(2026, 10, 31, 12, tzinfo=UTC)) == DAY_END
+    assert lifecycle.next_boundary(session, datetime(2026, 11, 2, tzinfo=UTC)) == as_utc(
+        haunted_season.end_at
+    )
+
+
+def test_parade_follows_the_group_timezone(session, haunted_season, set_group_tz) -> None:
+    set_group_tz("Europe/Moscow")
+    local_start = datetime(2026, 10, 30, 21, tzinfo=UTC)  # Oct 31 00:00 MSK
+    local_end = datetime(2026, 10, 31, 21, tzinfo=UTC)  # Nov 1 00:00 MSK
+    assert lifecycle.next_boundary(session, datetime(2026, 10, 28, tzinfo=UTC)) == local_start
+    assert lifecycle.next_boundary(session, datetime(2026, 10, 31, 12, tzinfo=UTC)) == local_end
+    before = datetime(2026, 10, 30, 20, 30, tzinfo=UTC)
+    during = datetime(2026, 10, 30, 22, 30, tzinfo=UTC)  # 01:30 MSK
+    assert event_day.due_posts(session, haunted_season, before) == []
+    assert event_day.due_posts(session, haunted_season, during) == [OutboxKind.EVENT_DAY_START]

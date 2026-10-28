@@ -14,18 +14,19 @@ from nani_pix_bot.jobs import reveal_worker
 from nani_pix_bot.jobs.reveal_worker import RevealCache, runtime
 from nani_pix_bot.models.enums import PixelAlgorithm, RevealEffect
 from nani_pix_bot.models.game import Game
-from nani_pix_bot.services.cosmetics import reveal_choice
+from nani_pix_bot.services.cosmetics import costume, reveal_choice
 from nani_pix_bot.services.game import STAGE_ORDER
 from nani_pix_bot.services.reveal import pipeline, store
 from nani_pix_bot.services.settings.stage_config import get_stage_config
 
-_Inputs = tuple[bytes, PixelAlgorithm, tuple[int, ...], RevealEffect, tuple[str, ...]]
+_Inputs = tuple[bytes, PixelAlgorithm, tuple[int, ...], RevealEffect, pipeline.Looks]
 
 
 def _read_inputs(session: Session, game_id: int) -> _Inputs | None:
     """The stored image bytes (unmodified: the worker's static cache keys on
     them), the pixelation algorithm, the five stage widths, the effect and the
-    win overlays players have equipped (drawn ahead, so a win doesn't wait)."""
+    players' looks: the win overlays they have equipped and Nani's costume. All plain
+    values: they're pickled into the worker."""
     game = session.get(Game, game_id)
     slot = store.load(session)
     if game is None or slot is None or slot.game_id != game_id:
@@ -37,7 +38,13 @@ def _read_inputs(session: Session, game_id: int) -> _Inputs | None:
     if image is None:
         return None
     widths = tuple(get_stage_config(session, stage).target_width for stage in STAGE_ORDER)
-    return image, game.pixel_algorithm, widths, slot.effect, reveal_choice.overlays_in_use(session)
+    return (
+        image,
+        game.pixel_algorithm,
+        widths,
+        slot.effect,
+        pipeline.Looks(reveal_choice.overlays_in_use(session), costume.for_game(session, game)),
+    )
 
 
 def _not_owned(session: Session) -> str:
@@ -104,9 +111,11 @@ def start_pregeneration(application: Application, game_id: int, *, startup: bool
     future: asyncio.Future[pipeline.Pregen] = asyncio.get_running_loop().create_future()
     cache.pending(game_id, future)
     logger.info(
-        "reveal pre-render started ({effect}; win overlays drawn ahead: {overlays})",
+        "reveal pre-render started ({effect}; win overlays drawn ahead: {overlays};"
+        " Nani's costume: {costume})",
         effect=inputs[3].value,
-        overlays=", ".join(inputs[4]) or "the default only",
+        overlays=", ".join(inputs[4].win_overlays) or "the default only",
+        costume=inputs[4].costume,
         game_id=game_id,
     )
     coro = _pregenerate(application, cache, game_id, future, inputs)

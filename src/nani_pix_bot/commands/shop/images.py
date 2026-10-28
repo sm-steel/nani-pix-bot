@@ -23,9 +23,11 @@ from nani_pix_bot.services import mascot, players, settings
 from nani_pix_bot.services import pixelate as pixelate_service
 from nani_pix_bot.services.clues import author_list, handouts, shop
 from nani_pix_bot.services.clues.shop import Offer, Refusal, ShopRefusedError
+from nani_pix_bot.services.cosmetics import costume
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.mascot import Pose
 from nani_pix_bot.services.pixelate import fingerprint, render
+from nani_pix_bot.services.seasons import haunting
 from nani_pix_bot.services.settings import stage_config
 
 # How many candidate screenshots one purchase may download before giving
@@ -66,6 +68,7 @@ class ScreenshotPlan:
     mode: ClueScreenshotMode = ClueScreenshotMode.RANDOM
     author: tuple[AuthorCandidate, ...] = ()
     pose: Pose = Pose.CAST
+    costume: str | None = None
 
 
 class ScreenshotFetchError(Exception):
@@ -144,6 +147,7 @@ def screenshot_plan(session: Session, user: User, game_id: int) -> ScreenshotPla
         mode=mode,
         author=_author_candidates(session, game, mode),
         pose=stage_cosmetics.stage_pose(session, game),
+        costume=costume.for_game(session, game),
     )
 
 
@@ -240,7 +244,9 @@ def _render(plan: ScreenshotPlan, url: str, data: bytes, print_: int) -> Fetched
             "extra screenshot: could not pixelate {screenshot_url}", screenshot_url=url
         )
         raise ScreenshotFetchError("pixelation failed") from None
-    return FetchedScreenshot(url, mascot.add_to_png(pixelated, plan.pose), print_, data)
+    return FetchedScreenshot(
+        url, mascot.add_to_png(pixelated, plan.pose, plan.costume), print_, data
+    )
 
 
 def _author_pick(plan: ScreenshotPlan) -> FetchedScreenshot | None:
@@ -306,7 +312,8 @@ async def fetch_extra_screenshot(
 
 
 def render_tile_clue(session: Session, game: Game, tile: int) -> bytes:
-    """The pixelated screenshot with the round's `tile` shown unpixelated."""
+    """The pixelated screenshot with the round's `tile` shown unpixelated, both
+    wearing the current stage's haunted twists."""
     original = game.original_image
     if original is None:
         logger.error("no original image for a tile clue", game_id=game.id)
@@ -314,5 +321,13 @@ def render_tile_clue(session: Session, game: Game, tile: int) -> bytes:
     pixelated = pixelate_service.pixelate(
         original, stage_width(session, game), game.pixel_algorithm
     )
+    haunt = stage_cosmetics.current_haunt(session, game)
+    if haunt is not None:
+        # Both images wear the stage's twists, so the tapped tile lines up with
+        # what the buyer sees (the mirror included).
+        original = haunting.apply_twists(original, haunt.twists)
+        pixelated = haunting.apply_twists(pixelated, haunt.twists)
     revealed = render.reveal_tiles(original, pixelated, [tile], shop.TILE_GRID)
-    return mascot.add_to_png(revealed, stage_cosmetics.stage_pose(session, game))
+    return mascot.add_to_png(
+        revealed, stage_cosmetics.stage_pose(session, game), costume.for_game(session, game)
+    )

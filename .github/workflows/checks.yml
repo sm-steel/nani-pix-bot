@@ -13,10 +13,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      # uv and qlty at the versions mise.toml pins and mise.lock checksums
+      # (locked mode fails on any mismatch), the same binaries as local dev.
+      # Only these two: ffmpeg and Node aren't needed for the hooks.
+      - name: Install pinned tools (uv, qlty)
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          python-version: "3.11"
+          version: 2026.10.4
+          install_args: uv github:qltysh/qlty
 
       - name: Install project dependencies
         run: uv sync
@@ -27,20 +31,11 @@ jobs:
       # `smells` never invokes plugins) are enabled (see .qlty/qlty.toml);
       # every other third-party linter plugin it could also run is
       # disabled, ruff/ty stay the only linter/type-checker (see
-      # CLAUDE.md).
-      #
-      # Version pinned (issue #190) via the install script's QLTY_VERSION —
-      # qltysh/qlty-action/install has no version input and always pulls
-      # the latest CLI, whose bundled plugin defaults can change under us
-      # between runs (that's how an unpinned trufflehog started failing
-      # every branch). Keep this in step with the qlty you run locally
-      # (`qlty upgrade --version <same>`), and bump both deliberately.
-      - name: Install qlty
-        env:
-          QLTY_VERSION: "0.650.0"
-        run: |
-          curl -fsSL https://qlty.sh | sh
-          echo "$HOME/.qlty/bin" >> "$GITHUB_PATH"
+      # CLAUDE.md). Installed by mise above, pinned in mise.toml since
+      # issue #190: an unpinned qlty's bundled plugin defaults changed under
+      # us and failed every branch. Bump it deliberately (CLAUDE.md).
+      - name: Check the qlty version
+        run: qlty --version
 
       # Runs the committed .pre-commit-config.yaml as-is — every hook is
       # `language: system`, shelling out to `uv run ruff`/`uv run ty`/

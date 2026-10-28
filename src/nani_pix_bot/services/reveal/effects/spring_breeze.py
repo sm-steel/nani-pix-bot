@@ -15,13 +15,13 @@ from dataclasses import dataclass
 from PIL import Image, ImageDraw
 
 from nani_pix_bot.services.reveal import encode
+from nani_pix_bot.services.reveal.effects._common import block_grid, rgb_at
 from nani_pix_bot.services.shapes import petal_outline
 
 SWEEP_S = 1.3  # the wind front crosses the image
 FLIGHT_S = 0.7  # a petal's life after it lifts off
 TILT = 0.35  # the front leans: lower rows go a little later
 JITTER = 0.08  # of the sweep: blocks don't all leave on a perfect line
-BLOCK_PX = 22  # target block size of the grid that blows away
 PETAL_SHARE = 0.6  # of the blocks, this many become a visible petal
 PINK = (255, 183, 205)
 SEED = 17
@@ -41,11 +41,6 @@ class _Flyer:
     size: float
 
 
-def _grid(size: tuple[int, int]) -> tuple[int, int]:
-    w, h = size
-    return max(1, round(w / BLOCK_PX)), max(1, round(h / BLOCK_PX))
-
-
 def _departures(grid: tuple[int, int], rng: random.Random) -> list[list[float]]:
     """When each block leaves, in seconds into the sweep."""
     gw, gh = grid
@@ -60,10 +55,6 @@ def _departures(grid: tuple[int, int], rng: random.Random) -> list[list[float]]:
         ]
         for gy in range(gh)
     ]
-
-
-def _rgb_at(data: bytes, offset: int) -> tuple[int, int, int]:
-    return data[offset], data[offset + 1], data[offset + 2]
 
 
 def _flyers(
@@ -85,7 +76,7 @@ def _flyers(
                     x=(gx + 0.5) * bw,
                     y=(gy + 0.5) * bh,
                     leaves=leaves[gy][gx],
-                    color=_rgb_at(colours, (gy * gw + gx) * 3),
+                    color=rgb_at(colours, (gy * gw + gx) * 3),
                     vx=math.cos(heading) * speed,
                     vy=math.sin(heading) * speed,
                     spin=rng.uniform(-9, 9),
@@ -130,7 +121,7 @@ def frames(original: Image.Image, stages: list[Image.Image]) -> Iterator[bytes]:
     front = stages[0].convert("RGB")
     size = clear.size
     rng = random.Random(SEED)  # noqa: S311 - visual randomness, seeded for a reproducible look
-    grid = _grid(size)
+    grid = block_grid(size)
     leaves = _departures(grid, rng)
     flyers = _flyers(front, grid, leaves, rng)
     total = SWEEP_S + FLIGHT_S

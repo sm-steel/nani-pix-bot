@@ -28,26 +28,33 @@ from nani_pix_bot import db, heartbeat
 from nani_pix_bot.commands import (
     achievements,
     balance,
+    candles,
     cosmetics,
     currency_config,
     dm_start,
     game_flow,
     gamesenabled,
     grant_item,
+    grant_item_picker,
+    hexes,
     history,
+    inventory,
     language,
     leaderboard,
     mal_link,
+    omikuji,
     onboarding,
     partialmatch,
     profile,
     quiet_hours,
     refund,
+    refund_picker,
     season,
     season_pass,
     season_shop,
     setautostart,
     setwinner,
+    setwinner_picker,
     shop,
     stageconfig,
     standings,
@@ -58,6 +65,7 @@ from nani_pix_bot.commands import (
     version,
 )
 from nani_pix_bot.commands.achievements import browser as achievements_browser
+from nani_pix_bot.commands.achievements import someone_else_picker as achievements_someone_else
 from nani_pix_bot.commands.dm_start.keyboards import (
     SCREENSHOT_UPLOAD_CALLBACK_DATA,
     SEARCH_RETRY_CALLBACK_DATA,
@@ -66,6 +74,8 @@ from nani_pix_bot.commands.helpers import log_scope, paging, player_tracking
 from nani_pix_bot.commands.helpers.bot_menu import refresh_command_menu
 from nani_pix_bot.commands.helpers.mal_config import MAL_BOT_DATA_KEYS
 from nani_pix_bot.commands.language import SET_LANGUAGE_PREFIX
+from nani_pix_bot.commands.profile import browse as profile_browse
+from nani_pix_bot.commands.profile import someone_else_picker as profile_someone_else
 from nani_pix_bot.commands.profile.data import PREFIX as PROFILE_PREFIX
 from nani_pix_bot.commands.quiet_hours import SET_TIMEZONE_PREFIX
 from nani_pix_bot.config import Config, load_config
@@ -359,8 +369,45 @@ def build_application(config: Config) -> Application:
         CallbackQueryHandler(achievements_browser.achievements_callback, pattern=r"^ach:")
     )
     application.add_handler(
-        CallbackQueryHandler(profile.browse.profile_callback, pattern=rf"^{PROFILE_PREFIX}")
+        CallbackQueryHandler(hexes.hex_callback, pattern=rf"^{re.escape(hexes.PREFIX)}")
     )
+    application.add_handler(
+        CallbackQueryHandler(tip.tip_callback, pattern=rf"^{re.escape(tip.PREFIX)}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            game_flow.correct_callback, pattern=rf"^{re.escape(game_flow.CORRECT_PREFIX)}"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            game_flow.skip_callback, pattern=rf"^{re.escape(game_flow.SKIP_PREFIX)}"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            setwinner_picker.setwinner_callback,
+            pattern=rf"^{re.escape(setwinner_picker.PREFIX)}",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(profile_browse.profile_callback, pattern=rf"^{PROFILE_PREFIX}")
+    )
+    for picker_callback, prefix in (
+        (refund_picker.refund_picker_callback, refund_picker.PREFIX),
+        (grant_item_picker.grant_item_callback, grant_item_picker.PREFIX),
+        (
+            profile_someone_else.profile_someone_else_callback,
+            profile_someone_else.SOMEONE_ELSE.spec.prefix,
+        ),
+        (
+            achievements_someone_else.achievements_someone_else_callback,
+            achievements_someone_else.SOMEONE_ELSE.spec.prefix,
+        ),
+    ):
+        application.add_handler(
+            CallbackQueryHandler(picker_callback, pattern=rf"^{re.escape(prefix)}")
+        )
     application.add_handler(CallbackQueryHandler(standings_dm.standings_callback, pattern=r"^std:"))
     application.add_handler(CallbackQueryHandler(leaderboard.leaderboard_callback, pattern=r"^lb:"))
     application.add_handler(CallbackQueryHandler(history.history_callback, pattern=r"^hist:"))
@@ -381,11 +428,15 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
     application.add_handler(CommandHandler("status", status.status_command))
     application.add_handler(CommandHandler("balance", balance.balance_command))
+    application.add_handler(CommandHandler("inventory", inventory.inventory_command))
     application.add_handler(CommandHandler("profile", profile.profile_command))
     application.add_handler(CommandHandler("shop", shop.shop_command))
     application.add_handler(CommandHandler("seasonpass", season_pass.season_pass_command))
     application.add_handler(CommandHandler("seasonshop", season_shop.season_shop_command))
     application.add_handler(CommandHandler("tip", tip.tip_command))
+    application.add_handler(CommandHandler("hex", hexes.hex_command))
+    application.add_handler(CommandHandler("hexes", hexes.hexes_command))
+    application.add_handler(CommandHandler("omikuji", omikuji.omikuji_command))
     application.add_handler(CommandHandler("pixelconfig", currency_config.currency_config_command))
     application.add_handler(CommandHandler("partialmatch", partialmatch.partialmatch_command))
     application.add_handler(CommandHandler("refund", refund.refund_command))
@@ -409,6 +460,7 @@ def build_application(config: Config) -> Application:
     application.add_handler(CommandHandler("version", version.version_command))
     application.add_handler(CommandHandler("achievements", achievements.achievements_command))
     application.add_handler(CommandHandler("standings", standings.standings_command))
+    application.add_handler(CommandHandler("candles", candles.candles_command))
     application.add_handler(CommandHandler("history", history.history_command))
     application.add_error_handler(_error_handler)
 

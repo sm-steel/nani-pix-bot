@@ -19,20 +19,21 @@ from nani_pix_bot.jobs.reveal import AVATAR_TIMEOUT
 from nani_pix_bot.models.enums import CosmeticSlot, PreviewKind
 from nani_pix_bot.seasons.registry import ResolvedItem
 from nani_pix_bot.services import i18n, players
-from nani_pix_bot.services.cosmetics import previews, profile
+from nani_pix_bot.services.cosmetics import costume, previews, profile
 from nani_pix_bot.services.reveal import pipeline
 
 
 @dataclass(frozen=True)
 class _Request:
     """One preview to send: of `resolved`, into `chat_id`, drawn on `viewer`, kept under
-    `key` (previews.cache_key; None: never kept)."""
+    `key` (previews.cache_key; None: never kept), Nani in `costume` (None: plain)."""
 
     chat_id: int
     viewer: User
     resolved: ResolvedItem
     lang: str
     key: str | None
+    costume: str | None = None
 
 
 async def _viewer(context: ContextTypes.DEFAULT_TYPE, request: _Request) -> previews.Viewer:
@@ -41,20 +42,26 @@ async def _viewer(context: ContextTypes.DEFAULT_TYPE, request: _Request) -> prev
     capped like the reveal's (AVATAR_TIMEOUT): updates are handled one at a time."""
     user, slot = request.viewer, request.resolved.item.slot
     card = None
-    if slot is CosmeticSlot.PROFILE_BANNER:
-        with session_scope(context.bot_data["session_factory"]) as session:
+    with session_scope(context.bot_data["session_factory"]) as session:
+        if slot is CosmeticSlot.PROFILE_BANNER:
             card = profile.card(profile.build(session, user.id, request.lang), request.lang)
+        handle = players.image_name(
+            session, user.id, request.lang, players.badge_handle(user.username, user.full_name)
+        )
+        full_name = players.image_name(session, user.id, request.lang, user.full_name)
     avatar = None
     if slot in previews.AVATAR_SLOTS:
         try:
-            avatar = await asyncio.wait_for(fetch_avatar(context.bot, user.id), AVATAR_TIMEOUT)
+            avatar = await asyncio.wait_for(
+                fetch_avatar(context.bot, user.id, context.bot_data["session_factory"]),
+                AVATAR_TIMEOUT,
+            )
         except TimeoutError:
             logger.warning(
                 "the avatar took over {seconds:g} s; previewing with initials",
                 seconds=AVATAR_TIMEOUT,
             )
-    handle = players.badge_handle(user.username, user.full_name)
-    return previews.Viewer(user.id, handle, user.full_name, avatar, card)
+    return previews.Viewer(user.id, handle, full_name, avatar, card, request.costume)
 
 
 async def _render(context: ContextTypes.DEFAULT_TYPE, request: _Request) -> previews.Preview:
@@ -144,6 +151,17 @@ def _cached(
         return (PreviewKind(row.kind), row.file_id) if row is not None else None
 
 
+def _worn(context: ContextTypes.DEFAULT_TYPE, viewer_id: int) -> str | None:
+    """Nani's costume on the viewer's previews. A failed lookup is logged and leaves her
+    plain: it never blocks a preview."""
+    try:
+        with session_scope(context.bot_data["session_factory"]) as session:
+            return costume.for_viewer(session, viewer_id)
+    except Exception as exc:
+        logger.opt(exception=exc).error("couldn't read Nani's costume; previewing her plain")
+        return None
+
+
 async def send(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
@@ -152,12 +170,14 @@ async def send(
     viewer: User,
 ) -> None:
     """`resolved`'s preview into `chat_id`, drawn on `viewer` (#427)."""
-    key = previews.cache_key(resolved, viewer.id)
-    request = _Request(chat_id, viewer, resolved, lang, key)
+    worn = _worn(context, viewer.id)
+    key = previews.cache_key(resolved, viewer.id, worn, lang)
+    request = _Request(chat_id, viewer, resolved, lang, key, worn)
     cached = _cached(context, request)
     logger.info(
         "previewed {item_id} ({source})",
         item_id=resolved.item_id,
+        costume=worn,
         source="cached" if cached else "rendered",
     )
     try:

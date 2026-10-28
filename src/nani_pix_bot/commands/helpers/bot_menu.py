@@ -17,6 +17,7 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("help", i18n.t("commands.help", lang)),
         BotCommand("newgame", i18n.t("commands.newgame", lang)),
         BotCommand("balance", i18n.t("commands.balance", lang)),
+        BotCommand("inventory", i18n.t("commands.inventory", lang)),
         BotCommand("profile", i18n.t("commands.profile", lang)),
         BotCommand("shop", i18n.t("commands.shop", lang)),
         BotCommand("seasonpass", i18n.t("commands.seasonpass", lang)),
@@ -28,6 +29,10 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("title", i18n.t("commands.title", lang)),
         BotCommand("cosmetics", i18n.t("commands.cosmetics", lang)),
         BotCommand("tip", i18n.t("commands.tip", lang)),
+        BotCommand("hex", i18n.t("commands.hex", lang)),
+        BotCommand("hexes", i18n.t("commands.hexes", lang)),
+        BotCommand("omikuji", i18n.t("commands.omikuji", lang)),
+        BotCommand("candles", i18n.t("commands.candles", lang)),
         BotCommand("language", i18n.t("commands.language", lang)),
         # Listed unconditionally, like every other command here: this menu
         # is set once at startup (and on a /language change) for all
@@ -65,8 +70,13 @@ async def refresh_command_menu(bot: Bot, *, group_chat_id: int, lang: str) -> No
         BotCommand("achievements", i18n.t("commands.achievements", lang)),
         BotCommand("standings", i18n.t("commands.standings", lang)),
         BotCommand("balance", i18n.t("commands.balance", lang)),
+        BotCommand("inventory", i18n.t("commands.inventory", lang)),
         BotCommand("profile", i18n.t("commands.profile", lang)),
         BotCommand("tip", i18n.t("commands.tip", lang)),
+        BotCommand("hex", i18n.t("commands.hex", lang)),
+        BotCommand("hexes", i18n.t("commands.hexes", lang)),
+        BotCommand("omikuji", i18n.t("commands.omikuji", lang)),
+        BotCommand("candles", i18n.t("commands.candles", lang)),
         BotCommand("help", i18n.t("commands.help", lang)),
         BotCommand("version", i18n.t("commands.version", lang)),
     ]

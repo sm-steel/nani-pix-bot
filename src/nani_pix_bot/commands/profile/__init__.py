@@ -4,12 +4,11 @@ game topic, with ◀ ▶ and a player list on the card (browse.py)."""
 from loguru import logger
 from sqlalchemy.orm import Session
 from telegram import Update, User
-from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.achievements.common import outsider_refusal
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
-from nani_pix_bot.commands.profile import browse, card
+from nani_pix_bot.commands.profile.send import CardRequest, send_card
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.services import i18n, players, settings
 
@@ -54,28 +53,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # card's "my card" button always has somewhere to go.
         players.get_or_create_player(session, user.id, username=user.username)
         target_id = _target_id(session, user, args)
-        if target_id is None:
-            unknown = i18n.t("profile.unknown", lang, username=args[0].lstrip("@"))
-        else:
-            view, headline = card.load(session, target_id, lang)
-            viewing = browse.Viewing(user.id, target_id, private=not in_topic)
-            keyboard = browse.card_keyboard(browse.roster(session, context, user.id), viewing, lang)
     if target_id is None:
-        await message.reply_text(unknown)
+        await message.reply_text(i18n.t("profile.unknown", lang, username=args[0].lstrip("@")))
         return
-    png, caption = await card.photo(context, view, headline, lang)
-    try:
-        await message.reply_photo(photo=png, caption=caption, reply_markup=keyboard)
-    except TelegramError:
-        logger.opt(exception=True).error(
-            "failed to send the profile card of {target}",
-            target=view.name,
-            target_id=target_id,
-        )
-        return
-    logger.info(
-        "showed the /profile of {target}",
-        target=view.name,
-        target_id=target_id,
-        seasons=view.seasons_played,
-    )
+    await send_card(message, context, CardRequest(user.id, target_id, private=not in_topic))

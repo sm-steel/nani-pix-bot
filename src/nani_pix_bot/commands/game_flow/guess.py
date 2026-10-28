@@ -1,7 +1,8 @@
 """The /guess command — see MECHANICS.md's "Guess matching" and
 "Pixelation stages" sections."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 
 from loguru import logger
 from telegram import Message, Update, User
@@ -20,9 +21,10 @@ from nani_pix_bot.commands.game_flow.stage_post import (
 from nani_pix_bot.commands.helpers.scoping import is_game_topic
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import timers as timeout_module
+from nani_pix_bot.jobs.moments import CharmMoment, post_charm_moment
 from nani_pix_bot.jobs.reveal import RevealWinner
 from nani_pix_bot.jobs.timers.current_image import RevealTarget
-from nani_pix_bot.models.enums import CosmeticSlot, GameStatus
+from nani_pix_bot.models.enums import ConsumableKind, CosmeticSlot, GameStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, players, settings
@@ -31,6 +33,10 @@ from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import earning, settlement
 from nani_pix_bot.services.economy.messages import earnings_suffix
 from nani_pix_bot.services.game import guesses
+from nani_pix_bot.services.seasons import haunting, hex_marks
+
+# Outcomes answered with the remaining-guesses reply (a forgiven miss included).
+_WRONG_LIKE = frozenset({game_service.GuessOutcome.WRONG, game_service.GuessOutcome.FORGIVEN})
 
 # Outcomes whose post reveals the title anyway.
 _NO_PARTIAL_REVEAL = frozenset(
@@ -50,12 +56,14 @@ def _partial_reveal_line(session, game: Game, lang: str) -> str:
     return "\n" + i18n.t("guess.partial_reveal", lang, reveal=row.partial_reveal)
 
 
-def _reveal_winner(session, user: User) -> RevealWinner:
+def _reveal_winner(session, user: User, lang: str) -> RevealWinner:
     """The reveal badge's winner: "@username", or the full name for a
     player with no username, plus their equipped win overlay."""
     return RevealWinner(
         user.id,
-        players.badge_handle(user.username, user.full_name),
+        players.image_name(
+            session, user.id, lang, players.badge_handle(user.username, user.full_name)
+        ),
         inventory.look(session, user.id, CosmeticSlot.WIN_EFFECT),
     )
 
@@ -67,7 +75,7 @@ def _prepare_won_announcement(
     lang: str,
     user: User,
 ) -> Announcement:
-    winner = _reveal_winner(session, user)
+    winner = _reveal_winner(session, user, lang)
     original_bytes = require_original_image(game, "a WON outcome")
     timeout_module.cancel_timeout(context.job_queue, game.id)
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
@@ -98,7 +106,7 @@ def _prepare_hard_mode_won_announcement(
     of a single post_reveal call. Timer/turn-state
     handling is identical to the normal-mode helper; only the reveal
     photos and caption key differ."""
-    winner = _reveal_winner(session, user)
+    winner = _reveal_winner(session, user, lang)
     photos = game_service.hard_mode_reveal_images(game)
     timeout_module.cancel_timeout(context.job_queue, game.id)
     timeout_module.cancel_inactivity_timers(context.job_queue, game.id)
@@ -141,6 +149,9 @@ def _prepare_turn_advanced_announcement(
         total=progress.total,
         remaining=progress.remaining,
         limit=progress.limit,
+    )
+    caption += haunting.caption_suffix(
+        session, game, lang, number=progress.number, total=progress.total
     )
     return Announcement(
         photos=(pixelated_a, pixelated_b),
@@ -233,7 +244,7 @@ def _dispatch_non_won_outcome(
     only reply text for guess_command to actually await sending (this
     function stays synchronous, message.reply_text is the only async
     call any outcome needs, so it's left to the caller)."""
-    if outcome is game_service.GuessOutcome.WRONG:
+    if outcome in _WRONG_LIKE:
         return None, False, _prepare_wrong_feedback(session, context, game, lang)
     if outcome is game_service.GuessOutcome.STAGE_ADVANCED:
         return prepare_stage_advanced_announcement(session, context, game, lang), False, None
@@ -257,21 +268,44 @@ class _GuessResult:
     reply_text: str | None
     announcement: Announcement | None
     needs_cleanup_after_send: bool
-    reaction: str | None = None  # the winner's equipped reaction, for a WON guess only
+    reaction: str | None = None  # the equipped reaction on a win, or Chochin's prank on any guess
+    moment: CharmMoment | None = None  # the card that follows the reply (a forgiven miss)
 
 
-async def _react_to_win(message: Message, reaction: str) -> None:
-    """Reacts to the winning /guess; a refused reaction never blocks the win."""
+def _ofuda_moment(session, user: User, name: str, lang: str) -> CharmMoment:
+    """The card for a miss an Ofuda forgave: the old reply line is its caption."""
+    handle = players.image_name(session, user.id, lang, players.display_name(session, user.id))
+    return CharmMoment(
+        kind=ConsumableKind.OFUDA,
+        user_id=user.id,
+        display_name=players.image_name(session, user.id, lang, user.full_name),
+        title=i18n.t("ofuda.card_title", lang),
+        detail=i18n.t("ofuda.card_detail", lang, name=handle),
+        caption=i18n.t("ofuda.used", lang, name=name),
+    )
+
+
+async def _react(message: Message, reaction: str) -> None:
+    """Reacts to the /guess; a refused reaction never blocks the guess."""
+    chochin = reaction == hex_marks.CHOCHIN_REACTION
     try:
         await message.set_reaction(reaction=reaction)
     except TelegramError as error:
         logger.warning(
-            "couldn't react {reaction} to the winning guess: {error}",
+            "couldn't react {reaction} to the guess: {error}",
             reaction=reaction,
             error=str(error),
+            chochin=chochin,
         )
     else:
-        logger.info("reacted {reaction} to the winning guess", reaction=reaction)
+        logger.info("reacted {reaction} to the guess", reaction=reaction, chochin=chochin)
+
+
+def _reaction_for(session, user_id: int, outcome) -> str | None:
+    """Chochin's prank on any guess, else the equipped reaction on a win."""
+    won = outcome is game_service.GuessOutcome.WON
+    equipped = inventory.look(session, user_id, CosmeticSlot.GUESS_REACTION) if won else None
+    return hex_marks.guess_reaction(session, user_id, equipped, won, datetime.now(UTC))
 
 
 async def _send_guess_result(
@@ -279,6 +313,8 @@ async def _send_guess_result(
 ) -> None:
     if result.reply_text is not None:
         await message.reply_text(result.reply_text)
+    if result.moment is not None:
+        await post_charm_moment(context, result.moment, game_id=result.game_id)
     if result.announcement is not None:
         if result.needs_cleanup_after_send:
             sent = await send_reveal_announcement(context, session_factory, result.announcement)
@@ -286,7 +322,7 @@ async def _send_guess_result(
         else:
             await send_announcement(context, session_factory, result.announcement)
     if result.reaction is not None:
-        await _react_to_win(message, result.reaction)
+        await _react(message, result.reaction)
 
 
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -330,17 +366,21 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         earnings = earning.award_guess(
             session, game, guesser_id=user.id, won=outcome is game_service.GuessOutcome.WON
         )
-        suffix = earnings_suffix(
-            session, game, earnings, lang, player_name=flair.named(session, user.id, user.full_name)
-        )
+        name = flair.named(session, user.id, user.full_name)
+        suffix = earnings_suffix(session, game, earnings, lang, player_name=name)
         if outcome not in _NO_PARTIAL_REVEAL:
             suffix = _partial_reveal_line(session, game, lang) + suffix
         if outcome is game_service.GuessOutcome.WON:
             announcement = _prepare_won_announcement_dispatch(session, context, game, lang, user)
-            reaction = inventory.look(session, user.id, CosmeticSlot.GUESS_REACTION)
-            result = _GuessResult(game.id, None, with_suffix(announcement, suffix), True, reaction)
+            result = _GuessResult(game.id, None, with_suffix(announcement, suffix), True)
         else:
             result = _non_won_result(session, context, game, outcome, suffix)
+            if outcome is game_service.GuessOutcome.FORGIVEN:
+                result = replace(
+                    result,
+                    moment=_ofuda_moment(session, user, name, lang),
+                )
+        result = replace(result, reaction=_reaction_for(session, user.id, outcome))
     # Block closed and committed above — the outcome (and the currency it
     # paid) is durable now regardless of whether the reply/announcement
     # below actually reaches the group (see post_current_image's docstring).

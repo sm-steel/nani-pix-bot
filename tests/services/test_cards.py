@@ -65,6 +65,12 @@ def test_a_photo_avatar_replaces_the_initials_disc() -> None:
     assert fallback.getpixel((20, 50)) != (255, 0, 0)
 
 
+def test_the_avatar_disc_has_a_hard_edge() -> None:
+    """Callers draw it large and shrink it, so it stays cheap: no supersampled mask."""
+    alpha = cards.avatar_disc(_red_avatar(), "@alice", 42, 100).getchannel("A")
+    assert set(cast(list[int], list(alpha.get_flattened_data()))) == {0, 255}
+
+
 def test_a_broken_avatar_falls_back_to_initials() -> None:
     disc = cards.avatar_disc(b"not an image", "@alice", 42, 100)
     assert disc.size == (100, 100)

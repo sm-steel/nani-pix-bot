@@ -34,7 +34,7 @@ async def photo(
     context: ContextTypes.DEFAULT_TYPE, view: profile.ProfileView, headline: str, lang: str
 ) -> tuple[bytes, str]:
     """The rendered card and its caption."""
-    avatar = await fetch_avatar(context.bot, view.player_id)
+    avatar = await fetch_avatar(context.bot, view.player_id, context.bot_data["session_factory"])
     png = await asyncio.to_thread(
         render_profile_card, profile.card(view, lang), avatar, view.banner
     )

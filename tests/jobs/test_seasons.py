@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from unittest.mock import MagicMock
@@ -9,6 +10,7 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import seasons as season_jobs
 from nani_pix_bot.models.enums import SeasonStatus
 from nani_pix_bot.models.season import SeasonSchedule
+from nani_pix_bot.seasons import registry
 
 
 def _context(session_factory) -> MagicMock:
@@ -78,3 +80,29 @@ async def test_a_closing_season_with_no_running_games_is_ended_by_one_run(sessio
         row = session.query(SeasonSchedule).one()
         assert row.status == SeasonStatus.ENDED
         assert row.ended_at is not None
+
+
+async def test_the_job_rearms_for_the_event_day_window_edge(session_factory, monkeypatch) -> None:
+    runs = registry.discover("tests.seasons.fake_runs")
+    monkeypatch.setattr(registry, "all_runs", lambda: runs)
+    now = datetime.now(UTC)
+    day = (now + timedelta(days=2)).date()
+    demo3 = registry.get("demo_3")
+    assert demo3 is not None
+    assert demo3.event_day is not None
+    run = replace(demo3, event_day=replace(demo3.event_day, month=day.month, day=day.day))
+    monkeypatch.setattr(registry, "get", lambda run_id: run if run_id == "demo_3" else None)
+    with session_scope(session_factory) as session:
+        session.add(
+            SeasonSchedule(
+                run_id="demo_3",
+                start_at=now - timedelta(days=1),
+                end_at=now + timedelta(days=10),
+                status=SeasonStatus.ACTIVE,
+                created_by=9,
+            )
+        )
+    context = _context(session_factory)
+    await season_jobs.season_boundary_callback(cast(ContextTypes.DEFAULT_TYPE, context))
+    when = context.job_queue.run_once.call_args.kwargs["when"]
+    assert when == datetime(day.year, day.month, day.day, tzinfo=UTC)

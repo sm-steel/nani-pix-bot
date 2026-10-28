@@ -15,6 +15,7 @@ from nani_pix_bot.models.stage_config import StageConfig
 from nani_pix_bot.services import mascot
 from nani_pix_bot.services.mascot import Pose
 from tests.conftest import LogLine
+from tests.costume_fixtures import activate_season
 
 
 def _make_update(*, user_id: int = 1, chat_type: str = "private") -> MagicMock:
@@ -230,7 +231,9 @@ async def test_the_stage_samples_show_nani_in_each_stages_pose(
     session_factory, monkeypatch
 ) -> None:
     poses: list[Pose] = []
-    monkeypatch.setattr(mascot, "add_to_png", lambda png, pose: poses.append(pose) or png)
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: poses.append(pose) or png
+    )
     context = _make_context(
         session_factory, admin_ids={1}, args=["64:1", "80:1", "128:2", "192:3", "512:3"]
     )
@@ -341,3 +344,25 @@ async def test_setstage_command_logs_the_change_once_with_the_admin_in_context(
     assert [line.message for line in info] == ["changed stage config: stage 3/5 width=100 limit=2"]
     assert info[0].extra["user_id"] == 1
     assert info[0].extra["changes"] == "stage 3/5 width=100 limit=2"
+
+
+async def test_stageconfig_samples_wear_the_active_runs_default(
+    session_factory, monkeypatch, costume_run
+) -> None:
+    costumes: list[str | None] = []
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: costumes.append(costume) or png
+    )
+    with session_factory() as session:
+        activate_season(session)
+        session.commit()
+    context = _make_context(
+        session_factory, admin_ids={1}, args=["64:1", "80:1", "128:2", "192:3", "512:3"]
+    )
+
+    await stageconfig_module.setstageconfig_command(
+        cast(Update, _make_update(user_id=1)), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert costumes
+    assert set(costumes) == {costume_run}

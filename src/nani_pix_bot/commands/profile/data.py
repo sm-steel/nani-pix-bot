@@ -8,12 +8,16 @@ parsed defensively.
 - prof:t:<owner>:<kind>:<id>:<page>    show/hide one stamp or achievement (edit.py)
 
 <kind> is s (season stamps; <id> is the season_schedule row) or a
-(achievements; <id> is the achievement grant)."""
+(achievements; <id> is the achievement grant).
+
+👥 Someone else, under your own card, opens a player picker with its own
+prefix, SOMEONE_ELSE_PREFIX (someone_else_picker.py, helpers/someone_else.py)."""
 
 from nani_pix_bot.commands.achievements.common import MAX_ID
 from nani_pix_bot.models.enums import ShowcaseKind
 
 PREFIX = "prof:"
+SOMEONE_ELSE_PREFIX = "prs:"
 # How a card was reached, as it reads in the log.
 VIAS = {"p": "◀", "n": "▶", "l": "the player list", "m": "my card"}
 KINDS = {"s": ShowcaseKind.STAMP, "a": ShowcaseKind.ACHIEVEMENT}

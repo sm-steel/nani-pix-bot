@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes
 
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import announcements
+from nani_pix_bot.jobs.post import Post, send_one
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.enums import OutboxKind, Rarity
 from nani_pix_bot.models.player import Player
@@ -415,3 +416,34 @@ async def test_a_renderer_crash_fails_that_row_and_posts_the_next(
     (error,) = [r for r in log_records if r.level == "ERROR"]
     assert "could not be rendered" in error.message
     assert "RuntimeError" in error.message
+
+
+async def test_a_post_with_a_guide_sends_it_as_a_rich_message_after_the_card(
+    session_factory,
+) -> None:
+    context = _context(session_factory)
+    context.bot.do_api_request = AsyncMock()
+    calls = MagicMock()
+    calls.attach_mock(context.bot.send_photo, "photo")
+    calls.attach_mock(context.bot.do_api_request, "rich")
+    post = Post((1,), "caption", rich="## Guide")
+
+    await send_one(cast(ContextTypes.DEFAULT_TYPE, context), post, b"png")
+
+    assert [c[0] for c in calls.mock_calls] == ["photo", "rich"]
+    call = context.bot.do_api_request.await_args
+    assert call is not None
+    endpoint, payload = call.args[0], call.kwargs["api_kwargs"]
+    assert endpoint == "sendRichMessage"
+    assert payload["chat_id"] == 555
+    assert payload["message_thread_id"] == 7
+    assert payload["rich_message"] == {"markdown": "## Guide"}
+
+
+async def test_a_post_without_a_guide_sends_no_rich_message(session_factory) -> None:
+    context = _context(session_factory)
+    context.bot.do_api_request = AsyncMock()
+
+    await send_one(cast(ContextTypes.DEFAULT_TYPE, context), Post((1,), "caption"), b"png")
+
+    context.bot.do_api_request.assert_not_awaited()

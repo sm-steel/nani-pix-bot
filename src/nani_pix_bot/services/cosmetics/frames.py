@@ -4,13 +4,13 @@ frames are registered here; "simple_border" is the neutral built-in, the Sakura
 paper frames live in paper_frames.py."""
 
 from collections.abc import Callable, Mapping
-from io import BytesIO
 from types import MappingProxyType
 
 from loguru import logger
 from PIL import Image, ImageDraw
 
-from nani_pix_bot.services.cosmetics import gold_frame, paper_frames
+from nani_pix_bot.services import stage_image
+from nani_pix_bot.services.cosmetics import gold_frame, lantern_frame, night_frames, paper_frames
 
 _SIMPLE_WIDTH_RATIO = 0.03
 _SIMPLE_COLOR = (245, 245, 245)
@@ -31,6 +31,10 @@ FRAMES: Mapping[str, Callable[[Image.Image], Image.Image]] = MappingProxyType(
         "paper": paper_frames.paper,
         "gold_washi": gold_frame.gold_washi,
         "washi": paper_frames.washi,
+        "ofuda_strip": night_frames.ofuda_strip,
+        "bone_border": night_frames.bone_border,
+        "cobweb": night_frames.cobweb,
+        "lantern_string": lantern_frame.lantern_string,
     }
 )
 
@@ -42,6 +46,4 @@ def apply_frame(png: bytes, frame_key: str) -> bytes:
             "unknown frame {frame_key!r} — posting the stage unframed", frame_key=frame_key
         )
         return png
-    out = BytesIO()
-    draw(Image.open(BytesIO(png))).save(out, format="PNG")
-    return out.getvalue()
+    return stage_image.redraw_or_keep(png, draw, "frame", frame_key)

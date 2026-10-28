@@ -111,7 +111,7 @@ async def end_unsolved(context: ContextTypes.DEFAULT_TYPE, game_id: int, ending:
     its stored screenshots — see has_hard_mode_reveal_images().
 
     Imports maybe_overthrow lazily (function-local, not at module level):
-    autostart.py already imports schedule_timeout from this module, so a
+    bot_claim.py (under autostart.py) imports schedule_timeout from here, so a
     module-level import the other way round would be a real circular
     import, not just the theoretical shape the sibling-import convention
     is meant to dodge — Python's import system can't resolve two modules

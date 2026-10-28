@@ -1,8 +1,11 @@
 from contextlib import contextmanager
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy import create_engine, event
 from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.error import TimedOut
@@ -14,15 +17,30 @@ from nani_pix_bot.commands.helpers.keyboards import (
     STOP_CONFIRM_CALLBACK_DATA,
     STOP_REVEAL_CALLBACK_DATA,
 )
+from nani_pix_bot.db import make_session_factory
+from nani_pix_bot.jobs import reveal
 from nani_pix_bot.jobs import timers as timers_package
 from nani_pix_bot.jobs.timers.current_image import RevealTarget
 from nani_pix_bot.models import CluePurchase
-from nani_pix_bot.models.enums import ClueKind, GameStatus, PixelStage
+from nani_pix_bot.models.base import Base
+from nani_pix_bot.models.enums import (
+    ClueKind,
+    CosmeticSlot,
+    GameStatus,
+    ItemSource,
+    PixelStage,
+    SeasonStatus,
+)
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.halloween import ArmedOfuda, Hex
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.models.season import SeasonSchedule
 from nani_pix_bot.models.turn_state import TurnState
+from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.definition import Item
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services.clues import shop
+from nani_pix_bot.services.cosmetics import inventory
 from nani_pix_bot.services.economy import bounty, config
 from nani_pix_bot.services.economy.config import EconomyKey
 from tests.services.economy.ledger import ledger_balance
@@ -820,3 +838,91 @@ async def test_stop_reveal_hard_mode_keeps_clues_after_the_other_screenshot(
 
     media = context.bot.send_media_group.await_args.kwargs["media"]
     assert [item.media.input_file_content for item in media] == [b"image-b-bytes", b"c1"]
+
+
+def _wear_a_costume(session_factory, monkeypatch: pytest.MonkeyPatch, look: str) -> None:
+    """Player 1 owns and wears the costume item `look` of the fake run "demo_1"."""
+    demo = registry.discover("tests.seasons.fake_runs")["demo_1"]
+    hat = Item("mascot_costume.hat", CosmeticSlot.MASCOT_COSTUME, look, {"EN": "Hat", "RU": "Hat"})
+    run = replace(demo, items=(*demo.items, hat))
+    monkeypatch.setattr(registry, "all_runs", lambda: {"demo_1": run})
+    registry.all_items.cache_clear()
+    with session_factory() as session:
+        item_id = "demo_1/mascot_costume.hat"
+        inventory.grant(session, 1, inventory.ItemGrant(item_id, ItemSource.ADMIN))
+        inventory.equip(session, 1, item_id)
+        session.commit()
+
+
+async def test_a_stopped_games_reveal_keeps_the_starters_costume(
+    session_factory, monkeypatch: pytest.MonkeyPatch, costume_art, request
+) -> None:
+    request.addfinalizer(registry.all_items.cache_clear)  # runs even if an assert fails
+    game_id = _active_game(session_factory, starter_id=1)
+    _wear_a_costume(session_factory, monkeypatch, costume_art)
+    render = AsyncMock(return_value=None)
+    monkeypatch.setattr(reveal, "render_reveal", render)
+    update = _make_callback_update(data=STOP_REVEAL_CALLBACK_DATA, user_id=1)
+    context = _make_context(session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with session_factory() as session:
+        assert session.get(Game, game_id) is None
+    assert render.await_args is not None
+    assert render.await_args.kwargs["nani"].costume == costume_art
+    context.bot.send_photo.assert_awaited_once()
+
+
+@pytest.fixture
+def fk_session_factory():
+    """Like session_factory, but SQLite enforces foreign keys, as MariaDB does."""
+    engine = create_engine("sqlite:///:memory:")
+
+    @event.listens_for(engine, "connect")
+    def _enforce(dbapi_connection, _record) -> None:
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    Base.metadata.create_all(engine)
+    return make_session_factory(engine)
+
+
+async def test_stop_drops_the_armed_ofuda_and_keeps_the_hex(fk_session_factory) -> None:
+    game_id = _active_game(fk_session_factory, starter_id=1)
+    now = datetime(2026, 10, 25, tzinfo=UTC)
+    with fk_session_factory() as session:
+        session.add(Player(telegram_user_id=2))
+        season = SeasonSchedule(
+            run_id="demo_1",
+            start_at=now,
+            end_at=now + timedelta(days=9),
+            status=SeasonStatus.ACTIVE,
+            created_by=9,
+        )
+        session.add(season)
+        session.flush()
+        session.add(ArmedOfuda(player_id=2, game_id=game_id, armed_at=now))
+        session.add(
+            Hex(
+                season_id=season.id,
+                kind="kappa",
+                caster_id=1,
+                target_id=2,
+                cast_at=now,
+                game_id=game_id,
+            )
+        )
+        session.commit()
+    update = _make_callback_update(data=STOP_CONFIRM_CALLBACK_DATA, user_id=1)
+    context = _make_context(fk_session_factory)
+
+    await stop_command_module.stop_callback_handler(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    with fk_session_factory() as session:
+        assert session.get(Game, game_id) is None
+        assert session.query(ArmedOfuda).count() == 0
+        assert session.query(Hex).one().game_id is None

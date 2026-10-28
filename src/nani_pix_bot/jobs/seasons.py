@@ -38,14 +38,15 @@ def _next_run(context: ContextTypes.DEFAULT_TYPE) -> datetime:
     """The next boundary; or, when that can't be read or is already due
     (advancing just failed), a fallback later run that catches up then —
     never a past time, which would re-run at once in a tight loop."""
-    fallback = datetime.now(UTC) + REARM_FALLBACK
+    now = datetime.now(UTC)
+    fallback = now + REARM_FALLBACK
     try:
         with session_scope(context.bot_data["session_factory"]) as session:
-            next_at = lifecycle.next_boundary(session)
+            next_at = lifecycle.next_boundary(session, now)
     except Exception:
         logger.opt(exception=True).error("couldn't read the next season boundary")
         return fallback
-    if next_at is None or next_at <= datetime.now(UTC):
+    if next_at is None or next_at <= now:
         return fallback
     return next_at
 

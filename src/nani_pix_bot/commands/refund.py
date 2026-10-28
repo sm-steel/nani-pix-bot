@@ -1,5 +1,6 @@
-"""/refund @user — admin-only (DM) refund of one clue purchase, picked from a
-paginated keyboard. Runs the same shop.refund() a failed delivery uses, then
+"""/refund [@user] — admin-only (DM) refund of one clue purchase, picked from a
+paginated keyboard (without the @user, a menu of who has one comes first:
+refund_picker.py). Runs the same shop.refund() a failed delivery uses, then
 tells the player in DM (issue #249)."""
 
 from loguru import logger
@@ -8,68 +9,16 @@ from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, 
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+from nani_pix_bot.commands import refund_picker
 from nani_pix_bot.commands.helpers.membership import is_group_admin
 from nani_pix_bot.commands.helpers.scoping import is_private_chat
+from nani_pix_bot.commands.refund_views import REFUND_PREFIX, kind_name, page_view, player_name
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.clue_purchase import CluePurchase
 from nani_pix_bot.models.enums import ClueKind
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.clues import shop
-
-REFUND_PREFIX = "refund:"
-REFUND_PAGE_SIZE = 5
-
-
-def _kind(kind: ClueKind, lang: str) -> str:
-    return i18n.t(f"clue_kind.{kind.value}", lang)
-
-
-def _username(player: Player) -> str:
-    return player.username or str(player.telegram_user_id)
-
-
-def _nav_row(player_id: int, page: int, pages: int, lang: str) -> list[InlineKeyboardButton]:
-    targets = [
-        ("refund.prev", page - 1, page > 0),
-        ("refund.next", page + 1, page < pages - 1),
-    ]
-    return [
-        InlineKeyboardButton(i18n.t(key, lang), callback_data=f"{REFUND_PREFIX}p:{player_id}:{to}")
-        for key, to, shown in targets
-        if shown
-    ]
-
-
-def _item_button(item: shop.RefundableItem, lang: str) -> InlineKeyboardButton:
-    label = i18n.t(
-        "refund.item",
-        lang,
-        game_id=item.game_id,
-        kind=_kind(item.kind, lang),
-        amount=item.amount,
-        date=item.created_at.strftime("%Y-%m-%d"),
-    )
-    return InlineKeyboardButton(label, callback_data=f"{REFUND_PREFIX}s:{item.purchase_id}")
-
-
-def _page_view(
-    session: Session, player: Player, page: int, lang: str
-) -> tuple[str, InlineKeyboardMarkup | None]:
-    items = shop.refundable_purchases(session, player.telegram_user_id)
-    if not items:
-        return i18n.t("refund.none", lang, username=_username(player)), None
-    pages = (len(items) + REFUND_PAGE_SIZE - 1) // REFUND_PAGE_SIZE
-    page = max(0, min(page, pages - 1))
-    shown = items[page * REFUND_PAGE_SIZE : (page + 1) * REFUND_PAGE_SIZE]
-    rows = [[_item_button(item, lang)] for item in shown]
-    nav = _nav_row(player.telegram_user_id, page, pages, lang)
-    if nav:
-        rows.append(nav)
-    header = i18n.t(
-        "refund.list_header", lang, username=_username(player), page=page + 1, pages=pages
-    )
-    return header, InlineKeyboardMarkup(rows)
 
 
 async def refund_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -85,6 +34,11 @@ async def refund_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text(i18n.t("commands.admins_only", lang))
         return
     args = context.args or []
+    if not args:
+        with session_scope(session_factory) as session:
+            text, keyboard = refund_picker.open_view(session, user.id)
+        await message.reply_text(text, reply_markup=keyboard)
+        return
     if len(args) != 1:
         logger.info("sent /refund with bad args {args!r} — replied with usage", args=args)
         await message.reply_text(i18n.t("refund.usage", lang))
@@ -98,7 +52,7 @@ async def refund_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             await message.reply_text(i18n.t("refund.unknown_user", lang, username=username))
             return
-        text, markup = _page_view(session, player, 0, lang)
+        text, markup = page_view(session, player, 0, lang)
         logger.info(
             "opened /refund for {target}",
             target=players.describe_player_id(session, player.telegram_user_id),
@@ -142,7 +96,7 @@ async def _show_page(
         player = session.get(Player, int(player_id))
         if player is None:
             return
-        text, markup = _page_view(session, player, int(page), lang)
+        text, markup = page_view(session, player, int(page), lang)
     logger.info("paged /refund to page {page}", page=int(page) + 1)
     await query.edit_message_text(text, reply_markup=markup)
 
@@ -171,8 +125,8 @@ async def _show_confirm(
             "refund.confirm_prompt",
             lang,
             amount=item.amount,
-            username=_username(player),
-            kind=_kind(item.kind, lang),
+            username=player_name(player),
+            kind=kind_name(item.kind, lang),
             game_id=item.game_id,
         )
         if item.cashback_deducted:
@@ -210,12 +164,12 @@ async def _confirm(
             )
             await query.edit_message_text(i18n.t("refund.stale", lang))
             return
-        kind, game_id, username = ClueKind(row.kind), row.game_id, _username(player)
+        kind, game_id, username = ClueKind(row.kind), row.game_id, player_name(player)
         player_id = player.telegram_user_id
         # shop.refund() logs the INFO line (amount, recipient, game).
         amount = shop.refund(session, row)
     dm_text = i18n.t(
-        "refund.player_dm", lang, amount=amount, kind=_kind(kind, lang), game_id=game_id
+        "refund.player_dm", lang, amount=amount, kind=kind_name(kind, lang), game_id=game_id
     )
     await _notify_player(context, player_id, dm_text)
     await query.edit_message_text(i18n.t("refund.done", lang, amount=amount, username=username))

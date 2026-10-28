@@ -1083,3 +1083,18 @@ async def test_confirm_random_mode_unchanged(
     assert _game_row(session_factory, game_id).status == GameStatus.ACTIVE
     context.bot.send_photo.assert_awaited_once()
     assert "Random mode" not in update.callback_query.edit_message_text.await_args.kwargs["text"]
+
+
+def test_first_post_caption_carries_the_haunt_line(
+    session, fake_runs, haunted_season, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nani_pix_bot.services.seasons import haunting
+    from tests.seasons_fixtures import FixedRng
+
+    monkeypatch.setattr(haunting, "_rng", lambda: FixedRng(randrange=0, choice=0))
+    monkeypatch.setattr(stage_cosmetics, "stage_png", lambda *_a, **_k: b"x")
+    session.add(Player(telegram_user_id=1))
+    game = game_service.create_setup_game(session, starter_id=1, original_image=b"file123")
+    post = preview._activate_and_stage_first_post(session, MagicMock(), game, "en", "Starter Name")
+    assert "Kitsune illusion" in post.caption
+    assert post.caption.index("Kitsune illusion") < post.caption.index(f"#{game.id}")

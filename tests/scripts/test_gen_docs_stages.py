@@ -34,7 +34,9 @@ def test_the_poses_follow_the_round_and_the_original_cheers(tmp_path: Path, monk
     poses: list[Pose] = []
     real = mascot.compose
     monkeypatch.setattr(
-        mascot, "compose", lambda image, pose: poses.append(pose) or real(image, pose)
+        mascot,
+        "compose",
+        lambda image, pose, costume=None: poses.append(pose) or real(image, pose, costume),
     )
     gen_docs_stages.generate(gen_docs_stages.SAMPLE, tmp_path)
     assert poses == [Pose.CAST, Pose.NOPE, Pose.NOPE, Pose.NOPE, Pose.NANI, Pose.WIN]

@@ -10,15 +10,18 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.helpers.membership import is_group_member
-from nani_pix_bot.commands.shop import images, parsing, share, tile_grid
+from nani_pix_bot.commands.shop import images, ofuda_button, parsing, share, tile_grid
 from nani_pix_bot.commands.shop.deliver import (
+    bought_notice,
     deliver_image_clue,
     deliver_text_clue,
     post_bought_notice,
     text_clue_message,
+    token_moment,
 )
 from nani_pix_bot.commands.shop.keyboards import (
     SHOP_BUY_PREFIX,
+    SHOP_OFUDA_PREFIX,
     SHOP_SHARE_PREFIX,
     SHOP_TILE_PREFIX,
     share_keyboard,
@@ -61,6 +64,7 @@ class _Bought:
     followup: str | None
     followup_purchase_id: int | None
     buyer: str
+    token_used: bool = False  # paid with a clue token, not 💠
 
 
 @dataclass(frozen=True)
@@ -73,6 +77,7 @@ class _ImageBought:
     photo: bytes
     caption_key: str
     buyer: str
+    token_used: bool = False  # paid with a clue token, not 💠
 
 
 async def _route_buy(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, user: User) -> bool:
@@ -109,6 +114,8 @@ async def shop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         handled = await _route_tile(context, query, query.from_user)
     elif query.data.startswith(SHOP_SHARE_PREFIX):
         handled = await share.route_share(context, query, query.from_user)
+    elif query.data.startswith(SHOP_OFUDA_PREFIX):
+        handled = await ofuda_button.route_ofuda(context, query, query.from_user)
     else:
         handled = False
     if not handled:
@@ -204,6 +211,7 @@ def _purchase(session_factory, tap: _BuyTap) -> _Bought:
             followup=followup,
             followup_purchase_id=followup_purchase_id,
             buyer=_buyer_label(session, tap),
+            token_used=row.token_used,
         )
 
 
@@ -227,7 +235,7 @@ async def _fail_delivery(
 ) -> None:
     """Refund a purchase whose clue Telegram would not take, and say so."""
     _refund(context.bot_data["session_factory"], bought.purchase_id)
-    key = "shop.delivery_failed" if bought.amount else "shop.delivery_failed_token"
+    key = "shop.delivery_failed_token" if bought.token_used else "shop.delivery_failed"
     await tap.query.answer(i18n.t(key, bought.lang, amount=bought.amount), show_alert=True)
 
 
@@ -236,7 +244,15 @@ async def _announce(
 ) -> None:
     """Post the topic notice, then answer the tap — in that order, so a
     callback that timed out (BadRequest on the answer) skips nothing."""
-    await post_bought_notice(context, tap.game_id, bought.buyer, tap.kind, bought.lang)
+    notice = bought_notice(bought.buyer, tap.kind, bought.lang)
+    moment = None
+    if bought.token_used:
+        with session_scope(context.bot_data["session_factory"]) as session:
+            lang = bought.lang
+            handle = players.image_name(session, tap.user.id, lang)
+            pill = players.image_name(session, tap.user.id, lang, tap.user.full_name)
+        moment = token_moment(tap.user, handle, pill, notice, bought.lang)
+    await post_bought_notice(context, tap.game_id, notice, tap.kind, moment)
     try:
         await tap.query.answer()
     except BadRequest:
@@ -327,6 +343,7 @@ async def _buy_screenshot(context: ContextTypes.DEFAULT_TYPE, tap: _BuyTap) -> N
                 fetched.pixelated,
                 "clue.screenshot_caption",
                 _buyer_label(session, tap),
+                row.token_used,
             )
     except ShopRefusedError as refused:
         await _alert_refusal(context, tap, refused)
@@ -388,7 +405,13 @@ def _purchase_tile(session_factory, tap: _BuyTap) -> _ImageBought:
             raise RuntimeError("a bought tile has no tile_index")
         photo = images.render_tile_clue(session, game, row.tile_index)
         return _ImageBought(
-            lang, row.id, amount, photo, "clue.tile_caption", _buyer_label(session, tap)
+            lang,
+            row.id,
+            amount,
+            photo,
+            "clue.tile_caption",
+            _buyer_label(session, tap),
+            row.token_used,
         )
 
 

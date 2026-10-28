@@ -1,0 +1,70 @@
+---
+title: Hexes
+description: In Yōkai Night you can spend Season Coins to hex a fellow player with /hex, opt out with /hexes off, and block a hex with an Omamori.
+sidebar:
+  order: 8
+---
+
+In [Yōkai Night](/nani-pix-bot/seasons/yokai-night/), you can spend Season Coins 🪙 to
+put a **hex** on another player: a prank, or a tax on their coins.
+
+## The four hexes
+
+| Hex | Price | Cooldown | Effect |
+|---|---|---|---|
+| 👤 **Nopperabō** | 20 🪙 | 30 min | For 24 h the player is faceless: 👤 instead of their name, flair and title in messages, and "Faceless" with a blank face on pictures |
+| 🏮 **Chōchin-obake** | 20 🪙 | 30 min | For 24 h every guess they make gets a 🤪 |
+| 🥒 **Kappa's dish** | 40 🪙 | 60 min | On their next win that pays 🪙, you take 50% of it |
+| 🦊 **Kitsune trick** | 30 🪙 | 60 min | Their next wrong guess costs them up to 15 🪙, which simply vanish |
+
+- Kappa and Kitsune wait until they go off, however long that takes. They only take 🪙
+  the player has: an empty purse loses nothing, but the hex is still used up.
+- A win that pays no 🪙 doesn't set off a Kappa.
+- An [Ofuda](/nani-pix-bot/seasons/omikuji-and-charms/#ofuda) doesn't stop a Kitsune: a
+  forgiven miss is still a wrong guess.
+
+## Casting
+
+Send `/hex` in the game topic or in a private chat with Nani Pix. She lists the hexes
+with their prices and cooldowns, and a menu of players to pick from, then the hex to
+cast. Only your own taps count on your menu.
+
+You can also name them straight away: `/hex @username` opens the hex picker for that
+player, and `/hex @username kappa` casts at once (`nopperabo`, `chochin`, `kappa` or
+`kitsune`).
+
+## Who can hex whom
+
+- **You and your target must have played this season**: guessed in a season round, or
+  hosted one.
+- **Not yourself.**
+- **One hex per player at a time.** Someone who's already hexed can't get another until
+  theirs ends or goes off.
+- **Each hex has its own cooldown**, counted from your last cast of that kind.
+- **The price is paid when you cast**, even if an Omamori blocks it. Too few 🪙 and Nani
+  Pix refuses.
+
+Every hex is public: the game topic gets a card with the caster, the hex and the target.
+While a player is hexed, **💀** follows their name in the group's messages. Kappa and
+Kitsune get another public line when they go off, held by quiet hours like other posts.
+
+Hexes still open when the season ends are cancelled, with no refund.
+
+## Opting out: /hexes
+
+`/hexes` shows whether you're in, the hex on you and how long it has left, and your
+cooldowns.
+
+- **`/hexes off`** opts you out: nobody can hex you, and you can't cast either. A hex
+  already on you stays until it ends.
+- **`/hexes on`** brings you back.
+- You can't opt out for **24 hours after hexing someone**. Opting back in always works.
+
+## Blocking a hex: the Omamori
+
+Hold an **Omamori 🧿** and it blocks the next hex cast on you, by itself. The caster
+still pays, the Omamori is used up, and the game topic gets a card of the hex torn apart.
+Blocking a hex completes the **Exorcist** objective and climbs **Curse Breaker**.
+
+An Omamori doesn't stop the curse of an omikuji *kyō* slip. See
+[Omikuji and charms](/nani-pix-bot/seasons/omikuji-and-charms/) for where to get one.

@@ -46,20 +46,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
-        with:
-          python-version: "3.11"
-
-      - name: Install project dependencies
-        run: uv sync
-
-      # Node and ffmpeg are pinned in mise.toml/mise.lock (locked mode). ffmpeg renders
-      # the Sakura page's cosmetic clips (gen_docs_cards.py) and their test.
-      - name: Install pinned tools (Node, ffmpeg)
+      # uv, Node and ffmpeg are pinned in mise.toml/mise.lock (locked mode).
+      # ffmpeg renders the Sakura page's cosmetic clips (gen_docs_cards.py)
+      # and their test.
+      - name: Install pinned tools (uv, Node, ffmpeg)
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: 2026.10.4
+          install_args: uv node github:BtbN/FFmpeg-Builds
+
+      - name: Install project dependencies
+        run: uv sync
 
       - name: Guide tests (page parity, command table, stage generator)
         run: uv run pytest -q tests/docs tests/scripts/test_gen_docs_stages.py tests/scripts/test_gen_docs_cards.py

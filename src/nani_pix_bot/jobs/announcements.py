@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from itertools import groupby
-from typing import TypedDict
+from typing import Any
 
 from loguru import logger
 from sqlalchemy.orm import Session, sessionmaker
@@ -22,9 +22,9 @@ from telegram.error import Forbidden, TelegramError
 from telegram.ext import ContextTypes, JobQueue
 
 from nani_pix_bot.db import session_scope
-from nani_pix_bot.jobs import season_posts
+from nani_pix_bot.jobs import goal_posts, hex_posts, season_posts
 from nani_pix_bot.jobs.avatars import fetch_avatar
-from nani_pix_bot.jobs.post import Post
+from nani_pix_bot.jobs.post import Post, send_one, where
 from nani_pix_bot.jobs.timers._shared import job_log_scope
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.announcement import AnnouncementOutbox
@@ -32,11 +32,13 @@ from nani_pix_bot.models.enums import OutboxKind, Rarity
 from nani_pix_bot.services import i18n, players, quiet_hours, settings
 from nani_pix_bot.services.achievements import catalogue, names, outbox, podium
 from nani_pix_bot.services.cards import (
+    GoalCard,
     PodiumCard,
     SeasonBanner,
     UnlockCard,
     load_background,
     podium_slot,
+    render_goal_card,
     render_podium_card,
     render_season_banner,
     render_unlock_card,
@@ -51,11 +53,6 @@ ALBUM_MIN = 3
 ALBUM_MAX = 10  # Telegram's album size limit
 
 
-class _Where(TypedDict, total=False):
-    chat_id: int
-    message_thread_id: int
-
-
 def _card_text(text: str) -> str:
     """Noto Sans has no 💠 glyph (the card draws its own diamond): drop it
     together with the space before it."""
@@ -67,7 +64,7 @@ def _unlock_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post |
     if granted is None:
         return None
     defn = catalogue.get(granted.key)
-    who = players.display_name(session, granted.player_id)
+    who = players.display_name(session, granted.player_id, unmasked=True)
     name = names.title(defn, granted.tier, granted.period_key, lang)
     desc = names.description(defn, granted.tier, lang)
     rarity = i18n.t(f"achievement.rarity.{granted.rarity}", lang)
@@ -85,7 +82,7 @@ def _unlock_post(session: Session, row: AnnouncementOutbox, lang: str) -> Post |
         headline=i18n.t("card.unlocked", lang),
         name=name,
         description=_card_text(desc),
-        handle=who,
+        handle=players.image_name(session, granted.player_id, lang, who),
         reward=granted.reward,
         points_label=i18n.t("card.points", lang, points=granted.points),
         rarity_label=rarity,
@@ -124,6 +121,8 @@ RENDERERS: dict[OutboxKind, Callable[[Session, AnnouncementOutbox, str], Post | 
     OutboxKind.UNLOCK: _unlock_post,
     OutboxKind.PERIOD_SUMMARY: _period_post,
     **season_posts.RENDERERS,
+    **hex_posts.RENDERERS,
+    **goal_posts.RENDERERS,
 }
 
 
@@ -186,6 +185,13 @@ def _batches(posts: list[Post]) -> list[list[Post]]:
     return [piece for _, group in groupby(posts, _event_key) for piece in _albums(list(group))]
 
 
+# Cards drawn from the card alone (the banner also gets its background).
+_PLAIN_CARDS: dict[type, Callable[[Any, bytes | None], bytes]] = {
+    SeasonBanner: render_season_banner,
+    GoalCard: lambda card, _background: render_goal_card(card),
+}
+
+
 def _draw(post: Post, faces: list[bytes | None]) -> bytes:
     """Render the post's card on a worker thread: background lookup included."""
     slot = post.background_slot
@@ -196,8 +202,9 @@ def _draw(post: Post, faces: list[bytes | None]) -> bytes:
     card = post.card
     if isinstance(card, UnlockCard):
         return render_unlock_card(card, faces[0] if faces else None, background)
-    if isinstance(card, SeasonBanner):
-        return render_season_banner(card, background)
+    plain = _PLAIN_CARDS.get(type(card))
+    if plain is not None:
+        return plain(card, background)
     if isinstance(card, PodiumCard):
         entries = tuple(replace(e, avatar=a) for e, a in zip(card.entries, faces, strict=False))
         return render_podium_card(replace(card, entries=entries), background)
@@ -213,7 +220,9 @@ async def _faces(
     """The post's avatars; each player is fetched once per drain, not once per card."""
     for user_id in post.avatar_ids:
         if user_id not in cache:
-            cache[user_id] = await fetch_avatar(context.bot, user_id)
+            cache[user_id] = await fetch_avatar(
+                context.bot, user_id, context.bot_data["session_factory"]
+            )
     return [cache[user_id] for user_id in post.avatar_ids]
 
 
@@ -234,25 +243,6 @@ async def _image(
         return None
 
 
-def _where(context: ContextTypes.DEFAULT_TYPE, post: Post) -> _Where:
-    if post.dm_to is not None:
-        return {"chat_id": post.dm_to}
-    return {
-        "chat_id": context.bot_data["group_chat_id"],
-        "message_thread_id": context.bot_data["game_topic_id"],
-    }
-
-
-async def _send_one(context: ContextTypes.DEFAULT_TYPE, post: Post, image: bytes | None) -> None:
-    """A photo with the caption, or the text alone when there's no card."""
-    if not post.text:
-        return
-    if image is None:
-        await context.bot.send_message(text=post.text, **_where(context, post))
-    else:
-        await context.bot.send_photo(photo=image, caption=post.text, **_where(context, post))
-
-
 def _row_ids(group: list[Post]) -> list[int]:
     return [i for post in group for i in post.row_ids]
 
@@ -263,7 +253,7 @@ async def _send_album(
     media = [
         InputMediaPhoto(image, caption=post.text) for image, post in zip(images, group, strict=True)
     ]
-    await context.bot.send_media_group(media=media, **_where(context, group[0]))
+    await context.bot.send_media_group(media=media, **where(context, group[0]))
 
 
 async def _send_each(
@@ -276,7 +266,7 @@ async def _send_each(
     given_up: set[int] = set()
     for done, (post, image) in enumerate(zip(group, images, strict=True)):
         try:
-            await _send_one(context, post, image)
+            await send_one(context, post, image)
         except Forbidden as exc:
             if post.dm_to is None:
                 logger.error(
@@ -331,8 +321,27 @@ async def _send(
     return posted, failed
 
 
+# One drain at a time: the repeating job and the boss start (drain()) must
+# never both send the same pending row.
+_DRAIN_LOCK = asyncio.Lock()
+
+
 @job_log_scope()
 async def drain_outbox(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """The repeating OUTBOX_POLL_SECONDS job."""
+    await drain(context)
+
+
+async def drain(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Posts what is pending now, in id order. The repeating job calls it,
+    and so does the boss start (jobs/timers/bot_claim.py), so "goal
+    reached" and "the Gashadokuro rises" land before the boss's stage 1.
+    No log scope of its own: a caller's context stays as it is."""
+    async with _DRAIN_LOCK:
+        await _drain_pending(context)
+
+
+async def _drain_pending(context: ContextTypes.DEFAULT_TYPE) -> None:
     session_factory = context.bot_data["session_factory"]
     cache: AvatarCache = {}
     for group in _batches(_collect(session_factory)):

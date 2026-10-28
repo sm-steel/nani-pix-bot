@@ -3,9 +3,11 @@
 Both mode."""
 
 from dataclasses import replace
+from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from PIL import Image, ImageOps
 from sqlalchemy import select
 
 from nani_pix_bot.commands.shop import images
@@ -14,9 +16,11 @@ from nani_pix_bot.models.enums import ClueScreenshotMode, PixelAlgorithm, PixelS
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.services import mascot
 from nani_pix_bot.services import pixelate as pixelate_service
+from nani_pix_bot.services.clues import shop
 from nani_pix_bot.services.mascot import Pose
-from nani_pix_bot.services.pixelate import fingerprint
+from nani_pix_bot.services.pixelate import fingerprint, render
 from nani_pix_bot.services.search import shikimori
+from nani_pix_bot.services.seasons import haunting
 from tests.commands.shop.helpers import (
     RICH,
     make_context,
@@ -26,6 +30,7 @@ from tests.commands.shop.helpers import (
     set_currency,
     tap,
 )
+from tests.costume_fixtures import activate_season
 from tests.frames import frame_bytes
 
 _RANDOM_URL = "https://x/random.jpg"
@@ -188,7 +193,9 @@ async def test_a_bought_screenshot_shows_nani_in_the_plans_pose(
     session_factory, provider, monkeypatch
 ) -> None:
     poses: list[Pose] = []
-    monkeypatch.setattr(mascot, "add_to_png", lambda png, pose: poses.append(pose) or png + b"+N")
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: poses.append(pose) or png + b"+N"
+    )
     plan = replace(_plan(ClueScreenshotMode.RANDOM, ()), pose=Pose.NANI)
 
     fetched = await images.fetch_extra_screenshot(_context(session_factory), plan)
@@ -200,7 +207,9 @@ async def test_a_bought_screenshot_shows_nani_in_the_plans_pose(
 
 def test_a_tile_clue_shows_nani_in_the_current_stages_pose(session_factory, monkeypatch) -> None:
     poses: list[Pose] = []
-    monkeypatch.setattr(mascot, "add_to_png", lambda png, pose: poses.append(pose) or png)
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: poses.append(pose) or png
+    )
     game_id = seed_game(
         session_factory, original_image=frame_bytes(3), current_stage=PixelStage.STAGE_5
     )
@@ -232,3 +241,118 @@ async def test_random_mode_buy_sells_a_random_frame_not_the_list(session_factory
 
     assert [p.screenshot_url for p in purchases(session_factory)] == [_RANDOM_URL]
     provider.assert_awaited_once()
+
+
+def _costume_game(session_factory) -> int:
+    with session_factory() as session:
+        season_id = activate_season(session)
+        session.commit()
+    return seed_game(
+        session_factory, original_image=frame_bytes(3), shikimori_id=1, season_id=season_id
+    )
+
+
+async def test_a_bought_screenshot_wears_the_costume(
+    session_factory, provider, monkeypatch, costume_run
+) -> None:
+    costumes: list[str | None] = []
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: costumes.append(costume) or png
+    )
+    game_id = _costume_game(session_factory)
+    set_currency(session_factory, 2, RICH)
+    with session_factory() as session:
+        plan = images.screenshot_plan(session, MagicMock(id=2, username="user2"), game_id)
+    assert plan.costume == costume_run
+
+    await images.fetch_extra_screenshot(_context(session_factory), plan)
+
+    assert costumes == [costume_run]
+
+
+def test_a_tile_clue_wears_the_costume(session_factory, monkeypatch, costume_run) -> None:
+    costumes: list[str | None] = []
+    monkeypatch.setattr(
+        mascot, "add_to_png", lambda png, pose, costume=None: costumes.append(costume) or png
+    )
+    game_id = _costume_game(session_factory)
+
+    with session_factory() as session:
+        images.render_tile_clue(session, session.get(Game, game_id), 0)
+
+    assert costumes == [costume_run]
+
+
+def _tile_clue(session, game, monkeypatch) -> Image.Image:
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, _pose, _costume=None: png)
+    return Image.open(BytesIO(images.render_tile_clue(session, game, 0))).convert("RGB")
+
+
+def _haunted_tile_game(session, haunted_game, twist: str, stage: PixelStage) -> Game:
+    haunted_game.original_image = frame_bytes(3)
+    haunted_game.haunt_twist = twist
+    haunted_game.current_stage = stage
+    return haunted_game
+
+
+def test_a_tile_clue_on_a_mirrored_round_lines_up_with_the_mirrored_stage(
+    session, fake_runs, haunted_game, monkeypatch
+) -> None:
+    game = _haunted_tile_game(session, haunted_game, "kitsune_mirror", PixelStage.STAGE_1)
+    assert game.original_image is not None
+
+    clue = _tile_clue(session, game, monkeypatch)
+
+    mirrored = ImageOps.mirror(Image.open(BytesIO(game.original_image)).convert("RGB"))
+    box = render.tile_box(mirrored.size, 0, shop.TILE_GRID)
+    assert clue.crop(box).tobytes() == mirrored.crop(box).tobytes()
+
+
+def test_an_unhaunted_tile_clue_is_unchanged(session, fake_runs, tagged_game, monkeypatch) -> None:
+    tagged_game.original_image = frame_bytes(3)
+    tagged_game.pixel_algorithm = PixelAlgorithm.BOX
+    pixelated = pixelate_service.pixelate(
+        tagged_game.original_image, images.stage_width(session, tagged_game), PixelAlgorithm.BOX
+    )
+    expected = render.reveal_tiles(tagged_game.original_image, pixelated, [0], shop.TILE_GRID)
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, _pose, _costume=None: png)
+
+    assert images.render_tile_clue(session, tagged_game, 0) == expected
+
+
+def test_a_fading_twist_on_the_last_stage_gives_a_clean_tile_clue(
+    session, fake_runs, haunted_game, monkeypatch
+) -> None:
+    game = _haunted_tile_game(session, haunted_game, "tanuki_leaf", PixelStage.STAGE_5)
+    game.pixel_algorithm = PixelAlgorithm.BOX
+    assert game.original_image is not None
+    pixelated = pixelate_service.pixelate(
+        game.original_image, images.stage_width(session, game), PixelAlgorithm.BOX
+    )
+    expected = render.reveal_tiles(game.original_image, pixelated, [0], shop.TILE_GRID)
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, _pose, _costume=None: png)
+
+    assert images.render_tile_clue(session, game, 0) == expected
+
+
+def test_tile_clue_on_a_boss_stage_applies_every_twist(
+    session, fake_runs, haunted_game, monkeypatch
+) -> None:
+    game = _haunted_tile_game(session, haunted_game, "tanuki_leaf", PixelStage.STAGE_5)
+    game.boss_game = True
+    game.pixel_algorithm = PixelAlgorithm.BOX
+    assert game.original_image is not None
+    pixelated = pixelate_service.pixelate(
+        game.original_image, images.stage_width(session, game), PixelAlgorithm.BOX
+    )
+    # The whole clue, not just the open tile: both the original and the
+    # pixelated picture around it wear all four twists.
+    expected = render.reveal_tiles(
+        haunting.apply_twists(game.original_image, haunting.BOSS_ORDER),
+        haunting.apply_twists(pixelated, haunting.BOSS_ORDER),
+        [0],
+        shop.TILE_GRID,
+    )
+    monkeypatch.setattr(mascot, "add_to_png", lambda png, _pose, _costume=None: png)
+
+    assert images.render_tile_clue(session, game, 0) == expected

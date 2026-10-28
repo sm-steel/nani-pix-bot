@@ -6,7 +6,7 @@ from types import MappingProxyType
 
 from nani_pix_bot.models.enums import CurrencyReason, EventType
 from nani_pix_bot.seasons.definition import Goal, GoalKind
-from nani_pix_bot.services import i18n
+from nani_pix_bot.services import events, i18n
 from nani_pix_bot.services.achievements.definitions import History
 
 E = EventType
@@ -19,13 +19,15 @@ TRIGGERS: Mapping[GoalKind, tuple[EventType, ...]] = MappingProxyType(
         GoalKind.SHARED_CLUES: (E.CLUE_SHARED,),
         GoalKind.TIPS: (E.CURRENCY_MOVED,),
         GoalKind.DAYS_PLAYED: (E.GUESS, E.GAME_ACTIVATED),
+        GoalKind.HAUNTED_WINS: (E.GAME_WON,),
+        GoalKind.HEXES_BLOCKED: (E.HEX_BLOCKED,),
     }
 )
 
 
 def _hosted(history: History) -> int:
-    # A bot-started (HARD MODE) game is no one's hosting.
-    return sum(1 for e in history.mine(E.GAME_ACTIVATED) if not e.data.get("hard_mode"))
+    # A bot-started (HARD MODE or boss) game is no one's hosting.
+    return sum(1 for e in history.mine(E.GAME_ACTIVATED) if not events.bot_hosted(e.data))
 
 
 def _wins(max_stage: int | None, history: History) -> int:
@@ -34,6 +36,15 @@ def _wins(max_stage: int | None, history: History) -> int:
         return len(wins)
     by_stage = range(1, max_stage + 1)
     return sum(1 for e in wins if not e.data.get("hard_mode") and e.data.get("stage") in by_stage)
+
+
+def _haunted_wins(history: History) -> int:
+    # Wins recorded before the `haunted` fact existed count as not haunted.
+    return sum(1 for e in history.mine(E.GAME_WON) if e.data.get("haunted"))
+
+
+def _blocked(history: History) -> int:
+    return len(history.mine(E.HEX_BLOCKED))
 
 
 def _guessed_in(history: History) -> int:
@@ -61,6 +72,8 @@ _COUNTS: Mapping[GoalKind, Callable[[History], int]] = MappingProxyType(
         GoalKind.SHARED_CLUES: _shared,
         GoalKind.TIPS: _tips,
         GoalKind.DAYS_PLAYED: _days,
+        GoalKind.HAUNTED_WINS: _haunted_wins,
+        GoalKind.HEXES_BLOCKED: _blocked,
     }
 )
 

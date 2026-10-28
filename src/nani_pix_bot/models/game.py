@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from typing import Literal
 
+import sqlalchemy as sa
 from sqlalchemy import JSON, BigInteger, ForeignKey, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -163,6 +164,13 @@ class Game(Base):
     season_id: Mapped[int | None] = mapped_column(
         ForeignKey("season_schedule.id"), default=None, index=True
     )
+    # Season mechanics (Halloween): the HauntTwist applied to this game, if any.
+    # A plain String so it stores the value, like `source` above.
+    haunt_twist: Mapped[str | None] = mapped_column(String(16), default=None)
+    # The season's boss game (the Gashadokuro).
+    boss_game: Mapped[bool] = mapped_column(default=False, server_default=sa.false())
+    # Activated on the run's event day.
+    event_day: Mapped[bool] = mapped_column(default=False, server_default=sa.false())
     winner_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("players.telegram_user_id"), default=None
     )
@@ -217,3 +225,17 @@ class Game(Base):
 
     starter: Mapped[Player] = relationship(foreign_keys=[starter_id])
     winner: Mapped[Player | None] = relationship(foreign_keys=[winner_id])
+
+    @property
+    def bot_hosted(self) -> bool:
+        """Nani Pix started this game, so it has no human host: a HARD MODE
+        game or the season's boss. No host rewards (setter 💠, host XP and 🪙,
+        period host points) and no hosting credit. `bot_hosted_clause()` is
+        the same test in SQL; `services.events.bot_hosted` reads it from a
+        game event's data."""
+        return bool(self.hard_mode or self.boss_game)
+
+
+def bot_hosted_clause() -> sa.ColumnElement[bool]:
+    """`Game.bot_hosted` as a SQL condition."""
+    return sa.or_(Game.hard_mode.is_(True), Game.boss_game.is_(True))

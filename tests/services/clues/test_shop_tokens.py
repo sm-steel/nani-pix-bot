@@ -79,3 +79,9 @@ def test_a_token_purchase_adds_nothing_to_the_clue_spend(session, game, buyer) -
     _give(session, buyer)
     shop.purchase(session, game, buyer, PurchaseRequest(ClueKind.FIRST_LETTER))
     assert earning.clue_spend(session, game.id) == {}
+
+
+def test_a_token_purchase_leaves_its_buyer_off_the_refund_list(session, game, buyer) -> None:
+    _give(session, buyer)
+    shop.purchase(session, game, buyer, PurchaseRequest(ClueKind.FIRST_LETTER))
+    assert shop.refundable_player_ids(session) == []

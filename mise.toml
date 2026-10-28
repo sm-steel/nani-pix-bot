@@ -8,6 +8,9 @@ locked = true
 # Dockerfile installs ffmpeg alone, so Node never enters the bot image.
 [tools]
 node = "24.21.0"
+# uv runs Python and every Python dev tool (ruff, ty, vulture, pytest,
+# pre-commit) at the versions in uv.lock; the Python itself is .python-version.
+uv = "0.13.6"
 
 # ffmpeg/ffprobe: BtbN's static GPL build of ffmpeg 7.1.1 (libx264 built in).
 [tools."github:BtbN/FFmpeg-Builds"]
@@ -18,3 +21,9 @@ strip_components = 1
 [tools."github:BtbN/FFmpeg-Builds".platforms]
 linux-x64 = { asset_pattern = "ffmpeg-n7.1.1-*-linux64-gpl-7.1.tar.xz" }
 windows-x64 = { asset_pattern = "ffmpeg-n7.1.1-*-win64-gpl-7.1.zip" }
+
+# qlty: complexity/duplication (`qlty smells`) and the trufflehog secret scan
+# (`qlty check`), run by the pre-commit hooks. Pinned since issue #190: bump it
+# deliberately in its own change, scanning locally first (see CLAUDE.md).
+[tools."github:qltysh/qlty"]
+version = "0.650.0"

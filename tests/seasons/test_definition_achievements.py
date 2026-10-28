@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from nani_pix_bot.models.enums import EventType
+from nani_pix_bot.models.enums import EventType, Rarity
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import (
     MAX_RUN_ACHIEVEMENTS,
@@ -79,3 +79,37 @@ def test_a_run_id_longer_than_the_period_key_is_rejected(tmp_path, monkeypatch) 
     monkeypatch.syspath_prepend(str(tmp_path))
     with pytest.raises(registry.RunModuleError, match="at most 16"):
         registry.discover("long_id_runs")
+
+
+def test_sixteen_achievements_fit_and_seventeen_do_not() -> None:
+    assert MAX_RUN_ACHIEVEMENTS == 16
+    many = tuple(_with(key=f"a{i}") for i in range(17))
+    assert not _problems(*many[:16])
+    assert _problems(*many)
+
+
+def test_an_achievement_has_one_tier_and_its_own_rarity_by_default() -> None:
+    plain = _demo().achievements[0]
+    assert plain.tiers == (1,)
+    assert plain.tier_rarities == (plain.rarity,)
+
+
+def test_a_tiered_achievement_validates() -> None:
+    tiered = _with(tiers=(1, 3, 6), rarities=(Rarity.BRONZE, Rarity.SILVER, Rarity.GOLD))
+    assert _problems(tiered) == []
+    assert tiered.tier_rarities == (Rarity.BRONZE, Rarity.SILVER, Rarity.GOLD)
+
+
+@pytest.mark.parametrize(
+    ("tiers", "rarities"),
+    [
+        ((1, 3, 6), (Rarity.BRONZE, Rarity.SILVER)),  # a rarity short
+        ((1, 3), None),  # two tiers, one rarity
+        ((3, 1), (Rarity.BRONZE, Rarity.SILVER)),  # not increasing
+        ((1, 1), (Rarity.BRONZE, Rarity.SILVER)),  # not strictly increasing
+        ((0, 2), (Rarity.BRONZE, Rarity.SILVER)),  # not positive
+        ((), ()),  # no tier at all
+    ],
+)
+def test_bad_tiers_are_a_problem(tiers, rarities) -> None:
+    assert _problems(_with(tiers=tiers, rarities=rarities))

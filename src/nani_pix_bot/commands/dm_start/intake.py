@@ -23,6 +23,7 @@ from nani_pix_bot.db import session_scope
 from nani_pix_bot.models.enums import SetupStep
 from nani_pix_bot.services import game as game_service
 from nani_pix_bot.services import i18n, settings
+from nani_pix_bot.services.cosmetics import costume
 from nani_pix_bot.services.settings import stage_config
 
 # Setup steps where a DM photo means "use this image for the game I'm
@@ -95,6 +96,7 @@ async def _replace_photo_before_identification(
             game_id=existing.id,
             width=stage_config.get_stage_config(session, game_service.STAGE_ORDER[0]).target_width,
             algorithm=existing.pixel_algorithm,
+            costume=costume.for_game(session, existing),
         )
     if had_image:
         await message.reply_text(i18n.t("dm_start.photo_replaced", lang))

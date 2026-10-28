@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -7,16 +8,22 @@ from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands.game_flow import guess as guess_command_module
+from nani_pix_bot.commands.game_flow import stage_post
 from nani_pix_bot.jobs import timers as timers_package
 from nani_pix_bot.jobs.reveal import RevealWinner
 from nani_pix_bot.jobs.timers.current_image import RevealTarget
-from nani_pix_bot.models.enums import GameStatus, PixelStage
+from nani_pix_bot.models.enums import ConsumableKind, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.halloween import ArmedOfuda
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.stage_config import StageConfig
+from nani_pix_bot.seasons.mechanics import HexKind
 from nani_pix_bot.services import i18n
+from nani_pix_bot.services.cards import moments as moment_cards
+from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.cosmetics import stage as stage_cosmetics
 from nani_pix_bot.services.economy import bounty
+from tests.hex_fixtures import add_hex
 
 
 def _make_update(
@@ -536,6 +543,93 @@ async def test_guess_command_wrong_feedback_shows_remaining_over_the_stage_limit
 
     text = update.message.reply_text.await_args.args[0]
     assert "2/3" in text
+
+
+def _arm_ofuda(session_factory) -> int:
+    game_id = _active_game(session_factory)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_1, wrong_guess_limit=2)
+    with session_factory() as session:
+        session.add(Player(telegram_user_id=2))
+        session.commit()
+        consumables.add(session, 2, ConsumableKind.OFUDA, "test")
+        session.add(ArmedOfuda(player_id=2, game_id=game_id, armed_at=datetime.now(UTC)))
+        session.commit()
+    return game_id
+
+
+async def test_forgiven_guess_replies_with_remaining_and_posts_the_ofuda_card(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("nani_pix_bot.jobs.moments.fetch_avatar", AsyncMock(return_value=None))
+    captions: list = []
+    real_card = moment_cards.charm_card
+
+    def spy(mood, face, art, caption):
+        captions.append(caption)
+        return real_card(mood, face, art, caption)
+
+    monkeypatch.setattr(moment_cards, "charm_card", spy)
+    _arm_ofuda(session_factory)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    [caption] = captions
+    assert caption.title
+    assert "@guesser" in caption.detail  # the effect line names the player by @username
+    text = update.message.reply_text.await_args.args[0]
+    assert "2/2" in text  # the stage budget is untouched (wording varies, the count doesn't)
+    assert "Ofuda" not in text  # the line rides on the card instead
+    card = context.bot.send_photo.await_args.kwargs
+    assert card["chat_id"] == 555
+    assert card["message_thread_id"] == 7
+    assert "Ofuda" in card["caption"]
+    assert "didn't count" in card["caption"]
+
+
+async def test_chochin_reacts_to_an_ofuda_forgiven_miss(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("nani_pix_bot.jobs.moments.fetch_avatar", AsyncMock(return_value=None))
+    _arm_ofuda(session_factory)
+    with session_factory() as session:
+        add_hex(session, 2, HexKind.CHOCHIN, hours=1)
+        session.commit()
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    update.message.set_reaction = AsyncMock()
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert "2/2" in update.message.reply_text.await_args.args[0]  # forgiven: budget untouched
+    update.message.set_reaction.assert_awaited_once_with(reaction="🤪")
+
+
+async def test_forgiven_guess_posts_the_line_as_text_when_the_card_fails(
+    session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*_args, **_kwargs):
+        raise OSError("no font")
+
+    monkeypatch.setattr("nani_pix_bot.jobs.moments.fetch_avatar", AsyncMock(return_value=None))
+    monkeypatch.setattr("nani_pix_bot.jobs.moments.moment_cards.charm_card", broken)
+    _arm_ofuda(session_factory)
+    update = _make_update(user_id=2, args=["attack", "on", "titan"])
+    context = _make_context(session_factory, args=["attack", "on", "titan"])
+    context.bot.send_message = AsyncMock()
+
+    await guess_command_module.guess_command(
+        cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context)
+    )
+
+    assert context.bot.send_message.await_args is not None
+    assert "didn't count" in context.bot.send_message.await_args.kwargs["text"]
+    context.bot.send_photo.assert_not_awaited()
 
 
 async def test_guess_won_calls_maybe_overthrow(
@@ -1166,3 +1260,17 @@ async def test_stage_advance_posts_the_starters_equipped_frame(
     # is the only thing that can change the corner.
     assert posted.getpixel((0, 0)) != posted.getpixel((posted.width // 2, posted.height // 2))
     assert game_id
+
+
+def test_stage_advanced_caption_on_last_stage_says_lifted(
+    session, fake_runs, haunted_game, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(stage_cosmetics, "stage_png", lambda *_a, **_k: b"x")
+    haunted_game.haunt_twist = "tanuki_leaf"
+    haunted_game.current_stage = PixelStage.STAGE_5
+    haunted_game.original_image = b"file123"
+    announcement = stage_post.prepare_stage_advanced_announcement(
+        session, MagicMock(), haunted_game, "en"
+    )
+    assert announcement.caption is not None
+    assert "lifts" in announcement.caption

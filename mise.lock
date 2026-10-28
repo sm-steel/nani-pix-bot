@@ -28,6 +28,23 @@ checksum = "sha256:7a4dcf07bc7c89a33970c5c0f524fc1662ea4e2f342c9d10a6a9f307cdc03
 url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2025-08-31-13-00/ffmpeg-n7.1.1-57-g1b48158a23-linux64-gpl-7.1.tar.xz"
 url_api = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/assets/288112634"
 
+[[tools."github:qltysh/qlty"]]
+version = "0.650.0"
+backend = "github:qltysh/qlty"
+specifiers = ["0.650.0"]
+
+[tools."github:qltysh/qlty"."platforms.linux-x64"]
+checksum = "sha256:7303d0dcffc23d1e42f02dd72610d44dd6d252fcf2460e377d765e2571efe918"
+url = "https://github.com/qltysh/qlty/releases/download/v0.650.0/qlty-x86_64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/qltysh/qlty/releases/assets/601546637"
+provenance = "github-attestations"
+
+[tools."github:qltysh/qlty"."platforms.windows-x64"]
+checksum = "sha256:5ae3b76ddb316df1851acee66b0cf1d0ac71536c9e0595e619c15903698705c5"
+url = "https://github.com/qltysh/qlty/releases/download/v0.650.0/qlty-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/qltysh/qlty/releases/assets/601546622"
+provenance = "github-attestations"
+
 [[tools.node]]
 version = "24.21.0"
 backend = "core:node"
@@ -40,3 +57,20 @@ url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.gz"
 [tools.node."platforms.windows-x64"]
 checksum = "sha256:158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541"
 url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip"
+
+[[tools.uv]]
+version = "0.13.6"
+backend = "aqua:astral-sh/uv"
+specifiers = ["0.13.6"]
+
+[tools.uv."platforms.linux-x64"]
+checksum = "sha256:f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.6/uv-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/679980644"
+provenance = "github-attestations"
+
+[tools.uv."platforms.windows-x64"]
+checksum = "sha256:a2a8820d5eea32f08ef467ef3b7f66883a9b076d5737a2fc2fbb5f458d1bb50f"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.6/uv-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/679980629"
+provenance = "github-attestations"

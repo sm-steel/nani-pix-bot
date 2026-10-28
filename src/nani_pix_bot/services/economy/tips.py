@@ -13,6 +13,8 @@ from nani_pix_bot.services import players
 from nani_pix_bot.services.economy import wallet
 
 TIP_MIN = 1
+# The amount buttons the /tip player picker offers once a player is picked.
+TIP_AMOUNTS = (10, 25, 50, 100)
 
 
 class TipRefusal(enum.StrEnum):
@@ -25,6 +27,21 @@ class TipRefusedError(Exception):
     def __init__(self, refusal: TipRefusal) -> None:
         super().__init__(refusal.value)
         self.refusal = refusal
+
+
+def affordable_amounts(balance: int) -> list[int]:
+    """The TIP_AMOUNTS a sender holding `balance` can give."""
+    return [amount for amount in TIP_AMOUNTS if amount <= balance]
+
+
+def amount_refusal(amount: int, balance: int) -> TipRefusal | None:
+    """Why `amount` can't be tipped from `balance`, before a recipient is
+    known; None when it can. `tip` itself still checks at transfer time."""
+    if amount < TIP_MIN:
+        return TipRefusal.BELOW_MIN
+    if amount > balance:
+        return TipRefusal.INSUFFICIENT
+    return None
 
 
 def tip(session: Session, sender: Player, recipient: Player, amount: int) -> CurrencyTransfer:

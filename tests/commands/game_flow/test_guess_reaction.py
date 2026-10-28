@@ -14,6 +14,7 @@ from nani_pix_bot.commands.game_flow import guess as guess_command_module
 from nani_pix_bot.models.enums import ItemSource, PixelStage
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.mechanics import HexKind
 from nani_pix_bot.services.cosmetics import inventory
 from tests.commands.game_flow.test_guess import (
     _active_game,
@@ -22,6 +23,7 @@ from tests.commands.game_flow.test_guess import (
     _seed_stage_limit,
 )
 from tests.conftest import LogLine
+from tests.hex_fixtures import add_hex
 
 GUESSER = 2
 
@@ -43,12 +45,16 @@ def equip_reaction(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[Sessio
     registry.all_items.cache_clear()
 
 
-def _seed_guesser(session_factory, equip: Callable[[Session, int], None] | None) -> None:
+def _seed_guesser(
+    session_factory, equip: Callable[[Session, int], None] | None, *, chochin: bool = False
+) -> None:
     with session_factory() as session:
         session.add(Player(telegram_user_id=GUESSER, username="guesser"))
         session.flush()
         if equip is not None:
             equip(session, GUESSER)
+        if chochin:
+            add_hex(session, GUESSER, HexKind.CHOCHIN, hours=1)
         session.commit()
 
 
@@ -123,3 +129,29 @@ async def test_a_wrong_guess_never_reacts(session_factory, equip_reaction) -> No
     update, _ = await _guess(session_factory, "naruto")
 
     update.message.set_reaction.assert_not_awaited()
+
+
+async def test_wrong_guess_by_a_chochin_target_is_reacted_to(
+    session_factory, log_records: list[LogLine]
+) -> None:
+    _active_game(session_factory)
+    _seed_stage_limit(session_factory, PixelStage.STAGE_1, wrong_guess_limit=3)
+    _seed_guesser(session_factory, None, chochin=True)
+
+    update, _ = await _guess(session_factory, "naruto")
+
+    update.message.set_reaction.assert_awaited_once_with(reaction="🤪")
+    infos = [r for r in log_records if r.level == "INFO" and "reacted" in r.message]
+    assert len(infos) == 1
+    assert infos[0].extra["chochin"] is True
+
+
+async def test_winning_guess_by_a_chochin_target_reacts_with_the_prank_not_the_equipped_one(
+    session_factory, equip_reaction
+) -> None:
+    _active_game(session_factory)
+    _seed_guesser(session_factory, equip_reaction, chochin=True)
+
+    update, _ = await _guess(session_factory, "frieren")
+
+    update.message.set_reaction.assert_awaited_once_with(reaction="🤪")

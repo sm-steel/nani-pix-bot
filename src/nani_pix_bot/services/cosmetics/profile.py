@@ -3,6 +3,7 @@ picked in showcase.py), equipped banner and title, and the counts the card and
 caption show."""
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -25,6 +26,7 @@ from nani_pix_bot.services.cards import (
 )
 from nani_pix_bot.services.cosmetics import inventory, looks, showcase
 from nani_pix_bot.services.game import history
+from nani_pix_bot.services.seasons import hex_marks
 
 
 @dataclass(frozen=True)
@@ -83,7 +85,7 @@ def roster(session: Session, *, viewer_id: int, bot_id: int) -> list[int]:
     played.pop(bot_id, None)
 
     def key(player_id: int) -> tuple[int, str, int]:
-        name = players.display_name(session, player_id).lstrip("@").casefold()
+        name = players.display_name(session, player_id, unmasked=True).lstrip("@").casefold()
         return -played[player_id], name, player_id
 
     order = sorted(played, key=key)
@@ -148,6 +150,14 @@ def _banner(session: Session, player_id: int, played: list[str]) -> bytes | None
     return season_background(played[0]) if played else None
 
 
+def _title(session: Session, player: Player | None, lang: str) -> str | None:
+    """The equipped title, hidden while Nopperabō makes the player faceless (the
+    leaderboard and achievements drop it the same way)."""
+    if player is None or hex_marks.is_faceless(session, player.telegram_user_id, datetime.now(UTC)):
+        return None
+    return titles.text(player.title_key, lang)
+
+
 def build(session: Session, player_id: int, lang: str) -> ProfileView:
     played = showcase.stamp_choices(session, player_id)
     # the newest season of a run wins (later dict entries overwrite earlier ones)
@@ -162,8 +172,8 @@ def build(session: Session, player_id: int, lang: str) -> ProfileView:
     )
     return ProfileView(
         player_id=player_id,
-        name=players.display_name(session, player_id),
-        title=titles.text(player.title_key if player else None, lang),
+        name=players.image_name(session, player_id, lang),
+        title=_title(session, player, lang),
         banner=_banner(session, player_id, played),
         stamps=stamps,
         badges=_badges(session, player_id, lang),
