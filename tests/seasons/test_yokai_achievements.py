@@ -161,9 +161,11 @@ def test_curse_breaker_climbs_with_each_block(session, yokai_season) -> None:
     _block(session, yokai_season)
     assert _held(session, "curse_breaker") == {GUESSER: [1]}
     _block(session, yokai_season)
-    assert _held(session, "curse_breaker") == {GUESSER: [1]}
+    assert _held(session, "curse_breaker") == {GUESSER: [1, 2]}
     _block(session, yokai_season)
     assert _held(session, "curse_breaker") == {GUESSER: [1, 2]}
+    _block(session, yokai_season)
+    assert _held(session, "curse_breaker") == {GUESSER: [1, 2, 3]}
 
 
 def _cast(session, season: SeasonSchedule, *, target: int, blocked=False, prank=False) -> None:

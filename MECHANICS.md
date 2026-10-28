@@ -3002,18 +3002,18 @@ hold the rules.
 |---|---|---|
 | Gate | Horror, Supernatural, Mythology or Vampire anime (Shikimori genre 14 and 37, theme 6 and 32) | "The anime gate" |
 | XP | win by stage 50 / 40 / 30 / 20 / 10, host solved 15, host unsolved 5, first guess 5 | "Season XP" |
-| 🪙 | win 30, host solved 20, host unsolved 10, first guess 10; 2 🪙 per 💠 on conversion | "Season Coins, Pass and Premium" |
+| 🪙 | win 40, host solved 25, host unsolved 15, first guess 15; 2 🪙 per 💠 on conversion | "Season Coins, Pass and Premium" |
 | Pass | 12 tiers at 20 / 50 / 90 / 140 / 190 / 240 / 300 / 360 / 420 / 490 / 570 / 650 XP; Premium costs 300 💠; rewards include an Omamori (tier 7), a clue ticket and stamps | "Season Coins, Pass and Premium" |
-| Shop | 14 cosmetics (25-95 🪙), a clue ticket (30 🪙, limit 2) and an Ofuda (20 🪙, limit 2) | "Season Shop", "Ofuda and Omamori" |
+| Shop | 14 cosmetics (25-95 🪙), a clue ticket (30 🪙, limit 2) and an Ofuda (20 🪙, limit 8) | "Season Shop", "Ofuda and Omamori" |
 | Objectives | 7: Kimodameshi (win by stage 2), Lantern Keeper (host 2), Spirit Chaser (win 3), Night Walker (5 days), Hundred Tales (guess 8), Bone Collector (2 haunted wins), Exorcist (block 1 hex) | "Objectives" |
 | Style | `moonlit` | "Season style" |
 | Mascot costume | `pumpkin` while the season is open | "Cosmetics" |
 | Haunting | 25% of games, all four twists, 🪙 x2 | "Haunted rounds" |
 | Night Parade | 31 October in the group's time zone: every game haunted (x2), 🪙 x2 on top (x4 in all), gate narrowed to Mythology or Supernatural | "Event day (Night Parade)" |
-| 100 Candles | 100 candles; a game puts out 1, a haunted one 2, a Night Parade one 3, a boss game 0; a post at 25 / 50 / 75; each contributor gets 50 🪙 and the Gashadokuro Slayer title | "100 Candles and the boss game" |
+| 100 Candles | 100 candles; a game puts out 1, a haunted one 2, a Night Parade one 3, a boss game 0; a post at 25 / 50 / 75; each contributor gets 80 🪙 and the Gashadokuro Slayer title | "100 Candles and the boss game" |
 | Boss game | XP x2 and 🪙 x3 for guessers, on top of the haunting's x2 (x6 🪙 in all); a host award is never multiplied | "Haunted rounds", `services/seasons/multipliers.py` |
 | Hexes | Nopperabo 20 🪙 (30 min cooldown, 24 h), Chochin 20 🪙 (30 min, 24 h), Kappa 40 🪙 (60 min, 50% of the target's next win), Kitsune 30 🪙 (60 min, 15 🪙 off the next wrong guess) | "Hexes" |
-| Omikuji | Daikichi 10% (20 🪙 and an Omamori), Kichi 30% (10 🪙), Shokichi 40% (5 🪙), Kyo 20% (a prank hex on the drawer) | "Omikuji" |
+| Omikuji | Daikichi 15% (30 🪙 and an Omamori), Kichi 30% (15 🪙), Shokichi 35% (5 🪙), Kyo 20% (a prank hex on the drawer) | "Omikuji" |
 | Bone set | 7 haunted wins give the Mini Skeleton name flair | "Bone Collector" |
 | Achievements | 13 run achievements, five of them hidden (Gashadokuro Bane, Daikichi, Cursed Luck, Hexed and Happy, Hyakki Yagyo) | "Season achievements" |
 | Cosmetics | 33 items: 5 mascot costumes, 4 host frames, 3 host transitions, 3 win effects, 3 banners, 8 name flairs, 3 reactions and 4 titles | "Cosmetics" |

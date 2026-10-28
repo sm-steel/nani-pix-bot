@@ -2,6 +2,7 @@ from dataclasses import replace
 
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import (
+    MAX_SHOP_CHARMS,
     MAX_SHOP_CLUE_TOKENS,
     RewardKind,
     ShopOffer,
@@ -44,6 +45,15 @@ def test_the_clue_token_limit_is_capped() -> None:
     too_many = ShopOffer.clue_ticket(30, MAX_SHOP_CLUE_TOKENS + 1)
     assert shop_problems(replace(_demo(), shop=(too_many,)))
     assert shop_problems(replace(_demo(), shop=(ShopOffer.clue_ticket(30, 0),)))
+
+
+def test_charms_get_a_higher_cap_than_clue_tokens() -> None:
+    for kind in (RewardKind.OFUDA, RewardKind.OMAMORI):
+        at_cap = ShopOffer.consumable(kind, 20, MAX_SHOP_CHARMS)
+        too_many = ShopOffer.consumable(kind, 20, MAX_SHOP_CHARMS + 1)
+        assert shop_problems(replace(_demo(), shop=(at_cap,))) == []
+        assert shop_problems(replace(_demo(), shop=(too_many,)))
+    assert MAX_SHOP_CHARMS > MAX_SHOP_CLUE_TOKENS
 
 
 def test_an_offer_appears_once() -> None:

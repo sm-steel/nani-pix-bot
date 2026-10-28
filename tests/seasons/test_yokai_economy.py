@@ -68,7 +68,7 @@ def test_the_conservative_profile_is_consistent_with_its_objectives() -> None:
 def test_a_conservative_free_player_can_afford_the_whole_shop() -> None:
     xp, coins = _xp_and_coins(CONSERVATIVE, _sure_objectives())
     shop = sum(o.price * o.limit for o in RUN.shop)
-    assert shop == 790
+    assert shop == 910
     assert coins + _free_coins_reached(xp) >= shop + 50
 
 

@@ -141,7 +141,7 @@ ITEMS = (
 
 TIERS = (
     Tier(20, Reward.item("name_flair.jack_o_lantern"), Reward.item("mascot_costume.pastel_witch")),
-    Tier(50, Reward.coins(80), Reward.item("name_flair.fox")),
+    Tier(50, Reward.coins(100), Reward.item("name_flair.fox")),
     Tier(90, Reward.clue_ticket(), Reward.item("guess_reaction.imp")),
     Tier(140, Reward.item("guess_reaction.boo"), Reward.item("mascot_costume.bakeneko")),
     Tier(190, Reward.item("name_flair.bat"), Reward.item("title.kitsune")),
@@ -152,7 +152,7 @@ TIERS = (
         Reward.item("profile_banner.night_parade_scroll"),
         Reward.item("host_transition.night_parade"),
     ),
-    Tier(420, Reward.coins(110), Reward.currency(100)),
+    Tier(420, Reward.coins(150), Reward.currency(100)),
     Tier(490, Reward.item("host_frame.cobweb"), Reward.stamp_plus()),
     Tier(570, Reward.item("title.onmyoji"), Reward.item("profile_banner.lantern_shrine")),
     Tier(650, Reward.stamp(), Reward.item("mascot_costume.skeleton")),
@@ -174,7 +174,7 @@ SHOP = (
     ShopOffer.item("title.yokai_hunter", 45),
     ShopOffer.item("mascot_costume.chochin_obake", 85),
     ShopOffer.clue_ticket(30, 2),
-    ShopOffer.consumable(RewardKind.OFUDA, 20, 2),
+    ShopOffer.consumable(RewardKind.OFUDA, 20, 8),
 )
 
 OBJECTIVES = (
@@ -183,49 +183,49 @@ OBJECTIVES = (
         _names("Kimodameshi", "Кимодамэси"),
         Goal(GoalKind.WINS, 1, max_stage=2),
         xp=60,
-        coins=60,
+        coins=70,
     ),
     Objective(
         "lantern_keeper",
         _names("Lantern Keeper", "Хранитель фонарей"),
         Goal(GoalKind.HOSTED, 2),
         xp=40,
-        coins=50,
+        coins=60,
     ),
     Objective(
         "spirit_chaser",
         _names("Spirit Chaser", "Охотник за духами"),
         Goal(GoalKind.WINS, 3),
         xp=80,
-        coins=80,
+        coins=100,
     ),
     Objective(
         "night_walker",
         _names("Night Walker", "Ночной странник"),
         Goal(GoalKind.DAYS_PLAYED, 5),
         xp=50,
-        coins=60,
+        coins=70,
     ),
     Objective(
         "hundred_tales",
         _names("Hundred Tales", "Сто страшных историй"),
         Goal(GoalKind.GUESSED_IN, 8),
         xp=40,
-        coins=50,
+        coins=60,
     ),
     Objective(
         "bone_collector",
         _names("Bone Collector", "Собиратель костей"),
         Goal(GoalKind.HAUNTED_WINS, 2),
         xp=60,
-        coins=50,
+        coins=60,
     ),
     Objective(
         "exorcist",
         _names("Exorcist", "Экзорцист"),
         Goal(GoalKind.HEXES_BLOCKED, 1),
         xp=30,
-        coins=30,
+        coins=40,
     ),
 )
 
@@ -240,7 +240,7 @@ GROUP_GOAL = GroupGoal(
     milestone_every=25,
     boss_xp_multiplier=2,
     boss_coin_multiplier=3,
-    contributor_coins=50,
+    contributor_coins=80,
     contributor_item_key="title.gashadokuro_slayer",
 )
 
@@ -363,7 +363,7 @@ ACHIEVEMENTS = (
         _B,
         frozenset({EventType.HEX_BLOCKED}),
         _blocks,
-        tiers=(1, 3, 6),
+        tiers=(1, 2, 4),
         rarities=_LADDER,
     ),
     RunAchievement(
@@ -502,7 +502,7 @@ RUN = SeasonRun(
         ),
     ),
     items=ITEMS,
-    coins=CoinTable(win=30, host_solved=20, host_unsolved=10, first_guess=10),
+    coins=CoinTable(win=40, host_solved=25, host_unsolved=15, first_guess=15),
     tiers=TIERS,
     premium_price=300,
     coins_per_currency=2,
@@ -535,10 +535,10 @@ RUN = SeasonRun(
     ),
     omikuji=(
         OmikujiOutcome(
-            OmikujiKind.DAIKICHI, weight=10, coins=20, consumable=ConsumableKind.OMAMORI
+            OmikujiKind.DAIKICHI, weight=15, coins=30, consumable=ConsumableKind.OMAMORI
         ),
-        OmikujiOutcome(OmikujiKind.KICHI, weight=30, coins=10),
-        OmikujiOutcome(OmikujiKind.SHOKICHI, weight=40, coins=5),
+        OmikujiOutcome(OmikujiKind.KICHI, weight=30, coins=15),
+        OmikujiOutcome(OmikujiKind.SHOKICHI, weight=35, coins=5),
         OmikujiOutcome(OmikujiKind.KYO, weight=20, prank=True),
     ),
     bone_set=BoneSet(bones=7, item_key="name_flair.mini_skeleton"),

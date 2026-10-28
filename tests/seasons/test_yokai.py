@@ -99,7 +99,7 @@ def test_consumables_come_from_where_the_plan_says() -> None:
     daikichi = next(o for o in RUN.omikuji if o.kind is OmikujiKind.DAIKICHI)
     assert daikichi.consumable is ConsumableKind.OMAMORI
     assert tiers_of(RewardKind.OFUDA) == []
-    assert shop_limit(RewardKind.OFUDA) == [2]
+    assert shop_limit(RewardKind.OFUDA) == [8]
 
 
 def test_the_mechanics_are_on() -> None:

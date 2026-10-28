@@ -90,7 +90,13 @@ class Tier:
 
 MAX_CLUE_TOKEN_TIERS = 2
 MAX_SHOP_CLUE_TOKENS = 2
+MAX_SHOP_CHARMS = 8  # an Ofuda forgives one miss; Paper Shield's top tier needs 8
 CONSUMABLE_REWARDS = (RewardKind.CLUE_TICKET, RewardKind.OFUDA, RewardKind.OMAMORI)
+_SHOP_CAPS = {
+    RewardKind.CLUE_TICKET: MAX_SHOP_CLUE_TOKENS,
+    RewardKind.OFUDA: MAX_SHOP_CHARMS,
+    RewardKind.OMAMORI: MAX_SHOP_CHARMS,
+}
 _SHOP_KINDS = (RewardKind.ITEM, *CONSUMABLE_REWARDS)
 
 
@@ -388,8 +394,9 @@ def _offer_problems(run: SeasonRun, offer: ShopOffer) -> list[str]:
             problems.append(f"{where}: already a pass reward; an item is shop- or pass-only")
         if offer.limit != 1:
             problems.append(f"{where}: an item sells once")
-    if offer.kind in CONSUMABLE_REWARDS and not 1 <= offer.limit <= MAX_SHOP_CLUE_TOKENS:
-        problems.append(f"{where}: limit must be 1..{MAX_SHOP_CLUE_TOKENS}")
+    cap = _SHOP_CAPS.get(offer.kind)
+    if cap is not None and not 1 <= offer.limit <= cap:
+        problems.append(f"{where}: limit must be 1..{cap}")
     return problems
 
 
