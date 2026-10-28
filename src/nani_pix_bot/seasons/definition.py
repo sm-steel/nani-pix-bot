@@ -310,6 +310,7 @@ class SeasonRun:
     hexes: tuple[HexRule, ...] = ()
     omikuji: tuple[OmikujiOutcome, ...] = ()
     bone_set: BoneSet | None = None
+    guide_page: str | None = None  # its page in the user's guide, e.g. "yokai-night"
 
     def name(self, lang: str) -> str:
         return self.names.get(lang) or self.names["EN"]

@@ -6,3 +6,4 @@
 - 🎋 `/omikuji` draws your daily fortune: Daikichi brings 🪙 and an Omamori, Kichi and Shokichi smaller prizes, Kyō a prank on yourself. The Ofuda charm is sold in the shop and the Omamori comes from pass tier 7 or a Daikichi slip, and both live in `/inventory`; arm an Ofuda from the clue menu so your next miss doesn't count.
 - ☠️ Win 7 haunted rounds to collect all the bones and earn the Mini Skeleton name flair.
 - 👮 Admins start the season with `/season schedule yokai_1 <start> <end>`.
+- 📖 When a season is announced and when it starts, Nani Pix follows the banner with a guide to everything the season brings: what you earn, each new mechanic with its numbers in tables, the commands to try, and links to the matching pages of the user's guide.

@@ -302,3 +302,21 @@ def test_a_run_without_event_day_is_skipped_with_a_warning(session, log_records)
     line = next(r for r in log_records if r.level == "WARNING")
     assert line.extra["kind"] == "event_day_start"
     assert line.extra["run_id"] == "demo_1"
+
+
+@pytest.mark.parametrize("kind", [OutboxKind.SEASON_TEASER, OutboxKind.SEASON_START])
+def test_teaser_and_start_carry_the_season_guide(session, kind) -> None:
+    post = _render(session, kind)
+    assert post.rich is not None
+    assert post.rich.startswith("## ")
+    assert "/seasonpass" in post.rich
+
+
+def test_the_guide_opens_differently_before_and_after_the_start(session) -> None:
+    teaser = _render(session, OutboxKind.SEASON_TEASER).rich
+    start = _render(session, OutboxKind.SEASON_START).rich
+    assert teaser.splitlines()[0] != start.splitlines()[0]
+
+
+def test_the_end_post_has_no_guide(session) -> None:
+    assert _render(session, OutboxKind.SEASON_END).rich is None

@@ -77,6 +77,12 @@ class HexKind(enum.StrEnum):
 
 
 PRANK_HEXES = frozenset({HexKind.NOPPERABO, HexKind.CHOCHIN})
+HEX_ICONS = {
+    HexKind.NOPPERABO: "👤",
+    HexKind.CHOCHIN: "🏮",
+    HexKind.KAPPA: "🥒",
+    HexKind.KITSUNE: "🦊",
+}
 MAX_HEX_COOLDOWN_MINUTES = 1440
 
 

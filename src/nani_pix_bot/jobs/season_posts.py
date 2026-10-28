@@ -20,7 +20,13 @@ from nani_pix_bot.services import i18n, players, settings
 from nani_pix_bot.services.cards import SeasonBanner, season_background, season_stamp
 from nani_pix_bot.services.cosmetics import flair
 from nani_pix_bot.services.events import as_utc
-from nani_pix_bot.services.seasons import conversion, objectives, podium_text, season_pass
+from nani_pix_bot.services.seasons import (
+    conversion,
+    objectives,
+    podium_text,
+    season_guide,
+    season_pass,
+)
 
 
 def _local(at: datetime, tz: ZoneInfo) -> str:
@@ -74,6 +80,13 @@ def open_season(
     return season, run
 
 
+def _guide(kind: OutboxKind, run: SeasonRun, lang: str) -> str | None:
+    """The season guide under the teaser and start banners; none at the end."""
+    if kind is OutboxKind.SEASON_END:
+        return None
+    return season_guide.markdown(run, lang, started=kind is OutboxKind.SEASON_START)
+
+
 def _season_post(
     kind: OutboxKind,
 ) -> Callable[[Session, AnnouncementOutbox, str], Post | None]:
@@ -95,6 +108,7 @@ def _season_post(
             "\n".join(_season_lines(session, kind, season, run, lang)),
             banner,
             background=season_background(season.run_id),
+            rich=_guide(kind, run, lang),
         )
 
     return render

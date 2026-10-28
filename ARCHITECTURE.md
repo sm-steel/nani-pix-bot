@@ -624,7 +624,9 @@ src/nani_pix_bot/
                    #                      expired). This job is cleanup,
                    #                      not the guarantee
     post.py       # Post: one announcement as it will be sent (text, card,
-                   # and dm_to for a player's DM instead of the topic)
+                   # dm_to for a player's DM instead of the topic, rich for
+                   # a rich message right after it), and send_one: the card
+                   # or text, then the rich message via send_rich
     moments.py    # posts a moment card (CharmMoment: whose art, who, title,
                    # caption) to the game topic with the plain line as the
                    # caption; a failed avatar/render/send falls back to the
@@ -644,7 +646,8 @@ src/nani_pix_bot/
                    # avatars cached per drain, one drain at a time (the
                    # boss start awaits `drain` too), a drain stops at the first
                    # failed send, a row is given up after 3 attempts
-                   # (season_teaser/start/end render a banner card; a
+                   # (season_teaser/start/end render a banner card, and
+                   # teaser/start add the season guide as Post.rich; a
                    # cancelled season's rows are dropped unsent). A Post
                    # may be a DM (`dm_to`, the season pass notices): a DM
                    # the bot can't send (the player never started it, or
@@ -1103,6 +1106,10 @@ src/nani_pix_bot/
                    #   goals.py      progress toward and wording of a Goal
                    #   objectives.py check (complete + pay + DM), status
                    #   pass_view.py  the /seasonpass text and its tier lines
+                   #   season_guide.py  the rich-message season guide under
+                   #                 the teaser/start banners: every mechanic
+                   #                 of the run, numbers from the run, links
+                   #                 into the user's guide (GUIDE_URL)
                    #   omikuji.py    the daily draw: one slip per group-local
                    #                 day (omikuji_draws), weighted pick,
                    #                 🪙 + charm payout, a kyō's self-prank

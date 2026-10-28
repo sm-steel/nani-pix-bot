@@ -2627,6 +2627,19 @@ a **start** post (with the gate's rule when there is one) and an **end**
 post with the frozen podium. There is no reminder. A cancelled season posts
 nothing: its queued posts are dropped unsent.
 
+The teaser and the start post are each followed by the **season guide**, a
+rich message (`services/seasons/season_guide.py`, sent as `Post.rich` right
+after the banner) that walks through everything the run switches on: what a
+round earns (a table), the pass, objectives, shop and 💠 conversion, then one
+section per mechanic the run has (haunted rounds, the event day, the group
+goal and its boss, hexes as a table, omikuji odds as a table, the charms, the
+bone set) and the commands to try. Each section links to its page in the
+user's guide (`GUIDE_URL`, `/ru/` for Russian; the run's own page is
+`SeasonRun.guide_page`). Every number is read from the run. The teaser's
+guide also states the gate (the start caption already does). Both languages
+stay under 4096 characters, so a rejected rich message's plain-text fallback
+isn't cut.
+
 A run with `group_goal` or `bone_set` adds four more (renderers in
 `jobs/goal_posts.py`, queued by `services/achievements/outbox.py`'s
 `enqueue_goal`). Each is skipped, with an INFO line, when the season is

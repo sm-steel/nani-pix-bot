@@ -542,4 +542,5 @@ RUN = SeasonRun(
         OmikujiOutcome(OmikujiKind.KYO, weight=20, prank=True),
     ),
     bone_set=BoneSet(bones=7, item_key="name_flair.mini_skeleton"),
+    guide_page="yokai-night",
 )
