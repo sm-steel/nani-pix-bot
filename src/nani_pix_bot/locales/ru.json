@@ -1176,7 +1176,7 @@
   "season_guide.charm.ofuda": "офуда 📜",
   "season_guide.charm.omamori": "омамори 🧿",
   "season_guide.charms.title": "📜 Амулеты",
-  "season_guide.charms.ofuda": "📜 Офуда: {price} 🪙 в /seasonshop, до {limit} на игрока. Во время раунда приготовьте её в /shop в личке с Nani Pix, и ваша следующая ошибка не засчитается.",
+  "season_guide.charms.ofuda": "📜 Офуда: {price} 🪙 в /seasonshop, до {limit} на игрока. Во время раунда активируйте её в /shop в личке с Nani Pix, и ваша следующая ошибка не засчитается.",
   "season_guide.charms.omamori": "🧿 Омамори: отражает следующее проклятие на вас. Где взять: {sources}.",
   "season_guide.charms.from_tier": "{tier}-й уровень пасса",
   "season_guide.charms.from_slip": "бумажка {slip}",
