@@ -1,5 +1,6 @@
 import re
 from dataclasses import replace
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -94,3 +95,28 @@ def test_the_run_name_is_escaped() -> None:
 def test_the_guide_fits_the_plain_text_fallback(lang, started) -> None:
     # A rejected rich message goes out as plain text, cut at 4096 characters.
     assert len(_guide(lang=lang, started=started)) <= 4096
+
+
+def _blocks_are_separated(text: str) -> bool:
+    """Lines only touch inside a table: everything else (heading, paragraph,
+    link, the table itself) stands apart with a blank line, or the rich
+    message's markdown runs it into one paragraph and a table after a
+    sentence shows as raw `|` text (issue #487)."""
+    lines = text.splitlines()
+    for above, below in pairwise(lines):
+        if above and below and not (above.startswith("|") and below.startswith("|")):
+            return False
+    return True
+
+
+@pytest.mark.parametrize("lang", ["EN", "RU"])
+@pytest.mark.parametrize("started", [True, False])
+def test_every_block_stands_apart_with_a_blank_line(lang, started) -> None:
+    assert _blocks_are_separated(_guide(lang=lang, started=started))
+
+
+def test_a_table_after_a_sentence_gets_its_blank_line() -> None:
+    lines = _guide().splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith("|") and not lines[index - 1].startswith("|"):
+            assert lines[index - 1] == "", line
