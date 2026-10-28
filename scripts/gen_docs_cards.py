@@ -8,20 +8,20 @@ no avatar, so the cards show the initials faces the bot falls back to.
 Called by `docs/site`'s predev/prebuild npm scripts; the output directory is
 gitignored.
 
-It also draws the first season's (Sakura Season) cards with the production
+It also draws each run's (Sakura Season, Yokai Night) cards with the production
 renderers and its committed art: the season-start post, a profile card over
 each of its three banners, and a profile card showing the stamps. Those are
 WebP: the renders are photographs and would weigh about a megabyte each as PNG.
 
-For the Sakura page's cosmetics section it draws each stage frame on the key visual
-(a stage-3 Sakura image), and renders each win effect and reveal transition as the
+For a run page's cosmetics section it draws each stage frame and costume on the key visual
+(a stage-3 image), and renders each win effect and reveal transition as the
 same MP4 clip `/cosmetics` previews it with, on the key visual. The clips need ffmpeg
 (pinned in mise.toml) and go to the site's public/ folder, also gitignored.
 
 Usage: uv run python scripts/gen_docs_cards.py
 """
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from io import BytesIO
 from pathlib import Path
 
@@ -106,14 +106,41 @@ def podium_card(lang: str) -> PodiumCard:
     return PodiumCard(title, entries)
 
 
-RUN_ID = "sakura_1"
+@dataclass(frozen=True)
+class DocsRun:
+    """One season run the guide draws: its registry id, the file-name slug, and the
+    made-up profile card and start-post values."""
+
+    run_id: str
+    slug: str
+    title_key: str
+    run_badge: tuple[str, Rarity]
+    # The made-up season dates the start card shows, written the way the bot writes them.
+    dates: str
+
+
+DOCS_RUNS = (
+    DocsRun(
+        "sakura_1",
+        "sakura",
+        "title.hanami_host",
+        ("hanami_party", Rarity.BRONZE),
+        "12.10 18:00 \u2013 22.10 18:00 (Europe/Moscow)",
+    ),
+    DocsRun(
+        "yokai_1",
+        "yokai",
+        "title.onmyoji",
+        ("gashadokuro", Rarity.SILVER),
+        "29.10 06:00 \u2013 13.11 06:00 (Europe/Moscow)",
+    ),
+)
+# Sakura's file names predate the slug scheme and stay as they are (the published pages
+# link them): its stamps card is `profile-stamps-*`, the others' `profile-<slug>-stamps-*`.
+LEGACY_SLUG = "sakura"
 WEBP_QUALITY = 85
-# The made-up season dates the start card shows, written the way the bot writes them.
-SEASON_DATES = "12.10 18:00 \u2013 22.10 18:00 (Europe/Moscow)"
-# The Sakura profile cards: a made-up player with a Sakura title, two achievements
-# (a Sakura one and a gold Sharpshooter), 2 seasons played and 12 cosmetics owned.
-TITLE_KEY = "title.hanami_host"
-RUN_BADGE = ("hanami_party", Rarity.BRONZE)
+# The profile cards: a made-up player with the run's title, two achievements (a run one
+# and a gold Sharpshooter), 2 seasons played and 12 cosmetics owned.
 PROFILE_SEASONS, PROFILE_COSMETICS = 2, 12
 # The frame stills show the key visual at stage 3, at the default width.
 FRAME_STAGE_WIDTH = previews.FRAME_STAGE_WIDTH
@@ -127,36 +154,36 @@ def webp(png: bytes) -> bytes:
     return out.getvalue()
 
 
-def run() -> SeasonRun:
-    found = registry.get(RUN_ID)
+def run(docs: DocsRun) -> SeasonRun:
+    found = registry.get(docs.run_id)
     if found is None:
-        raise LookupError(f"{RUN_ID} is not in the season registry")
+        raise LookupError(f"{docs.run_id} is not in the season registry")
     return found
 
 
-def season_banner(lang: str) -> SeasonBanner:
+def season_banner(docs: DocsRun, lang: str) -> SeasonBanner:
     return SeasonBanner(
         headline=i18n.t(f"card.season.{OutboxKind.SEASON_START.value}", lang),
-        title=run().name(lang.upper()),
-        subtitle=SEASON_DATES,
-        stamp=season_stamp(RUN_ID, plus=False),
+        title=run(docs).name(lang.upper()),
+        subtitle=docs.dates,
+        stamp=season_stamp(docs.run_id, plus=False),
     )
 
 
-def plain_season_banner(lang: str) -> SeasonBanner:
-    """The season's card with no ribbon and no dates: the Sakura page's own picture."""
-    return replace(season_banner(lang), headline="", subtitle="")
+def plain_season_banner(docs: DocsRun, lang: str) -> SeasonBanner:
+    """The season's card with no ribbon and no dates: the run page's own picture."""
+    return replace(season_banner(docs, lang), headline="", subtitle="")
 
 
-def banner_files() -> tuple[str, ...]:
+def banner_files(docs: DocsRun) -> tuple[str, ...]:
     """The run's profile-banner file names, in the order the run lists them."""
-    return tuple(i.look for i in run().items if i.slot is CosmeticSlot.PROFILE_BANNER)
+    return tuple(i.look for i in run(docs).items if i.slot is CosmeticSlot.PROFILE_BANNER)
 
 
-def _profile(lang: str, stamps: tuple[StampEntry, ...]) -> ProfileCard:
-    sakura = run()
-    title = next(i for i in sakura.items if i.key == TITLE_KEY)
-    run_badge = next(a for a in sakura.achievements if a.key == RUN_BADGE[0])
+def _profile(docs: DocsRun, lang: str, stamps: tuple[StampEntry, ...]) -> ProfileCard:
+    season = run(docs)
+    title = next(i for i in season.items if i.key == docs.title_key)
+    run_badge = next(a for a in season.achievements if a.key == docs.run_badge[0])
     sharpshooter = catalogue.get(ACHIEVEMENT)
     tier = sharpshooter.rarities.index(Rarity.GOLD) + 1
     return ProfileCard(
@@ -167,29 +194,32 @@ def _profile(lang: str, stamps: tuple[StampEntry, ...]) -> ProfileCard:
         seed=UNLOCK_SEED,
         badges=(
             BadgeEntry(names.title(sharpshooter, tier, "", lang), Rarity.GOLD),
-            BadgeEntry(run_badge.name(lang.upper()), RUN_BADGE[1]),
+            BadgeEntry(run_badge.name(lang.upper()), docs.run_badge[1]),
         ),
     )
 
 
-def _stamp(lang: str, *, gold: bool, plus: bool) -> StampEntry:
-    return StampEntry(run().name(lang.upper()), gold=gold, art=season_stamp(RUN_ID, plus=plus))
+def _stamp(docs: DocsRun, lang: str, *, gold: bool, plus: bool) -> StampEntry:
+    return StampEntry(
+        run(docs).name(lang.upper()), gold=gold, art=season_stamp(docs.run_id, plus=plus)
+    )
 
 
-def banner_card(lang: str) -> ProfileCard:
-    """The profile card over a Sakura banner, with the season's plain stamp."""
-    return _profile(lang, (_stamp(lang, gold=False, plus=False),))
+def banner_card(docs: DocsRun, lang: str) -> ProfileCard:
+    """The profile card over one of the run's banners, with the season's plain stamp."""
+    return _profile(docs, lang, (_stamp(docs, lang, gold=False, plus=False),))
 
 
-def stamps_card(lang: str) -> ProfileCard:
-    """The profile card with the three stamps a Sakura player can hold: scored only,
-    pass completed (gold ring), and Sakura+ (gold ring and gold art)."""
+def stamps_card(docs: DocsRun, lang: str) -> ProfileCard:
+    """The profile card with the three stamps a player can hold: scored only,
+    pass completed (gold ring), and the plus one (gold ring and gold art)."""
     return _profile(
+        docs,
         lang,
         (
-            _stamp(lang, gold=False, plus=False),
-            _stamp(lang, gold=True, plus=False),
-            _stamp(lang, gold=True, plus=True),
+            _stamp(docs, lang, gold=False, plus=False),
+            _stamp(docs, lang, gold=True, plus=False),
+            _stamp(docs, lang, gold=True, plus=True),
         ),
     )
 
@@ -198,38 +228,45 @@ def banner_stem(file_name: str) -> str:
     return file_name.rsplit(".", 1)[0].replace("_", "-")
 
 
-def sakura_images(lang: str) -> dict[str, bytes]:
-    """The Sakura images of one language, by file name. The stamps card sits on the
+def stamps_file(docs: DocsRun, lang: str) -> str:
+    middle = "" if docs.slug == LEGACY_SLUG else f"{docs.slug}-"
+    return f"profile-{middle}stamps-{lang}.webp"
+
+
+def season_images(docs: DocsRun, lang: str) -> dict[str, bytes]:
+    """The run's images of one language, by file name. The stamps card sits on the
     key visual, which is what a card with no equipped banner shows."""
-    key_visual = season_background(RUN_ID)
+    key_visual = season_background(docs.run_id)
     files = {
-        f"season-sakura-{lang}.webp": webp(render_season_banner(season_banner(lang), key_visual)),
-        f"season-sakura-plain-{lang}.webp": webp(
-            render_season_banner(plain_season_banner(lang), key_visual)
+        f"season-{docs.slug}-{lang}.webp": webp(
+            render_season_banner(season_banner(docs, lang), key_visual)
         ),
-        f"profile-stamps-{lang}.webp": webp(
-            render_profile_card(stamps_card(lang), None, key_visual)
+        f"season-{docs.slug}-plain-{lang}.webp": webp(
+            render_season_banner(plain_season_banner(docs, lang), key_visual)
+        ),
+        stamps_file(docs, lang): webp(
+            render_profile_card(stamps_card(docs, lang), None, key_visual)
         ),
     }
-    for file_name in banner_files():
-        banner = looks.banner_path(RUN_ID, file_name).read_bytes()
+    for file_name in banner_files(docs):
+        banner = looks.banner_path(docs.run_id, file_name).read_bytes()
         files[f"profile-{banner_stem(file_name)}-{lang}.webp"] = webp(
-            render_profile_card(banner_card(lang), None, banner)
+            render_profile_card(banner_card(docs, lang), None, banner)
         )
     return files
 
 
-def _key_visual() -> bytes:
-    found = season_background(RUN_ID)
+def _key_visual(docs: DocsRun) -> bytes:
+    found = season_background(docs.run_id)
     if found is None:
-        raise LookupError(f"{RUN_ID} has no key visual")
+        raise LookupError(f"{docs.run_id} has no key visual")
     return found
 
 
-def _resolved(slot: CosmeticSlot) -> tuple[registry.ResolvedItem, ...]:
+def _resolved(docs: DocsRun, slot: CosmeticSlot) -> tuple[registry.ResolvedItem, ...]:
     """The run's items of `slot`, in the order the run lists them, as the bot resolves them."""
     items = registry.all_items()
-    return tuple(items[f"{RUN_ID}/{i.key}"] for i in run().items if i.slot is slot)
+    return tuple(items[f"{docs.run_id}/{i.key}"] for i in run(docs).items if i.slot is slot)
 
 
 def cosmetic_stem(resolved: registry.ResolvedItem) -> str:
@@ -237,25 +274,40 @@ def cosmetic_stem(resolved: registry.ResolvedItem) -> str:
     return resolved.item.key.split(".", 1)[1].replace("_", "-")
 
 
-def frame_stills() -> dict[str, bytes]:
-    """Each Sakura frame on the key visual as a real Sakura game posts stage 3: pixelated,
-    painted in the season's style, framed, then Nani in stage 3's pose (`stage_png_with`).
-    No text: one set."""
-    key_visual = _key_visual()
+def _stage_3(docs: DocsRun, frame: str | None) -> bytes:
+    """The key visual as a real game posts stage 3: pixelated, painted in the season's
+    style, then `frame` (None for no frame)."""
+    return stage.stage_png_with(
+        _key_visual(docs),
+        FRAME_STAGE_WIDTH,
+        DEFAULT_ALGORITHM,
+        frame,
+        stage.SeasonLook(run(docs).style),
+    )
+
+
+def frame_stills(docs: DocsRun) -> dict[str, bytes]:
+    """Each of the run's frames on the key visual as a real game posts stage 3, then Nani
+    in stage 3's pose. No text: one set."""
+    pose = mascot.stage_pose(3, 5)
     return {
         f"frame-{cosmetic_stem(resolved)}.webp": webp(
-            mascot.add_to_png(
-                stage.stage_png_with(
-                    key_visual,
-                    FRAME_STAGE_WIDTH,
-                    DEFAULT_ALGORITHM,
-                    resolved.item.look,
-                    stage.SeasonLook(run().style),
-                ),
-                mascot.stage_pose(3, 5),
-            )
+            mascot.add_to_png(_stage_3(docs, resolved.item.look), pose)
         )
-        for resolved in _resolved(CosmeticSlot.HOST_FRAME)
+        for resolved in _resolved(docs, CosmeticSlot.HOST_FRAME)
+    }
+
+
+def costume_stills(docs: DocsRun) -> dict[str, bytes]:
+    """Nani in each of the run's costumes on the unframed stage-3 key visual. No text:
+    one set. A run with no costumes writes none."""
+    pose = mascot.stage_pose(3, 5)
+    base = _stage_3(docs, None)
+    return {
+        f"costume-{cosmetic_stem(resolved)}.webp": webp(
+            mascot.add_to_png(base, pose, resolved.item.look)
+        )
+        for resolved in _resolved(docs, CosmeticSlot.MASCOT_COSTUME)
     }
 
 
@@ -265,47 +317,49 @@ def _sample_viewer(lang: str) -> previews.Viewer:
     return previews.Viewer(player_id=0, handle=you, full_name=you)
 
 
-def clip_jobs() -> dict[str, previews.ClipJob]:
-    """The /cosmetics preview clip of each Sakura win effect (per language: its badge reads
-    the localized "you") and reveal transition (one, no text), by file name."""
+def clip_jobs(docs: DocsRun) -> dict[str, previews.ClipJob]:
+    """The /cosmetics preview clip of each of the run's win effects (per language: its badge
+    reads the localized "you") and reveal transitions (one, no text), by file name."""
     jobs: dict[str, previews.ClipJob] = {}
-    for resolved in _resolved(CosmeticSlot.WIN_EFFECT):
+    for resolved in _resolved(docs, CosmeticSlot.WIN_EFFECT):
         for lang in LANGS:
             job = previews.clip_job(resolved, _sample_viewer(lang))
             if job is not None:
                 jobs[f"win-{cosmetic_stem(resolved)}-{lang}.mp4"] = job
-    for resolved in _resolved(CosmeticSlot.HOST_TRANSITION):
+    for resolved in _resolved(docs, CosmeticSlot.HOST_TRANSITION):
         job = previews.clip_job(resolved, _sample_viewer(LANGS[0]))
         if job is not None:
             jobs[f"transition-{cosmetic_stem(resolved)}.mp4"] = job
     return jobs
 
 
-def clip_image() -> bytes:
-    """The key visual cropped to the previews' size, so the clips look like a Sakura game
-    and stay as small as the bot's own previews."""
+def clip_image(docs: DocsRun) -> bytes:
+    """The key visual cropped to the previews' size, so the clips look like a game of the
+    run and stay as small as the bot's own previews."""
     out = BytesIO()
-    with Image.open(BytesIO(_key_visual())) as image:
+    with Image.open(BytesIO(_key_visual(docs))) as image:
         ImageOps.fit(image.convert("RGB"), previews.SAMPLE_SIZE).save(out, format="PNG")
     return out.getvalue()
 
 
 def generate_clips(out_dir: Path) -> None:
-    """The win-effect and transition clips, rendered by the preview pipeline on the key
-    visual. MP4s are served as-is, so they go to the site's public/ folder."""
+    """The win-effect and transition clips of every run, rendered by the preview pipeline
+    on its key visual. MP4s are served as-is, so they go to the site's public/ folder."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    image = clip_image()
-    for file_name, job in clip_jobs().items():
-        clip = pipeline.preview_clip(
-            image, DEFAULT_ALGORITHM, previews.STAGE_WIDTHS, job.effect, job.ending()
-        )
-        (out_dir / file_name).write_bytes(clip)
+    for docs in DOCS_RUNS:
+        image = clip_image(docs)
+        for file_name, job in clip_jobs(docs).items():
+            clip = pipeline.preview_clip(
+                image, DEFAULT_ALGORITHM, previews.STAGE_WIDTHS, job.effect, job.ending()
+            )
+            (out_dir / file_name).write_bytes(clip)
 
 
 def generate(out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    for file_name, data in frame_stills().items():
-        (out_dir / file_name).write_bytes(data)
+    for docs in DOCS_RUNS:
+        for file_name, data in {**frame_stills(docs), **costume_stills(docs)}.items():
+            (out_dir / file_name).write_bytes(data)
     for lang in LANGS:
         background = load_background(unlock_slot(Rarity.GOLD), UNLOCK_SEED)
         unlock = render_unlock_card(unlock_card(lang), None, background)
@@ -313,8 +367,9 @@ def generate(out_dir: Path) -> None:
         podium = podium_card(lang)
         background = load_background(podium_slot("year"), podium.entries[0].seed)
         (out_dir / f"podium-{lang}.png").write_bytes(render_podium_card(podium, background))
-        for file_name, data in sakura_images(lang).items():
-            (out_dir / file_name).write_bytes(data)
+        for docs in DOCS_RUNS:
+            for file_name, data in season_images(docs, lang).items():
+                (out_dir / file_name).write_bytes(data)
 
 
 if __name__ == "__main__":

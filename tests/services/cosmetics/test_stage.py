@@ -303,3 +303,14 @@ def test_the_mirror_never_fades(session, haunted_game, fake_runs) -> None:
     haunted_game.current_stage = PixelStage.STAGE_5
 
     assert stage.current_haunt(session, haunted_game) == stage.Haunt((HauntTwist.KITSUNE_MIRROR,))
+
+
+def test_a_twist_that_raises_does_not_block_the_stage(monkeypatch, log_records) -> None:
+    def boom(_image):
+        raise OSError("bad image mode")
+
+    monkeypatch.setitem(haunting._OPS, HauntTwist.KYOKOTSU_XRAY, boom)
+    look = stage.SeasonLook(None, stage.Haunt((HauntTwist.KYOKOTSU_XRAY,)))
+    png = stage.stage_png_with(_image(), WIDTH, PixelAlgorithm.BOX, None, look)
+    assert png == pixelate.pixelate(_image(), WIDTH, PixelAlgorithm.BOX)
+    assert any(r.level == "ERROR" and r.extra["kind"] == "twist" for r in log_records)

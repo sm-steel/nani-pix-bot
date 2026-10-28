@@ -16,11 +16,12 @@ from nani_pix_bot.services import i18n, players
 
 
 def _amount(session: Session, row: Hex) -> int:
-    """What the hex took, read back from its HEX_TRIGGERED event."""
+    """What the hex took, read back from its HEX_TRIGGERED event, found by the
+    hex's id. Not by game id: /stop deletes the game, which sets the hex's
+    `game_id` to NULL while the event keeps the old one."""
     stmt = select(EventLog).where(
         EventLog.event_type == EventType.HEX_TRIGGERED,
         EventLog.actor_id == row.target_id,
-        EventLog.game_id == row.game_id,
     )
     for event in session.scalars(stmt.order_by(EventLog.id.desc())):
         if event.data.get("hex_id") == row.id:

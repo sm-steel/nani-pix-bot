@@ -1,16 +1,28 @@
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nani_pix_bot.models.enums import ConsumableKind, EventType, GameStatus, PixelStage
+from nani_pix_bot.models.enums import (
+    ConsumableKind,
+    EventType,
+    GameStatus,
+    PixelStage,
+    SeasonStatus,
+)
 from nani_pix_bot.models.event_log import EventLog
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.halloween import ArmedOfuda
 from nani_pix_bot.models.player import Player
+from nani_pix_bot.models.season import SeasonSchedule
+from nani_pix_bot.seasons import registry
+from nani_pix_bot.seasons.definition import Reward, RewardKind, Tier
+from nani_pix_bot.seasons.mechanics import OmikujiKind, OmikujiOutcome
 from nani_pix_bot.services.cosmetics import consumables, ofuda
 from nani_pix_bot.services.cosmetics.ofuda import ArmRefusal, ArmRefusedError
+from tests.seasons.fake_runs import demo_2
 
 PLAYER = 1
 STARTER = 2
@@ -39,6 +51,19 @@ def _armed_rows(session: Session) -> int:
     return len(list(session.scalars(select(ArmedOfuda))))
 
 
+def _season(session: Session, run_id: str, status=SeasonStatus.ACTIVE) -> SeasonSchedule:
+    row = SeasonSchedule(
+        run_id=run_id,
+        start_at=NOW - timedelta(days=1),
+        end_at=NOW + timedelta(days=9),
+        status=status,
+        created_by=9,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
 @pytest.fixture(autouse=True)
 def players(session: Session) -> None:
     session.add_all([Player(telegram_user_id=PLAYER), Player(telegram_user_id=STARTER)])
@@ -46,7 +71,13 @@ def players(session: Session) -> None:
 
 
 @pytest.fixture
-def game(session: Session) -> Game:
+def ofuda_season(session: Session) -> SeasonSchedule:
+    """An active demo_3 season: its shop sells Ofuda."""
+    return _season(session, "demo_3")
+
+
+@pytest.fixture
+def game(session: Session, ofuda_season) -> Game:
     return _new_game(session)
 
 
@@ -85,7 +116,7 @@ def test_arm_logs_the_count_held(session, ofuda_holder, game, log_records) -> No
         ("armed", ArmRefusal.ALREADY_ARMED),
     ],
 )
-def test_arm_refusals(session, log_records, setup, expected) -> None:
+def test_arm_refusals(session, ofuda_season, log_records, setup, expected) -> None:
     player = PLAYER
     if setup != "none_held":
         consumables.add(session, PLAYER, ConsumableKind.OFUDA, why="test")
@@ -152,3 +183,64 @@ def test_an_unused_armed_ofuda_stays_held_and_does_not_carry_over(
     assert consumables.count(session, PLAYER, ConsumableKind.OFUDA) == 1
     assert not ofuda.is_armed(session, next_game.id, PLAYER)
     assert ofuda.forgive(session, next_game, PLAYER) is False
+
+
+PLAIN_RUN = demo_2.RUN  # no shop, pass or omikuji at all
+
+
+@pytest.mark.parametrize(
+    ("run", "offered"),
+    [
+        (PLAIN_RUN, False),
+        (replace(PLAIN_RUN, tiers=(Tier(xp=10, free=Reward(RewardKind.OFUDA)),)), True),
+        (replace(PLAIN_RUN, tiers=(Tier(xp=10, premium=Reward(RewardKind.OFUDA)),)), True),
+        (replace(PLAIN_RUN, tiers=(Tier(xp=10, free=Reward.omamori()),)), False),
+        (
+            replace(
+                PLAIN_RUN,
+                omikuji=(OmikujiOutcome(OmikujiKind.KICHI, 1, consumable=ConsumableKind.OFUDA),),
+            ),
+            True,
+        ),
+    ],
+)
+def test_offers_ofuda(run, offered) -> None:
+    assert ofuda.offers_ofuda(run) is offered
+
+
+def test_the_demo_runs_offer_ofuda_only_in_demo_3() -> None:
+    offered = {run.run_id: ofuda.offers_ofuda(run) for run in registry.all_runs().values()}
+    assert offered["demo_3"] is True
+    assert offered["demo_1"] is False
+
+
+@pytest.mark.parametrize("season", ["none", "demo_1", "demo_3_ended", "demo_3_closing"])
+def test_arm_is_refused_without_an_active_ofuda_season(
+    session, ofuda_holder, log_records, season
+) -> None:
+    if season == "demo_1":
+        _season(session, "demo_1")
+    elif season == "demo_3_ended":
+        _season(session, "demo_3", SeasonStatus.ENDED)
+    elif season == "demo_3_closing":
+        _season(session, "demo_3", SeasonStatus.CLOSING)
+    game = _new_game(session)
+
+    assert ofuda.refusal(session, game, PLAYER) == ArmRefusal.NO_SEASON
+    with pytest.raises(ArmRefusedError) as raised:
+        ofuda.arm(session, game, PLAYER, NOW)
+    assert raised.value.refusal == ArmRefusal.NO_SEASON
+    assert _armed_rows(session) == 0
+    assert consumables.count(session, PLAYER, ConsumableKind.OFUDA) == 1
+    warning = next(r for r in log_records if r.level == "WARNING")
+    assert "no_season" in warning.message
+
+
+def test_an_ofuda_armed_before_the_season_ends_is_honored(
+    session, ofuda_holder, ofuda_season, game
+) -> None:
+    ofuda.arm(session, game, PLAYER, NOW)
+    ofuda_season.status = SeasonStatus.ENDED
+    session.flush()
+    assert ofuda.forgive(session, game, PLAYER) is True
+    assert consumables.count(session, PLAYER, ConsumableKind.OFUDA) == 0

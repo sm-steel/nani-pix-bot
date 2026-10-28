@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from itertools import groupby
-from typing import Any, TypedDict
+from typing import Any
 
 from loguru import logger
 from sqlalchemy.orm import Session, sessionmaker
@@ -24,7 +24,7 @@ from telegram.ext import ContextTypes, JobQueue
 from nani_pix_bot.db import session_scope
 from nani_pix_bot.jobs import goal_posts, hex_posts, season_posts
 from nani_pix_bot.jobs.avatars import fetch_avatar
-from nani_pix_bot.jobs.post import Post
+from nani_pix_bot.jobs.post import Post, send_one, where
 from nani_pix_bot.jobs.timers._shared import job_log_scope
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.announcement import AnnouncementOutbox
@@ -51,11 +51,6 @@ OUTBOX_POLL_SECONDS = 20
 OUTBOX_BATCH = 20
 ALBUM_MIN = 3
 ALBUM_MAX = 10  # Telegram's album size limit
-
-
-class _Where(TypedDict, total=False):
-    chat_id: int
-    message_thread_id: int
 
 
 def _card_text(text: str) -> str:
@@ -248,25 +243,6 @@ async def _image(
         return None
 
 
-def _where(context: ContextTypes.DEFAULT_TYPE, post: Post) -> _Where:
-    if post.dm_to is not None:
-        return {"chat_id": post.dm_to}
-    return {
-        "chat_id": context.bot_data["group_chat_id"],
-        "message_thread_id": context.bot_data["game_topic_id"],
-    }
-
-
-async def _send_one(context: ContextTypes.DEFAULT_TYPE, post: Post, image: bytes | None) -> None:
-    """A photo with the caption, or the text alone when there's no card."""
-    if not post.text:
-        return
-    if image is None:
-        await context.bot.send_message(text=post.text, **_where(context, post))
-    else:
-        await context.bot.send_photo(photo=image, caption=post.text, **_where(context, post))
-
-
 def _row_ids(group: list[Post]) -> list[int]:
     return [i for post in group for i in post.row_ids]
 
@@ -277,7 +253,7 @@ async def _send_album(
     media = [
         InputMediaPhoto(image, caption=post.text) for image, post in zip(images, group, strict=True)
     ]
-    await context.bot.send_media_group(media=media, **_where(context, group[0]))
+    await context.bot.send_media_group(media=media, **where(context, group[0]))
 
 
 async def _send_each(
@@ -290,7 +266,7 @@ async def _send_each(
     given_up: set[int] = set()
     for done, (post, image) in enumerate(zip(group, images, strict=True)):
         try:
-            await _send_one(context, post, image)
+            await send_one(context, post, image)
         except Forbidden as exc:
             if post.dm_to is None:
                 logger.error(

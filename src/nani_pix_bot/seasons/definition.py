@@ -2,6 +2,7 @@
 services read it, nothing here does anything."""
 
 import enum
+import itertools
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -66,10 +67,6 @@ class Reward:
         return cls(RewardKind.CLUE_TICKET)
 
     @classmethod
-    def ofuda(cls) -> "Reward":
-        return cls(RewardKind.OFUDA)
-
-    @classmethod
     def omamori(cls) -> "Reward":
         return cls(RewardKind.OMAMORI)
 
@@ -93,7 +90,13 @@ class Tier:
 
 MAX_CLUE_TOKEN_TIERS = 2
 MAX_SHOP_CLUE_TOKENS = 2
+MAX_SHOP_CHARMS = 8  # an Ofuda forgives one miss; Paper Shield's top tier needs 8
 CONSUMABLE_REWARDS = (RewardKind.CLUE_TICKET, RewardKind.OFUDA, RewardKind.OMAMORI)
+_SHOP_CAPS = {
+    RewardKind.CLUE_TICKET: MAX_SHOP_CLUE_TOKENS,
+    RewardKind.OFUDA: MAX_SHOP_CHARMS,
+    RewardKind.OMAMORI: MAX_SHOP_CHARMS,
+}
 _SHOP_KINDS = (RewardKind.ITEM, *CONSUMABLE_REWARDS)
 
 
@@ -240,7 +243,7 @@ class Objective:
         return self.names.get(lang) or self.names["EN"]
 
 
-MAX_RUN_ACHIEVEMENTS = 4
+MAX_RUN_ACHIEVEMENTS = 16
 MAX_RUN_ID_LENGTH = PERIOD_KEY_LENGTH  # the run id is the per-season grant period_key
 
 
@@ -249,7 +252,11 @@ class RunAchievement:
     """An achievement a run module declares for its own season (spec §6). It is
     merged into the catalogue as `"{run_id}.{key}"`. `progress` takes a
     SeasonHistory and returns the number reached; the text comes from these
-    EN/RU maps (EN is the fallback), and descriptions take no placeholders."""
+    EN/RU maps (EN is the fallback), and descriptions take no placeholders.
+
+    With several `tiers` it climbs like a ladder within its season: one grant
+    per tier reached, the n-th with `rarities[n]`. `rarities` None means the
+    single tier's `rarity`."""
 
     key: str
     names: Mapping[str, str]
@@ -258,6 +265,12 @@ class RunAchievement:
     triggers: frozenset[EventType]
     progress: Callable[[Any], int]
     hidden: bool = False
+    tiers: tuple[int, ...] = (1,)
+    rarities: tuple[Rarity, ...] | None = None
+
+    @property
+    def tier_rarities(self) -> tuple[Rarity, ...]:
+        return self.rarities if self.rarities is not None else (self.rarity,)
 
     def name(self, lang: str) -> str:
         return self.names.get(lang) or self.names["EN"]
@@ -297,6 +310,7 @@ class SeasonRun:
     hexes: tuple[HexRule, ...] = ()
     omikuji: tuple[OmikujiOutcome, ...] = ()
     bone_set: BoneSet | None = None
+    guide_page: str | None = None  # its page in the user's guide, e.g. "yokai-night"
 
     def name(self, lang: str) -> str:
         return self.names.get(lang) or self.names["EN"]
@@ -381,8 +395,9 @@ def _offer_problems(run: SeasonRun, offer: ShopOffer) -> list[str]:
             problems.append(f"{where}: already a pass reward; an item is shop- or pass-only")
         if offer.limit != 1:
             problems.append(f"{where}: an item sells once")
-    if offer.kind in CONSUMABLE_REWARDS and not 1 <= offer.limit <= MAX_SHOP_CLUE_TOKENS:
-        problems.append(f"{where}: limit must be 1..{MAX_SHOP_CLUE_TOKENS}")
+    cap = _SHOP_CAPS.get(offer.kind)
+    if cap is not None and not 1 <= offer.limit <= cap:
+        problems.append(f"{where}: limit must be 1..{cap}")
     return problems
 
 
@@ -443,7 +458,20 @@ def _achievement_problems(run: SeasonRun, achievement: RunAchievement) -> list[s
             problems.append(f"{where}: {label} need EN and RU text")
     if not achievement.triggers:
         problems.append(f"{where}: needs at least one trigger event")
-    return problems
+    return problems + _tier_problems(where, achievement)
+
+
+def _tier_problems(where: str, achievement: RunAchievement) -> list[str]:
+    tiers = achievement.tiers
+    checks = (
+        (not tiers or tiers[0] < 1, f"{where}: tiers must be positive, at least one"),
+        (
+            any(a >= b for a, b in itertools.pairwise(tiers)),
+            f"{where}: tiers must be strictly increasing",
+        ),
+        (len(achievement.tier_rarities) != len(tiers), f"{where}: one rarity per tier"),
+    )
+    return [message for failed, message in checks if failed]
 
 
 def achievement_problems(run: SeasonRun) -> list[str]:

@@ -140,6 +140,12 @@ def rarity_of(defn: Definition, tier: int) -> Rarity:
     return defn.rarities[min(tier, len(defn.rarities)) - 1]
 
 
+def counts_times(defn: Definition) -> bool:
+    """Whether earning it again counts times — a champion, or a one-tier
+    season achievement (once per season) — rather than climbing tiers."""
+    return defn.kind is Kind.PERIOD or (defn.kind is Kind.SEASON and len(defn.tiers) == 1)
+
+
 def grants_title(defn: Definition, tier: int) -> bool:
     """The prestige set (spec §4): group-unique, champions, and the top
     *defined* tier of every ladder; a season achievement when it says so."""

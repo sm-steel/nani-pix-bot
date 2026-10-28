@@ -120,7 +120,9 @@ def test_its_run_achievements_validate() -> None:
 def test_every_shipped_gate_tag_is_in_the_snapshot() -> None:
     snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     registry.all_runs.cache_clear()
-    tags = [t for run in registry.all_runs().values() if run.gate for t in run.gate.any_of]
+    gates = [run.gate for run in registry.all_runs().values()]
+    gates += [run.event_day.gate for run in registry.all_runs().values() if run.event_day]
+    tags = [t for gate in gates if gate for t in gate.any_of]
     assert tags
     for tag in tags:
         assert snapshot[tag.kind].get(str(tag.mal_id)) == tag.name, tag

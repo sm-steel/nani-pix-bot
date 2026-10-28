@@ -10,8 +10,9 @@ from nani_pix_bot.commands import inventory as inventory_module
 from nani_pix_bot.commands.inventory import inventory_text
 from nani_pix_bot.models.enums import ConsumableKind, GameStatus, PixelStage
 from nani_pix_bot.models.game import Game
+from nani_pix_bot.models.halloween import ArmedOfuda
 from nani_pix_bot.models.player import Player
-from nani_pix_bot.services.cosmetics import consumables, ofuda
+from nani_pix_bot.services.cosmetics import consumables
 from nani_pix_bot.services.i18n import t
 
 NONE = dict.fromkeys(ConsumableKind, 0)
@@ -103,7 +104,9 @@ async def test_inventory_marks_an_ofuda_armed_for_the_active_game(session_factor
         game = Game(starter_id=2, status=GameStatus.ACTIVE, current_stage=PixelStage.STAGE_1)
         session.add(game)
         session.flush()
-        ofuda.arm(session, game, 1, datetime(2026, 10, 25, tzinfo=UTC))
+        session.add(
+            ArmedOfuda(player_id=1, game_id=game.id, armed_at=datetime(2026, 10, 25, tzinfo=UTC))
+        )
         session.commit()
     update = _make_update(chat_type=ChatType.PRIVATE, thread_id=None)
 

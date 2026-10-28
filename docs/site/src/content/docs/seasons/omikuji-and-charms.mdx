@@ -1,0 +1,67 @@
+---
+title: Omikuji and charms
+description: In Yōkai Night draw a daily fortune slip with /omikuji, and use the Ofuda 📜 and the Omamori 🧿 charms.
+sidebar:
+  order: 9
+---
+
+[Yōkai Night](/nani-pix-bot/seasons/yokai-night/) has a shrine: draw a fortune slip
+every day, and carry two charms, the **Ofuda 📜** and the **Omamori 🧿**.
+
+## Omikuji
+
+Send `/omikuji` in the game topic or in a private chat with Nani Pix to draw a slip.
+You get **one a day**; the day turns at midnight in the group's time zone.
+
+| Slip | Chance | What you get |
+|---|---|---|
+| 大吉 **Daikichi**, great blessing | 15% | 30 🪙 and an Omamori 🧿 |
+| 吉 **Kichi**, blessing | 30% | 15 🪙 |
+| 小吉 **Shōkichi**, small blessing | 35% | 5 🪙 |
+| 凶 **Kyō**, a curse | 20% | a free prank [hex](/nani-pix-bot/seasons/hexes/) on yourself |
+
+The slip comes back as a card with your picture.
+
+**Kyō** puts a Nopperabō or a Chōchin-obake on you for 24 hours, picked at random. It
+costs nothing, and an Omamori doesn't stop it. If you've opted out of hexes, or already
+carry one, the spirits pass you by and nothing happens. A kyō that lands is always
+public: drawn in a private chat, its card goes to the game topic too.
+
+Omikuji only open during a season that has them.
+
+## Your charms: /inventory
+
+Send `/inventory` in the game topic or in a private chat to see your clue tokens 🎟,
+Ofuda 📜 and Omamori 🧿. Charms don't expire: what you don't use stays with you for the
+next season that has them.
+
+| Charm | Where it comes from |
+|---|---|
+| 📜 Ofuda | The [Season Shop](/nani-pix-bot/seasons/season-shop/), 20 🪙, up to 8 per player |
+| 🧿 Omamori | The [pass](/nani-pix-bot/seasons/yokai-night/#the-pass), tier 7; a Daikichi slip |
+
+## Ofuda
+
+An Ofuda **forgives one wrong guess**: the miss doesn't count toward the stage's
+wrong-guess limit, so it can't move the round on to the next stage or end it.
+
+1. During a round, open [`/shop`](/nani-pix-bot/players/pixels-and-shop/) in a private
+   chat with Nani Pix and tap **📜 Arm an Ofuda**. Arming is private; the topic sees
+   nothing.
+2. Your next wrong guess in that round is forgiven. The Ofuda burns away and the topic
+   gets a card saying that miss didn't count.
+
+- An armed Ofuda is used up **only when it forgives a miss**. If the round ends first,
+  you keep it.
+- One armed at a time, and only for the round that's running.
+- You can arm one only while a season that has Ofuda is on, like Yōkai Night. Outside
+  one, the button isn't shown and your Ofuda wait in `/inventory`. One you armed before
+  the season ended still works in that round.
+- It doesn't work in HARD MODE rounds, or in your own round, since you can't guess there.
+- A forgiven miss is still a guess: it earns what any miss earns, and it still sets off a
+  [Kitsune hex](/nani-pix-bot/seasons/hexes/).
+
+## Omamori
+
+An Omamori is never armed: just hold one and it **blocks the next hex** someone casts on
+you. See [Blocking a hex](/nani-pix-bot/seasons/hexes/#blocking-a-hex-the-omamori).

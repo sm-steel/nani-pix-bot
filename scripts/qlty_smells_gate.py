@@ -21,7 +21,7 @@ def _run_qlty() -> subprocess.CompletedProcess[str]:
             args=["qlty"],
             returncode=1,
             stdout="",
-            stderr="qlty not found on PATH — see CLAUDE.md's Tooling section.",
+            stderr="qlty not found on PATH — run `mise install` (see CLAUDE.md's Tooling section).",
         )
     return subprocess.run(  # noqa: S603 - argv is a fixed list, no shell, no user input
         [qlty, *_QLTY_SMELLS_ARGS], capture_output=True, text=True

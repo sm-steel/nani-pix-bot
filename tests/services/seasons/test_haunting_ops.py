@@ -92,3 +92,28 @@ def test_boss_stage_image_applies_every_twist_in_order() -> None:
         expected = haunting.twist_image(expected, twist)
     out = Image.open(BytesIO(haunting.apply_twists(_png(_image()), haunting.BOSS_ORDER)))
     assert out.convert("RGB").tobytes() == expected.tobytes()
+
+
+def _boom(_image: Image.Image) -> Image.Image:
+    raise OSError("bad image mode")
+
+
+def test_a_twist_that_raises_is_skipped_and_logged(monkeypatch, log_records) -> None:
+    monkeypatch.setitem(haunting._OPS, HauntTwist.TANUKI_LEAF, _boom)
+    png = _png(_image())
+    out = haunting.apply_twists(png, (HauntTwist.TANUKI_LEAF,))
+    assert out == png
+    error = next(r for r in log_records if r.level == "ERROR")
+    assert error.extra["kind"] == "twist"
+    assert error.extra["key"] == HauntTwist.TANUKI_LEAF.value
+    assert "posting the stage without it" in error.message
+
+
+def test_one_raising_twist_leaves_the_whole_stack_off(monkeypatch, log_records) -> None:
+    """The boss's stack is drawn in one go, so a failure posts it fully untwisted."""
+    monkeypatch.setitem(haunting._OPS, HauntTwist.TANUKI_LEAF, _boom)
+    png = _png(_image())
+    twists = (HauntTwist.KITSUNE_MIRROR, HauntTwist.TANUKI_LEAF)
+    assert haunting.apply_twists(png, twists) == png
+    error = next(r for r in log_records if r.level == "ERROR")
+    assert error.extra["key"] == "kitsune_mirror+tanuki_leaf"

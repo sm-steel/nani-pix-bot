@@ -2,7 +2,7 @@
 title: Cosmetics
 description: Browse, preview and equip your season cosmetics with /cosmetics.
 sidebar:
-  order: 4
+  order: 5
 ---
 import TelegramChat from '../../../components/TelegramChat.astro';
 import TgMessage from '../../../components/TgMessage.astro';
@@ -35,6 +35,7 @@ sends its preview, followed by **Equip** or **Unequip**. You can equip one item 
 | 💬 Guess reaction | the reaction Nani Pix puts on your winning `/guess` | a line of text |
 | 🪪 Profile banner | the background of your [profile card](/nani-pix-bot/players/profile/) | an image |
 | 🏷 Title | shown next to your name — pick it with [`/title`](/nani-pix-bot/players/achievements/#titles) | a line of text |
+| 🎭 Nani Pix costume | what Nani Pix wears on the pictures of the rounds you start (see [below](#nani-pixs-costume)) | a sheet of all six of her poses |
 
 A few limits:
 
@@ -52,6 +53,20 @@ banners, shown on a profile card here:
 ![A profile card over the Blossom Avenue banner](../../../assets/generated/profile-blossom-avenue-en.webp)
 
 ![A profile card over the School Rooftop banner](../../../assets/generated/profile-school-rooftop-en.webp)
+
+## Nani Pix's costume
+
+Nani Pix can dress up. She wears the costume of **whoever started the round** on every
+picture of that round: the stages, `/status`, bought clues, the reveal video and photo,
+and the clue album. Equip one in `/cosmetics` → **🎭 Nani Pix costume**; changing it
+shows on the next picture of a round that's already running.
+
+- With no costume equipped, she wears **the season's own look**: in
+  [Yōkai Night](/nani-pix-bot/seasons/yokai-night/#nani-pixs-costumes), pumpkin
+  accessories. Outside a season she looks like herself. A round started before the season
+  began keeps her usual look.
+- Costumes from a past season keep working.
+- The previews of frames, transitions and win effects show her in your current costume.
 
 Previews are drawn on demand, and on you: a name flair follows your own name, a win
 effect's badge carries your avatar and name, and a banner is shown behind your real

@@ -11,8 +11,10 @@ from nani_pix_bot.models.enums import GameStatus, OutboxKind, SeasonStatus
 from nani_pix_bot.models.game import Game
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonSchedule
+from nani_pix_bot.seasons import registry
 from nani_pix_bot.services import i18n
 from nani_pix_bot.services.cards import GoalCard, backgrounds
+from nani_pix_bot.services.seasons import multipliers
 from tests.jobs.test_announcements import _context, _drain
 
 
@@ -86,7 +88,19 @@ def test_boss_post_has_the_boss_card_and_multipliers(session, yokai_season):
     assert post.card == GoalCard("demo_3", 10, 10, boss=True)
     assert f"Game #{row.payload['game_id']}" in post.text
     game_id = row.payload["game_id"]
-    assert post.text == i18n.t("goal.post.boss", "en", game_id=game_id, xp=2, coins=3)
+    assert post.text == i18n.t("goal.post.boss", "en", game_id=game_id, xp=2, coins=6)
+
+
+def test_boss_post_coins_equal_what_a_guesser_wins(session, yokai_season):
+    row = _boss(session, yokai_season)
+    game = session.get(Game, row.payload["game_id"])
+    run = registry.get(yokai_season.run_id)
+    assert run is not None
+    assert run.haunt is not None
+    assert run.group_goal is not None
+    paid = multipliers.coin_multiplier(run, game)
+    assert paid == run.haunt.coin_multiplier * run.group_goal.boss_coin_multiplier
+    assert f"\u00d7{paid} 🪙" in _render(session, row).text
 
 
 def test_boss_post_skipped_when_the_game_was_stopped(session, yokai_season, log_records):

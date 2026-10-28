@@ -124,8 +124,8 @@ target VPS, including the database.
 
 **[qlty](https://github.com/qltysh/qlty) checks Python complexity and
 duplication** — neither is covered by `ruff`/`ty`. It's a standalone native
-binary (installed once per machine via `qlty.sh`'s install script,
-`~/.qlty/bin` — not a `uv` dependency, nothing in `pyproject.toml`),
+binary pinned in `mise.toml` and checksummed in `mise.lock` (`mise
+install` puts it on PATH — not a `uv` dependency, nothing in `pyproject.toml`),
 configured by the committed `.qlty/qlty.toml`. Only its own built-in
 complexity/duplication analysis, plus its `trufflehog` secret-scanning
 plugin, are enabled; every other third-party linter plugin it can also run
@@ -144,15 +144,16 @@ qlty metrics --all --sort complexity --limit 15   # per-file complexity/LOC tabl
 ```
 
 **Both the qlty CLI and its trufflehog plugin are version-pinned** — the
-CLI via `QLTY_VERSION` in `checks.yml`'s install step, trufflehog via
+CLI in `mise.toml` (`github:qltysh/qlty`, which local dev and CI both
+install with mise in locked mode), trufflehog via
 `version = "…"` on its `[[plugin]]` entry in `.qlty/qlty.toml`. Unpinned,
 CI silently picked up whatever the newest qlty bundled; issue #190 is
 what that cost (a trufflehog release whose Lob detector "verified" every
 40-character pytest name as a live secret, failing every branch at once
-with no code change). Run the same qlty locally (`qlty --version` must
-match `checks.yml`; `qlty upgrade --version <x>` to align), and bump
-either pin deliberately in its own change — scan locally against the new
-version first (`qlty check --filter trufflehog --all`), never just bump
+with no code change). mise makes local and CI run the same qlty; bump
+either pin deliberately in its own change (for the CLI: its version in
+`mise.toml`, then `mise lock --platform linux-x64,windows-x64`) — scan
+locally against the new version first (`qlty check --filter trufflehog --all`), never just bump
 CI and see.
 
 **The secret scan only catches *verified* secrets by default** — qlty's

@@ -20,6 +20,7 @@ from nani_pix_bot.services.achievements.definitions import (
     Definition,
     Kind,
     SeasonHistory,
+    counts_times,
     next_threshold,
     reached,
 )
@@ -85,7 +86,7 @@ def _earned(defn: Definition, ctx: _Context) -> Status:
             period_key=latest.period_key,
             rank=_current_rank(defn, ctx),  # a past champion still races this period
         )
-    if defn.kind is Kind.SEASON:
+    if defn.kind is Kind.SEASON and counts_times(defn):
         return Status(
             defn,
             State.EARNED,
@@ -93,6 +94,8 @@ def _earned(defn: Definition, ctx: _Context) -> Status:
             granted_at=latest.granted_at,
             period_key=latest.period_key,
         )
+    if defn.kind is Kind.SEASON:
+        return _season_ladder(defn, ctx, latest)
     tier = max(g.tier for g in ctx.grants)
     return Status(
         defn,
@@ -101,6 +104,26 @@ def _earned(defn: Definition, ctx: _Context) -> Status:
         value=defn.progress(ctx.history),
         target=next_threshold(defn, tier),
         granted_at=latest.granted_at,
+    )
+
+
+def _season_ladder(defn: Definition, ctx: _Context, latest: AchievementGrant) -> Status:
+    """A tiered (run-bound) season achievement: the highest tier held, and
+    progress toward the next while its season is the open one."""
+    tier = max(g.tier for g in ctx.grants)
+    open_season = ctx.open_season
+    if open_season is None or not season_eval.counts_in(defn, open_season.run):
+        value, target = 0, None
+    else:
+        value, target = defn.progress(open_season.history), next_threshold(defn, tier)
+    return Status(
+        defn,
+        State.EARNED,
+        tier=tier,
+        value=value,
+        target=target,
+        granted_at=latest.granted_at,
+        period_key=latest.period_key,
     )
 
 

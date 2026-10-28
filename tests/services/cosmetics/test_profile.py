@@ -6,6 +6,7 @@ from types import MappingProxyType
 import pytest
 from PIL import Image
 
+from nani_pix_bot.commands.profile import card as profile_card
 from nani_pix_bot.models.achievement import AchievementGrant
 from nani_pix_bot.models.cosmetics import EquippedItem, OwnedItem
 from nani_pix_bot.models.enums import (
@@ -21,8 +22,10 @@ from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonResult, SeasonSchedule
 from nani_pix_bot.seasons import registry
 from nani_pix_bot.seasons.definition import Item
+from nani_pix_bot.seasons.mechanics import HexKind
 from nani_pix_bot.services.cards import backgrounds
 from nani_pix_bot.services.cosmetics import looks, profile, showcase
+from tests.hex_fixtures import add_hex
 
 ALICE = 2
 BANNER_ID = "demo_1/profile_banner.sky"
@@ -249,3 +252,18 @@ def test_from_someone_not_listed_next_is_the_first_and_prev_the_last() -> None:
 
 def test_neighbour_of_the_only_player_is_themselves() -> None:
     assert profile.neighbour([5], 5, 1) == 5
+
+
+def test_a_faceless_player_shows_no_title(session, alice, art) -> None:
+    """Nopperabō hides the title on the card and in its caption, like the leaderboard."""
+    session.get(Player, alice).title_key = "item:demo_1/title.demo"
+    add_hex(session, alice, HexKind.NOPPERABO, hours=1)
+    view = profile.build(session, alice, "EN")
+    assert view.title is None
+    assert "Demo Star" not in profile_card._caption(view, "👤", "EN")
+
+
+def test_a_kappa_hex_keeps_the_title(session, alice, art) -> None:
+    session.get(Player, alice).title_key = "item:demo_1/title.demo"
+    add_hex(session, alice, HexKind.KAPPA)
+    assert profile.build(session, alice, "EN").title == "Demo Star"

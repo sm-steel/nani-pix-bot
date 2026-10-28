@@ -9,17 +9,12 @@ from telegram.ext import ContextTypes
 from nani_pix_bot.commands.helpers.player_picker import Picker
 from nani_pix_bot.commands.helpers.player_picker import language as language
 from nani_pix_bot.commands.helpers.scoping import is_game_topic, is_private_chat
-from nani_pix_bot.seasons.mechanics import HexKind
+from nani_pix_bot.seasons.mechanics import HEX_ICONS, HexKind
 from nani_pix_bot.services import i18n
 
 PREFIX = "hex:"
 
-ICONS = {
-    HexKind.NOPPERABO: "👤",
-    HexKind.CHOCHIN: "🏮",
-    HexKind.KAPPA: "🥒",
-    HexKind.KITSUNE: "🦊",
-}
+ICONS = HEX_ICONS
 
 
 def now() -> datetime:

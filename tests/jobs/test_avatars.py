@@ -1,4 +1,6 @@
 import ast
+import asyncio
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -138,3 +140,37 @@ def test_every_caller_passes_a_session_factory() -> None:
             if isinstance(node, ast.Attribute) and node.attr == "get_user_profile_photos":
                 assert path.name == "avatars.py", f"{path}:{node.lineno} bypasses the seam"
     assert calls >= 6
+
+
+async def test_the_faceless_check_runs_off_the_event_loop(session_factory, monkeypatch) -> None:
+    """The sync DB session must not block the loop (and with it AVATAR_TIMEOUT)."""
+    threads: list[threading.Thread] = []
+    real = avatars._is_faceless
+
+    def spy(factory, user_id: int) -> bool:
+        threads.append(threading.current_thread())
+        return real(factory, user_id)
+
+    monkeypatch.setattr(avatars, "_is_faceless", spy)
+    _hex(session_factory, HexKind.NOPPERABO, expires=timedelta(hours=1))
+
+    art = await avatars.fetch_avatar(_bot(), 2, session_factory)
+
+    assert art == avatars.FACELESS_AVATAR.read_bytes()
+    assert threads
+    assert threads[0] is not threading.main_thread()
+
+
+async def test_a_slow_faceless_check_still_times_out(session_factory, monkeypatch) -> None:
+    release = threading.Event()
+
+    def slow(_factory, _user_id: int) -> bool:
+        release.wait(5)
+        return False
+
+    monkeypatch.setattr(avatars, "_is_faceless", slow)
+    try:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(avatars.fetch_avatar(_bot(), 2, session_factory), 0.05)
+    finally:
+        release.set()

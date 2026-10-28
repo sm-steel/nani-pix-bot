@@ -14,7 +14,7 @@ from nani_pix_bot.models.enums import (
 from nani_pix_bot.models.player import Player
 from nani_pix_bot.models.season import SeasonXp
 from nani_pix_bot.seasons import registry
-from nani_pix_bot.seasons.definition import Reward
+from nani_pix_bot.seasons.definition import Reward, RewardKind
 from nani_pix_bot.services.achievements import outbox
 from nani_pix_bot.services.cosmetics import consumables, inventory
 from nani_pix_bot.services.cosmetics.inventory import ItemGrant
@@ -262,11 +262,11 @@ def test_the_purchase_is_logged(session, season, demo, rich, log_records) -> Non
 
 def test_ofuda_and_omamori_rewards_grant_their_consumables(session, season) -> None:
     run = registry.discover("tests.seasons.fake_runs")["demo_3"]
-    for reward in (Reward.ofuda(), Reward.omamori()):
+    for reward in (Reward(RewardKind.OFUDA), Reward.omamori()):
         player = session.get(Player, 1)
         assert season_pass._give(session, season, run, player, reward) is True
     assert consumables.count(session, 1, ConsumableKind.OFUDA) == 1
     assert consumables.count(session, 1, ConsumableKind.OMAMORI) == 1
-    assert season_pass.describe(run, Reward.ofuda(), "EN") == "📜 Ofuda"
+    assert season_pass.describe(run, Reward(RewardKind.OFUDA), "EN") == "📜 Ofuda"
     assert season_pass.describe(run, Reward.omamori(), "RU") == "🧿 Омамори"
     assert season_pass.describe(run, Reward.omamori(), "EN") == "🧿 Omamori"

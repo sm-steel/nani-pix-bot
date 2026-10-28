@@ -2020,10 +2020,12 @@ round's bounty, tip a player, or pay to sharpen the image.
 **Status: Implemented (phase 1: the framework, Season XP and the anime
 gate; phase 2: inventory and cosmetics; phase 3: Season Coins, the
 Season Pass, Premium and clue tokens; phase 4: the Season Shop, rule
-modifiers, the visual style and objectives; phase 5: season achievements).** Seasons are occasional,
-time-boxed events that run alongside the normal game. One run ships,
-`seasons/runs/sakura_1.py` (Sakura Season); `/season` schedules it and any
-run module added later.
+modifiers, the visual style and objectives; phase 5: season achievements;
+phases 6-8: the 100 Candles goal, hexes and the Yōkai Night run).** Seasons
+are occasional, time-boxed events that run alongside the normal game. Two
+runs ship: `seasons/runs/sakura_1.py` (Sakura Season) and
+`seasons/runs/yokai_1.py` (Yōkai Night, see below); `/season` schedules
+either and any run module added later.
 
 ### Runs and the schedule
 
@@ -2174,7 +2176,8 @@ Season Shop and can be pass rewards; the shop and pass name them (`season_shop.o
 
 **Consumables outlive the season.** A count is never converted, expired or
 reset when a season finalizes (only 🪙 is converted): an unused Ofuda or
-Omamori stays in `/inventory` for the next run.
+Omamori stays in `/inventory` for the next run that has it. An Ofuda can be
+armed only while such a run is on (below); outside one it just waits there.
 
 **Ofuda (📜) forgives one miss.** It is armed for one round, then spent by
 the first wrong guess its holder makes in that round.
@@ -2188,11 +2191,19 @@ the first wrong guess its holder makes in that round.
   **arming takes nothing**: the count is unchanged until the Ofuda forgives.
 - **Refused** (`ArmRefusal`, an alert, logged at `WARNING`): the round is not
   the `ACTIVE` game any more (stale button, or a button from an older round);
-  the tapper is the round's starter (they cannot guess); the round is HARD
+  the tapper is the round's starter (they cannot guess); no Ofuda season
+  (`NO_SEASON`: no `ACTIVE` season, or its run doesn't offer Ofuda, per
+  `ofuda.offers_ofuda`: the run's shop sells one, or a pass tier or an omikuji
+  outcome grants one; a Sakura re-run or no season at all refuses, and the
+  menu doesn't draw the button); the round is HARD
   MODE (it has no per-stage limit to protect, and `record_guess` hands those
   rounds to the hard-mode path before the Ofuda is looked at); none held;
   already armed in this round. One armed at a time: a player holding two can
   arm again once the first has forgiven.
+- **The season ending doesn't disarm it.** The gate is on arming only:
+  `forgive` checks just the `armed_ofuda` row, so an Ofuda armed before the
+  season left `ACTIVE` still forgives one miss in that round. The row dies
+  with the round anyway, so this is at most one miss per player, in one round.
 - **When it is taken.** `state._count_wrong`, on a wrong guess by a player
   with an `armed_ofuda` row for that game: the row is deleted, one Ofuda is
   taken (`consumables.take`) and an `OFUDA_USED` event is emitted. A correct
@@ -2465,9 +2476,9 @@ pays and gates exactly as before.
 A run with `group_goal` (`GroupGoal`: `target`, the three weights,
 `milestone_every`, the boss multipliers, `contributor_coins`,
 `contributor_item_key`) sets the whole group a shared goal: put out `target`
-candles. The code is `services/seasons/group_goal.py`. No shipped run sets it
-yet (`yokai_1` does in a later phase), and a run without it, like `demo_1`,
-sees none of this. The boss itself (how its twists stack, how Nani Pix starts
+candles. The code is `services/seasons/group_goal.py`. `yokai_1` sets it
+(see "Yōkai Night"); a run without it, like `sakura_1` or `demo_1`, sees
+none of this. The boss itself (how its twists stack, how Nani Pix starts
 it) is under "Haunted rounds"; this section is the goal that calls it.
 
 - **The count.** `group_goal.candles` adds up the season's **finished**
@@ -2615,6 +2626,19 @@ any other): a **teaser** when a season is scheduled (or its dates change),
 a **start** post (with the gate's rule when there is one) and an **end**
 post with the frozen podium. There is no reminder. A cancelled season posts
 nothing: its queued posts are dropped unsent.
+
+The teaser and the start post are each followed by the **season guide**, a
+rich message (`services/seasons/season_guide.py`, sent as `Post.rich` right
+after the banner) that walks through everything the run switches on: what a
+round earns (a table), the pass, objectives, shop and 💠 conversion, then one
+section per mechanic the run has (haunted rounds, the event day, the group
+goal and its boss, hexes as a table, omikuji odds as a table, the charms, the
+bone set) and the commands to try. Each section links to its page in the
+user's guide (`GUIDE_URL`, `/ru/` for Russian; the run's own page is
+`SeasonRun.guide_page`). Every number is read from the run. The teaser's
+guide also states the gate (the start caption already does). Both languages
+stay under 4096 characters, so a rejected rich message's plain-text fallback
+isn't cut.
 
 A run with `group_goal` or `bone_set` adds four more (renderers in
 `jobs/goal_posts.py`, queued by `services/achievements/outbox.py`'s
@@ -2801,11 +2825,16 @@ matched in `games.anime_tags`, so its wins count too.
 **Run-specific achievements.** A run module may list `RunAchievement`s (key,
 names and descriptions in EN and RU, rarity, trigger events, a `progress`
 function over the season's history). They are merged into the catalogue as
-`<run_id>.<key>` and earned once in that season. `/achievements` lists one
+`<run_id>.<key>` and earned once in that season. One with several `tiers`
+(and a `rarities` entry per tier) climbs like a ladder inside its season:
+one grant per tier reached, and `/achievements` shows it with its tier
+numeral, medal and progress to the next tier. A run lists at most 16
+(`MAX_RUN_ACHIEVEMENTS`). `/achievements` lists one
 only while its season is the open one (`active`/`closing`), or for a player
 who holds it; it is left out of everyone else's list and summary total
 (`status.build`). A comparison lists it when either player would see it.
-`sakura_1` ships none; a later run (Phase 8) is the first to.
+`sakura_1` ships none; `yokai_1` is the first to (13 of them, at most 16 per
+run, several of them tiered).
 
 ### Hexes
 
@@ -2882,7 +2911,8 @@ effect. It emits `HEX_CAST` (with `outcome="blocked"`) and `HEX_BLOCKED`
     title. Guess replies, notices, standings, leaderboard, achievements,
     profile captions, reveal posts, tips and ballots all go through those.
   - *Images.* A name drawn on a card (name pills, card titles and effect
-    lines, profile card, podium and unlock cards, reveal badge) is the
+    lines, profile card, which drops the title too (`profile.build`), podium
+    and unlock cards, reveal badge) is the
     localized `faceless.label` ("Faceless" / «Без лица»,
     `players.image_name`), and the profile photo is replaced by
     `assets/icons/hex/nopperabo_avatar.jpg`: every image gets its photo from
@@ -2962,7 +2992,7 @@ the last column.
 | `hexes` | A tuple of `HexRule(kind, price, cooldown_minutes, duration_hours, amount)`, at most one per kind. Pranks (`nopperabo`, `chochin`) last `duration_hours` (at least 1) and have `amount` 0; `kappa` (percent 1..100 of the target's next win) and `kitsune` (🪙 lost on the next wrong guess, at least 1) last until triggered (`duration_hours` 0). Price at least 1, cooldown 1..1440 minutes. Players can refuse hexes with `players.hex_opt_out`. | Phase 5 |
 | `group_goal` | `GroupGoal(target, per_game, per_haunted, per_event_day, milestone_every, boss_*_multiplier, contributor_coins, contributor_item_key)`: a shared candle count that fills as season games finish, with a boss game (`games.boss_game`) when it is reached. Amounts are not negative; the prize is one of the run's items. | Phase 6 |
 | `bone_set` | `BoneSet(bones, item_key)`: an item earned after `bones` haunted wins. The item is one of the run's items. | Phase 6 |
-| `GoalKind.HEXES_BLOCKED` | Objective kind counting hexes a player's ofuda blocked. | Phase 5 |
+| `GoalKind.HEXES_BLOCKED` | Objective kind counting hexes a player's Omamori blocked. | Phase 5 |
 | `GoalKind.HAUNTED_WINS` | Objective kind counting haunted-game wins. | Phase 3 |
 
 **One source per item.** An item comes from exactly one place: a pass tier,
@@ -2972,3 +3002,38 @@ rejects a key in two of them.
 **Storage.** Hexes, armed ofuda and omikuji draws live in their own tables
 (see `ARCHITECTURE.md`); boss state, candle progress and bones are derived
 from `games` rows, so they have none.
+
+### Yōkai Night (`yokai_1`)
+
+The second run, `seasons/runs/yokai_1.py` (frozen once shipped, like Sakura).
+It is the first run to switch on every optional mechanic above. The
+admin's example window is `/season schedule yokai_1 2026-10-29 06:00
+2026-11-13 06:00`. The values below are the module's; the linked sections
+hold the rules.
+
+| What | Value | Rules in |
+|---|---|---|
+| Gate | Horror, Supernatural, Mythology or Vampire anime (Shikimori genre 14 and 37, theme 6 and 32) | "The anime gate" |
+| XP | win by stage 50 / 40 / 30 / 20 / 10, host solved 15, host unsolved 5, first guess 5 | "Season XP" |
+| 🪙 | win 40, host solved 25, host unsolved 15, first guess 15; 2 🪙 per 💠 on conversion | "Season Coins, Pass and Premium" |
+| Pass | 12 tiers at 20 / 50 / 90 / 140 / 190 / 240 / 300 / 360 / 420 / 490 / 570 / 650 XP; Premium costs 300 💠; rewards include an Omamori (tier 7), a clue ticket and stamps | "Season Coins, Pass and Premium" |
+| Shop | 14 cosmetics (25-95 🪙), a clue ticket (30 🪙, limit 2) and an Ofuda (20 🪙, limit 8) | "Season Shop", "Ofuda and Omamori" |
+| Objectives | 7: Kimodameshi (win by stage 2), Lantern Keeper (host 2), Spirit Chaser (win 3), Night Walker (5 days), Hundred Tales (guess 8), Bone Collector (2 haunted wins), Exorcist (block 1 hex) | "Objectives" |
+| Style | `moonlit` | "Season style" |
+| Mascot costume | `pumpkin` while the season is open | "Cosmetics" |
+| Haunting | 25% of games, all four twists, 🪙 x2 | "Haunted rounds" |
+| Night Parade | 31 October in the group's time zone: every game haunted (x2), 🪙 x2 on top (x4 in all), gate narrowed to Mythology or Supernatural | "Event day (Night Parade)" |
+| 100 Candles | 100 candles; a game puts out 1, a haunted one 2, a Night Parade one 3, a boss game 0; a post at 25 / 50 / 75; each contributor gets 80 🪙 and the Gashadokuro Slayer title | "100 Candles and the boss game" |
+| Boss game | XP x2 and 🪙 x3 for guessers, on top of the haunting's x2 (x6 🪙 in all); a host award is never multiplied | "Haunted rounds", `services/seasons/multipliers.py` |
+| Hexes | Nopperabo 20 🪙 (30 min cooldown, 24 h), Chochin 20 🪙 (30 min, 24 h), Kappa 40 🪙 (60 min, 50% of the target's next win), Kitsune 30 🪙 (60 min, 15 🪙 off the next wrong guess) | "Hexes" |
+| Omikuji | Daikichi 15% (30 🪙 and an Omamori), Kichi 30% (15 🪙), Shokichi 35% (5 🪙), Kyo 20% (a prank hex on the drawer) | "Omikuji" |
+| Bone set | 7 haunted wins give the Mini Skeleton name flair | "Bone Collector" |
+| Achievements | 13 run achievements, five of them hidden (Gashadokuro Bane, Daikichi, Cursed Luck, Hexed and Happy, Hyakki Yagyo) | "Season achievements" |
+| Cosmetics | 33 items: 5 mascot costumes, 4 host frames, 3 host transitions, 3 win effects, 3 banners, 8 name flairs, 3 reactions and 4 titles | "Cosmetics" |
+
+**Multipliers stack.** `multipliers.coin_multiplier` multiplies the haunt's
+factor (when the game is haunted), the event day's (when the game was
+started on it) and the boss's (for a guesser, never for a host award). So a
+Night Parade game pays x4 🪙, a boss game x6, and the posts that announce
+them (the Night Parade start post and the boss topic post and caption) state
+the same product, not one factor.
