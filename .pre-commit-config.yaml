@@ -8,7 +8,7 @@
 # run manually.
 #
 # qlty is a native binary (see CLAUDE.md's Tooling section), not a uv
-# dependency — installed once per machine via qlty.sh, expected on PATH.
+# dependency — pinned in mise.toml, installed by `mise install`, expected on PATH.
 repos:
   - repo: local
     hooks:

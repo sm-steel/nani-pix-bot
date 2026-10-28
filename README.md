@@ -51,7 +51,7 @@ Docker.
 
 ```sh
 git clone https://github.com/sm-steel/nani-pix-bot && cd nani-pix-bot
-mise install                # pinned ffmpeg and Node
+mise install                # pinned uv, qlty, ffmpeg and Node
 uv sync
 uv run pre-commit install
 uv run pytest
