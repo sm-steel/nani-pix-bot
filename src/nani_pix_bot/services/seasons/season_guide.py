@@ -23,16 +23,18 @@ def _url(page: str, lang: str) -> str:
     return f"{GUIDE_URL}{'ru/' if lang == 'RU' else ''}seasons/{page}/"
 
 
-def _section(title: str, lines: list[str], page: str, lang: str) -> list[str]:
+def _section(title: str, blocks: list[str], page: str, lang: str) -> list[str]:
     link = f"📖 [{_t('more', lang)}]({_url(page, lang)})"
-    return ["", f"## {title}", *lines, link]
+    return [f"## {title}", *blocks, link]
 
 
-def _table(head: list[str], rows: list[list[str]]) -> list[str]:
+def _table(head: list[str], rows: list[list[str]]) -> str:
+    """One block: a table's rows must touch, with no blank line between them."""
+
     def row(cells: list[str]) -> str:
         return "| " + " | ".join(cells) + " |"
 
-    return [row(head), "|" + "---|" * len(head), *(row(cells) for cells in rows)]
+    return "\n".join([row(head), "|" + "---|" * len(head), *(row(cells) for cells in rows)])
 
 
 def _intro(run: SeasonRun, lang: str, *, started: bool) -> list[str]:
@@ -58,7 +60,7 @@ def _earning(run: SeasonRun, lang: str) -> list[str]:
         [_t("earn.host_unsolved", lang), str(xp.host_unsolved), str(coins.host_unsolved)],
         [_t("earn.first_guess", lang), str(xp.first_guess), str(coins.first_guess)],
     ]
-    lines = _table(head, rows)
+    lines = [_table(head, rows)]
     if run.tiers:
         lines.append(_t("earn.pass", lang, tiers=len(run.tiers)))
     if any(tier.premium for tier in run.tiers):
@@ -151,7 +153,7 @@ def _hexes(run: SeasonRun, lang: str) -> list[str]:
         cooldown = duration(timedelta(minutes=rule.cooldown_minutes), lang)
         cells = [f"{HEX_ICONS[rule.kind]} {name}", str(rule.price), cooldown, effect]
         rows.append([md_escape(cell) for cell in cells])
-    lines = [_t("hexes.body", lang), *_table(head, rows), _t("hexes.defence", lang)]
+    lines = [_t("hexes.body", lang), _table(head, rows), _t("hexes.defence", lang)]
     return _section(_t("hexes.title", lang), lines, "hexes", lang)
 
 
@@ -177,7 +179,7 @@ def _omikuji(run: SeasonRun, lang: str) -> list[str]:
         ]
         for outcome in run.omikuji
     ]
-    lines = [_t("omikuji.body", lang), *_table(head, rows)]
+    lines = [_t("omikuji.body", lang), _table(head, rows)]
     return _section(_t("omikuji.title", lang), lines, "omikuji-and-charms", lang)
 
 
@@ -232,11 +234,14 @@ def _commands(run: SeasonRun, lang: str) -> list[str]:
     commands += ["/omikuji"] if run.omikuji else []
     if run.omikuji or any(o.kind in (RewardKind.OFUDA, RewardKind.OMAMORI) for o in run.shop):
         commands.append("/inventory")
-    return ["", _t("commands", lang, commands=" · ".join(commands))]
+    return [_t("commands", lang, commands=" · ".join(commands))]
 
 
 def markdown(run: SeasonRun, lang: str, *, started: bool) -> str:
-    """The guide under the teaser (`started` False) or the start banner."""
+    """The guide under the teaser (`started` False) or the start banner. Every
+    block (heading, paragraph, table, link) stands apart with a blank line:
+    lines that touch run into one paragraph in a rich message, and a table
+    can't start inside one (issue #487)."""
     lines = [
         *_intro(run, lang, started=started),
         *_earning(run, lang),
@@ -249,4 +254,4 @@ def markdown(run: SeasonRun, lang: str, *, started: bool) -> str:
         *_bones(run, lang),
         *_commands(run, lang),
     ]
-    return "\n".join(lines)
+    return "\n\n".join(lines)

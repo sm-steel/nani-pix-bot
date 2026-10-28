@@ -1,3 +1,15 @@
+## v1.21.0 · 2026-10-28
+
+### ✨ New
+- 🎃 **Yōkai Night** is here: a Halloween season of horror, supernatural, mythology and vampire anime, with a moonlit look for every round, Nani Pix in a pumpkin costume, a 12-tier pass, a shop and objectives, and a Night Parade on 31 October (in the group's time zone), plus new host frames, reveal transitions and win effects, and a pile of profile banners, flairs, reactions, titles, costumes and achievements to collect.
+- 👻 One round in four is haunted by a yōkai: a twist on the picture (Kitsune's mirror, Tanuki's leaf, Yūrei's double or Kyokotsu's x-ray) and a hint to spot it, every 🪙 in the round pays ×2, and the reveal at the end is clean. On the Night Parade every round is haunted and the day pays ×2 more, ×4 🪙 in all.
+- 🕯 Every game puts out candles toward a shared 100, with news at 25, 50 and 75 and `/candles` to check on it; at 100 everyone who helped gets 80 🪙 and the Gashadokuro Slayer title, and Nani Pix starts the Gashadokuro boss game herself, with twists piling up stage after stage, ×2 XP and ×6 🪙 for guessers.
+- 🧿 `/hex` lets you spend 🪙 on a prank for another player (Nopperabō's faceless mask, a Chōchin lantern, Kappa taking half of their next win, Kitsune stealing 🪙 from their next miss), with a public notice and a cooldown. An Omamori blocks one hex, and `/hexes on|off` turns them off or on for you.
+- 🎋 `/omikuji` draws your daily fortune: Daikichi brings 🪙 and an Omamori, Kichi and Shokichi smaller prizes, Kyō a prank on yourself. The Ofuda charm is sold in the shop and the Omamori comes from pass tier 7 or a Daikichi slip, and both live in `/inventory`; arm an Ofuda from `/shop` during a round so your next miss doesn't count.
+- ☠️ Win 7 haunted rounds to collect all the bones and earn the Mini Skeleton name flair.
+- 📖 When a season is announced and when it starts, Nani Pix follows the banner with a guide to everything the season brings: what you earn, each new mechanic with its numbers in tables, the commands to try, and links to the matching pages of the user's guide.
+- 👮 Admins start the season with `/season schedule yokai_1 <start> <end>`.
+
 ## v1.20.0 · 2026-10-19
 
 ### ✨ New
@@ -18,13 +30,3 @@
 
 ### 🛠 Fixed
 - 🖼 An extra screenshot from `/shop` is always a new one now: never the round's own picture, never one you or anyone else already got that round (even if it was refunded), and picked at random instead of the same one for everybody.
-
-## v1.17.0 · 2026-10-14
-
-### ✨ New
-- 🏳 Stuck on a screenshot nobody knows? `/pass` votes to give up: once enough of the group agrees (half of those who played in the last day, at least 3), the round ends and the answer is shown.
-- 🌸 In a season, an anime that's off-theme is turned down the moment you pick it — from search, your MAL list or a typed title — instead of after you've chosen a screenshot.
-- ↩ Picked the wrong anime while setting up a game? **Pick a different anime** now sits under the screenshot menu, the gallery and the setup questions, so there's no need to `/stop` and start over.
-- 🎫 `/seasonpass` is easier to read: the tiers are a table with the free and ⭐ Premium rewards in their own columns, a ⬜ the same size as ✅ for tiers still ahead, a 🔒 on the Premium column until you buy it, and the objectives under a heading of their own.
-- 🪪 `/profile`'s ◀ ▶ and 👥 Players now walk only the people who actually play, most games first — no more lurkers, and never Nani Pix herself.
-- 🎨 Cosmetic previews in `/cosmetics` and `/seasonshop` now show you — your name with the flair, your avatar and name on the win badge, your own profile card behind a banner — and stage frames and reveal transitions play out on a real pixelated anime screenshot, just as a round posts them.
