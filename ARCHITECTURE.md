@@ -1235,7 +1235,8 @@ src/nani_pix_bot/
                    # tests/seasons/gate_snapshot.json, a frozen copy of the
                    # genre/theme ids and names, so a wrong id fails the
                    # run's tests before it is locked (yokai_1 added Horror
-                   # 14, Supernatural 37, Mythology 6, Vampire 32).
+                   # 14, Supernatural 37, Mythology 6, Vampire 32, then
+                   # Action 1, Adventure 2, Fantasy 10 in #489).
                    # A RunAchievement may be tiered (`tiers` thresholds,
                    # one `rarities` entry per tier, climbing like a ladder
                    # inside its season); a run lists at most

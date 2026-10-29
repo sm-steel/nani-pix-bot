@@ -1,4 +1,5 @@
 # run_id sha256 — one line per shipped run module (see lock.py). Never edit a
 # line for a run that has shipped; ship a new run module instead.
 sakura_1 ec1dd891623262384982780f4a3b5a2fdfc2c68bbcea2300d01eaa1d9b83be9b
-yokai_1 5d507c82d901b5fcc58650e02c4b869ccedd44d0c8b1ebf849d70ab6dd0043db
+# yokai_1 re-locked once while live (#489): its gate widened mid-season.
+yokai_1 629571ea85c9a2d759f18f68916eef51753fc51ec709f1c7037c5b0f59219431

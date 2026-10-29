@@ -170,12 +170,20 @@ def test_its_run_achievements_validate() -> None:
     }
 
 
+def test_the_gate_also_takes_action_adventure_and_fantasy() -> None:
+    # #489: undead heroes and demon kings carry none of the spooky tags.
+    assert RUN.gate is not None
+    assert {t.mal_id for t in RUN.gate.any_of} == {14, 37, 6, 32, 1, 2, 10}
+
+
 def test_the_russian_texts() -> None:
     assert RUN.names["RU"] == "Ночь ёкаев"
     assert RUN.event_day is not None
     assert RUN.event_day.names["RU"] == "Ночной парад"
     assert RUN.gate is not None
-    assert RUN.gate.description["RU"] == "ужасы, мистику, мифологию или вампиров"
+    assert RUN.gate.description["RU"] == (
+        "ужасы, мистику, мифологию, вампиров, экшен, приключения или фэнтези"
+    )
     assert RUN.event_day.gate is not None
     assert RUN.event_day.gate.description["RU"] == "мифологию или мистику"
     bane = next(a for a in RUN.achievements if a.key == "gashadokuro_bane")

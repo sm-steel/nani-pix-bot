@@ -3013,7 +3013,7 @@ hold the rules.
 
 | What | Value | Rules in |
 |---|---|---|
-| Gate | Horror, Supernatural, Mythology or Vampire anime (Shikimori genre 14 and 37, theme 6 and 32) | "The anime gate" |
+| Gate | Horror, Supernatural, Mythology, Vampire, Action, Adventure or Fantasy anime (Shikimori genre 14, 37, 1, 2 and 10, theme 6 and 32; the last three added mid-season, #489) | "The anime gate" |
 | XP | win by stage 50 / 40 / 30 / 20 / 10, host solved 15, host unsolved 5, first guess 5 | "Season XP" |
 | 🪙 | win 40, host solved 25, host unsolved 15, first guess 15; 2 🪙 per 💠 on conversion | "Season Coins, Pass and Premium" |
 | Pass | 12 tiers at 20 / 50 / 90 / 140 / 190 / 240 / 300 / 360 / 420 / 490 / 570 / 650 XP; Premium costs 300 💠; rewards include an Omamori (tier 7), a clue ticket and stamps | "Season Coins, Pass and Premium" |

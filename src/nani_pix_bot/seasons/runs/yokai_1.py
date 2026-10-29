@@ -1,7 +1,8 @@
 """Yōkai Night (#473): the Halloween season run — horror, supernatural,
-mythology and vampire anime under a moonlit wash, with haunted rounds, the
-Night Parade on 31 October, the 100 Candles goal and its Gashadokuro boss,
-hexes, omikuji and the bone set. Frozen once shipped."""
+mythology, vampire, action, adventure and fantasy anime under a moonlit wash,
+with haunted rounds, the Night Parade on 31 October, the 100 Candles goal and
+its Gashadokuro boss, hexes, omikuji and the bone set. Frozen once shipped;
+re-locked once while live, when #489 widened the gate."""
 
 from types import MappingProxyType
 
@@ -495,10 +496,13 @@ RUN = SeasonRun(
             _SUPERNATURAL,
             _MYTHOLOGY,
             GateTag("theme", "Vampire", 32, shikimori_id=32),
+            GateTag("genre", "Action", 1, shikimori_id=1),
+            GateTag("genre", "Adventure", 2, shikimori_id=2),
+            GateTag("genre", "Fantasy", 10, shikimori_id=10),
         ),
         description=_names(
-            "horror, supernatural, mythology or vampire anime",
-            "ужасы, мистику, мифологию или вампиров",
+            "horror, supernatural, mythology, vampire, action, adventure or fantasy anime",
+            "ужасы, мистику, мифологию, вампиров, экшен, приключения или фэнтези",
         ),
     ),
     items=ITEMS,
