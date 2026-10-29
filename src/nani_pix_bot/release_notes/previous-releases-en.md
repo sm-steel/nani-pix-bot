@@ -1,3 +1,8 @@
+## v1.21.1 · 2026-10-28
+
+### 🛠 Fixed
+- 📖 The season guide under the Yōkai Night banners shows its tables and paragraphs properly instead of running them together.
+
 ## v1.21.0 · 2026-10-28
 
 ### ✨ New
@@ -21,12 +26,3 @@
 - 🙅 The HARD MODE vote has a **Nobody** button for when no guess was right, and it no longer has to run its full 15 minutes: as soon as one option has the most votes, with no tie, from at least half of the day's players (never fewer than 3), it closes on the spot.
 ### 🛠 Fixed
 - 📷 Sent a different screenshot while setting up a round, before picking the anime (say, after the season's theme turned the first one down)? It now replaces the first one, instead of being ignored while the round went live with the old picture.
-
-## v1.18.0 · 2026-10-17
-
-### ✨ New
-- 🖼 Starting a round? The preview now has **Clue screenshots**: choose whether the shop's extra screenshot is random (as before), only your own picks, or yours first and then random. Add up to 10 from the Shikimori or TMDB gallery or upload your own; the ones handed out show up in the clue album when the round ends.
-- 🖼 When a round ends, every extra screenshot bought during it is shown in full quality in an album under the reveal. In HARD MODE the video now shows one screenshot, and the other one opens the album.
-
-### 🛠 Fixed
-- 🖼 An extra screenshot from `/shop` is always a new one now: never the round's own picture, never one you or anyone else already got that round (even if it was refunded), and picked at random instead of the same one for everybody.
