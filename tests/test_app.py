@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from cryptography.fernet import Fernet
-from telegram.error import Conflict, NetworkError
+from telegram.error import BadRequest, Conflict, Forbidden, NetworkError
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, TypeHandler
 
 from nani_pix_bot import app, db
@@ -277,6 +277,23 @@ async def test_error_handler_logs_network_errors_as_a_warning(
     ]
 
 
+@pytest.mark.parametrize(
+    "error",
+    [BadRequest("Message is too long"), Forbidden("Bot was blocked")],
+)
+async def test_error_handler_logs_telegram_request_failures_as_errors(
+    log_records: list[LogLine], error: Exception
+) -> None:
+    context = MagicMock(error=error)
+
+    await app._error_handler(cast(object, "some update"), cast(ContextTypes.DEFAULT_TYPE, context))
+
+    assert [(line.level, line.message) for line in log_records] == [
+        ("ERROR", f"Telegram error: {error}")
+    ]
+    assert log_records[0].extra["error"] == error
+
+
 async def test_error_handler_logs_a_conflict_as_a_warning(log_records: list[LogLine]) -> None:
     # A 409 Conflict self-heals on its own (see the 2026-09-13 incident) —
     # it's not a bug, so it shouldn't be logged as one.
@@ -285,7 +302,9 @@ async def test_error_handler_logs_a_conflict_as_a_warning(log_records: list[LogL
 
     await app._error_handler(cast(object, "some update"), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    assert [line.level for line in log_records] == ["WARNING"]
+    assert [(line.level, line.message) for line in log_records] == [
+        ("WARNING", "Telegram polling conflict: terminated by other getUpdates request")
+    ]
 
 
 async def test_error_handler_logs_anything_else_as_an_error(

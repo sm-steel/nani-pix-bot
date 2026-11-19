@@ -11,7 +11,7 @@ import httpx
 from cryptography.fernet import Fernet
 from loguru import logger
 from telegram import Update
-from telegram.error import Conflict, NetworkError
+from telegram.error import BadRequest, Conflict, NetworkError, TelegramError
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -468,17 +468,16 @@ def build_application(config: Config) -> Application:
 
 
 async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Without this, PTB just logs "No error handlers are registered,
-    logging exception" — which is how the 2026-09-13 getUpdates
-    connection-pool wedge (issue #51) produced hours of DEBUG-only
-    "Failed run number N of -1. Retrying." spam with nothing at
-    WARNING/ERROR level to catch it. Network hiccups (including a 409
-    Conflict, which self-heals — see that incident's postmortem) are
-    expected occasionally and log at WARNING; anything else reaching
-    here is an actual bug and gets a full traceback at ERROR."""
+    """Log recoverable polling and transport failures and trace unhandled errors."""
     error = context.error
-    if isinstance(error, NetworkError | Conflict):
+    if isinstance(error, Conflict):
+        logger.warning("Telegram polling conflict: {error}", error=error)
+        return
+    if isinstance(error, NetworkError) and not isinstance(error, BadRequest):
         logger.warning("network error talking to Telegram: {error}", error=error)
+        return
+    if isinstance(error, TelegramError):
+        logger.opt(exception=error).error("Telegram error: {error}", error=error)
         return
     logger.opt(exception=error).error(
         "unhandled exception while processing update: {update}", update=update
