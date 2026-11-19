@@ -1,14 +1,16 @@
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from telegram import Update
-from telegram.constants import ChatMemberStatus
+from telegram.constants import ChatMemberStatus, MessageLimit
 from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
 from nani_pix_bot.commands import onboarding
 from nani_pix_bot.commands.achievements.browser import Browse
-from nani_pix_bot.services import i18n
+from nani_pix_bot.db import session_scope
+from nani_pix_bot.services import i18n, settings
 
 
 def _make_context(session_factory, **extra_bot_data) -> MagicMock:
@@ -62,14 +64,28 @@ async def test_start_command_ignores_group_chats(session_factory) -> None:
     update.message.reply_text.assert_not_awaited()
 
 
-async def test_help_command_replies_directly_in_dm(session_factory) -> None:
-    update = _make_dm_update()
+@pytest.mark.parametrize("lang", ["en", "ru"])
+@pytest.mark.parametrize("in_dm", [True, False])
+async def test_help_command_delivers_all_sections_privately(session_factory, lang, in_dm) -> None:
+    with session_scope(session_factory) as session:
+        settings.set_language(session, lang)
+    update = _make_dm_update() if in_dm else _make_group_update()
     context = _make_context(session_factory)
 
     await onboarding.help_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
 
-    update.message.reply_text.assert_awaited_once()
-    context.bot.send_message.assert_not_awaited()
+    if in_dm:
+        context.bot.send_message.assert_not_awaited()
+        parts = [call.args[0] for call in update.message.reply_text.await_args_list]
+    else:
+        update.message.reply_text.assert_not_awaited()
+        calls = context.bot.send_message.await_args_list
+        assert all(call.kwargs["chat_id"] == 1 for call in calls)
+        parts = [call.kwargs["text"] for call in calls]
+    assert len(parts) > 1
+    for part in parts:
+        assert 0 < len(part.encode("utf-16-le")) // 2 <= MessageLimit.MAX_TEXT_LENGTH
+    assert parts == i18n.t("onboarding.help", lang).split("\n\n")
 
 
 async def test_help_command_ignores_group_messages_outside_the_game_topic(session_factory) -> None:
@@ -80,18 +96,6 @@ async def test_help_command_ignores_group_messages_outside_the_game_topic(sessio
 
     update.message.reply_text.assert_not_awaited()
     context.bot.send_message.assert_not_awaited()
-
-
-async def test_help_command_in_group_dms_the_asker(session_factory) -> None:
-    update = _make_group_update()
-    context = _make_context(session_factory)
-
-    await onboarding.help_command(cast(Update, update), cast(ContextTypes.DEFAULT_TYPE, context))
-
-    context.bot.send_message.assert_awaited_once()
-    _, kwargs = context.bot.send_message.await_args
-    assert kwargs["chat_id"] == 1
-    update.message.reply_text.assert_not_awaited()
 
 
 async def test_help_command_in_group_falls_back_when_dm_fails(session_factory) -> None:

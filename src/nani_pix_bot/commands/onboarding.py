@@ -90,9 +90,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     with session_scope(session_factory) as session:
         lang = settings.get_language(session)
 
+    sections = i18n.t("onboarding.help", lang).split("\n\n")
     if is_private_chat(update):
+        for section in sections:
+            await message.reply_text(section)
         logger.info("sent /help in DM")
-        await message.reply_text(i18n.t("onboarding.help", lang))
         return
 
     group_chat_id = context.bot_data["group_chat_id"]
@@ -101,7 +103,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     try:
-        await context.bot.send_message(chat_id=user.id, text=i18n.t("onboarding.help", lang))
+        for section in sections:
+            await context.bot.send_message(chat_id=user.id, text=section)
         logger.info("sent /help in the game topic — help sent by DM")
     except Forbidden:
         logger.warning("couldn't DM /help — they haven't started the bot")

@@ -1,3 +1,8 @@
+## v1.22.0 · 2026-10-29
+
+### ✨ New
+- 🎃 Yōkai Night now also accepts action, adventure and fantasy anime, so spooky-but-untagged picks like undead heroes and demon kings get through. The Night Parade stays strictly mythology and supernatural.
+
 ## v1.21.1 · 2026-10-28
 
 ### 🛠 Fixed
@@ -19,10 +24,3 @@
 
 ### ✨ New
 - 🧙‍♀️ Meet **Nani Pix**, the game's host: a pixel mage who now speaks as herself in every message and watches every round from the corner of the picture, reacting to how it goes, from a sly grin when she steals a turn to a cheer when someone gets it.
-
-## v1.19.0 · 2026-10-17
-
-### ✨ New
-- 🙅 The HARD MODE vote has a **Nobody** button for when no guess was right, and it no longer has to run its full 15 minutes: as soon as one option has the most votes, with no tie, from at least half of the day's players (never fewer than 3), it closes on the spot.
-### 🛠 Fixed
-- 📷 Sent a different screenshot while setting up a round, before picking the anime (say, after the season's theme turned the first one down)? It now replaces the first one, instead of being ignored while the round went live with the old picture.
